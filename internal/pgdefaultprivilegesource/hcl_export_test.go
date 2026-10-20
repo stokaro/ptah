@@ -34,7 +34,7 @@ func TestHCLExport_RoundTripsRoleNamesAndPrivileges(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 			c.Assert(string(rendered.Data), qt.Contains, "default_privilege {")
-			parsed := must.Must(parseHCL(string(rendered.Data)))
+			parsed := must.Must(parseHCL(t.Context(), string(rendered.Data)))
 			c.Assert(parsed.FeatureObjects.Equal(db.FeatureObjects), qt.IsTrue)
 			second := must.Must(atlashclrender.RenderInspected(parsed, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL()}))
 			c.Assert(second.Data, qt.DeepEquals, rendered.Data)
@@ -54,7 +54,7 @@ func TestHCLExport_GlobalRevokesDoNotInheritASchema(t *testing.T) {
 			db := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(object))}
 			rendered := must.Must(atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL()}))
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-			parsed := must.Must(parseHCL(string(rendered.Data)))
+			parsed := must.Must(parseHCL(t.Context(), string(rendered.Data)))
 			c.Assert(parsed.FeatureObjects.Equal(db.FeatureObjects), qt.IsTrue)
 			objects := must.Must(parsed.FeatureObjects.All())
 			c.Assert(must.Must(pgdefaultprivilege.IdentityOf(objects[0].Ref)).Schema, qt.Equals, "")
@@ -66,8 +66,8 @@ func TestHCLExport_IsIndependentOfDeclarationOrder(t *testing.T) {
 	c := qt.New(t)
 	first := hclBlock(hclIdentity + "privileges = [INSERT]\ngrantable = [INSERT]")
 	second := hclBlock(hclIdentity + "privileges = [SELECT]")
-	left := must.Must(parseHCL(first + second))
-	right := must.Must(parseHCL(second + first))
+	left := must.Must(parseHCL(t.Context(), first+second))
+	right := must.Must(parseHCL(t.Context(), second+first))
 	options := atlashclrender.Options{HCL: builtintest.Runtime().HCL()}
 	c.Assert(must.Must(atlashclrender.Render(left, options)).Data, qt.DeepEquals, must.Must(atlashclrender.Render(right, options)).Data)
 }

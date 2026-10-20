@@ -54,7 +54,7 @@ func TestRender_ExportMetadataRoundTripsWithoutLoss(t *testing.T) {
 	c.Assert(string(first.Data), qt.Contains, `graphql_name = "emailNode"`)
 	c.Assert(string(first.Data), qt.Contains, `api_expose = "read"`)
 
-	parsed, err := atlashcl.ParseWithOptions(first.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), first.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)

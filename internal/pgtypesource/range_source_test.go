@@ -61,7 +61,7 @@ type Types struct{}
 
 func TestRangeHCLExportReload(t *testing.T) {
 	c := qt.New(t)
-	database, err := atlashcl.ParseWithOptions([]byte(`schema "app" {}
+	database, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "app" {}
 range "app" "span" {
   subtype = numeric
   subtype_diff = ""
@@ -74,7 +74,7 @@ range "app" "span" {
 	c.Assert(value.Cleared, qt.DeepEquals, []string{pgtype.RangeSubtypeDiff})
 	rendered, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
-	reloaded, err := atlashcl.ParseWithOptions(rendered.Data, "reloaded.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	reloaded, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "reloaded.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	afterObject, afterValue := oneRange(c, reloaded)
 	c.Assert(afterObject, qt.DeepEquals, object)

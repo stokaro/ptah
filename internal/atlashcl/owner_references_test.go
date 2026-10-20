@@ -78,9 +78,9 @@ func ruleOwners(requests *[]hclext.Request) hclext.Set {
 
 // parseRules parses source with the rule owner, and returns the requests the
 // owner received.
-func parseRules(source string) (*schemamodel.Database, []hclext.Request, error) {
+func parseRules(ctx context.Context, source string) (*schemamodel.Database, []hclext.Request, error) {
 	var requests []hclext.Request
-	db, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{HCL: ruleOwners(&requests)})
+	db, err := atlashcl.ParseWithOptions(ctx, []byte(source), "schema.hcl", atlashcl.Options{HCL: ruleOwners(&requests)})
 	return db, requests, err
 }
 
@@ -125,7 +125,7 @@ func TestParseWithOptions_ResolvesAReference(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, requests, err := parseRules(ruleTables + "rule \"r\" {\n  on = " + test.on + "\n}\n")
+			_, requests, err := parseRules(t.Context(), ruleTables+"rule \"r\" {\n  on = "+test.on+"\n}\n")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 1)
@@ -160,7 +160,7 @@ func TestParseWithOptions_RefusesAReferenceItCannotResolve(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, _, err := parseRules(test.source)
+			db, _, err := parseRules(t.Context(), test.source)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -190,7 +190,7 @@ func TestParseWithOptions_ReadsAListOfReferences(t *testing.T) {
 			source := "variable \"r\" {\n  type    = string\n  default = \"writer\"\n}\n" + ruleTables +
 				"rule \"r\" {\n  on = table.users\n  to = " + test.to + "\n}\n"
 
-			_, requests, err := parseRules(source)
+			_, requests, err := parseRules(t.Context(), source)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 1)
@@ -228,7 +228,7 @@ func TestParseWithOptions_RefusesAListElementThatIsNoReference(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, _, err := parseRules("rule \"r\" {\n  on = table.users\n  to = " + test.to + "\n}\n")
+			db, _, err := parseRules(t.Context(), "rule \"r\" {\n  on = table.users\n  to = "+test.to+"\n}\n")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -241,7 +241,7 @@ func TestParseWithOptions_RefusesAListElementThatIsNoReference(t *testing.T) {
 func TestParseWithOptions_JoinsTwoLabelsIntoOneName(t *testing.T) {
 	c := qt.New(t)
 
-	_, requests, err := parseRules(ruleTables + "rule \"a\" \"b\" {\n  on = table.users\n}\n")
+	_, requests, err := parseRules(t.Context(), ruleTables+"rule \"a\" \"b\" {\n  on = table.users\n}\n")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
@@ -255,7 +255,7 @@ func TestParseWithOptions_JoinsTwoLabelsIntoOneName(t *testing.T) {
 func TestParseWithOptions_RefusesASchemaOfAJoinedName(t *testing.T) {
 	c := qt.New(t)
 
-	db, _, err := parseRules("rule \"r\" {\n  schema = schema.app\n  on     = table.users\n}\n")
+	db, _, err := parseRules(t.Context(), "rule \"r\" {\n  schema = schema.app\n  on     = table.users\n}\n")
 
 	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:1,1-5: unsupported rule attribute "schema"`)
 	c.Assert(db, qt.IsNil)
@@ -284,7 +284,7 @@ table "orders" {
 func TestParseWithOptions_ClaimsATableBlockForTheOwner(t *testing.T) {
 	c := qt.New(t)
 
-	db, requests, err := parseRules(switchedTables)
+	db, requests, err := parseRules(t.Context(), switchedTables)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Block: "switch",
@@ -316,7 +316,7 @@ func TestParseWithOptions_RefusesATableBlockAsItsOwn(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: test.owners})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.source), "schema.hcl", atlashcl.Options{HCL: test.owners})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -351,7 +351,7 @@ func TestParseWithOptions_ReportsARefusalOfTheDocumentLast(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, _, err := parseRules(test.source)
+			db, _, err := parseRules(t.Context(), test.source)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -365,7 +365,7 @@ func TestParseWithOptions_RefusesAnAmbiguousReferenceAsInvalid(t *testing.T) {
 	c := qt.New(t)
 	source := ruleTables + "table \"users\" {\n  column \"id\" {\n    type = int\n  }\n}\nrule \"r\" {\n  on = table.users\n}\n"
 
-	db, _, err := parseRules(source)
+	db, _, err := parseRules(t.Context(), source)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(db, qt.IsNil)
@@ -379,7 +379,7 @@ func TestParseWithOptions_KeepsNothingAnOwnerDeclaredForARefusedDocument(t *test
 	c := qt.New(t)
 	source := "table \"t\" {\n  switch {\n    on = true\n  }\n  column \"id\" {\n    type = int\n    null = \"x\"\n  }\n}\n"
 
-	db, _, err := parseRules(source)
+	db, _, err := parseRules(t.Context(), source)
 
 	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:7,5-9: column attribute "null" must be a bool`)
 	c.Assert(db, qt.IsNil)

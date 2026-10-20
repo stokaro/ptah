@@ -121,7 +121,7 @@ func TestYAML_ClaimsRowTTLForAYAMLDocument(t *testing.T) {
 			set, err := yamlext.NewSet(test.owners...)
 			c.Assert(err, qt.IsNil)
 
-			db, err := yamlschema.Parse(set, []byte(sessionsYAML))
+			db, err := yamlschema.Parse(t.Context(), set, []byte(sessionsYAML))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables[1].Name, qt.Equals, "sessions")

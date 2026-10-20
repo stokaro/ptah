@@ -14,7 +14,7 @@ func TestYDBIndexPartitioning_RejectsInvalidSettings(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners([]byte("table \"items\" {\n column \"id\" { type = Int64 }\n index \"by_id\" {\n columns = [column.id]\n "+test.setting+" = "+test.value+"\n }\n}"), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte("table \"items\" {\n column \"id\" { type = Int64 }\n index \"by_id\" {\n columns = [column.id]\n "+test.setting+" = "+test.value+"\n }\n}"), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, `(?s).*index "by_id": invalid `+test.setting+`.*`)
 		})
 	}
@@ -41,7 +41,7 @@ func TestYDBIndexPartitioning_ReportsTheEarlierRefusal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

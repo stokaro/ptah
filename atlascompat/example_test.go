@@ -1,6 +1,7 @@
 package atlascompat_test
 
 import (
+	"context"
 	"fmt"
 	"testing/fstest"
 
@@ -16,7 +17,7 @@ import (
 // produce, so everything downstream of the parse is format-blind. It is the
 // front door for tooling that holds a schema authored for the Atlas CLI.
 func ExampleParseAtlasHCL() {
-	db := must.Must(atlascompat.ParseAtlasHCL([]byte(`
+	db := must.Must(atlascompat.ParseAtlasHCL(context.Background(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -69,12 +70,12 @@ hypertable "public" "metrics" {
 `)
 	runtime := must.Must(builtin.Bundled())
 
-	db, err := atlascompat.ParseAtlasHCLWithOptions(document, "schema.hcl", atlascompat.ParseHCLOptions{HCL: runtime.HCL()})
+	db, err := atlascompat.ParseAtlasHCLWithOptions(context.Background(), document, "schema.hcl", atlascompat.ParseHCLOptions{HCL: runtime.HCL()})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	_, plainErr := atlascompat.ParseAtlasHCL(document, "schema.hcl")
+	_, plainErr := atlascompat.ParseAtlasHCL(context.Background(), document, "schema.hcl")
 
 	fmt.Println("tables:", len(db.Tables))
 	fmt.Println("hypertable facets:", db.Tables[0].Facets.Len())
@@ -93,7 +94,7 @@ hypertable "public" "metrics" {
 // drop everything. The refusal is the contract here — the wording of the
 // message is not, so branch on the error rather than on its text.
 func ExampleParseAtlasHCL_projectFile() {
-	db, err := atlascompat.ParseAtlasHCL([]byte(`env "local" {
+	db, err := atlascompat.ParseAtlasHCL(context.Background(), []byte(`env "local" {
   url = "sqlite://local.db"
 }
 `), "atlas.hcl")

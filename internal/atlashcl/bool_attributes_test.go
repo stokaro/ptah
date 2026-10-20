@@ -36,7 +36,7 @@ func TestParse_RefusesABoolAttributeThatIsNoBool(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.document), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -62,7 +62,7 @@ func TestParse_ReadsABoolAttribute(t *testing.T) {
 			document := "variable \"nullable\" {\n  type    = bool\n  default = true\n}\n\ntable \"t\" {\n  column \"a\" {\n    type = int\n    null = " +
 				test.null + "\n  }\n}\n"
 
-			db, err := atlashcl.Parse([]byte(document), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(document), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)

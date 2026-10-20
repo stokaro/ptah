@@ -12,7 +12,7 @@ import (
 func TestParsePermissionSequenceTarget(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 permission {
   to         = role.app_user
   for        = sequence.order_seq
@@ -32,7 +32,7 @@ permission {
 func TestParsePermissionSchemaQualifiedSequenceTarget(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 permission {
   to         = role.app_user
   for        = sequence.app.order_seq
@@ -75,7 +75,7 @@ func TestParsePermissionRelationTargets(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(`
+			db, err := atlashcl.Parse(t.Context(), []byte(`
 permission {
   to         = role.app_user
   for        = `+test.target+`
@@ -98,7 +98,7 @@ permission {
 func TestParsePermissionRejectsUnknownTargetKind(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 permission {
   to         = role.app_user
   for        = wibble.reporting

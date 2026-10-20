@@ -1,6 +1,7 @@
 package builtin_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -118,7 +119,7 @@ tables:
         foreign_key_name: fk_posts_user
 `)
 
-	db := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), document))
+	db := must.Must(yamlschema.Parse(context.Background(), builtintest.Runtime().YAML(), document))
 	statements, err := builtin.GetOrderedCreateStatements(db, "postgres")
 	if err != nil {
 		fmt.Println(err)

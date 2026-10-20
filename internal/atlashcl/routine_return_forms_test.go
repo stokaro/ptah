@@ -68,7 +68,7 @@ func TestParseFunctionReturnForms_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(returnFormDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), returnFormDocument("function", row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Functions, qt.HasLen, 1)
@@ -108,7 +108,7 @@ func TestParseFunctionReturnTableKeepsDeclaredOrder_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(returnFormDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), returnFormDocument("function", row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
@@ -166,7 +166,7 @@ func TestParseFunctionReturnForms_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(returnFormDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), returnFormDocument("function", row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)
@@ -198,7 +198,7 @@ func TestParseProcedureReturnForms_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(returnFormDocument("procedure", row.attrs), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), returnFormDocument("procedure", row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)

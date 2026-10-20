@@ -423,17 +423,16 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, strictErr := parseWithOwners([]byte(tt.hcl), "schema.hcl")
+			_, strictErr := parseWithOwners(t.Context(), []byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
-			tolerant, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			tolerant, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
 
-			without, err := atlashcl.ParseWithOptions([]byte(tt.equivalent), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			without, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.equivalent), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(tolerant, qt.DeepEquals, without)
 		})
@@ -725,8 +724,7 @@ annotation "gql" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -846,8 +844,7 @@ annotation "gql" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -923,8 +920,7 @@ annotation "gql" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -981,8 +977,7 @@ func TestParseIgnoreUnknownNamesKeepsStructuralRefusals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -1016,7 +1011,7 @@ table "t" {
 `
 
 	var dropped []atlashcl.IgnoredName
-	_, err := atlashcl.ParseWithOptions([]byte(src), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(src), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		IgnoreUnknownNames: true,
 		RecordIgnored:      func(name atlashcl.IgnoredName) { dropped = append(dropped, name) },
 	})
@@ -1041,7 +1036,7 @@ annotation "gql" {
 `
 
 	var dropped []atlashcl.IgnoredName
-	_, err := atlashcl.ParseWithOptions([]byte(src), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(src), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		RecordIgnored: func(name atlashcl.IgnoredName) { dropped = append(dropped, name) },
 	})
 	c.Assert(err, qt.ErrorMatches, `.*unsupported top-level block "annotation".*`)

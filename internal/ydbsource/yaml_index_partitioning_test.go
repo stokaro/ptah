@@ -17,7 +17,7 @@ import (
 func TestParse_YDBGlobalIndex_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), ydbYAMLOwners, []byte(`
 tables:
   items:
     columns:
@@ -79,7 +79,7 @@ func TestParse_YDBGlobalIndex_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(ydbYAMLOwners, []byte(`
+			db, err := yamlschema.Parse(t.Context(), ydbYAMLOwners, []byte(`
 tables:
   items:
     columns:

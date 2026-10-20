@@ -26,14 +26,14 @@ import (
 
 func refreshYAML(c *qt.C, attribute string) *schemamodel.Database {
 	c.Helper()
-	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte("matviews:\n  mv:\n    body: SELECT 1\n"+attribute))
+	db, err := yamlschema.Parse(c.Context(), builtintest.Runtime().YAML(), []byte("matviews:\n  mv:\n    body: SELECT 1\n"+attribute))
 	c.Assert(err, qt.IsNil)
 	return db
 }
 
 func refreshHCL(c *qt.C, attribute string) *schemamodel.Database {
 	c.Helper()
-	db, err := atlashcl.ParseWithOptions([]byte("materialized \"mv\" {\n  as = \"SELECT 1\"\n"+attribute+"\n}"), "schema.hcl",
+	db, err := atlashcl.ParseWithOptions(c.Context(), []byte("materialized \"mv\" {\n  as = \"SELECT 1\"\n"+attribute+"\n}"), "schema.hcl",
 		atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	return db
@@ -62,7 +62,7 @@ func TestRefreshSourcesHaveTheSameScheduleAndSQL(t *testing.T) {
 			exported, err := atlashclrender.Render(yamlDB, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "clickhouse"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(exported.Diagnostics, qt.HasLen, 0)
-			again, err := atlashcl.ParseWithOptions(exported.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			again, err := atlashcl.ParseWithOptions(t.Context(), exported.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(again.MaterializedViews[0].Facets, qt.DeepEquals, want)
 		})
@@ -87,7 +87,7 @@ func TestRefreshSourcesOmittedAndEmptyDeclareNoSchedule(t *testing.T) {
 
 func TestRefreshHCLExportPreservesQualifiedQuotedNames(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(`schema "a.b" {}
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "a.b" {}
 materialized " v.name " {
  schema = schema["a.b"]
  as = "SELECT 1"
@@ -97,7 +97,7 @@ materialized " v.name " {
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "clickhouse"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
-	again, err := atlashcl.ParseWithOptions(result.Data, "copy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	again, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "copy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.MaterializedViews, qt.DeepEquals, db.MaterializedViews)
 }

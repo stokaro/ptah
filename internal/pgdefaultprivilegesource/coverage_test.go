@@ -47,7 +47,7 @@ func TestSourceLimits_RoundTripPreservesUnknownScopes(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			hcl, err := atlashclrender.RenderInspected(original, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
-			hclRead, err := parseHCL(string(hcl.Data))
+			hclRead, err := parseHCL(t.Context(), string(hcl.Data))
 			c.Assert(err, qt.IsNil)
 			for _, read := range []*schemamodel.Database{&goRead, hclRead} {
 				known := read.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})

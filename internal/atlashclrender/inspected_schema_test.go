@@ -330,7 +330,7 @@ func TestRenderedPermissionRoundTrips(t *testing.T) {
 			result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL()},
 			)
 
@@ -619,7 +619,7 @@ func TestRenderedRelationTargetRoundTrips(t *testing.T) {
 			result, err := atlashclrender.RenderInspected(test.db(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL()},
 			)
 
@@ -650,7 +650,7 @@ func TestRenderedTriggerOnAViewRoundTrips(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(result.Data), qt.Contains, "  on = view.v\n")
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 
@@ -717,7 +717,7 @@ func TestRenderedRelationTargetKeepsItsSchema(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, "  for = view.v\n")
 
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL()},
 			)
 
@@ -765,7 +765,7 @@ func TestRenderedDuplicateRelationLabelRoundTrips(t *testing.T) {
 	c.Assert(rendered, qt.Contains, "  for = \"v\"\n", qt.Commentf("rendered HCL:\n%s", rendered))
 	c.Assert(rendered, qt.Contains, "  on = \"other.v\"\n", qt.Commentf("rendered HCL:\n%s", rendered))
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 
@@ -827,7 +827,7 @@ func TestRenderedSequenceTargetKeepsItsSchema(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, "  for = sequence.order_seq\n")
 
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL()},
 			)
 

@@ -26,7 +26,7 @@ func TestYDBDesiredYQL_Comments(t *testing.T) {
 				"",
 			} {
 				c.Assert(os.WriteFile(path, []byte(declarations+suffix), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
+				desired, err := schemafile.LoadAll(t.Context(), []string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 				c.Assert(err, qt.IsNil)
 				statements := planAgainst(c, conn, desired, nil)
 				c.Assert(statements, qt.Not(qt.HasLen), 0)

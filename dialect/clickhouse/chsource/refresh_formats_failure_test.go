@@ -32,7 +32,7 @@ func TestRefreshYAMLRequiresAnOwnerAndAValidSchedule(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(test.owners, []byte("matviews:\n  mv:\n    body: SELECT 1\n    refresh: "+test.clause+"\n"))
+			db, err := yamlschema.Parse(t.Context(), test.owners, []byte("matviews:\n  mv:\n    body: SELECT 1\n    refresh: "+test.clause+"\n"))
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.reason+".*")
 			c.Assert(db, qt.IsNil)
 		})
@@ -52,7 +52,7 @@ func TestRefreshHCLRequiresAnOwnerAndAValidSchedule(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.ParseWithOptions([]byte("materialized \"mv\" {\n as = \"SELECT 1\"\n refresh = "+test.value+"\n}"), "schema.hcl", atlashcl.Options{HCL: test.owners})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte("materialized \"mv\" {\n as = \"SELECT 1\"\n refresh = "+test.value+"\n}"), "schema.hcl", atlashcl.Options{HCL: test.owners})
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.reason+".*")
 			c.Assert(db, qt.IsNil)
 		})

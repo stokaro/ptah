@@ -96,7 +96,7 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
 			runtime := builtintest.Runtime()
-			database, err := schemafile.LoadPath(path, schemafile.Options{
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{
 				YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL(), CoverageVocabulary: runtime.CoverageVocabulary(),
 			})
 
@@ -134,7 +134,7 @@ func TestAFormatRecordsNoKindOfAnOwnerTheLoadDidNotSelect(t *testing.T) {
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 			runtime := builtintest.Runtime()
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL()})
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: runtime.YAML(), SQL: runtime.SQL(), HCL: runtime.HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
@@ -184,7 +184,7 @@ func TestOnlyAFormatThatDeclaresSecretsClaimsTheirNamespace(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.FeatureCoverage.Lookup(ydbsecret.Kind, ydbsecret.Ref("", "held")).State, qt.Equals, test.want)
@@ -221,7 +221,7 @@ func TestOnlyASQLiteSQLDocumentDescribesVirtualTables(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 
 			c.Assert(err, qt.IsNil)
 			table := objectidentity.ID{Kind: objectidentity.KindTable, Name: objectidentity.Part{Source: "docs", Normalized: "docs"}}
@@ -239,7 +239,7 @@ func TestASQLiteSQLDocumentRefusesANamedVirtualTableLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte("-- ptah:not-described virtual_table \"docs\"\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-	database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "sqlite"})
+	database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "sqlite"})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*ptah:not-described virtual_table names "docs"; the directive takes no name in a SQLite document.*`)
@@ -269,7 +269,7 @@ func TestTimescaleCoverageFollowsWhatAFormatCanName(t *testing.T) {
 			path := filepath.Join(t.TempDir(), test.file)
 			c.Assert(os.WriteFile(path, []byte(test.contents), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			for _, kind := range []schemaext.Kind{tsschema.HypertableKind, tsschema.ContinuousAggregateKind} {

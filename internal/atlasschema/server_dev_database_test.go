@@ -46,15 +46,15 @@ func classifiedTo(c *qt.C, name, contents string) atlassource.Set {
 func TestRefuseServerDevDatabase_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	sqlErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
+	sqlErr := atlasschema.RefuseServerDevDatabase(t.Context(), wholeMySQLServer, "mysql://root@localhost:3307/dev",
 		classifiedTo(c, "realm.sql", "CREATE DATABASE app;\n"), builtintest.Runtime().HCL())
-	dirErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
+	dirErr := atlasschema.RefuseServerDevDatabase(t.Context(), wholeMySQLServer, "mysql://root@localhost:3307/dev",
 		classifiedTo(c, "migrations/", "CREATE DATABASE app;\n"), builtintest.Runtime().HCL())
-	realmErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
+	realmErr := atlasschema.RefuseServerDevDatabase(t.Context(), wholeMySQLServer, "mysql://root@localhost:3307/dev",
 		classifiedTo(c, "realm.hcl", `schema "app" {}`+"\n"+`schema "more" {}`+"\n"), builtintest.Runtime().HCL())
-	oneErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
+	oneErr := atlasschema.RefuseServerDevDatabase(t.Context(), wholeMySQLServer, "mysql://root@localhost:3307/dev",
 		classifiedTo(c, "one.hcl", `schema "app" {}`+"\n"), builtintest.Runtime().HCL())
-	databaseErr := atlasschema.RefuseServerDevDatabase(wholeMySQLServer, "mysql://root@localhost:3307/dev",
+	databaseErr := atlasschema.RefuseServerDevDatabase(t.Context(), wholeMySQLServer, "mysql://root@localhost:3307/dev",
 		atlassource.Set{Kind: atlassource.KindDatabase}, builtintest.Runtime().HCL())
 
 	c.Assert(sqlErr, qt.ErrorMatches, `cannot diff a schema "dev" with a database connection`)
@@ -96,7 +96,7 @@ func TestRefuseServerDevDatabase_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(atlasschema.RefuseServerDevDatabase(test.info, test.devURL, test.desired, builtintest.Runtime().HCL()), qt.IsNil)
+			c.Assert(atlasschema.RefuseServerDevDatabase(t.Context(), test.info, test.devURL, test.desired, builtintest.Runtime().HCL()), qt.IsNil)
 		})
 	}
 }

@@ -90,7 +90,7 @@ func verifyAtlasSchemaPlanFile(
 	// The sources rather than the URLs: a desired state the env selected
 	// through `data "hcl_schema"` carries that block's vars, and the plan verbs
 	// load local files directly instead of classifying them.
-	desired, err := schemafile.LoadSources(atlasSchemaPlanSources(transition), schemafile.Options{
+	desired, err := schemafile.LoadSources(cmd.Context(), atlasSchemaPlanSources(transition), schemafile.Options{
 		YAML:                  runtime.YAML(),
 		SQL:                   runtime.SQL(),
 		HCL:                   runtime.HCL(),

@@ -56,7 +56,7 @@ func TestParseTriggerEvents_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse(triggerEventsDocument(test.events), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), triggerEventsDocument(test.events), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Triggers, qt.HasLen, 1)
 			c.Assert(db.Triggers[0].Event, qt.Equals, test.want)
@@ -91,7 +91,7 @@ func TestParseTriggerEvents_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse(triggerEventsDocument(test.events), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), triggerEventsDocument(test.events), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})

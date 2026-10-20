@@ -170,6 +170,16 @@ Operation and change models remain refused until their native adapters exist.
 This boundary does not yet connect frontend source capture, native object
 comparison, planning, or engine transaction and history services.
 
+## Cancellation during source interpretation
+
+Schema loading carries the caller context through file and directory reads,
+external command output, and selected SQL and HCL owner calls. The external
+command deadline covers output interpretation as well as process execution.
+An owner result received after cancellation cannot become a desired schema.
+Public YAML and Atlas HCL parsing APIs take the context explicitly; no
+old-signature wrapper substitutes a background context. This is required before
+source decoding can safely call an independent process.
+
 ## Consequences
 
 Experimental revision 5 refuses earlier revisions. Pre-v1 compatibility does not justify

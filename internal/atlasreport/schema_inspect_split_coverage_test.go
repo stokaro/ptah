@@ -112,7 +112,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 
 	whole, err := atlasreport.RenderSchemaInspect(`{{ hcl . }}`, coverageSplitReport(c))
 	c.Assert(err, qt.IsNil)
-	wholeDB, err := atlashcl.ParseWithOptions([]byte(whole.Text), "inspect.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	wholeDB, err := atlashcl.ParseWithOptions(t.Context(), []byte(whole.Text), "inspect.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(wholeDB.NotDescribed, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension, coverage.Policy, coverage.Sequence,
@@ -124,7 +124,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	for path, data := range txtarMembers(split.Text) {
 		t.Run(path, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := atlashcl.ParseWithOptions([]byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			got, err := atlashcl.ParseWithOptions(t.Context(), []byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.NotDescribed, qt.DeepEquals, wholeDB.NotDescribed)
 			c.Assert(got.FeatureCoverage.Equal(wholeDB.FeatureCoverage), qt.IsTrue)
@@ -150,7 +150,7 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 		t.Run(file.Path, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(file.Dir, qt.Equals, "out")
-			got, err := atlashcl.ParseWithOptions([]byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			got, err := atlashcl.ParseWithOptions(t.Context(), []byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.NotDescribed, qt.DeepEquals, suppressedBlocks(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
@@ -170,7 +170,7 @@ func TestSplitWithoutCommonLimitsKeepsUnknownFeatureNamespaces(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	for path, data := range txtarMembers(output.Text) {
 		c.Assert(leadingCommentLines(data), qt.HasLen, 0, qt.Commentf("member %s", path))
-		parsed, err := atlashcl.ParseWithOptions([]byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+		parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(data), path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 		c.Assert(err, qt.IsNil)
 		c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, schemaext.Coverage{})), qt.IsTrue)
 	}

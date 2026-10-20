@@ -116,7 +116,7 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, test.opts)
+			db, err := schemafile.LoadPath(t.Context(), dir, test.opts)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			// A refusal that still handed back a document would let a caller
@@ -182,7 +182,7 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaDir(c, test.files)
 
-			db, err := schemafile.LoadPath(dir, test.opts)
+			db, err := schemafile.LoadPath(t.Context(), dir, test.opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(schemaNames(db), qt.DeepEquals, test.wantSchemas)
@@ -202,12 +202,12 @@ func TestLoadAllCountsSchemaBlocksAcrossEveryURL(t *testing.T) {
 	dir := writeSchemaDir(c, map[string]string{"a.hcl": oneSchemaHCL, "b.hcl": postsHCL})
 
 	limited := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"}
-	_, err := schemafile.LoadAll([]string{dir + "/a.hcl", dir + "/b.hcl"}, limited)
+	_, err := schemafile.LoadAll(t.Context(), []string{dir + "/a.hcl", dir + "/b.hcl"}, limited)
 	c.Assert(err, qt.ErrorMatches,
 		`cannot use HCL with more than 1 schema when dev-url is limited to schema "main": `+
 			`2 top-level schema blocks are declared: "main" at .*a\.hcl:1, "main" at .*b\.hcl:1`)
 
-	db, err := schemafile.LoadAll([]string{dir + "/a.hcl"}, limited)
+	db, err := schemafile.LoadAll(t.Context(), []string{dir + "/a.hcl"}, limited)
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(db), qt.DeepEquals, []string{"users"})
 }

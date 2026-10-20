@@ -95,7 +95,7 @@ data {
 
 	owners, err := hclext.NewSet(pgtablesource.ExclusionHCL())
 	c.Assert(err, qt.IsNil)
-	db, err := atlashcl.ParseWithOptions(source, "configs/schema.hcl", atlashcl.Options{HCL: owners})
+	db, err := atlashcl.ParseWithOptions(t.Context(), source, "configs/schema.hcl", atlashcl.Options{HCL: owners})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -316,7 +316,7 @@ table "users" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}

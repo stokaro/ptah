@@ -93,7 +93,7 @@ func TestParseForeignKeyDeferral(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(deferrableDocument(test.body), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), deferrableDocument(test.body), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			field := fieldNamed1624(c, db, "parent_id")
@@ -109,7 +109,7 @@ func TestParseForeignKeyDeferral(t *testing.T) {
 func TestParseForeignKeyDeferralRefusesAnUnknownTiming(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse(deferrableDocument(`    initially = "whenever"`), "schema.hcl")
+	_, err := atlashcl.Parse(t.Context(), deferrableDocument(`    initially = "whenever"`), "schema.hcl")
 
 	c.Assert(err, qt.ErrorMatches, `.*initially "whenever" is neither deferred nor immediate.*`)
 }

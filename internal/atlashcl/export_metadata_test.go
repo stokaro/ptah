@@ -12,7 +12,7 @@ import (
 func TestParseExportMetadata(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "public" {}
 
 table "users" {
@@ -74,7 +74,7 @@ func TestParseExportMetadataRejectsInvalidAttributes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte("table \"users\" {\n"+test.body+"\n}\n"), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte("table \"users\" {\n"+test.body+"\n}\n"), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

@@ -3762,6 +3762,12 @@ and `on_update`, and an index's parser into the writer's blocks, and reports a
 block size as a loss. `sqlitetable.HCL` writes a table's `strict` and
 `without_rowid`.
 
+`atlascompat.ParseAtlasHCL`, `ParseAtlasHCLFile`, and
+`ParseAtlasHCLWithOptions` take the caller context as their first argument.
+Owner decoding receives that context, and cancellation returns no schema.
+`core/yamlschema.Parse` and `ParseFile` also take a context first and refuse a
+result after cancellation.
+
 `atlascompat.ParseAtlasHCL` and `ParseAtlasHCLFile` select no owner, so those
 blocks and attributes and the captured header are refused there, and no
 owner's claim is made. `ParseAtlasHCLWithOptions` takes
@@ -4553,7 +4559,11 @@ and HCL readers decode owner syntax and the package links no owner:
 `sourceformats.New` returns the bundled readers, with YAML, SQL and HCL read by
 the owners it is given.
 
-`Formats.ReadHCL` receives the document bytes, filename, and caller dialect.
+`Formats.ReadYAML`, `ReadSQL`, and `ReadHCL` receive the caller context first.
+The schema command deadline covers both execution and output interpretation.
+Cancellation returns no parsed schema, even if a reader returns a result after
+the context expires. `Formats.ReadHCL` then receives the document bytes,
+filename, and caller dialect.
 `schemasource.Command.Dialect` selects SQL grammar and the default reader of
 scoped HCL blocks. `atlascompat.ParseHCLOptions.Dialect` provides the same HCL
 selection to embedders.

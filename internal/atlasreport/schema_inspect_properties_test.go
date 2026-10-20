@@ -40,7 +40,7 @@ func TestSchemaInspectHCLExportsSkippingIndexSettings(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, "")
 	c.Assert(document, qt.Contains, `platform "clickhouse"`)
-	parsed, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 	c.Assert(err, qt.IsNil)

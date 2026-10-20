@@ -5,6 +5,7 @@ package schemasource
 // deterministic dispatch from program execution.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -17,7 +18,7 @@ type hclDialectReader struct {
 	dialect string
 }
 
-func (r *hclDialectReader) ReadHCL(_ []byte, _, dialect string) (*schemamodel.Database, error) {
+func (r *hclDialectReader) ReadHCL(_ context.Context, _ []byte, _, dialect string) (*schemamodel.Database, error) {
 	r.dialect = dialect
 	return &schemamodel.Database{}, nil
 }
@@ -25,7 +26,7 @@ func (r *hclDialectReader) ReadHCL(_ []byte, _, dialect string) (*schemamodel.Da
 func TestParseOutput_PassesTheHCLDialect(t *testing.T) {
 	c := qt.New(t)
 	reader := &hclDialectReader{}
-	db, err := parseOutput(reader, []byte(`shape "s" {}`), "hcl", "oracle")
+	db, err := parseOutput(t.Context(), reader, []byte(`shape "s" {}`), "hcl", "oracle")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db, qt.IsNotNil)
 	c.Assert(reader.dialect, qt.Equals, "oracle")

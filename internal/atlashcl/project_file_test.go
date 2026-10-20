@@ -53,10 +53,10 @@ table "users" {
 func TestParseProjectFileIsNotSilentlyErased(t *testing.T) {
 	c := qt.New(t)
 
-	withoutEnv, err := atlashcl.Parse([]byte(plainSchemaHCL), "schema.hcl")
+	withoutEnv, err := atlashcl.Parse(t.Context(), []byte(plainSchemaHCL), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	withEnv, errEnv := atlashcl.Parse([]byte(envSchemaHCL), "schema.hcl")
+	withEnv, errEnv := atlashcl.Parse(t.Context(), []byte(envSchemaHCL), "schema.hcl")
 
 	c.Assert(errEnv, qt.IsNotNil, qt.Commentf(
 		"env block was erased silently: parse succeeded and the IR is identical to the same file with the block deleted (IRs equal = %v)",
@@ -271,7 +271,7 @@ table "users" {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse([]byte(tc.hcl), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(tc.hcl), "schema.hcl")
 			tc.assert(c, db, err)
 		})
 	}

@@ -62,8 +62,9 @@ ptah schema render --schema-cmd "./scripts/export-schema" --dialect postgres
   whitespace, so pipes, globbing, and variable expansion are not available and
   arguments cannot contain spaces. Wrap a more complex invocation in a small
   script and point `--schema-cmd` at that.
-- **Lifecycle**: execution is bounded by a timeout, and Ptah owns the loader's
-  process tree — a process group on Unix, a kill-on-close Job Object on
+- **Lifecycle**: the timeout covers execution and interpretation of the
+  emitted schema. Cancellation reaches selected SQL and HCL readers and
+  discards the schema result. Ptah owns the loader's process tree — a process group on Unix, a kill-on-close Job Object on
   Windows — so descendants are cleaned up on cancellation, timeout, and after
   a successful parent exit.
 - **Errors**: if the program exits non-zero, its stderr is surfaced in the

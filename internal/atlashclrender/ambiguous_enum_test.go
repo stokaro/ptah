@@ -190,7 +190,7 @@ func TestInspectedTwoSchemaEnumsRoundTrip(t *testing.T) {
 	first, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
-	reparsed, err := atlashcl.ParseWithOptions(first.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
+	reparsed, err := atlashcl.ParseWithOptions(t.Context(), first.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 	c.Assert(err, qt.IsNil)
@@ -217,7 +217,7 @@ func TestInspectedTwoSchemaEnumsAreRefusedByDefault(t *testing.T) {
 	rendered, err := atlashclrender.RenderInspected(inspected, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
-	_, err = atlashcl.ParseWithOptions(rendered.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
+	_, err = atlashcl.ParseWithOptions(t.Context(), rendered.Data, "inspected.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 

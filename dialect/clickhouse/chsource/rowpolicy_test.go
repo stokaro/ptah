@@ -132,8 +132,8 @@ func TestYAML_ClaimsEveryRowPolicy(t *testing.T) {
 	document := []byte("tables:\n  docs:\n    columns:\n      id: { type: UInt64, primary: true }\n")
 	other := chschema.RowPolicyRef("", "docs", "other")
 
-	selected := must.Must(yamlschema.Parse(must.Must(yamlext.NewSet(chsource.YAML())), document))
-	unselected := must.Must(yamlschema.Parse(yamlext.None(), document))
+	selected := must.Must(yamlschema.Parse(t.Context(), must.Must(yamlext.NewSet(chsource.YAML())), document))
+	unselected := must.Must(yamlschema.Parse(t.Context(), yamlext.None(), document))
 
 	c.Assert(selected.FeatureCoverage.Lookup(chschema.RowPolicyKind, other).State, qt.Equals, schemaext.Complete)
 	c.Assert(unselected.FeatureCoverage.Lookup(chschema.RowPolicyKind, other).State, qt.Not(qt.Equals), schemaext.Complete)

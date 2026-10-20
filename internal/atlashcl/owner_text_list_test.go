@@ -29,7 +29,7 @@ func TestOwnerTextList_PreservesOrderAndEvaluatesValues(t *testing.T) {
 				Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "words", Naming: hclext.Unlabeled,
 					Attributes: []hclext.Attribute{{Name: "values", Kind: hclext.TextList}}}}}))
 			text := "variable \"words\" {\n type = list(string)\n default = [\"last\", \"first\", \"last\"]\n}\nwords {\n values = " + test.expression + "\n}\n"
-			_, err := atlashcl.ParseWithOptions([]byte(text), "words.hcl", atlashcl.Options{HCL: set})
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(text), "words.hcl", atlashcl.Options{HCL: set})
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 1)
 			c.Assert(requests[0].Claims, qt.HasLen, 1)

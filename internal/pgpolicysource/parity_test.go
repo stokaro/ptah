@@ -59,7 +59,7 @@ func TestReaders_OneDeclarationDecodesAlikeFromGoAndYAML(t *testing.T) {
 	c := qt.New(t)
 
 	fromGo := must.Must(goschema.ParseSource(must.Must(annotation.NewSet(pgpolicysource.Annotations())), "docs.go", parityGo))
-	fromYAML := must.Must(yamlschema.Parse(must.Must(yamlext.NewSet(pgpolicysource.YAML())), []byte(parityYAML)))
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), must.Must(yamlext.NewSet(pgpolicysource.YAML())), []byte(parityYAML)))
 
 	goObjects := must.Must(fromGo.FeatureObjects.All())
 	c.Assert(goObjects, qt.HasLen, 1)

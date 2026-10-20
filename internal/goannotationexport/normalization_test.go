@@ -65,7 +65,7 @@ func TestExportReportsNonNFCAttributeValue(t *testing.T) {
 	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+	result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.Not(qt.HasLen), 0)
@@ -83,7 +83,7 @@ func TestExportDetectsEscapedNonNFCCodePoint(t *testing.T) {
 	dir := modelWithFunctionBody(c, `Cafe\u0301`)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+	result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(normalizationMessages(result), qt.Not(qt.HasLen), 0)
@@ -98,7 +98,7 @@ func TestExportNonNFCDiagnosticReportsTheSourceLine(t *testing.T) {
 	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+	result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(normalizationMessages(result), qt.Any(qt.Contains), "line 3:")
@@ -124,7 +124,7 @@ type Item struct {
 	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+	result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticMessages(result), qt.Any(qt.Contains), "attribute password is not Unicode NFC")
@@ -142,7 +142,7 @@ func TestExportRefusesDestructiveCleanupOnNonNFCValue(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	_, err = goannotationexport.Export(exportOptions(dir, out, true))
+	_, err = goannotationexport.Export(t.Context(), exportOptions(dir, out, true))
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
@@ -173,7 +173,7 @@ type User struct {
 	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
-	result, err := goannotationexport.Export(exportOptions(dir, out, false))
+	result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, false))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(normalizationMessages(result), qt.Not(qt.HasLen), 0)
@@ -202,7 +202,7 @@ func TestExportAcceptsComposedAndASCIIValues(t *testing.T) {
 			dir := modelWithTableName(c, tt.body+"_items")
 			out := filepath.Join(c.TempDir(), "schema.hcl")
 
-			result, err := goannotationexport.Export(exportOptions(dir, out, true))
+			result, err := goannotationexport.Export(t.Context(), exportOptions(dir, out, true))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(normalizationMessages(result), qt.HasLen, 0)

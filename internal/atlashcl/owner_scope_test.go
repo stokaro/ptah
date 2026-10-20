@@ -37,7 +37,7 @@ func TestParseWithOptions_BlockDialectOverridesTheCaller(t *testing.T) {
 			c := qt.New(t)
 			var pg, oracle []hclext.Request
 			document := "shape \"s\" {\n " + test.attribute + " = \"value\"" + "\n" + test.selector + "\n}"
-			parsed, err := atlashcl.ParseWithOptions([]byte(document), "types.hcl", atlashcl.Options{
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "types.hcl", atlashcl.Options{
 				HCL: dialectShapes(&pg, &oracle), Dialect: test.dialect,
 			})
 			c.Assert(err, qt.IsNil)
@@ -65,7 +65,7 @@ shape "p" {
 table "t" {
  column "value" { type = shape.d }
 }`
-	parsed, err := atlashcl.ParseWithOptions([]byte(source), "types.hcl", atlashcl.Options{HCL: dialectShapes(&pg, &oracle), Dialect: "mysql"})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(source), "types.hcl", atlashcl.Options{HCL: dialectShapes(&pg, &oracle), Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(pg, qt.HasLen, 1)
 	c.Assert(oracle, qt.HasLen, 1)
@@ -84,7 +84,7 @@ func TestParseWithOptions_RefusesInvalidBlockDialect(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var pg, oracle []hclext.Request
-			parsed, err := atlashcl.ParseWithOptions([]byte("shape \"s\" {\n"+test.body+"\n}"), "types.hcl", atlashcl.Options{HCL: dialectShapes(&pg, &oracle)})
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte("shape \"s\" {\n"+test.body+"\n}"), "types.hcl", atlashcl.Options{HCL: dialectShapes(&pg, &oracle)})
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(parsed, qt.IsNil)
 		})
@@ -94,7 +94,7 @@ func TestParseWithOptions_RefusesInvalidBlockDialect(t *testing.T) {
 func TestParseWithOptions_AnUnavailableDialectIsNotIgnored(t *testing.T) {
 	c := qt.New(t)
 	var pg, oracle []hclext.Request
-	parsed, err := atlashcl.ParseWithOptions([]byte(`shape "s" { dialect = "typo" }`), "types.hcl", atlashcl.Options{
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(`shape "s" { dialect = "typo" }`), "types.hcl", atlashcl.Options{
 		HCL: dialectShapes(&pg, &oracle), IgnoreUnknownNames: true,
 	})
 	c.Assert(err, qt.ErrorMatches, `.*shape has no owner for dialect "typo".*`)
@@ -105,7 +105,7 @@ func TestParseWithOptions_UsesTheSelectedSetsDialect(t *testing.T) {
 	c := qt.New(t)
 	var pg, oracle []hclext.Request
 	owners := dialectShapes(&pg, &oracle).ForDialect("oracle")
-	db, err := atlashcl.ParseWithOptions([]byte(`shape "s" { ora = "value" }`), "types.hcl", atlashcl.Options{HCL: owners})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`shape "s" { ora = "value" }`), "types.hcl", atlashcl.Options{HCL: owners})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db, qt.IsNotNil)
 	c.Assert(pg, qt.HasLen, 0)

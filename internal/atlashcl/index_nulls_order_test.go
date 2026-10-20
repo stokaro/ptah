@@ -65,7 +65,7 @@ func TestParseIndexPartNullsOrder(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(`
+			db, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "a" {
     type = text
@@ -94,7 +94,7 @@ table "t" {
 func TestParseIndexPartNullsOrderRejectsBoth(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "a" {
     type = text
@@ -117,7 +117,7 @@ table "t" {
 func TestParseIndexPartNullsOrderRejectsNonBool(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "a" {
     type = text

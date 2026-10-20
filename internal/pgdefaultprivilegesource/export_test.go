@@ -17,7 +17,7 @@ import (
 
 func TestGoExport_RoundTripPreservesGlobalScopeAndOptions(t *testing.T) {
 	c := qt.New(t)
-	original := must.Must(yamlschema.Parse(yamlOwners, []byte(yamlPrefix+"    privileges: [SELECT, INSERT]\n    grantable: SELECT\n    revoked: DELETE\n    dialects: [postgres, cockroachdb]\n    comment: 'A quoted \"grant\"'\n")))
+	original := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte(yamlPrefix+"    privileges: [SELECT, INSERT]\n    grantable: SELECT\n    revoked: DELETE\n    dialects: [postgres, cockroachdb]\n    comment: 'A quoted \"grant\"'\n")))
 	files, err := goschematogo.Render(t.Context(), original, goschematogo.Options{Annotations: goOwners, SingleFile: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.HasLen, 1)

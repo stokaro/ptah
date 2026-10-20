@@ -57,7 +57,7 @@ const coatedDocument = `tables:
 func TestParse_AnOwnersEntryKeysJoinTheSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(entryPaintOwner(), []byte(coatedDocument))
+	db, err := yamlschema.Parse(t.Context(), entryPaintOwner(), []byte(coatedDocument))
 
 	c.Assert(err, qt.IsNil)
 	coat, found, err := schemaext.FacetAs[*shade](db.Tables[0].Facets, shadeKind)
@@ -92,7 +92,7 @@ func TestParse_AnOwnersEntryKeys_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(test.owners, []byte(test.document))
+			db, err := yamlschema.Parse(t.Context(), test.owners, []byte(test.document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

@@ -31,7 +31,7 @@ func TestParseWithOptions_OwnerLocalColumns_HappyPath(t *testing.T) {
 			var requests []hclext.Request
 			document := "table \"t\" {\n layout {\n columns = [" + spelling + ", column.z]\n anchor = " + spelling +
 				"\n by { column = " + spelling + " }\n by { column = column.z }\n }\n}"
-			_, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: localColumnOwners(&requests)})
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: localColumnOwners(&requests)})
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 1)
 			claim := requests[0].Claims[0]
@@ -64,7 +64,7 @@ func TestParseWithOptions_OwnerLocalColumns_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var requests []hclext.Request
-			db, err := atlashcl.ParseWithOptions([]byte("table \"t\" {\n layout {\n"+test.body+"\n }\n}"), "schema.hcl", atlashcl.Options{HCL: localColumnOwners(&requests)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte("table \"t\" {\n layout {\n"+test.body+"\n }\n}"), "schema.hcl", atlashcl.Options{HCL: localColumnOwners(&requests)})
 			c.Assert(err, qt.ErrorMatches, "(?s).*schema.hcl:.*"+test.want+".*")
 			c.Assert(db, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 0)

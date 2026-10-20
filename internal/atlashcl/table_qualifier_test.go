@@ -45,7 +45,7 @@ func TestParseTableQualifierNamingItsSchema_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(qualifierDocument(row.lines), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), qualifierDocument(row.lines), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
@@ -83,7 +83,7 @@ func TestParseTableQualifier_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(qualifierDocument(row.lines), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), qualifierDocument(row.lines), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)
@@ -101,7 +101,7 @@ func TestParseTableQualifier_FailurePath(t *testing.T) {
 func TestParseTableQualifiedReferenceAlreadyAddressesASchema_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "a" {}
 schema "b" {}
 

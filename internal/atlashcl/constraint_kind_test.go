@@ -16,7 +16,7 @@ func TestParse_RefusesUnknownCommonConstraintKinds(t *testing.T) {
   column "id" { type = integer }
   constraint "c" { type = "` + kind + `" }
 }`
-			db, err := atlashcl.Parse([]byte(source), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(source), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, `(?s).*constraint "c" has unsupported common kind .*`)
 			c.Assert(db, qt.IsNil)
 		})

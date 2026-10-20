@@ -33,7 +33,7 @@ range "measurement" {
 func TestParse_AnEmptyRangeAttributeIsToldFromAnAbsentOne(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(clearedRangeHCL), "schema.hcl")
+	db, err := parseTypeHCL(t.Context(), []byte(clearedRangeHCL), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rangeObjects(db), qt.HasLen, 1)
@@ -54,14 +54,14 @@ func TestParse_AnEmptyRangeAttributeIsToldFromAnAbsentOne(t *testing.T) {
 func TestRender_AnEmptyRangeAttributeSurvivesTheRoundTrip(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(clearedRangeHCL), "schema.hcl")
+	db, err := parseTypeHCL(t.Context(), []byte(clearedRangeHCL), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `subtype_diff = ""`)
 
-	again, err := parseTypeHCL(rendered.Data, "rendered.hcl")
+	again, err := parseTypeHCL(t.Context(), rendered.Data, "rendered.hcl")
 	c.Assert(err, qt.IsNil)
 	c.Assert(rangeObjects(again), qt.HasLen, 1)
 	c.Assert(rangeValues(again)[0].Clears("subtype_diff"), qt.IsTrue)
@@ -76,7 +76,7 @@ func TestRender_AnEmptyRangeAttributeSurvivesTheRoundTrip(t *testing.T) {
 func TestRender_AnAbsentRangeAttributeStaysAbsent(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 schema "public" {}
 
 range "measurement" {

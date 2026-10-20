@@ -85,7 +85,7 @@ func TestPersistenceSQL_RefusesMalformedPrefix(t *testing.T) {
 func TestPersistenceHCL_TableAttributes(t *testing.T) {
 	c := qt.New(t)
 	owners := must.Must(hclext.NewSet(pgtablesource.HCL()))
-	db, err := atlashcl.ParseWithOptions([]byte(`schema "app" {}
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "app" {}
 schema "other" {}
 table "app" "cache" { unlogged = true }
 table "other" "cache" { unlogged = false }

@@ -328,13 +328,12 @@ table "t" {
 			c.Assert(withoutCode, qt.Equals, 0, qt.Commentf("reference output: %s", withoutDDL))
 			c.Assert(withDDL, qt.Equals, withoutDDL)
 
-			tolerant, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			tolerant, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
-			without, err := atlashcl.ParseWithOptions([]byte(tt.equivalent), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			without, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.equivalent), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(tolerant, qt.DeepEquals, without)
 		})
@@ -700,8 +699,7 @@ table "t" {
 			out, code := runSchemaReference(c, reference, tt.hcl)
 			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -802,8 +800,7 @@ table "t" {
 			out, code := runSchemaReference(c, reference, tt.hcl)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("reference output: %s", out))
 
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
@@ -835,8 +832,7 @@ annotation "gql" {
 	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 	c.Assert(out, qt.Contains, `There is no variable named "HASH"`)
 
-	_, err := atlashcl.ParseWithOptions(
-		[]byte(bare),
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(bare),
 		"schema.hcl",
 		atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 	)

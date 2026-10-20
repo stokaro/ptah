@@ -74,7 +74,7 @@ func (f rlsFileFixture) load(c *qt.C, body string) *schemamodel.Database {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(strings.ReplaceAll(body, "S.", `"`+f.schema+`".`)), 0o600), qt.IsNil)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+	db, err := schemafile.LoadAll(c.Context(), []string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	return db
 }

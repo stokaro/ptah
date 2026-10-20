@@ -78,7 +78,7 @@ shades:
 func TestParse_AnOwnerSectionJoinsTheSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(paintOwner("shades"), []byte(paintedDocument))
+	db, err := yamlschema.Parse(t.Context(), paintOwner("shades"), []byte(paintedDocument))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -111,7 +111,7 @@ func TestParse_AnOwnerSection_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(test.owners, []byte(test.document))
+			db, err := yamlschema.Parse(t.Context(), test.owners, []byte(test.document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

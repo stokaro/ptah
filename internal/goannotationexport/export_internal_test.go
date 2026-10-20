@@ -88,7 +88,7 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 			c.Assert(os.WriteFile(source, original, 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 
-			result, err := export(Options{HCL: builtintest.Runtime().HCL(),
+			result, err := export(t.Context(), Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: annotation.None(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -139,7 +139,7 @@ func TestExport_FailurePath_PreservesConcurrentOutputChangeAfterStaging(t *testi
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 			c.Assert(test.prepare(output), qt.IsNil)
 
-			result, err := export(Options{HCL: builtintest.Runtime().HCL(),
+			result, err := export(t.Context(), Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: annotation.None(),
 				RootDir:     root,
 				OutputPath:  output,
@@ -174,7 +174,7 @@ func TestExport_FailurePath_RejectsReplacedStagedOutput(t *testing.T) {
 	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(output, previousOutput, 0o600), qt.IsNil)
 
-	result, err := export(Options{HCL: builtintest.Runtime().HCL(),
+	result, err := export(t.Context(), Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: annotation.None(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -284,7 +284,7 @@ func TestExport_FailurePath_RefusesDestinationChangedInsideCommitWindow(t *testi
 			c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
 			c.Assert(test.prepare(output), qt.IsNil)
 
-			result, err := export(Options{HCL: builtintest.Runtime().HCL(),
+			result, err := export(t.Context(), Options{HCL: builtintest.Runtime().HCL(),
 				Annotations: annotation.None(),
 				RootDir:     root,
 				OutputPath:  output,

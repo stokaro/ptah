@@ -39,7 +39,7 @@ func TestExclusionSources_QuotedHCLRoundTrip(t *testing.T) {
 			rendered, err := atlashclrender.Render(&db, atlashclrender.Options{HCL: owners, Dialect: "postgres"})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-			returned, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: owners})
+			returned, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: owners})
 			c.Assert(err, qt.IsNil)
 			c.Assert(returned.FeatureObjects.Refs(), qt.DeepEquals, db.FeatureObjects.Refs())
 			c.Assert(returned.FeatureObjects.Len(), qt.Equals, 1)
@@ -96,7 +96,7 @@ func TestExclusionSources_YAMLParity(t *testing.T) {
 	declared, err := goschema.ParseSource(exclusionSourceOwners(), "schema.go", exclusionGo)
 	c.Assert(err, qt.IsNil)
 	owners := must.Must(yamlext.NewSet(pgtablesource.ExclusionYAML()))
-	db, err := yamlschema.Parse(owners, []byte(`tables:
+	db, err := yamlschema.Parse(t.Context(), owners, []byte(`tables:
   rooms:
     name: rooms
     schema: app
@@ -133,7 +133,7 @@ func TestExclusionSources_HCLRoundTrip(t *testing.T) {
 	text, err := atlashclrender.Render(&db, atlashclrender.Options{HCL: owners, Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(text.Diagnostics, qt.HasLen, 0)
-	returned, err := atlashcl.ParseWithOptions(text.Data, "schema.hcl", atlashcl.Options{HCL: owners})
+	returned, err := atlashcl.ParseWithOptions(t.Context(), text.Data, "schema.hcl", atlashcl.Options{HCL: owners})
 	c.Assert(err, qt.IsNil)
 	c.Assert(returned.Constraints, qt.HasLen, 0)
 	c.Assert(returned.FeatureObjects.Len(), qt.Equals, 2)
@@ -177,7 +177,7 @@ func TestExclusionSources_HCLRefusesDuplicateConstraints(t *testing.T) {
 	c := qt.New(t)
 	owners, err := hclext.NewSet(pgtablesource.ExclusionHCL())
 	c.Assert(err, qt.IsNil)
-	db, err := atlashcl.ParseWithOptions([]byte(`schema "public" {}
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "public" {}
 table "users" {
   schema = schema.public
   column "id" { type = integer }

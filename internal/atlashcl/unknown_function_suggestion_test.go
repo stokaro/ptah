@@ -17,7 +17,7 @@ func TestParse_SuggestsTheSameFunctionOnEveryRun(t *testing.T) {
 	c := qt.New(t)
 	document := []byte("table \"t\" {\n  column \"state\" {\n    type    = text\n    default = now()\n  }\n}\n")
 	for range 100 {
-		_, err := atlashcl.Parse(document, "schema.hcl")
+		_, err := atlashcl.Parse(t.Context(), document, "schema.hcl")
 
 		c.Assert(err, qt.ErrorMatches,
 			`parse HCL schema at schema\.hcl:4,15-18: call to unknown function: There is no function named "now"\. Did you mean "pow"\?`)

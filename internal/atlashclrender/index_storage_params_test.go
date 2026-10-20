@@ -60,7 +60,7 @@ func TestIndexStorageParams_SurviveTheHCLRoundTrip(t *testing.T) {
 			rendered, err := atlashclrender.Render(indexedSchema(test.params), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 
-			parsed, err := atlashcl.ParseWithOptions([]byte(string(rendered.Data)), "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(string(rendered.Data)), "round-trip.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)
@@ -129,7 +129,7 @@ func TestIndexStorageParams_ADocumentIsRefusedWhenTheSwitchIsOff(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Contains, "storage_params")
 
 	t.Setenv(pgindexstorage.EnvVar, "false")
-	_, err = atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+	_, err = atlashcl.ParseWithOptions(t.Context(), rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)
@@ -146,7 +146,7 @@ func TestIndexStorageParams_TheSameDocumentLoadsWithTheSwitchOn(t *testing.T) {
 	rendered, err := atlashclrender.Render(indexedSchema(map[string]string{"m": "32"}), atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)
@@ -166,7 +166,7 @@ func TestIndexStorageParams_ADocumentWithoutTheAttributeIsUnaffected(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "storage_params")
 
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "round-trip.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)

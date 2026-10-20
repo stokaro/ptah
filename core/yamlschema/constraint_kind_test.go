@@ -13,7 +13,7 @@ func TestParse_RefusesUnknownCommonConstraintKinds(t *testing.T) {
 	for _, kind := range []string{"EXCLUDE", "UNQIUE"} {
 		t.Run(kind, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(yamlext.None(), []byte(`constraints:
+			db, err := yamlschema.Parse(t.Context(), yamlext.None(), []byte(`constraints:
   c:
     table: rooms
     type: `+kind+"\n"))
