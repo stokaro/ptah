@@ -377,8 +377,8 @@ github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiT
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
 github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/stokaro/ptah/provider-sdk v0.0.0-20261020192717-92754cd8f618 h1:jSkKvnUjiwvZJVFWT6M5ABczSwph65e5J1TdvJgq/lM=
-github.com/stokaro/ptah/provider-sdk v0.0.0-20261020192717-92754cd8f618/go.mod h1:ierpbsi1EeXBQj4zSA0auheEhZ6Ep5M3eG18AcYoyEA=
+github.com/stokaro/ptah/provider-sdk v0.0.0-20261020204702-9f004f4f2c1b h1:2NjALhtA3SJhywFHr5P2bdu00Q6Zg1Czww3FkTlplKY=
+github.com/stokaro/ptah/provider-sdk v0.0.0-20261020204702-9f004f4f2c1b/go.mod h1:6XSvBJNaFnszJnxVWzshI6AzajLivF6rQWprNOQHLeA=
 github.com/stokaro/teststyle v0.2.0 h1:jCyBstcPX+doEkmw5jRoiwPj/9I3srYyI27avIB+7kY=
 github.com/stokaro/teststyle v0.2.0/go.mod h1:/eSKEwaWErHF/URpcA0yaXLbNOD5951tH4y89wX2zio=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
