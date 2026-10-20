@@ -392,6 +392,9 @@ message ValueModel {
   string definition_sha256 = 5;
   string canonical_format = 6;
   repeated SourceDocument.Format source_formats = 7;
+  // Full owner definition, canonicalized with modeljson.Canonical. Its exact
+  // SHA-256 must match definition_sha256. It is a nonempty JSON object.
+  bytes definition_json = 8;
 }
 message ModelKnowledge {
   enum State {

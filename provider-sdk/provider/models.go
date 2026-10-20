@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
 
+	"github.com/stokaro/ptah/provider-sdk/modeljson"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 )
 
@@ -30,6 +33,9 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		digest, err := hex.DecodeString(model.GetDefinitionSha256())
 		if err != nil || len(digest) != 32 || model.GetDefinitionSha256() != strings.ToLower(model.GetDefinitionSha256()) {
 			return fmt.Errorf("%w: model definition requires a lowercase SHA-256 digest", ErrProtocol)
+		}
+		if err := validateModelDefinition(model); err != nil {
+			return err
 		}
 		key := identity{kind: model.GetKind(), representation: model.GetRepresentation()}
 		if seen[key] {
@@ -74,6 +80,18 @@ func validateModelSourceFormats(model *protocol.ValueModel) error {
 			return fmt.Errorf("%w: duplicate model source format", ErrProtocol)
 		}
 		seen[format] = true
+	}
+	return nil
+}
+
+func validateModelDefinition(model *protocol.ValueModel) error {
+	canonical, err := modeljson.Canonical(model.GetDefinitionJson())
+	if err != nil || len(canonical) == 0 || canonical[0] != '{' || string(canonical) == "{}" || !bytes.Equal(canonical, model.GetDefinitionJson()) {
+		return fmt.Errorf("%w: model definition must be a canonical nonempty JSON object", ErrProtocol)
+	}
+	digest := sha256.Sum256(canonical)
+	if hex.EncodeToString(digest[:]) != model.GetDefinitionSha256() {
+		return fmt.Errorf("%w: model definition digest differs from its content", ErrProtocol)
 	}
 	return nil
 }
