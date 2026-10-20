@@ -18,10 +18,16 @@ import (
 const Revision uint32 = 2
 
 const (
+	// CommonTableIdentityFeature promises the common table comparison contract:
+	// no implicit schema objects, no undeclared table facets, and no additional
+	// creation defaults or type coercions. Unsupported declarations are refused.
+	CommonTableIdentityFeature = "schema.common-table-identity.v1"
 	// InspectFeature advertises complete, scoped catalog inspection.
 	InspectFeature = "schema.inspect"
 	// RenderFeature advertises batched rendering of typed changes.
 	RenderFeature = "schema.render"
+	// AnalyzeSQLFeature advertises owner-defined statement boundaries and safety.
+	AnalyzeSQLFeature = "sql.analyze"
 	// ExecuteFeature advertises execution with explicit terminal outcomes.
 	ExecuteFeature = "units.execute"
 )

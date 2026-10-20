@@ -46,6 +46,7 @@ type Server struct {
 	Inspector   provider.Inspector
 	Renderer    provider.Renderer
 	Executor    provider.Executor
+	SQLAnalyzer provider.SQLAnalyzer
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -63,6 +64,7 @@ func (s Server) Validate() error {
 		{provider.InspectFeature, !nilService(s.Inspector)},
 		{provider.RenderFeature, !nilService(s.Renderer)},
 		{provider.ExecuteFeature, !nilService(s.Executor)},
+		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -222,4 +224,21 @@ func nilService(service any) bool {
 	default:
 		return false
 	}
+}
+
+func (s *serverAdapter) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
+	if s.server.SQLAnalyzer == nil {
+		return nil, status.Error(codes.Unimplemented, "SQL analysis is unavailable")
+	}
+	if !s.hasEngine(request.GetEngine()) {
+		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
+	}
+	result, err := s.server.SQLAnalyzer.AnalyzeSQL(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := provider.ValidateSQLAnalysis(request, result); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return result, nil
 }

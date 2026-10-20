@@ -235,6 +235,63 @@ func (Execution_Outcome) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{20, 0}
 }
 
+type SQLStatement_Safety int32
+
+const (
+	SQLStatement_SAFETY_UNSPECIFIED SQLStatement_Safety = 0
+	// COMMON_DDL permits the host's common DDL assessment. It is not a claim
+	// that the operation is safe. Native effects require another disposition.
+	SQLStatement_COMMON_DDL  SQLStatement_Safety = 1
+	SQLStatement_BEHAVIORAL  SQLStatement_Safety = 2
+	SQLStatement_DESTRUCTIVE SQLStatement_Safety = 3
+	SQLStatement_UNKNOWN     SQLStatement_Safety = 4
+)
+
+// Enum value maps for SQLStatement_Safety.
+var (
+	SQLStatement_Safety_name = map[int32]string{
+		0: "SAFETY_UNSPECIFIED",
+		1: "COMMON_DDL",
+		2: "BEHAVIORAL",
+		3: "DESTRUCTIVE",
+		4: "UNKNOWN",
+	}
+	SQLStatement_Safety_value = map[string]int32{
+		"SAFETY_UNSPECIFIED": 0,
+		"COMMON_DDL":         1,
+		"BEHAVIORAL":         2,
+		"DESTRUCTIVE":        3,
+		"UNKNOWN":            4,
+	}
+)
+
+func (x SQLStatement_Safety) Enum() *SQLStatement_Safety {
+	p := new(SQLStatement_Safety)
+	*p = x
+	return p
+}
+
+func (x SQLStatement_Safety) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SQLStatement_Safety) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[4].Descriptor()
+}
+
+func (SQLStatement_Safety) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[4]
+}
+
+func (x SQLStatement_Safety) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SQLStatement_Safety.Descriptor instead.
+func (SQLStatement_Safety) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{24, 0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1763,6 +1820,258 @@ func (x *Execution) GetMessage() string {
 	return ""
 }
 
+// AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
+// A refused batch returns no prefix. Every source byte belongs to a statement
+// or whitespace; unsupported comments or syntax must be refused, not skipped.
+type AnalyzeSQLRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Engine        string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	Sources       []string               `protobuf:"bytes,2,rep,name=sources,proto3" json:"sources,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnalyzeSQLRequest) Reset() {
+	*x = AnalyzeSQLRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnalyzeSQLRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnalyzeSQLRequest) ProtoMessage() {}
+
+func (x *AnalyzeSQLRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnalyzeSQLRequest.ProtoReflect.Descriptor instead.
+func (*AnalyzeSQLRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AnalyzeSQLRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *AnalyzeSQLRequest) GetSources() []string {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+type SQLAnalysis struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Complete      bool                   `protobuf:"varint,1,opt,name=complete,proto3" json:"complete,omitempty"`
+	Files         []*SQLFile             `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SQLAnalysis) Reset() {
+	*x = SQLAnalysis{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SQLAnalysis) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SQLAnalysis) ProtoMessage() {}
+
+func (x *SQLAnalysis) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SQLAnalysis.ProtoReflect.Descriptor instead.
+func (*SQLAnalysis) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *SQLAnalysis) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *SQLAnalysis) GetFiles() []*SQLFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+type SQLFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Statements    []*SQLStatement        `protobuf:"bytes,1,rep,name=statements,proto3" json:"statements,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SQLFile) Reset() {
+	*x = SQLFile{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SQLFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SQLFile) ProtoMessage() {}
+
+func (x *SQLFile) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SQLFile.ProtoReflect.Descriptor instead.
+func (*SQLFile) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *SQLFile) GetStatements() []*SQLStatement {
+	if x != nil {
+		return x.Statements
+	}
+	return nil
+}
+
+type SQLStatement struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Start       uint32                 `protobuf:"varint,1,opt,name=start,proto3" json:"start,omitempty"`
+	End         uint32                 `protobuf:"varint,2,opt,name=end,proto3" json:"end,omitempty"`
+	Line        uint32                 `protobuf:"varint,3,opt,name=line,proto3" json:"line,omitempty"`
+	Words       []string               `protobuf:"bytes,4,rep,name=words,proto3" json:"words,omitempty"`
+	SourceWords []string               `protobuf:"bytes,5,rep,name=source_words,json=sourceWords,proto3" json:"source_words,omitempty"`
+	Canonical   string                 `protobuf:"bytes,6,opt,name=canonical,proto3" json:"canonical,omitempty"`
+	Safety      SQLStatement_Safety    `protobuf:"varint,7,opt,name=safety,proto3,enum=ptah.provider.experimental.SQLStatement_Safety" json:"safety,omitempty"`
+	// Redacted explanation of a native effect or an unknown assessment.
+	Reason        string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SQLStatement) Reset() {
+	*x = SQLStatement{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SQLStatement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SQLStatement) ProtoMessage() {}
+
+func (x *SQLStatement) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SQLStatement.ProtoReflect.Descriptor instead.
+func (*SQLStatement) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SQLStatement) GetStart() uint32 {
+	if x != nil {
+		return x.Start
+	}
+	return 0
+}
+
+func (x *SQLStatement) GetEnd() uint32 {
+	if x != nil {
+		return x.End
+	}
+	return 0
+}
+
+func (x *SQLStatement) GetLine() uint32 {
+	if x != nil {
+		return x.Line
+	}
+	return 0
+}
+
+func (x *SQLStatement) GetWords() []string {
+	if x != nil {
+		return x.Words
+	}
+	return nil
+}
+
+func (x *SQLStatement) GetSourceWords() []string {
+	if x != nil {
+		return x.SourceWords
+	}
+	return nil
+}
+
+func (x *SQLStatement) GetCanonical() string {
+	if x != nil {
+		return x.Canonical
+	}
+	return ""
+}
+
+func (x *SQLStatement) GetSafety() SQLStatement_Safety {
+	if x != nil {
+		return x.Safety
+	}
+	return SQLStatement_SAFETY_UNSPECIFIED
+}
+
+func (x *SQLStatement) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -1913,13 +2222,42 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aAPPLIED\x10\x03\x12\x0f\n" +
 	"\vNOT_APPLIED\x10\x04\x12\v\n" +
 	"\aPARTIAL\x10\x05\x12\v\n" +
-	"\aUNKNOWN\x10\x062\xb0\x04\n" +
+	"\aUNKNOWN\x10\x06\"E\n" +
+	"\x11AnalyzeSQLRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x18\n" +
+	"\asources\x18\x02 \x03(\tR\asources\"d\n" +
+	"\vSQLAnalysis\x12\x1a\n" +
+	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x129\n" +
+	"\x05files\x18\x02 \x03(\v2#.ptah.provider.experimental.SQLFileR\x05files\"S\n" +
+	"\aSQLFile\x12H\n" +
+	"\n" +
+	"statements\x18\x01 \x03(\v2(.ptah.provider.experimental.SQLStatementR\n" +
+	"statements\"\xe2\x02\n" +
+	"\fSQLStatement\x12\x14\n" +
+	"\x05start\x18\x01 \x01(\rR\x05start\x12\x10\n" +
+	"\x03end\x18\x02 \x01(\rR\x03end\x12\x12\n" +
+	"\x04line\x18\x03 \x01(\rR\x04line\x12\x14\n" +
+	"\x05words\x18\x04 \x03(\tR\x05words\x12!\n" +
+	"\fsource_words\x18\x05 \x03(\tR\vsourceWords\x12\x1c\n" +
+	"\tcanonical\x18\x06 \x01(\tR\tcanonical\x12G\n" +
+	"\x06safety\x18\a \x01(\x0e2/.ptah.provider.experimental.SQLStatement.SafetyR\x06safety\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\"^\n" +
+	"\x06Safety\x12\x16\n" +
+	"\x12SAFETY_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"COMMON_DDL\x10\x01\x12\x0e\n" +
+	"\n" +
+	"BEHAVIORAL\x10\x02\x12\x0f\n" +
+	"\vDESTRUCTIVE\x10\x03\x12\v\n" +
+	"\aUNKNOWN\x10\x042\x96\x05\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
 	"\x05Close\x12(.ptah.provider.experimental.CloseRequest\x1a!.ptah.provider.experimental.Empty\x12Y\n" +
 	"\aInspect\x12*.ptah.provider.experimental.InspectRequest\x1a\".ptah.provider.experimental.Schema\x12]\n" +
-	"\x06Render\x12).ptah.provider.experimental.RenderRequest\x1a(.ptah.provider.experimental.RenderResult\x12\\\n" +
+	"\x06Render\x12).ptah.provider.experimental.RenderRequest\x1a(.ptah.provider.experimental.RenderResult\x12d\n" +
+	"\n" +
+	"AnalyzeSQL\x12-.ptah.provider.experimental.AnalyzeSQLRequest\x1a'.ptah.provider.experimental.SQLAnalysis\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.ExecutionBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
 var (
@@ -1934,80 +2272,90 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 	return file_protocol_experimental_provider_proto_rawDescData
 }
 
-var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(IdentifierRules_Comparison)(0),     // 0: ptah.provider.experimental.IdentifierRules.Comparison
 	(IdentifierRules_IndexNamespace)(0), // 1: ptah.provider.experimental.IdentifierRules.IndexNamespace
 	(Disposition_State)(0),              // 2: ptah.provider.experimental.Disposition.State
 	(Execution_Outcome)(0),              // 3: ptah.provider.experimental.Execution.Outcome
-	(*Empty)(nil),                       // 4: ptah.provider.experimental.Empty
-	(*DescribeRequest)(nil),             // 5: ptah.provider.experimental.DescribeRequest
-	(*Description)(nil),                 // 6: ptah.provider.experimental.Description
-	(*Engine)(nil),                      // 7: ptah.provider.experimental.Engine
-	(*IdentifierRules)(nil),             // 8: ptah.provider.experimental.IdentifierRules
-	(*Reference)(nil),                   // 9: ptah.provider.experimental.Reference
-	(*Envelope)(nil),                    // 10: ptah.provider.experimental.Envelope
-	(*OpenRequest)(nil),                 // 11: ptah.provider.experimental.OpenRequest
-	(*Session)(nil),                     // 12: ptah.provider.experimental.Session
-	(*CloseRequest)(nil),                // 13: ptah.provider.experimental.CloseRequest
-	(*InspectRequest)(nil),              // 14: ptah.provider.experimental.InspectRequest
-	(*Schema)(nil),                      // 15: ptah.provider.experimental.Schema
-	(*Table)(nil),                       // 16: ptah.provider.experimental.Table
-	(*Column)(nil),                      // 17: ptah.provider.experimental.Column
-	(*Disposition)(nil),                 // 18: ptah.provider.experimental.Disposition
-	(*Change)(nil),                      // 19: ptah.provider.experimental.Change
-	(*RenderRequest)(nil),               // 20: ptah.provider.experimental.RenderRequest
-	(*Unit)(nil),                        // 21: ptah.provider.experimental.Unit
-	(*RenderResult)(nil),                // 22: ptah.provider.experimental.RenderResult
-	(*ExecuteRequest)(nil),              // 23: ptah.provider.experimental.ExecuteRequest
-	(*Execution)(nil),                   // 24: ptah.provider.experimental.Execution
+	(SQLStatement_Safety)(0),            // 4: ptah.provider.experimental.SQLStatement.Safety
+	(*Empty)(nil),                       // 5: ptah.provider.experimental.Empty
+	(*DescribeRequest)(nil),             // 6: ptah.provider.experimental.DescribeRequest
+	(*Description)(nil),                 // 7: ptah.provider.experimental.Description
+	(*Engine)(nil),                      // 8: ptah.provider.experimental.Engine
+	(*IdentifierRules)(nil),             // 9: ptah.provider.experimental.IdentifierRules
+	(*Reference)(nil),                   // 10: ptah.provider.experimental.Reference
+	(*Envelope)(nil),                    // 11: ptah.provider.experimental.Envelope
+	(*OpenRequest)(nil),                 // 12: ptah.provider.experimental.OpenRequest
+	(*Session)(nil),                     // 13: ptah.provider.experimental.Session
+	(*CloseRequest)(nil),                // 14: ptah.provider.experimental.CloseRequest
+	(*InspectRequest)(nil),              // 15: ptah.provider.experimental.InspectRequest
+	(*Schema)(nil),                      // 16: ptah.provider.experimental.Schema
+	(*Table)(nil),                       // 17: ptah.provider.experimental.Table
+	(*Column)(nil),                      // 18: ptah.provider.experimental.Column
+	(*Disposition)(nil),                 // 19: ptah.provider.experimental.Disposition
+	(*Change)(nil),                      // 20: ptah.provider.experimental.Change
+	(*RenderRequest)(nil),               // 21: ptah.provider.experimental.RenderRequest
+	(*Unit)(nil),                        // 22: ptah.provider.experimental.Unit
+	(*RenderResult)(nil),                // 23: ptah.provider.experimental.RenderResult
+	(*ExecuteRequest)(nil),              // 24: ptah.provider.experimental.ExecuteRequest
+	(*Execution)(nil),                   // 25: ptah.provider.experimental.Execution
+	(*AnalyzeSQLRequest)(nil),           // 26: ptah.provider.experimental.AnalyzeSQLRequest
+	(*SQLAnalysis)(nil),                 // 27: ptah.provider.experimental.SQLAnalysis
+	(*SQLFile)(nil),                     // 28: ptah.provider.experimental.SQLFile
+	(*SQLStatement)(nil),                // 29: ptah.provider.experimental.SQLStatement
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	7,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	8,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	8,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	9,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
 	0,  // 2: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
 	0,  // 3: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
 	0,  // 4: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
 	1,  // 5: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	9,  // 6: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	8,  // 7: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	16, // 8: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	10, // 9: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	18, // 10: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	9,  // 11: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	17, // 12: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	10, // 13: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	10, // 14: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	9,  // 15: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	10, // 6: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	9,  // 7: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	17, // 8: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	11, // 9: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	19, // 10: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	10, // 11: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	18, // 12: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	11, // 13: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	11, // 14: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	10, // 15: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
 	2,  // 16: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	9,  // 17: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	16, // 18: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	4,  // 19: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	17, // 20: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	10, // 21: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
-	19, // 22: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	10, // 23: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	21, // 24: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	21, // 25: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	10, // 17: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	17, // 18: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	5,  // 19: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	18, // 20: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	11, // 21: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
+	20, // 22: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	11, // 23: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	22, // 24: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	22, // 25: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
 	3,  // 26: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	5,  // 27: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	11, // 28: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	13, // 29: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	14, // 30: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	20, // 31: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	23, // 32: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	6,  // 33: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	12, // 34: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	4,  // 35: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	15, // 36: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	22, // 37: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	24, // 38: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	33, // [33:39] is the sub-list for method output_type
-	27, // [27:33] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	28, // 27: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	29, // 28: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	4,  // 29: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	6,  // 30: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	12, // 31: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	14, // 32: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	15, // 33: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	21, // 34: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	26, // 35: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	24, // 36: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	7,  // 37: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	13, // 38: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	5,  // 39: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	16, // 40: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	23, // 41: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	27, // 42: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	25, // 43: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	37, // [37:44] is the sub-list for method output_type
+	30, // [30:37] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -2032,8 +2380,8 @@ func file_protocol_experimental_provider_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   21,
+			NumEnums:      5,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

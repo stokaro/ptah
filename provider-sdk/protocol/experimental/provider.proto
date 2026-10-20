@@ -13,6 +13,7 @@ service Provider {
   rpc Close(CloseRequest) returns (Empty);
   rpc Inspect(InspectRequest) returns (Schema);
   rpc Render(RenderRequest) returns (RenderResult);
+  rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -186,4 +187,37 @@ message Execution {
   string diagnostic_code = 3;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
   string message = 4;
+}
+
+// AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
+// A refused batch returns no prefix. Every source byte belongs to a statement
+// or whitespace; unsupported comments or syntax must be refused, not skipped.
+message AnalyzeSQLRequest {
+  string engine = 1;
+  repeated string sources = 2;
+}
+message SQLAnalysis {
+  bool complete = 1;
+  repeated SQLFile files = 2;
+}
+message SQLFile { repeated SQLStatement statements = 1; }
+message SQLStatement {
+  uint32 start = 1;
+  uint32 end = 2;
+  uint32 line = 3;
+  repeated string words = 4;
+  repeated string source_words = 5;
+  string canonical = 6;
+  enum Safety {
+    SAFETY_UNSPECIFIED = 0;
+    // COMMON_DDL permits the host's common DDL assessment. It is not a claim
+    // that the operation is safe. Native effects require another disposition.
+    COMMON_DDL = 1;
+    BEHAVIORAL = 2;
+    DESTRUCTIVE = 3;
+    UNKNOWN = 4;
+  }
+  Safety safety = 7;
+  // Redacted explanation of a native effect or an unknown assessment.
+  string reason = 8;
 }

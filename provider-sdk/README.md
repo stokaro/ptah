@@ -30,6 +30,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
+| `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
 Common records represent tables and columns explicitly. Native records use a
@@ -127,3 +128,18 @@ reports the effective rules and default schema. Missing rules, unknown compariso
 modes, and unknown index namespaces are refused. The experimental contract
 supports exact and ASCII-insensitive comparison; it makes no claim about other
 collation semantics. Hosts must not infer these rules from a built-in target.
+
+The experimental application adapter currently requires each engine to declare
+`schema.common-table-identity.v1`. This promises common table and column comparison
+semantics without implicit schema objects, undeclared facets, additional creation
+defaults, or type coercions. A provider must refuse declarations outside that
+contract. A missing feature does not select a built-in implementation. Engines
+with additional semantics need corresponding protocol operations before this
+adapter can support them.
+
+`AnalyzeSQL` accounts for every source byte with a statement span or whitespace.
+It preserves source tokens, canonical tokens, and line numbers. A provider refuses
+comments or syntax it cannot represent. `COMMON_DDL` permits the host's common DDL
+assessment; it does not mean safe. Native behavioral and destructive effects carry
+explicit reasons. `UNKNOWN` remains destructive for approval policy. Unknown
+numeric dispositions, incomplete batches, gaps, and overlapping spans are errors.

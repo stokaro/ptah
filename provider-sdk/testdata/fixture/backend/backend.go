@@ -34,8 +34,8 @@ type session struct {
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
 	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-2",
-		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns"}, Identifiers: identifierRules()}},
-		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature}}
+		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature}, Identifiers: identifierRules()}},
+		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature}}
 }
 
 func identifierRules() *protocol.IdentifierRules {
@@ -114,8 +114,10 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	if len(request.GetSchemas()) != 0 {
-		return nil, fmt.Errorf("fixture has no named schemas")
+	for _, schema := range request.GetSchemas() {
+		if schema != "main" {
+			return nil, fmt.Errorf("fixture supports only the main schema")
+		}
 	}
 	var unsupported int
 	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type IN ('view', 'trigger', 'index') AND name NOT LIKE 'sqlite_%'").Scan(&unsupported); err != nil {
