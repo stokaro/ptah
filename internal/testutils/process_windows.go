@@ -1,10 +1,11 @@
-//go:build integration && windows
+//go:build windows
 
-package providercli_test
+package testutils
 
 import "golang.org/x/sys/windows"
 
-func providerProcessRunning(pid int) bool {
+// ProcessRunning reports whether the process with pid is still running.
+func ProcessRunning(pid int) bool {
 	handle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid)) // #nosec G115 -- PID is read from the fixture process
 	if err != nil {
 		return false

@@ -21,10 +21,12 @@ import (
 
 	"ptah.run/internal/cli/root"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 )
 
 func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 	c := qt.New(t)
+	c.Assert(testutils.ProcessRunning(os.Getpid()), qt.IsTrue)
 	binary := independentCLIProvider(c)
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
@@ -203,7 +205,7 @@ func (f providerCLI) assertStopped(c *qt.C) {
 	c.Assert(err, qt.IsNil)
 	pid, err := strconv.Atoi(string(data))
 	c.Assert(err, qt.IsNil)
-	c.Assert(awaitProviderCLI(c.Context(), func() bool { return !providerProcessRunning(pid) }), qt.IsNil)
+	c.Assert(awaitProviderCLI(c.Context(), func() bool { return !testutils.ProcessRunning(pid) }), qt.IsNil)
 }
 func awaitProviderCLI(ctx context.Context, ready func() bool) error {
 	wait, cancel := context.WithTimeout(ctx, 10*time.Second)
