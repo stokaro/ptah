@@ -118,6 +118,9 @@ func newNativeConnection(session NativeSession, target, address string, scope Co
 	if scope == DatabaseScope && info.WholeServer {
 		return nil, fmt.Errorf("native session opened a whole server where a database is required")
 	}
+	if err := info.Provider.Validate(); err != nil {
+		return nil, fmt.Errorf("native session returned invalid provider identity: %w", err)
+	}
 	info.URL = address
 	// A provider URL can carry secrets in fields the host does not recognize.
 	// Keep only the target in the display form rather than guessing its grammar.
@@ -152,6 +155,9 @@ func (dc *DatabaseConnection) withNativeSession(ctx context.Context, use func(*D
 	}
 	if scoped.info.Schema != dc.info.Schema || scoped.info.WholeServer != dc.info.WholeServer {
 		return fmt.Errorf("native session changed the connected scope")
+	}
+	if scoped.info.Provider != dc.info.Provider {
+		return fmt.Errorf("native session changed the selected provider identity")
 	}
 	scoped.pinned = true
 	if dc.writer.IsDryRun() {

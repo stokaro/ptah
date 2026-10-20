@@ -758,14 +758,17 @@ existing pinned session and its lifecycle, or pins a pool-backed connection.
 
 `dbschema.WithNativeConnections` selects explicit URL-scheme bindings for
 provider-owned sessions. `NativeConnector` opens each session with the requested
-database or server scope. The connector must report the selected target and
-identifier semantics. A failed provider open never falls back to a bundled
+database or server scope. The connector must report the selected target,
+identifier semantics, and a complete `catalog.ProviderIdentity`. That identity
+records the provider ID, version, semantic identity, executable SHA-256,
+protocol revision, and the digest of the negotiated contract. The contract
+digest comes from a versioned semantic projection, not Protobuf bytes. A failed provider open never falls back to a bundled
 connector. Selection belongs to the context; the application owns provider
 process lifetime. The display URL contains only the target name because the host
 cannot identify every credential field in a provider-specific address.
 
 `NativeSession` supplies readers and writers for the same handle. `WithSession`
-opens an independent handle, preserves its schema scope and dry-run setting,
+opens an independent handle, preserves its provider identity, schema scope, and dry-run setting,
 and closes it after the callback, including on failure. Closing the scoped
 connection inside that callback leaves cleanup with `WithSession`.
 

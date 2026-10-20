@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -54,7 +55,7 @@ func (h *nativeHandle) Info() catalog.ServerInfo {
 	if h.fixture.metadata != nil {
 		return *h.fixture.metadata
 	}
-	return catalog.ServerInfo{Dialect: "example", Schema: "main", IdentifierSemantics: identifier.ForDialect("sqlite")}
+	return catalog.ServerInfo{Dialect: "example", Schema: "main", Provider: nativeIdentity(), IdentifierSemantics: identifier.ForDialect("sqlite")}
 }
 func (h *nativeHandle) Reader(schemas []string) catalog.SchemaReader {
 	return nativeReader{h, slices.Clone(schemas)}
@@ -203,6 +204,7 @@ func TestNativeConnectionRefusesInvalidSessionMetadata(t *testing.T) {
 		info catalog.ServerInfo
 	}{
 		{name: "another target", info: catalog.ServerInfo{Dialect: "another", IdentifierSemantics: identifier.ForDialect("sqlite")}},
+		{name: "missing provider identity", info: catalog.ServerInfo{Dialect: "example", IdentifierSemantics: identifier.ForDialect("sqlite")}},
 		{name: "missing identifier semantics", info: catalog.ServerInfo{Dialect: "example"}},
 		{name: "whole server instead of a database", info: catalog.ServerInfo{Dialect: "example", WholeServer: true, IdentifierSemantics: identifier.ForDialect("sqlite")}},
 	}
@@ -230,7 +232,7 @@ func TestNativeSessionPreservesScopeAndDryRun(t *testing.T) {
 		return scoped.Writer().ExecuteSQL(c.Context(), "write")
 	}), qt.IsNil)
 	c.Assert(fixture.sessions[1].writes.Load(), qt.Equals, int64(0))
-	fixture.metadata = &catalog.ServerInfo{Dialect: "example", Schema: "another", IdentifierSemantics: identifier.ForDialect("sqlite")}
+	fixture.metadata = &catalog.ServerInfo{Dialect: "example", Schema: "another", Provider: nativeIdentity(), IdentifierSemantics: identifier.ForDialect("sqlite")}
 	called := false
 	err = conn.WithSession(c.Context(), func(*dbschema.DatabaseConnection) error { called = true; return nil })
 	c.Assert(err, qt.ErrorMatches, "native session changed the connected scope")
@@ -253,10 +255,31 @@ func TestNativeConnectionHidesTheProviderAddress(t *testing.T) {
 
 func TestNativeConnectionAcceptsAnExplicitServerScope(t *testing.T) {
 	c := qt.New(t)
-	fixture := &nativeFixture{metadata: &catalog.ServerInfo{Dialect: "example", WholeServer: true, IdentifierSemantics: identifier.ForDialect("sqlite")}}
+	fixture := &nativeFixture{metadata: &catalog.ServerInfo{Dialect: "example", WholeServer: true, Provider: nativeIdentity(), IdentifierSemantics: identifier.ForDialect("sqlite")}}
 	conn, err := dbschema.ConnectToServer(nativeContext(c, fixture), "example://server")
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	c.Assert(conn.Info().WholeServer, qt.IsTrue)
 	c.Assert(fixture.requests[0].Scope, qt.Equals, dbschema.ServerScope)
+}
+
+func nativeIdentity() catalog.ProviderIdentity {
+	return catalog.ProviderIdentity{ID: "example.provider", Version: "test", SemanticIdentity: "test-1", ProtocolRevision: 2, ArtifactSHA256: strings.Repeat("a", 64), ContractSHA256: strings.Repeat("b", 64)}
+}
+
+func TestNativeSessionRefusesAChangedProviderIdentity(t *testing.T) {
+	c := qt.New(t)
+	fixture := &nativeFixture{}
+	conn, err := dbschema.ConnectToDatabase(nativeContext(c, fixture), "example://database")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	info := conn.Info()
+	info.Provider.ArtifactSHA256 = strings.Repeat("c", 64)
+	fixture.metadata = &info
+	called := false
+	err = conn.WithSession(c.Context(), func(*dbschema.DatabaseConnection) error { called = true; return nil })
+	c.Assert(err, qt.ErrorMatches, "native session changed the selected provider identity")
+	c.Assert(called, qt.IsFalse)
+	c.Assert(fixture.sessions[1].closes.Load(), qt.Equals, int64(1))
+	c.Assert(conn.Info().Provider, qt.Equals, nativeIdentity())
 }

@@ -162,6 +162,14 @@ declaration does not manage does not. The row values themselves are not written
 into the plan file. A plan that declares no rows carries neither field, and the
 Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
 
+When an embedding application selects an executable provider, the native JSON
+plan also records `provider`: the executable and negotiated contract identity,
+plus a digest of the server version, schema scope, capabilities, and identifier
+rules used during planning. Apply checks that binding before reading the target.
+A changed or missing provider binding requires a new plan and approval, even if
+the schema has not changed. Addresses and credentials are excluded. The Atlas
+`.plan.hcl` format cannot preserve this binding and refuses such plans.
+
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script
 around this workflow has to treat a missing plan file as a normal outcome.
