@@ -21,6 +21,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dblockext"
 )
 
 func TestWithLockSession_KeepsLockAndCallbackOnPinnedSession(t *testing.T) {
@@ -185,7 +186,7 @@ func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 			session, err := db.Conn(c.Context())
 			c.Assert(err, qt.IsNil)
 
-			lock, acquireErr := acquireOnSession(c.Context(), session, db, test.dialect, "ptah_test", time.Second, false)
+			lock, acquireErr := acquireOnSession(c.Context(), dblockext.SQLSession{Conn: session}, db, test.dialect, "ptah_test", time.Second, false)
 			c.Assert(lock, qt.IsNil)
 			c.Assert(acquireErr, qt.ErrorIs, queryErr)
 			c.Assert(closeAfterFailedAcquisition(session, acquireErr), qt.ErrorIs, queryErr)

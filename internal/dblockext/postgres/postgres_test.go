@@ -51,13 +51,13 @@ func (s *server) answer(query string, args []driver.NamedValue) (dbtest.QueryRes
 	return dbtest.QueryResult{Columns: []string{"pg_advisory_unlock"}, Rows: [][]driver.Value{{s.unlocked}}}, nil
 }
 
-func open(c *qt.C, s *server) (*sql.DB, *sql.Conn) {
+func open(c *qt.C, s *server) (*sql.DB, dblockext.SQLSession) {
 	c.Helper()
 	db := dbtest.Open(c, s.answer)
 	session, err := db.SQL.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
-	return db.SQL, session
+	return db.SQL, dblockext.SQLSession{Conn: session}
 }
 
 // The key must stay stable across releases: concurrent runners of different

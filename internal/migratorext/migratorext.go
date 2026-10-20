@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"strings"
 
+	"ptah.run/core/dataext"
 	"ptah.run/internal/lexer"
 	"ptah.run/migration/migrationfile"
 )
@@ -23,7 +24,7 @@ import (
 // Queryer is the connection a service reads and writes through.
 type Queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	// Conn reserves one physical connection, which the caller closes.
 	Conn(ctx context.Context) (*sql.Conn, error)

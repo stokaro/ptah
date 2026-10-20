@@ -754,6 +754,26 @@ The scoped connection must stay inside the callback. Ptah discards the physical
 connection afterward to prevent state leaks. `WithSessionOrCurrent` reuses an
 existing pinned session and its lifecycle, or pins a pool-backed connection.
 
+`dbschema.WithNativeConnections` selects explicit URL-scheme bindings for
+provider-owned sessions. `NativeConnector` opens each session with the requested
+database or server scope. The connector must report the selected target and
+identifier semantics. A failed provider open never falls back to a bundled
+connector. Selection belongs to the context; the application owns provider
+process lifetime. The display URL contains only the target name because the host
+cannot identify every credential field in a provider-specific address.
+
+`NativeSession` supplies readers and writers for the same handle. `WithSession`
+opens an independent handle, preserves its schema scope and dry-run setting,
+and closes it after the callback, including on failure. Closing the scoped
+connection inside that callback leaves cleanup with `WithSession`.
+
+Native sessions do not expose `database/sql` handles. Raw queries, raw execution,
+SQL transactions, and isolated SQL-query callbacks return
+`ptaherr.ErrUnsupportedFeature`. Schema operations use the selected reader and
+writer. `QueryRow` and `QueryRowContext` return `dataext.Row`, which keeps `Scan`
+and `Err` available for either a database row or an explicit refusal. This
+changes the pre-v1 API without retaining an old signature.
+
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers
 always roll the transaction back; ClickHouse runs directly on the disposable

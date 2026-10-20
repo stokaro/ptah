@@ -1,7 +1,6 @@
 package mysql_test
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"strings"
@@ -42,12 +41,12 @@ func (s *server) answer(query string, args []driver.NamedValue) (dbtest.QueryRes
 	return dbtest.QueryResult{Columns: []string{"result"}, Rows: [][]driver.Value{{s.value}}}, nil
 }
 
-func open(c *qt.C, s *server) *sql.Conn {
+func open(c *qt.C, s *server) dblockext.SQLSession {
 	c.Helper()
 	session, err := dbtest.Open(c, s.answer).SQL.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
-	return session
+	return dblockext.SQLSession{Conn: session}
 }
 
 func TestServices(t *testing.T) {

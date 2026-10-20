@@ -893,8 +893,8 @@ func (s Sequence) QualifiedName() string {
 // version, which schema unqualified names mean there, and the capability set
 // and identifier semantics that follow from those answers.
 type ServerInfo struct {
-	// Dialect is a canonical dialect name from core/platform, the set
-	// platform.NormalizeDialect resolves to. Where several products share one
+	// Dialect is the canonical target selected by the application runtime.
+	// Built-in names are declared by core/platform. Where products share one
 	// wire protocol it names the product the connection actually reached
 	// rather than the URL's scheme, so a caller must not assume the two agree:
 	// a postgres:// connection can report cockroachdb, yugabytedb or spanner,
