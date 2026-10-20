@@ -31,7 +31,6 @@ import (
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff"
 	"ptah.run/migration/shadow"
 )
 
@@ -252,7 +251,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 }
 
 type baselineVerifyOptions struct {
-	runtime schemadiff.DatabaseRuntime
+	runtime schemaops.Runtime
 	// diagnostics receives the warning for each declared object the entity
 	// comparison could not check.
 	diagnostics    io.Writer

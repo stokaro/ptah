@@ -221,7 +221,9 @@ import "ptah.run/engine/builtin"
 ```
 
 `engine.New` registers caller-supplied providers; duplicate targets and aliases
-are refused. `builtin.New` selects the bundled providers. Runtime services
+are refused. `builtin.New` selects the bundled providers and accepts explicit
+additional providers. Additional targets keep their own services; an omitted
+service remains unavailable. Conflicting target names are refused. Runtime services
 propagate errors and cancellation without partial output. Rendering returns one
 `Fragments` entry per input node: empty for no output, or holding one or more
 statements. `Result.SQL()` joins fragments without adding separators.

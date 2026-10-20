@@ -6,9 +6,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemastats"
 )
@@ -82,7 +82,7 @@ func runSchemaStats(cmd *cobra.Command, opts schemaStatsOptions) error {
 	if opts.dbURL == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s is required", statsDBURLFlag))
 	}
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

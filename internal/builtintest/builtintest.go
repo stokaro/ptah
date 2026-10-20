@@ -23,7 +23,7 @@ import (
 )
 
 // shared is built on first use and lives as long as the test binary.
-var shared = sync.OnceValues(builtin.New)
+var shared = sync.OnceValues(func() (*engine.Runtime, error) { return builtin.New() })
 
 // Runtime returns the bundled runtime every caller in this test binary shares.
 // It panics when the bundled providers do not assemble, which every other use

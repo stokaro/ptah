@@ -12,11 +12,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/pathguard"
@@ -181,7 +181,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -296,7 +296,7 @@ func materializeOCISchemaFiles(
 	if !slices.ContainsFunc(sources, isOCISchemaReference) {
 		return nil, nil, nil
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return nil, nil, err
 	}

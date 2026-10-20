@@ -6,11 +6,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/schemacomparison"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 )
 
 // bundledRuntime is the built-in runtime, assembled once for the package.
-var bundledRuntime = sync.OnceValues(builtin.New)
+var bundledRuntime = sync.OnceValues(func() (*engine.Runtime, error) { return builtin.New() })
 
 // builtinRules returns the comparison rules the built-in runtime registers for
 // dialect, so a test of an engine's index or expression reading compares with

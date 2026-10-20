@@ -16,7 +16,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -27,10 +26,17 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
+// Runtime selects the same feature owners for source loading and comparison.
+type Runtime interface {
+	dataext.Runtime
+	schemadiff.DatabaseRuntime
+	schemaload.Owners
+}
+
 // CompareOptions configures a live schema comparison.
 type CompareOptions struct {
 	// Runtime selects the model services used for the comparison.
-	Runtime        schemadiff.DatabaseRuntime
+	Runtime        Runtime
 	RootDirs       []string
 	SchemaFiles    []string
 	Commands       []schemasource.Command
@@ -115,13 +121,9 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	owners, err := builtin.Bundled()
-	if err != nil {
-		return nil, err
-	}
 	loadOpts := schemaload.Options{
 		RootDirs:        opts.RootDirs,
-		Owners:          owners,
+		Owners:          opts.Runtime,
 		SchemaFiles:     opts.SchemaFiles,
 		ProjectEnv:      opts.ProjectEnv,
 		EnvSelectorFlag: opts.EnvSelectorFlag,
@@ -163,7 +165,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	// reuses the connection the structural read opened, which the deferred
 	// close above would already have returned by the time a command saw the
 	// result.
-	dataDrift, err := compareManagedData(ctx, conn, owners, desired, dbSchema, opts)
+	dataDrift, err := compareManagedData(ctx, conn, opts.Runtime, desired, dbSchema, opts)
 	if err != nil {
 		return nil, err
 	}

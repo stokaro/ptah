@@ -14,9 +14,9 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/schemasecurity"
@@ -159,7 +159,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// The connection's own set rather than the dialect default: it is what the
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

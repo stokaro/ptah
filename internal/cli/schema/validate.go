@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform/capability"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/schemaload"
@@ -118,7 +118,7 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

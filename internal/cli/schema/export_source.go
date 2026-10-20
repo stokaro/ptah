@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemaload"
@@ -34,7 +34,7 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 	if err != nil {
 		return nil, err
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return nil, err
 	}

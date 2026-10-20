@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"ptah.run/core/ast"
@@ -59,13 +60,13 @@ import (
 // ValidateSchemaWithCapabilities and the omission reports) render with. A
 // runtime is frozen when New returns and renders concurrently, so the helpers
 // share one rather than assembling every provider and codec on each call.
-var bundled = sync.OnceValues(New)
+var bundled = sync.OnceValues(func() (*engine.Runtime, error) { return New() })
 
-// New assembles a runtime with the bundled providers and their codecs. It returns a
-// fresh registry on every call. The provider services create their own visitor
-// for each batch, so the runtime can render concurrently without sharing output
-// buffers.
-func New() (*engine.Runtime, error) {
+// New assembles the bundled providers and explicit additional providers into a
+// fresh runtime. Additional targets retain their own services; missing services
+// remain unavailable. Conflicting provider IDs, targets, and aliases are refused.
+// The bundled services create a visitor for each batch and share no output state.
+func New(additional ...engine.Provider) (*engine.Runtime, error) {
 	// The built-in descriptors, not the process registry: a dialect another
 	// program registered has no bundled provider.
 	described := builtindialects.Descriptors()
@@ -216,7 +217,7 @@ func New() (*engine.Runtime, error) {
 		pgpolicyProvider(), pgextensionProvider(), pgtypeProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider(),
 		oratypeProvider(),
 	)
-	return assembleSchemaServices(providers)
+	return assembleSchemaServices(providers, additional)
 }
 
 // routineBodyReader is the owner that reads a target's routine bodies, or nil
@@ -257,9 +258,10 @@ func routineDefaults(name string) schemacomparison.Routines {
 // Whole-schema services depend on a frozen declaration dispatcher. Derive it
 // from the same descriptors before constructing the outer runtime, so neither
 // runtime needs a mutable self-reference or a second list of feature owners.
-func assembleSchemaServices(providers []engine.Provider) (*engine.Runtime, error) {
-	declarations := make([]engine.Provider, len(providers))
-	for i, provider := range providers {
+func assembleSchemaServices(providers, additional []engine.Provider) (*engine.Runtime, error) {
+	selected := slices.Concat(providers, additional)
+	declarations := make([]engine.Provider, len(selected))
+	for i, provider := range selected {
 		declarations[i] = engine.Provider{ID: provider.ID, Codecs: provider.Codecs, Declarations: provider.Declarations}
 		for _, target := range provider.Targets {
 			declarations[i].Targets = append(declarations[i].Targets, engine.Target{Name: target.Name, Aliases: target.Aliases})
@@ -275,7 +277,7 @@ func assembleSchemaServices(providers []engine.Provider) (*engine.Runtime, error
 			providers[i].Targets[j].Validation = validationService{declarations: runtime}
 		}
 	}
-	return engine.New(providers...)
+	return engine.New(selected...)
 }
 
 type renderingService struct{}

@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationschema"
 	"ptah.run/internal/cli/compare"
@@ -19,6 +18,7 @@ import (
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/webartifact"
 	"ptah.run/internal/cli/schemapull"
 	"ptah.run/internal/cli/schemapush"
@@ -199,11 +199,11 @@ func runAnnotations(cmd *cobra.Command, format, outPath string) error {
 	if strings.TrimSpace(format) != "json-schema" {
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --format %q: expected json-schema", format))
 	}
-	annotations, err := builtin.Annotations()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	catalog, err := annotationmeta.NewCatalog(annotations)
+	catalog, err := annotationmeta.NewCatalog(runtime.Annotations())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -550,7 +550,7 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	case exportFormatDBML:
-		runtime, err := builtin.New()
+		runtime, err := engineruntime.Resolve(cmd.Context())
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -581,7 +581,7 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 
 // runHCLExport adapts the reusable Go-to-HCL workflow to Cobra streams.
 func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error {
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
