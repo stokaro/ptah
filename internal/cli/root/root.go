@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/cli/migrations"
 	"ptah.run/internal/cli/oci"
 	"ptah.run/internal/cli/project"
+	"ptah.run/internal/cli/providers"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/cli/seed"
 	sqlcmd "ptah.run/internal/cli/sql"
@@ -92,6 +93,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(migrations.NewMigrationsCommand())
 	cmd.AddCommand(oci.NewCommand())
 	cmd.AddCommand(project.NewProjectCommand())
+	cmd.AddCommand(providers.NewCommand())
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())

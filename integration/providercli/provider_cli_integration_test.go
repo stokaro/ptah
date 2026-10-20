@@ -20,6 +20,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
 )
@@ -32,6 +33,7 @@ func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)
 	spec := providerhost.Spec{Executable: binary, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture"}
+	providerSelectionCases(t, spec)
 	t.Run("inspect plan apply verify", func(t *testing.T) {
 		c := qt.New(t)
 		f := newProviderCLI(c, spec)
@@ -165,7 +167,7 @@ func newProviderCLI(c *qt.C, spec providerhost.Spec) providerCLI {
 	f := providerCLI{manifestPath: filepath.Join(dir, "providers.json"), pidPath: filepath.Join(dir, "provider.pid"), databasePath: filepath.Join(dir, "database.db"), schemaPath: filepath.Join(dir, "schema.yaml"), planPath: filepath.Join(dir, "change.plan.json")}
 	f.address = (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(f.databasePath), "/")}).String()
 	spec.Environment = []string{"PTAH_FIXTURE_PID_FILE=" + f.pidPath}
-	manifest, err := json.Marshal(map[string]any{"format_version": 1, "providers": []providerhost.Spec{spec}})
+	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion, Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: "fixture"}}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifestPath, manifest, 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(f.schemaPath, []byte("tables:\n  items:\n    columns:\n      id:\n        type: INTEGER\n        not_null: true\n  second:\n    columns:\n      value:\n        type: TEXT\n"), 0o600), qt.IsNil)

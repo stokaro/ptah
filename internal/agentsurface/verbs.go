@@ -26,6 +26,12 @@ var verbs = map[string]Verb{
 	"viz": {TargetNone, ScratchNone,
 		"renders diagrams from a desired schema; no database is opened"},
 
+	// providers.
+	"providers list": {TargetNone, ScratchNone,
+		"lists official provider identities and checks configured executable bytes without starting a process or opening a database"},
+	"providers check": {TargetNone, ScratchNone,
+		"starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database"},
+
 	// assist.
 	"assist context": {TargetNone, ScratchNone,
 		"prints what a question would send to a model provider and sends nothing; it opens " +

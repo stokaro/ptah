@@ -3,140 +3,186 @@
 package providercommand
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
-	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdflags"
-	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/engineruntime"
-	"ptah.run/internal/providerhost"
+	"ptah.run/internal/providercatalog"
+	"ptah.run/internal/providerconfig"
 )
 
-const flag = "provider-config"
+const (
+	configFlag = "provider-config"
+	engineFlag = "provider-engine"
+)
 
-// Configure adds an explicit-only manifest flag and binds provider lifetime to
-// RunE. Help and argument errors start no processes. Nothing discovers or starts
-// an executable from PATH, the working directory, or an environment variable.
-func Configure(command *cobra.Command) *cobra.Command {
-	var path string
-	command.Flags().StringVar(&path, flag, "", "Explicit trusted provider manifest (experimental JSON format)")
-	if err := cmdflags.DisableEnvBinding(command.Flags(), flag); err != nil {
-		panic(err)
+// Configure selects one explicitly trusted provider before the command runs.
+// fail owns the command's error presentation, including machine-readable output.
+// Help and argument errors start no processes. Unselected installations remain
+// data: nothing executes from PATH, the working directory, or environment.
+func Configure(command *cobra.Command, fail func(*cobra.Command, error) error) *cobra.Command {
+	var path, selectedEngine string
+	command.Flags().StringVar(&path, configFlag, "", "Explicit trusted provider manifest (experimental JSON format)")
+	command.Flags().StringVar(&selectedEngine, engineFlag, "", "Engine required from an executable provider; never use a built-in implementation")
+	for _, name := range []string{configFlag, engineFlag} {
+		if err := cmdflags.DisableEnvBinding(command.Flags(), name); err != nil {
+			panic(err)
+		}
 	}
 	run := command.RunE
 	command.RunE = func(cmd *cobra.Command, args []string) error {
-		if !cmd.Flags().Changed(flag) {
+		ctx, closeProvider, err := prepare(cmd, path, selectedEngine)
+		if err != nil {
+			return fail(cmd, err)
+		}
+		if closeProvider == nil {
 			return run(cmd, args)
 		}
-		if strings.TrimSpace(path) == "" {
-			return cmdutil.Fail(cmd, fmt.Errorf("--%s requires a manifest path", flag))
-		}
-		specs, err := load(path)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-		selected, closeProviders, err := selectProviders(cmd.Context(), specs)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-		defer closeProviders()
+		defer closeProvider()
 		previous := cmd.Context()
-		cmd.SetContext(selected)
+		cmd.SetContext(ctx)
 		defer cmd.SetContext(previous)
 		return run(cmd, args)
 	}
 	return command
 }
 
-type manifest struct {
-	FormatVersion int                 `json:"format_version"`
-	Providers     []providerhost.Spec `json:"providers"`
-}
-
-func load(path string) ([]providerhost.Spec, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("read provider manifest: %w", err)
+func prepare(cmd *cobra.Command, path, selectedEngine string) (context.Context, func(), error) {
+	configured, explicit := cmd.Flags().Changed(configFlag), cmd.Flags().Changed(engineFlag)
+	if configured && strings.TrimSpace(path) == "" {
+		return nil, nil, fmt.Errorf("--%s requires a manifest path", configFlag)
 	}
-	defer func() { _ = file.Close() }()
-	const limit = 1024 * 1024
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read provider manifest: %w", err)
+	if explicit && strings.TrimSpace(selectedEngine) == "" {
+		return nil, nil, fmt.Errorf("--%s requires an engine ID", engineFlag)
 	}
-	if len(data) > limit {
-		return nil, fmt.Errorf("provider manifest exceeds 1 MiB")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var config manifest
-	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("parse provider manifest: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("provider manifest must contain one JSON document")
-	}
-	if config.FormatVersion != 1 || len(config.Providers) == 0 {
-		return nil, fmt.Errorf("provider manifest requires format_version 1 and at least one provider")
-	}
-	return config.Providers, nil
-}
-
-func selectProviders(ctx context.Context, specs []providerhost.Spec) (context.Context, func(), error) {
-	hosts := make([]*providerhost.Host, 0, len(specs))
-	closeProviders := func() {
-		for _, host := range hosts {
-			host.Close()
-		}
-	}
-	providers := make([]engine.Provider, 0, len(specs))
-	bindings := make(map[string]dbschema.NativeRegistration)
-	for _, spec := range specs {
-		host, err := providerhost.Start(ctx, spec)
+	config := providerconfig.Configuration{}
+	if configured {
+		var err error
+		config, err = providerconfig.Load(path)
 		if err != nil {
-			closeProviders()
 			return nil, nil, err
 		}
-		hosts = append(hosts, host)
-		providers = append(providers, host.Provider())
-		for name, binding := range host.Connections() {
-			if atlassource.IsReservedScheme(name) {
-				closeProviders()
-				return nil, nil, fmt.Errorf("provider URL scheme %q is reserved for schema sources", name)
+	}
+	selector := strings.ToLower(strings.TrimSpace(selectedEngine))
+	if !explicit {
+		selector = targetSelector(cmd)
+	}
+	if selector == "" && configured {
+		if len(config.Providers) != 1 || len(config.Providers[0].Engines) != 1 {
+			return nil, nil, fmt.Errorf("--%s is required when the command does not identify one configured provider engine", engineFlag)
+		}
+		selector = config.Providers[0].Engines[0].ID
+	}
+	if selector == "" {
+		return cmd.Context(), nil, nil
+	}
+	installation, target, err := config.Select(selector)
+	if err != nil {
+		if !explicit && platform.NormalizeDialect(selector) != "" && !configuredFor(config, selector) {
+			return cmd.Context(), nil, nil
+		}
+		if !configured && !explicit {
+			if _, known := providercatalog.Lookup(selector); !known {
+				return cmd.Context(), nil, nil
 			}
-			if _, exists := bindings[name]; exists {
-				closeProviders()
-				return nil, nil, fmt.Errorf("provider URL scheme %q has multiple owners", name)
-			}
-			bindings[name] = binding
+		}
+		return nil, nil, err
+	}
+	if err := validateTargets(cmd, installation, target); err != nil {
+		return nil, nil, err
+	}
+	return selectProvider(cmd.Context(), installation, target)
+}
+
+func targetSelector(cmd *cobra.Command) string {
+	for _, name := range []string{"db-url", "dialect", "dev-url"} {
+		if cmd.Flags().Lookup(name) == nil {
+			continue
+		}
+		value, _ := cmd.Flags().GetString(name)
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if entry, known := providercatalog.Lookup(value); known {
+			return entry.EngineID
+		}
+		if scheme, _, found := strings.Cut(value, ":"); found {
+			return strings.ToLower(scheme)
+		}
+		if name == "dialect" {
+			return strings.ToLower(value)
 		}
 	}
-	runtime, err := builtin.New(providers...)
+	return ""
+}
+
+func configuredFor(config providerconfig.Configuration, selector string) bool {
+	if entry, found := providercatalog.Lookup(selector); found {
+		selector = entry.EngineID
+	}
+	for _, installation := range config.Providers {
+		if _, found := installation.Claims()[selector]; found {
+			return true
+		}
+	}
+	return false
+}
+
+func selectProvider(ctx context.Context, installation providerconfig.Installation, target string) (context.Context, func(), error) {
+	host, err := providerconfig.Start(ctx, installation, target)
 	if err != nil {
-		closeProviders()
+		return nil, nil, err
+	}
+	bindings := host.Connections()
+	// A selected executable owns this runtime completely. In particular an
+	// official provider never inherits a built-in implementation on failure.
+	runtime, err := engine.New(host.Provider())
+	if err != nil {
+		host.Close()
 		return nil, nil, err
 	}
 	selected, err := dbschema.WithNativeConnections(ctx, bindings)
 	if err != nil {
-		closeProviders()
+		host.Close()
 		return nil, nil, err
 	}
 	selected, err = engineruntime.With(selected, runtime)
 	if err != nil {
-		closeProviders()
+		host.Close()
 		return nil, nil, err
 	}
-	return selected, closeProviders, nil
+	return selected, host.Close, nil
+}
+
+// Check every explicit target before startup. The connection selection also
+// refuses unregistered schemes from configuration loaded later by the command.
+func validateTargets(cmd *cobra.Command, installation providerconfig.Installation, target string) error {
+	for _, name := range []string{"db-url", "dialect", "dev-url"} {
+		if cmd.Flags().Lookup(name) == nil {
+			continue
+		}
+		value, _ := cmd.Flags().GetString(name)
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		selector := value
+		if entry, found := providercatalog.Lookup(value); found {
+			selector = entry.EngineID
+		} else if scheme, _, found := strings.Cut(value, ":"); found {
+			selector = strings.ToLower(scheme)
+		}
+		if installation.Claims()[selector] != target {
+			return installation.Diagnostic(target, "provider_target_mismatch", "The --"+name+" target is not owned by the selected provider engine.")
+		}
+	}
+	return nil
 }

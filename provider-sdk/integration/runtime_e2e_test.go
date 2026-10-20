@@ -197,7 +197,7 @@ func TestIndependentProviderProcess(t *testing.T) {
 		wrong := options
 		wrong.SHA256 = strings.Repeat("0", 64)
 		client, err := transport.Start(c.Context(), wrong)
-		c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+		c.Assert(err, qt.ErrorIs, transport.ErrStartup)
 		c.Assert(client, qt.IsNil)
 	})
 

@@ -143,3 +143,8 @@ comments or syntax it cannot represent. `COMMON_DDL` permits the host's common D
 assessment; it does not mean safe. Native behavioral and destructive effects carry
 explicit reasons. `UNKNOWN` remains destructive for approval policy. Unknown
 numeric dispositions, incomplete batches, gaps, and overlapping spans are errors.
+
+A failed process launch or transport bootstrap wraps `runtime.ErrStartup`.
+A rejected protocol revision, service contract, or provider identity wraps
+`provider.ErrProtocol`. Cancellation and deadline errors preserve their context
+sentinels. A caller can distinguish these failures from a missing installation.

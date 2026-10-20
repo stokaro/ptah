@@ -2,13 +2,17 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdflags"
+	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/providerdiagnostic"
 )
 
 // humanOutput is where `schema plan` writes for a person.
@@ -88,4 +92,30 @@ func writeReport(w io.Writer, report any) error {
 		return fmt.Errorf("write the JSON result: %w", err)
 	}
 	return nil
+}
+
+// reportProviderFailure retains the verb's JSON contract when setup fails
+// before its RunE starts. Provider processes never write to that stream.
+func reportProviderFailure(cmd *cobra.Command, err error) error {
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	format, _ := cmd.Flags().GetString("format")
+	if jsonOutput || format == "json" {
+		var report any
+		switch cmd.Name() {
+		case "plan":
+			report = atlasschema.NewPlanReport(atlasschema.PlanEvidence{Err: err})
+		case "apply":
+			report = atlasschema.NewApplyReport(atlasschema.ApplyEvidence{Err: err})
+		default:
+			diagnostic, _ := errors.AsType[*providerdiagnostic.Diagnostic](err)
+			report = struct {
+				Error              string                         `json:"error"`
+				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+			}{err.Error(), diagnostic}
+		}
+		if writeErr := writeReport(cmd.OutOrStdout(), report); writeErr != nil {
+			return cmdutil.Fail(cmd, writeErr)
+		}
+	}
+	return cmdutil.Fail(cmd, err)
 }

@@ -18,6 +18,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/dbschema"
+	"ptah.run/internal/providercatalog"
 )
 
 // Spec selects executable bytes already trusted by the caller. Environment is
@@ -56,6 +57,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 	}
 	host := &Host{client: client, description: client.Description(), artifact: strings.ToLower(spec.SHA256), targets: make(map[string]*target)}
 	for _, engine := range host.description.GetEngines() {
+		if err := providercatalog.CheckOwnership(spec.ProviderID, engine.GetId(), engine.GetAliases()); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("%w: %s", provider.ErrProtocol, err)
+		}
 		if !slices.Contains(engine.GetFeatures(), provider.CommonTableIdentityFeature) {
 			client.Close()
 			return nil, fmt.Errorf("%w: engine %q does not declare the common table identity contract", provider.ErrProtocol, engine.GetId())
