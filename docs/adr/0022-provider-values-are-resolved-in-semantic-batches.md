@@ -167,8 +167,8 @@ equality, encoding, and fingerprints remain local after provider shutdown.
 Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
 Operation and change models remain refused until their native adapters exist.
-This boundary does not yet connect frontend source capture, native object
-comparison, planning, or engine transaction and history services.
+Native object comparison, planning, and engine transaction and history
+services still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -216,9 +216,6 @@ result on cancellation or failure. The same owner cannot also register local
 per-key decoders or static coverage. In-process owners can keep their local
 callbacks; neither path serializes their values through the SDK.
 
-Negotiated source claims and conversion of captured YAML nodes to SDK source
-values remain application-adapter work. This frontend boundary does not claim
-that an external engine can already interpret native YAML files.
 ## Negotiated YAML ownership
 
 An engine declares each YAML key it owns, the document or table scope, the
@@ -235,9 +232,39 @@ named by its fragment's key, even when the document enrolls other models.
 Other source formats cannot carry YAML claims. The host includes this grammar in contract and model-definition digests,
 with key and model declaration order normalized as sets.
 
-This metadata does not yet connect native YAML capture to the transport.
-Source range capture, value conversion, and normalized model placement remain
-required application-adapter work before an external owner can read YAML files.
+## Native YAML provider adapter
+
+The host registers negotiated document and table keys with the same YAML owner
+set as in-process extensions. Each engine receives its claimed fragments and
+the complete common table binding set in one offline request per document.
+A missing key still enrolls its models, requiring an explicit coverage result.
+The host does not select the first engine or treat a provider ID as an engine.
+YAML has no selected server profile, so the request declares no target features.
+
+Conversion preserves exact finite numbers, explicit nulls, string tags,
+sequence order, alias-use positions, and original encoded byte coordinates.
+Mapping merges retain YAML override precedence and declaration positions for
+inherited entries. Cyclic aliases, expansion limits, non-string mapping keys,
+nonfinite numbers, and unsupported tags cause refusal. The provider cannot
+recover missing data by reading source files.
+
+Validated results enter the shared schema as target-scoped table facets or
+native objects. Their coverage uses the registered host codec identity, and
+their canonical values require no second normalization RPC. Copying, encoding,
+and comparison of resolved values remain local after the process closes.
+Any failure discards the complete desired schema. If another registered engine
+cannot express the same model in YAML, kind-wide coverage stays uninspected;
+explicit subject records retain their engine scope. Target-specific absence
+claims need target-scoped kind coverage in the shared schema before this limit
+can be removed.
+
+The shared placement identity cannot yet express database components, path
+tuples, or overload tuples from the wire contract; those results are refused.
+Facets of columns and indexes also require placement adapters. Conflicting
+values for the same model and subject across engines are refused by the shared
+collections. These gaps, HCL and Go annotation capture, and native planning
+remain part of #4204. The fixture's retention value proves transport and schema
+placement; it does not implement SQLite retention or qualify YDB extraction.
 
 ## Consequences
 

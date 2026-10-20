@@ -230,6 +230,11 @@ func awaitProviderCLI(ctx context.Context, ready func() bool) error {
 // No local replacement or workspace can satisfy the independent build.
 func independentCLIProvider(c *qt.C) string {
 	c.Helper()
+	return independentCLIProviderCommand(c, "provider")
+}
+
+func independentCLIProviderCommand(c *qt.C, name string) string {
+	c.Helper()
 	repo, err := filepath.Abs("../..")
 	c.Assert(err, qt.IsNil)
 	dir := c.TempDir()
@@ -252,10 +257,10 @@ func independentCLIProvider(c *qt.C) string {
 	c.Assert(version, qt.Not(qt.Equals), "")
 	providerBuildCommand(c, dir, "go", "mod", "edit", "-dropreplace="+sdk, "-require="+sdk+"@"+version)
 	providerBuildCommand(c, dir, "go", "mod", "tidy")
-	dependencies := string(providerBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/provider"))
+	dependencies := string(providerBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/"+name))
 	c.Assert(dependencies, qt.Not(qt.Contains), "ptah.run/")
 	binary := filepath.Join(c.TempDir(), "provider.exe")
-	providerBuildCommand(c, dir, "go", "build", "-o", binary, "./cmd/provider")
+	providerBuildCommand(c, dir, "go", "build", "-o", binary, "./cmd/"+name)
 	return binary
 }
 func providerBuildCommand(c *qt.C, dir, program string, args ...string) []byte {
