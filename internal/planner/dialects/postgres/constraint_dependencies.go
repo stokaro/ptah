@@ -2,7 +2,7 @@ package postgres
 
 import (
 	"ptah.run/core/ast"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // releaseRemovedForeignKeys separates dependency release from recreation.

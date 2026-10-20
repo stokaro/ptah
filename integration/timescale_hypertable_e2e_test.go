@@ -13,6 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -240,6 +241,6 @@ func planTimescaleReportingError(
 
 	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, conn.Info().Dialect, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, conn.Info().Dialect, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 }

@@ -10,13 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/engine"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const coverageChangeKind schemaext.Kind = "example.org/reversal/setting"

@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestEveryPlannerButYDBRefusesChangefeedChanges drives a hand-built diff that
@@ -28,8 +28,7 @@ import (
 // and report the database synced.
 func TestEveryPlannerButYDBRefusesChangefeedChanges(t *testing.T) {
 	c := qt.New(t)
-	dialects, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
+	dialects := must.Must(builtin.New()).Targets()
 	dialects = slices.DeleteFunc(dialects, func(dialect string) bool { return dialect == platform.YDB })
 	c.Assert(len(dialects) >= 8, qt.IsTrue, qt.Commentf("registered dialects: %v", dialects))
 

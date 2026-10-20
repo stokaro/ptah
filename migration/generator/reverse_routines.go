@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/objectlookup"
 )
 
 // reverseProceduresRemoved names which of the added routines are procedures, so

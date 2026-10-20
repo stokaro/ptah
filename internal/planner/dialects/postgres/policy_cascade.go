@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // refusePoliciesLostToCascade refuses a plan whose DROP ... CASCADE of a view

@@ -13,15 +13,15 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/sqlitevirtual"
-	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/shadow"
 )
 
@@ -169,7 +169,7 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 // fields the rebuild predicate reads, and `drop_index` empties the standalone
 // index removals the guard counts the owning table for; forwarding one of the
 // three left the other two refusing plans this function had already emptied.
-// diffpolicy.DropEnum is the one kind deliberately not forwarded: SQLite has no
+// planext.DropEnum is the one kind deliberately not forwarded: SQLite has no
 // enum type and the guard reads no enum field, and the census in
 // internal/sqlitevirtual fails if a new kind appears unclassified.
 func compareOptionsWithDiffPolicy(
@@ -181,8 +181,8 @@ func compareOptionsWithDiffPolicy(
 		*merged = *opts
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
-	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropTable)
-	merged.SkipColumnDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropColumn)
-	merged.SkipIndexDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropIndex)
+	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, planext.DropTable)
+	merged.SkipColumnDrops = slices.Contains(policy.SkipChangeKinds, planext.DropColumn)
+	merged.SkipIndexDrops = slices.Contains(policy.SkipChangeKinds, planext.DropIndex)
 	return merged
 }

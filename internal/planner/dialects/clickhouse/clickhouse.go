@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -40,7 +41,6 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/schemaprecondition"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Planner implements the migration planner interface for ClickHouse.

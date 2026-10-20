@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/ydb/ydbschema"
@@ -73,7 +74,7 @@ func rebuildPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	c.Assert(err, qt.IsNil)
 	return planner.GenerateSchemaDiffSQLWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities, AllowTableRebuild: allow,
 		},
 	)

@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // BaselineVerifyOptions configures shadow verification before metadata

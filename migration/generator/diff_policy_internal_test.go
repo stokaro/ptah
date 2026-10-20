@@ -12,13 +12,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
-	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
@@ -40,7 +40,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 		postgresInfo(capability.Postgres17()),
 		100,
 		"drop_legacy",
-		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropTable}},
+		DiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropTable}},
 		atlasmigrate.Qualifier{},
 	)
 
@@ -86,7 +86,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 		postgresInfo(capability.Postgres17()),
 		100,
 		"drop_legacy",
-		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropTable}},
+		DiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropTable}},
 		atlasmigrate.Qualifier{},
 	)
 
@@ -135,7 +135,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 		"rebuild_index",
 		// concurrent_index policy is OFF; only skip: [drop_index] is set, proving
 		// the heuristic alone reaches the buggy path.
-		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropIndex}},
+		DiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropIndex}},
 		atlasmigrate.Qualifier{},
 	)
 

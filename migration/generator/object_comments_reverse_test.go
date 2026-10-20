@@ -7,12 +7,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A rollback puts back the comment the forward change replaced, and removes

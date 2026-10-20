@@ -4,10 +4,10 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/modelast"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planRoles emits real role DDL for a target in this family that manages roles,

@@ -8,12 +8,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlindex"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Constraints compares constraint definitions between generated and database schemas.

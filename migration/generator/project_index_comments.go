@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 func (p *indexProjection) comments(changes []difftypes.IndexCommentChange, removals []difftypes.IndexRef) error {

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
@@ -33,7 +34,6 @@ import (
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/risk"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Severity is the operational risk level for a schema change.

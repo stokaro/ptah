@@ -15,6 +15,7 @@ import (
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -260,7 +261,7 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+				diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `(?s).*the TTL of table "ptah_ydb_ttl/events": the table's TTL runs every 1800 seconds, `+

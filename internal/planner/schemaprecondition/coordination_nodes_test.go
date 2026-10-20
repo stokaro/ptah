@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbcoordination"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/internal/planner/dialects/postgres"
 	"ptah.run/internal/planner/dialects/sqlite"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Every planner other than YDB's refuses a diff that creates a node, rather

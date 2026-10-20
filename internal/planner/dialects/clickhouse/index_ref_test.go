@@ -9,11 +9,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/clickhouse"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {

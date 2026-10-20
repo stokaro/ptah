@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -21,6 +20,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -210,19 +210,8 @@ func (w widget) render(target string, node ast.Node) (string, error) {
 	}
 }
 
-// registerPlanner registers the shipped PostgreSQL planner for the target,
-// once per test binary. migration/planner links no dialect's planner, and the
-// built-in runtime that registers the bundled ones is what this test leaves
-// out, so the synthetic provider brings the planner for its target itself.
-var registerPlanner = sync.OnceValue(func() error {
-	return planner.Register(target, func(opts planner.Options) planner.Planner {
-		return postgres.NewForDialect(target, opts.CapabilitiesFor(target))
-	})
-})
-
 func syntheticRuntime(c *qt.C) *engine.Runtime {
 	c.Helper()
-	c.Assert(registerPlanner(), qt.IsNil)
 	extensions, err := renderer.NewExtensions(renderer.TypedHandler(&setLevel{}, ast.StatementExtension,
 		func(_ renderer.ExtensionContext, operation *setLevel) error {
 			if operation.Level == "" {
@@ -244,7 +233,9 @@ func syntheticRuntime(c *qt.C) *engine.Runtime {
 			jsonCodec[*levelChange](schemaext.Change, func(v *levelChange) schemaext.Payload { return v.CloneChange() }),
 			jsonCodec[*setLevel](schemaext.Operation, func(v *setLevel) schemaext.Payload { return v.CloneExtension() }),
 		},
-		Targets: []engine.Target{{Name: target, Rendering: service, Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}},
+		Targets: []engine.Target{{Name: target, Planner: func(opts planext.Options) planext.Planner {
+			return postgres.NewForDialect(target, opts.CapabilitiesFor(target))
+		}, Rendering: service, Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}},
 		FacetComparisons: []engine.FacetComparison{{Target: target, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable},
 			Kinds: []schemaext.Kind{levelKind}, ChangeKinds: []schemaext.Kind{levelChangeKind}, Service: service}},
 		Planning: []engine.Planning{{Target: target, Kinds: []schemaext.Kind{levelChangeKind}, OperationKinds: []schemaext.Kind{setLevelKind}, Service: service}},

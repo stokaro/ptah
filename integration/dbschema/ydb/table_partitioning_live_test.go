@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -77,7 +78,7 @@ func planPartitioning(c *qt.C, conn *dbschema.DatabaseConnection, declared *sche
 	c.Assert(err, qt.IsNil)
 	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities, AllowTableRebuild: rebuild,
 		},
 	)

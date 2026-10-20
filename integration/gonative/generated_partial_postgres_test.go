@@ -13,6 +13,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -63,7 +64,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	changedDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, liveSchema, platform.Postgres, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		changedDiff, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()},
+		changedDiff, platform.Postgres, planext.Options{Capabilities: capability.Postgres17()},
 	)
 	c.Assert(err, qt.IsNil)
 	plannedSQL := strings.Join(statements, "\n")

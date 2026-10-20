@@ -5,12 +5,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestGenerateSchemaDiffSQLStatements_PlansSynonymChanges drives a synonym

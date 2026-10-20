@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -94,7 +95,7 @@ func planOne(ctx context.Context, runtime engine.SchemaRuntime, schema schemamod
 		ctx, runtime,
 		diff,
 		cell.Dialect,
-		planner.Options{Capabilities: cell.Preset()},
+		planext.Options{Capabilities: cell.Preset()},
 	)
 	if err != nil {
 		return measuredRefusal(err)

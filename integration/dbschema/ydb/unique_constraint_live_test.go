@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -125,7 +126,7 @@ func TestYDBUniqueConstraint_AddedToATableThatExists_FailurePath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+				diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

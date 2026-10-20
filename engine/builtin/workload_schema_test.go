@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbworkload"
@@ -61,7 +62,7 @@ func TestWorkloadSourceComparisonAndRankSwapReachRegisteredPlanner(t *testing.T)
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), &desired, current, info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.FeatureChanges, qt.HasLen, 2)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "ydb", planner.Options{Capabilities: caps})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "ydb", planext.Options{Capabilities: caps})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		"DROP RESOURCE POOL CLASSIFIER `alpha`",

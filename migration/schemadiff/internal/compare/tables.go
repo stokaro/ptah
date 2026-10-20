@@ -6,6 +6,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -14,9 +15,8 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/internal/tableidentity"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.

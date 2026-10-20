@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
@@ -40,7 +41,7 @@ func TestYDBIndexAndFeatureRollbackPreservesSkippedIndex(t *testing.T) {
 			after.Indexes = []schemamodel.Index{{Name: "new_name", StructName: "Event", Fields: []string{"payload", "category"}, Comment: "new comment"}}
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), after, current, conn.Info(), nil, runtime)
 			c.Assert(err, qt.IsNil)
-			filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex), "ydb")
+			filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(planext.DropIndex), "ydb")
 			c.Assert(skipped, qt.HasLen, 1)
 			plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
 				Runtime: runtime, Diff: filtered, DesiredSchema: after, CurrentSchema: current, Dialect: "ydb", Capabilities: conn.Info().Capabilities,

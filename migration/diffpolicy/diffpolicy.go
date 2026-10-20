@@ -23,47 +23,28 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
-)
-
-// ChangeKind identifies a destructive schema change kind that a diff policy can
-// skip. The string values are the stable identifiers accepted in project config
-// (ptah.yaml diff.skip) and are safe to render in migration comments.
-type ChangeKind string
-
-const (
-	// DropTable skips dropping tables that exist in the database but not in the
-	// target schema. Dependent object removals (indexes, constraints, triggers,
-	// RLS policies, grants) for a kept table are skipped with it.
-	DropTable ChangeKind = "drop_table"
-	// DropColumn skips dropping columns from tables that exist in both schemas.
-	DropColumn ChangeKind = "drop_column"
-	// DropIndex skips dropping standalone indexes. Indexes that are being
-	// replaced (dropped and recreated under the same name) are not affected.
-	DropIndex ChangeKind = "drop_index"
-	// DropEnum skips dropping enum types that exist in the database but not in
-	// the target schema.
-	DropEnum ChangeKind = "drop_enum"
 )
 
 // AllChangeKinds returns every skippable change kind in declaration order.
-func AllChangeKinds() []ChangeKind {
-	return []ChangeKind{DropTable, DropColumn, DropIndex, DropEnum}
+func AllChangeKinds() []planext.ChangeKind {
+	return []planext.ChangeKind{planext.DropTable, planext.DropColumn, planext.DropIndex, planext.DropEnum}
 }
 
-// ParseChangeKind validates raw and returns the matching ChangeKind. Matching
+// ParseChangeKind validates raw and returns the matching planext.ChangeKind. Matching
 // is case-insensitive and tolerant of surrounding whitespace.
-func ParseChangeKind(raw string) (ChangeKind, error) {
-	kind := ChangeKind(strings.ToLower(strings.TrimSpace(raw)))
+func ParseChangeKind(raw string) (planext.ChangeKind, error) {
+	kind := planext.ChangeKind(strings.ToLower(strings.TrimSpace(raw)))
 	if slices.Contains(AllChangeKinds(), kind) {
 		return kind, nil
 	}
 	return "", fmt.Errorf("unknown diff skip change kind %q (supported: %s)", raw, joinChangeKinds(AllChangeKinds()))
 }
 
-func joinChangeKinds(kinds []ChangeKind) string {
+func joinChangeKinds(kinds []planext.ChangeKind) string {
 	names := make([]string, len(kinds))
 	for i, kind := range kinds {
 		names[i] = string(kind)
@@ -72,11 +53,11 @@ func joinChangeKinds(kinds []ChangeKind) string {
 }
 
 // SkipSet is a set of change kinds a policy skips.
-type SkipSet map[ChangeKind]struct{}
+type SkipSet map[planext.ChangeKind]struct{}
 
 // NewSkipSet builds a SkipSet from kinds, collapsing duplicates. It returns nil
 // (an empty, no-op set) when no kinds are given.
-func NewSkipSet(kinds ...ChangeKind) SkipSet {
+func NewSkipSet(kinds ...planext.ChangeKind) SkipSet {
 	if len(kinds) == 0 {
 		return nil
 	}
@@ -88,7 +69,7 @@ func NewSkipSet(kinds ...ChangeKind) SkipSet {
 }
 
 // Has reports whether kind is skipped.
-func (s SkipSet) Has(kind ChangeKind) bool {
+func (s SkipSet) Has(kind planext.ChangeKind) bool {
 	_, ok := s[kind]
 	return ok
 }
@@ -102,7 +83,7 @@ func (s SkipSet) Empty() bool {
 // clearly-marked comment in its place.
 type SkippedChange struct {
 	// Kind is the change kind that caused the omission.
-	Kind ChangeKind
+	Kind planext.ChangeKind
 	// Object is a human-readable identity of the omitted object, e.g. a table,
 	// column, index, or enum name.
 	Object string
@@ -112,19 +93,19 @@ type SkippedChange struct {
 // SQL comment prefix. It is the single source of truth for the wording both the
 // planner and the generator emit.
 func (c SkippedChange) Comment() string {
-	return fmt.Sprintf("SKIP: %s of %s omitted by diff policy (skip: %s)", c.Kind.ddl(), c.Object, c.Kind)
+	return fmt.Sprintf("SKIP: %s of %s omitted by diff policy (skip: %s)", ddl(c.Kind), c.Object, c.Kind)
 }
 
 // ddl returns the DDL keyword phrase a change kind omits, for comment text.
-func (k ChangeKind) ddl() string {
+func ddl(k planext.ChangeKind) string {
 	switch k {
-	case DropTable:
+	case planext.DropTable:
 		return "DROP TABLE"
-	case DropColumn:
+	case planext.DropColumn:
 		return "DROP COLUMN"
-	case DropIndex:
+	case planext.DropIndex:
 		return "DROP INDEX"
-	case DropEnum:
+	case planext.DropEnum:
 		return "DROP TYPE"
 	default:
 		return strings.ToUpper(string(k))
@@ -176,16 +157,16 @@ func apply(
 	}
 	var skipped []SkippedChange
 
-	if skip.Has(DropTable) {
-		skipped = append(skipped, changesForNames(DropTable, filtered.TablesRemoved.Names())...)
+	if skip.Has(planext.DropTable) {
+		skipped = append(skipped, changesForNames(planext.DropTable, filtered.TablesRemoved.Names())...)
 		removedTables := filtered.TablesRemoved.Names()
 		filtered.TablesRemoved = nil
 		filtered = dropTableDependents(filtered, removedTables)
 	}
-	if skip.Has(DropColumn) {
+	if skip.Has(planext.DropColumn) {
 		filtered.TablesModified, skipped = skipColumnRemovals(filtered.TablesModified, skipped)
 	}
-	if skip.Has(DropIndex) {
+	if skip.Has(planext.DropIndex) {
 		additions := indexscope.NewConflictSetWithSemantics(
 			filtered.EffectiveIdentifierSemantics(dialect),
 			filtered.IndexAdditions(),
@@ -199,14 +180,14 @@ func apply(
 				kept = append(kept, ref)
 				continue
 			}
-			skipped = append(skipped, SkippedChange{Kind: DropIndex, Object: indexRefObject(ref)})
+			skipped = append(skipped, SkippedChange{Kind: planext.DropIndex, Object: indexRefObject(ref)})
 			retained = append(retained, ref)
 		}
 		filtered.SetIndexRemovals(kept)
 		filtered.IndexCommentsChanged = retainIndexComments(&filtered, retained, dialect)
 	}
-	if skip.Has(DropEnum) {
-		skipped = append(skipped, changesForNames(DropEnum, filtered.EnumsRemoved.Names())...)
+	if skip.Has(planext.DropEnum) {
+		skipped = append(skipped, changesForNames(planext.DropEnum, filtered.EnumsRemoved.Names())...)
 		filtered.EnumsRemoved = nil
 	}
 
@@ -267,14 +248,14 @@ func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange) (
 			continue
 		}
 		for _, column := range out[i].ColumnsRemoved {
-			skipped = append(skipped, SkippedChange{Kind: DropColumn, Object: out[i].TableName + "." + column.Name})
+			skipped = append(skipped, SkippedChange{Kind: planext.DropColumn, Object: out[i].TableName + "." + column.Name})
 		}
 		out[i].ColumnsRemoved = nil
 	}
 	return out, skipped
 }
 
-func changesForNames(kind ChangeKind, names []string) []SkippedChange {
+func changesForNames(kind planext.ChangeKind, names []string) []SkippedChange {
 	changes := make([]SkippedChange, len(names))
 	for i, name := range names {
 		changes[i] = SkippedChange{Kind: kind, Object: name}

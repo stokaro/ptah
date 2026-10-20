@@ -13,6 +13,7 @@ import (
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -105,7 +106,7 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 	c.Assert(err, qt.IsNil)
 	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN")
@@ -122,7 +123,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -157,7 +158,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	c.Assert(err, qt.IsNil)
 	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		teardown, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <

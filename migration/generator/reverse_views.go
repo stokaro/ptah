@@ -7,10 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/planner/objectlookup"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/objectlookup"
 )
 
 // reverseViewDiffs carries modified views into the down direction.

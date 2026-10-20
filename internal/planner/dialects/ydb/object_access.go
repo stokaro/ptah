@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/internal/ydbacl"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // objectLifecycle is what a plan does to each scheme object an owner manages

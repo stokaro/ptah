@@ -19,6 +19,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -31,7 +32,6 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {

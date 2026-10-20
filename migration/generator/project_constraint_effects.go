@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaprojection"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func projectConstraintEffects(ctx context.Context, diff *difftypes.SchemaDiff, before, after schemacapture.TableObservation, dialect string, caps capability.Capabilities, runtime Runtime) (schemacapture.TableObservation, string, error) {

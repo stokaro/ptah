@@ -6,12 +6,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/definedtypetest"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A created table's column names a domain a feature owner's object defines,

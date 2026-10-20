@@ -9,11 +9,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/convert/dbschematogo"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func reverseForTest(t testing.TB, diff *difftypes.SchemaDiff, desired *schemamodel.Database, current *catalog.Database, dialect string) *difftypes.SchemaDiff {

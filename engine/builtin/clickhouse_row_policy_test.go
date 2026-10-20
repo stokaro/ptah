@@ -9,8 +9,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -21,7 +23,6 @@ import (
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // These tests build the owner's model themselves and drive it through the
@@ -66,7 +67,7 @@ func TestClickHouseRowPolicyChangesPlanThroughTheRuntime(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: chschema.RowPolicyRef("", "orders", "tenant"), Value: test.change}}}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), must.Must(builtin.New()), diff, platform.ClickHouse, planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), must.Must(builtin.New()), diff, platform.ClickHouse, planext.Options{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{test.want})
@@ -96,7 +97,7 @@ func TestClickHouseCreatedTableCreatesItsRowPolicies(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, &catalog.Database{}, test.server, nil, runtime)
 			c.Assert(err, qt.IsNil)
-			planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planner.Options{})
+			planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planext.Options{})
 			c.Assert(err, qt.IsNil)
 
 			for _, statements := range [][]string{rendered, planned} {
@@ -123,7 +124,7 @@ func TestClickHouseDroppedTableDropsItsRowPolicies(t *testing.T) {
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, catalog.ServerInfo{Dialect: platform.ClickHouse}, nil, runtime)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planner.Options{})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planext.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.FeatureChanges, qt.HasLen, 0)
@@ -161,7 +162,7 @@ func TestClickHouseRowPolicyFindsItsTableInTheConnectionsDatabase(t *testing.T) 
 
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, clickHouseServer(), nil, runtime)
 			c.Assert(err, qt.IsNil)
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planext.Options{})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{"ALTER ROW POLICY `tenant` ON `orders` USING (tenant = 1) AS RESTRICTIVE TO `alice`"})
@@ -187,7 +188,7 @@ func TestClickHouseRowPolicyLimitFollowsThePolicy(t *testing.T) {
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, current, clickHouseServer(), nil, runtime)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planner.Options{})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.ClickHouse, planext.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 0)

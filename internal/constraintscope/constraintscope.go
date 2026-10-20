@@ -14,10 +14,10 @@
 package constraintscope
 
 import (
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Identity folds a constraint's owning table and its own name into the form two

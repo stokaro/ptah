@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/ast"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // planRoles emits the role half of ClickHouse access control.

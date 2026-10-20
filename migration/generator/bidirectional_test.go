@@ -9,13 +9,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/generator"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T) {

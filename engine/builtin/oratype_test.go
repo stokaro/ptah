@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -108,7 +109,7 @@ func TestOraclePlansTypesAroundTheTables(t *testing.T) {
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), oracleTypesWithTable(), empty, info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Oracle,
-		planner.Options{Capabilities: info.Capabilities})
+		planext.Options{Capabilities: info.Capabilities})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
@@ -131,7 +132,7 @@ func TestOraclePlansTypesAroundTheTables(t *testing.T) {
 	teardown, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, held, info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, teardown, platform.Oracle,
-		planner.Options{Capabilities: info.Capabilities})
+		planext.Options{Capabilities: info.Capabilities})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 3)

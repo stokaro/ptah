@@ -34,6 +34,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `core/coverage` | Schema description scope facts, so an absent object is not read as a removed one. |
 | `core/dataext` | The data contract an engine owner answers where its descriptor cannot: typed literals, moment columns, typed managed rows and seed execution. |
 | `core/objectidentity` | Structured object identities, target-aware name comparison, and reference resolution. |
+| `core/planext` | Common migration planner, options, factory, and change-kind contracts. |
 | `core/plangraph` | Owner-contributed steps, object effects, and validated dependency ordering. |
 | `core/featureplan` | Contextual feature-planning batches, captured parents, and typed graph contributions. |
 | `core/lintext` | The migration lint contract: rules as data, statement splitting per dialect, and the batched check an owner answers. |
@@ -208,7 +209,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `migration/risk` | Migration risk classification. |
 | `migration/safety` | Destructive-change assessment and safety reports. |
 | `migration/schemadiff` | Desired/live schema diffing. |
-| `migration/schemadiff/difftypes` | Shared schema-diff types. |
+| `core/difftypes` | Shared schema-diff types. |
 | `migration/seeder` | Seed discovery and execution. |
 | `migration/shadow` | Migration verification against a live disposable database. |
 | `sourceformats` | The bundled readers of an external schema program's output, which `core/schemasource.Run` takes. |
@@ -788,7 +789,7 @@ statements.
 
 ## Schema diff and planning contracts
 
-`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
+`core/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons snapshot catalog identifier semantics into the diff so
 comparison, policy, forward planning, and reverse planning share one source of
@@ -867,7 +868,7 @@ reporting a malformed value.
 
 Embedders that need cancellation while waiting for that lock use
 `WriteFilesContext`; concurrent use of one plan fails with
-`generator.ErrMigrationPlanInUse`. `migration/planner.Planner` exposes only
+`generator.ErrMigrationPlanInUse`. `core/planext.Planner` exposes only
 checked planning; malformed references, unresolved additions, and target
 index-namespace conflicts fail before SQL is returned. The returned
 `generator.MigrationFiles.Files` slice is the authoritative list of generated
@@ -985,3 +986,14 @@ Use [Reusable components](../components/) for task-oriented examples.
 Use this page to decide whether a package is supported for embedding. Do not
 import `internal/...` packages from another module, and do not import a
 documentation-only package from production code.
+
+## Planner selection
+
+`core/difftypes` carries schema changes, and `core/planext` defines the planner
+contract. A provider supplies its factory on `engine.Target`. The selected
+runtime resolves that factory through `MigrationPlanner`; constructing a
+bundled runtime does not change another runtime's selection. Missing targets
+and missing planners are refused.
+
+The process-wide planner registration and lookup functions are removed.
+Embedders import the neutral contracts and pass their runtime explicitly.

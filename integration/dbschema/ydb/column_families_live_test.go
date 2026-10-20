@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -237,7 +238,7 @@ func planRebuildAgainst(c *qt.C, conn *dbschema.DatabaseConnection, declared *sc
 	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities, AllowTableRebuild: true},
+		planext.Options{Capabilities: info.Capabilities, AllowTableRebuild: true},
 	)
 }
 

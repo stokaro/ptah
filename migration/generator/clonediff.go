@@ -6,9 +6,9 @@ package generator
 import (
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemapreparation"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {

@@ -17,6 +17,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -36,7 +38,6 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -228,7 +229,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 	output, err := planner.GenerateSchemaDiffSQLWithOptions(
 		cmd.Context(), runtime,
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
 			AllowTableRebuild: rebuild,
 		},

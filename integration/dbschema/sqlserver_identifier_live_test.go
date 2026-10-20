@@ -14,6 +14,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -22,7 +24,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -88,7 +89,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		replacementDiff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -158,7 +159,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		replacementDiff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -236,7 +237,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		replacementDiff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -316,7 +317,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		replacementDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		replacementDiff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -387,7 +388,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		createDiff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		createDiff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
@@ -451,7 +452,7 @@ CREATE TABLE [dbo].[users] (
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

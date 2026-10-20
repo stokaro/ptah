@@ -7,14 +7,14 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func generatedTableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {

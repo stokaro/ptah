@@ -14,6 +14,7 @@ import (
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -69,7 +70,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 
@@ -132,7 +133,7 @@ func TestOracleRoutinesPlanAndConvergeE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		teardown, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	drops := oracleStatementsNamingRoutines(teardownStatements)
@@ -274,7 +275,7 @@ func TestOracleTriggerCompilesE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 

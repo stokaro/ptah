@@ -10,6 +10,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -18,10 +20,8 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/revisiontable"
-	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // GenerateMigrationOptions contains options for migration generation
@@ -139,7 +139,7 @@ func (opts GenerateMigrationOptions) reportUndecided(undecided schemadiff.Diagno
 type DiffPolicy struct {
 	// SkipChangeKinds lists destructive change kinds to omit from generated
 	// migrations. Currently honored by the PostgreSQL-family planner.
-	SkipChangeKinds []diffpolicy.ChangeKind
+	SkipChangeKinds []planext.ChangeKind
 	// OnlineAlter asks the server to apply the generated migration without
 	// blocking the writes already running against its tables, in whichever
 	// grammar the target has. A target without one generates as if this were
@@ -162,7 +162,7 @@ type DiffPolicy struct {
 	ConcurrentIndexDrop bool
 	// AllowTableRebuild plans a change the target cannot make in place as an
 	// explicit table rebuild, in both directions of the migration. See
-	// [planner.Options.AllowTableRebuild].
+	// [planext.Options.AllowTableRebuild].
 	AllowTableRebuild bool
 	// RotateSecrets names the YDB secrets, by path, the up migration gives the
 	// value their declared variable holds when it runs. The down migration

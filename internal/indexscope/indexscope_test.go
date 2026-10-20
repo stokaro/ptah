@@ -7,11 +7,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestValidate_TargetIdentityCollisionRejected(t *testing.T) {

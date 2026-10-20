@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/pgeffects"
 	"ptah.run/internal/planner/featurehost"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // commonOwner is the contribution owner of the PostgreSQL family's own steps.

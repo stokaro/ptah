@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
@@ -42,7 +43,7 @@ func TestYDBDesiredYQL_StreamingQueries(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, "ydb", planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	c.Assert(statements, qt.HasLen, 0)

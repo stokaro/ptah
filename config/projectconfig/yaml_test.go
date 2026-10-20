@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/migration/diffpolicy"
+	"ptah.run/core/planext"
 )
 
 func TestParsePtahProjectConfigNamedEnv(t *testing.T) {
@@ -232,8 +232,8 @@ diff:
 	c.Assert(cfg.Diff.Skip.DropEnum.Value, qt.IsTrue)
 	c.Assert(cfg.Diff.ConcurrentIndex.Create.Value, qt.IsTrue)
 	c.Assert(cfg.Diff.ConcurrentIndex.Create.Set, qt.IsTrue)
-	c.Assert(cfg.Diff.SkipChangeKinds(), qt.DeepEquals, []diffpolicy.ChangeKind{
-		diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex, diffpolicy.DropEnum,
+	c.Assert(cfg.Diff.SkipChangeKinds(), qt.DeepEquals, []planext.ChangeKind{
+		planext.DropTable, planext.DropColumn, planext.DropIndex, planext.DropEnum,
 	})
 	c.Assert(cfg.Diff.ConcurrentIndexCreate(), qt.IsTrue)
 }

@@ -3,8 +3,8 @@ package safety
 import (
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A diff report can precede planning. Use only consequences its owner has

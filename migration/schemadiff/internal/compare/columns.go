@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -28,7 +29,6 @@ import (
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/typechange"
 	"ptah.run/migration/internal/generatedschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TableColumns performs detailed column-level comparison within a specific table.

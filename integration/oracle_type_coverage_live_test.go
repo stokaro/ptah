@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -69,7 +70,7 @@ func TestOracleTypesTheReadCannotDescribeAreNotReplacedLive(t *testing.T) {
 	c.Assert(undecidedOracleTypes(undecided), qt.DeepEquals, fixture.undecided)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, platform.Oracle, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statementsCreatingOracleTypes(statements), qt.HasLen, 0)

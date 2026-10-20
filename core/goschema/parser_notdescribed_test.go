@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/spanner/spannerschema"
@@ -16,7 +17,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A Go schema can say what it does not describe.

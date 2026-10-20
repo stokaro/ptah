@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -80,7 +81,7 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, "ydb", planner.Options{Capabilities: caps},
+				diff, "ydb", planext.Options{Capabilities: caps},
 			)
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 0)

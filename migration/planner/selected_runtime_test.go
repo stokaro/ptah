@@ -7,12 +7,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type selectedRenderer struct {

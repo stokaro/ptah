@@ -3,7 +3,7 @@ package descriptor
 // Comparison states facts about an engine that comparing a declared schema
 // with the catalog it is applied to depends on. migration/schemadiff,
 // internal/indexbacking, internal/foreignkeyscope, internal/dbexprprobe and
-// migration/internal/tableidentity read it and check the enumerated values
+// internal/tableidentity read it and check the enumerated values
 // when they do. The zero value is an engine with none of these properties.
 type Comparison struct {
 	// ForeignKeysOutside reports that a foreign key may name a table outside

@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planSchemaPreconditions creates the schemas the added objects are declared

@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {

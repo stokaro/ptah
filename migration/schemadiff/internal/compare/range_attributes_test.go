@@ -7,12 +7,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func compareRanges(c *qt.C, desired *schemamodel.Database, observed *catalog.Database) *difftypes.SchemaDiff {

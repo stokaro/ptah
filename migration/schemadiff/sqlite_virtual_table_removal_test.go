@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/envbool/envbooltest"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestCompareRefusesToPlanDroppingALiveVirtualTable is the seam test for the

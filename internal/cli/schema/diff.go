@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
 	"ptah.run/engine/builtin"
@@ -21,7 +22,6 @@ import (
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/featurejson"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (

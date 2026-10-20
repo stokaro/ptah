@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestCompare_IndexBlockSize compares the hint the MySQL owner holds. A

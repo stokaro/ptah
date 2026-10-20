@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -66,7 +67,7 @@ func TestPostgresCreatedTableCreatesItsPolicies(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, &catalog.Database{}, catalog.ServerInfo{Dialect: platform.Postgres}, nil, runtime)
 	c.Assert(err, qt.IsNil)
-	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planner.Options{})
+	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planext.Options{})
 	c.Assert(err, qt.IsNil)
 
 	for _, statements := range [][]string{rendered, planned} {

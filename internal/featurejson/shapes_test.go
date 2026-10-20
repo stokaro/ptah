@@ -10,12 +10,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/internal/featurejson"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // pointed holds every feature value behind a pointer, and a feature object on

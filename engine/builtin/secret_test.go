@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -19,7 +21,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // secretlessTargets are the targets of every engine but YDB, which has the one
@@ -139,7 +140,7 @@ func TestSecretFeatures_RefuseUnsupportedTargets(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(diff, qt.IsNil)
 			change := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("", "pw"), Value: &ydbdiff.Secret{Before: &ydbsecret.Observed{}}}}}
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, change, test.dialect, planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, change, test.dialect, planext.Options{})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.HasLen, 0)
 		})

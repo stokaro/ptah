@@ -9,12 +9,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	migrationplanner "ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 var sqlCommentLineRE = regexp.MustCompile(`(?m)^\s*--.*\n?`)

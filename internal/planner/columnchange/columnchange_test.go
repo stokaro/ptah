@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/planner/columnchange"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Properties reads each comparator key an ALTER COLUMN clause carries, a

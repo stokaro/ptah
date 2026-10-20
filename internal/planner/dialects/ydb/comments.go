@@ -5,9 +5,9 @@ import (
 	"slices"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A comment on YDB is a user attribute: a table's, a column's and an index's

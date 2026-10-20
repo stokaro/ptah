@@ -8,6 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -20,7 +22,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // topicSchema declares one topic beside a table.
@@ -194,7 +195,7 @@ func TestTopicFeatures_RefuseUnsupportedTargets(t *testing.T) {
 			c.Assert(diff, qt.IsNil)
 			change := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbtopic.Ref("", "events"),
 				Value: &ydbdiff.Topic{Before: &ydbtopic.Observed{}}}}}
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, change, test.dialect, planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, change, test.dialect, planext.Options{})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.HasLen, 0)
 		})

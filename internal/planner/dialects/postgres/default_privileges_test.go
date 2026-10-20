@@ -7,12 +7,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func defaultPrivilegeChange(grantor, class, grantee string, change pgdefaultprivilege.Change) schemaext.ChangeRecord {

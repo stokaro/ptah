@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func checkProjectionOptions(c *qt.C, addedFields []schemamodel.Field) generator.BidirectionalSchemaPlanOptions {

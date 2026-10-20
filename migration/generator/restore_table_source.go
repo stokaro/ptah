@@ -6,13 +6,13 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/internal/tableidentity"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/tableidentity"
 )
 
 // restoreTableSource builds the rollback input from captured removal operands.

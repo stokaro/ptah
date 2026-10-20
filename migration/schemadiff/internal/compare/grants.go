@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // grantObjectTypeSchema is the object type whose target is a schema rather

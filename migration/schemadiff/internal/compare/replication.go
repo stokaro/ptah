@@ -2,8 +2,8 @@ package compare
 
 import (
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Features carries every named feature object of both sides on diff, changed

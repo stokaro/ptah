@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -55,7 +56,7 @@ func TestPostgresDeclaredExtensionComesFirst(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, emptyPostgres(), catalog.ServerInfo{Dialect: platform.Postgres}, nil, runtime)
 	c.Assert(err, qt.IsNil)
-	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planner.Options{})
+	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planext.Options{})
 	c.Assert(err, qt.IsNil)
 
 	for _, statements := range [][]string{rendered, planned} {
@@ -84,7 +85,7 @@ func TestPostgresRemovedExtensionGoesLast(t *testing.T) {
 
 	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, catalog.ServerInfo{Dialect: platform.Postgres}, nil, runtime)
 	c.Assert(err, qt.IsNil)
-	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planner.Options{})
+	planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.Postgres, planext.Options{})
 
 	c.Assert(err, qt.IsNil)
 	script := strings.Join(planned, "\n")
@@ -185,7 +186,7 @@ func TestOffFamilyTargetsSkipADeclaredExtension(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, &catalog.Database{}, catalog.ServerInfo{Dialect: target}, nil, runtime)
 			c.Assert(err, qt.IsNil)
-			planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, target, planner.Options{})
+			planned, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, target, planext.Options{})
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(rendered[0], qt.Equals, skipped)

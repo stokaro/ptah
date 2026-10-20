@@ -8,13 +8,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestEveryPlannerButYDBRefusesSerialSequenceChanges drives a hand-built diff
@@ -25,13 +25,10 @@ import (
 // synced.
 func TestEveryPlannerButYDBRefusesSerialSequenceChanges(t *testing.T) {
 	c := qt.New(t)
-	dialects, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
-	// The planners Ptah ships: a name NormalizeDialect knows. Another test of
-	// this package registers planners of its own under names it does not, and
-	// those plan whatever their test asks.
+	dialects := must.Must(builtin.New()).Targets()
+	// Only this runtime owns the planners considered here.
 	dialects = slices.DeleteFunc(dialects, func(dialect string) bool {
-		return dialect == platform.YDB || platform.NormalizeDialect(dialect) != dialect
+		return dialect == platform.YDB
 	})
 	c.Assert(len(dialects) >= 8, qt.IsTrue, qt.Commentf("registered dialects: %v", dialects))
 

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/identifiervalidation"
-	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 

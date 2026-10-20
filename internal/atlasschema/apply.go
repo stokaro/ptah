@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -111,7 +112,7 @@ type ApplyOptions struct {
 	IgnoreUnknownHCLNames bool
 	// OmitNullBackfill plans SET NOT NULL without filling the column's NULL
 	// rows from its declared default first; see
-	// [ptah.run/migration/planner.Options]. The caller selects it from its
+	// [ptah.run/migration/planext.Options]. The caller selects it from its
 	// compatibility policy.
 	OmitNullBackfill bool
 	// Diagnostics receives out-of-band notices, such as an --exclude selector
@@ -454,7 +455,7 @@ func computeApplyPlan(
 		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
 	}
 	if diff.HasChanges() {
-		planOptions := planner.Options{
+		planOptions := planext.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			OnlineAlter:          opts.Policy.OnlineAlter,

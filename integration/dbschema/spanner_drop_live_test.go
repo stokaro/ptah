@@ -13,6 +13,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -35,7 +36,7 @@ func spannerRemovalPlan(c *qt.C, conn *dbschema.DatabaseConnection, table, view 
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), &schemamodel.Database{}, live, info, nil, engine)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		c.Context(), engine, diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		c.Context(), engine, diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements

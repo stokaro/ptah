@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -106,14 +107,14 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 	// CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email")
 }
 
-// ExampleGetPlanner_unsupportedDialect shows the failure contract a caller
+// ExamplePlanningRuntime_unsupportedDialect shows the failure contract a caller
 // branches on: a dialect no planner is registered for fails with a
 // *ptaherr.PlanError satisfying errors.Is against ptaherr.ErrUnsupportedDialect,
 // and errors.AsType retrieves the structured form carrying the dialect the
 // lookup was made for. Branch on the sentinel rather than on the message: the
 // wording printed below is not part of the contract.
-func ExampleGetPlanner_unsupportedDialect() {
-	_, err := planner.GetPlanner("dbase")
+func ExamplePlanningRuntime_unsupportedDialect() {
+	_, err := must.Must(builtin.New()).MigrationPlanner("dbase", planext.Options{})
 	fmt.Println(err)
 	fmt.Println("unsupported dialect:", errors.Is(err, ptaherr.ErrUnsupportedDialect))
 
@@ -156,11 +157,11 @@ func ExampleRequiresNoTransaction() {
 
 	locking := must.Must(planner.GenerateSchemaDiffASTWithOptions(
 		ctx, runtime,
-		diff, "postgres", planner.Options{},
+		diff, "postgres", planext.Options{},
 	))
 	concurrent := must.Must(planner.GenerateSchemaDiffASTWithOptions(
 		ctx, runtime,
-		diff, "postgres", planner.Options{ConcurrentIndexes: true},
+		diff, "postgres", planext.Options{ConcurrentIndexes: true},
 	))
 
 	fmt.Println("locking build needs autocommit:", planner.RequiresNoTransaction("postgres", locking))
@@ -171,12 +172,10 @@ func ExampleRequiresNoTransaction() {
 	// concurrent build needs autocommit: true
 }
 
-// ExampleRegisteredDialects asks the registry what it can plan for. The example
-// asserts membership rather than printing the whole list, because the
-// registered set can grow: a built-in dialect added later, or a third-party
-// Register call in the same process, would change the full listing.
-func ExampleRegisteredDialects() {
-	dialects := must.Must(planner.RegisteredDialects())
+// ExamplePlanningRuntime_targets reads the selected runtime targets. Separate
+// runtimes cannot change that selection.
+func ExamplePlanningRuntime_targets() {
+	dialects := must.Must(builtin.New()).Targets()
 
 	fmt.Println("postgres:", slices.Contains(dialects, "postgres"))
 	fmt.Println("dbase:", slices.Contains(dialects, "dbase"))

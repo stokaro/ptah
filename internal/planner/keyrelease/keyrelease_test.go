@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/planner/keyrelease"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // gains is a diff in which column x of table changes with the given changes,

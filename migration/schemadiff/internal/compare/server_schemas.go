@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlsystemdb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ServerSchemas records on diff the databases a comparison of a whole MySQL or

@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -36,6 +37,6 @@ func TestGenerateSchemaDiffSQLStatements_EndsAProcedureWithItsNode(t *testing.T)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(statements[0], qt.Equals, "CREATE OR ALTER PROCEDURE [do_it] \nAS\nSELECT 1;;")
 	c.Assert(statements[1], qt.Matches, `(?s).*CREATE TABLE \[t\].*`)
-	withOptions := must.Must(planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.SQLServer, planner.Options{}))
+	withOptions := must.Must(planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, platform.SQLServer, planext.Options{}))
 	c.Assert(withOptions, qt.DeepEquals, statements)
 }

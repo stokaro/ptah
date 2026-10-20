@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -67,7 +68,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, test.dialect, planner.Options{OmitNullBackfill: test.omit},
+				diff, test.dialect, planext.Options{OmitNullBackfill: test.omit},
 			)
 
 			c.Assert(err, qt.IsNil)

@@ -11,6 +11,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -80,7 +81,7 @@ func TestYDBStreamingQueries_RoundTripAndRollback(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, "ydb", planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, "ydb", planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	editStreamingDeclaration(c, declared, func(query *ydbstreaming.Desired) { query.AllowStateReset = true })

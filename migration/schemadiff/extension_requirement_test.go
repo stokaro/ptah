@@ -8,13 +8,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // readingsDeclaring is a desired schema that declares the table readings with

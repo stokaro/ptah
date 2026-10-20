@@ -9,11 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/sqlschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPostgresGrantAll_ConvergesAfterOneApply applies a schema file granting

@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -82,7 +83,7 @@ func spannerPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, spannerLiveTable(c, conn, table), info, nil, engine)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		c.Context(), engine, diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		c.Context(), engine, diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements

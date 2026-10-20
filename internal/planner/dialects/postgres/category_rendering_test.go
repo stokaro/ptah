@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // categoryFixture is one schema diff category together with the desired schema

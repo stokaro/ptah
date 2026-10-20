@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -19,7 +20,6 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {

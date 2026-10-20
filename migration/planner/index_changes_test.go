@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestEveryPlannerButYDBRefusesIndexChangesInPlace drives a hand-built diff
@@ -30,8 +30,7 @@ import (
 // covers it.
 func TestEveryPlannerButYDBRefusesIndexChangesInPlace(t *testing.T) {
 	c := qt.New(t)
-	dialects, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
+	dialects := builtintest.Runtime().Targets()
 	dialects = slices.DeleteFunc(dialects, func(dialect string) bool { return dialect == platform.YDB })
 	c.Assert(len(dialects) >= 8, qt.IsTrue, qt.Commentf("registered dialects: %v", dialects))
 	withoutIndexComments := slices.DeleteFunc(slices.Clone(dialects), func(dialect string) bool {

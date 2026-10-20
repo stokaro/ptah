@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/oracleroutine"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reportUnsupportedObjects appends the AST nodes for the declared object kinds

@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -28,7 +29,7 @@ func ownedPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamodel
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, replicationSchemas), info, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(c.Context(), runtime, diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities})
+		planext.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
 }

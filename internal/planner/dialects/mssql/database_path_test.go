@@ -7,12 +7,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mssql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // pathRecorder plans as fixtureRuntime does and keeps the database path each

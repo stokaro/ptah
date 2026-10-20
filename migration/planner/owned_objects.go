@@ -3,9 +3,9 @@ package planner
 import (
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // scopeCreatedObjects applies the owner's target policy to declarations carried

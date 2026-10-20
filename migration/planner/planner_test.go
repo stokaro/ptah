@@ -2,8 +2,6 @@ package planner_test
 
 import (
 	"context"
-	"fmt"
-	"sync/atomic"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -11,21 +9,21 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
-
-var externalPlannerDialectSeq atomic.Int64
 
 func TestGetPlanner(t *testing.T) {
 	tests := []struct {
@@ -89,7 +87,7 @@ func TestGetPlanner(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			plannerInstance, err := planner.GetPlanner(tt.dialect)
+			plannerInstance, err := must.Must(builtin.New()).MigrationPlanner(tt.dialect, planext.Options{})
 			if tt.wantErr {
 				c.Assert(plannerInstance, qt.IsNil)
 				c.Assert(err, qt.ErrorMatches, "unsupported database dialect: "+tt.dialect)
@@ -104,62 +102,42 @@ func TestGetPlanner(t *testing.T) {
 func TestGetPlanner_MariaDBUsesMySQLPlanner(t *testing.T) {
 	c := qt.New(t)
 
-	plannerInstance, err := planner.GetPlanner(platform.MariaDB)
+	plannerInstance, err := must.Must(builtin.New()).MigrationPlanner(platform.MariaDB, planext.Options{})
 	c.Assert(err, qt.IsNil)
 	_, ok := plannerInstance.(*mysql.Planner)
 
 	c.Assert(ok, qt.IsTrue)
 }
 
-func TestRegisterExternalPlanner(t *testing.T) {
+func TestSelectedRuntimeOwnsExternalPlanner(t *testing.T) {
 	c := qt.New(t)
-
-	dialect := nextExternalPlannerDialect("external_planner_test")
-	err := planner.Register(dialect, func(opts planner.Options) planner.Planner {
-		return externalPlanner{caps: opts.CapabilitiesFor(dialect)}
-	})
+	runtime, err := engine.New(engine.Provider{ID: "example.org/external", Targets: []engine.Target{{Name: "external", Aliases: []string{"external-alias"}, Planner: func(opts planext.Options) planext.Planner {
+		return externalPlanner{caps: opts.CapabilitiesFor("external")}
+	}}}})
 	c.Assert(err, qt.IsNil)
-
-	caps := capability.Postgres13()
-	registered, err := planner.GetPlannerWithOptions(dialect, planner.Options{Capabilities: caps})
+	registered, err := runtime.MigrationPlanner("external-alias", planext.Options{Capabilities: capability.Postgres13()})
 	c.Assert(err, qt.IsNil)
-
 	external, ok := registered.(externalPlanner)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(external.caps.Has(capability.CreateIndexConcurrently), qt.IsTrue)
+	other := must.Must(engine.New())
+	_, err = other.MigrationPlanner("external", planext.Options{})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 }
 
-func TestRegisterRejectsDuplicateAndNilFactories(t *testing.T) {
+func TestSelectedRuntimeRefusesMissingAndNilPlanner(t *testing.T) {
 	c := qt.New(t)
-
-	dialect := nextExternalPlannerDialect("duplicate_planner_test")
-	err := planner.Register(dialect, func(planner.Options) planner.Planner {
-		return externalPlanner{}
-	})
+	runtime, err := engine.New(engine.Provider{ID: "example.org/external", Targets: []engine.Target{
+		{Name: "missing"},
+		{Name: "invalid", Planner: func(planext.Options) planext.Planner { return nil }},
+	}})
 	c.Assert(err, qt.IsNil)
-
-	err = planner.Register(dialect, func(planner.Options) planner.Planner {
-		return externalPlanner{}
-	})
-	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: dialect %q is already registered`, dialect))
-
-	nilDialect := nextExternalPlannerDialect("nil_factory_planner_test")
-	err = planner.Register(nilDialect, nil)
-	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: factory for dialect %q must not be nil`, nilDialect))
-}
-
-func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
-	c := qt.New(t)
-
-	dialect := nextExternalPlannerDialect("nil_planner_test")
-	err := planner.Register(dialect, func(planner.Options) planner.Planner {
-		return nil
-	})
-	c.Assert(err, qt.IsNil)
-
-	registered, err := planner.GetPlanner(dialect)
-	c.Assert(registered, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: factory for dialect %q returned nil`, dialect))
+	missing, err := runtime.MigrationPlanner("missing", planext.Options{})
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(missing, qt.IsNil)
+	invalid, err := runtime.MigrationPlanner("invalid", planext.Options{})
+	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(invalid, qt.IsNil)
 }
 
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
@@ -292,10 +270,6 @@ func TestRequiresNoTransaction_ConcurrentIndexDrop(t *testing.T) {
 
 type externalPlanner struct {
 	caps capability.Capabilities
-}
-
-func nextExternalPlannerDialect(prefix string) string {
-	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
 }
 
 func (p externalPlanner) GenerateMigrationAST(

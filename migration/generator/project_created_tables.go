@@ -6,13 +6,13 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematodb"
-	"ptah.run/migration/internal/tableidentity"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/tableidentity"
 )
 
 // projectCreatedTableRemovals captures the state a reverse DROP would destroy.

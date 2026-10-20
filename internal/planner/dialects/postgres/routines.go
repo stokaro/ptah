@@ -4,11 +4,11 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ResolvesBodyAtCreate reports whether the PostgreSQL family resolves the

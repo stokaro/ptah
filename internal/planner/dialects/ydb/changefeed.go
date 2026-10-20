@@ -6,13 +6,13 @@ import (
 	"maps"
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/planner/featurehost"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func (p *Planner) planFeatureChanges(

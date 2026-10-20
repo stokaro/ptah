@@ -16,6 +16,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -214,7 +215,7 @@ func planRotating(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamo
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -458,7 +459,7 @@ func planFailure(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, readScoped(c, conn, schemas), info, nil, must.Must(builtin.New()))
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		context.Background(), must.Must(builtin.New()), diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+		context.Background(), must.Must(builtin.New()), diff, info.Dialect, planext.Options{Capabilities: info.Capabilities})
 	c.Assert(statements, qt.IsNil)
 	return err
 }

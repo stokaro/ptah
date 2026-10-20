@@ -10,11 +10,11 @@ import (
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/sqlite"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {

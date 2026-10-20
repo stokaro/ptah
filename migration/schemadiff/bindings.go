@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/featureselect"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // refuseDroppedBindings refuses a comparison whose plan drops a table, a

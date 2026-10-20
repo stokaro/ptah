@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbdiff"
@@ -36,7 +37,7 @@ func TestCompare_YQLStreamingQueryOmissionAndReset(t *testing.T) {
 			c.Assert(streamingChangeCounts(c, diff.FeatureChanges), qt.DeepEquals, [2]int{test.changed, test.removed})
 			_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, "ydb", planner.Options{Capabilities: capability.YDB262().With(capability.StreamingQueries, true)},
+				diff, "ydb", planext.Options{Capabilities: capability.YDB262().With(capability.StreamingQueries, true)},
 			)
 			c.Assert(err, qt.IsNil)
 		})
@@ -51,7 +52,7 @@ func TestCompare_YQLStreamingQueryBodyChangeRequiresPermission(t *testing.T) {
 	diff := must.Must(schemadiff.CompareWithDatabaseInfo(t.Context(), &desired, held, catalog.ServerInfo{Dialect: "ydb", Capabilities: capability.YDB262().With(capability.StreamingQueries, true)}, nil, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, "ydb", planner.Options{Capabilities: capability.YDB262().With(capability.StreamingQueries, true)},
+		diff, "ydb", planext.Options{Capabilities: capability.YDB262().With(capability.StreamingQueries, true)},
 	)
 	c.Assert(err, qt.ErrorMatches, `(?s).*allow_state_reset=true.*`)
 	c.Assert(statements, qt.HasLen, 0)

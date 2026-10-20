@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -69,7 +70,7 @@ func TestClickHouseReadRendersItsOwnRead(t *testing.T) {
 	live := readLive(c, conn)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, live, platform.ClickHouse, must.Must(builtin.New()))), platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities},
+		must.Must(schemadiff.CompareWithDialect(t.Context(), &schemamodel.Database{}, live, platform.ClickHouse, must.Must(builtin.New()))), platform.ClickHouse, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNotNil)
@@ -115,7 +116,7 @@ func planAgainstLive(c *qt.C, conn *dbschema.DatabaseConnection, declared *schem
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements

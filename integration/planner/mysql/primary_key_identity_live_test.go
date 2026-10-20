@@ -15,12 +15,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // liveMySQLAdminURLForPrimaryKeyIdentity returns the server-administration URL.

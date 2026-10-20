@@ -3,8 +3,8 @@ package generator
 import (
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // pendingTableProjection identifies state that still needs a common or owning
