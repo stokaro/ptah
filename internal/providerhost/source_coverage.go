@@ -47,18 +47,26 @@ func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, e
 	return schemaext.Knowledge{State: state, Reason: knowledge.GetReason()}, nil
 }
 
-// The shared identity currently has one parent component and no database or
-// path tuple. Refuse richer identities instead of folding their components into
-// strings or silently dropping them. Extending that identity is separate from
-// normalizing the provider-owned payload retained in resolvedModel.
+// Source and comparison paths must have matching component boundaries. The
+// wire permits other normalization shapes; refuse those until native placement
+// can preserve both shapes without inventing source spellings.
 func sourceIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
-	if source.GetDatabase() != "" || normalized.GetDatabase() != "" || len(source.GetPath()) != 0 || len(normalized.GetPath()) != 0 || len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
-		return objectidentity.ID{}, unsupported("structured database, path, or overload identity in native YAML placement")
+	if len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
+		return objectidentity.ID{}, unsupported("structured overload identity in native YAML placement")
+	}
+	if len(source.GetPath()) != len(normalized.GetPath()) {
+		return objectidentity.ID{}, unsupported("normalization changing path component count in native YAML placement")
+	}
+	parts := make([]objectidentity.Part, len(source.GetPath()))
+	for i, part := range source.GetPath() {
+		parts[i] = objectidentity.Part{Source: part, Normalized: normalized.GetPath()[i]}
 	}
 	return objectidentity.ID{Kind: objectidentity.Kind(source.GetKind()),
-		Catalog: objectidentity.Part{Source: source.GetCatalog(), Normalized: normalized.GetCatalog()},
-		Schema:  objectidentity.Part{Source: source.GetSchema(), Normalized: normalized.GetSchema()},
-		Name:    objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
+		Database:  objectidentity.Part{Source: source.GetDatabase(), Normalized: normalized.GetDatabase()},
+		Catalog:   objectidentity.Part{Source: source.GetCatalog(), Normalized: normalized.GetCatalog()},
+		Schema:    objectidentity.Part{Source: source.GetSchema(), Normalized: normalized.GetSchema()},
+		Namespace: objectidentity.NewParts(parts...),
+		Name:      objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
 }
 
 // Kind-wide coverage has no target scope in the shared schema. A model another

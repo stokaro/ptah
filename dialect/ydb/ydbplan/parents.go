@@ -152,7 +152,7 @@ func reconstructibleChangefeeds(action featureplan.ParentAction, objects schemae
 		return err
 	}
 	for _, object := range values {
-		owner := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: object.Ref.Catalog, Schema: object.Ref.Schema, Name: object.Ref.Parent}
+		owner := objectidentity.ID{Kind: objectidentity.KindTable, Database: object.Ref.Database, Namespace: object.Ref.Namespace, Catalog: object.Ref.Catalog, Schema: object.Ref.Schema, Name: object.Ref.Parent}
 		if object.Value.Kind() != ydbschema.ChangefeedKind {
 			continue
 		}

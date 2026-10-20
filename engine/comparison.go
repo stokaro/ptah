@@ -220,7 +220,7 @@ func snapshotDeclaredRoles(refs []objectidentity.ID) ([]objectidentity.ID, error
 	refs = slices.Clone(refs)
 	for _, ref := range refs {
 		if ref.Kind != objectidentity.KindRole || ref.Name.Source == "" || ref.Name.Normalized == "" ||
-			!ref.Catalog.Empty() || !ref.Schema.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
+			!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Schema.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
 			return nil, fmt.Errorf("%w: invalid declared role %s", schemaext.ErrInvalidValue, ref)
 		}
 	}

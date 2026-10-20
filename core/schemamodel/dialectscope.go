@@ -238,6 +238,9 @@ func scopedFeatureObjects(objects schemaext.Objects, want func(scope []string) b
 // source spelled them, for the scope report. The report's Ref is what a
 // comparison matches.
 func featureObjectScopeName(ref objectidentity.ID) string {
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() {
+		return ref.Path()
+	}
 	var parts []string
 	for _, part := range []objectidentity.Part{ref.Catalog, ref.Schema, ref.Parent, ref.Name} {
 		if source := part.Authored(); source != "" {

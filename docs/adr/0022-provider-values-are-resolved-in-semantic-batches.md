@@ -258,8 +258,17 @@ explicit subject records retain their engine scope. Target-specific absence
 claims need target-scoped kind coverage in the shared schema before this limit
 can be removed.
 
-The shared placement identity cannot yet express database components, path
-tuples, or overload tuples from the wire contract; those results are refused.
+The shared placement identity retains database components and ordered namespace
+paths with separate source and normalized forms. Immutable tuple nodes keep
+IDs comparable without exposing writable slices or delimiter-based keys.
+Collections, coverage, dependency capture, and codecs retain these components.
+
+A provider result that changes the path component count during normalization
+is refused: the shared model cannot pair its source and normalized components.
+Overload tuples still require a shared identity representation and are refused.
+A common table facet with database, catalog, or path qualification is refused;
+matching it by table name and schema would drop part of its identity.
+
 Facets of columns and indexes also require placement adapters. Conflicting
 values for the same model and subject across engines are refused by the shared
 collections. These gaps, HCL and Go annotation capture, and native planning
