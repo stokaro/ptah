@@ -17,6 +17,7 @@ const (
 
 // Node preserves the source syntax that an owner interprets. Numbers retain
 // their authored scalar spelling and are never converted through floating point.
+// Explicit numeric tags do not impose machine integer or floating-point ranges.
 // Tags distinguish strings, numbers, booleans and explicit nulls. Nodes may
 // share alias targets. Original bytes, quoting and comments remain available in
 // Document.Source; Line and Column locate the value in those bytes.

@@ -188,6 +188,13 @@ with original YAML nodes, source bytes, and the filename. This preserves exact
 numbers, explicit nulls, aliases, and references to later declarations. Unknown
 keys, duplicate mappings, and cyclic aliases are refused before dispatch.
 
+Validation does not impose Go integer or floating-point ranges on explicitly
+typed owner numbers. Their tags and original scalar text reach the owner
+unchanged, including decimal exponents beyond machine ranges. Finite numbers
+can be converted to exact JSON number syntax without expanding exponents or
+rounding. Nonfinite YAML values remain distinguishable at capture; a transport
+that accepts only finite numbers must refuse them explicitly.
+
 A document owner returns contributions and desired coverage in one result.
 Missing fragments do not establish absence. The registry validates model
 ownership and table bindings, isolates mutable input per owner, and discards the
