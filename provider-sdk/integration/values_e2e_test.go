@@ -23,10 +23,11 @@ func TestIndependentProviderNormalizesValuesWithoutSession(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	checksum := sha256.Sum256(data)
 	client := start(c, transport.Options{Executable: binary, SHA256: hex.EncodeToString(checksum[:]), ProviderID: "example.org/fixture", RequiredFeatures: []string{provider.NormalizeValuesFeature}})
+	definition := client.Description().GetEngines()[0].GetValueModels()[0].GetDefinitionSha256()
 	request := &protocol.NormalizeValuesRequest{Engine: "fixture", Values: []*protocol.ValueInput{
-		retentionInput("seconds", `{"seconds":60}`), retentionInput("minutes", `{"minutes":1}`),
-		retentionInput("default", `{}`), retentionInput("zero", `{"seconds":0}`),
-		retentionInput("exact", `{"seconds":9007199254740993}`),
+		retentionInput(definition, "seconds", `{"seconds":60}`), retentionInput(definition, "minutes", `{"minutes":1}`),
+		retentionInput(definition, "default", `{}`), retentionInput(definition, "zero", `{"seconds":0}`),
+		retentionInput(definition, "exact", `{"seconds":9007199254740993}`),
 	}}
 	original := proto.CloneOf(request)
 	result, err := client.NormalizeValues(c.Context(), request)
@@ -53,13 +54,13 @@ func TestIndependentProviderNormalizesValuesWithoutSession(t *testing.T) {
 		t.Run(payload, func(t *testing.T) {
 			c := qt.New(t)
 			refused, err := client.NormalizeValues(c.Context(), &protocol.NormalizeValuesRequest{Engine: "fixture", Values: []*protocol.ValueInput{
-				retentionInput("valid-prefix", `{"seconds":60}`), retentionInput("bad", payload),
+				retentionInput(definition, "valid-prefix", `{"seconds":60}`), retentionInput(definition, "bad", payload),
 			}})
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(refused, qt.IsNil)
 		})
 	}
-	observed := retentionInput("incomplete", `{}`)
+	observed := retentionInput(definition, "incomplete", `{}`)
 	observed.Representation = protocol.ValueInput_OBSERVED
 	refused, err := client.NormalizeValues(c.Context(), &protocol.NormalizeValuesRequest{Engine: "fixture", Values: []*protocol.ValueInput{observed}})
 	c.Assert(err, qt.IsNotNil)
@@ -71,9 +72,9 @@ func TestIndependentProviderNormalizesValuesWithoutSession(t *testing.T) {
 	c.Assert(refused, qt.IsNil)
 }
 
-func retentionInput(id, payload string) *protocol.ValueInput {
+func retentionInput(definition, id, payload string) *protocol.ValueInput {
 	return &protocol.ValueInput{Id: id, Representation: protocol.ValueInput_DESIRED, Value: &protocol.Envelope{
-		ProviderId: "example.org/fixture", Kind: "example.org/fixture/retention", SchemaVersion: 1, Encoding: "json", Payload: []byte(payload),
+		DefinitionSha256: definition, ProviderId: "example.org/fixture", Kind: "example.org/fixture/retention", SchemaVersion: 1, Encoding: "json", Payload: []byte(payload),
 		Owner: &protocol.Reference{Engine: "fixture", Database: "db", Catalog: "catalog", Schema: "a.b", Path: []string{"a/b", "c"}, Kind: "table", Name: "C", Overload: []string{"integer"}, DisplayName: "Original"},
 	}}
 }

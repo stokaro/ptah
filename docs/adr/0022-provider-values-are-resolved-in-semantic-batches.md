@@ -114,9 +114,36 @@ the engine's actual behavior before its embedded implementation is removed.
   could miss engine-specific requirements. Keep the protocol experimental while
   implementing and qualifying complete YDB, DuckDB, and Spanner providers.
 
+## Captured source batches and model identity
+
+The SDK transports evaluated extension fragments with exact scalar values,
+structured bindings, and authored source positions. HCL evaluation, common
+schema parsing, and file confinement stay in the host. A decoder receives the
+whole captured document, including bindings needed for forward references. It
+interprets every field or refuses the complete batch.
+
+Each document enrolls exact desired-model identities before dispatch. These
+identities include owner-declared definition digests and canonical projection
+formats. A provider's later registry cannot enlarge an earlier document's
+scope. The response preserves that scope, returns each fragment in order, and
+binds every emitted object or facet to explicit subject coverage and an
+original source trace. Duplicate normalized subjects are refused. Unknown
+coverage cannot masquerade as absence; defaults belong only to desired state.
+
+The client validates independently of the server. The server gives the owner a
+clone so owner mutation cannot rewrite the original provenance used to check
+its response. Neither boundary returns a usable prefix after failure. Shared
+validation preserves typed source paths and exact numbers without interpreting
+engine syntax or comparing raw payload bytes.
+
+The independently compiled fixture demonstrates this contract for evaluated
+YAML, HCL, and Go annotation fragments. It does not implement SQL source parsing
+or a real engine's native semantics. Host frontend capture and schema adapters
+remain required before the SDK can replace the in-process source owners.
+
 ## Consequences
 
-Experimental revision 3 refuses revision 2. Pre-v1 compatibility does not justify
+Experimental revision 4 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic

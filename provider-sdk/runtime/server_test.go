@@ -58,3 +58,24 @@ type normalizer struct{}
 func (*normalizer) NormalizeValues(context.Context, *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
 	return &protocol.NormalizedValues{Complete: true}, nil
 }
+
+func TestServerRequiresAdvertisedSourceDecoder(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.NormalizeValuesFeature, provider.DecodeSourceFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, ValueNormalizer: &normalizer{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.SourceDecoder = (*sourceDecoder)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.SourceDecoder = &sourceDecoder{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Features = []string{provider.NormalizeValuesFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = []string{provider.DecodeSourceFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type sourceDecoder struct{}
+
+func (*sourceDecoder) DecodeSource(context.Context, *protocol.DecodeSourceRequest) (*protocol.DecodedSource, error) {
+	return &protocol.DecodedSource{Complete: true}, nil
+}

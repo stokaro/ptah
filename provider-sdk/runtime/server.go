@@ -48,6 +48,7 @@ type Server struct {
 	Executor        provider.Executor
 	SQLAnalyzer     provider.SQLAnalyzer
 	ValueNormalizer provider.ValueNormalizer
+	SourceDecoder   provider.SourceDecoder
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -67,6 +68,7 @@ func (s Server) Validate() error {
 		{provider.ExecuteFeature, !nilService(s.Executor)},
 		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},
 		{provider.NormalizeValuesFeature, !nilService(s.ValueNormalizer)},
+		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

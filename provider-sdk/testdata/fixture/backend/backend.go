@@ -33,9 +33,9 @@ type session struct {
 
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-2",
-		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature}, Identifiers: identifierRules()}},
-		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature}}
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-4",
+		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature}, Identifiers: identifierRules(), ValueModels: valueModels()}},
+		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature, provider.DecodeSourceFeature}}
 }
 
 func identifierRules() *protocol.IdentifierRules {

@@ -25,6 +25,7 @@ const (
 	Provider_Inspect_FullMethodName         = "/ptah.provider.experimental.Provider/Inspect"
 	Provider_Render_FullMethodName          = "/ptah.provider.experimental.Provider/Render"
 	Provider_AnalyzeSQL_FullMethodName      = "/ptah.provider.experimental.Provider/AnalyzeSQL"
+	Provider_DecodeSource_FullMethodName    = "/ptah.provider.experimental.Provider/DecodeSource"
 	Provider_NormalizeValues_FullMethodName = "/ptah.provider.experimental.Provider/NormalizeValues"
 	Provider_Execute_FullMethodName         = "/ptah.provider.experimental.Provider/Execute"
 )
@@ -43,6 +44,7 @@ type ProviderClient interface {
 	Inspect(ctx context.Context, in *InspectRequest, opts ...grpc.CallOption) (*Schema, error)
 	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResult, error)
 	AnalyzeSQL(ctx context.Context, in *AnalyzeSQLRequest, opts ...grpc.CallOption) (*SQLAnalysis, error)
+	DecodeSource(ctx context.Context, in *DecodeSourceRequest, opts ...grpc.CallOption) (*DecodedSource, error)
 	NormalizeValues(ctx context.Context, in *NormalizeValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 }
@@ -115,6 +117,16 @@ func (c *providerClient) AnalyzeSQL(ctx context.Context, in *AnalyzeSQLRequest, 
 	return out, nil
 }
 
+func (c *providerClient) DecodeSource(ctx context.Context, in *DecodeSourceRequest, opts ...grpc.CallOption) (*DecodedSource, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecodedSource)
+	err := c.cc.Invoke(ctx, Provider_DecodeSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) NormalizeValues(ctx context.Context, in *NormalizeValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(NormalizedValues)
@@ -149,6 +161,7 @@ type ProviderServer interface {
 	Inspect(context.Context, *InspectRequest) (*Schema, error)
 	Render(context.Context, *RenderRequest) (*RenderResult, error)
 	AnalyzeSQL(context.Context, *AnalyzeSQLRequest) (*SQLAnalysis, error)
+	DecodeSource(context.Context, *DecodeSourceRequest) (*DecodedSource, error)
 	NormalizeValues(context.Context, *NormalizeValuesRequest) (*NormalizedValues, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	mustEmbedUnimplementedProviderServer()
@@ -178,6 +191,9 @@ func (UnimplementedProviderServer) Render(context.Context, *RenderRequest) (*Ren
 }
 func (UnimplementedProviderServer) AnalyzeSQL(context.Context, *AnalyzeSQLRequest) (*SQLAnalysis, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AnalyzeSQL not implemented")
+}
+func (UnimplementedProviderServer) DecodeSource(context.Context, *DecodeSourceRequest) (*DecodedSource, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DecodeSource not implemented")
 }
 func (UnimplementedProviderServer) NormalizeValues(context.Context, *NormalizeValuesRequest) (*NormalizedValues, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NormalizeValues not implemented")
@@ -314,6 +330,24 @@ func _Provider_AnalyzeSQL_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_DecodeSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecodeSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).DecodeSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_DecodeSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).DecodeSource(ctx, req.(*DecodeSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_NormalizeValues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(NormalizeValuesRequest)
 	if err := dec(in); err != nil {
@@ -380,6 +414,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AnalyzeSQL",
 			Handler:    _Provider_AnalyzeSQL_Handler,
+		},
+		{
+			MethodName: "DecodeSource",
+			Handler:    _Provider_DecodeSource_Handler,
 		},
 		{
 			MethodName: "NormalizeValues",

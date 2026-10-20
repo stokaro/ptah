@@ -79,9 +79,11 @@ func (*mutatingNormalizer) NormalizeValues(_ context.Context, request *protocol.
 	}}}, nil
 }
 
+const testModelDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
 func normalizationExchange() (*protocol.Description, *protocol.NormalizeValuesRequest, *protocol.NormalizedValues) {
-	description := &protocol.Description{ProviderId: "example.org/test", Features: []string{provider.NormalizeValuesFeature}, Engines: []*protocol.Engine{{Id: "test"}}}
-	value := &protocol.Envelope{ProviderId: "example.org/test", Kind: "example.org/test/value", SchemaVersion: 1, Encoding: "json",
+	description := &protocol.Description{ProviderId: "example.org/test", Features: []string{provider.NormalizeValuesFeature}, Engines: []*protocol.Engine{{Id: "test", ValueModels: []*protocol.ValueModel{{Kind: "example.org/test/value", Representation: protocol.ValueInput_DESIRED, SchemaVersion: 1, Encoding: "json", DefinitionSha256: testModelDigest, CanonicalFormat: "example.org/value-v1"}}}}}
+	value := &protocol.Envelope{DefinitionSha256: testModelDigest, ProviderId: "example.org/test", Kind: "example.org/test/value", SchemaVersion: 1, Encoding: "json",
 		Owner: &protocol.Reference{Engine: "test", Kind: "table", Name: "original"}, Payload: []byte("{}")}
 	request := &protocol.NormalizeValuesRequest{Engine: "test", Values: []*protocol.ValueInput{{Id: "first", Representation: protocol.ValueInput_DESIRED, Value: value}}}
 	result := &protocol.NormalizedValues{Complete: true, Values: []*protocol.NormalizedValue{{Id: "first", Value: proto.CloneOf(value),

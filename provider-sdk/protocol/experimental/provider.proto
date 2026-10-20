@@ -14,6 +14,7 @@ service Provider {
   rpc Inspect(InspectRequest) returns (Schema);
   rpc Render(RenderRequest) returns (RenderResult);
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
+  rpc DecodeSource(DecodeSourceRequest) returns (DecodedSource);
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
@@ -39,6 +40,7 @@ message Engine {
   string default_schema = 3;
   repeated string features = 4;
   IdentifierRules identifiers = 5;
+  repeated ValueModel value_models = 6;
 }
 // IdentifierRules are owner-supplied comparison facts. Missing or unknown
 // values are refused; the host must not borrow rules from a built-in engine.
@@ -79,6 +81,7 @@ message Envelope {
   Reference owner = 5;
   bytes payload = 6;
   repeated string required_features = 7;
+  string definition_sha256 = 8;
 }
 message OpenRequest {
   string engine = 1;
@@ -261,4 +264,195 @@ message NormalizedValue {
   // representation. It never substitutes serialized Protobuf or raw payload.
   string canonical_format = 4;
   bytes canonical_projection = 5;
+}
+
+// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
+// byte-column coordinates. It describes the captured source, not a temporary
+// rendering of its evaluated values.
+message SourcePosition {
+  uint64 byte_offset = 1;
+  uint32 line = 2;
+  uint32 column = 3;
+}
+message SourceSpan {
+  SourcePosition start = 1;
+  SourcePosition end = 2;
+}
+// SourceValue retains evaluated frontend data without a host AST, callback, or
+// floating-point conversion. An absent map entry and an explicit null differ.
+message SourceValue {
+  SourceSpan span = 1;
+  oneof value {
+    Empty null = 2;
+    bool boolean = 3;
+    string text = 4;
+    // Exact JSON number syntax, retained as text rather than a double.
+    string number = 5;
+    // An expression already identified by the shared frontend. The owner
+    // does not evaluate host functions or read files to produce this value.
+    string sql = 6;
+    Reference reference = 7;
+    SourceSequence sequence = 8;
+    SourceMapping mapping = 9;
+  }
+}
+message SourceSequence { repeated SourceValue values = 1; }
+message SourceMapping { repeated SourceEntry entries = 1; }
+message SourceEntry {
+  string key = 1;
+  SourceSpan key_span = 2;
+  SourceValue value = 3;
+}
+// SourceBlock is evaluated block data. Attributes and child blocks are separate
+// namespaces, so an author's attribute cannot collide with transport metadata.
+message SourceBlock {
+  string type = 1;
+  repeated SourceLabel labels = 2;
+  SourceMapping attributes = 3;
+  repeated SourceBlock children = 4;
+  SourceSpan span = 5;
+}
+message SourceLabel {
+  string value = 1;
+  SourceSpan span = 2;
+}
+// SourceBinding retains frontend naming separately from database identity.
+// Bindings are scoped to one captured document; no string concatenation joins
+// their database, schema, path, or object-name components.
+message SourceBinding {
+  string id = 1;
+  Reference object = 2;
+  string struct_name = 3;
+  string entry_key = 4;
+}
+message SourceFragment {
+  string id = 1;
+  string selector = 2;
+  // The shared frontend's attachment context, if already known. An owner may
+  // resolve a written reference against the document's complete binding set.
+  string binding_id = 3;
+  Reference subject = 4;
+  // Common attributes the selected owner explicitly requested to interpret,
+  // such as an index's type and operator class. These are not authored twice.
+  SourceMapping inherited_attributes = 5;
+  SourceSpan span = 6;
+  oneof content {
+    SourceValue value = 7;
+    SourceBlock block = 8;
+    string sql = 9;
+  }
+}
+message SourceDocument {
+  string id = 1;
+  enum Format {
+    FORMAT_UNSPECIFIED = 0;
+    SQL = 1;
+    YAML = 2;
+    HCL = 3;
+    GO_ANNOTATIONS = 4;
+  }
+  Format format = 2;
+  string file = 3;
+  uint64 byte_length = 4;
+  repeated SourceBinding bindings = 5;
+  repeated SourceFragment fragments = 6;
+  // Explicit scope, frozen before dispatch. Only DESIRED models supporting
+  // this document format may be enrolled. Empty means no owner models.
+  repeated ValueModel models = 7;
+}
+// SourcePathStep distinguishes a mapping key from a sequence index. A trace
+// follows the explicit fragment content tree, not an encoded Go field name.
+message SourcePathStep {
+  oneof step {
+    string key = 1;
+    uint32 index = 2;
+    string attribute = 3;
+    uint32 child = 4;
+    uint32 label = 5;
+  }
+}
+message SourceTrace {
+  string document_id = 1;
+  string fragment_id = 2;
+  repeated SourcePathStep path = 3;
+  enum Root { ROOT_UNSPECIFIED = 0; CONTENT = 1; INHERITED_ATTRIBUTES = 2; }
+  Root root = 4;
+}
+
+
+// ValueModel identifies one owner's exact model definition. A captured source
+// enrolls these identities explicitly; a later registry cannot widen its scope.
+// The definition digest is owner-supplied SHA-256 of its canonical definition,
+// not a hash of Protobuf serialization or a substitute for semantic comparison.
+message ValueModel {
+  string kind = 1;
+  ValueInput.Representation representation = 2;
+  uint32 schema_version = 3;
+  string encoding = 4;
+  string definition_sha256 = 5;
+  string canonical_format = 6;
+  repeated SourceDocument.Format source_formats = 7;
+}
+message ModelKnowledge {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    UNINSPECTED = 1;
+    COMPLETE = 2;
+    ABSENT = 3;
+    DEFAULTED = 4;
+    UNREPRESENTABLE = 5;
+  }
+  State state = 1;
+  string reason = 2;
+}
+message ModelKindCoverage {
+  ValueModel model = 1;
+  ModelKnowledge knowledge = 2;
+}
+message ModelSubjectCoverage {
+  string kind = 1;
+  Reference subject = 2;
+  Reference normalized_subject = 3;
+  ModelKnowledge knowledge = 4;
+}
+message ModelCoverage {
+  ValueInput.Representation representation = 1;
+  repeated ModelKindCoverage kinds = 2;
+  repeated ModelSubjectCoverage subjects = 3;
+}
+
+// DecodeSource interprets captured extension fragments offline. The host owns
+// frontend evaluation and common schema parsing; this call cannot read files,
+// evaluate host functions, or decide migration policy. The owner interprets
+// every supplied field, including inherited attributes, or refuses the batch.
+message DecodeSourceRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  repeated SourceDocument documents = 3;
+}
+message DecodedSource {
+  bool complete = 1;
+  // Exactly one document result per input, in input order.
+  repeated DecodedSourceDocument documents = 2;
+}
+message DecodedSourceDocument {
+  string id = 1;
+  ModelCoverage coverage = 2;
+  // Exactly one result per fragment, in input order. An empty value list is an
+  // explicit owner statement that the fully interpreted fragment adds none.
+  repeated DecodedSourceFragment fragments = 3;
+}
+message DecodedSourceFragment {
+  string id = 1;
+  repeated SourceModelValue values = 2;
+}
+message SourceModelValue {
+  enum Placement { PLACEMENT_UNSPECIFIED = 0; NATIVE_OBJECT = 1; FACET = 2; }
+  Placement placement = 1;
+  // IDs are unique within a document. The value is DESIRED and its model must
+  // be enrolled by that input document. It carries a canonical projection.
+  NormalizedValue value = 2;
+  // Provenance resolves against the original captured fragment, never output
+  // synthesized by the provider. Even an inherited default has a trace.
+  SourceTrace source = 3;
 }

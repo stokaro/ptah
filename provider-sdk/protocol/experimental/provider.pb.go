@@ -347,6 +347,217 @@ func (ValueInput_Representation) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{26, 0}
 }
 
+type SourceDocument_Format int32
+
+const (
+	SourceDocument_FORMAT_UNSPECIFIED SourceDocument_Format = 0
+	SourceDocument_SQL                SourceDocument_Format = 1
+	SourceDocument_YAML               SourceDocument_Format = 2
+	SourceDocument_HCL                SourceDocument_Format = 3
+	SourceDocument_GO_ANNOTATIONS     SourceDocument_Format = 4
+)
+
+// Enum value maps for SourceDocument_Format.
+var (
+	SourceDocument_Format_name = map[int32]string{
+		0: "FORMAT_UNSPECIFIED",
+		1: "SQL",
+		2: "YAML",
+		3: "HCL",
+		4: "GO_ANNOTATIONS",
+	}
+	SourceDocument_Format_value = map[string]int32{
+		"FORMAT_UNSPECIFIED": 0,
+		"SQL":                1,
+		"YAML":               2,
+		"HCL":                3,
+		"GO_ANNOTATIONS":     4,
+	}
+)
+
+func (x SourceDocument_Format) Enum() *SourceDocument_Format {
+	p := new(SourceDocument_Format)
+	*p = x
+	return p
+}
+
+func (x SourceDocument_Format) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceDocument_Format) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[6].Descriptor()
+}
+
+func (SourceDocument_Format) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[6]
+}
+
+func (x SourceDocument_Format) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceDocument_Format.Descriptor instead.
+func (SourceDocument_Format) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{39, 0}
+}
+
+type SourceTrace_Root int32
+
+const (
+	SourceTrace_ROOT_UNSPECIFIED     SourceTrace_Root = 0
+	SourceTrace_CONTENT              SourceTrace_Root = 1
+	SourceTrace_INHERITED_ATTRIBUTES SourceTrace_Root = 2
+)
+
+// Enum value maps for SourceTrace_Root.
+var (
+	SourceTrace_Root_name = map[int32]string{
+		0: "ROOT_UNSPECIFIED",
+		1: "CONTENT",
+		2: "INHERITED_ATTRIBUTES",
+	}
+	SourceTrace_Root_value = map[string]int32{
+		"ROOT_UNSPECIFIED":     0,
+		"CONTENT":              1,
+		"INHERITED_ATTRIBUTES": 2,
+	}
+)
+
+func (x SourceTrace_Root) Enum() *SourceTrace_Root {
+	p := new(SourceTrace_Root)
+	*p = x
+	return p
+}
+
+func (x SourceTrace_Root) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceTrace_Root) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[7].Descriptor()
+}
+
+func (SourceTrace_Root) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[7]
+}
+
+func (x SourceTrace_Root) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceTrace_Root.Descriptor instead.
+func (SourceTrace_Root) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{41, 0}
+}
+
+type ModelKnowledge_State int32
+
+const (
+	ModelKnowledge_STATE_UNSPECIFIED ModelKnowledge_State = 0
+	ModelKnowledge_UNINSPECTED       ModelKnowledge_State = 1
+	ModelKnowledge_COMPLETE          ModelKnowledge_State = 2
+	ModelKnowledge_ABSENT            ModelKnowledge_State = 3
+	ModelKnowledge_DEFAULTED         ModelKnowledge_State = 4
+	ModelKnowledge_UNREPRESENTABLE   ModelKnowledge_State = 5
+)
+
+// Enum value maps for ModelKnowledge_State.
+var (
+	ModelKnowledge_State_name = map[int32]string{
+		0: "STATE_UNSPECIFIED",
+		1: "UNINSPECTED",
+		2: "COMPLETE",
+		3: "ABSENT",
+		4: "DEFAULTED",
+		5: "UNREPRESENTABLE",
+	}
+	ModelKnowledge_State_value = map[string]int32{
+		"STATE_UNSPECIFIED": 0,
+		"UNINSPECTED":       1,
+		"COMPLETE":          2,
+		"ABSENT":            3,
+		"DEFAULTED":         4,
+		"UNREPRESENTABLE":   5,
+	}
+)
+
+func (x ModelKnowledge_State) Enum() *ModelKnowledge_State {
+	p := new(ModelKnowledge_State)
+	*p = x
+	return p
+}
+
+func (x ModelKnowledge_State) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ModelKnowledge_State) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[8].Descriptor()
+}
+
+func (ModelKnowledge_State) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[8]
+}
+
+func (x ModelKnowledge_State) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ModelKnowledge_State.Descriptor instead.
+func (ModelKnowledge_State) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{43, 0}
+}
+
+type SourceModelValue_Placement int32
+
+const (
+	SourceModelValue_PLACEMENT_UNSPECIFIED SourceModelValue_Placement = 0
+	SourceModelValue_NATIVE_OBJECT         SourceModelValue_Placement = 1
+	SourceModelValue_FACET                 SourceModelValue_Placement = 2
+)
+
+// Enum value maps for SourceModelValue_Placement.
+var (
+	SourceModelValue_Placement_name = map[int32]string{
+		0: "PLACEMENT_UNSPECIFIED",
+		1: "NATIVE_OBJECT",
+		2: "FACET",
+	}
+	SourceModelValue_Placement_value = map[string]int32{
+		"PLACEMENT_UNSPECIFIED": 0,
+		"NATIVE_OBJECT":         1,
+		"FACET":                 2,
+	}
+)
+
+func (x SourceModelValue_Placement) Enum() *SourceModelValue_Placement {
+	p := new(SourceModelValue_Placement)
+	*p = x
+	return p
+}
+
+func (x SourceModelValue_Placement) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SourceModelValue_Placement) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[9].Descriptor()
+}
+
+func (SourceModelValue_Placement) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[9]
+}
+
+func (x SourceModelValue_Placement) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SourceModelValue_Placement.Descriptor instead.
+func (SourceModelValue_Placement) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51, 0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -528,6 +739,7 @@ type Engine struct {
 	DefaultSchema string                 `protobuf:"bytes,3,opt,name=default_schema,json=defaultSchema,proto3" json:"default_schema,omitempty"`
 	Features      []string               `protobuf:"bytes,4,rep,name=features,proto3" json:"features,omitempty"`
 	Identifiers   *IdentifierRules       `protobuf:"bytes,5,opt,name=identifiers,proto3" json:"identifiers,omitempty"`
+	ValueModels   []*ValueModel          `protobuf:"bytes,6,rep,name=value_models,json=valueModels,proto3" json:"value_models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -593,6 +805,13 @@ func (x *Engine) GetFeatures() []string {
 func (x *Engine) GetIdentifiers() *IdentifierRules {
 	if x != nil {
 		return x.Identifiers
+	}
+	return nil
+}
+
+func (x *Engine) GetValueModels() []*ValueModel {
+	if x != nil {
+		return x.ValueModels
 	}
 	return nil
 }
@@ -786,6 +1005,7 @@ type Envelope struct {
 	Owner            *Reference             `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`
 	Payload          []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
 	RequiredFeatures []string               `protobuf:"bytes,7,rep,name=required_features,json=requiredFeatures,proto3" json:"required_features,omitempty"`
+	DefinitionSha256 string                 `protobuf:"bytes,8,opt,name=definition_sha256,json=definitionSha256,proto3" json:"definition_sha256,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -867,6 +1087,13 @@ func (x *Envelope) GetRequiredFeatures() []string {
 		return x.RequiredFeatures
 	}
 	return nil
+}
+
+func (x *Envelope) GetDefinitionSha256() string {
+	if x != nil {
+		return x.DefinitionSha256
+	}
+	return ""
 }
 
 type OpenRequest struct {
@@ -2386,6 +2613,1728 @@ func (x *NormalizedValue) GetCanonicalProjection() []byte {
 	return nil
 }
 
+// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
+// byte-column coordinates. It describes the captured source, not a temporary
+// rendering of its evaluated values.
+type SourcePosition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ByteOffset    uint64                 `protobuf:"varint,1,opt,name=byte_offset,json=byteOffset,proto3" json:"byte_offset,omitempty"`
+	Line          uint32                 `protobuf:"varint,2,opt,name=line,proto3" json:"line,omitempty"`
+	Column        uint32                 `protobuf:"varint,3,opt,name=column,proto3" json:"column,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourcePosition) Reset() {
+	*x = SourcePosition{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourcePosition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourcePosition) ProtoMessage() {}
+
+func (x *SourcePosition) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourcePosition.ProtoReflect.Descriptor instead.
+func (*SourcePosition) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SourcePosition) GetByteOffset() uint64 {
+	if x != nil {
+		return x.ByteOffset
+	}
+	return 0
+}
+
+func (x *SourcePosition) GetLine() uint32 {
+	if x != nil {
+		return x.Line
+	}
+	return 0
+}
+
+func (x *SourcePosition) GetColumn() uint32 {
+	if x != nil {
+		return x.Column
+	}
+	return 0
+}
+
+type SourceSpan struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Start         *SourcePosition        `protobuf:"bytes,1,opt,name=start,proto3" json:"start,omitempty"`
+	End           *SourcePosition        `protobuf:"bytes,2,opt,name=end,proto3" json:"end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceSpan) Reset() {
+	*x = SourceSpan{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceSpan) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceSpan) ProtoMessage() {}
+
+func (x *SourceSpan) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceSpan.ProtoReflect.Descriptor instead.
+func (*SourceSpan) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *SourceSpan) GetStart() *SourcePosition {
+	if x != nil {
+		return x.Start
+	}
+	return nil
+}
+
+func (x *SourceSpan) GetEnd() *SourcePosition {
+	if x != nil {
+		return x.End
+	}
+	return nil
+}
+
+// SourceValue retains evaluated frontend data without a host AST, callback, or
+// floating-point conversion. An absent map entry and an explicit null differ.
+type SourceValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Span  *SourceSpan            `protobuf:"bytes,1,opt,name=span,proto3" json:"span,omitempty"`
+	// Types that are valid to be assigned to Value:
+	//
+	//	*SourceValue_Null
+	//	*SourceValue_Boolean
+	//	*SourceValue_Text
+	//	*SourceValue_Number
+	//	*SourceValue_Sql
+	//	*SourceValue_Reference
+	//	*SourceValue_Sequence
+	//	*SourceValue_Mapping
+	Value         isSourceValue_Value `protobuf_oneof:"value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceValue) Reset() {
+	*x = SourceValue{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceValue) ProtoMessage() {}
+
+func (x *SourceValue) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceValue.ProtoReflect.Descriptor instead.
+func (*SourceValue) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SourceValue) GetSpan() *SourceSpan {
+	if x != nil {
+		return x.Span
+	}
+	return nil
+}
+
+func (x *SourceValue) GetValue() isSourceValue_Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *SourceValue) GetNull() *Empty {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Null); ok {
+			return x.Null
+		}
+	}
+	return nil
+}
+
+func (x *SourceValue) GetBoolean() bool {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Boolean); ok {
+			return x.Boolean
+		}
+	}
+	return false
+}
+
+func (x *SourceValue) GetText() string {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Text); ok {
+			return x.Text
+		}
+	}
+	return ""
+}
+
+func (x *SourceValue) GetNumber() string {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Number); ok {
+			return x.Number
+		}
+	}
+	return ""
+}
+
+func (x *SourceValue) GetSql() string {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Sql); ok {
+			return x.Sql
+		}
+	}
+	return ""
+}
+
+func (x *SourceValue) GetReference() *Reference {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Reference); ok {
+			return x.Reference
+		}
+	}
+	return nil
+}
+
+func (x *SourceValue) GetSequence() *SourceSequence {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Sequence); ok {
+			return x.Sequence
+		}
+	}
+	return nil
+}
+
+func (x *SourceValue) GetMapping() *SourceMapping {
+	if x != nil {
+		if x, ok := x.Value.(*SourceValue_Mapping); ok {
+			return x.Mapping
+		}
+	}
+	return nil
+}
+
+type isSourceValue_Value interface {
+	isSourceValue_Value()
+}
+
+type SourceValue_Null struct {
+	Null *Empty `protobuf:"bytes,2,opt,name=null,proto3,oneof"`
+}
+
+type SourceValue_Boolean struct {
+	Boolean bool `protobuf:"varint,3,opt,name=boolean,proto3,oneof"`
+}
+
+type SourceValue_Text struct {
+	Text string `protobuf:"bytes,4,opt,name=text,proto3,oneof"`
+}
+
+type SourceValue_Number struct {
+	// Exact JSON number syntax, retained as text rather than a double.
+	Number string `protobuf:"bytes,5,opt,name=number,proto3,oneof"`
+}
+
+type SourceValue_Sql struct {
+	// An expression already identified by the shared frontend. The owner
+	// does not evaluate host functions or read files to produce this value.
+	Sql string `protobuf:"bytes,6,opt,name=sql,proto3,oneof"`
+}
+
+type SourceValue_Reference struct {
+	Reference *Reference `protobuf:"bytes,7,opt,name=reference,proto3,oneof"`
+}
+
+type SourceValue_Sequence struct {
+	Sequence *SourceSequence `protobuf:"bytes,8,opt,name=sequence,proto3,oneof"`
+}
+
+type SourceValue_Mapping struct {
+	Mapping *SourceMapping `protobuf:"bytes,9,opt,name=mapping,proto3,oneof"`
+}
+
+func (*SourceValue_Null) isSourceValue_Value() {}
+
+func (*SourceValue_Boolean) isSourceValue_Value() {}
+
+func (*SourceValue_Text) isSourceValue_Value() {}
+
+func (*SourceValue_Number) isSourceValue_Value() {}
+
+func (*SourceValue_Sql) isSourceValue_Value() {}
+
+func (*SourceValue_Reference) isSourceValue_Value() {}
+
+func (*SourceValue_Sequence) isSourceValue_Value() {}
+
+func (*SourceValue_Mapping) isSourceValue_Value() {}
+
+type SourceSequence struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []*SourceValue         `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceSequence) Reset() {
+	*x = SourceSequence{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceSequence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceSequence) ProtoMessage() {}
+
+func (x *SourceSequence) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceSequence.ProtoReflect.Descriptor instead.
+func (*SourceSequence) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SourceSequence) GetValues() []*SourceValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type SourceMapping struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*SourceEntry         `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceMapping) Reset() {
+	*x = SourceMapping{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceMapping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceMapping) ProtoMessage() {}
+
+func (x *SourceMapping) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceMapping.ProtoReflect.Descriptor instead.
+func (*SourceMapping) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SourceMapping) GetEntries() []*SourceEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type SourceEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	KeySpan       *SourceSpan            `protobuf:"bytes,2,opt,name=key_span,json=keySpan,proto3" json:"key_span,omitempty"`
+	Value         *SourceValue           `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceEntry) Reset() {
+	*x = SourceEntry{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceEntry) ProtoMessage() {}
+
+func (x *SourceEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceEntry.ProtoReflect.Descriptor instead.
+func (*SourceEntry) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SourceEntry) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SourceEntry) GetKeySpan() *SourceSpan {
+	if x != nil {
+		return x.KeySpan
+	}
+	return nil
+}
+
+func (x *SourceEntry) GetValue() *SourceValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+// SourceBlock is evaluated block data. Attributes and child blocks are separate
+// namespaces, so an author's attribute cannot collide with transport metadata.
+type SourceBlock struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Labels        []*SourceLabel         `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty"`
+	Attributes    *SourceMapping         `protobuf:"bytes,3,opt,name=attributes,proto3" json:"attributes,omitempty"`
+	Children      []*SourceBlock         `protobuf:"bytes,4,rep,name=children,proto3" json:"children,omitempty"`
+	Span          *SourceSpan            `protobuf:"bytes,5,opt,name=span,proto3" json:"span,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceBlock) Reset() {
+	*x = SourceBlock{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceBlock) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceBlock) ProtoMessage() {}
+
+func (x *SourceBlock) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceBlock.ProtoReflect.Descriptor instead.
+func (*SourceBlock) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SourceBlock) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *SourceBlock) GetLabels() []*SourceLabel {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *SourceBlock) GetAttributes() *SourceMapping {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *SourceBlock) GetChildren() []*SourceBlock {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+func (x *SourceBlock) GetSpan() *SourceSpan {
+	if x != nil {
+		return x.Span
+	}
+	return nil
+}
+
+type SourceLabel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Span          *SourceSpan            `protobuf:"bytes,2,opt,name=span,proto3" json:"span,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceLabel) Reset() {
+	*x = SourceLabel{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceLabel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceLabel) ProtoMessage() {}
+
+func (x *SourceLabel) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceLabel.ProtoReflect.Descriptor instead.
+func (*SourceLabel) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SourceLabel) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *SourceLabel) GetSpan() *SourceSpan {
+	if x != nil {
+		return x.Span
+	}
+	return nil
+}
+
+// SourceBinding retains frontend naming separately from database identity.
+// Bindings are scoped to one captured document; no string concatenation joins
+// their database, schema, path, or object-name components.
+type SourceBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Object        *Reference             `protobuf:"bytes,2,opt,name=object,proto3" json:"object,omitempty"`
+	StructName    string                 `protobuf:"bytes,3,opt,name=struct_name,json=structName,proto3" json:"struct_name,omitempty"`
+	EntryKey      string                 `protobuf:"bytes,4,opt,name=entry_key,json=entryKey,proto3" json:"entry_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceBinding) Reset() {
+	*x = SourceBinding{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceBinding) ProtoMessage() {}
+
+func (x *SourceBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceBinding.ProtoReflect.Descriptor instead.
+func (*SourceBinding) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SourceBinding) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SourceBinding) GetObject() *Reference {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+func (x *SourceBinding) GetStructName() string {
+	if x != nil {
+		return x.StructName
+	}
+	return ""
+}
+
+func (x *SourceBinding) GetEntryKey() string {
+	if x != nil {
+		return x.EntryKey
+	}
+	return ""
+}
+
+type SourceFragment struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Selector string                 `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	// The shared frontend's attachment context, if already known. An owner may
+	// resolve a written reference against the document's complete binding set.
+	BindingId string     `protobuf:"bytes,3,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	Subject   *Reference `protobuf:"bytes,4,opt,name=subject,proto3" json:"subject,omitempty"`
+	// Common attributes the selected owner explicitly requested to interpret,
+	// such as an index's type and operator class. These are not authored twice.
+	InheritedAttributes *SourceMapping `protobuf:"bytes,5,opt,name=inherited_attributes,json=inheritedAttributes,proto3" json:"inherited_attributes,omitempty"`
+	Span                *SourceSpan    `protobuf:"bytes,6,opt,name=span,proto3" json:"span,omitempty"`
+	// Types that are valid to be assigned to Content:
+	//
+	//	*SourceFragment_Value
+	//	*SourceFragment_Block
+	//	*SourceFragment_Sql
+	Content       isSourceFragment_Content `protobuf_oneof:"content"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceFragment) Reset() {
+	*x = SourceFragment{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceFragment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceFragment) ProtoMessage() {}
+
+func (x *SourceFragment) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceFragment.ProtoReflect.Descriptor instead.
+func (*SourceFragment) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SourceFragment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SourceFragment) GetSelector() string {
+	if x != nil {
+		return x.Selector
+	}
+	return ""
+}
+
+func (x *SourceFragment) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *SourceFragment) GetSubject() *Reference {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetInheritedAttributes() *SourceMapping {
+	if x != nil {
+		return x.InheritedAttributes
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetSpan() *SourceSpan {
+	if x != nil {
+		return x.Span
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetContent() isSourceFragment_Content {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetValue() *SourceValue {
+	if x != nil {
+		if x, ok := x.Content.(*SourceFragment_Value); ok {
+			return x.Value
+		}
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetBlock() *SourceBlock {
+	if x != nil {
+		if x, ok := x.Content.(*SourceFragment_Block); ok {
+			return x.Block
+		}
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetSql() string {
+	if x != nil {
+		if x, ok := x.Content.(*SourceFragment_Sql); ok {
+			return x.Sql
+		}
+	}
+	return ""
+}
+
+type isSourceFragment_Content interface {
+	isSourceFragment_Content()
+}
+
+type SourceFragment_Value struct {
+	Value *SourceValue `protobuf:"bytes,7,opt,name=value,proto3,oneof"`
+}
+
+type SourceFragment_Block struct {
+	Block *SourceBlock `protobuf:"bytes,8,opt,name=block,proto3,oneof"`
+}
+
+type SourceFragment_Sql struct {
+	Sql string `protobuf:"bytes,9,opt,name=sql,proto3,oneof"`
+}
+
+func (*SourceFragment_Value) isSourceFragment_Content() {}
+
+func (*SourceFragment_Block) isSourceFragment_Content() {}
+
+func (*SourceFragment_Sql) isSourceFragment_Content() {}
+
+type SourceDocument struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Format     SourceDocument_Format  `protobuf:"varint,2,opt,name=format,proto3,enum=ptah.provider.experimental.SourceDocument_Format" json:"format,omitempty"`
+	File       string                 `protobuf:"bytes,3,opt,name=file,proto3" json:"file,omitempty"`
+	ByteLength uint64                 `protobuf:"varint,4,opt,name=byte_length,json=byteLength,proto3" json:"byte_length,omitempty"`
+	Bindings   []*SourceBinding       `protobuf:"bytes,5,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	Fragments  []*SourceFragment      `protobuf:"bytes,6,rep,name=fragments,proto3" json:"fragments,omitempty"`
+	// Explicit scope, frozen before dispatch. Only DESIRED models supporting
+	// this document format may be enrolled. Empty means no owner models.
+	Models        []*ValueModel `protobuf:"bytes,7,rep,name=models,proto3" json:"models,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceDocument) Reset() {
+	*x = SourceDocument{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceDocument) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceDocument) ProtoMessage() {}
+
+func (x *SourceDocument) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceDocument.ProtoReflect.Descriptor instead.
+func (*SourceDocument) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SourceDocument) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SourceDocument) GetFormat() SourceDocument_Format {
+	if x != nil {
+		return x.Format
+	}
+	return SourceDocument_FORMAT_UNSPECIFIED
+}
+
+func (x *SourceDocument) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
+}
+
+func (x *SourceDocument) GetByteLength() uint64 {
+	if x != nil {
+		return x.ByteLength
+	}
+	return 0
+}
+
+func (x *SourceDocument) GetBindings() []*SourceBinding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+func (x *SourceDocument) GetFragments() []*SourceFragment {
+	if x != nil {
+		return x.Fragments
+	}
+	return nil
+}
+
+func (x *SourceDocument) GetModels() []*ValueModel {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+// SourcePathStep distinguishes a mapping key from a sequence index. A trace
+// follows the explicit fragment content tree, not an encoded Go field name.
+type SourcePathStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Step:
+	//
+	//	*SourcePathStep_Key
+	//	*SourcePathStep_Index
+	//	*SourcePathStep_Attribute
+	//	*SourcePathStep_Child
+	//	*SourcePathStep_Label
+	Step          isSourcePathStep_Step `protobuf_oneof:"step"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourcePathStep) Reset() {
+	*x = SourcePathStep{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourcePathStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourcePathStep) ProtoMessage() {}
+
+func (x *SourcePathStep) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourcePathStep.ProtoReflect.Descriptor instead.
+func (*SourcePathStep) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *SourcePathStep) GetStep() isSourcePathStep_Step {
+	if x != nil {
+		return x.Step
+	}
+	return nil
+}
+
+func (x *SourcePathStep) GetKey() string {
+	if x != nil {
+		if x, ok := x.Step.(*SourcePathStep_Key); ok {
+			return x.Key
+		}
+	}
+	return ""
+}
+
+func (x *SourcePathStep) GetIndex() uint32 {
+	if x != nil {
+		if x, ok := x.Step.(*SourcePathStep_Index); ok {
+			return x.Index
+		}
+	}
+	return 0
+}
+
+func (x *SourcePathStep) GetAttribute() string {
+	if x != nil {
+		if x, ok := x.Step.(*SourcePathStep_Attribute); ok {
+			return x.Attribute
+		}
+	}
+	return ""
+}
+
+func (x *SourcePathStep) GetChild() uint32 {
+	if x != nil {
+		if x, ok := x.Step.(*SourcePathStep_Child); ok {
+			return x.Child
+		}
+	}
+	return 0
+}
+
+func (x *SourcePathStep) GetLabel() uint32 {
+	if x != nil {
+		if x, ok := x.Step.(*SourcePathStep_Label); ok {
+			return x.Label
+		}
+	}
+	return 0
+}
+
+type isSourcePathStep_Step interface {
+	isSourcePathStep_Step()
+}
+
+type SourcePathStep_Key struct {
+	Key string `protobuf:"bytes,1,opt,name=key,proto3,oneof"`
+}
+
+type SourcePathStep_Index struct {
+	Index uint32 `protobuf:"varint,2,opt,name=index,proto3,oneof"`
+}
+
+type SourcePathStep_Attribute struct {
+	Attribute string `protobuf:"bytes,3,opt,name=attribute,proto3,oneof"`
+}
+
+type SourcePathStep_Child struct {
+	Child uint32 `protobuf:"varint,4,opt,name=child,proto3,oneof"`
+}
+
+type SourcePathStep_Label struct {
+	Label uint32 `protobuf:"varint,5,opt,name=label,proto3,oneof"`
+}
+
+func (*SourcePathStep_Key) isSourcePathStep_Step() {}
+
+func (*SourcePathStep_Index) isSourcePathStep_Step() {}
+
+func (*SourcePathStep_Attribute) isSourcePathStep_Step() {}
+
+func (*SourcePathStep_Child) isSourcePathStep_Step() {}
+
+func (*SourcePathStep_Label) isSourcePathStep_Step() {}
+
+type SourceTrace struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DocumentId    string                 `protobuf:"bytes,1,opt,name=document_id,json=documentId,proto3" json:"document_id,omitempty"`
+	FragmentId    string                 `protobuf:"bytes,2,opt,name=fragment_id,json=fragmentId,proto3" json:"fragment_id,omitempty"`
+	Path          []*SourcePathStep      `protobuf:"bytes,3,rep,name=path,proto3" json:"path,omitempty"`
+	Root          SourceTrace_Root       `protobuf:"varint,4,opt,name=root,proto3,enum=ptah.provider.experimental.SourceTrace_Root" json:"root,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceTrace) Reset() {
+	*x = SourceTrace{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceTrace) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceTrace) ProtoMessage() {}
+
+func (x *SourceTrace) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceTrace.ProtoReflect.Descriptor instead.
+func (*SourceTrace) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *SourceTrace) GetDocumentId() string {
+	if x != nil {
+		return x.DocumentId
+	}
+	return ""
+}
+
+func (x *SourceTrace) GetFragmentId() string {
+	if x != nil {
+		return x.FragmentId
+	}
+	return ""
+}
+
+func (x *SourceTrace) GetPath() []*SourcePathStep {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
+func (x *SourceTrace) GetRoot() SourceTrace_Root {
+	if x != nil {
+		return x.Root
+	}
+	return SourceTrace_ROOT_UNSPECIFIED
+}
+
+// ValueModel identifies one owner's exact model definition. A captured source
+// enrolls these identities explicitly; a later registry cannot widen its scope.
+// The definition digest is owner-supplied SHA-256 of its canonical definition,
+// not a hash of Protobuf serialization or a substitute for semantic comparison.
+type ValueModel struct {
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	Kind             string                    `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Representation   ValueInput_Representation `protobuf:"varint,2,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
+	SchemaVersion    uint32                    `protobuf:"varint,3,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Encoding         string                    `protobuf:"bytes,4,opt,name=encoding,proto3" json:"encoding,omitempty"`
+	DefinitionSha256 string                    `protobuf:"bytes,5,opt,name=definition_sha256,json=definitionSha256,proto3" json:"definition_sha256,omitempty"`
+	CanonicalFormat  string                    `protobuf:"bytes,6,opt,name=canonical_format,json=canonicalFormat,proto3" json:"canonical_format,omitempty"`
+	SourceFormats    []SourceDocument_Format   `protobuf:"varint,7,rep,packed,name=source_formats,json=sourceFormats,proto3,enum=ptah.provider.experimental.SourceDocument_Format" json:"source_formats,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ValueModel) Reset() {
+	*x = ValueModel{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValueModel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValueModel) ProtoMessage() {}
+
+func (x *ValueModel) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValueModel.ProtoReflect.Descriptor instead.
+func (*ValueModel) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *ValueModel) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ValueModel) GetRepresentation() ValueInput_Representation {
+	if x != nil {
+		return x.Representation
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ValueModel) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *ValueModel) GetEncoding() string {
+	if x != nil {
+		return x.Encoding
+	}
+	return ""
+}
+
+func (x *ValueModel) GetDefinitionSha256() string {
+	if x != nil {
+		return x.DefinitionSha256
+	}
+	return ""
+}
+
+func (x *ValueModel) GetCanonicalFormat() string {
+	if x != nil {
+		return x.CanonicalFormat
+	}
+	return ""
+}
+
+func (x *ValueModel) GetSourceFormats() []SourceDocument_Format {
+	if x != nil {
+		return x.SourceFormats
+	}
+	return nil
+}
+
+type ModelKnowledge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         ModelKnowledge_State   `protobuf:"varint,1,opt,name=state,proto3,enum=ptah.provider.experimental.ModelKnowledge_State" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelKnowledge) Reset() {
+	*x = ModelKnowledge{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelKnowledge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelKnowledge) ProtoMessage() {}
+
+func (x *ModelKnowledge) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelKnowledge.ProtoReflect.Descriptor instead.
+func (*ModelKnowledge) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ModelKnowledge) GetState() ModelKnowledge_State {
+	if x != nil {
+		return x.State
+	}
+	return ModelKnowledge_STATE_UNSPECIFIED
+}
+
+func (x *ModelKnowledge) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ModelKindCoverage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Model         *ValueModel            `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	Knowledge     *ModelKnowledge        `protobuf:"bytes,2,opt,name=knowledge,proto3" json:"knowledge,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelKindCoverage) Reset() {
+	*x = ModelKindCoverage{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelKindCoverage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelKindCoverage) ProtoMessage() {}
+
+func (x *ModelKindCoverage) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelKindCoverage.ProtoReflect.Descriptor instead.
+func (*ModelKindCoverage) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ModelKindCoverage) GetModel() *ValueModel {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+func (x *ModelKindCoverage) GetKnowledge() *ModelKnowledge {
+	if x != nil {
+		return x.Knowledge
+	}
+	return nil
+}
+
+type ModelSubjectCoverage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Kind              string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Subject           *Reference             `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	NormalizedSubject *Reference             `protobuf:"bytes,3,opt,name=normalized_subject,json=normalizedSubject,proto3" json:"normalized_subject,omitempty"`
+	Knowledge         *ModelKnowledge        `protobuf:"bytes,4,opt,name=knowledge,proto3" json:"knowledge,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ModelSubjectCoverage) Reset() {
+	*x = ModelSubjectCoverage{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelSubjectCoverage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelSubjectCoverage) ProtoMessage() {}
+
+func (x *ModelSubjectCoverage) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelSubjectCoverage.ProtoReflect.Descriptor instead.
+func (*ModelSubjectCoverage) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ModelSubjectCoverage) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ModelSubjectCoverage) GetSubject() *Reference {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *ModelSubjectCoverage) GetNormalizedSubject() *Reference {
+	if x != nil {
+		return x.NormalizedSubject
+	}
+	return nil
+}
+
+func (x *ModelSubjectCoverage) GetKnowledge() *ModelKnowledge {
+	if x != nil {
+		return x.Knowledge
+	}
+	return nil
+}
+
+type ModelCoverage struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Representation ValueInput_Representation `protobuf:"varint,1,opt,name=representation,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"representation,omitempty"`
+	Kinds          []*ModelKindCoverage      `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	Subjects       []*ModelSubjectCoverage   `protobuf:"bytes,3,rep,name=subjects,proto3" json:"subjects,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ModelCoverage) Reset() {
+	*x = ModelCoverage{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelCoverage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelCoverage) ProtoMessage() {}
+
+func (x *ModelCoverage) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelCoverage.ProtoReflect.Descriptor instead.
+func (*ModelCoverage) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ModelCoverage) GetRepresentation() ValueInput_Representation {
+	if x != nil {
+		return x.Representation
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ModelCoverage) GetKinds() []*ModelKindCoverage {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
+func (x *ModelCoverage) GetSubjects() []*ModelSubjectCoverage {
+	if x != nil {
+		return x.Subjects
+	}
+	return nil
+}
+
+// DecodeSource interprets captured extension fragments offline. The host owns
+// frontend evaluation and common schema parsing; this call cannot read files,
+// evaluate host functions, or decide migration policy. The owner interprets
+// every supplied field, including inherited attributes, or refuses the batch.
+type DecodeSourceRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Engine         string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	TargetFeatures []string               `protobuf:"bytes,2,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	Documents      []*SourceDocument      `protobuf:"bytes,3,rep,name=documents,proto3" json:"documents,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DecodeSourceRequest) Reset() {
+	*x = DecodeSourceRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodeSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodeSourceRequest) ProtoMessage() {}
+
+func (x *DecodeSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodeSourceRequest.ProtoReflect.Descriptor instead.
+func (*DecodeSourceRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DecodeSourceRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *DecodeSourceRequest) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *DecodeSourceRequest) GetDocuments() []*SourceDocument {
+	if x != nil {
+		return x.Documents
+	}
+	return nil
+}
+
+type DecodedSource struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Complete bool                   `protobuf:"varint,1,opt,name=complete,proto3" json:"complete,omitempty"`
+	// Exactly one document result per input, in input order.
+	Documents     []*DecodedSourceDocument `protobuf:"bytes,2,rep,name=documents,proto3" json:"documents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecodedSource) Reset() {
+	*x = DecodedSource{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodedSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodedSource) ProtoMessage() {}
+
+func (x *DecodedSource) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodedSource.ProtoReflect.Descriptor instead.
+func (*DecodedSource) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *DecodedSource) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *DecodedSource) GetDocuments() []*DecodedSourceDocument {
+	if x != nil {
+		return x.Documents
+	}
+	return nil
+}
+
+type DecodedSourceDocument struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Coverage *ModelCoverage         `protobuf:"bytes,2,opt,name=coverage,proto3" json:"coverage,omitempty"`
+	// Exactly one result per fragment, in input order. An empty value list is an
+	// explicit owner statement that the fully interpreted fragment adds none.
+	Fragments     []*DecodedSourceFragment `protobuf:"bytes,3,rep,name=fragments,proto3" json:"fragments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecodedSourceDocument) Reset() {
+	*x = DecodedSourceDocument{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodedSourceDocument) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodedSourceDocument) ProtoMessage() {}
+
+func (x *DecodedSourceDocument) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodedSourceDocument.ProtoReflect.Descriptor instead.
+func (*DecodedSourceDocument) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *DecodedSourceDocument) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DecodedSourceDocument) GetCoverage() *ModelCoverage {
+	if x != nil {
+		return x.Coverage
+	}
+	return nil
+}
+
+func (x *DecodedSourceDocument) GetFragments() []*DecodedSourceFragment {
+	if x != nil {
+		return x.Fragments
+	}
+	return nil
+}
+
+type DecodedSourceFragment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Values        []*SourceModelValue    `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecodedSourceFragment) Reset() {
+	*x = DecodedSourceFragment{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodedSourceFragment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodedSourceFragment) ProtoMessage() {}
+
+func (x *DecodedSourceFragment) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodedSourceFragment.ProtoReflect.Descriptor instead.
+func (*DecodedSourceFragment) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *DecodedSourceFragment) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DecodedSourceFragment) GetValues() []*SourceModelValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type SourceModelValue struct {
+	state     protoimpl.MessageState     `protogen:"open.v1"`
+	Placement SourceModelValue_Placement `protobuf:"varint,1,opt,name=placement,proto3,enum=ptah.provider.experimental.SourceModelValue_Placement" json:"placement,omitempty"`
+	// IDs are unique within a document. The value is DESIRED and its model must
+	// be enrolled by that input document. It carries a canonical projection.
+	Value *NormalizedValue `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// Provenance resolves against the original captured fragment, never output
+	// synthesized by the provider. Even an inherited default has a trace.
+	Source        *SourceTrace `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SourceModelValue) Reset() {
+	*x = SourceModelValue{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SourceModelValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SourceModelValue) ProtoMessage() {}
+
+func (x *SourceModelValue) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SourceModelValue.ProtoReflect.Descriptor instead.
+func (*SourceModelValue) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *SourceModelValue) GetPlacement() SourceModelValue_Placement {
+	if x != nil {
+		return x.Placement
+	}
+	return SourceModelValue_PLACEMENT_UNSPECIFIED
+}
+
+func (x *SourceModelValue) GetValue() *NormalizedValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *SourceModelValue) GetSource() *SourceTrace {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -2402,13 +4351,14 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12+\n" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
-	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\xc4\x01\n" +
+	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\x8f\x02\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
 	"\x0edefault_schema\x18\x03 \x01(\tR\rdefaultSchema\x12\x1a\n" +
 	"\bfeatures\x18\x04 \x03(\tR\bfeatures\x12M\n" +
-	"\videntifiers\x18\x05 \x01(\v2+.ptah.provider.experimental.IdentifierRulesR\videntifiers\"\x9e\x04\n" +
+	"\videntifiers\x18\x05 \x01(\v2+.ptah.provider.experimental.IdentifierRulesR\videntifiers\x12I\n" +
+	"\fvalue_models\x18\x06 \x03(\v2&.ptah.provider.experimental.ValueModelR\vvalueModels\"\x9e\x04\n" +
 	"\x0fIdentifierRules\x12W\n" +
 	"\vtable_names\x18\x01 \x01(\x0e26.ptah.provider.experimental.IdentifierRules.ComparisonR\n" +
 	"tableNames\x12Y\n" +
@@ -2435,7 +4385,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x04kind\x18\x06 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04name\x18\a \x01(\tR\x04name\x12\x1a\n" +
 	"\boverload\x18\b \x03(\tR\boverload\x12!\n" +
-	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\"\x86\x02\n" +
+	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\"\xb3\x02\n" +
 	"\bEnvelope\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x12\n" +
@@ -2444,7 +4394,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\bencoding\x18\x04 \x01(\tR\bencoding\x12;\n" +
 	"\x05owner\x18\x05 \x01(\v2%.ptah.provider.experimental.ReferenceR\x05owner\x12\x18\n" +
 	"\apayload\x18\x06 \x01(\fR\apayload\x12+\n" +
-	"\x11required_features\x18\a \x03(\tR\x10requiredFeatures\"?\n" +
+	"\x11required_features\x18\a \x03(\tR\x10requiredFeatures\x12+\n" +
+	"\x11definition_sha256\x18\b \x01(\tR\x10definitionSha256\"?\n" +
 	"\vOpenRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\"\x86\x02\n" +
@@ -2588,7 +4539,151 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2$.ptah.provider.experimental.EnvelopeR\x05value\x12P\n" +
 	"\x10normalized_owner\x18\x03 \x01(\v2%.ptah.provider.experimental.ReferenceR\x0fnormalizedOwner\x12)\n" +
 	"\x10canonical_format\x18\x04 \x01(\tR\x0fcanonicalFormat\x121\n" +
-	"\x14canonical_projection\x18\x05 \x01(\fR\x13canonicalProjection2\x8b\x06\n" +
+	"\x14canonical_projection\x18\x05 \x01(\fR\x13canonicalProjection\"]\n" +
+	"\x0eSourcePosition\x12\x1f\n" +
+	"\vbyte_offset\x18\x01 \x01(\x04R\n" +
+	"byteOffset\x12\x12\n" +
+	"\x04line\x18\x02 \x01(\rR\x04line\x12\x16\n" +
+	"\x06column\x18\x03 \x01(\rR\x06column\"\x8c\x01\n" +
+	"\n" +
+	"SourceSpan\x12@\n" +
+	"\x05start\x18\x01 \x01(\v2*.ptah.provider.experimental.SourcePositionR\x05start\x12<\n" +
+	"\x03end\x18\x02 \x01(\v2*.ptah.provider.experimental.SourcePositionR\x03end\"\xc3\x03\n" +
+	"\vSourceValue\x12:\n" +
+	"\x04span\x18\x01 \x01(\v2&.ptah.provider.experimental.SourceSpanR\x04span\x127\n" +
+	"\x04null\x18\x02 \x01(\v2!.ptah.provider.experimental.EmptyH\x00R\x04null\x12\x1a\n" +
+	"\aboolean\x18\x03 \x01(\bH\x00R\aboolean\x12\x14\n" +
+	"\x04text\x18\x04 \x01(\tH\x00R\x04text\x12\x18\n" +
+	"\x06number\x18\x05 \x01(\tH\x00R\x06number\x12\x12\n" +
+	"\x03sql\x18\x06 \x01(\tH\x00R\x03sql\x12E\n" +
+	"\treference\x18\a \x01(\v2%.ptah.provider.experimental.ReferenceH\x00R\treference\x12H\n" +
+	"\bsequence\x18\b \x01(\v2*.ptah.provider.experimental.SourceSequenceH\x00R\bsequence\x12E\n" +
+	"\amapping\x18\t \x01(\v2).ptah.provider.experimental.SourceMappingH\x00R\amappingB\a\n" +
+	"\x05value\"Q\n" +
+	"\x0eSourceSequence\x12?\n" +
+	"\x06values\x18\x01 \x03(\v2'.ptah.provider.experimental.SourceValueR\x06values\"R\n" +
+	"\rSourceMapping\x12A\n" +
+	"\aentries\x18\x01 \x03(\v2'.ptah.provider.experimental.SourceEntryR\aentries\"\xa1\x01\n" +
+	"\vSourceEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12A\n" +
+	"\bkey_span\x18\x02 \x01(\v2&.ptah.provider.experimental.SourceSpanR\akeySpan\x12=\n" +
+	"\x05value\x18\x03 \x01(\v2'.ptah.provider.experimental.SourceValueR\x05value\"\xae\x02\n" +
+	"\vSourceBlock\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12?\n" +
+	"\x06labels\x18\x02 \x03(\v2'.ptah.provider.experimental.SourceLabelR\x06labels\x12I\n" +
+	"\n" +
+	"attributes\x18\x03 \x01(\v2).ptah.provider.experimental.SourceMappingR\n" +
+	"attributes\x12C\n" +
+	"\bchildren\x18\x04 \x03(\v2'.ptah.provider.experimental.SourceBlockR\bchildren\x12:\n" +
+	"\x04span\x18\x05 \x01(\v2&.ptah.provider.experimental.SourceSpanR\x04span\"_\n" +
+	"\vSourceLabel\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12:\n" +
+	"\x04span\x18\x02 \x01(\v2&.ptah.provider.experimental.SourceSpanR\x04span\"\x9c\x01\n" +
+	"\rSourceBinding\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12=\n" +
+	"\x06object\x18\x02 \x01(\v2%.ptah.provider.experimental.ReferenceR\x06object\x12\x1f\n" +
+	"\vstruct_name\x18\x03 \x01(\tR\n" +
+	"structName\x12\x1b\n" +
+	"\tentry_key\x18\x04 \x01(\tR\bentryKey\"\xd7\x03\n" +
+	"\x0eSourceFragment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bselector\x18\x02 \x01(\tR\bselector\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x03 \x01(\tR\tbindingId\x12?\n" +
+	"\asubject\x18\x04 \x01(\v2%.ptah.provider.experimental.ReferenceR\asubject\x12\\\n" +
+	"\x14inherited_attributes\x18\x05 \x01(\v2).ptah.provider.experimental.SourceMappingR\x13inheritedAttributes\x12:\n" +
+	"\x04span\x18\x06 \x01(\v2&.ptah.provider.experimental.SourceSpanR\x04span\x12?\n" +
+	"\x05value\x18\a \x01(\v2'.ptah.provider.experimental.SourceValueH\x00R\x05value\x12?\n" +
+	"\x05block\x18\b \x01(\v2'.ptah.provider.experimental.SourceBlockH\x00R\x05block\x12\x12\n" +
+	"\x03sql\x18\t \x01(\tH\x00R\x03sqlB\t\n" +
+	"\acontent\"\xc3\x03\n" +
+	"\x0eSourceDocument\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12I\n" +
+	"\x06format\x18\x02 \x01(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\x06format\x12\x12\n" +
+	"\x04file\x18\x03 \x01(\tR\x04file\x12\x1f\n" +
+	"\vbyte_length\x18\x04 \x01(\x04R\n" +
+	"byteLength\x12E\n" +
+	"\bbindings\x18\x05 \x03(\v2).ptah.provider.experimental.SourceBindingR\bbindings\x12H\n" +
+	"\tfragments\x18\x06 \x03(\v2*.ptah.provider.experimental.SourceFragmentR\tfragments\x12>\n" +
+	"\x06models\x18\a \x03(\v2&.ptah.provider.experimental.ValueModelR\x06models\"P\n" +
+	"\x06Format\x12\x16\n" +
+	"\x12FORMAT_UNSPECIFIED\x10\x00\x12\a\n" +
+	"\x03SQL\x10\x01\x12\b\n" +
+	"\x04YAML\x10\x02\x12\a\n" +
+	"\x03HCL\x10\x03\x12\x12\n" +
+	"\x0eGO_ANNOTATIONS\x10\x04\"\x94\x01\n" +
+	"\x0eSourcePathStep\x12\x12\n" +
+	"\x03key\x18\x01 \x01(\tH\x00R\x03key\x12\x16\n" +
+	"\x05index\x18\x02 \x01(\rH\x00R\x05index\x12\x1e\n" +
+	"\tattribute\x18\x03 \x01(\tH\x00R\tattribute\x12\x16\n" +
+	"\x05child\x18\x04 \x01(\rH\x00R\x05child\x12\x16\n" +
+	"\x05label\x18\x05 \x01(\rH\x00R\x05labelB\x06\n" +
+	"\x04step\"\x96\x02\n" +
+	"\vSourceTrace\x12\x1f\n" +
+	"\vdocument_id\x18\x01 \x01(\tR\n" +
+	"documentId\x12\x1f\n" +
+	"\vfragment_id\x18\x02 \x01(\tR\n" +
+	"fragmentId\x12>\n" +
+	"\x04path\x18\x03 \x03(\v2*.ptah.provider.experimental.SourcePathStepR\x04path\x12@\n" +
+	"\x04root\x18\x04 \x01(\x0e2,.ptah.provider.experimental.SourceTrace.RootR\x04root\"C\n" +
+	"\x04Root\x12\x14\n" +
+	"\x10ROOT_UNSPECIFIED\x10\x00\x12\v\n" +
+	"\aCONTENT\x10\x01\x12\x18\n" +
+	"\x14INHERITED_ATTRIBUTES\x10\x02\"\xf4\x02\n" +
+	"\n" +
+	"ValueModel\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12]\n" +
+	"\x0erepresentation\x18\x02 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x0erepresentation\x12%\n" +
+	"\x0eschema_version\x18\x03 \x01(\rR\rschemaVersion\x12\x1a\n" +
+	"\bencoding\x18\x04 \x01(\tR\bencoding\x12+\n" +
+	"\x11definition_sha256\x18\x05 \x01(\tR\x10definitionSha256\x12)\n" +
+	"\x10canonical_format\x18\x06 \x01(\tR\x0fcanonicalFormat\x12X\n" +
+	"\x0esource_formats\x18\a \x03(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\rsourceFormats\"\xdf\x01\n" +
+	"\x0eModelKnowledge\x12F\n" +
+	"\x05state\x18\x01 \x01(\x0e20.ptah.provider.experimental.ModelKnowledge.StateR\x05state\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"m\n" +
+	"\x05State\x12\x15\n" +
+	"\x11STATE_UNSPECIFIED\x10\x00\x12\x0f\n" +
+	"\vUNINSPECTED\x10\x01\x12\f\n" +
+	"\bCOMPLETE\x10\x02\x12\n" +
+	"\n" +
+	"\x06ABSENT\x10\x03\x12\r\n" +
+	"\tDEFAULTED\x10\x04\x12\x13\n" +
+	"\x0fUNREPRESENTABLE\x10\x05\"\x9b\x01\n" +
+	"\x11ModelKindCoverage\x12<\n" +
+	"\x05model\x18\x01 \x01(\v2&.ptah.provider.experimental.ValueModelR\x05model\x12H\n" +
+	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\x8b\x02\n" +
+	"\x14ModelSubjectCoverage\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12?\n" +
+	"\asubject\x18\x02 \x01(\v2%.ptah.provider.experimental.ReferenceR\asubject\x12T\n" +
+	"\x12normalized_subject\x18\x03 \x01(\v2%.ptah.provider.experimental.ReferenceR\x11normalizedSubject\x12H\n" +
+	"\tknowledge\x18\x04 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\x81\x02\n" +
+	"\rModelCoverage\x12]\n" +
+	"\x0erepresentation\x18\x01 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x0erepresentation\x12C\n" +
+	"\x05kinds\x18\x02 \x03(\v2-.ptah.provider.experimental.ModelKindCoverageR\x05kinds\x12L\n" +
+	"\bsubjects\x18\x03 \x03(\v20.ptah.provider.experimental.ModelSubjectCoverageR\bsubjects\"\xa0\x01\n" +
+	"\x13DecodeSourceRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12'\n" +
+	"\x0ftarget_features\x18\x02 \x03(\tR\x0etargetFeatures\x12H\n" +
+	"\tdocuments\x18\x03 \x03(\v2*.ptah.provider.experimental.SourceDocumentR\tdocuments\"|\n" +
+	"\rDecodedSource\x12\x1a\n" +
+	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12O\n" +
+	"\tdocuments\x18\x02 \x03(\v21.ptah.provider.experimental.DecodedSourceDocumentR\tdocuments\"\xbf\x01\n" +
+	"\x15DecodedSourceDocument\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12E\n" +
+	"\bcoverage\x18\x02 \x01(\v2).ptah.provider.experimental.ModelCoverageR\bcoverage\x12O\n" +
+	"\tfragments\x18\x03 \x03(\v21.ptah.provider.experimental.DecodedSourceFragmentR\tfragments\"m\n" +
+	"\x15DecodedSourceFragment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12D\n" +
+	"\x06values\x18\x02 \x03(\v2,.ptah.provider.experimental.SourceModelValueR\x06values\"\xb2\x02\n" +
+	"\x10SourceModelValue\x12T\n" +
+	"\tplacement\x18\x01 \x01(\x0e26.ptah.provider.experimental.SourceModelValue.PlacementR\tplacement\x12A\n" +
+	"\x05value\x18\x02 \x01(\v2+.ptah.provider.experimental.NormalizedValueR\x05value\x12?\n" +
+	"\x06source\x18\x03 \x01(\v2'.ptah.provider.experimental.SourceTraceR\x06source\"D\n" +
+	"\tPlacement\x12\x19\n" +
+	"\x15PLACEMENT_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rNATIVE_OBJECT\x10\x01\x12\t\n" +
+	"\x05FACET\x10\x022\xf7\x06\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -2596,7 +4691,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aInspect\x12*.ptah.provider.experimental.InspectRequest\x1a\".ptah.provider.experimental.Schema\x12]\n" +
 	"\x06Render\x12).ptah.provider.experimental.RenderRequest\x1a(.ptah.provider.experimental.RenderResult\x12d\n" +
 	"\n" +
-	"AnalyzeSQL\x12-.ptah.provider.experimental.AnalyzeSQLRequest\x1a'.ptah.provider.experimental.SQLAnalysis\x12s\n" +
+	"AnalyzeSQL\x12-.ptah.provider.experimental.AnalyzeSQLRequest\x1a'.ptah.provider.experimental.SQLAnalysis\x12j\n" +
+	"\fDecodeSource\x12/.ptah.provider.experimental.DecodeSourceRequest\x1a).ptah.provider.experimental.DecodedSource\x12s\n" +
 	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.ExecutionBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
@@ -2612,8 +4708,8 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 	return file_protocol_experimental_provider_proto_rawDescData
 }
 
-var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(IdentifierRules_Comparison)(0),     // 0: ptah.provider.experimental.IdentifierRules.Comparison
 	(IdentifierRules_IndexNamespace)(0), // 1: ptah.provider.experimental.IdentifierRules.IndexNamespace
@@ -2621,94 +4717,171 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(Execution_Outcome)(0),              // 3: ptah.provider.experimental.Execution.Outcome
 	(SQLStatement_Safety)(0),            // 4: ptah.provider.experimental.SQLStatement.Safety
 	(ValueInput_Representation)(0),      // 5: ptah.provider.experimental.ValueInput.Representation
-	(*Empty)(nil),                       // 6: ptah.provider.experimental.Empty
-	(*DescribeRequest)(nil),             // 7: ptah.provider.experimental.DescribeRequest
-	(*Description)(nil),                 // 8: ptah.provider.experimental.Description
-	(*Engine)(nil),                      // 9: ptah.provider.experimental.Engine
-	(*IdentifierRules)(nil),             // 10: ptah.provider.experimental.IdentifierRules
-	(*Reference)(nil),                   // 11: ptah.provider.experimental.Reference
-	(*Envelope)(nil),                    // 12: ptah.provider.experimental.Envelope
-	(*OpenRequest)(nil),                 // 13: ptah.provider.experimental.OpenRequest
-	(*Session)(nil),                     // 14: ptah.provider.experimental.Session
-	(*CloseRequest)(nil),                // 15: ptah.provider.experimental.CloseRequest
-	(*InspectRequest)(nil),              // 16: ptah.provider.experimental.InspectRequest
-	(*Schema)(nil),                      // 17: ptah.provider.experimental.Schema
-	(*Table)(nil),                       // 18: ptah.provider.experimental.Table
-	(*Column)(nil),                      // 19: ptah.provider.experimental.Column
-	(*Disposition)(nil),                 // 20: ptah.provider.experimental.Disposition
-	(*Change)(nil),                      // 21: ptah.provider.experimental.Change
-	(*RenderRequest)(nil),               // 22: ptah.provider.experimental.RenderRequest
-	(*Unit)(nil),                        // 23: ptah.provider.experimental.Unit
-	(*RenderResult)(nil),                // 24: ptah.provider.experimental.RenderResult
-	(*ExecuteRequest)(nil),              // 25: ptah.provider.experimental.ExecuteRequest
-	(*Execution)(nil),                   // 26: ptah.provider.experimental.Execution
-	(*AnalyzeSQLRequest)(nil),           // 27: ptah.provider.experimental.AnalyzeSQLRequest
-	(*SQLAnalysis)(nil),                 // 28: ptah.provider.experimental.SQLAnalysis
-	(*SQLFile)(nil),                     // 29: ptah.provider.experimental.SQLFile
-	(*SQLStatement)(nil),                // 30: ptah.provider.experimental.SQLStatement
-	(*NormalizeValuesRequest)(nil),      // 31: ptah.provider.experimental.NormalizeValuesRequest
-	(*ValueInput)(nil),                  // 32: ptah.provider.experimental.ValueInput
-	(*NormalizedValues)(nil),            // 33: ptah.provider.experimental.NormalizedValues
-	(*NormalizedValue)(nil),             // 34: ptah.provider.experimental.NormalizedValue
+	(SourceDocument_Format)(0),          // 6: ptah.provider.experimental.SourceDocument.Format
+	(SourceTrace_Root)(0),               // 7: ptah.provider.experimental.SourceTrace.Root
+	(ModelKnowledge_State)(0),           // 8: ptah.provider.experimental.ModelKnowledge.State
+	(SourceModelValue_Placement)(0),     // 9: ptah.provider.experimental.SourceModelValue.Placement
+	(*Empty)(nil),                       // 10: ptah.provider.experimental.Empty
+	(*DescribeRequest)(nil),             // 11: ptah.provider.experimental.DescribeRequest
+	(*Description)(nil),                 // 12: ptah.provider.experimental.Description
+	(*Engine)(nil),                      // 13: ptah.provider.experimental.Engine
+	(*IdentifierRules)(nil),             // 14: ptah.provider.experimental.IdentifierRules
+	(*Reference)(nil),                   // 15: ptah.provider.experimental.Reference
+	(*Envelope)(nil),                    // 16: ptah.provider.experimental.Envelope
+	(*OpenRequest)(nil),                 // 17: ptah.provider.experimental.OpenRequest
+	(*Session)(nil),                     // 18: ptah.provider.experimental.Session
+	(*CloseRequest)(nil),                // 19: ptah.provider.experimental.CloseRequest
+	(*InspectRequest)(nil),              // 20: ptah.provider.experimental.InspectRequest
+	(*Schema)(nil),                      // 21: ptah.provider.experimental.Schema
+	(*Table)(nil),                       // 22: ptah.provider.experimental.Table
+	(*Column)(nil),                      // 23: ptah.provider.experimental.Column
+	(*Disposition)(nil),                 // 24: ptah.provider.experimental.Disposition
+	(*Change)(nil),                      // 25: ptah.provider.experimental.Change
+	(*RenderRequest)(nil),               // 26: ptah.provider.experimental.RenderRequest
+	(*Unit)(nil),                        // 27: ptah.provider.experimental.Unit
+	(*RenderResult)(nil),                // 28: ptah.provider.experimental.RenderResult
+	(*ExecuteRequest)(nil),              // 29: ptah.provider.experimental.ExecuteRequest
+	(*Execution)(nil),                   // 30: ptah.provider.experimental.Execution
+	(*AnalyzeSQLRequest)(nil),           // 31: ptah.provider.experimental.AnalyzeSQLRequest
+	(*SQLAnalysis)(nil),                 // 32: ptah.provider.experimental.SQLAnalysis
+	(*SQLFile)(nil),                     // 33: ptah.provider.experimental.SQLFile
+	(*SQLStatement)(nil),                // 34: ptah.provider.experimental.SQLStatement
+	(*NormalizeValuesRequest)(nil),      // 35: ptah.provider.experimental.NormalizeValuesRequest
+	(*ValueInput)(nil),                  // 36: ptah.provider.experimental.ValueInput
+	(*NormalizedValues)(nil),            // 37: ptah.provider.experimental.NormalizedValues
+	(*NormalizedValue)(nil),             // 38: ptah.provider.experimental.NormalizedValue
+	(*SourcePosition)(nil),              // 39: ptah.provider.experimental.SourcePosition
+	(*SourceSpan)(nil),                  // 40: ptah.provider.experimental.SourceSpan
+	(*SourceValue)(nil),                 // 41: ptah.provider.experimental.SourceValue
+	(*SourceSequence)(nil),              // 42: ptah.provider.experimental.SourceSequence
+	(*SourceMapping)(nil),               // 43: ptah.provider.experimental.SourceMapping
+	(*SourceEntry)(nil),                 // 44: ptah.provider.experimental.SourceEntry
+	(*SourceBlock)(nil),                 // 45: ptah.provider.experimental.SourceBlock
+	(*SourceLabel)(nil),                 // 46: ptah.provider.experimental.SourceLabel
+	(*SourceBinding)(nil),               // 47: ptah.provider.experimental.SourceBinding
+	(*SourceFragment)(nil),              // 48: ptah.provider.experimental.SourceFragment
+	(*SourceDocument)(nil),              // 49: ptah.provider.experimental.SourceDocument
+	(*SourcePathStep)(nil),              // 50: ptah.provider.experimental.SourcePathStep
+	(*SourceTrace)(nil),                 // 51: ptah.provider.experimental.SourceTrace
+	(*ValueModel)(nil),                  // 52: ptah.provider.experimental.ValueModel
+	(*ModelKnowledge)(nil),              // 53: ptah.provider.experimental.ModelKnowledge
+	(*ModelKindCoverage)(nil),           // 54: ptah.provider.experimental.ModelKindCoverage
+	(*ModelSubjectCoverage)(nil),        // 55: ptah.provider.experimental.ModelSubjectCoverage
+	(*ModelCoverage)(nil),               // 56: ptah.provider.experimental.ModelCoverage
+	(*DecodeSourceRequest)(nil),         // 57: ptah.provider.experimental.DecodeSourceRequest
+	(*DecodedSource)(nil),               // 58: ptah.provider.experimental.DecodedSource
+	(*DecodedSourceDocument)(nil),       // 59: ptah.provider.experimental.DecodedSourceDocument
+	(*DecodedSourceFragment)(nil),       // 60: ptah.provider.experimental.DecodedSourceFragment
+	(*SourceModelValue)(nil),            // 61: ptah.provider.experimental.SourceModelValue
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	9,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	10, // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	0,  // 2: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	0,  // 3: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	0,  // 4: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	1,  // 5: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	11, // 6: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	10, // 7: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	18, // 8: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	12, // 9: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	20, // 10: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	11, // 11: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	19, // 12: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	12, // 13: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	12, // 14: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	11, // 15: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
-	2,  // 16: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	11, // 17: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	18, // 18: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	6,  // 19: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	19, // 20: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	12, // 21: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
-	21, // 22: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	12, // 23: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	23, // 24: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	23, // 25: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
-	3,  // 26: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	29, // 27: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
-	30, // 28: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
-	4,  // 29: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
-	32, // 30: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	5,  // 31: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	12, // 32: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
-	34, // 33: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
-	12, // 34: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
-	11, // 35: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
-	7,  // 36: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	13, // 37: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	15, // 38: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	16, // 39: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	22, // 40: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	27, // 41: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	31, // 42: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	25, // 43: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	8,  // 44: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	14, // 45: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	6,  // 46: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	17, // 47: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	24, // 48: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	28, // 49: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	33, // 50: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	26, // 51: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	44, // [44:52] is the sub-list for method output_type
-	36, // [36:44] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	13, // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	14, // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	52, // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
+	0,  // 3: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	0,  // 4: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	0,  // 5: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	1,  // 6: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
+	15, // 7: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	14, // 8: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	22, // 9: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	16, // 10: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	24, // 11: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	15, // 12: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	23, // 13: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	16, // 14: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	16, // 15: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	15, // 16: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	2,  // 17: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
+	15, // 18: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	22, // 19: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	10, // 20: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	23, // 21: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	16, // 22: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
+	25, // 23: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	16, // 24: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	27, // 25: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	27, // 26: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	3,  // 27: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
+	33, // 28: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	34, // 29: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	4,  // 30: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	36, // 31: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	5,  // 32: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	16, // 33: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
+	38, // 34: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
+	16, // 35: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
+	15, // 36: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
+	39, // 37: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
+	39, // 38: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
+	40, // 39: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
+	10, // 40: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
+	15, // 41: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
+	42, // 42: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
+	43, // 43: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
+	41, // 44: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
+	44, // 45: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
+	40, // 46: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
+	41, // 47: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
+	46, // 48: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
+	43, // 49: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
+	45, // 50: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
+	40, // 51: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
+	40, // 52: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
+	15, // 53: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
+	15, // 54: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
+	43, // 55: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
+	40, // 56: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
+	41, // 57: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
+	45, // 58: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
+	6,  // 59: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	47, // 60: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	48, // 61: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
+	52, // 62: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
+	50, // 63: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
+	7,  // 64: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
+	5,  // 65: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	6,  // 66: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
+	8,  // 67: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
+	52, // 68: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	53, // 69: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	15, // 70: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
+	15, // 71: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
+	53, // 72: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	5,  // 73: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	54, // 74: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
+	55, // 75: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
+	49, // 76: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
+	59, // 77: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
+	56, // 78: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	60, // 79: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
+	61, // 80: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
+	9,  // 81: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	38, // 82: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	51, // 83: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
+	11, // 84: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	17, // 85: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	19, // 86: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	20, // 87: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	26, // 88: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	31, // 89: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	57, // 90: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	35, // 91: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	29, // 92: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	12, // 93: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	18, // 94: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	10, // 95: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	21, // 96: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	28, // 97: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	32, // 98: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	58, // 99: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	37, // 100: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	30, // 101: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	93, // [93:102] is the sub-list for method output_type
+	84, // [84:93] is the sub-list for method input_type
+	84, // [84:84] is the sub-list for extension type_name
+	84, // [84:84] is the sub-list for extension extendee
+	0,  // [0:84] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -2728,13 +4901,35 @@ func file_protocol_experimental_provider_proto_init() {
 		(*Unit_Sql)(nil),
 		(*Unit_Native)(nil),
 	}
+	file_protocol_experimental_provider_proto_msgTypes[31].OneofWrappers = []any{
+		(*SourceValue_Null)(nil),
+		(*SourceValue_Boolean)(nil),
+		(*SourceValue_Text)(nil),
+		(*SourceValue_Number)(nil),
+		(*SourceValue_Sql)(nil),
+		(*SourceValue_Reference)(nil),
+		(*SourceValue_Sequence)(nil),
+		(*SourceValue_Mapping)(nil),
+	}
+	file_protocol_experimental_provider_proto_msgTypes[38].OneofWrappers = []any{
+		(*SourceFragment_Value)(nil),
+		(*SourceFragment_Block)(nil),
+		(*SourceFragment_Sql)(nil),
+	}
+	file_protocol_experimental_provider_proto_msgTypes[40].OneofWrappers = []any{
+		(*SourcePathStep_Key)(nil),
+		(*SourcePathStep_Index)(nil),
+		(*SourcePathStep_Attribute)(nil),
+		(*SourcePathStep_Child)(nil),
+		(*SourcePathStep_Label)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   29,
+			NumEnums:      10,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
