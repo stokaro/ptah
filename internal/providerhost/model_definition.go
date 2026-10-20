@@ -47,11 +47,37 @@ func modelIdentities(models []*protocol.ValueModel) []modelIdentity {
 	return result
 }
 
+// yamlKeyIdentity is a host-owned projection of grammar ownership. Key and
+// model declaration order are not semantic; scope and selector are.
+type yamlKeyIdentity struct {
+	Scope    string   `json:"scope"`
+	Key      string   `json:"key"`
+	Selector string   `json:"selector"`
+	Models   []string `json:"models"`
+}
+
+func yamlKeyIdentities(claims []*protocol.YAMLSourceKey) []yamlKeyIdentity {
+	result := make([]yamlKeyIdentity, 0, len(claims))
+	for _, claim := range claims {
+		models := slices.Clone(claim.GetModels())
+		slices.Sort(models)
+		result = append(result, yamlKeyIdentity{Scope: claim.GetScope().String(), Key: claim.GetKey(), Selector: claim.GetSelector(), Models: models})
+	}
+	slices.SortFunc(result, func(a, b yamlKeyIdentity) int {
+		if a.Scope != b.Scope {
+			return strings.Compare(a.Scope, b.Scope)
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
+	return result
+}
+
 func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error) {
 	type engineModel struct {
 		Model       modelIdentity        `json:"model"`
 		Features    []string             `json:"features"`
 		Identifiers identifier.Semantics `json:"identifiers"`
+		YAMLKeys    []yamlKeyIdentity    `json:"yaml_keys"`
 	}
 	engines := make(map[string]engineModel, len(contract.engines))
 	for name, model := range contract.engines {
@@ -60,7 +86,7 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 		if err != nil {
 			return nil, err
 		}
-		engines[name] = engineModel{Model: identityOfModel(model), Features: featureSet(declared.GetFeatures()), Identifiers: rules}
+		engines[name] = engineModel{Model: identityOfModel(model), Features: featureSet(declared.GetFeatures()), Identifiers: rules, YAMLKeys: yamlKeyIdentities(declared.GetYamlSourceKeys())}
 	}
 	definition := struct {
 		Format           string                 `json:"format"`
