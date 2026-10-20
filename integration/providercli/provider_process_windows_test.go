@@ -1,6 +1,6 @@
 //go:build integration && windows
 
-package root_test
+package providercli_test
 
 import "golang.org/x/sys/windows"
 

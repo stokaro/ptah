@@ -1,6 +1,6 @@
 //go:build integration
 
-package root_test
+package providercli_test
 
 import (
 	"bytes"
@@ -226,7 +226,7 @@ func awaitProviderCLI(ctx context.Context, ready func() bool) error {
 // No local replacement or workspace can satisfy the independent build.
 func independentCLIProvider(c *qt.C) string {
 	c.Helper()
-	repo, err := filepath.Abs("../../..")
+	repo, err := filepath.Abs("../..")
 	c.Assert(err, qt.IsNil)
 	dir := c.TempDir()
 	copyRoot, err := os.OpenRoot(dir)

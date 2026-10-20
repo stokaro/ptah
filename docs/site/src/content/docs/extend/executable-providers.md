@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/internal/providercommand"
   - "internal/providerhost"
   - "provider-sdk"
-  - "internal/cli/root/provider_cli_integration_test.go"
+  - "integration/providercli/provider_cli_integration_test.go"
 generated: false
 overlaps: []
 disposition: keep
