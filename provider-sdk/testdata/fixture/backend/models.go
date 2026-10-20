@@ -30,3 +30,10 @@ func valueModels() []*protocol.ValueModel {
 	models[0].SourceFormats = []protocol.SourceDocument_Format{protocol.SourceDocument_YAML, protocol.SourceDocument_HCL, protocol.SourceDocument_GO_ANNOTATIONS}
 	return models
 }
+
+func yamlSourceKeys() []*protocol.YAMLSourceKey {
+	return []*protocol.YAMLSourceKey{
+		{Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "retention", Selector: "retention", Models: []string{"example.org/fixture/retention"}},
+		{Scope: protocol.YAMLSourceKey_TABLE, Key: "retention", Selector: "retention", Models: []string{"example.org/fixture/retention"}},
+	}
+}

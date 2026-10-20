@@ -16,6 +16,8 @@ func sourceExchange() (*protocol.Description, *protocol.DecodeSourceRequest, *pr
 	model.SourceFormats = []protocol.SourceDocument_Format{protocol.SourceDocument_YAML}
 	doc := sourceDocument()
 	doc.Models = []*protocol.ValueModel{proto.CloneOf(model)}
+	d.Engines[0].YamlSourceKeys = []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_TABLE, Key: "retention", Selector: "retention", Models: []string{model.Kind}}}
+	doc.Fragments[0].YamlKey = proto.CloneOf(d.Engines[0].YamlSourceKeys[0])
 	request := &protocol.DecodeSourceRequest{Engine: "fixture", TargetFeatures: r.TargetFeatures, Documents: []*protocol.SourceDocument{doc}}
 	normalized := normalizedValues(r).Values[0]
 	coverage := &protocol.ModelCoverage{Representation: protocol.ValueInput_DESIRED,
