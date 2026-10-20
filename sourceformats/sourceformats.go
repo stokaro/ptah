@@ -51,15 +51,14 @@ type readers struct {
 }
 
 // ReadYAML reads a YAML document with the selected owners.
-func (r readers) ReadYAML(data []byte) (*schemamodel.Database, error) {
-	return yamlschema.Parse(r.owners, data)
+func (r readers) ReadYAML(ctx context.Context, data []byte) (*schemamodel.Database, error) {
+	return yamlschema.Parse(ctx, r.owners, data)
 }
 
 // ReadSQL reads SQL DDL with an optional dialect hint.
-func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, error) {
-	// The program has already run when its output is read, and the owners
-	// read their syntax in process, so the parse bounds the read.
-	db, _, err := sqlschema.ReadWith(context.Background(), data, dialect, nil,
+func (r readers) ReadSQL(ctx context.Context, data []byte, dialect string) (*schemamodel.Database, error) {
+	// The command deadline includes interpretation by selected owners.
+	db, _, err := sqlschema.ReadWith(ctx, data, dialect, nil,
 		sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary, Relations: r.relations})
 	if err != nil {
 		return nil, err
@@ -68,6 +67,6 @@ func (r readers) ReadSQL(data []byte, dialect string) (*schemamodel.Database, er
 }
 
 // ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
-func (r readers) ReadHCL(data []byte, filename, dialect string) (*schemamodel.Database, error) {
-	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary, HCL: r.hcl, Dialect: dialect})
+func (r readers) ReadHCL(ctx context.Context, data []byte, filename, dialect string) (*schemamodel.Database, error) {
+	return atlashcl.ParseWithOptions(ctx, data, filename, atlashcl.Options{CoverageVocabulary: r.vocabulary, HCL: r.hcl, Dialect: dialect})
 }

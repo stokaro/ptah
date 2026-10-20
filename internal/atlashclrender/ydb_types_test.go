@@ -130,7 +130,7 @@ func TestRenderInspectedForAtlasCLIYDBDocumentReadsBackAsItself(t *testing.T) {
 	first, err := atlashclrender.RenderInspectedForAtlasCLI(ydbInspectedDatabase(), "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(first.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), first.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)

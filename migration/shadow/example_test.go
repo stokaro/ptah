@@ -45,7 +45,7 @@ func ExampleVerifyMigration() {
 	}
 
 	// The desired schema: what the history plus the candidate should produce.
-	desired := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`
+	desired := must.Must(yamlschema.Parse(context.Background(), builtintest.Runtime().YAML(), []byte(`
 tables:
   users:
     columns:
@@ -102,7 +102,7 @@ func ExampleVerifyMigration_mismatch() {
 	defer dbschema.CloseAndWarn(target)
 
 	// The desired schema declares an email column.
-	desired := must.Must(yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`
+	desired := must.Must(yamlschema.Parse(context.Background(), builtintest.Runtime().YAML(), []byte(`
 tables:
   users:
     columns:

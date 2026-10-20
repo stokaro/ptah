@@ -30,7 +30,7 @@ func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []strin
 func TestParse_IssueExampleMatchesGoAnnotations(t *testing.T) {
 	c := qt.New(t)
 
-	yamlDB, err := yamlschema.Parse(noOwners, []byte(`
+	yamlDB, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -66,7 +66,7 @@ type User struct {
 func TestParse_IdentityColumn(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -93,7 +93,7 @@ tables:
 func TestParse_IdentityColumnRejectsInvalidGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -107,7 +107,7 @@ tables:
 func TestParse_IdentityColumnOptionsDefaultGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -128,7 +128,7 @@ tables:
 func TestParse_CoversCurrentSchemaIR(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(postgresOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), postgresOwners, []byte(`
 enums:
   account_status: [active, suspended]
 extensions:
@@ -271,7 +271,7 @@ rls_policies:
 func TestParse_TrimsScalarEnumValues(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 enums:
   account_status: active, suspended
 `))
@@ -285,7 +285,7 @@ enums:
 func TestParse_RejectsDuplicateOrderedMappingKeys(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -298,7 +298,7 @@ tables:
 func TestParse_RejectsDuplicateTopLevelMappingKeys(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -313,14 +313,14 @@ tables:
 func TestParse_RejectsInvalidIndexesAndConstraints(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 indexes:
   idx_users_email:
     fields: [email]
 `))
 	c.Assert(err, qt.ErrorMatches, `top-level index "idx_users_email" requires table`)
 
-	_, err = yamlschema.Parse(noOwners, []byte(`
+	_, err = yamlschema.Parse(t.Context(), noOwners, []byte(`
 constraints:
   chk_users_email:
     type: CHECK
@@ -328,7 +328,7 @@ constraints:
 `))
 	c.Assert(err, qt.ErrorMatches, `top-level constraint "chk_users_email" requires table`)
 
-	_, err = yamlschema.Parse(noOwners, []byte(`
+	_, err = yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -343,7 +343,7 @@ tables:
 func TestParse_RejectsMultipleDocuments(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -360,7 +360,7 @@ tables:
 func TestParse_ViewsMaterializedViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:
@@ -429,7 +429,7 @@ triggers:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := yamlschema.Parse(noOwners, []byte(tt.yaml))
+			_, err := yamlschema.Parse(t.Context(), noOwners, []byte(tt.yaml))
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
@@ -562,7 +562,7 @@ default_privileges:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(postgresOwners, []byte(tt.yaml))
+			db, err := yamlschema.Parse(t.Context(), postgresOwners, []byte(tt.yaml))
 			c.Assert(err, qt.ErrorMatches, tt.want)
 			c.Assert(db, qt.IsNil)
 		})
@@ -575,7 +575,7 @@ default_privileges:
 func TestParse_DefaultPrivilegeWithoutDialectsReachesEveryDialect(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(postgresOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), postgresOwners, []byte(`
 default_privileges:
   owner_tables:
     for_role: app_owner
@@ -592,7 +592,7 @@ default_privileges:
 func TestParse_RejectsUnknownColumnAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(noOwners, []byte(`
+	_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   users:
     columns:

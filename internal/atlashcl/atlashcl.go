@@ -3,6 +3,7 @@ package atlashcl
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -118,30 +119,47 @@ type Options struct {
 // Go annotations and YAML schema files. It selects no owner, so it reads this
 // package's own blocks alone; [ParseFileWithOptions] takes the owners whose
 // blocks a document carries.
-func ParseFile(path string) (*schemamodel.Database, error) {
-	return ParseFileWithOptions(path, Options{HCL: hclext.None()})
+func ParseFile(ctx context.Context, path string) (*schemamodel.Database, error) {
+	return ParseFileWithOptions(ctx, path, Options{HCL: hclext.None()})
 }
 
 // Parse parses HCL schema text into the same Database IR used by Go
 // annotations and YAML schema files. It selects no owner, so it reads this
 // package's own blocks alone; [ParseWithOptions] takes the owners whose
 // blocks a document carries.
-func Parse(data []byte, filename string) (*schemamodel.Database, error) {
-	return ParseWithOptions(data, filename, Options{HCL: hclext.None()})
+func Parse(ctx context.Context, data []byte, filename string) (*schemamodel.Database, error) {
+	return ParseWithOptions(ctx, data, filename, Options{HCL: hclext.None()})
 }
 
 // ParseFileWithOptions parses an HCL schema file under the given options.
-func ParseFileWithOptions(path string, opts Options) (*schemamodel.Database, error) {
+func ParseFileWithOptions(ctx context.Context, path string, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read HCL schema file: %w", err)
 	}
 
-	return ParseWithOptions(data, path, opts)
+	return ParseWithOptions(ctx, data, path, opts)
 }
 
 // ParseWithOptions parses HCL schema text under the given options.
-func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.Database, error) {
+func ParseWithOptions(ctx context.Context, data []byte, filename string, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	database, err := parseSchemaDocument(ctx, data, filename, opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return database, nil
+}
+
+func parseSchemaDocument(ctx context.Context, data []byte, filename string, opts Options) (*schemamodel.Database, error) {
 	if !opts.HCL.Selected() {
 		return nil, hclext.ErrUnselected
 	}
@@ -158,7 +176,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	}
 
 	schemaBlocks := declaredSchemaBlocks(body)
-	p := parser{
+	p := parser{requestCtx: ctx,
 		src:             data,
 		filename:        filename,
 		sourceDir:       filepath.Dir(filename),
@@ -190,11 +208,11 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*schemamodel.
 	// The evaluation context is built from the file's own variable and locals
 	// blocks, so it has to exist before any attribute is read -- including the
 	// sql() arguments the next guard evaluates.
-	ctx, err := newEvalContext(body, opts.Vars, opts.VarValues, p.printLine)
+	evalCtx, err := newEvalContext(body, opts.Vars, opts.VarValues, p.printLine)
 	if err != nil {
 		return nil, err
 	}
-	p.ctx = ctx
+	p.ctx = evalCtx
 	// Refuse malformed sql() calls before the body walk, not during it. Every
 	// value helper below falls back to an attribute's source text when the
 	// expression will not evaluate, so a call this guard let through would be
@@ -363,6 +381,7 @@ func projectFileError(filename string, block *hclsyntax.Block) error {
 }
 
 type parser struct {
+	requestCtx context.Context
 	// redeclarations is how the document treats an object it declares
 	// twice; see [resolveRedeclarationPolicy].
 	redeclarations redeclarationPolicy

@@ -31,7 +31,7 @@ secrets:
 func TestParse_TheYDBOwnerReadsItsKeysAndClaims(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(ydbYAMLOwners, []byte(ownedDocument))
+	db, err := yamlschema.Parse(t.Context(), ydbYAMLOwners, []byte(ownedDocument))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureObjects.Len(), qt.Equals, 2)
@@ -58,7 +58,7 @@ func TestParse_WithoutTheYDBOwnerItsKeysAreUnknown(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(yamlext.None(), []byte(test.document))
+			db, err := yamlschema.Parse(t.Context(), yamlext.None(), []byte(test.document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

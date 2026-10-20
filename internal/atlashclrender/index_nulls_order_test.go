@@ -47,7 +47,7 @@ func TestRenderIndexPartNullsOrderRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, "nulls_last = true")
 	c.Assert(hcl, qt.Contains, "nulls_first = true")
 
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)
@@ -88,7 +88,7 @@ func TestRenderIndexPartNullsOrderKeepsOnBlocks(t *testing.T) {
 	c.Assert(hcl, qt.Contains, "on {")
 	c.Assert(hcl, qt.Contains, "nulls_first = true")
 
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL(),
 	},
 	)

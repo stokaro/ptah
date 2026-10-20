@@ -2,7 +2,6 @@ package atlashcl
 
 import (
 	"cmp"
-	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -576,9 +575,8 @@ func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documen
 		}
 		matches = append(matches, match)
 	}
-	// The loaders take no context yet. The owners read their blocks in
-	// process, so the walk bounds the read.
-	declarations, err = p.owners.Decode(context.Background(), matches)
+	// Owner decoding shares the caller deadline and cancellation.
+	declarations, err = p.owners.Decode(p.requestCtx, matches)
 	if refused, ok := errors.AsType[*hclext.ClaimError](err); ok {
 		return nil, nil, p.blockError(p.ownerClaims[refused.Claim].block, "%v", refused.Err)
 	}

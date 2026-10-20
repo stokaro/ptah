@@ -71,7 +71,7 @@ func TestYDBIndexPartitioning_HCLRoundTrip(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			// The block writes the settings, so nothing reports them lost.
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-			parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.Indexes, qt.HasLen, 1)
 			c.Assert(heldIndexPartitioning(c, parsed.Indexes[0].Facets), qt.DeepEquals, test.spec)

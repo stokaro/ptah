@@ -548,7 +548,7 @@ func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 func boundaryParseBack(c *qt.C, document string, compatibility bool) *schemamodel.Database {
 	c.Helper()
 
-	parsed, err := schemafile.LoadAll([]string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
+	parsed, err := schemafile.LoadAll(c.Context(), []string{"file://" + boundaryDocumentFile(c, document)}, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               "postgres",

@@ -53,7 +53,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(rowSecurityOwners, rowSecurityDocument(test.dialects))
+			db, err := yamlschema.Parse(t.Context(), rowSecurityOwners, rowSecurityDocument(test.dialects))
 
 			c.Assert(err, qt.IsNil)
 			objects := must.Must(db.FeatureObjects.All())
@@ -70,7 +70,7 @@ func TestParse_RowSecurityScopeSelectsTheModel(t *testing.T) {
 func TestParse_RowSecurityScopeSelectsTheModel_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(rowSecurityOwners, rowSecurityDocument("dialects: [postgres, mssql]"))
+	db, err := yamlschema.Parse(t.Context(), rowSecurityOwners, rowSecurityDocument("dialects: [postgres, mssql]"))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 	c.Assert(err, qt.ErrorMatches, `(?s).*rls_enabled_tables\.docs: .*mixes PostgreSQL-family targets with others.*`)
@@ -106,7 +106,7 @@ func TestParse_RowSecurityScopedToClickHouse_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(rowSecurityOwners, []byte(test.document))
+			db, err := yamlschema.Parse(t.Context(), rowSecurityOwners, []byte(test.document))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
@@ -122,7 +122,7 @@ func TestParse_RowSecurityScopedToClickHouse_FailurePath(t *testing.T) {
 func TestParse_WithoutTheRowSecurityOwnerAPolicyStaysShared(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, rowSecurityDocument(""))
+	db, err := yamlschema.Parse(t.Context(), noOwners, rowSecurityDocument(""))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.RLSPolicies, qt.HasLen, 1)
@@ -147,7 +147,7 @@ func TestParse_APolicyComposition_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(rowSecurityOwners, []byte("rls_policies:\n  docs_read:\n    table: docs\n"+
+			db, err := yamlschema.Parse(t.Context(), rowSecurityOwners, []byte("rls_policies:\n  docs_read:\n    table: docs\n"+
 				"    using: \"true\"\n    as: restrictiv\n"+test.dialects))
 
 			c.Assert(err, qt.ErrorMatches, `rls_policies\.docs_read: .*as must be PERMISSIVE or RESTRICTIVE, got "restrictiv"`)

@@ -142,7 +142,7 @@ func TestRenderCrossSchemaReferencesRoundTripToTheSameIR(t *testing.T) {
 
 	rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 
 	c.Assert(fieldByName(parsed.Fields, "author_id").Foreign, qt.Equals, "other.users(id)")
@@ -275,7 +275,7 @@ func TestRenderKeepsQualifiedSequenceTarget(t *testing.T) {
 	hcl := string(rendered.Data)
 	c.Assert(hcl, qt.Contains, `for = sequence.app.order_seq`, qt.Commentf("rendered HCL:\n%s", hcl))
 
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.Grants, qt.HasLen, 1)
 	c.Assert(parsed.Grants[0].OnSequence, qt.Equals, "app.order_seq")

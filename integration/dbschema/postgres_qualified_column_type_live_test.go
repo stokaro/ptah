@@ -27,7 +27,7 @@ func planAcrossSchemas(c *qt.C, conn *dbschema.DatabaseConnection, schemaName, d
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(fmt.Sprintf(document, schemaName)), 0o600), qt.IsNil)
-	declared, err := schemafile.LoadSources([]schemafile.Source{{URL: path}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
+	declared, err := schemafile.LoadSources(c.Context(), []schemafile.Source{{URL: path}}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, []string{schemaName, schemaName + "_types"})
 	c.Assert(err, qt.IsNil)

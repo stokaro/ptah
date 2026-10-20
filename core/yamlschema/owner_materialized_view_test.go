@@ -24,7 +24,7 @@ func materializedPaintOwner(attribute string) yamlext.Set {
 
 func TestParse_MaterializedViewOwnerAttributes(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse(materializedPaintOwner("gloss"), []byte(`matviews:
+	db, err := yamlschema.Parse(t.Context(), materializedPaintOwner("gloss"), []byte(`matviews:
   first: { body: "SELECT 1", gloss: teal }
   second: { body: "SELECT 2" }
 `))
@@ -50,7 +50,7 @@ func TestParse_MaterializedViewOwnerAttributes_FailurePath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := yamlschema.Parse(test.owners, []byte(test.text))
+			db, err := yamlschema.Parse(t.Context(), test.owners, []byte(test.text))
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(db, qt.IsNil)
 		})

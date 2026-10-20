@@ -98,7 +98,7 @@ func TestRenderedUserTypeBasesRoundTrip(t *testing.T) {
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	domain, found, err := parsed.FeatureObjects.Get(pgtype.Ref(pgtype.DomainKind, "public", "d"))

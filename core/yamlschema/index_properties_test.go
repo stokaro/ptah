@@ -10,7 +10,7 @@ import (
 
 func TestParseIndexPlatformProperties(t *testing.T) {
 	c := qt.New(t)
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   events:
     columns:

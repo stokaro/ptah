@@ -111,7 +111,7 @@ func TestParseReadsForeignKeySchemaOffTheReferencedBlock(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(foreignKeyDocument(test.reference, test.extraTables), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), foreignKeyDocument(test.reference, test.extraTables), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(fieldByName(db.Fields, "posts", "author_id").Foreign, qt.Equals, test.want,
@@ -132,7 +132,7 @@ func TestParseReadsForeignKeySchemaOffTheReferencedBlock(t *testing.T) {
 func TestParseLeavesAmbiguousForeignKeyReferenceAsWritten(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(foreignKeyDocument("table.users.column.id", `
+	db, err := atlashcl.Parse(t.Context(), foreignKeyDocument("table.users.column.id", `
 table "users" {
   schema = schema.billing
   column "id" {
@@ -198,7 +198,7 @@ data {
 }
 `, test.extraTables)
 
-			db, err := atlashcl.Parse(source, "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), source, "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.ManagedData, qt.HasLen, 1)

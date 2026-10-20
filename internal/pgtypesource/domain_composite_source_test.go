@@ -50,7 +50,7 @@ func TestDomainCompositeSourcesKeepDefinitions(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			hcl, err := atlashclrender.Render(&original, atlashclrender.Options{HCL: runtime.HCL()})
 			c.Assert(err, qt.IsNil)
-			fromHCL, err := atlashcl.ParseWithOptions(hcl.Data, "type.hcl", atlashcl.Options{HCL: runtime.HCL()})
+			fromHCL, err := atlashcl.ParseWithOptions(t.Context(), hcl.Data, "type.hcl", atlashcl.Options{HCL: runtime.HCL()})
 			c.Assert(err, qt.IsNil)
 			composer, ok := test.want.(schemaext.ComposableDeclaration)
 			c.Assert(ok, qt.IsTrue)

@@ -21,7 +21,7 @@ import (
 
 func TestParseAtlasHCL(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlascompat.ParseAtlasHCL([]byte(`
+	db, err := atlascompat.ParseAtlasHCL(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -59,7 +59,7 @@ const projectFileWithEnv = `env "local" {
 func TestParseAtlasHCLRefusesProjectFile(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlascompat.ParseAtlasHCL([]byte(projectFileWithEnv), "atlas.hcl")
+	db, err := atlascompat.ParseAtlasHCL(t.Context(), []byte(projectFileWithEnv), "atlas.hcl")
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf(
 		"project file parsed as a schema: err=nil and the returned IR is %+v -- an empty desired state, which a diff cannot tell apart from a request to drop every table",

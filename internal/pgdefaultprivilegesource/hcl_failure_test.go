@@ -31,7 +31,7 @@ func TestHCL_RefusesInvalidDeclarations(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseHCL(hclBlock(test.body))
+			db, err := parseHCL(t.Context(), hclBlock(test.body))
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.wantErr+".*")
 			c.Assert(db, qt.IsNil)
 		})
@@ -47,7 +47,7 @@ func TestHCL_RefusesLabelsAndConflictingBlocks(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseHCL(test.text)
+			db, err := parseHCL(t.Context(), test.text)
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.wantErr+".*")
 			c.Assert(db, qt.IsNil)
 		})

@@ -88,14 +88,14 @@ func TestPostgresFunctionProperties_HCLExportOverloads(t *testing.T) {
 	rendered, err := atlashclrender.Render(desired, atlashclrender.Options{HCL: runtime.HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredProperties(c, parsed), qt.DeepEquals, declaredProperties(c, desired))
 }
 func TestPostgresFunctionProperties_YAML(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
-	parsed, err := yamlschema.Parse(runtime.YAML(), []byte(`functions:
+	parsed, err := yamlschema.Parse(t.Context(), runtime.YAML(), []byte(`functions:
   f:
     params: a integer
     returns: integer

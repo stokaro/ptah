@@ -60,7 +60,7 @@ table "users" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -101,7 +101,7 @@ func TestParsePolicyRoles_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners(policyTo(test.to), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), policyTo(test.to), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(ownerPolicies(c, db)["public.users.tenant"].Roles, qt.DeepEquals, test.want)
@@ -130,7 +130,7 @@ func TestParsePolicyRoles_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners(policyTo(test.to), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), policyTo(test.to), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -145,7 +145,7 @@ func TestParsePolicyRoles_FailurePath(t *testing.T) {
 func TestParsePolicy_LeavesTheSwitchesOfItsTableToTheDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners(policyTo(`[app]`), "schema.hcl")
+	db, err := parseWithOwners(t.Context(), policyTo(`[app]`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureCoverage.Lookup(pgpolicy.TableStateKind, pgpolicysource.TableRef("public", "users")), qt.DeepEquals, pgpolicy.DefaultedSwitches())
@@ -175,7 +175,7 @@ policy "strict" {
 }
 `
 
-	db, err := parseWithOwners([]byte(source), "schema.hcl")
+	db, err := parseWithOwners(t.Context(), []byte(source), "schema.hcl")
 
 	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:12,1-7: policy "strict" as must be PERMISSIVE or RESTRICTIVE`)
 	c.Assert(db, qt.IsNil)

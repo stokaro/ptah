@@ -15,7 +15,7 @@ import (
 func TestParseCoordinationNode(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "app" {
 }
 
@@ -55,7 +55,7 @@ func TestParseCoordinationNode_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseWithOwners([]byte(test.block), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.block), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
 		})
@@ -68,7 +68,7 @@ func TestParseCoordinationNode_FailurePath(t *testing.T) {
 func TestParsePermissionOnACoordinationNode(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "app" {
 }
 
@@ -105,7 +105,7 @@ revoke {
 func TestParsePermissionOnAnUnownedBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 permission {
   to         = "reader"
   for        = topic.app.events

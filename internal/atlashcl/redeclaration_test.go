@@ -385,7 +385,7 @@ trigger "users_touch" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -622,7 +622,7 @@ function "get_tenant" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(countDocument(db), qt.DeepEquals, test.want)
@@ -637,7 +637,7 @@ function "get_tenant" {
 func TestParse_UnlabeledCheckConstraintsAreNamedApart(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(twoUnlabeledChecksSource), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), []byte(twoUnlabeledChecksSource), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Constraints, qt.HasLen, 2)
@@ -697,7 +697,7 @@ func TestParse_StrictRedeclarationsEnvVarRefusesWhatTheBinaryReads(t *testing.T)
 			c := qt.New(t)
 			t.Setenv(atlashcl.StrictRedeclarationsEnvVar, "1")
 
-			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -712,7 +712,7 @@ func TestParse_StrictRedeclarationsEnvVarStillReadsARepeatedSchemaBlock(t *testi
 	c := qt.New(t)
 	t.Setenv(atlashcl.StrictRedeclarationsEnvVar, "1")
 
-	db, err := atlashcl.Parse([]byte(`schema "public" {}
+	db, err := atlashcl.Parse(t.Context(), []byte(`schema "public" {}
 schema "public" {}
 table "users" {
   schema = schema.public
@@ -766,7 +766,7 @@ enum "other" "mood" {
 			c := qt.New(t)
 			t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, "1")
 
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Enums, qt.HasLen, 2)
@@ -813,7 +813,7 @@ enum "mood" {
 			c := qt.New(t)
 			t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, test.value)
 
-			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -828,7 +828,7 @@ func TestParse_SchemaScopedEnumsEnvVarRefusesAnUnparsableValue(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, "yes-please")
 
-	_, err := atlashcl.Parse([]byte(enumInTwoSchemasSource), "schema.hcl")
+	_, err := atlashcl.Parse(t.Context(), []byte(enumInTwoSchemasSource), "schema.hcl")
 
 	c.Assert(err, qt.ErrorMatches, `invalid boolean value "yes-please" for PTAH_HCL_SCHEMA_SCOPED_ENUMS`)
 }
@@ -891,7 +891,7 @@ enum "other" "mood" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Enums, qt.HasLen, 1)
@@ -936,7 +936,7 @@ enum "a" "b" "c" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := parseTypeHCL([]byte(test.source), "schema.hcl")
+			_, err := parseTypeHCL(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -962,7 +962,7 @@ func TestParse_MergeRedeclarationsEnvVarRestoresTheMerge(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, test.value)
 
-			db, err := atlashcl.Parse([]byte(tableTwiceSource), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(tableTwiceSource), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
@@ -1007,7 +1007,7 @@ func TestParse_MergeRedeclarationsEnvVarLeavesTheDocumentRefused(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, test.value)
 
-			_, err := atlashcl.Parse([]byte(tableTwiceSource), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte(tableTwiceSource), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -1045,7 +1045,7 @@ func TestParse_RefusesAPolicyDeclaredTwice(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, merge)
 
-			db, err := parseWithOwners([]byte(policyDeclaredTwice), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(policyDeclaredTwice), "schema.hcl")
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 			c.Assert(err, qt.ErrorMatches, `parse HCL schema schema\.hcl: invalid annotation attribute value: `+
@@ -1089,7 +1089,7 @@ func TestParse_RefusesARepeatedExtensionBlock(t *testing.T) {
 			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, test.merge)
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.source), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -1103,7 +1103,7 @@ func TestParse_MergesAnEqualRepeatedExtensionBlock(t *testing.T) {
 	t.Setenv(atlashcl.MergeRedeclarationsEnvVar, "1")
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(repeatedExtension("1.6", "1.6")), "schema.hcl")
+	db, err := parseWithOwners(t.Context(), []byte(repeatedExtension("1.6", "1.6")), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{Name: "pg_trgm", Version: "1.6"}})

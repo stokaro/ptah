@@ -12,7 +12,7 @@ import (
 func TestParseColumnCheck(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "age" {
     type  = int
@@ -32,7 +32,7 @@ table "t" {
 func TestParseColumnCheckWithName(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "age" {
     type       = int
@@ -52,7 +52,7 @@ table "t" {
 func TestParseColumnUniqueExpr(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "email" {
     type        = text
@@ -68,7 +68,7 @@ table "t" {
 func TestParseColumnIdentityOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "id" {
     type = bigint

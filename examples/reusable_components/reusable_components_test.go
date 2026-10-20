@@ -71,7 +71,7 @@ type User struct {
 
 func TestAtlasHCLToSQL(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlascompat.ParseAtlasHCL([]byte(`
+	db, err := atlascompat.ParseAtlasHCL(t.Context(), []byte(`
 schema "public" {}
 
 table "users" {

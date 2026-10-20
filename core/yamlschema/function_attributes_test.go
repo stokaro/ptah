@@ -27,7 +27,7 @@ func TestParse_FunctionAttributes_HappyPath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(document))
+	db, err := yamlschema.Parse(t.Context(), builtintest.Runtime().YAML(), []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -50,7 +50,7 @@ func TestParse_FunctionAttributes_FailurePath(t *testing.T) {
     body: SELECT true
 `
 
-	db, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(document))
+	db, err := yamlschema.Parse(t.Context(), builtintest.Runtime().YAML(), []byte(document))
 
 	c.Assert(err, qt.ErrorMatches, `function "same_tenant": .*parallel must be SAFE, RESTRICTED or UNSAFE, not "SOMETIMES"`)
 	c.Assert(db, qt.IsNil)

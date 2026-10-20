@@ -64,7 +64,7 @@ func TestPartitionOwner_HCLExportRetainsKeyOrderAndModifiers(t *testing.T) {
 	rendered, err := atlashclrender.Render(desired, atlashclrender.Options{HCL: runtime.HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(partitionValue(c, parsed), qt.DeepEquals, partitionValue(c, desired))
 }

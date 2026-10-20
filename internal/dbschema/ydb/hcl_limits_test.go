@@ -44,7 +44,7 @@ func TestReader_HCLExportKeepsWhatTheReadDidNotDescribe(t *testing.T) {
 	exported, err := atlashclrender.RenderInspected(described, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
 		CoverageVocabulary: runtime.CoverageVocabulary(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(exported.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), CoverageVocabulary: runtime.CoverageVocabulary()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), exported.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), CoverageVocabulary: runtime.CoverageVocabulary()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.NotDescribed.Directives(), qt.DeepEquals, read.NotDescribed.Directives())

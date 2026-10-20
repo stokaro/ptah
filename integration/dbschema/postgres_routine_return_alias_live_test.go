@@ -78,7 +78,7 @@ func TestPostgresLiveRoutineReturnAliasConverges(t *testing.T) {
 		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
 	}()
 
-	description, err := atlashcl.ParseWithOptions(returnAliasDocument(schemaName), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
+	description, err := atlashcl.ParseWithOptions(t.Context(), returnAliasDocument(schemaName), "schema.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 	c.Assert(err, qt.IsNil)
 
 	statements, err := builtin.GetOrderedCreateStatements(description, platform.Postgres)
@@ -123,7 +123,7 @@ func TestPostgresLiveRoutineReturnDifferenceIsStillPlanned(t *testing.T) {
 		`CREATE FUNCTION "`+schemaName+`".scalar() RETURNS integer LANGUAGE sql AS 'SELECT 1'`)
 	c.Assert(err, qt.IsNil)
 
-	wanted, err := atlashcl.ParseWithOptions([]byte(`
+	wanted, err := atlashcl.ParseWithOptions(t.Context(), []byte(`
 schema "`+schemaName+`" {}
 
 function "scalar" {

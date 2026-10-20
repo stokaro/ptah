@@ -117,7 +117,7 @@ func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T)
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		IgnoreUnknownNames: true,
 	})
 
@@ -134,7 +134,7 @@ func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 	result, err := atlashclrender.RenderInspected(inspectedRichDatabase(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.NotDescribed.IsZero(), qt.IsTrue)

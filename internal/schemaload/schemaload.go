@@ -503,7 +503,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// destination through that identical guard. absPath is a display and
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
-	result, err := schemafile.LoadPath(schemaFile, schemafile.Options{
+	result, err := schemafile.LoadPath(ctx, schemaFile, schemafile.Options{
 		DatabaseURL:        o.DatabaseURL,
 		Dialect:            o.Dialect,
 		YAML:               o.yaml(),

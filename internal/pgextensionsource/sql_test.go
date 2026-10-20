@@ -49,7 +49,7 @@ func loadDirectory(c *qt.C, files map[string]string) (*schemamodel.Database, err
 	for name, text := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600), qt.IsNil)
 	}
-	return schemafile.LoadAll([]string{dir}, schemafile.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
+	return schemafile.LoadAll(c.Context(), []string{dir}, schemafile.Options{SQL: builtintest.Runtime().SQL(), Dialect: platform.Postgres})
 }
 
 // TestSQL_HappyPath pins what the owner reads from a PostgreSQL-family

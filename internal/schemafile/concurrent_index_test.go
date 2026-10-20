@@ -49,7 +49,7 @@ func TestAConcurrentIndexSurvivesTheConversion(t *testing.T) {
 				"CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\n"+test.statement+"\n",
 			), 0o600), qt.IsNil)
 
-			database, err := schemafile.LoadPath(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+			database, err := schemafile.LoadPath(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Indexes, qt.HasLen, 1)

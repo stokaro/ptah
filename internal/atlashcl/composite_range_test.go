@@ -16,7 +16,7 @@ import (
 func TestParseCompositeType(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 composite "address" {
   field "street" {
     type = text
@@ -41,7 +41,7 @@ composite "address" {
 func TestParseCompositeTypeWithSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 composite "app" "point" {
   field "x" {
     type = float8
@@ -63,7 +63,7 @@ func TestParseCompositeQuotedMultiWordFieldType(t *testing.T) {
 	// A multi-word type has no bare HCL spelling, so it must be quoted; the
 	// quotes must be stripped from the stored type or the rendered DDL becomes a
 	// quoted identifier for a nonexistent type.
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 composite "measurement" {
   field "value" {
     type = "double precision"
@@ -104,7 +104,7 @@ composite "address" {
   }
 }
 `
-			db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.dialect})
 			c.Assert(err, qt.IsNil)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 2)
@@ -124,7 +124,7 @@ composite "address" {
 func TestParseCompositeRequiresField(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 composite "empty" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*composite "empty" requires at least one field.*`)
@@ -133,7 +133,7 @@ composite "empty" {}
 func TestParseCompositeFieldRequiresType(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 composite "address" {
   field "street" {}
 }
@@ -144,7 +144,7 @@ composite "address" {
 func TestParseCompositeRejectsUnknownBlock(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 composite "address" {
   column "street" {
     type = text
@@ -157,7 +157,7 @@ composite "address" {
 func TestParseRangeType(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 range "floatrange" {
   subtype      = float8
   subtype_diff = float8mi
@@ -176,7 +176,7 @@ range "floatrange" {
 func TestParseRangeTypeAllOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 range "app" "textrange" {
   subtype         = text
   subtype_opclass = text_ops
@@ -198,7 +198,7 @@ range "app" "textrange" {
 func TestParseRangeRequiresSubtype(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 range "floatrange" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*range "floatrange" requires subtype.*`)
@@ -207,7 +207,7 @@ range "floatrange" {}
 func TestParseRangeRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 range "floatrange" {
   subtype  = float8
   nonsense = true

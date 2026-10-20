@@ -1,6 +1,7 @@
 package pgdefaultprivilegesource_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -17,8 +18,8 @@ import (
 
 const hclIdentity = "  for_role = role.owner\n  object_type = \"TABLES\"\n  to = role.reader\n"
 
-func parseHCL(text string) (*schemamodel.Database, error) {
-	return atlashcl.ParseWithOptions([]byte(text), "privileges.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+func parseHCL(ctx context.Context, text string) (*schemamodel.Database, error) {
+	return atlashcl.ParseWithOptions(ctx, []byte(text), "privileges.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 }
 
 func hclBlock(body string) string {
@@ -38,7 +39,7 @@ func TestHCL_GrantOptionsBelongToEachPrivilege(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseHCL(hclBlock(hclIdentity + "schema = schema.app\nprivileges = [SELECT, \"insert\", SELECT]\ncomment = \"new tables\"\n" + test.grantable))
+			db, err := parseHCL(t.Context(), hclBlock(hclIdentity+"schema = schema.app\nprivileges = [SELECT, \"insert\", SELECT]\ncomment = \"new tables\"\n"+test.grantable))
 			c.Assert(err, qt.IsNil)
 			objects := must.Must(db.FeatureObjects.All())
 			c.Assert(objects, qt.HasLen, 1)
@@ -61,7 +62,7 @@ locals {
 }
 `
 	identity := "for_role = local.owner\nobject_type = \"TABLES\"\nto = local.reader\n"
-	db, err := parseHCL(input + hclBlock(identity+"privileges = var.rights") + hclBlock(identity+"privileges = [upper(\"select\")]\ngrantable = \"SELECT\"\nrevoked = [DELETE]"))
+	db, err := parseHCL(t.Context(), input+hclBlock(identity+"privileges = var.rights")+hclBlock(identity+"privileges = [upper(\"select\")]\ngrantable = \"SELECT\"\nrevoked = [DELETE]"))
 	c.Assert(err, qt.IsNil)
 	objects := must.Must(db.FeatureObjects.All())
 	c.Assert(objects, qt.HasLen, 1)
@@ -72,7 +73,7 @@ locals {
 func TestHCL_IdentitySeparatesGrantorsAndGlobalScope(t *testing.T) {
 	c := qt.New(t)
 	block := hclBlock(hclIdentity + "privileges = SELECT")
-	db := must.Must(parseHCL(block + strings.ReplaceAll(block, "role.owner", "role.another") + hclBlock(hclIdentity+"schema = schema.public\nprivileges = SELECT")))
+	db := must.Must(parseHCL(t.Context(), block+strings.ReplaceAll(block, "role.owner", "role.another")+hclBlock(hclIdentity+"schema = schema.public\nprivileges = SELECT")))
 	objects := must.Must(db.FeatureObjects.All())
 	c.Assert(objects, qt.HasLen, 3)
 	identities := make([]pgdefaultprivilege.Identity, 0, len(objects))
@@ -88,7 +89,7 @@ func TestHCL_IdentitySeparatesGrantorsAndGlobalScope(t *testing.T) {
 
 func TestHCL_RequiresSelectedOwner(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(hclBlock(hclIdentity+"privileges = [SELECT]")), "privileges.hcl", atlashcl.Options{HCL: hclext.None()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(hclBlock(hclIdentity+"privileges = [SELECT]")), "privileges.hcl", atlashcl.Options{HCL: hclext.None()})
 	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported.*default_privilege.*`)
 	c.Assert(db, qt.IsNil)
 }

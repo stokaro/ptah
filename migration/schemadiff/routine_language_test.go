@@ -46,7 +46,7 @@ func TestCompareWithDialect_AnUndeclaredLanguageIsTheEnginesOwn(t *testing.T) {
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+			desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 			current := &catalog.Database{Functions: []catalog.Function{{
 				Name: "touch", Schema: "app", Kind: "procedure", Language: test.language,
 				Security: desired.Functions[0].Security, Volatility: desired.Functions[0].Volatility,
@@ -67,7 +67,7 @@ func TestCompareWithDialect_AnUndeclaredLanguageIsTheEnginesOwn(t *testing.T) {
 // routine's language out as well, and it is the target's there too.
 func TestCompareWithDialect_ADocumentStandingForADatabaseLeavesTheLanguageOut(t *testing.T) {
 	c := qt.New(t)
-	desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+	desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 	desired.Functions[0].Language = "plpgsql"
 	current := &catalog.Database{Functions: []catalog.Function{{
 		Name: "touch", Schema: "app", Kind: "procedure",
@@ -87,7 +87,7 @@ func TestCompareWithDialect_ADocumentStandingForADatabaseLeavesTheLanguageOut(t 
 // (stokaro/ptah#2315).
 func TestCompareWithDialect_TheDiffKeepsTheLanguageAsWritten(t *testing.T) {
 	c := qt.New(t)
-	desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+	desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 	current := &catalog.Database{Functions: []catalog.Function{{
 		Name: "touch", Schema: "app", Kind: "procedure", Language: "sql",
 		Security: desired.Functions[0].Security, Volatility: desired.Functions[0].Volatility,

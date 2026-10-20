@@ -98,7 +98,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -196,7 +196,7 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
@@ -230,7 +230,7 @@ func indexPartsPerIndex(db *schemamodel.Database) [][]schemamodel.IndexPart {
 func TestParseKeepsRawSQLInTheIndexExprAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "t" {
   column "n" { type = int }
   index "idx_n" {

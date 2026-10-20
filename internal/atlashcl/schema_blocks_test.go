@@ -66,7 +66,7 @@ schema "main" {}
 			c := qt.New(t)
 			var recorded []atlashcl.SchemaBlock
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 				RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
 			})
 
@@ -93,7 +93,7 @@ env "local" {
 `
 	var recorded []atlashcl.SchemaBlock
 
-	_, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(source), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(),
 		RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
 	})
 

@@ -1,6 +1,7 @@
 package atlasschema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,7 +43,10 @@ var ErrServerDevDatabase = errors.New(
 //
 // hcl is the owners whose blocks an HCL document may carry, which the count of
 // its databases reads past.
-func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atlassource.Set, hcl hclext.Set) error {
+func RefuseServerDevDatabase(ctx context.Context, info catalog.ServerInfo, devURL string, desired atlassource.Set, hcl hclext.Set) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	devDatabase, beside := devDatabaseBesideServer(info, devURL)
 	switch {
 	case !beside:
@@ -51,25 +55,29 @@ func RefuseServerDevDatabase(info catalog.ServerInfo, devURL string, desired atl
 		return ErrServerDevDatabase
 	case runsSQL(desired):
 		return &ServerScopeMismatchError{Database: devDatabase}
-	case declaresSeveralDatabases(info.Dialect, desired, hcl):
-		return &OneDatabaseBesideDocumentError{Flag: "dev-url", Database: devDatabase}
-	default:
-		return ErrServerDevDatabase
 	}
+	several := declaresSeveralDatabases(ctx, info.Dialect, desired, hcl)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if several {
+		return &OneDatabaseBesideDocumentError{Flag: "dev-url", Database: devDatabase}
+	}
+	return ErrServerDevDatabase
 }
 
 // declaresSeveralDatabases reports a declarative document that declares more
 // than one database. It reads the files, which needs no dev database. A
 // document that does not read answers false, and the refusal is
 // [ErrServerDevDatabase] either way.
-func declaresSeveralDatabases(dialect string, desired atlassource.Set, hcl hclext.Set) bool {
+func declaresSeveralDatabases(ctx context.Context, dialect string, desired atlassource.Set, hcl hclext.Set) bool {
 	if !desired.DeclarativeLocalFiles() {
 		return false
 	}
 	// The load only counts the databases the files name, which no owner's
 	// claim changes, so it selects no YAML owner. An HCL document's owner
 	// blocks are read, so a document that carries one is counted as before.
-	schema, err := schemafile.LoadSources(desired.SchemaFileSources(), schemafile.Options{Dialect: dialect, YAML: yamlext.None(), SQL: sqlext.None(), HCL: hcl})
+	schema, err := schemafile.LoadSources(ctx, desired.SchemaFileSources(), schemafile.Options{Dialect: dialect, YAML: yamlext.None(), SQL: sqlext.None(), HCL: hcl})
 	return err == nil && len(schema.Schemas) > 1
 }
 

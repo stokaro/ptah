@@ -70,7 +70,7 @@ func TestRenderInspectedForAtlasCLIWritesAYDBVectorIndex(t *testing.T) {
 
 			result, err := atlashclrender.RenderInspectedForAtlasCLI(db, "", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.YDB})
 			c.Assert(err, qt.IsNil)
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(string(result.Data), qt.Contains, test.want)

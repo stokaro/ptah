@@ -34,7 +34,7 @@ import (
 // returnTypeDocument declares one zero-argument routine returning the given type.
 func returnTypeDocument(c *qt.C, schemaName, returns string) *schemamodel.Database {
 	c.Helper()
-	description, err := atlashcl.ParseWithOptions([]byte(`
+	description, err := atlashcl.ParseWithOptions(c.Context(), []byte(`
 schema "`+schemaName+`" {}
 
 function "scalar" {

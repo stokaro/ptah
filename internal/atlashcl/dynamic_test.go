@@ -124,7 +124,7 @@ func TestParseDynamicBlockGeneratesTheBlocksItStandsFor(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(dynamicTableDocument(test.body), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), dynamicTableDocument(test.body), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			names := make([]string, 0, len(db.Indexes))
@@ -213,7 +213,7 @@ func TestParseDynamicBlockRefusesWhatItCannotExpand(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse(dynamicTableDocument(test.body), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), dynamicTableDocument(test.body), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `.*`+test.wantError+`.*`)
 		})
@@ -228,7 +228,7 @@ func TestParseDynamicBlockRefusesWhatItCannotExpand(t *testing.T) {
 func TestParseWithoutDynamicBlockIsUnchanged(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(dynamicTableDocument(`  index "idx_email" {
+	db, err := atlashcl.Parse(t.Context(), dynamicTableDocument(`  index "idx_email" {
     columns = [column.email]
   }`), "schema.hcl")
 

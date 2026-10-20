@@ -54,7 +54,7 @@ function "f" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Functions, qt.HasLen, 1)
@@ -122,7 +122,7 @@ procedure "p" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

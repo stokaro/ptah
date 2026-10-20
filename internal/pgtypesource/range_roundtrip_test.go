@@ -45,7 +45,7 @@ func TestRangeSourceRoundTripPreservesQuotedNames(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			hcl, err := atlashclrender.Render(&original, atlashclrender.Options{HCL: runtime.HCL()})
 			c.Assert(err, qt.IsNil)
-			fromHCL, err := atlashcl.ParseWithOptions(hcl.Data, "roundtrip.hcl", atlashcl.Options{HCL: runtime.HCL()})
+			fromHCL, err := atlashcl.ParseWithOptions(t.Context(), hcl.Data, "roundtrip.hcl", atlashcl.Options{HCL: runtime.HCL()})
 			c.Assert(err, qt.IsNil)
 			for i, read := range []*schemamodel.Database{&fromGo, fromHCL} {
 				after, model := oneRange(c, read)
@@ -79,7 +79,7 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			hcl, err := atlashclrender.Render(original, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
-			fromHCL, err := atlashcl.ParseWithOptions(hcl.Data, "limited.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			fromHCL, err := atlashcl.ParseWithOptions(t.Context(), hcl.Data, "limited.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			for _, read := range []*schemamodel.Database{&fromGo, fromHCL} {
 				known := read.FeatureCoverage.SelectKinds([]schemaext.Kind{pgtype.RangeKind})

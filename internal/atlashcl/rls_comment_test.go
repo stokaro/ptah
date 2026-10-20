@@ -15,7 +15,7 @@ import (
 func TestParseRowSecurityComment(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -34,7 +34,7 @@ table "users" {
 func TestParseRowSecurityCommentAbsentIsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -71,7 +71,7 @@ type SecurityMarker struct{}
 `)
 	c.Assert(err, qt.IsNil)
 
-	hclDB, err := parseWithOwners([]byte(`
+	hclDB, err := parseWithOwners(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int

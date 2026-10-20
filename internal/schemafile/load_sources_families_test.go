@@ -32,10 +32,9 @@ func TestLoadSources_CarriesTheFamiliesLoadCarries(t *testing.T) {
 	c := qt.New(t)
 	path := writeSQLServerDocument(c)
 
-	direct, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
+	direct, err := schemafile.Load(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer})
 	c.Assert(err, qt.IsNil)
-	merged, err := schemafile.LoadSources(
-		[]schemafile.Source{{URL: path}},
+	merged, err := schemafile.LoadSources(t.Context(), []schemafile.Source{{URL: path}},
 		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer},
 	)
 	c.Assert(err, qt.IsNil)
@@ -53,8 +52,7 @@ func TestLoadSources_CarriesTheFamiliesLoadCarries(t *testing.T) {
 func TestLoadSources_MergesTheFamiliesAcrossFiles(t *testing.T) {
 	c := qt.New(t)
 
-	merged, err := schemafile.LoadSources(
-		[]schemafile.Source{{URL: writeSQLServerDocument(c)}, {URL: writeSecondSynonymDocument(c)}},
+	merged, err := schemafile.LoadSources(t.Context(), []schemafile.Source{{URL: writeSQLServerDocument(c)}, {URL: writeSecondSynonymDocument(c)}},
 		schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLServer},
 	)
 

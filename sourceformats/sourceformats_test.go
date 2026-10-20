@@ -23,7 +23,7 @@ func TestReadSQL_DropsATableWithRelations(t *testing.T) {
 	runtime := builtintest.Runtime()
 	formats := sourceformats.New(runtime.YAML(), runtime.SQL(), runtime.HCL(), coverage.Vocabulary{}, runtime)
 
-	database, err := formats.ReadSQL([]byte(dropsBesideAnExtension), "postgres")
+	database, err := formats.ReadSQL(t.Context(), []byte(dropsBesideAnExtension), "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
@@ -37,7 +37,7 @@ func TestReadSQL_RefusesADropTableWithoutRelations(t *testing.T) {
 	runtime := builtintest.Runtime()
 	formats := sourceformats.New(runtime.YAML(), runtime.SQL(), runtime.HCL(), coverage.Vocabulary{}, nil)
 
-	database, err := formats.ReadSQL([]byte(dropsBesideAnExtension), "postgres")
+	database, err := formats.ReadSQL(t.Context(), []byte(dropsBesideAnExtension), "postgres")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `DROP TABLE a: .*no runtime can say which tables the standalone feature objects bind or are attached to`)

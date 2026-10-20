@@ -222,18 +222,22 @@ func ScopeFromURLs(devURL, targetURL, targetFlag string) (scope, flag string) {
 // A nested load -- a directory entry, or one of several --to files -- finds the
 // collector already set and just contributes to it, so the count is the desired
 // state's and the refusal is reported once.
-func gateSchemaScope(opts Options, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
-	if opts.collect != nil {
-		return load(opts)
+func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
+	topLevel := opts.collect == nil
+	if topLevel {
+		opts.collect = &schemaBlockCollector{}
 	}
-	inner := opts
-	inner.collect = &schemaBlockCollector{}
-	db, err := load(inner)
+	db, err := load(opts)
 	if err != nil {
 		return nil, err
 	}
-	if err := opts.checkSchemaScope(inner.collect.blocks); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if topLevel {
+		if err := opts.checkSchemaScope(opts.collect.blocks); err != nil {
+			return nil, err
+		}
 	}
 	return db, nil
 }
@@ -260,26 +264,32 @@ func (o Options) checkSchemaScope(blocks []atlashcl.SchemaBlock) error {
 }
 
 // Load reads one local schema file from either a plain path or file:// URL.
-func Load(rawURL string, opts Options) (*schemamodel.Database, error) {
+func Load(ctx context.Context, rawURL string, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path, err := LocalFilePath(rawURL)
 	if err != nil {
 		return nil, err
 	}
-	return LoadPath(path, opts)
+	return LoadPath(ctx, path, opts)
 }
 
 // LoadPath reads one local schema source from a resolved filesystem path: a
 // single schema file, or a directory of schema files (see [loadSchemaDir]).
-func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
-	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
+func LoadPath(ctx context.Context, path string, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return gateSchemaScope(ctx, opts, func(opts Options) (*schemamodel.Database, error) {
 		resolved, isDir, err := statSchemaPath(path)
 		if err != nil {
 			return nil, err
 		}
 		if isDir {
-			return loadSchemaDir(resolved, opts)
+			return loadSchemaDir(ctx, resolved, opts)
 		}
-		return loadSchemaFile(resolved, opts)
+		return loadSchemaFile(ctx, resolved, opts)
 	})
 }
 
@@ -291,7 +301,7 @@ func LoadPath(path string, opts Options) (*schemamodel.Database, error) {
 // a directory refuses here instead of being read as another schema directory.
 // That covers the case [os.ReadDir] cannot see, a symlink to a directory, which
 // it reports as a symlink rather than as a directory.
-func loadSchemaDirEntry(
+func loadSchemaDirEntry(ctx context.Context,
 	path string, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, *ast.StatementList, error) {
 	resolved, isDir, err := statSchemaPath(path)
@@ -302,7 +312,7 @@ func loadSchemaDirEntry(
 		return nil, nil, isDirectoryError(resolved)
 	}
 	if strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
-		db, statements, err := loadSQLFileWithStatements(resolved, opts, earlier)
+		db, statements, err := loadSQLFileWithStatements(ctx, resolved, opts, earlier)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -312,7 +322,7 @@ func loadSchemaDirEntry(
 		// destructive.
 		return withFormatLimits(db, resolved, opts.CoverageVocabulary), statements, nil
 	}
-	db, err := loadSchemaFile(resolved, opts)
+	db, err := loadSchemaFile(ctx, resolved, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -338,8 +348,8 @@ func statSchemaPath(path string) (resolved string, isDir bool, err error) {
 
 // loadSchemaFile reads one schema file, chosen by extension, and records what
 // the chosen format cannot express.
-func loadSchemaFile(resolved string, opts Options) (*schemamodel.Database, error) {
-	database, err := parseSchemaFile(resolved, opts)
+func loadSchemaFile(ctx context.Context, resolved string, opts Options) (*schemamodel.Database, error) {
+	database, err := parseSchemaFile(ctx, resolved, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -518,10 +528,10 @@ func unsupportedByFormat(kinds ...coverage.Kind) []coverage.Object {
 	return records
 }
 
-func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, error) {
+func parseSchemaFile(ctx context.Context, resolved string, opts Options) (*schemamodel.Database, error) {
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
-		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
+		return atlashcl.ParseFileWithOptions(ctx, resolved, atlashcl.Options{
 			Dialect:            opts.Dialect,
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
 			RecordIgnored:      ignoredNameReporter(opts.ReportIgnored),
@@ -533,9 +543,9 @@ func parseSchemaFile(resolved string, opts Options) (*schemamodel.Database, erro
 			HCL:                opts.HCL,
 		})
 	case ".yaml", ".yml":
-		return yamlschema.ParseFile(opts.YAML, resolved)
+		return yamlschema.ParseFile(ctx, opts.YAML, resolved)
 	case ".sql":
-		return loadSQLFileTree(resolved, opts)
+		return loadSQLFileTree(ctx, resolved, opts)
 	case ".dbml":
 		return loadDBMLFile(resolved, opts)
 	default:
@@ -580,7 +590,7 @@ const (
 // atlas.sum still wins: a directory carrying one is a migration directory on
 // both surfaces, replayed rather than read, and saying so here keeps the two
 // spellings from disagreeing when this loader is reached directly.
-func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
+func loadSchemaDir(ctx context.Context, dir string, opts Options) (*schemamodel.Database, error) {
 	names, format, err := schemaDirFiles(dir)
 	if err != nil {
 		return nil, err
@@ -590,7 +600,7 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 		if err := script.addDir(dir, names); err != nil {
 			return nil, err
 		}
-		return script.read(opts)
+		return script.read(ctx, opts)
 	}
 
 	merged := &schemamodel.Database{}
@@ -599,7 +609,7 @@ func loadSchemaDir(dir string, opts Options) (*schemamodel.Database, error) {
 	var settings []atlashcl.TableSetting
 	opts.deferTableSettings = func(setting atlashcl.TableSetting) { settings = append(settings, setting) }
 	for _, name := range names {
-		db, statements, err := loadSchemaDirEntry(filepath.Join(dir, name), opts, document)
+		db, statements, err := loadSchemaDirEntry(ctx, filepath.Join(dir, name), opts, document)
 		if err != nil {
 			return nil, err
 		}
@@ -714,7 +724,10 @@ func isDirectoryError(path string) error {
 }
 
 // LoadAll reads all schema files and merges them into one database IR.
-func LoadAll(rawURLs []string, opts Options) (*schemamodel.Database, error) {
+func LoadAll(ctx context.Context, rawURLs []string, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(rawURLs) == 0 {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
@@ -723,7 +736,7 @@ func LoadAll(rawURLs []string, opts Options) (*schemamodel.Database, error) {
 	for _, rawURL := range rawURLs {
 		sources = append(sources, Source{URL: rawURL})
 	}
-	return LoadSources(sources, opts)
+	return LoadSources(ctx, sources, opts)
 }
 
 // Source is one desired-state schema source URL together with the variable
@@ -748,19 +761,22 @@ type Source struct {
 
 // LoadSources loads every source into one merged schema, applying each source's
 // own variable scope.
-func LoadSources(sources []Source, opts Options) (*schemamodel.Database, error) {
+func LoadSources(ctx context.Context, sources []Source, opts Options) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("at least one schema file URL is required")
 	}
 
-	return gateSchemaScope(opts, func(opts Options) (*schemamodel.Database, error) {
+	return gateSchemaScope(ctx, opts, func(opts Options) (*schemamodel.Database, error) {
 		if readsAsLoad(opts) {
-			return loadSourcesAsLoad(sources, opts)
+			return loadSourcesAsLoad(ctx, sources, opts)
 		}
 		merged := &schemamodel.Database{}
 		document := sqlschema.NewDocument(merged)
 		for _, source := range sources {
-			if err := loadSourceInto(source, source.apply(opts), merged, document); err != nil {
+			if err := loadSourceInto(ctx, source, source.apply(opts), merged, document); err != nil {
 				return nil, err
 			}
 		}
@@ -772,7 +788,7 @@ func LoadSources(sources []Source, opts Options) (*schemamodel.Database, error) 
 // loadSourceInto preserves both source-list order and each SQL entry point's
 // import tree. Imports share the accumulated document but retain their own
 // entry point's confinement root and cycle checks.
-func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, document *sqlschema.Document) error {
+func loadSourceInto(ctx context.Context, source Source, opts Options, merged *schemamodel.Database, document *sqlschema.Document) error {
 	path, err := LocalFilePath(source.URL)
 	if err != nil {
 		return err
@@ -782,13 +798,13 @@ func loadSourceInto(source Source, opts Options, merged *schemamodel.Database, d
 		return err
 	}
 	if !isDir && strings.EqualFold(filepath.Ext(resolved), dirSQLExtension) {
-		if err := loadSQLWithImports(filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, document); err != nil {
+		if err := loadSQLWithImports(ctx, filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, document); err != nil {
 			return err
 		}
 		withFormatLimits(merged, resolved, opts.CoverageVocabulary)
 		return nil
 	}
-	db, err := LoadPath(resolved, opts)
+	db, err := LoadPath(ctx, resolved, opts)
 	if err != nil {
 		return err
 	}
@@ -834,8 +850,8 @@ func LocalFilePath(rawURL string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
-	db, _, err := loadSQLFileWithStatements(path, opts, nil)
+func loadSQLFile(ctx context.Context, path string, opts Options) (*schemamodel.Database, error) {
+	db, _, err := loadSQLFileWithStatements(ctx, path, opts, nil)
 	return db, err
 }
 
@@ -848,23 +864,24 @@ func loadSQLFile(path string, opts Options) (*schemamodel.Database, error) {
 //
 // earlier is what a schema directory's earlier files declared, and nil for a
 // file read on its own; see [sqlschema.ReadOnto].
-func loadSQLFileWithStatements(
+func loadSQLFileWithStatements(ctx context.Context,
 	path string, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, *ast.StatementList, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
-	return readSQLFile(path, data, opts, earlier)
+	return readSQLFile(ctx, path, data, opts, earlier)
 }
 
 // readSQLFile is [loadSQLFileWithStatements] over the file's text, data.
 func readSQLFile(
+	ctx context.Context,
 	path string, data []byte, opts Options, earlier *sqlschema.Document,
 ) (*schemamodel.Database, *ast.StatementList, error) {
 	// The loaders take no context yet. The owners read their syntax in
 	// process, so the parse bounds the read.
-	db, statements, err := sqlschema.ReadWith(context.Background(), data, opts.Dialect, earlier,
+	db, statements, err := sqlschema.ReadWith(ctx, data, opts.Dialect, earlier,
 		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)

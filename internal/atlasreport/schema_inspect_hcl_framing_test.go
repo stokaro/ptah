@@ -100,7 +100,7 @@ func TestCompatibilityHCLFraming_PreservesPostgreSQLCoverageDirectives(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.HasPrefix(hcl, "// ptah:not-described extension reason=suppressed provenance=defaulted\n"), qt.IsTrue)
 	c.Assert(hcl, qt.Not(qt.Contains), atlashclrender.GeneratedCodeMarker)
-	parsed, err := atlashcl.ParseWithOptions([]byte(hcl), "inspect.hcl", atlashcl.Options{HCL: builtintest.
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(hcl), "inspect.hcl", atlashcl.Options{HCL: builtintest.
 		Runtime().HCL()},
 	)
 	c.Assert(err, qt.IsNil)

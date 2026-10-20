@@ -892,7 +892,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// The sources, so a desired state the env selected through
 		// `data "hcl_schema"` is verified against the values that block
 		// supplies. The plan itself was computed from them.
-		desired, err = schemafile.LoadSources(atlasSchemaApplyDesiredSources(opts), schemafile.Options{
+		desired, err = schemafile.LoadSources(cmd.Context(), atlasSchemaApplyDesiredSources(opts), schemafile.Options{
 			YAML:                  opts.runtime.YAML(),
 			SQL:                   opts.runtime.SQL(),
 			HCL:                   opts.runtime.HCL(),
@@ -1415,7 +1415,7 @@ func checkAtlasApplyTarget(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
-	if err := atlasschema.RefuseServerDevDatabase(conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv), opts.runtime.HCL()); err != nil {
+	if err := atlasschema.RefuseServerDevDatabase(cmd.Context(), conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv), opts.runtime.HCL()); err != nil {
 		return err
 	}
 	if opts.policy.IsStrictCE() {

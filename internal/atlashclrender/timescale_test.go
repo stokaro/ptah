@@ -100,7 +100,7 @@ func TestRenderTheTimescaleStateSurvivesItsOwnDocument(t *testing.T) {
 
 	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	reread, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	reread, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(reread.Tables, qt.HasLen, 1)

@@ -100,7 +100,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaVarFixtures(c)
 
-			db, err := schemafile.LoadSources(test.sources(dir), test.opts)
+			db, err := schemafile.LoadSources(t.Context(), test.sources(dir), test.opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(test.wantDefaults, qt.Not(qt.HasLen), 0,
@@ -162,7 +162,7 @@ func TestLoadSourcesRefusesValuesFromOutsideTheScope(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaVarFixtures(c)
 
-			db, err := schemafile.LoadSources(test.sources(dir), test.opts)
+			db, err := schemafile.LoadSources(t.Context(), test.sources(dir), test.opts)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

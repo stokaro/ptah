@@ -106,7 +106,7 @@ CREATE POLICY docs_tenant ON %[1]s.docs %[2]s USING (true);
 `, f.schema, toClause)
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
-	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: f.dialect})
+	db, err := schemafile.LoadAll(c.Context(), []string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: f.dialect})
 	c.Assert(err, qt.IsNil)
 	return db
 }

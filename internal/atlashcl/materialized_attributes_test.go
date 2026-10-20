@@ -23,7 +23,7 @@ func materializedAttributeOwners(requests *[]hclext.Request, attribute string) h
 func TestParse_MaterializedAttributesAttachToTheDeclaredView(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
-	db, err := atlashcl.ParseWithOptions([]byte(`schema "a" {}
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "a" {}
 schema "b" {}
 materialized "a" "mv" {
  as = "SELECT 1"
@@ -53,7 +53,7 @@ materialized "plain" { as = "SELECT 3" }
 func TestParse_MaterializedAttributesCannotReplaceNativeValues(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
-	db, err := atlashcl.ParseWithOptions([]byte("materialized \"mv\" { as = \"SELECT 1\" }"), "schema.hcl",
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("materialized \"mv\" { as = \"SELECT 1\" }"), "schema.hcl",
 		atlashcl.Options{HCL: materializedAttributeOwners(&requests, "as")})
 	c.Assert(err, qt.ErrorMatches, `(?s).*owner attribute "as" conflicts with a materialized attribute.*`)
 	c.Assert(db, qt.IsNil)

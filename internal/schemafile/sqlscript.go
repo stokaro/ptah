@@ -73,14 +73,13 @@ func (s *sqlScript) addDir(dir string, names []string) error {
 
 // read reads the script in one call to the owner, and checks each schema
 // directory among its files.
-func (s *sqlScript) read(opts Options) (*schemamodel.Database, error) {
+func (s *sqlScript) read(ctx context.Context, opts Options) (*schemamodel.Database, error) {
 	root, err := sourceDatabasePath(opts)
 	if err != nil {
 		return nil, err
 	}
-	// The loaders take no context yet. The owners read in process, so the
-	// read bounds itself.
-	load, err := sqlschema.ReadLoad(context.Background(),
+	// The caller context bounds owner parsing across the whole script.
+	load, err := sqlschema.ReadLoad(ctx,
 		sqlext.GrammarRequest{Target: opts.Dialect, Files: s.files, DatabasePath: root},
 		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations})
 	if refused, ok := errors.AsType[*sqlext.FileError](err); ok {
@@ -111,7 +110,7 @@ func (s *sqlScript) read(opts Options) (*schemamodel.Database, error) {
 // A document of the load can change only what the load declares. A source in
 // another format is not part of it, so a statement that changes an object
 // such a source declares is refused, and the refusal says so.
-func loadSourcesAsLoad(sources []Source, opts Options) (*schemamodel.Database, error) {
+func loadSourcesAsLoad(ctx context.Context, sources []Source, opts Options) (*schemamodel.Database, error) {
 	var script sqlScript
 	parts := make([]*schemamodel.Database, 0, len(sources))
 	var others []string
@@ -128,7 +127,7 @@ func loadSourcesAsLoad(sources []Source, opts Options) (*schemamodel.Database, e
 			}
 			continue
 		}
-		db, err := LoadPath(resolved, source.apply(opts))
+		db, err := LoadPath(ctx, resolved, source.apply(opts))
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +135,7 @@ func loadSourcesAsLoad(sources []Source, opts Options) (*schemamodel.Database, e
 		others = append(others, filepath.Base(resolved))
 	}
 	if scriptAt >= 0 {
-		db, err := script.read(opts)
+		db, err := script.read(ctx, opts)
 		if errors.Is(err, sqlext.ErrUndeclared) && len(others) > 0 {
 			return nil, fmt.Errorf(
 				"%w; a %s SQL file changes only what the SQL files of the same load declare, not what %s declares",

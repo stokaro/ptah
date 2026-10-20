@@ -23,8 +23,8 @@ func TestSources_RenderThroughBuiltinComposition(t *testing.T) {
 	c := qt.New(t)
 	runtime := builtintest.Runtime()
 	fromGo := must.Must(goschema.ParseSource(runtime.Annotations(), "privileges.go", goSource(annotationPrefix+` schema="app" privileges="SELECT,INSERT" grantable="INSERT"`)))
-	fromYAML := must.Must(yamlschema.Parse(runtime.YAML(), []byte(yamlPrefix+"    schema: app\n    privileges: [SELECT, INSERT]\n    grantable: INSERT\n")))
-	fromHCL := must.Must(parseHCL(hclBlock(hclIdentity + "schema = schema.app\nprivileges = [SELECT, INSERT]\ngrantable = [INSERT]")))
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), runtime.YAML(), []byte(yamlPrefix+"    schema: app\n    privileges: [SELECT, INSERT]\n    grantable: INSERT\n")))
+	fromHCL := must.Must(parseHCL(t.Context(), hclBlock(hclIdentity+"schema = schema.app\nprivileges = [SELECT, INSERT]\ngrantable = [INSERT]")))
 	fromSQL := readSQL(c, alterDefault+"GRANT SELECT ON TABLES TO reader;\n"+alterDefault+"GRANT INSERT ON TABLES TO reader WITH GRANT OPTION;")
 	for _, db := range []*schemamodel.Database{&fromGo, fromYAML, fromHCL, &fromSQL} {
 		whole, err := renderer.RenderSchema(t.Context(), runtime, renderer.SchemaRequest{Target: "postgres", Capabilities: capability.Postgres18(), Identifiers: identifier.ForDialect("postgres"), Schema: db})

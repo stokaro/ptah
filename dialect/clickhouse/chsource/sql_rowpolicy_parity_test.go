@@ -17,7 +17,7 @@ func TestSQLRowPolicyMatchesGoAndYAML(t *testing.T) {
 	c := qt.New(t)
 	runtime := builtintest.Runtime()
 	sql := policySQL(c, createPolicy)
-	yaml := must.Must(yamlschema.Parse(runtime.YAML(), []byte("row_policies:\n  tenant:\n    table: app.orders\n    using: tenant = 1\n    as: RESTRICTIVE\n    to: ALL EXCEPT admin\n")))
+	yaml := must.Must(yamlschema.Parse(t.Context(), runtime.YAML(), []byte("row_policies:\n  tenant:\n    table: app.orders\n    using: tenant = 1\n    as: RESTRICTIVE\n    to: ALL EXCEPT admin\n")))
 	goModel := must.Must(goschema.ParseSource(runtime.Annotations(), "policy.go", `package models
 //ptah:schema:rowpolicy name="tenant" table="app.orders" using="tenant = 1" as="RESTRICTIVE" to="ALL EXCEPT admin"
 type Policy struct{}

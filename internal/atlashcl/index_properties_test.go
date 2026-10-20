@@ -34,7 +34,7 @@ func TestParseRefusesMalformedIndexPlatformBlocks(t *testing.T) {
     %s
   }
 }`, test.block)
-			db, err := atlashcl.Parse([]byte(source), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(source), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(db, qt.IsNil)
 		})

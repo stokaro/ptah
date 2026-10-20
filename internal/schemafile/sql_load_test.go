@@ -77,7 +77,7 @@ func TestLoadPath_ReadsAGrammarDirectoryInOneCall(t *testing.T) {
 	writeFiles(c, dir, map[string]string{"001.sql": "first", "002.sql": "second"})
 	var requests []sqlext.GrammarRequest
 
-	database, err := schemafile.LoadPath(dir, grammarOptions(&requests))
+	database, err := schemafile.LoadPath(t.Context(), dir, grammarOptions(&requests))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
@@ -96,7 +96,7 @@ func TestLoadPath_ChecksTheOwnersDeclarationsOfADirectory(t *testing.T) {
 	writeFiles(c, dir, map[string]string{"001.sql": "same", "002.sql": "same"})
 	var requests []sqlext.GrammarRequest
 
-	database, err := schemafile.LoadPath(dir, grammarOptions(&requests))
+	database, err := schemafile.LoadPath(t.Context(), dir, grammarOptions(&requests))
 
 	c.Assert(err, qt.ErrorMatches, `read state from "002.sql": table "same" already exists`)
 	c.Assert(database, qt.IsNil)
@@ -113,7 +113,7 @@ func TestLoadAll_ReadsEveryGrammarSourceInOneCall(t *testing.T) {
 	writeFiles(c, dir, map[string]string{"001.sql": "tail"})
 	var requests []sqlext.GrammarRequest
 
-	database, err := schemafile.LoadAll([]string{filepath.Join(root, "main.sql"), dir}, grammarOptions(&requests))
+	database, err := schemafile.LoadAll(t.Context(), []string{filepath.Join(root, "main.sql"), dir}, grammarOptions(&requests))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
@@ -139,7 +139,7 @@ func TestLoadAll_AYQLFileChangesWhatTheLoadDeclares(t *testing.T) {
 	writeFiles(c, root, map[string]string{"feed.sql": yqlFeed})
 	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
 
-	database, err := schemafile.LoadAll([]string{dir, filepath.Join(root, "feed.sql")}, opts)
+	database, err := schemafile.LoadAll(t.Context(), []string{dir, filepath.Join(root, "feed.sql")}, opts)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(ydbschema.DesiredChangefeeds(database.FeatureObjects, "", "users")), qt.HasLen, 1)
@@ -156,7 +156,7 @@ func TestLoadAll_AYQLFileCannotChangeWhatAnHCLSourceDeclares(t *testing.T) {
 	writeFiles(c, root, map[string]string{"users.hcl": hclUsersYDB, "feed.sql": yqlFeed})
 	opts := schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb"}
 
-	database, err := schemafile.LoadAll([]string{filepath.Join(root, "users.hcl"), filepath.Join(root, "feed.sql")}, opts)
+	database, err := schemafile.LoadAll(t.Context(), []string{filepath.Join(root, "users.hcl"), filepath.Join(root, "feed.sql")}, opts)
 
 	c.Assert(err, qt.ErrorMatches, `read SQL schema file .*feed\.sql: the schema model has no place for this statement: `+
 		`ALTER TABLE users ADD CHANGEFEED updates names a table this schema does not declare; `+

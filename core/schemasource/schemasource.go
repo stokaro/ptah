@@ -23,7 +23,7 @@ import (
 	"ptah.run/internal/secretdisplay"
 )
 
-// DefaultTimeout bounds how long an external schema command may run when the
+// DefaultTimeout bounds command execution and output interpretation when the
 // caller does not set an explicit timeout.
 const DefaultTimeout = 60 * time.Second
 
@@ -43,7 +43,8 @@ type Command struct {
 	// working directory. A non-empty Dir is also reflected in the program's
 	// PWD environment variable, on every platform.
 	Dir string
-	// Timeout bounds execution. Zero uses DefaultTimeout; a negative value
+	// Timeout bounds execution and output interpretation. Zero uses
+	// DefaultTimeout; a negative value
 	// disables the timeout.
 	Timeout time.Duration
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
@@ -64,19 +65,19 @@ var ErrNoFormats = errors.New("no readers of the schema command's output were gi
 type Formats interface {
 	// ReadYAML reads a YAML document, as ptah.run/core/yamlschema.Parse does
 	// with the owners the readers were built for.
-	ReadYAML(data []byte) (*schemamodel.Database, error)
+	ReadYAML(ctx context.Context, data []byte) (*schemamodel.Database, error)
 	// ReadSQL reads SQL DDL statements. dialect is a hint, empty for none.
-	ReadSQL(data []byte, dialect string) (*schemamodel.Database, error)
+	ReadSQL(ctx context.Context, data []byte, dialect string) (*schemamodel.Database, error)
 	// ReadHCL reads an Atlas HCL document, naming it filename in a refusal.
 	// dialect selects a scoped block's owner when the block names none.
-	ReadHCL(data []byte, filename, dialect string) (*schemamodel.Database, error)
+	ReadHCL(ctx context.Context, data []byte, filename, dialect string) (*schemamodel.Database, error)
 }
 
 // Run executes cmd and parses its standard output into a desired schema with
 // formats, the readers of each output format; a nil formats is refused with
 // [ErrNoFormats] before the program starts.
 //
-// Execution is bounded by the resolved timeout, and when Run returns — on
+// Execution and output interpretation share the resolved timeout. When Run returns — on
 // success, failure, cancellation, or timeout — descendant processes the
 // program started are terminated with it. Caller cancellation and a timeout
 // are distinguishable: both wrap the context error, so errors.Is against
@@ -132,7 +133,7 @@ func Run(ctx context.Context, formats Formats, cmd Command) (*schemamodel.Databa
 		return nil, fmt.Errorf("schema command %q produced empty output", cmd.Args[0])
 	}
 
-	db, err := parseOutput(formats, stdout, format, cmd.Dialect)
+	db, err := parseOutput(runCtx, formats, stdout, format, cmd.Dialect)
 	if err != nil {
 		safeErr := secretdisplay.SanitizeError(
 			err,
@@ -141,17 +142,23 @@ func Run(ctx context.Context, formats Formats, cmd Command) (*schemamodel.Databa
 		)
 		return nil, fmt.Errorf("parse schema command %q output: %w", cmd.Args[0], safeErr)
 	}
+	if err := runCtx.Err(); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
-func parseOutput(formats Formats, data []byte, format, dialect string) (*schemamodel.Database, error) {
+func parseOutput(ctx context.Context, formats Formats, data []byte, format, dialect string) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	switch format {
 	case "sql":
-		return formats.ReadSQL(data, dialect)
+		return formats.ReadSQL(ctx, data, dialect)
 	case "hcl":
-		return formats.ReadHCL(data, "schema-command.hcl", dialect)
+		return formats.ReadHCL(ctx, data, "schema-command.hcl", dialect)
 	case "yaml", "yml":
-		return formats.ReadYAML(data)
+		return formats.ReadYAML(ctx, data)
 	default:
 		return nil, fmt.Errorf(
 			"unsupported schema command format %q: expected sql, hcl, or yaml",

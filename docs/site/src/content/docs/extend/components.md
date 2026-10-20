@@ -222,7 +222,7 @@ Use `atlascompat` when you need Atlas-shaped HCL input through a stable public
 wrapper.
 
 ```go
-db, err := atlascompat.ParseAtlasHCL([]byte(`
+db, err := atlascompat.ParseAtlasHCL(context.Background(), []byte(`
 schema "public" {}
 
 table "users" {
@@ -283,7 +283,7 @@ func main() {
 	}
 	// The runtime's owners claim what a YAML document can declare of their
 	// models. yamlext.None() selects no owner.
-	db, err := yamlschema.ParseFile(runtime.YAML(), "schema.yaml")
+	db, err := yamlschema.ParseFile(context.Background(), runtime.YAML(), "schema.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -62,7 +62,7 @@ permission {
   privileges = ["EXECUTE"]
 }
 `, fixture.schema, fixture.role)
-	desired, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	desired, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	fixture.apply(c, ctx, desired)

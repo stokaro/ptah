@@ -122,17 +122,16 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, strictErr := parseWithOwners([]byte(tt.hcl), "schema.hcl")
+			_, strictErr := parseWithOwners(t.Context(), []byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
-			tolerant, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			tolerant, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)
 			c.Assert(err, qt.IsNil)
 
-			without, err := parseWithOwners([]byte(tt.equivalent), "schema.hcl")
+			without, err := parseWithOwners(t.Context(), []byte(tt.equivalent), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(tolerant, qt.DeepEquals, without)
 		})
@@ -216,8 +215,7 @@ wibble "p" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl),
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{HCL: builtintest.Runtime().HCL(), IgnoreUnknownNames: true},
 			)

@@ -29,7 +29,7 @@ func TestRender_RoutineAttributesRoundTrip(t *testing.T) {
 
 	result, err := atlashclrender.Render(database, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil, qt.Commentf("the exported HCL does not parse:\n%s", result.Data))
 	c.Assert(parsed.Functions, qt.HasLen, 1)
