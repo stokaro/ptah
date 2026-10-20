@@ -26,6 +26,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ErrStartup identifies failure to start the process or establish transport.
+// Protocol negotiation failures instead wrap provider.ErrProtocol.
+var ErrStartup = errors.New("provider startup failed")
+
 // Options selects an explicitly trusted executable. A checksum detects changes
 // to those trusted bytes; it does not establish publisher authenticity. Relative
 // executable paths and inherited host environments are refused by construction.
@@ -125,7 +129,7 @@ func startupError(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fmt.Errorf("%w: provider startup failed; verify the executable, checksum, and bootstrap contract", provider.ErrProtocol)
+	return fmt.Errorf("%w: verify the executable, checksum, and bootstrap contract", ErrStartup)
 }
 
 // Description returns a private copy of the negotiated identity and services.
