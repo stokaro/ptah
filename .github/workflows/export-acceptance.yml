@@ -106,6 +106,9 @@ jobs:
       - name: Protobuf acceptance
         run: bash scripts/check-protobuf-export-acceptance.sh
 
+      - name: Check provider protocol bindings
+        run: bash scripts/check-provider-protocol.sh
+
       - name: Go annotation to HCL acceptance
         run: bash scripts/check-hcl-export-acceptance.sh
 

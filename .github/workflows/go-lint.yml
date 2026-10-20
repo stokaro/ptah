@@ -363,10 +363,8 @@ jobs:
       # repository root, so the gorm example was unlinted, as was the testkit
       # module before it moved to stokaro/ptah-testkit.
       #
-      # Neither nested module tracks a tagged file today, so their
-      # second runs read the same files as their first. They are cheap next to
-      # the root module's runs, and they are what lints a tagged file added
-      # there later without anyone having to remember this list.
+      # Every nested module is checked in both contours, including modules
+      # whose current source does not contain an opt-in build tag.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
@@ -394,6 +392,34 @@ jobs:
           args: --timeout=30m --build-tags=integration,observability
           version: v2.15.0
           working-directory: docs/site/fixtures/source-equivalence
+
+      - name: Golint (provider SDK)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          working-directory: provider-sdk
+
+      - name: Golint (provider SDK, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          working-directory: provider-sdk
+
+      - name: Golint (independent provider fixture)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          working-directory: provider-sdk/testdata/fixture
+
+      - name: Golint (independent provider fixture, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          working-directory: provider-sdk/testdata/fixture
 
   go-lint-gate:
     name: Go lint gate
@@ -521,10 +547,8 @@ jobs:
       # repository root, so the gorm example was unlinted, as was the testkit
       # module before it moved to stokaro/ptah-testkit.
       #
-      # Neither nested module tracks a tagged file today, so their
-      # second runs read the same files as their first. They are cheap next to
-      # the root module's runs, and they are what lints a tagged file added
-      # there later without anyone having to remember this list.
+      # Every nested module is checked in both contours, including modules
+      # whose current source does not contain an opt-in build tag.
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
@@ -556,3 +580,35 @@ jobs:
           version: v2.15.0
           skip-cache: true
           working-directory: docs/site/fixtures/source-equivalence
+
+      - name: Golint (provider SDK)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          skip-cache: true
+          working-directory: provider-sdk
+
+      - name: Golint (provider SDK, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          skip-cache: true
+          working-directory: provider-sdk
+
+      - name: Golint (independent provider fixture)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.15.0
+          skip-cache: true
+          working-directory: provider-sdk/testdata/fixture
+
+      - name: Golint (independent provider fixture, tagged contour)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m --build-tags=integration,observability
+          version: v2.15.0
+          skip-cache: true
+          working-directory: provider-sdk/testdata/fixture
