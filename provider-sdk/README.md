@@ -179,7 +179,8 @@ work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-s
 
 ## Captured extension sources
 
-Experimental revision 5 carries `source.decode` and complete `ValueModel` definitions.
+Experimental revision 6 carries `source.decode`, complete `ValueModel` definitions,
+and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
 session, connection address, host AST, or callback. The host evaluates frontend
@@ -193,6 +194,20 @@ normalized by `modeljson.Canonical`. The SDK verifies its exact SHA-256 digest
 and refuses duplicate keys, lossy strings, or a changed definition. Number text
 remains exact. Protobuf bytes and value payloads are not model definitions.
 These checks bind the declared format; they do not prove engine semantics.
+
+Each YAML-capable engine declares `yaml_source_keys`. A claim names the key,
+its `DOCUMENT` or `TABLE` scope, a decoder selector, and the desired model kinds
+it can declare. The SDK refuses duplicate keys within a scope, missing or
+unsupported models, and a YAML-capable model with no key claim. The host must
+also refuse collisions with common frontend keys or another selected owner.
+A model's JSON definition and kind name do not imply grammar ownership.
+
+Every YAML fragment carries the exact negotiated `yaml_key` claim. Its selector
+must match, and its document must enroll every model the claim names. A table
+key needs a common table binding with an entry key; a document key has no
+implicit table attachment. The client and server validate these facts before
+owner code runs. Other source formats cannot carry a YAML claim. Grammar claims
+are metadata, not a promise that the host has connected every frontend adapter.
 
 Captured values preserve missing entries, explicit null, false, empty values,
 exact number text, expressions, and structured references. Mapping keys,

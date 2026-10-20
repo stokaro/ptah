@@ -45,6 +45,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 			}
 			kinds[model.GetKind()] = true
 		}
+		if err := validateYAMLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
+			return err
+		}
 		if len(document.GetFragments()) != 0 && len(kinds) == 0 {
 			return sourceError("fragments require explicit model scope")
 		}

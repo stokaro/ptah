@@ -91,6 +91,9 @@ func capturedRetention(model *protocol.ValueModel, format protocol.SourceDocumen
 	for _, name := range []string{"later", "first"} {
 		mapping := &protocol.SourceMapping{Entries: []*protocol.SourceEntry{{Key: "on", KeySpan: captureSpan(), Value: &protocol.SourceValue{Span: captureSpan(), Value: &protocol.SourceValue_Text{Text: name}}}}}
 		fragment := &protocol.SourceFragment{Id: name, Selector: "retention", Span: captureSpan()}
+		if format == protocol.SourceDocument_YAML {
+			fragment.YamlKey = &protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "retention", Selector: "retention", Models: []string{model.GetKind()}}
+		}
 		switch format {
 		case protocol.SourceDocument_HCL:
 			fragment.Content = &protocol.SourceFragment_Block{Block: &protocol.SourceBlock{Type: "retention", Span: captureSpan(), Attributes: mapping}}
