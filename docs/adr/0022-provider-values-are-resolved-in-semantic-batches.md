@@ -219,10 +219,29 @@ callbacks; neither path serializes their values through the SDK.
 Negotiated source claims and conversion of captured YAML nodes to SDK source
 values remain application-adapter work. This frontend boundary does not claim
 that an external engine can already interpret native YAML files.
+## Negotiated YAML ownership
+
+An engine declares each YAML key it owns, the document or table scope, the
+selector its decoder understands, and the desired models that key can declare.
+A YAML-capable model must have an explicit key claim. The host must check claims
+against common frontend keys and the other selected owners before parsing.
+Model kind names and owner JSON definitions do not imply key ownership.
+
+A captured YAML fragment carries its frozen claim. Both SDK boundaries refuse a
+changed claim, a selector mismatch, a model outside the captured document's
+scope, or a missing table binding before invoking owner code. Document keys do
+not carry an implicit table attachment. A returned value must belong to a model
+named by its fragment's key, even when the document enrolls other models.
+Other source formats cannot carry YAML claims. The host includes this grammar in contract and model-definition digests,
+with key and model declaration order normalized as sets.
+
+This metadata does not yet connect native YAML capture to the transport.
+Source range capture, value conversion, and normalized model placement remain
+required application-adapter work before an external owner can read YAML files.
 
 ## Consequences
 
-Experimental revision 5 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic

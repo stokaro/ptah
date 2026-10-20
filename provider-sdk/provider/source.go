@@ -99,6 +99,9 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 	if err := w.node(0); err != nil {
 		return err
 	}
+	if format != protocol.SourceDocument_YAML && fragment.GetYamlKey() != nil {
+		return sourceError("YAML grammar claim on another source format")
+	}
 	if err := w.span(fragment.GetSpan(), authoredSource); err != nil {
 		return err
 	}
