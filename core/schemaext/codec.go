@@ -45,9 +45,11 @@ func (r Representation) valid() bool {
 // owner-supplied wire-model description; its canonical hash enters envelopes and
 // fingerprints. A changed definition cannot reuse an old recorded approval.
 //
-// Clone, Encode, Decode, and Canonical must be pure local functions. They are not
-// provider transport callbacks. Registry exposes context-aware batch methods;
-// an external adapter serializes data already received by a coarse service call.
+// Clone, Encode, Decode, and Canonical are pure local functions, never
+// provider transport callbacks. OwnedCodec.BatchDecoder replaces Decode at the
+// explicit batch boundary when models need their external owner. Registry
+// exposes context-aware batch methods; an external adapter serializes data
+// already received by a coarse service call.
 // Canonical defines feature-specific set ordering while retaining ordered lists.
 // It is not used as a substitute for semantic equality or target comparison.
 type Codec struct {
@@ -65,6 +67,20 @@ type Codec struct {
 type OwnedCodec struct {
 	Owner string
 	Codec Codec
+	// BatchDecoder resolves all this owner's envelopes in one context-aware
+	// call. It is mutually exclusive with Codec.Decode. Reuse the same pointer
+	// for every registration belonging to one owner; registration snapshots it.
+	BatchDecoder *BatchDecoder
+}
+
+// BatchDecoder validates serialized models through their selected owner. It
+// receives a complete ordered group of envelopes that may contain several
+// kinds and representations. Decode must return one payload per envelope in
+// the same order, or an error and no usable prefix. It must honor cancellation.
+// This is an explicit resolution phase; Clone, Equal, Encode, and Canonical
+// remain local operations and never call this service.
+type BatchDecoder struct {
+	Decode func(context.Context, []Envelope) ([]Payload, error)
 }
 
 type codecKey struct {
@@ -87,7 +103,8 @@ type registeredCodec struct {
 // server capabilities. Its zero value knows no kinds. There is one current
 // codec per kind/representation; older encodings are refused, never guessed.
 type Registry struct {
-	codecs map[codecKey]registeredCodec
+	codecs        map[codecKey]registeredCodec
+	batchDecoders map[string]func(context.Context, []Envelope) ([]Payload, error)
 	// definitions is Definitions' answer, sorted once when the registry is
 	// frozen: callers ask for it on every comparison and registration.
 	definitions []CodecIdentity
@@ -96,8 +113,13 @@ type Registry struct {
 // NewRegistry validates registrations and freezes their metadata. It calls no
 // encoder or decoder and performs no database or network I/O.
 func NewRegistry(owned ...OwnedCodec) (Registry, error) {
-	result := Registry{codecs: make(map[codecKey]registeredCodec, len(owned))}
+	result := Registry{codecs: make(map[codecKey]registeredCodec, len(owned)), batchDecoders: make(map[string]func(context.Context, []Envelope) ([]Payload, error))}
+	batchOwners := make(map[string]*BatchDecoder)
 	for _, declaration := range owned {
+		if previous, found := batchOwners[declaration.Owner]; found && previous != declaration.BatchDecoder {
+			return Registry{}, fmt.Errorf("%w: owner %q has conflicting batch decoders", ErrInvalidCodec, declaration.Owner)
+		}
+		batchOwners[declaration.Owner] = declaration.BatchDecoder
 		key, codec, err := registerCodec(declaration)
 		if err != nil {
 			return Registry{}, err
@@ -107,6 +129,9 @@ func NewRegistry(owned ...OwnedCodec) (Registry, error) {
 				ErrInvalidCodec, key.kind, key.representation, previous.owner, codec.owner)
 		}
 		result.codecs[key] = codec
+		if declaration.BatchDecoder != nil {
+			result.batchDecoders[declaration.Owner] = declaration.BatchDecoder.Decode
+		}
 	}
 	result.definitions = make([]CodecIdentity, 0, len(result.codecs))
 	for key, codec := range result.codecs {
@@ -146,7 +171,7 @@ func registerCodec(owned OwnedCodec) (codecKey, registeredCodec, error) {
 	if err := ValidatePayload(codec.Prototype); err != nil {
 		return codecKey{}, registeredCodec{}, fmt.Errorf("%w: %w", ErrInvalidCodec, err)
 	}
-	if codec.Clone == nil || codec.Encode == nil || codec.Decode == nil || codec.Canonical == nil {
+	if codec.Clone == nil || codec.Encode == nil || codec.Canonical == nil || !validDecoder(owned) {
 		return codecKey{}, registeredCodec{}, fmt.Errorf("%w: %q is incomplete", ErrInvalidCodec, codec.Prototype.Kind())
 	}
 	definitionDigest, err := definitionDigestOf(codec.Definition)
@@ -299,56 +324,6 @@ func (c registeredCodec) snapshot(payload Payload) (Payload, error) {
 		return nil, err
 	}
 	return cloned, nil
-}
-
-// Decode reconstructs an ordered batch using exactly the selected definitions.
-// It refuses unknown, incompatible, and malformed envelopes without returning
-// partial values. Decoders never receive an aliased caller buffer.
-func (r Registry) Decode(ctx context.Context, envelopes []Envelope) ([]Payload, error) {
-	if err := codecContext(ctx); err != nil {
-		return nil, err
-	}
-	result := make([]Payload, 0, len(envelopes))
-	for _, envelope := range envelopes {
-		if err := codecContext(ctx); err != nil {
-			return nil, err
-		}
-		value, err := r.decodeOne(envelope)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, value)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (r Registry) decodeOne(envelope Envelope) (Payload, error) {
-	codec, found := r.codecs[codecKey{kind: envelope.Kind, representation: envelope.Representation}]
-	if !found {
-		return nil, &UnknownCodecError{Kind: envelope.Kind, Representation: envelope.Representation}
-	}
-	if envelope.Format != envelopeFormat || envelope.Owner != codec.owner || envelope.Version != codec.version || envelope.Definition != codec.definition {
-		return nil, fmt.Errorf("%w: %q/%s; decode with the recorded definition or regenerate the artifact",
-			ErrIncompatibleCodec, envelope.Kind, envelope.Representation)
-	}
-	data, err := CanonicalJSON(envelope.Payload)
-	if err != nil {
-		return nil, err
-	}
-	decoded, err := codec.decode(slices.Clone(data))
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidatePayload(decoded); err != nil {
-		return nil, err
-	}
-	if decoded.Kind() != envelope.Kind {
-		return nil, fmt.Errorf("%w: decoder returned kind %q for %q", ErrInvalidValue, decoded.Kind(), envelope.Kind)
-	}
-	return codec.snapshot(decoded)
 }
 
 // Fingerprint hashes a canonical ordered batch, including owner, representation,

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
@@ -16,7 +17,13 @@ import (
 // Provider returns services for the explicitly selected target declarations.
 // No built-in renderer, planner, or capability preset supplies missing behavior.
 func (h *Host) Provider() engine.Provider {
-	result := engine.Provider{ID: h.description.GetProviderId()}
+	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs)}
+	for i := range result.Codecs {
+		result.Codecs[i].Definition = slices.Clone(result.Codecs[i].Definition)
+	}
+	if len(result.Codecs) > 0 {
+		result.ModelDecoder = &schemaext.BatchDecoder{Decode: h.decodeModels}
+	}
 	for _, declared := range h.description.GetEngines() {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())

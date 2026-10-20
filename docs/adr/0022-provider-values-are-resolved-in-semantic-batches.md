@@ -141,9 +141,35 @@ YAML, HCL, and Go annotation fragments. It does not implement SQL source parsing
 or a real engine's native semantics. Host frontend capture and schema adapters
 remain required before the SDK can replace the in-process source owners.
 
+## Host model resolution
+
+Negotiation carries each complete canonical JSON model definition beside its
+SHA-256 digest. The SDK and host share lossless JSON normalization. Numbers
+retain their source text; duplicate keys and malformed Unicode are refused.
+
+The host registers desired and observed model codecs in the common schema
+registry. Its codec definition binds the owner definition, executable digest,
+semantic identity, protocol revision, engine features, and identifier rules.
+A changed binding invalidates earlier serialized envelopes and plan contracts.
+Models sharing a kind and representation across engines use one codec with
+explicit per-engine definitions.
+
+Decoding is an explicit context-aware batch service. The registry validates all
+envelopes first, then calls each owner once across kinds and representations.
+The host validates every engine and feature group before normalization. It
+returns no partial result on failure. Returned values contain normalized owner
+data and a validated canonical projection, with no process client. Clone,
+equality, encoding, and fingerprints remain local after provider shutdown.
+
+Persistence stores owner input and its binding, not a claim of prior validation.
+Loading it requires the selected owner to reconstruct the semantic projection.
+Operation and change models remain refused until their native adapters exist.
+This boundary does not yet connect frontend source capture, native object
+comparison, planning, or engine transaction and history services.
+
 ## Consequences
 
-Experimental revision 4 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 5 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
