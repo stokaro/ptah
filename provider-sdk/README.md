@@ -173,9 +173,8 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. Native object/facet adaptation in the host, frontend capture, contextual
-comparison, and migration backend operations remain required
-work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
+comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
 ## Captured extension sources
 
