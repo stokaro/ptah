@@ -9,12 +9,13 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -111,7 +112,7 @@ func judgedStatements(c *qt.C, diff *difftypes.SchemaDiff, dialect string) []jud
 	c.Helper()
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, dialect, planner.Options{},
+		diff, dialect, planext.Options{},
 	)
 	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, dialect)

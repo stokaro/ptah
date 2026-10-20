@@ -8,6 +8,8 @@ import (
 	"path"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
@@ -237,7 +239,7 @@ func planRebuildAgainst(c *qt.C, conn *dbschema.DatabaseConnection, declared *sc
 	return planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
 		diff, info.Dialect,
-		planner.Options{Capabilities: info.Capabilities, AllowTableRebuild: true},
+		planext.Options{Capabilities: info.Capabilities, AllowTableRebuild: true},
 	)
 }
 

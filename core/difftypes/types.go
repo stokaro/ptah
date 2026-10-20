@@ -22,7 +22,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tableref"
 )

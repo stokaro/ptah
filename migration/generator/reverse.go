@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reverseSchemaDiffWithPrior creates a reverse diff for generating down migrations with schema context.

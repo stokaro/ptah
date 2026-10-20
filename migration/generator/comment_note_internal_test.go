@@ -13,10 +13,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Dropping a column ends the PostgreSQL plan on a note, a statement that is

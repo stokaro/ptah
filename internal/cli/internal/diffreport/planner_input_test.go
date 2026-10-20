@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/cli/internal/diffreport"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestCategoriesLeavesOutEveryListTheWireDoesNotCarry is the property that keeps

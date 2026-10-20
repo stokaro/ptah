@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -51,7 +52,7 @@ func TestCompareTablesPreservesUnmanagedWorkloadState(t *testing.T) {
 			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), desired, current, info, nil, runtime)
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.FeatureChanges, qt.HasLen, 0)
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "ydb", planner.Options{Capabilities: info.Capabilities})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "ydb", planext.Options{Capabilities: info.Capabilities})
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
 			c.Assert(statements[0], qt.Contains, "CREATE TABLE `jobs`")

@@ -9,7 +9,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/migration/internal/tableidentity"
+	"ptah.run/internal/tableidentity"
 )
 
 type comparisonIdentity struct {

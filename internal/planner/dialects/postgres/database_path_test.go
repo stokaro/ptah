@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -14,7 +15,6 @@ import (
 	"ptah.run/dialect/cockroachdb/crdbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planningPathRecorder passes each planning request to Runtime and keeps the

@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // rowTTLChanges is the owner change the comparator attaches to a table whose

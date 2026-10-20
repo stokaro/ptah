@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	identifiers "ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
@@ -19,7 +21,6 @@ import (
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Direction is one half of the round trip between the declared model and the
@@ -680,7 +681,7 @@ func (t *roundTrip) describe(result answer, dialect string) string {
 		return "refused: " + result.err.Error()
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.ctx, t.runtime, result.diff, dialect,
-		planner.Options{Capabilities: t.presets[dialect]})
+		planext.Options{Capabilities: t.presets[dialect]})
 	if err != nil {
 		return "planned a change the planner refused: " + err.Error()
 	}

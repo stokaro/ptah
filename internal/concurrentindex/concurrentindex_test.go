@@ -6,10 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/concurrentindex"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // desiredWithConcurrentIndex is one table and one index on it, with the

@@ -1,7 +1,7 @@
 package compare
 
 import (
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // SearchColumnByName searches for a specific column difference by name within a slice of column diffs.

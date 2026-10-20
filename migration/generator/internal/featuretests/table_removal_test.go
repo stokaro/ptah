@@ -7,7 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -20,7 +22,6 @@ import (
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestTableRemovalCapturesUnknownOwnedStateBeforePolicy(t *testing.T) {
@@ -41,10 +42,10 @@ func TestTableRemovalCapturesUnknownOwnedStateBeforePolicy(t *testing.T) {
 	c.Assert(diff.TablesRemoved[0].Current.FeatureCoverage.Lookup(ydbschema.ChangefeedKind, parent).State, qt.Equals, schemaext.Uninspected)
 	opts.CurrentSchema.Tables[0].Columns[0].Name = "mutated"
 	c.Assert(diff.TablesRemoved[0].Current.Table.Columns[0].Name, qt.Equals, "id")
-	kept, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex), "ydb")
+	kept, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(planext.DropIndex), "ydb")
 	c.Assert(skipped, qt.HasLen, 0)
 	c.Assert(kept.TablesRemoved[0].Current.OwnedObjects.Equal(diff.TablesRemoved[0].Current.OwnedObjects), qt.IsTrue)
-	filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(diffpolicy.DropTable), "ydb")
+	filtered, skipped := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(planext.DropTable), "ydb")
 	c.Assert(skipped, qt.HasLen, 1)
 	c.Assert(filtered.TablesRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesRemoved, qt.HasLen, 1)

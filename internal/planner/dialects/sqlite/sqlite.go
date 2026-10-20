@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -20,13 +21,12 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const DialectName = platform.SQLite

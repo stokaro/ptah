@@ -8,9 +8,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A table whose only difference is its comment produces a statement --

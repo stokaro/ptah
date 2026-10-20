@@ -7,6 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -15,7 +17,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func withPools() capability.Capabilities {
@@ -144,7 +145,7 @@ func TestResourcePoolChangesRefuseOtherTargets(t *testing.T) {
 			} {
 				statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), must.Must(builtin.New()),
 					&difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{change}}, target,
-					planner.Options{Capabilities: capability.ForDialect(target).With(capability.ResourcePools, true)})
+					planext.Options{Capabilities: capability.ForDialect(target).With(capability.ResourcePools, true)})
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 				c.Assert(statements, qt.IsNil)
 			}

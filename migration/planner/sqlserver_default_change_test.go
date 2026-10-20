@@ -9,11 +9,12 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // sqlServerColumnDiff is a diff that changes column status of dbo.users.
@@ -139,7 +140,7 @@ func TestGenerateSchemaDiffASTWithOptions_SQLServerDefaultChange(t *testing.T) {
 
 			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				sqlServerColumnDiff(test.desired, test.changes), platform.SQLServer, planner.Options{},
+				sqlServerColumnDiff(test.desired, test.changes), platform.SQLServer, planext.Options{},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -156,7 +157,7 @@ func TestGenerateSchemaDiffASTWithOptions_SQLServerSetsTheDeclaredDefault(t *tes
 
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		sqlServerColumnDiff(desired, map[string]string{"default": "('inactive') -> active"}), platform.SQLServer, planner.Options{},
+		sqlServerColumnDiff(desired, map[string]string{"default": "('inactive') -> active"}), platform.SQLServer, planext.Options{},
 	)
 
 	c.Assert(err, qt.IsNil)
@@ -176,7 +177,7 @@ func TestGenerateSchemaDiffASTWithOptions_MySQLDefaultChangeStaysOneModify(t *te
 
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		sqlServerColumnDiff(desired, map[string]string{"type": "varchar(10) -> VARCHAR(20)", "default": "inactive -> active"}), platform.MySQL, planner.Options{},
+		sqlServerColumnDiff(desired, map[string]string{"type": "varchar(10) -> VARCHAR(20)", "default": "inactive -> active"}), platform.MySQL, planext.Options{},
 	)
 
 	c.Assert(err, qt.IsNil)

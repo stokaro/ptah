@@ -142,8 +142,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 // because item 4 is about the family and not about three names somebody
 // remembered. A fifth member registered tomorrow is measured the same day.
 func postgresFamilyPlannerDialects(c *qt.C) []string {
-	registered, err := planner.RegisteredDialects()
-	c.Assert(err, qt.IsNil)
+	registered := must.Must(builtin.New()).Targets()
 	return slices.DeleteFunc(registered, func(dialect string) bool {
 		return !platform.IsPostgresFamily(dialect)
 	})

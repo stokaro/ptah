@@ -8,12 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // These tests pin issue #694: a column-type change on a column that participates

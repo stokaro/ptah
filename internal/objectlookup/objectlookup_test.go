@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/objectlookup"
 )
 
 // TestView_HappyPath pins the two spellings a diff and a schema legitimately use

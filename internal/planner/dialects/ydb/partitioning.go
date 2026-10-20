@@ -3,10 +3,10 @@ package ydb
 import (
 	"fmt"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/dialect/ydb/ydbplan"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // How a YDB plan changes a table's settings: how it splits into partitions,

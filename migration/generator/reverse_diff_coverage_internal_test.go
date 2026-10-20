@@ -14,6 +14,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -21,7 +22,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestReverseSchemaDiff_AccountsForEverySchemaDiffField is the gate issue #1287

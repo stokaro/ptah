@@ -11,6 +11,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
@@ -20,7 +21,6 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgtype"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Every adjustment reaches shadow verification with its role identity and

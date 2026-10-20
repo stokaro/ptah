@@ -7,12 +7,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // mysqlFamilyDialects renders the same planner output through both renderers

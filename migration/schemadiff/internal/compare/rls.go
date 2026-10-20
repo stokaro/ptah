@@ -6,11 +6,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/rlspolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // RLSPolicies performs PostgreSQL RLS policy comparison between generated and database schemas.

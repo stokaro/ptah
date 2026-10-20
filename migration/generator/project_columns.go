@@ -6,10 +6,10 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematodb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // projectColumns applies accepted column changes to the captured table. The

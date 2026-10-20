@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -21,7 +22,6 @@ import (
 	"ptah.run/dialect/ydb/ydbworkload"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // objectGrant is one permission entry of reader on the scheme object name of

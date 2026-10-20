@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/dataext"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/hclext"
+	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
@@ -20,6 +21,7 @@ import (
 // planning, and AST or whole-schema rendering workflows. Narrower stages may
 // accept only the individual service they call. Both in-process runtimes and transport adapters can satisfy it.
 type SchemaRuntime interface {
+	planext.Resolver
 	annotation.Runtime
 	yamlext.Runtime
 	sqlext.Runtime

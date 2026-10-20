@@ -1,7 +1,7 @@
 package generator
 
 import (
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // splitEnumValueAdditionDiff moves enum VALUE ADDITIONS into their own diff and

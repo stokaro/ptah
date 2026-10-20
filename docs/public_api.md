@@ -19,11 +19,13 @@ These packages are intended for application and tool embedders:
 - `ptah.run/core/astbuilder`
 - `ptah.run/core/coverage`
 - `ptah.run/core/dataext`
+- `ptah.run/core/difftypes`
 - `ptah.run/core/featureplan`
 - `ptah.run/core/goschema`
 - `ptah.run/core/lintext`
 - `ptah.run/core/manageddata`
 - `ptah.run/core/objectidentity`
+- `ptah.run/core/planext`
 - `ptah.run/core/plangraph`
 - `ptah.run/core/schemamodel`
 - `ptah.run/core/platform`
@@ -194,7 +196,6 @@ These packages are intended for application and tool embedders:
 - `ptah.run/migration/risk`
 - `ptah.run/migration/safety`
 - `ptah.run/migration/schemadiff`
-- `ptah.run/migration/schemadiff/difftypes`
 - `ptah.run/migration/seeder`
 - `ptah.run/migration/shadow`
 - `ptah.run/sourceformats`
@@ -4542,7 +4543,7 @@ table a SQL document's standalone objects are attached to, so a DROP TABLE
 removes them with the table. With none, a DROP TABLE in a document whose model
 holds a standalone object is refused.
 
-`migration/schemadiff/difftypes.SchemaDiff` stores index additions and removals as
+`core/difftypes.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning
 table. Live comparisons also snapshot catalog identifier semantics into the
 diff so comparison, destructive-change policy, forward planning, and reverse
@@ -4583,7 +4584,7 @@ hand must fill both fields; a reference the target schema cannot resolve is
 rejected with `ptaherr.ErrInvalidSchemaDiff` rather than silently omitted from
 the plan.
 
-`migration/schemadiff/difftypes.ViewDiff` also records the view body that is in
+`core/difftypes.ViewDiff` also records the view body that is in
 force before the diff is applied, and whether the entry is being planned as a
 rollback. Planners read the body to decide whether the target engine accepts an
 in-place view replacement; PostgreSQL accepts `CREATE OR REPLACE VIEW` only when
@@ -4595,7 +4596,7 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
-`migration/schemadiff/difftypes.RLSPolicyRef` and `RLSPolicyDiff` carry a
+`core/difftypes.RLSPolicyRef` and `RLSPolicyDiff` carry a
 `Desired` policy and a `TableSchema`, both off the wire. The policy is what
 CREATE POLICY renders from; the schema is the one the owning table is declared
 under, which SQL Server addresses a policy by and which cannot be read off the
@@ -4746,7 +4747,7 @@ they exist. A planner refuses a diff that carries any. An embedder building a
 diff by hand will not produce one and need not populate it; an embedder reading
 a diff the comparison produced must not plan it while it is non-empty.
 
-`migration/schemadiff/difftypes.MaterializedViewDiff` carries one too. No engine
+`core/difftypes.MaterializedViewDiff` carries one too. No engine
 has an in-place replacement that keeps a materialized view's rows, so a change
 to the common view is a drop and a create, and the create renders from this
 field. `FeatureChanges` carries owner changes to settings attached to the view,
@@ -4757,7 +4758,7 @@ entry holding only in-place owner changes keeps the view. The former
 `RefreshChange` field and `MatViewRefreshChange` type are removed without
 aliases. This changes behavior; pre-v1, so no compatibility is owed.
 
-`migration/schemadiff/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
+`core/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
 field too, and the reference type is the one place where it means something on
 one list and nothing on another: a `TriggersAdded` entry carries the declaration
 CREATE TRIGGER renders from, while a `TriggersRemoved` entry carries none,
@@ -4766,7 +4767,7 @@ therefore does more than exchange the two lists: it resolves each reversed
 addition against the pre-change database, and strips the operand from each
 reversed removal.
 
-`migration/schemadiff/difftypes.FunctionDiff` and `SequenceDiff` carry a
+`core/difftypes.FunctionDiff` and `SequenceDiff` carry a
 `Desired` field for the same reason: a function modification renders as CREATE
 OR REPLACE and needs the whole body and attribute set, and an ALTER SEQUENCE
 reads the option values off the declaration while the change map only names
@@ -4796,7 +4797,7 @@ for Oracle. Each carries its captured `Before` and `After` operands, which
 supply both plan directions. A range replacement without a valid operand is
 refused before scheduling.
 
-`migration/schemadiff/difftypes.RoleDiff` carries the object it renders rather
+`core/difftypes.RoleDiff` carries the object it renders rather
 than a reference to it: a `Desired` field, off the wire, holding the declaration
 the planner writes the change from. A role's `password_update_required` entry
 records only that a password has to be set and never the value. An embedder
@@ -4989,17 +4990,33 @@ withdraws the checkpoint before publishing the sum, when the rooted
 destination does not match the authorized expected state. The sum is computed
 from that state rather than from a newly reopened path.
 
-`migration/planner.Planner` exposes only checked planning; malformed
+`core/planext.Planner` exposes only checked planning; malformed
 references, unresolved additions, and target index-namespace conflicts fail
 before SQL is returned.
 
-`migration/planner` registers no planner of its own and links no dialect's
-planner. `engine/builtin.New` registers the planner of every bundled dialect
-through `planner.Register` once per process. `GetPlanner` and the
-`GenerateSchemaDiff*` functions therefore refuse a bundled dialect with
-`ptaherr.ErrUnsupportedDialect` until a built-in runtime exists in the
-process, and `RegisteredDialects` lists it only from then on. This changes
-behavior; pre-v1, so no compatibility is owed.
+`migration/planner` links no concrete planner. `GenerateSchemaDiff*` takes a
+runtime that selects a planner through `MigrationPlanner`. Each `engine.Target`
+supplies its factory; `engine/builtin.New` assembles the bundled factories.
+`Runtime.Targets` lists the selected targets. A missing target wraps
+`ptaherr.ErrUnsupportedDialect`, and a target without a planner wraps
+`ptaherr.ErrUnsupportedFeature`. A nil factory result is an invalid registration.
+
+The process-wide `Register`, `GetPlanner`, `GetPlannerWithOptions`, and
+`RegisteredDialects` functions are removed. Embedders pass their selection
+explicitly; constructing a bundled runtime cannot affect another runtime.
+This changes behavior; pre-v1, so no compatibility is owed.
+
+### Common migration planning contracts
+
+`core/difftypes` holds the schema changes consumed by planning. `core/planext`
+holds `Planner`, `Options`, `Factory`, `Resolver`, and the destructive
+`ChangeKind` vocabulary. The application selects factories on `engine.Target`.
+These packages link no migration implementation or concrete engine. The
+architecture gate checks their complete import graphs.
+
+The old `migration/schemadiff/difftypes` package and the contract declarations
+under `migration/planner` and `migration/diffpolicy` are removed. Callers import
+the neutral contracts directly. Pre-v1, so no compatibility is owed.
 
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/planner/schemaprecondition"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestRefuseRoleMemberships_FailurePath refuses a membership added or removed

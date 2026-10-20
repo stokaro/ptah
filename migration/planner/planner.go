@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
-	"sync"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/featureplan"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -17,8 +16,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/txrequire"
-	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ErrInvalidPlan reports a plan a planner built in breach of the planning
@@ -27,313 +24,11 @@ import (
 // why it is not [ptaherr.ErrInvalidSchemaDiff].
 var ErrInvalidPlan = errors.New("invalid plan")
 
-var plannerRegistry struct {
-	mu        sync.RWMutex
-	factories map[string]Factory
-}
-
-// Planner defines the interface for database-specific migration planning.
-//
-// Implementations of this interface are responsible for converting schema differences
-// into Abstract Syntax Tree (AST) nodes that represent the SQL operations needed to
-// migrate from the current database schema to the desired schema.
-//
-// The interface is designed to be dialect-agnostic at the contract level while
-// allowing implementations to handle database-specific features, constraints,
-// and optimization strategies.
-//
-// # Implementation Requirements
-//
-// Implementations must:
-//   - Generate AST nodes in dependency-aware order (e.g., create tables before foreign keys)
-//   - Handle dialect-specific data types and constraints appropriately
-//   - Provide safe migration paths that minimize data loss risks
-//   - Support rollback scenarios where applicable
-//   - Refuse a diff they cannot plan into applicable SQL rather than emitting
-//     statements the target would reject
-//
-// # Parameters
-//
-// The diff carries the schema operands. Context and runtime select the services
-// and cancellation boundary. Each change entry carries its own operands
-// (the difftypes Changes elements and Desired fields), and schema-wide
-// vocabulary travels on the diff's Declared* carries, so an implementation
-// reads everything it plans from the diff. The desired schema itself stays
-// with the schemadiff package, which prepares and validates it where it is
-// supplied and puts on the diff what planning needs; see
-// GenerateSchemaDiffASTWithOptions.
-//
-// # Return Value
-//
-// Returns a slice of AST nodes representing the SQL operations needed for migration.
-// The nodes are ordered to respect database dependencies and constraints.
-//
-// # Example Implementation Pattern
-//
-//	func (p *AcmePlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
-//		var nodes []ast.Node
-//
-//		// 1. Create enum types first (PostgreSQL-style dialects)
-//		nodes = append(nodes, p.planEnumAdditions(diff)...)
-//
-//		// 2. Create tables in dependency order
-//		nodes = append(nodes, p.planTableAdditions(diff)...)
-//
-//		// 3. Add indexes and constraints
-//		nodes = append(nodes, p.planIndexAdditions(diff)...)
-//
-//		return nodes, nil
-//	}
-type Planner interface {
-	GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error)
-}
-
-// Options configures high-level planner helpers.
-type Options struct {
-	// Capabilities describes the concrete target server. Nil means the
-	// dialect's default capability preset.
-	Capabilities capability.Capabilities
-	// ConcurrentIndexes requests PostgreSQL CREATE INDEX CONCURRENTLY for all
-	// newly added indexes when the target supports it.
-	ConcurrentIndexes bool
-	// ConcurrentIndexRefs requests PostgreSQL CREATE INDEX CONCURRENTLY for
-	// exactly these table-qualified newly added indexes when the target
-	// supports it.
-	ConcurrentIndexRefs []difftypes.IndexRef
-	// ConcurrentIndexDrops requests PostgreSQL DROP INDEX CONCURRENTLY for all
-	// standalone index removals when the target supports it. It is separate
-	// from ConcurrentIndexes so enabling concurrent index builds never silently
-	// rewrites a drop the caller did not ask for.
-	ConcurrentIndexDrops bool
-	// ConcurrentIndexDropRefs requests PostgreSQL DROP INDEX CONCURRENTLY for
-	// exactly these table-qualified removed indexes when the target supports it.
-	ConcurrentIndexDropRefs []difftypes.IndexRef
-	// OnlineAlter asks the server to apply the plan without blocking the
-	// writes already running against its tables, in whichever grammar the
-	// target has: the MySQL-family ALGORITHM and LOCK clauses, or PostgreSQL's
-	// NOT VALID constraint followed by its own validation.
-	//
-	// It is a request, not a prediction. A MySQL-family server refuses a
-	// statement it cannot apply that way, so a plan built with this either
-	// runs online or fails at the statement rather than under a table copy
-	// nobody expected. A target without the grammar is planned as it would be
-	// without this.
-	OnlineAlter bool
-	// SkipChangeKinds lists destructive change kinds the planner must omit from
-	// the plan (emitting a clearly-marked comment in their place) instead of
-	// deferring to the coarse destructive gate. Currently honored by the
-	// PostgreSQL-family planner.
-	SkipChangeKinds []diffpolicy.ChangeKind
-	// OmitNullBackfill plans a column made NOT NULL without first filling its
-	// NULL rows from the column's declared default, so SET NOT NULL fails on a
-	// NULL row whether or not the column declares one.
-	//
-	// The zero value keeps the fill, which only a PostgreSQL-family plan
-	// writes: the value is the author's own, and the UPDATE is in the plan for
-	// review. Atlas CE v1.3.0 writes no fill, and ptah-compat sets this under
-	// its strict Community Edition policy to plan what that binary plans.
-	OmitNullBackfill bool
-	// AllowTableRebuild plans a change the target cannot make in place as an
-	// explicit rebuild of the table: a new table written from the declaration,
-	// a copy of the rows, and a swap of the two. On YDB it covers a changed
-	// primary key, a column type change and a column made NOT NULL, and
-	// without it each of those is refused with an error naming the way to ask,
-	// [Options.TableRebuildRequest].
-	//
-	// The steps of a YDB rebuild are not atomic, and rows written to the table
-	// between the copy and the swap are lost, which the plan says above the
-	// steps. A table with a Serial column, or with a setting the read of the
-	// database did not describe, is refused even when this is set. A target
-	// without such a rebuild plans as it would without this; SQLite rebuilds a
-	// table inside one transaction and needs no request.
-	AllowTableRebuild bool
-	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and a
-	// refusal of a change only a rebuild can make names it. Empty names the
-	// native --allow-table-rebuild flag; a surface that has no such flag, such
-	// as ptah-compat, passes the spelling it reads instead.
-	TableRebuildRequest string
-}
-
-// CapabilitiesFor returns the configured capability set, falling back to the
-// default preset for dialect when no explicit set was provided.
-func (o Options) CapabilitiesFor(dialect string) capability.Capabilities {
-	if o.Capabilities.Len() != 0 {
-		return o.Capabilities
-	}
-	return capability.ForDialect(dialect)
-}
-
-// Factory creates a planner for a dialect from construction options.
-type Factory func(Options) Planner
-
-// Register registers a planner factory for a dialect. A provider that brings a
-// dialect registers its planner here, and the standard planner helpers then
-// plan it. The built-in runtime registers the planner of every bundled dialect
-// this way when it is assembled (engine/builtin.New), so this package names no
-// dialect of its own.
-//
-// The dialect name is folded through platform.NormalizeDialect; a name that
-// package does not know is lowercased and trimmed instead, so GetPlanner
-// lookups resolve under the same spelling rules. An empty dialect, a nil
-// factory, and a dialect that is already registered each return an error
-// rather than overwrite, so a bundled dialect registered before the built-in
-// runtime is assembled makes that assembly fail. Registration is safe for
-// concurrent use, process-global, and permanent: there is no unregister.
-func Register(dialect string, factory Factory) error {
-	return registerPlannerFactory(dialect, factory)
-}
-
-// RegisteredDialects returns the registered planner dialect names, sorted. The
-// error result is always nil; it is kept so a registry that can fail does not
-// change the signature.
-func RegisteredDialects() ([]string, error) {
-	plannerRegistry.mu.RLock()
-	defer plannerRegistry.mu.RUnlock()
-
-	dialects := make([]string, 0, len(plannerRegistry.factories))
-	for dialect := range plannerRegistry.factories {
-		dialects = append(dialects, dialect)
-	}
-	slices.Sort(dialects)
-	return dialects, nil
-}
-
-// GetPlanner returns a dialect-specific migration planner for the given database dialect.
-//
-// This registry lookup creates and returns the appropriate planner
-// implementation based on the specified database dialect. Each planner handles
-// dialect-specific features, SQL syntax variations, and optimization
-// strategies.
-//
-// # Supported Dialects
-//
-// Every registered dialect is accepted. This package links no dialect's
-// planner: the built-in runtime registers the planner of every bundled dialect
-// (postgres, cockroachdb, yugabytedb, spanner, mysql, mariadb, sqlserver,
-// oracle, clickhouse, sqlite and ydb) when it is assembled, so a bundled
-// dialect is present only once a built-in runtime (engine/builtin.New) exists
-// in the process. Before that, a lookup fails as for any unregistered dialect.
-// See the package documentation for what each planner does, and
-// RegisteredDialects for the set at runtime, which a Register call can extend.
-//
-// # Parameters
-//
-//   - dialect: Database dialect identifier (use constants from platform package)
-//
-// # Return Value
-//
-// Returns a Planner implementation specific to the requested dialect. The
-// dialect is folded through platform.NormalizeDialect first, so every alias
-// that package accepts resolves to its canonical planner. An unknown, empty,
-// or unregistered dialect fails with a *ptaherr.PlanError satisfying
-// errors.Is against ptaherr.ErrUnsupportedDialect; errors.As retrieves the
-// structured form, which carries the dialect the lookup was made for. Branch
-// on the sentinel rather than on the message text.
-//
-// # Usage Example
-//
-//	import "ptah.run/core/platform"
-//
-//	// Get PostgreSQL planner
-//	pgPlanner, err := planner.GetPlanner(platform.Postgres)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Get MySQL planner
-//	mysqlPlanner, err := planner.GetPlanner(platform.MySQL)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Generate migration AST
-//	nodes, err := pgPlanner.GenerateMigrationAST(ctx, runtime, diff)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-// # Design Rationale
-//
-// The registry pattern is used here to:
-//   - Provide a clean, consistent interface for planner creation
-//   - Allow third-party extension for new database dialects
-//   - Centralize dialect validation and error handling
-//   - Enable dependency injection and testing scenarios
-func GetPlanner(dialect string) (Planner, error) {
-	return GetPlannerWithOptions(dialect, Options{Capabilities: capability.ForDialect(dialect)})
-}
-
-// GetPlannerWithOptions returns a dialect-specific migration planner with
-// explicit high-level generation policy. Live database paths should set
-// Options.Capabilities from DBInfo.Capabilities so planning uses the same
-// server-version preset as readers and renderers; offline callers can leave
-// it nil to fall back to the dialect's default preset.
-func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
-	return getRegisteredPlanner(dialect, opts)
-}
-
-func registerPlannerFactory(dialect string, factory Factory) error {
-	normalized := normalizeRegistryDialect(dialect)
-	if normalized == "" {
-		return fmt.Errorf("planner registry: dialect must not be empty")
-	}
-	if factory == nil {
-		return fmt.Errorf("planner registry: factory for dialect %q must not be nil", normalized)
-	}
-
-	plannerRegistry.mu.Lock()
-	defer plannerRegistry.mu.Unlock()
-
-	if plannerRegistry.factories == nil {
-		plannerRegistry.factories = make(map[string]Factory)
-	}
-	if _, exists := plannerRegistry.factories[normalized]; exists {
-		return fmt.Errorf("planner registry: dialect %q is already registered", normalized)
-	}
-	plannerRegistry.factories[normalized] = factory
-	return nil
-}
-
-func getRegisteredPlanner(dialect string, opts Options) (Planner, error) {
-	normalized := normalizeRegistryDialect(dialect)
-	if normalized == "" {
-		return nil, unsupportedDialectPlanError(dialect)
-	}
-
-	plannerRegistry.mu.RLock()
-	factory, exists := plannerRegistry.factories[normalized]
-	plannerRegistry.mu.RUnlock()
-	if !exists {
-		return nil, unsupportedDialectPlanError(dialect)
-	}
-	planner := factory(opts)
-	if planner == nil {
-		return nil, fmt.Errorf("planner registry: factory for dialect %q returned nil", normalized)
-	}
-	return planner, nil
-}
-
-func unsupportedDialectPlanError(dialect string) error {
-	return &ptaherr.PlanError{
-		Dialect: dialect,
-		Err:     ptaherr.ErrUnsupportedDialect,
-		Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
-	}
-}
-
-func normalizeRegistryDialect(dialect string) string {
-	normalized := platform.NormalizeDialect(dialect)
-	if normalized != "" {
-		return normalized
-	}
-	return strings.ToLower(strings.TrimSpace(dialect))
-}
-
 // GenerateSchemaDiffAST generates AST nodes for schema differences using the specified dialect.
 //
 // This is a convenience function that combines planner creation and AST generation
-// into a single call. It internally uses GetPlanner to obtain the appropriate
-// dialect-specific planner and then calls GenerateMigrationAST on it.
+// into a single call. It obtains the target planner from the selected runtime
+// and then calls GenerateMigrationAST on it.
 //
 // # Parameters
 //
@@ -366,11 +61,11 @@ func normalizeRegistryDialect(dialect string) string {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
-//   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error) {
+//   - planext.Resolver: For direct planner access
+func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error) {
 	return GenerateSchemaDiffASTWithOptions(
 		ctx, runtime,
-		diff, dialect, Options{
+		diff, dialect, planext.Options{
 			Capabilities: capability.ForDialect(dialect),
 		},
 	)
@@ -402,10 +97,10 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime featureplan.Runtime, dif
 // Every failure comes back as a *ptaherr.PlanError carrying the dialect, so
 // errors.As selects the structured form and errors.Is the sentinel.
 func GenerateSchemaDiffASTWithOptions(
-	ctx context.Context, runtime featureplan.Runtime,
+	ctx context.Context, runtime PlanningRuntime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
-	opts Options,
+	opts planext.Options,
 ) ([]ast.Node, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, wrapPlanError(dialect, err)
@@ -423,7 +118,7 @@ func GenerateSchemaDiffASTWithOptions(
 			),
 		)
 	}
-	planner, err := GetPlannerWithOptions(dialect, opts)
+	planner, err := runtime.MigrationPlanner(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
@@ -576,7 +271,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 func GenerateSchemaDiffSQLStatements(ctx context.Context, runtime Runtime, diff *difftypes.SchemaDiff, dialect string) ([]string, error) {
 	return GenerateSchemaDiffSQLStatementsWithOptions(
 		ctx, runtime,
-		diff, dialect, Options{
+		diff, dialect, planext.Options{
 			Capabilities: capability.ForDialect(dialect),
 		},
 	)
@@ -588,7 +283,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
-	opts Options,
+	opts planext.Options,
 ) ([]string, error) {
 	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
 	if err != nil {
@@ -699,7 +394,7 @@ func GenerateSchemaDiffRenderedPlan(
 	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
-	opts Options,
+	opts planext.Options,
 ) (RenderedPlan, error) {
 	// An extension this plan installs is installed before the statements that
 	// need it. A connection opened before the extension existed answers about
@@ -798,7 +493,7 @@ func GenerateSchemaDiffRenderedPlan(
 func GenerateSchemaDiffSQL(ctx context.Context, runtime Runtime, diff *difftypes.SchemaDiff, dialect string) (string, error) {
 	return GenerateSchemaDiffSQLWithOptions(
 		ctx, runtime,
-		diff, dialect, Options{
+		diff, dialect, planext.Options{
 			Capabilities: capability.ForDialect(dialect),
 		},
 	)
@@ -820,7 +515,7 @@ func GenerateSchemaDiffSQLWithOptions(
 	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
-	opts Options,
+	opts planext.Options,
 ) (string, error) {
 	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
 	if err != nil {

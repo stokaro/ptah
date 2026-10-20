@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // triggerStatement is one trigger change of a plan, with the table it runs

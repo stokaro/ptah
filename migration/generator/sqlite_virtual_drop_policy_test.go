@@ -9,12 +9,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/engine/builtin"
-	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
 )
 
@@ -57,7 +57,7 @@ func TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard(t *testin
 		{
 			name: "a plan whose table drops the policy removes is not refused",
 			policy: generator.DiffPolicy{
-				SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropTable},
+				SkipChangeKinds: []planext.ChangeKind{planext.DropTable},
 			},
 			wantErr: false,
 		},

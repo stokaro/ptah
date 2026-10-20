@@ -11,6 +11,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/dialect/ydb/ydbcoordination"
 	"ptah.run/dialect/ydb/ydbdiff"
 	"ptah.run/engine/builtin"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestGenerateDownMigration_CoordinationNodes pins the rollback of each

@@ -8,10 +8,13 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -20,7 +23,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // inlineEnumEntities parses a Go-annotation source declaring one table whose
@@ -175,7 +177,7 @@ func applyInlineEnum(
 	info := conn.Info()
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {

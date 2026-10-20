@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
-	"ptah.run/engine/builtin"
+	"ptah.run/engine"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type ownerOperation struct{}
@@ -28,11 +28,11 @@ func (p nodesPlanner) GenerateMigrationAST(context.Context, featureplan.Runtime,
 	return p.nodes, nil
 }
 
-func registerNodesPlanner(c *qt.C, nodes ...ast.Node) string {
+func nodesRuntime(c *qt.C, nodes ...ast.Node) *engine.Runtime {
 	c.Helper()
-	dialect := nextExternalPlannerDialect("owner_isolation_test")
-	c.Assert(planner.Register(dialect, func(planner.Options) planner.Planner { return nodesPlanner{nodes: nodes} }), qt.IsNil)
-	return dialect
+	runtime, err := engine.New(engine.Provider{ID: "example.org/owner", Targets: []engine.Target{{Name: "owner", Planner: func(planext.Options) planext.Planner { return nodesPlanner{nodes: nodes} }}}})
+	c.Assert(err, qt.IsNil)
+	return runtime
 }
 
 // Safety reports give each statement the verdict of the owner operation that
@@ -57,8 +57,8 @@ func TestGenerateSchemaDiffAST_FailurePath_RefusesAnOwnerOperationSharingANode(t
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			dialect := registerNodesPlanner(c, tc.node)
-			nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), must.Must(builtin.New()), &difftypes.SchemaDiff{}, dialect, planner.Options{})
+			runtime := nodesRuntime(c, tc.node)
+			nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), runtime, &difftypes.SchemaDiff{}, "owner", planext.Options{})
 			c.Assert(err, qt.ErrorIs, planner.ErrInvalidPlan)
 			c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrInvalidSchemaDiff, qt.Commentf("a planner defect, not a defect of the diff"))
 			c.Assert(err, qt.ErrorMatches, `(?s).*planned node 1 .* carries an owner operation beside other operations.*`)
@@ -75,8 +75,8 @@ func TestGenerateSchemaDiffAST_HappyPath_AcceptsIsolatedOwnerOperations(t *testi
 		&ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Payload: &ownerOperation{}}}},
 		&ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: "old"}}},
 	}
-	dialect := registerNodesPlanner(c, isolated...)
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), must.Must(builtin.New()), &difftypes.SchemaDiff{}, dialect, planner.Options{})
+	runtime := nodesRuntime(c, isolated...)
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), runtime, &difftypes.SchemaDiff{}, "owner", planext.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, len(isolated))
 }

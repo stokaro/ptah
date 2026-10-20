@@ -2,11 +2,11 @@ package compare
 
 import (
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // grantObjectTypeSequence is the object type of a grant on a sequence.

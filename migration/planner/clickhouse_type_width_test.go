@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -99,7 +100,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidth_HappyPath(t *testin
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				diff, platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -151,7 +152,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidth_SameTypePlansNothin
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				diff, platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -191,7 +192,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseTypeWidthBetweenDeclarations(
 
 			got, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				diff, platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)
@@ -228,7 +229,7 @@ func TestGenerateSchemaDiffAST_ClickHouseTypeNarrowingIsDestructive(t *testing.T
 
 			nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, platform.ClickHouse, planner.Options{Capabilities: capability.ClickHouse2411()},
+				diff, platform.ClickHouse, planext.Options{Capabilities: capability.ClickHouse2411()},
 			)
 
 			c.Assert(err, qt.IsNil)

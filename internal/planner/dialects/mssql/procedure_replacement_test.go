@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	mssqlplanner "ptah.run/internal/planner/dialects/mssql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A modified procedure is planned as a drop and a create. The drop half was

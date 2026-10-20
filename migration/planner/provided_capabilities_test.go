@@ -7,15 +7,16 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // providingChange creates an object that provides hypertables once it exists,
@@ -70,7 +71,7 @@ func TestRenderedPlan_WidensTheCapabilitiesAChangeProvides(t *testing.T) {
 			var rendered renderer.Request
 
 			_, err := planner.GenerateSchemaDiffRenderedPlan(t.Context(), renderingRuntime{Runtime: must.Must(builtin.New()), rendered: &rendered},
-				diff, "postgres", planner.Options{Capabilities: capability.Postgres17().With(capability.Hypertables, false)})
+				diff, "postgres", planext.Options{Capabilities: capability.Postgres17().With(capability.Hypertables, false)})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Capabilities.Has(capability.Hypertables), qt.Equals, test.want)

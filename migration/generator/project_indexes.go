@@ -6,11 +6,11 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/convert/goschematodb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // projectIndexes retains observed siblings and applies only accepted changes.

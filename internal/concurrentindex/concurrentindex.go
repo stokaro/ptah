@@ -20,12 +20,12 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TableFacts is what the live catalog says about one table, reduced to the two

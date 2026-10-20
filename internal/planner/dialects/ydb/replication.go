@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/ydbpath"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The replication owner plans, renders and refuses each statement on an async

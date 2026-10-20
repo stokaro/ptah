@@ -4,7 +4,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
-	"ptah.run/migration/internal/tableidentity"
+	"ptah.run/internal/tableidentity"
 )
 
 // TableObservationFor captures the feature namespace and common children of one

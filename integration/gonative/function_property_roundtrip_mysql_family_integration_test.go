@@ -15,6 +15,7 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // propertyRoundTripDatabase is the database this file owns outright. Like

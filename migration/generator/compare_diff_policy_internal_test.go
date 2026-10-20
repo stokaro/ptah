@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config"
-	"ptah.run/migration/diffpolicy"
+	"ptah.run/core/planext"
 )
 
 // TestCompareOptionsWithDiffPolicyForwardsEverySkipTheGuardReads pins the
@@ -31,22 +31,22 @@ import (
 func TestCompareOptionsWithDiffPolicyForwardsEverySkipTheGuardReads(t *testing.T) {
 	tests := []struct {
 		name  string
-		kinds []diffpolicy.ChangeKind
+		kinds []planext.ChangeKind
 		read  func(*config.CompareOptions) bool
 	}{
 		{
 			name:  "drop_table",
-			kinds: []diffpolicy.ChangeKind{diffpolicy.DropTable},
+			kinds: []planext.ChangeKind{planext.DropTable},
 			read:  func(opts *config.CompareOptions) bool { return opts.SkipTableDrops },
 		},
 		{
 			name:  "drop_column",
-			kinds: []diffpolicy.ChangeKind{diffpolicy.DropColumn},
+			kinds: []planext.ChangeKind{planext.DropColumn},
 			read:  func(opts *config.CompareOptions) bool { return opts.SkipColumnDrops },
 		},
 		{
 			name:  "drop_index",
-			kinds: []diffpolicy.ChangeKind{diffpolicy.DropIndex},
+			kinds: []planext.ChangeKind{planext.DropIndex},
 			read:  func(opts *config.CompareOptions) bool { return opts.SkipIndexDrops },
 		},
 	}
@@ -66,7 +66,7 @@ func TestCompareOptionsWithDiffPolicyForwardsEverySkipTheGuardReads(t *testing.T
 			c := qt.New(t)
 
 			merged := compareOptionsWithDiffPolicy(nil, DiffPolicy{
-				SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropEnum},
+				SkipChangeKinds: []planext.ChangeKind{planext.DropEnum},
 			})
 
 			c.Assert(tt.read(merged), qt.IsFalse)

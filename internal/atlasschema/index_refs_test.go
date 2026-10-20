@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/atlasschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestApplyDiffPolicy_PreservesSameNamedIndexOnKeptTable(t *testing.T) {

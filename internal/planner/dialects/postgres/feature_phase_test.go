@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const phaseOwner = "example.org/phase"

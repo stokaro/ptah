@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -53,7 +54,7 @@ func TestGenerateSchemaDiff_YDBRebuildKeepsATTLTheDesiredStateDoesNotDescribe(t 
 
 	plan, err := planner.GenerateSchemaDiffSQLWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, platform.YDB, planner.Options{
+		diff, platform.YDB, planext.Options{
 			Capabilities: capability.YDB262(), AllowTableRebuild: true,
 		},
 	)

@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -18,7 +21,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestMariaDBLiveSequenceConverges is the test the Sequences capability could
@@ -149,7 +151,7 @@ func applyLiveStatements(
 	c.Helper()
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, dialect, planner.Options{Capabilities: conn.Info().Capabilities},
+		diff, dialect, planext.Options{Capabilities: conn.Info().Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)

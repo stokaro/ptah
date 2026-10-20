@@ -7,10 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestSequenceChanges_TheWireShapeIsUnchanged is the same promise for the

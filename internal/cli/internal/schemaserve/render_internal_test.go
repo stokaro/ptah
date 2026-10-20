@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestRender_NamesWhatTheComparisonCouldNotCheck holds the page to the rule the

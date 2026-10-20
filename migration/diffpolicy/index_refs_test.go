@@ -5,10 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
@@ -22,13 +23,13 @@ func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
 		{Name: "idx_shared", TableName: "orders"},
 	})
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropIndex))
 
 	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
-		{Kind: diffpolicy.DropIndex, Object: "orders.idx_shared"},
+		{Kind: planext.DropIndex, Object: "orders.idx_shared"},
 	})
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
@@ -48,7 +49,7 @@ func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.
 
 	got, skipped := diffpolicy.ApplyForDialect(
 		diff,
-		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		diffpolicy.NewSkipSet(planext.DropIndex),
 		"postgres",
 	)
 
@@ -70,13 +71,13 @@ func TestApplyForDialectDropIndex_SkipsMySQLDifferentTableRemoval(t *testing.T) 
 
 	got, skipped := diffpolicy.ApplyForDialect(
 		diff,
-		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		diffpolicy.NewSkipSet(planext.DropIndex),
 		"mysql",
 	)
 
 	c.Assert(got.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
-		{Kind: diffpolicy.DropIndex, Object: "users.idx_shared"},
+		{Kind: planext.DropIndex, Object: "users.idx_shared"},
 	})
 }
 
@@ -117,7 +118,7 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 
 			got, skipped := diffpolicy.ApplyForDialect(
 				diff,
-				diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+				diffpolicy.NewSkipSet(planext.DropIndex),
 				test.dialect,
 			)
 
@@ -140,7 +141,7 @@ func TestApplyForDialectDropIndex_PreservesPotentialSQLServerReplacement(t *test
 
 	got, skipped := diffpolicy.ApplyForDialect(
 		diff,
-		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		diffpolicy.NewSkipSet(planext.DropIndex),
 		"sqlserver",
 	)
 
@@ -171,13 +172,13 @@ func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(
 
 	got, skipped := diffpolicy.ApplyForDialect(
 		diff,
-		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		diffpolicy.NewSkipSet(planext.DropIndex),
 		"sqlserver",
 	)
 
 	c.Assert(got.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
-		{Kind: diffpolicy.DropIndex, Object: "dbo.users.idx_shared"},
+		{Kind: planext.DropIndex, Object: "dbo.users.idx_shared"},
 	})
 }
 
@@ -189,13 +190,13 @@ func TestApplyDropTable_PreservesSameNamedIndexOnKeptTable(t *testing.T) {
 		{Name: "idx_shared", TableName: "orders"},
 	})
 
-	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropTable))
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropTable))
 
 	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},
 	})
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
-		{Kind: diffpolicy.DropTable, Object: "users"},
+		{Kind: planext.DropTable, Object: "users"},
 	})
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},

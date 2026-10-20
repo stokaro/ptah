@@ -13,14 +13,14 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
-	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) {
@@ -111,7 +111,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 		},
 		100,
 		"move_index",
-		DiffPolicy{SkipChangeKinds: []diffpolicy.ChangeKind{diffpolicy.DropIndex}},
+		DiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropIndex}},
 		atlasmigrate.Qualifier{},
 	)
 

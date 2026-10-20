@@ -6,11 +6,11 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type mysqlIndexCandidate struct {

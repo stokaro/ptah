@@ -24,8 +24,8 @@ package sqliterebuild
 import (
 	"slices"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // NeedsTableRebuild reports whether this table diff has to be converged by

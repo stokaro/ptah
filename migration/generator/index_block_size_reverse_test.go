@@ -9,6 +9,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -17,7 +19,6 @@ import (
 	"ptah.run/migration/generator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A rollback must restore the physical hint on both an ordinary index and a
@@ -38,7 +39,7 @@ func TestPlanBidirectionalSchemaDiff_IndexBlockSize(t *testing.T) {
 	c.Assert(reverse, qt.Contains, "ALTER TABLE `t` DROP INDEX `u`, ADD UNIQUE INDEX `u` (`b`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;")
 	online, err := planner.GenerateSchemaDiffSQLWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, "mysql", planner.Options{OnlineAlter: true},
+		diff, "mysql", planext.Options{OnlineAlter: true},
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(online, qt.Contains, "ALGORITHM=COPY, LOCK=NONE")

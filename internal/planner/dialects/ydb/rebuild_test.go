@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacapture"
@@ -17,7 +18,6 @@ import (
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/ydb"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // renderRebuild plans diff with rebuilds allowed and renders it.

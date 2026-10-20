@@ -1,6 +1,6 @@
 package diffpolicy
 
-import "ptah.run/migration/schemadiff/difftypes"
+import "ptah.run/core/difftypes"
 
 // retainIndexComments removes cleanup tied to a skipped index removal. A
 // retained index still owns its comment, including on targets that store it

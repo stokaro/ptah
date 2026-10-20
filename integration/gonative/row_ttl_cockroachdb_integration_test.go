@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -212,7 +214,7 @@ func planRowTTLAgainstLive(
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -593,7 +595,7 @@ func planRowTTLBothWays(c *qt.C, t *testing.T, dsn string, declared *schemamodel
 		Runtime: runtime, Diff: diff, DesiredSchema: declared, CurrentSchema: live, Dialect: info.Dialect, Capabilities: info.Capabilities,
 	})
 	c.Assert(err, qt.IsNil)
-	options := planner.Options{Capabilities: info.Capabilities}
+	options := planext.Options{Capabilities: info.Capabilities}
 	forward, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, plan.Forward.Diff, info.Dialect, options)
 	c.Assert(err, qt.IsNil)
 	reverse, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, plan.Reverse.Diff, info.Dialect, options)

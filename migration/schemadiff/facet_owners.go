@@ -14,8 +14,8 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/internal/tableidentity"
 )
 
 type facetOwnerSlot struct {

@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
@@ -71,7 +72,7 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 			diff, err := schemadiff.CompareWithDialect(t.Context(), &desired, empty, test.info.Dialect, runtime)
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-				t.Context(), runtime, diff, test.info.Dialect, planner.Options{Capabilities: test.info.Capabilities},
+				t.Context(), runtime, diff, test.info.Dialect, planext.Options{Capabilities: test.info.Capabilities},
 			)
 			c.Assert(err, qt.IsNil)
 

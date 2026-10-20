@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -23,7 +26,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // notNullEngine is one engine the NOT NULL statement is planned for: how its
@@ -82,7 +84,7 @@ func planNotNull(c *qt.C, dialect, table string) notNullPlan {
 	}}}
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		diff, dialect, planner.Options{},
+		diff, dialect, planext.Options{},
 	)
 	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(c.Context(), must.Must(builtin.New()), nodes, dialect)

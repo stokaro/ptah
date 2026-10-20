@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/webartifact"
 	"ptah.run/internal/fileopen"
 	"ptah.run/internal/schemadoc"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // `--web` and what it does here.

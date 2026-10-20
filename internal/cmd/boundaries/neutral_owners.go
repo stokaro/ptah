@@ -25,7 +25,7 @@ var neutralRoots = []string{"catalog", "core", "engine", "migration/planner", "m
 // otherwise report nothing about it.
 var requiredNeutralPackages = []string{
 	"catalog", "core/ast", "core/schemaext", "core/schemamodel", "engine",
-	"migration/planner", "migration/schemadiff", "migration/schemadiff/difftypes",
+	"migration/planner", "migration/schemadiff", "core/difftypes",
 	"internal/convert/goschematogo", "internal/goannotationcleanup",
 }
 

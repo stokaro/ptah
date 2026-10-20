@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/sqlident"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planServerSchemas creates and changes the databases a comparison of a whole

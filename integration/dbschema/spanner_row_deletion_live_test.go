@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
@@ -82,7 +84,7 @@ func spannerPlan(c *qt.C, conn *dbschema.DatabaseConnection, declared *schemamod
 	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), declared, spannerLiveTable(c, conn, table), info, nil, engine)
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		c.Context(), engine, diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+		c.Context(), engine, diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 	)
 	c.Assert(err, qt.IsNil)
 	return statements

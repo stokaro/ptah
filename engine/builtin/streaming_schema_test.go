@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -17,7 +19,6 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestStreamingFeatureSchemaUsesSelectedOwnerOnEveryEntryPoint(t *testing.T) {
@@ -55,7 +56,7 @@ func TestStreamingChangesRefuseUnregisteredPlanner(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{FeatureChanges: []schemaext.ChangeRecord{{Subject: ydbstreaming.Ref("", "copy"), Value: test.change}}}
-			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), must.Must(builtin.New()), diff, "postgres", planner.Options{})
+			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), must.Must(builtin.New()), diff, "postgres", planext.Options{})
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(statements, qt.HasLen, 0)
 		})

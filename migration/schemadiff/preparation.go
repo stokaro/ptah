@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -14,8 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
-	"ptah.run/migration/internal/tableidentity"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/internal/tableidentity"
 )
 
 type comparisonTables struct {

@@ -10,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"ptah.run/core/planext"
 	"ptah.run/migration/diffpolicy"
 )
 
@@ -415,16 +416,16 @@ func (d yamlDiff) diffConfig() (DiffConfig, error) {
 	return cfg, nil
 }
 
-func setDiffSkipKind(skip *DiffSkipConfig, kind diffpolicy.ChangeKind) {
+func setDiffSkipKind(skip *DiffSkipConfig, kind planext.ChangeKind) {
 	enabled := ConfigBool{Value: true, Set: true}
 	switch kind {
-	case diffpolicy.DropTable:
+	case planext.DropTable:
 		skip.DropTable = enabled
-	case diffpolicy.DropColumn:
+	case planext.DropColumn:
 		skip.DropColumn = enabled
-	case diffpolicy.DropIndex:
+	case planext.DropIndex:
 		skip.DropIndex = enabled
-	case diffpolicy.DropEnum:
+	case planext.DropEnum:
 		skip.DropEnum = enabled
 	}
 }

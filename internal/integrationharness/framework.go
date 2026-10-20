@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -598,7 +599,7 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 	info := conn.Info()
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		ctx, vem.runtime,
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities,
 		},
 	)
@@ -608,7 +609,7 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		ctx, vem.runtime,
-		diff, info.Dialect, planner.Options{
+		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities,
 		},
 	)

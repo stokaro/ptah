@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
 	"ptah.run/internal/planner/sqliterebuild"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestNeedsTableRebuildReadsEveryChangeField pins the predicate one recorded

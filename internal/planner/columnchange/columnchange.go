@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
-	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/core/difftypes"
 )
 
 // Properties names the properties colDiff changes that an ALTER COLUMN clause

@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -20,18 +22,17 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/keyrelease"
-	"ptah.run/internal/planner/objectlookup"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/diffpolicy"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -225,7 +226,7 @@ func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...difftypes.IndexRef) *
 // destructive change kinds from the plan, emitting a clearly-marked comment in
 // their place instead of the DDL. The receiver is not modified. Passing no
 // kinds returns the receiver unchanged.
-func (p *Planner) WithSkipChangeKinds(kinds ...diffpolicy.ChangeKind) *Planner {
+func (p *Planner) WithSkipChangeKinds(kinds ...planext.ChangeKind) *Planner {
 	if len(kinds) == 0 {
 		return p
 	}

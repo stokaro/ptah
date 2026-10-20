@@ -8,10 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // unvalidatedAdditions are a CHECK and a foreign key the declaration allows NOT
@@ -52,7 +53,7 @@ func TestPlan_AddsAConstraintTheDeclarationAllowsNotValid(t *testing.T) {
 					context.Background(), must.Must(builtin.New()),
 					&difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{test.constraint}},
 					"postgres",
-					planner.Options{Capabilities: capability.Postgres18(), OnlineAlter: online},
+					planext.Options{Capabilities: capability.Postgres18(), OnlineAlter: online},
 				)
 
 				c.Assert(err, qt.IsNil)
@@ -72,7 +73,7 @@ func TestPlan_ValidatesAConstraintTheDatabaseHoldsNotValid(t *testing.T) {
 		context.Background(), must.Must(builtin.New()),
 		&difftypes.SchemaDiff{ConstraintsValidated: []difftypes.ConstraintValidation{{TableName: "orders", Name: "ck_amount"}}},
 		"postgres",
-		planner.Options{Capabilities: capability.Postgres18()},
+		planext.Options{Capabilities: capability.Postgres18()},
 	)
 
 	c.Assert(err, qt.IsNil)

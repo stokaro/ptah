@@ -10,13 +10,13 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/concurrentindex"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type splitMigrationNodes struct {

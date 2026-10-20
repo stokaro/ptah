@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -18,7 +19,6 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/indexscope"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.

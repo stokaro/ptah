@@ -14,6 +14,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -23,7 +24,6 @@ import (
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // rlsStrengthSchema declares one table and one policy over it, at the strength

@@ -3,11 +3,11 @@ package generator
 import (
 	"strings"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // dropReverseConstraintsRestoredByTableCreation removes, from a reverse plan,

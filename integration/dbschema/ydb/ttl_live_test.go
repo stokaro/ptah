@@ -7,6 +7,8 @@ import (
 	"path"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Table_V1"
@@ -260,7 +262,7 @@ func TestYDBTTL_KeepsARunIntervalYQLCannotWrite(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				context.Background(), must.Must(builtin.New()),
-				diff, info.Dialect, planner.Options{Capabilities: info.Capabilities},
+				diff, info.Dialect, planext.Options{Capabilities: info.Capabilities},
 			)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `(?s).*the TTL of table "ptah_ydb_ttl/events": the table's TTL runs every 1800 seconds, `+

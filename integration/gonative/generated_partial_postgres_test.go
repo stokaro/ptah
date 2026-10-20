@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"ptah.run/core/planext"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
@@ -63,7 +65,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	changedDiff := must.Must(schemadiff.CompareWithDialect(t.Context(), changed, liveSchema, platform.Postgres, must.Must(builtin.New())))
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		changedDiff, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()},
+		changedDiff, platform.Postgres, planext.Options{Capabilities: capability.Postgres17()},
 	)
 	c.Assert(err, qt.IsNil)
 	plannedSQL := strings.Join(statements, "\n")

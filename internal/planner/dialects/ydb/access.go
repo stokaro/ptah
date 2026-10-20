@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/ydbacl"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // How a YDB plan changes the access model.

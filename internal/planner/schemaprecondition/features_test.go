@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/planner/schemaprecondition"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlannerWithoutFeatureHandlersRefusesEveryExtensionLocation(t *testing.T) {

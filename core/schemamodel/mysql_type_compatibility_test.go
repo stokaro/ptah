@@ -8,12 +8,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestMySQLTypeCompatibilityForEmbeddedRelations tests that embedded relation mode

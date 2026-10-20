@@ -6,6 +6,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -17,7 +19,6 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/internal/identifiervalidation"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ConcurrentIndexMode selects which index changes one direction plans with
@@ -51,13 +52,13 @@ type BidirectionalPlanPolicy struct {
 	OnlineAlter bool
 	// OmitNullBackfill plans both directions' SET NOT NULL without filling
 	// the column's NULL rows from its declared default first. See
-	// [planner.Options.OmitNullBackfill].
+	// [planext.Options.OmitNullBackfill].
 	OmitNullBackfill bool
 	// AllowTableRebuild plans both directions' changes the target cannot make
-	// in place as table rebuilds. See [planner.Options.AllowTableRebuild].
+	// in place as table rebuilds. See [planext.Options.AllowTableRebuild].
 	AllowTableRebuild bool
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild. See
-	// [planner.Options.TableRebuildRequest].
+	// [planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
 }
 
@@ -203,7 +204,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		return nil, fmt.Errorf("reverse feature changes: %w", err)
 	}
 
-	forwardOpts := planner.Options{
+	forwardOpts := planext.Options{
 		Capabilities:            caps,
 		ConcurrentIndexRefs:     forwardCreateRefs,
 		ConcurrentIndexDropRefs: forwardDropRefs,
@@ -267,7 +268,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		return nil, err
 	}
 
-	reverseOpts := planner.Options{
+	reverseOpts := planext.Options{
 		Capabilities:            caps,
 		ConcurrentIndexRefs:     reverseCreate,
 		ConcurrentIndexDropRefs: reverseDrop,

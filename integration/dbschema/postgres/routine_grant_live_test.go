@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"ptah.run/config"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPostgresRoutineGrant_SchemaFileRevokesWhatNobodyGranted drives the shape

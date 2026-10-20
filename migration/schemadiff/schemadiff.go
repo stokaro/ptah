@@ -9,6 +9,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/coverage"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -25,7 +26,6 @@ import (
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/migration/internal/identifiervalidation"
-	"ptah.run/migration/schemadiff/difftypes"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
 

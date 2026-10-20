@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -117,7 +118,7 @@ func TestGeneratorProjectsOnlyAcceptedColumnChanges(t *testing.T) {
 	after := declaration(c, changed)
 	after.Fields = append(after.Fields, schemamodel.Field{StructName: "Item", Name: "added", Type: "string", Nullable: true})
 	opts := options(c, runtime, before, after)
-	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(diffpolicy.DropColumn), "ydb")
+	filtered, skipped := diffpolicy.ApplyForDialect(opts.Diff, diffpolicy.NewSkipSet(planext.DropColumn), "ydb")
 	c.Assert(skipped, qt.HasLen, 1)
 	opts.Diff, opts.Policy.AllowTableRebuild = filtered, true
 	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)

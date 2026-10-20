@@ -4,10 +4,10 @@ import (
 	"slices"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // renamedIndexOwners is database as the feature comparison reads it: each

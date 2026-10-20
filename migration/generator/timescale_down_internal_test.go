@@ -12,6 +12,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -22,7 +23,6 @@ import (
 	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // timescaleCapabilities is a PostgreSQL target with both TimescaleDB keys.

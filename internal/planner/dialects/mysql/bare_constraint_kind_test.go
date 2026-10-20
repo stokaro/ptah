@@ -8,10 +8,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds is the MySQL half of

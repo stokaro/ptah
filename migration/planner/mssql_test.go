@@ -7,12 +7,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
@@ -78,7 +79,7 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 func TestGetPlanner_SQLServerAlias(t *testing.T) {
 	c := qt.New(t)
 
-	p, err := planner.GetPlanner("mssql")
+	p, err := must.Must(builtin.New()).MigrationPlanner("mssql", planext.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(p, qt.IsNotNil)

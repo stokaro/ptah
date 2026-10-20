@@ -7,10 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mssql"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // SQL Server's row-level security is a security policy, which its owner plans

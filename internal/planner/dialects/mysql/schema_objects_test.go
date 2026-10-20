@@ -10,12 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
 	migrationplanner "ptah.run/migration/planner"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	sqliteplanner "ptah.run/internal/planner/dialects/sqlite"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // viewFixture916 and triggerFixture916 are the two diffs the table below plans.

@@ -69,15 +69,13 @@ helpers. Its mutation tests compile direct and indirect owner imports, then
 verify that the gate refuses both. The writer must load for the gate to pass;
 renaming or omitting that package cannot silently reduce the measured scope.
 
-Two seams keep the YDB owner out of the layer:
+The YDB owner's planning and lowering enter through explicit services:
 
-- `migration/planner` registers no planner of its own. `engine/builtin.New`
-  registers the planner of every bundled dialect, the YDB owner's included,
-  through `planner.Register`, once per process, so `planner.GetPlanner`
-  succeeds for a bundled dialect only after a built-in runtime exists. That
-  order dependence is pinned by a test in `engine/builtin/internal/plannerorder`.
-  The follow-up is to serve target planners from the runtime
-  ([#4204](https://github.com/stokaro/ptah/issues/4204)).
+- `migration/planner` links no concrete planner. Each `engine.Target` supplies
+  its planner factory, and `engine.Runtime.MigrationPlanner` resolves that
+  factory from the selected runtime. `engine/builtin.New` supplies the bundled
+  factories, including YDB's. Constructing it cannot change another runtime's
+  selection. `engine/builtin/internal/plannerorder` tests that isolation.
 - `internal/modelast` names a grant's object through `Lowering.GrantPath`.
   `internal/builtinlowering` sets the hook for YDB, which names a grant on the
   database, or on an object at its root, by its absolute path.

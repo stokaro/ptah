@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/migration/diffpolicy"
+	"ptah.run/core/planext"
 )
 
 // skipRow is one atlas.hcl body and the change kinds its diff policy must
@@ -14,7 +14,7 @@ import (
 type skipRow struct {
 	name string
 	raw  string
-	want []diffpolicy.ChangeKind
+	want []planext.ChangeKind
 }
 
 // TestParseAtlasDiffSkipReachesTheDiffPolicy_HappyPath pins that a diff.skip
@@ -41,7 +41,7 @@ env "local" {
   url = "sqlite://s.db"
 }
 `,
-			want: []diffpolicy.ChangeKind{diffpolicy.DropColumn},
+			want: []planext.ChangeKind{planext.DropColumn},
 		},
 		{
 			name: "env-scoped drop_column",
@@ -54,7 +54,7 @@ env "local" {
   }
 }
 `,
-			want: []diffpolicy.ChangeKind{diffpolicy.DropColumn},
+			want: []planext.ChangeKind{planext.DropColumn},
 		},
 		{
 			name: "env-scoped drop_index",
@@ -67,7 +67,7 @@ env "local" {
   }
 }
 `,
-			want: []diffpolicy.ChangeKind{diffpolicy.DropIndex},
+			want: []planext.ChangeKind{planext.DropIndex},
 		},
 		{
 			name: "every modeled name together",
@@ -82,7 +82,7 @@ env "local" {
   }
 }
 `,
-			want: []diffpolicy.ChangeKind{diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex},
+			want: []planext.ChangeKind{planext.DropTable, planext.DropColumn, planext.DropIndex},
 		},
 		{
 			name: "false is decoded and skips nothing",

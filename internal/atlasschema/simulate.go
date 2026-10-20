@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -539,7 +540,7 @@ func recreateCurrentSchema(
 	if diff.HasChanges() {
 		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 			ctx, runtime,
-			diff, info.Dialect, planner.Options{
+			diff, info.Dialect, planext.Options{
 				Capabilities: info.Capabilities,
 			},
 		)

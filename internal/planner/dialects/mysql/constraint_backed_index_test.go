@@ -8,9 +8,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // uniqueKeyRebuildDiff is a database `UNIQUE KEY uq_users_email (email)` against

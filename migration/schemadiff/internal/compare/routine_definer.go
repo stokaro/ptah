@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -12,7 +13,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/tableref"
-	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ValidateRoutineDefinerReplacements refuses a routine replacement that would
