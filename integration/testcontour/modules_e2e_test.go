@@ -28,10 +28,10 @@ func TestNestedModuleOwnsItsIntegrationContour(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.org/sdk\n\ngo 1.26\n"), 0o600), qt.IsNil)
 	source := []byte("//go:build integration\n\npackage integration_test\n\nimport \"testing\"\n\nfunc TestBoundary(t *testing.T) {}\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "boundary_e2e_test.go"), source, 0o600), qt.IsNil)
-	var log bytes.Buffer
-	config := testcontour.Config{Package: "./integration/...", Tags: []string{"integration"}, Timeout: time.Minute, Dir: module, Stdout: &log, Stderr: &log}
-	c.Assert(testcontour.Run(c.Context(), config), qt.IsNil, qt.Commentf("contour: %s", &log))
-	c.Assert(log.String(), qt.Contains, "TestBoundary")
+	var stdout, stderr bytes.Buffer
+	config := testcontour.Config{Package: "./integration/...", Tags: []string{"integration"}, Timeout: time.Minute, Dir: module, Stdout: &stdout, Stderr: &stderr}
+	c.Assert(testcontour.Run(c.Context(), config), qt.IsNil, qt.Commentf("stdout: %s\nstderr: %s", &stdout, &stderr))
+	c.Assert(stdout.String(), qt.Contains, "TestBoundary")
 	c.Assert(os.Rename(dir, filepath.Join(module, "elsewhere")), qt.IsNil)
 	c.Assert(testcontour.Run(c.Context(), config), qt.ErrorMatches, `integration test file sdk/elsewhere/boundary_e2e_test.go must live under integration/`)
 }
