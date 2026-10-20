@@ -70,7 +70,7 @@ table "nullable" {
 func TestParse_TableAttributesAttachToTheDeclaredTable(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
-	db, err := atlashcl.ParseWithOptions([]byte(tableAttributeDocument), "schema.hcl", atlashcl.Options{HCL: tableAttributeOwners(&requests)})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(tableAttributeDocument), "schema.hcl", atlashcl.Options{HCL: tableAttributeOwners(&requests)})
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
 	c.Assert(requests[0].Claims, qt.HasLen, 4)
@@ -99,7 +99,7 @@ func TestParse_TableAttributesFailureReturnsNoSchema(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var requests []hclext.Request
-			db, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: tableAttributeOwners(&requests)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.source), "schema.hcl", atlashcl.Options{HCL: tableAttributeOwners(&requests)})
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(db, qt.IsNil)
 		})
@@ -108,7 +108,7 @@ func TestParse_TableAttributesFailureReturnsNoSchema(t *testing.T) {
 
 func TestParse_TableAttributesRequireASelectedOwner(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(tableAttributeDocument), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(tableAttributeDocument), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
 	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported table attribute "cache_hint".*`)
 	c.Assert(db, qt.IsNil)
 }

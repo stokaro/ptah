@@ -49,7 +49,7 @@ func TestParseRoutineSetReachesTheRenderedClause_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(routineDocument(row.blockType, `
+			db, err := atlashcl.Parse(t.Context(), routineDocument(row.blockType, `
   security = DEFINER
   set = {
     search_path = "public"
@@ -73,7 +73,7 @@ func TestParseRoutineSetReachesTheRenderedClause_HappyPath(t *testing.T) {
 func TestParseRoutineSetOrdersItsPairs_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(routineDocument("function", `
+	db, err := atlashcl.Parse(t.Context(), routineDocument("function", `
   set = {
     work_mem    = "64MB"
     search_path = "public"
@@ -91,7 +91,7 @@ func TestParseRoutineSetOrdersItsPairs_HappyPath(t *testing.T) {
 func TestParseRoutineWithoutSetCarriesNoSettings_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(routineDocument("function", `security = DEFINER`), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), routineDocument("function", `security = DEFINER`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -133,7 +133,7 @@ func TestParseRoutineSetRefusesWhatItCannotRead_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(routineDocument("function", row.attrs), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), routineDocument("function", row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)

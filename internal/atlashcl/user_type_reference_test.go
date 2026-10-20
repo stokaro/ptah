@@ -207,7 +207,7 @@ function "f" {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseTypeHCL([]byte(userTypeDeclarations+tt.hcl), "postgres")
+			db, err := parseTypeHCL(t.Context(), []byte(userTypeDeclarations+tt.hcl), "postgres")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tt.read(db), qt.Equals, tt.want)

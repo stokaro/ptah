@@ -71,7 +71,7 @@ func TestSchemaFunctions_MeasuredPresentNamesResolve(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(functionDocument(test.call), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), functionDocument(test.call), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -92,7 +92,7 @@ func TestSchemaFunctions_PrintWritesTheValueItReturns(t *testing.T) {
 	var printed strings.Builder
 	atlashcl.SetPrintDestinationForTest(c, &printed)
 
-	db, err := atlashcl.Parse(functionDocument(`print("hello")`), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), functionDocument(`print("hello")`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Fields[0].Default, qt.Equals, "hello")
@@ -111,7 +111,7 @@ func TestSchemaFunctions_PrintWritesTheValueItReturns(t *testing.T) {
 func TestSchemaFunctions_UUIDIsATypeAndNotAFunction(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`schema "main" {
+	db, err := atlashcl.Parse(t.Context(), []byte(`schema "main" {
 }
 
 table "t" {
@@ -126,7 +126,7 @@ table "t" {
 	c.Assert(db.Fields, qt.HasLen, 1)
 	c.Assert(strings.ToLower(db.Fields[0].Type), qt.Equals, "uuid")
 
-	_, callErr := atlashcl.Parse(functionDocument(`uuid()`), "schema.hcl")
+	_, callErr := atlashcl.Parse(t.Context(), functionDocument(`uuid()`), "schema.hcl")
 
 	c.Assert(callErr, qt.IsNotNil)
 }

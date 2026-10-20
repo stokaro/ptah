@@ -50,7 +50,7 @@ func TestParseSequenceOwnedByReadsBothSpellings_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(ownedByDocument(row.ownedBy), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), ownedByDocument(row.ownedBy), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Sequences, qt.HasLen, 1)
@@ -82,7 +82,7 @@ func TestParseSequenceOwnedByKeepsALiteralItCannotResolve_HappyPath(t *testing.T
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(ownedByDocument(row.ownedBy), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), ownedByDocument(row.ownedBy), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Sequences, qt.HasLen, 1)

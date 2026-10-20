@@ -24,7 +24,7 @@ func TestExportPreservesRefreshInHCL(t *testing.T) {
 //ptah:schema:matview name="events" body="SELECT 1 AS id" refresh="EVERY 1 DAY OFFSET 120 MINUTE RANDOMIZE FOR 1800 SECOND APPEND"
 type Events struct{}
 `), 0o600), qt.IsNil)
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(t.Context(), goannotationexport.Options{
 		HCL: builtintest.Runtime().HCL(), Annotations: builtintest.Annotations(), RootDir: root, OutputPath: output, Cleanup: false,
 	})
 	c.Assert(err, qt.IsNil)
@@ -34,7 +34,7 @@ type Events struct{}
 	c.Assert(result.Cleanup, qt.HasLen, 1)
 	c.Assert(result.Cleanup[0].RemovedLines, qt.Equals, 1)
 	data := must.Must(os.ReadFile(output))
-	parsed, err := atlashcl.ParseWithOptions(data, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), data, output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
 	c.Assert(parsed.MaterializedViews[0].Facets, qt.DeepEquals, must.Must(chsource.RefreshFacets("EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 30 MINUTE APPEND")))

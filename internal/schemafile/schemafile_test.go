@@ -34,7 +34,7 @@ CREATE TABLE users (
 CREATE INDEX idx_users_name ON users (name);
 `), 0o600), qt.IsNil)
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLite})
+	db, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: platform.SQLite})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -78,7 +78,7 @@ func TestLoadAll_HCLPreservesExtendedSchemaObjects(t *testing.T) {
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)
 	c.Assert(os.WriteFile(path, rendered.Data, 0o600), qt.IsNil)
 
-	got, err := schemafile.LoadAll([]string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+	got, err := schemafile.LoadAll(t.Context(), []string{path}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got.Schemas, qt.HasLen, 1)
@@ -114,7 +114,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := schemafile.Load(path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+	db, err := schemafile.Load(t.Context(), path, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 
 	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
@@ -184,7 +184,7 @@ func TestLoad_ReportsIgnoredTopLevelBlocks(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{
+	db, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
@@ -217,7 +217,7 @@ func TestLoad_RefusesIgnoredTopLevelBlocksWithoutTolerance(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	_, err := schemafile.Load("file://"+path, schemafile.Options{
+	_, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:       platform.SQLite,
@@ -237,7 +237,7 @@ func TestLoad_IgnoredBlocksStaySilentWithoutAReporter(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{
+	db, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
@@ -309,7 +309,7 @@ func TestLoad_ReportsTheConstructAnIgnoredNameSatIn(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(nestedIgnoredResolvableSchema), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{
+	db, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,
@@ -342,7 +342,7 @@ func TestLoad_ReportsAnIgnoredNameWhoseBodyThenFails(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(nestedIgnoredSchema), 0o600), qt.IsNil)
 	var reported bytes.Buffer
 
-	db, err := schemafile.Load("file://"+path, schemafile.Options{
+	db, err := schemafile.Load(t.Context(), "file://"+path, schemafile.Options{
 		YAML: builtintest.Runtime().YAML(),
 		SQL:  builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(),
 		Dialect:               platform.SQLite,

@@ -12,7 +12,7 @@ import (
 // refuse where the document wrote it, naming the index.
 func TestParse_YDBVectorIndex_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "docs" {
   column "id" {
     type = Uint64

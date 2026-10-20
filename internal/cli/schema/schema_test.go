@@ -48,7 +48,7 @@ func TestSchemaExportCommandWritesHCL(t *testing.T) {
 	c.Assert(string(content), qt.Contains, `table "users"`)
 	c.Assert(string(content), qt.Contains, `column "created_at"`)
 	c.Assert(string(content), qt.Contains, `primary_key {`)
-	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
@@ -185,7 +185,7 @@ warning: views.active_users: raw SQL body is emitted as opaque HCL text and cann
 
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), content, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 	c.Assert(parsedExtensions(c, parsed), qt.DeepEquals, map[string]pgextension.DesiredExtension{
 		"pg_trgm": {IfNotExists: true, Comment: "Fixture extension"},
@@ -401,7 +401,7 @@ type User struct {
 	c.Assert(string(modelAfter), qt.Not(qt.Contains), "ptah:schema")
 	hclData, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(hclData, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), hclData, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", hclData))
 	c.Assert(parsed.Tables, qt.HasLen, 1)
 	c.Assert(parsed.Tables[0].APIName, qt.Equals, "Account")

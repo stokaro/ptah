@@ -147,7 +147,7 @@ table "readings" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 1)
@@ -210,7 +210,7 @@ func TestParseHypertable_RefusesWhatItCannotPlace(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.want+".*")
 			c.Assert(db, qt.IsNil)
@@ -282,7 +282,7 @@ continuous_aggregate "app" "hourly" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(must.Must(db.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{test.want})
@@ -323,7 +323,7 @@ func TestParseContinuousAggregate_RefusesADeclarationWithNoBody(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.want+".*")
 			c.Assert(db, qt.IsNil)
@@ -347,7 +347,7 @@ func TestParse_AnHCLDocumentDescribesBothTimescaleModels(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte("table \"plain\" {\n  column \"id\" {\n    type = int\n  }\n}\n"), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte("table \"plain\" {\n  column \"id\" {\n    type = int\n  }\n}\n"), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			// The claim is per kind, so it answers for a subject the document never names.

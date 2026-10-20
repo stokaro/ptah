@@ -29,7 +29,7 @@ type Event struct {
 }
 `), 0o600), qt.IsNil)
 
-	_, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(), Annotations: builtintest.Annotations(),
+	_, err := goannotationexport.Export(t.Context(), goannotationexport.Options{HCL: builtintest.Runtime().HCL(), Annotations: builtintest.Annotations(),
 		RootDir: root, OutputPath: output})
 
 	c.Assert(err, qt.IsNil)

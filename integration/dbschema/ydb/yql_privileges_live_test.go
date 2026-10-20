@@ -34,7 +34,7 @@ func TestYDBDesiredYQL_Privileges(t *testing.T) {
 			file := filepath.Join(c.TempDir(), "schema.sql")
 			for _, source := range []string{first, second, prefix} {
 				c.Assert(os.WriteFile(file, []byte(source), 0o600), qt.IsNil)
-				desired, err := schemafile.LoadAll([]string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb", DatabaseURL: conn.Info().URL})
+				desired, err := schemafile.LoadAll(t.Context(), []string{file}, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL(), Dialect: "ydb", DatabaseURL: conn.Info().URL})
 				c.Assert(err, qt.IsNil)
 				changes := planAgainst(c, conn, desired, accessSchemas)
 				c.Assert(changes, qt.Not(qt.HasLen), 0)

@@ -137,7 +137,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
 			c.Assert(db.Fields[0].Type, qt.Equals, test.wantType)

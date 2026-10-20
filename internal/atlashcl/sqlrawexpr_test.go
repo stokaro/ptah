@@ -294,7 +294,7 @@ SQL
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(test.read(db), qt.DeepEquals, test.want)
@@ -489,7 +489,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -517,7 +517,7 @@ table "t" {
 `
 
 	for range 64 {
-		_, err := atlashcl.Parse([]byte(source), "schema.hcl")
+		_, err := atlashcl.Parse(t.Context(), []byte(source), "schema.hcl")
 		c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema.hcl:3,13-19: attribute "comment": .*`)
 	}
 }
@@ -534,7 +534,7 @@ table "t" {
 func TestParseReducesSQLRawExpressionInterpolation(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 variable "floor" {
   type    = number
   default = 5
@@ -566,7 +566,7 @@ table "t" {
 func TestParseRefusesUnknownFunctionCalls(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "t" {
   column "n" { type = int }
   check "c" { expr = sqlx("n > 0") }

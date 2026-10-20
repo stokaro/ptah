@@ -28,7 +28,7 @@ func TestReadHCL_PassesTheCallerDialect(t *testing.T) {
 		Blocks: []hclext.Block{{Site: hclext.TopLevel, Type: "shape", Naming: hclext.SchemaAndName, Dialects: []string{"custom"}}},
 	}))
 	formats := sourceformats.New(yamlext.None(), sqlext.None(), owners, coverage.Vocabulary{}, nil)
-	db, err := formats.ReadHCL([]byte(`shape "s" {}`), "custom.hcl", "custom")
+	db, err := formats.ReadHCL(t.Context(), []byte(`shape "s" {}`), "custom.hcl", "custom")
 	c.Assert(err, qt.IsNil)
 	c.Assert(db, qt.IsNotNil)
 	c.Assert(claims, qt.HasLen, 1)

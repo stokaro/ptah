@@ -64,7 +64,7 @@ func TestParseViewDependsOnOrdersTheRender_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(dependsOnDocument(row.edge), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), dependsOnDocument(row.edge), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Views, qt.HasLen, 2)
@@ -86,7 +86,7 @@ func TestParseViewDependsOnOrdersTheRender_HappyPath(t *testing.T) {
 func TestParseViewDependsOnNamesAnObjectTheSetDoesNotHold_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(dependsOnDocument(`depends_on = [view.absent_elsewhere]`), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), dependsOnDocument(`depends_on = [view.absent_elsewhere]`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Views, qt.HasLen, 2)
@@ -100,7 +100,7 @@ func TestParseViewDependsOnNamesAnObjectTheSetDoesNotHold_HappyPath(t *testing.T
 func TestParseMaterializedDependsOn_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "public" {}
 
 materialized "aa_roll" {

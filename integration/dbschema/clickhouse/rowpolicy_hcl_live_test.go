@@ -26,7 +26,7 @@ func TestRowPolicyFromHCLSourceRoundTripsLive(t *testing.T) {
  as = "RESTRICTIVE"
  to = "ALL EXCEPT %s"
  }`, fixture.policyByName, fixture.table, fixture.bob)
-	declared, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	declared, err := atlashcl.ParseWithOptions(t.Context(), []byte(source), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	table := fixture.declaration(nil)
 	declared.Tables, declared.Fields = table.Tables, table.Fields
@@ -42,7 +42,7 @@ func TestRowPolicyFromHCLSourceRoundTripsLive(t *testing.T) {
 	exported, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: runtime.HCL(), Dialect: "clickhouse"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(exported.Diagnostics, qt.HasLen, 0)
-	reloaded, err := atlashcl.ParseWithOptions(exported.Data, "copy.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	reloaded, err := atlashcl.ParseWithOptions(t.Context(), exported.Data, "copy.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	again, _ = fixture.plan(c, reloaded)
 	c.Assert(again, qt.HasLen, 0)

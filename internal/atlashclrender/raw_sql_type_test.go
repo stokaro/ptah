@@ -81,7 +81,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			parsed, err := atlashcl.ParseWithOptions([]byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.source), "schema.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)
@@ -94,7 +94,7 @@ table "t" {
 
 			// Re-parsing has to land on the same IR, or the round trip is
 			// stable in text and lossy in meaning.
-			reparsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+			reparsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)
@@ -118,7 +118,7 @@ table "t" {
 func TestSQLRawExpressionColumnTypeRendersReducedInDDL(t *testing.T) {
 	c := qt.New(t)
 
-	parsed, err := atlashcl.ParseWithOptions([]byte(`
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(`
 table "t" {
   column "c" {
     null = true

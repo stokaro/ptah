@@ -121,7 +121,7 @@ func TestYAML_ClaimsRowDeletionForAYAMLDocument(t *testing.T) {
 			set, err := yamlext.NewSet(test.owners...)
 			c.Assert(err, qt.IsNil)
 
-			db, err := yamlschema.Parse(set, []byte(eventsYAML))
+			db, err := yamlschema.Parse(t.Context(), set, []byte(eventsYAML))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables[0].Overrides, qt.DeepEquals, map[string]map[string]string{

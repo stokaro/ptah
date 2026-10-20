@@ -59,7 +59,7 @@ func TestParseWithOptions_ReadsAnOwnersChildrenInTheirOrder(t *testing.T) {
 		"  member \"alpha\" {\n    kind = enum.mood\n  }\n" +
 		"  member \"mid\" {}\n}\n"
 
-	_, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Block: "shape", Name: "s",
@@ -104,7 +104,7 @@ func TestParseWithOptions_RefusesAnOwnersChildAsItsOwn(t *testing.T) {
 			c := qt.New(t)
 			var requests []hclext.Request
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -141,7 +141,7 @@ func TestParseWithOptions_ReadsATypeNameAsAColumnTypeIsRead(t *testing.T) {
 			document := "table \"t\" {\n  column \"c\" {\n    type = " + test.spelling + "\n  }\n}\n" +
 				"shape \"s\" {\n  base = " + test.spelling + "\n}\n"
 
-			db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -173,7 +173,7 @@ func TestParseWithOptions_ReadsAnSQLAttributeAsWritten(t *testing.T) {
 			document := "variable \"d\" {\n  type    = string\n  default = \"from a variable\"\n}\n\n" +
 				"shape \"s\" {\n  default = " + test.spelling + "\n}\n"
 
-			_, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests[0].Claims[0].Attributes["default"], qt.DeepEquals, test.want)

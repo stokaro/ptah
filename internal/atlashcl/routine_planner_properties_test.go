@@ -54,7 +54,7 @@ func TestParseFunctionPlannerProperties_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			db, err := atlashcl.ParseWithOptions(t.Context(), plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Functions, qt.HasLen, 1)
@@ -73,7 +73,7 @@ func TestParseFunctionPlannerProperties_HappyPath(t *testing.T) {
 func TestParseFunctionWithoutPlannerProperties_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", `volatility = STABLE`), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), plannerPropertyDocument("function", `volatility = STABLE`), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -108,7 +108,7 @@ func TestParseProcedurePlannerProperties_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("procedure", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			db, err := atlashcl.ParseWithOptions(t.Context(), plannerPropertyDocument("procedure", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)
@@ -136,7 +136,7 @@ func TestParseFunctionParallelRefusesAnythingElse_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.ParseWithOptions(plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			db, err := atlashcl.ParseWithOptions(t.Context(), plannerPropertyDocument("function", row.attrs), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 			c.Assert(err, qt.ErrorMatches,
 				`(?s).*parallel must be SAFE, RESTRICTED or UNSAFE.*`)

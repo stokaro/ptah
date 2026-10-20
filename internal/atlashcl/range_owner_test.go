@@ -1,6 +1,8 @@
 package atlashcl_test
 
 import (
+	"context"
+
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/objectidentity"
@@ -13,8 +15,8 @@ import (
 
 // parseTypeHCL selects the shipped source owners for documents that declare
 // PostgreSQL ranges. The neutral parser selects no owners on its own.
-func parseTypeHCL(data []byte, name string) (*schemamodel.Database, error) {
-	return atlashcl.ParseWithOptions(data, name, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+func parseTypeHCL(ctx context.Context, data []byte, name string) (*schemamodel.Database, error) {
+	return atlashcl.ParseWithOptions(ctx, data, name, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 }
 
 func rangeObjects(database *schemamodel.Database) []schemaext.Object {

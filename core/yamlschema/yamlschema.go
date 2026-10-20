@@ -13,7 +13,7 @@
 // This package is the YAML reader. Parse takes the document as bytes, ParseFile
 // reads it from a path; both return the model:
 //
-//	db, err := yamlschema.ParseFile(runtime.YAML(), "schema.yaml")
+//	db, err := yamlschema.ParseFile(context.Background(), runtime.YAML(), "schema.yaml")
 //	if err != nil {
 //		return err
 //	}
@@ -69,6 +69,7 @@ package yamlschema
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -97,7 +98,10 @@ import (
 //
 // owners selects the feature owners whose models the document can declare, as
 // it does for Parse.
-func ParseFile(owners yamlext.Set, path string) (*schemamodel.Database, error) {
+func ParseFile(ctx context.Context, owners yamlext.Set, path string) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !owners.Selected() {
 		return nil, fmt.Errorf("parse YAML schema: %w", yamlext.ErrUnselected)
 	}
@@ -106,7 +110,7 @@ func ParseFile(owners yamlext.Set, path string) (*schemamodel.Database, error) {
 		return nil, fmt.Errorf("read schema file: %w", err)
 	}
 
-	return Parse(owners, data)
+	return Parse(ctx, owners, data)
 }
 
 // Parse parses a YAML schema document into the same *schemamodel.Database
@@ -132,7 +136,10 @@ func ParseFile(owners yamlext.Set, path string) (*schemamodel.Database, error) {
 // selects the owner; otherwise they stay unknown rather than absent. The zero
 // set is refused with [yamlext.ErrUnselected]; [yamlext.None] selects no
 // owner on purpose.
-func Parse(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
+func Parse(ctx context.Context, owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !owners.Selected() {
 		return nil, fmt.Errorf("parse YAML schema: %w", yamlext.ErrUnselected)
 	}
@@ -152,7 +159,14 @@ func Parse(owners yamlext.Set, data []byte) (*schemamodel.Database, error) {
 		return nil, err
 	}
 
-	return doc.toDatabase(owners, data)
+	db, err := doc.toDatabase(owners, data)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 type document struct {

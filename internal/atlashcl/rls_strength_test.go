@@ -74,7 +74,7 @@ func TestParsePolicyAsSelectsHowItCombines_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners(policyDocument(row.as), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), policyDocument(row.as), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			policies := ownerPolicies(c, db)
@@ -95,9 +95,9 @@ func TestParsePolicyAsSelectsHowItCombines_HappyPath(t *testing.T) {
 func TestParsePolicyAsLeavesAPermissiveOneUnmarked_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	stated, err := parseWithOwners(policyDocument(`as = PERMISSIVE`), "schema.hcl")
+	stated, err := parseWithOwners(t.Context(), policyDocument(`as = PERMISSIVE`), "schema.hcl")
 	c.Assert(err, qt.IsNil)
-	unstated, err := parseWithOwners(policyDocument(``), "schema.hcl")
+	unstated, err := parseWithOwners(t.Context(), policyDocument(``), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
 	statedSQL := strings.Join(renderStatements(c, stated, "postgres"), "\n")
@@ -126,7 +126,7 @@ func TestParsePolicyAsRefusesAnythingElse_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners(policyDocument(row.as), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), policyDocument(row.as), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*policy "p" as must be PERMISSIVE or RESTRICTIVE.*`)
 			c.Assert(db, qt.IsNil)
@@ -144,7 +144,7 @@ func TestParsePolicyAsRefusesAnythingElse_FailurePath(t *testing.T) {
 func TestParseRowSecurityEnforcedReachesTheOwner_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners(rowSecurityDocument(`enforced = true`), "schema.hcl")
+	db, err := parseWithOwners(t.Context(), rowSecurityDocument(`enforced = true`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	switches := ownerSwitches(c, db)
@@ -170,7 +170,7 @@ func TestParseRowSecurityWithoutEnforcedStaysUnforced_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners(rowSecurityDocument(row.attrs), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), rowSecurityDocument(row.attrs), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			switches := ownerSwitches(c, db)

@@ -15,7 +15,7 @@ import (
 func TestParseExtensionIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 extension "pg_trgm" {
   if_not_exists = true
   version       = "1.6"
@@ -33,7 +33,7 @@ extension "pg_trgm" {
 func TestParseExtensionDefaultsWithoutIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 extension "pg_trgm" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
@@ -74,7 +74,7 @@ func TestParseExtensionSchemaAttributePresence(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseWithOwners([]byte(test.source), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.source), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(ownedExtensions(c, db), qt.DeepEquals, []declaredExtension{{
 				Schema: test.wantSchema,
@@ -87,7 +87,7 @@ func TestParseExtensionSchemaAttributePresence(t *testing.T) {
 func TestParseTwoLabelExtensionRejectsExplicitDefaultSchema(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseWithOwners([]byte(`
+	_, err := parseWithOwners(t.Context(), []byte(`
 extension "extensions" "citext" {
   schema = ""
 }
@@ -99,7 +99,7 @@ extension "extensions" "citext" {
 func TestParseExplicitExtensionSystemSchemaReferenceIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "pg_catalog" {}
 schema "PG_CATALOG" {}
 
@@ -125,7 +125,7 @@ extension "plpgsql" {
 func TestParseLiteralExtensionSystemSchemaNeedsNoDeclaration(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 extension "plpgsql" {
   schema  = "pg_catalog"
   version = "1.0"
@@ -147,7 +147,7 @@ extension "plpgsql" {
 func TestParseStandaloneSystemSchemaIsNotTreatedAsAnExtensionReference(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "pg_catalog" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
@@ -162,7 +162,7 @@ schema "pg_catalog" {}
 func TestParseSystemSchemaUsedByAnObjectIsNotTreatedAsAnExtensionReference(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "pg_catalog" {}
 
 extension "plpgsql" {
@@ -189,7 +189,7 @@ table "blocked" {
 func TestParseTwoLabelExtensionDoesNotMakeASystemSchemaReferenceOnly(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "pg_catalog" {}
 extension "pg_catalog" "plpgsql" {}
 `), "schema.hcl")
@@ -214,7 +214,7 @@ func TestParsePermissionTargetKeepsItsSystemSchemaSemantic(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseWithOwners([]byte(`
+			db, err := parseWithOwners(t.Context(), []byte(`
 schema "pg_catalog" {}
 
 extension "plpgsql" {
@@ -241,7 +241,7 @@ permission {
 func TestParseExtensionRejectsNonBoolIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseWithOwners([]byte(`
+	_, err := parseWithOwners(t.Context(), []byte(`
 extension "pg_trgm" {
   if_not_exists = "yes"
 }

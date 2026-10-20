@@ -120,7 +120,7 @@ func TestParseWithOptions_ReachesTheOwnersBlocks(t *testing.T) {
 	var requests []hclext.Request
 	claims := 0
 
-	db, err := atlashcl.ParseWithOptions([]byte(gadgetDocument), "schema.hcl", atlashcl.Options{HCL: gadgetOwners(&requests, &claims)})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(gadgetDocument), "schema.hcl", atlashcl.Options{HCL: gadgetOwners(&requests, &claims)})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{
@@ -162,7 +162,7 @@ func TestParseWithOptions_RefusesAnOwnersBlockAsItsOwn(t *testing.T) {
 			var requests []hclext.Request
 			claims := 0
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl", atlashcl.Options{HCL: gadgetOwners(&requests, &claims)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document), "schema.hcl", atlashcl.Options{HCL: gadgetOwners(&requests, &claims)})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -179,7 +179,7 @@ func TestParseWithOptions_DropsAnOwnersUnknownNameUnderTheTolerance(t *testing.T
 	var ignored []atlashcl.IgnoredName
 	claims := 0
 
-	db, err := atlashcl.ParseWithOptions([]byte("gadget \"g\" {\n  color = \"red\"\n}\n"), "schema.hcl", atlashcl.Options{
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("gadget \"g\" {\n  color = \"red\"\n}\n"), "schema.hcl", atlashcl.Options{
 		HCL: gadgetOwners(&requests, &claims), IgnoreUnknownNames: true,
 		RecordIgnored: func(name atlashcl.IgnoredName) { ignored = append(ignored, name) },
 	})
@@ -195,7 +195,7 @@ func TestParseWithOptions_DropsAnOwnersUnknownNameUnderTheTolerance(t *testing.T
 func TestParseWithOptions_WithoutTheOwnerRefusesItsBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.ParseWithOptions([]byte("gadget \"g\" {}\n"), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("gadget \"g\" {}\n"), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
 
 	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema.hcl:1,1-7: unsupported top-level block "gadget"`)
 	c.Assert(db, qt.IsNil)
@@ -206,7 +206,7 @@ func TestParseWithOptions_WithoutTheOwnerRefusesItsBlock(t *testing.T) {
 func TestParseWithOptions_RefusesAnUnselectedOwnerSet(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.ParseWithOptions([]byte("schema \"app\" {}\n"), "schema.hcl", atlashcl.Options{})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("schema \"app\" {}\n"), "schema.hcl", atlashcl.Options{})
 
 	c.Assert(err, qt.ErrorIs, hclext.ErrUnselected)
 	c.Assert(db, qt.IsNil)
@@ -286,7 +286,7 @@ table "second" {
 }
 `
 
-	db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, map[string]hclext.Value{"on": {Kind: hclext.Bool, Bool: true}})
@@ -312,7 +312,7 @@ func TestParseWithOptions_RefusesABoolAttributeThatIsNoBool(t *testing.T) {
 			c := qt.New(t)
 			var requests []hclext.Request
 
-			db, err := atlashcl.ParseWithOptions([]byte("dial \"app\" \"t\" {\n  on = "+test.value+"\n}\n"), "schema.hcl",
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte("dial \"app\" \"t\" {\n  on = "+test.value+"\n}\n"), "schema.hcl",
 				atlashcl.Options{HCL: dialOwners(&requests)})
 
 			c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:2,3-5: dial attribute "on" must be a bool`)
@@ -327,7 +327,7 @@ func TestParseWithOptions_RefusesASettingOfAnUndeclaredTable(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
 
-	db, err := atlashcl.ParseWithOptions([]byte("dial \"app\" \"missing\" {}\n"), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("dial \"app\" \"missing\" {}\n"), "schema.hcl", atlashcl.Options{HCL: dialOwners(&requests)})
 
 	c.Assert(err, qt.ErrorMatches, `.*schema\.hcl:1,1-5.*dial "app\.missing" names a table this schema does not declare`)
 	c.Assert(db, qt.IsNil)
@@ -340,7 +340,7 @@ func TestParseWithOptions_ReadsAQualifiedName(t *testing.T) {
 	c := qt.New(t)
 	var requests []hclext.Request
 
-	_, err := atlashcl.ParseWithOptions([]byte("knob \"app.volume\" {}\nknob \"app\" \"bass.boost\" {}\n"), "schema.hcl",
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte("knob \"app.volume\" {}\nknob \"app\" \"bass.boost\" {}\n"), "schema.hcl",
 		atlashcl.Options{HCL: dialOwners(&requests)})
 
 	c.Assert(err, qt.IsNil)
@@ -435,7 +435,7 @@ func TestParseWithOptions_ClaimsEveryIndexForTheOwner(t *testing.T) {
 	var requests []hclext.Request
 	var coverageRequests []hclext.CoverageRequest
 
-	db, err := atlashcl.ParseWithOptions([]byte(tunedDocument), "schema.hcl",
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(tunedDocument), "schema.hcl",
 		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
 
 	c.Assert(err, qt.IsNil)
@@ -456,7 +456,7 @@ func TestParseWithOptions_ClaimsEveryIndexForTheOwner(t *testing.T) {
 func TestParseWithOptions_AdmitsAnIndexAttributeOnlyWithItsOwner(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.ParseWithOptions([]byte(tunedDocument), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(tunedDocument), "schema.hcl", atlashcl.Options{HCL: hclext.None()})
 
 	c.Assert(err, qt.ErrorMatches, `parse HCL schema at schema\.hcl:5,3-8: unsupported index attribute "tune"`)
 	c.Assert(db, qt.IsNil)
@@ -471,7 +471,7 @@ func TestParseWithOptions_HandsTheOwnerItsHeader(t *testing.T) {
 	var coverageRequests []hclext.CoverageRequest
 	document := "// ptah:not-described gizmo \"g1\"\n// ptah:not-described view\n// ptah:feature-coverage {\"exact\":true}\nschema \"app\" {}\n"
 
-	db, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl",
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl",
 		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, true)})
 
 	c.Assert(err, qt.IsNil)
@@ -490,7 +490,7 @@ func TestParseWithOptions_RefusesACapturedHeaderNoOwnerReads(t *testing.T) {
 	var requests []hclext.Request
 	var coverageRequests []hclext.CoverageRequest
 
-	db, err := atlashcl.ParseWithOptions([]byte("// ptah:feature-coverage {}\nschema \"app\" {}\n"), "schema.hcl",
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte("// ptah:feature-coverage {}\nschema \"app\" {}\n"), "schema.hcl",
 		atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -520,7 +520,7 @@ func TestParseWithOptions_ReportsTheEarliestRefusal(t *testing.T) {
 			var requests []hclext.Request
 			var coverageRequests []hclext.CoverageRequest
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl",
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document), "schema.hcl",
 				atlashcl.Options{HCL: tunerOwners(&requests, &coverageRequests, false)})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -595,7 +595,7 @@ probe "p" {
 			c := qt.New(t)
 			var requests []hclext.Request
 
-			_, err := atlashcl.ParseWithOptions([]byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
+			_, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 1)
@@ -633,7 +633,7 @@ func TestParseWithOptions_RefusesAReferenceToNoSchema(t *testing.T) {
 			c := qt.New(t)
 			var requests []hclext.Request
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document+"\n"), "schema.hcl", atlashcl.Options{HCL: probeOwners(&requests)})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -651,7 +651,7 @@ func TestParseWithOptions_EvaluatesTheNamingsSchemaOnce(t *testing.T) {
 	atlashcl.SetPrintDestinationForTest(c, &printed)
 	var requests []hclext.Request
 
-	_, err := atlashcl.ParseWithOptions([]byte("probe \"p\" {\n  schema = \"${print(\"app\")}\"\n}\n"), "schema.hcl",
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte("probe \"p\" {\n  schema = \"${print(\"app\")}\"\n}\n"), "schema.hcl",
 		atlashcl.Options{HCL: probeOwners(&requests)})
 
 	c.Assert(err, qt.IsNil)

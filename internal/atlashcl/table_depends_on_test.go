@@ -68,7 +68,7 @@ func TestParseTableDependsOnOrdersTheRender_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(tableDependsOnDocument(row.edge), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), tableDependsOnDocument(row.edge), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Tables, qt.HasLen, 2)
@@ -90,7 +90,7 @@ func TestParseTableDependsOnOrdersTheRender_HappyPath(t *testing.T) {
 func TestParseTableDependsOnNamesATableTheSchemaDoesNotHold_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(tableDependsOnDocument(`depends_on = [table.absent_elsewhere]`), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), tableDependsOnDocument(`depends_on = [table.absent_elsewhere]`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)

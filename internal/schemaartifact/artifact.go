@@ -138,7 +138,7 @@ type preparedPush struct {
 // [PushOptions.Checks] gives. vocabulary is the coverage kinds the snapshot's
 // header may name and hcl the owners whose blocks it may carry; the snapshot is
 // read back with them to prove it lossless.
-func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) (fs.FS, error) {
+func Capture(ctx context.Context, db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) (fs.FS, error) {
 	if db == nil {
 		return nil, fmt.Errorf("schema database is required")
 	}
@@ -165,7 +165,7 @@ func Capture(db *schemamodel.Database, checks []byte, vocabulary coverage.Vocabu
 			formatDiagnostics(rendered.Diagnostics),
 		)
 	}
-	parsed, err := atlashcl.ParseWithOptions(rendered.Data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
+	parsed, err := atlashcl.ParseWithOptions(ctx, rendered.Data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
 	if err != nil {
 		return nil, fmt.Errorf("validate canonical schema HCL: %w", err)
 	}
@@ -211,7 +211,7 @@ func PushTo(
 	db *schemamodel.Database,
 	opts PushOptions,
 ) (PushResult, error) {
-	prepared, err := prepare(db, opts)
+	prepared, err := prepare(ctx, db, opts)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -236,7 +236,7 @@ func push(
 	db *schemamodel.Database,
 	opts PushOptions,
 ) (PushResult, error) {
-	prepared, err := prepare(db, opts)
+	prepared, err := prepare(ctx, db, opts)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -269,7 +269,7 @@ func Pull(ctx context.Context, client *ociartifact.Client, reference string, voc
 	if err != nil {
 		return Artifact{}, err
 	}
-	return validatePulled(pulled, vocabulary, hcl)
+	return validatePulled(ctx, pulled, vocabulary, hcl)
 }
 
 // PullFrom retrieves and validates a canonical schema from target, reading its
@@ -282,7 +282,7 @@ func PullFrom(ctx context.Context, target oras.ReadOnlyTarget, selector string, 
 	if err != nil {
 		return Artifact{}, err
 	}
-	return validatePulled(pulled, vocabulary, hcl)
+	return validatePulled(ctx, pulled, vocabulary, hcl)
 }
 
 // PullToFile retrieves reference and materializes it at output. It returns the
@@ -353,11 +353,11 @@ func Materialize(artifact Artifact, output string) ([]string, error) {
 	return []string{output, rows}, nil
 }
 
-func prepare(
+func prepare(ctx context.Context,
 	db *schemamodel.Database,
 	opts PushOptions,
 ) (preparedPush, error) {
-	snapshot, err := Capture(db, opts.Checks, opts.CoverageVocabulary, opts.HCL)
+	snapshot, err := Capture(ctx, db, opts.Checks, opts.CoverageVocabulary, opts.HCL)
 	if err != nil {
 		return preparedPush{}, err
 	}
@@ -386,7 +386,7 @@ func prepare(
 	}, nil
 }
 
-func validatePulled(pulled ociartifact.Artifact, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
+func validatePulled(ctx context.Context, pulled ociartifact.Artifact, vocabulary coverage.Vocabulary, hcl hclext.Set) (Artifact, error) {
 	if pulled.Annotations[annotationFormat] != canonicalFormat {
 		return Artifact{}, fmt.Errorf("unsupported schema artifact format %q", pulled.Annotations[annotationFormat])
 	}
@@ -422,7 +422,7 @@ func validatePulled(pulled ociartifact.Artifact, vocabulary coverage.Vocabulary,
 	if err != nil {
 		return Artifact{}, fmt.Errorf("read schema artifact: %w", err)
 	}
-	db, err := atlashcl.ParseWithOptions(data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
+	db, err := atlashcl.ParseWithOptions(ctx, data, FileName, atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl})
 	if err != nil {
 		return Artifact{}, fmt.Errorf("parse schema artifact: %w", err)
 	}

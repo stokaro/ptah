@@ -33,7 +33,7 @@ func TestLoadPath_AttachesAHypertableDeclaredBesideAnotherFile(t *testing.T) {
 		"timescale.hcl": "hypertable \"app\" \"readings\" {\n  column = \"time\"\n  chunk_interval = \"1 day\"\n}\n",
 	})
 
-	database, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+	database, err := schemafile.LoadPath(t.Context(), dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
@@ -52,7 +52,7 @@ func TestLoadPath_RefusesAHypertableNoFileDeclaresTheTableOf(t *testing.T) {
 		"timescale.hcl": "hypertable \"app\" \"events\" {\n  column = \"time\"\n}\n",
 	})
 
-	database, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
+	database, err := schemafile.LoadPath(t.Context(), dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(), HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*timescale\.hcl.*hypertable "app\.events" names a table this schema does not declare`)
 	c.Assert(database, qt.IsNil)

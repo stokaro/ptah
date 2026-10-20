@@ -61,7 +61,7 @@ func TestParse_RowPoliciesKey_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(yamlOwner, rowPolicyDocument(test.policies))
+			db, err := yamlschema.Parse(t.Context(), yamlOwner, rowPolicyDocument(test.policies))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(must.Must(db.FeatureObjects.All()), qt.DeepEquals, []schemaext.Object{test.want})
@@ -92,7 +92,7 @@ func TestParse_RowPoliciesKey_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := yamlschema.Parse(yamlOwner, rowPolicyDocument(test.policies))
+			db, err := yamlschema.Parse(t.Context(), yamlOwner, rowPolicyDocument(test.policies))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)
@@ -105,7 +105,7 @@ func TestParse_RowPoliciesKey_FailurePath(t *testing.T) {
 func TestParse_RowPoliciesKey_RefusesAnInvalidValueAsSuch(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse(yamlOwner, rowPolicyDocument("  tenant:\n    table: orders\n    as: STRICT\n"))
+	_, err := yamlschema.Parse(t.Context(), yamlOwner, rowPolicyDocument("  tenant:\n    table: orders\n    as: STRICT\n"))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
 }
@@ -116,7 +116,7 @@ func TestParse_RowPoliciesKey_RefusesAnInvalidValueAsSuch(t *testing.T) {
 func TestParse_WithoutTheOwnerRowPoliciesIsUnknown(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(yamlext.None(), rowPolicyDocument("  tenant:\n    table: orders\n"))
+	db, err := yamlschema.Parse(t.Context(), yamlext.None(), rowPolicyDocument("  tenant:\n    table: orders\n"))
 
 	c.Assert(err, qt.ErrorMatches, `parse YAML schema: line 7: unknown key "row_policies"`)
 	c.Assert(db, qt.IsNil)

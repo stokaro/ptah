@@ -16,7 +16,7 @@ import (
 func TestParseIndexGranularityAsAClickHousePlatformProperty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "events" {
   column "payload" {
     type = text
@@ -43,7 +43,7 @@ table "events" {
 func TestParseIndexGranularityAttribute_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "events" {
   column "payload" {
     type = text
@@ -80,7 +80,7 @@ type Event struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(goDB.Indexes, qt.HasLen, 1)
 
-	hclDB, err := atlashcl.Parse([]byte(`
+	hclDB, err := atlashcl.Parse(t.Context(), []byte(`
 table "events" {
   column "payload" {
     type = String

@@ -52,7 +52,7 @@ func TestRender_ScopedModelSurvivesAnotherCallerDialect(t *testing.T) {
 	rendered, err := atlashclrender.Render(original, atlashclrender.Options{HCL: owners})
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(rendered.Data), qt.Contains, `dialect = "custom"`)
-	parsed, err := atlascompat.ParseAtlasHCLWithOptions(rendered.Data, "custom.hcl", atlascompat.ParseHCLOptions{
+	parsed, err := atlascompat.ParseAtlasHCLWithOptions(t.Context(), rendered.Data, "custom.hcl", atlascompat.ParseHCLOptions{
 		HCL: owners, Dialect: "oracle",
 	})
 	c.Assert(err, qt.IsNil)

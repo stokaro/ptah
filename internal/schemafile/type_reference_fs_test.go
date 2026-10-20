@@ -23,7 +23,7 @@ func TestLoadPath_ResolvesATypeDeclaredInAnotherFile(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "b_tables.hcl"),
 		[]byte("table \"t\" {\n  schema = schema.public\n  column \"c\" {\n    type = domain.pos2\n  }\n}\n"), 0o600), qt.IsNil)
 
-	db, err := schemafile.LoadPath(dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(),
+	db, err := schemafile.LoadPath(t.Context(), dir, schemafile.Options{YAML: builtintest.Runtime().YAML(), SQL: builtintest.Runtime().SQL(),
 		HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)

@@ -35,7 +35,7 @@ func TestRenderIndexPropertiesRoundTrip(t *testing.T) {
 			rendered, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered.Diagnostics, qt.HasLen, 0)
-			parsed, err := atlashcl.ParseWithOptions(rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)

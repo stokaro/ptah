@@ -149,7 +149,7 @@ func (f typeSourceFixture) assertExportsConverged(c *qt.C) {
 	f.assertConverged(c, &fromGo)
 	hcl, err := atlashclrender.RenderInspected(declared, f.schema, atlashclrender.Options{HCL: f.runtime.HCL(), Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
-	fromHCL, err := atlashcl.ParseWithOptions(hcl.Data, "range.hcl", atlashcl.Options{HCL: f.runtime.HCL()})
+	fromHCL, err := atlashcl.ParseWithOptions(c.Context(), hcl.Data, "range.hcl", atlashcl.Options{HCL: f.runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	f.assertConverged(c, fromHCL)
 }

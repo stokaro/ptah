@@ -179,7 +179,7 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 			c.Cleanup(func() { dropCoordinationDirectory(c, conn, coordinationSchema) })
 			apply(c, conn, []string{"CREATE COORDINATION NODE `ptah_ydb_coordination/plain`"})
 
-			plain, err := atlashcl.ParseWithOptions([]byte(`schema "ptah_ydb_coordination" {}`), "plain.hcl", owners)
+			plain, err := atlashcl.ParseWithOptions(t.Context(), []byte(`schema "ptah_ydb_coordination" {}`), "plain.hcl", owners)
 			c.Assert(err, qt.IsNil)
 			preserved := planAgainst(c, conn, plain, coordinationSchemas)
 			c.Assert(preserved, qt.HasLen, 0)
@@ -194,7 +194,7 @@ func TestYDBCoordinationNodes_HCLRequiresExplicitNamespaceClaim(t *testing.T) {
 			exported, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL(),
 				CoverageVocabulary: builtintest.Runtime().CoverageVocabulary(), Dialect: "ydb"})
 			c.Assert(err, qt.IsNil)
-			complete, err := atlashcl.ParseWithOptions(exported.Data, "complete.hcl", owners)
+			complete, err := atlashcl.ParseWithOptions(t.Context(), exported.Data, "complete.hcl", owners)
 			c.Assert(err, qt.IsNil)
 			drop := planAgainst(c, conn, complete, coordinationSchemas)
 			c.Assert(drop, qt.DeepEquals, []string{"DROP COORDINATION NODE `ptah_ydb_coordination/plain`"})

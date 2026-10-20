@@ -83,7 +83,7 @@ func TestAnOwnerFormatLimitIsRecordedByTheFormat(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaFiles(c, load.files)
 
-			database, err := schemafile.LoadPath(filepath.Join(dir, load.path), ownerLoadOptions(feedOwner(feedLimits)))
+			database, err := schemafile.LoadPath(t.Context(), filepath.Join(dir, load.path), ownerLoadOptions(feedOwner(feedLimits)))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, want[load.name])
@@ -109,7 +109,7 @@ func TestAnOwnerKindIsNotRecordedBeforeItsOwnerStatesALimit(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaFiles(c, load.files)
 
-			database, err := schemafile.LoadPath(filepath.Join(dir, load.path), ownerLoadOptions(feedOwner(nil)))
+			database, err := schemafile.LoadPath(t.Context(), filepath.Join(dir, load.path), ownerLoadOptions(feedOwner(nil)))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, want[load.name])
@@ -125,11 +125,11 @@ func TestAnOwnerFormatLimitIsRecordedForASQLSource(t *testing.T) {
 	dir := writeSchemaFiles(c, map[string]string{"schema.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n"})
 	sources := []schemafile.Source{{URL: filepath.Join(dir, "schema.sql")}}
 
-	stated, err := schemafile.LoadSources(sources, ownerLoadOptions(feedOwner(feedLimits)))
+	stated, err := schemafile.LoadSources(t.Context(), sources, ownerLoadOptions(feedOwner(feedLimits)))
 	c.Assert(err, qt.IsNil)
 	c.Assert(stated.NotDescribed.Objects, qt.DeepEquals, unsupportedRecords("tide"))
 
-	unstated, err := schemafile.LoadSources(sources, ownerLoadOptions(feedOwner(nil)))
+	unstated, err := schemafile.LoadSources(t.Context(), sources, ownerLoadOptions(feedOwner(nil)))
 	c.Assert(err, qt.IsNil)
 	c.Assert(unstated.NotDescribed.Objects, qt.IsNil)
 }

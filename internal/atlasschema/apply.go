@@ -735,7 +735,7 @@ func loadDesiredApplySchema(
 	// the target's URL is the one this connection was opened from.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
-		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
+		desired, err := schemafile.LoadSources(ctx, localApplySources(opts), schemafile.Options{
 			YAML:                  opts.Runtime.YAML(),
 			SQL:                   opts.Runtime.SQL(),
 			HCL:                   opts.Runtime.HCL(),
@@ -935,7 +935,7 @@ func PrepareApply(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
-	if err := RefuseServerDevDatabase(conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {
+	if err := RefuseServerDevDatabase(ctx, conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 

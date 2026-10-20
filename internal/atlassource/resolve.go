@@ -356,7 +356,7 @@ func (s Set) ResolveHolding(ctx context.Context, opts ResolveOptions, hold HoldF
 func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) error {
 	switch s.Kind {
 	case KindLocalFile:
-		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
+		schema, err := schemafile.LoadSources(ctx, s.SchemaFileSources(), schemafile.Options{
 			DatabaseURL:           opts.DatabaseURL,
 			Dialect:               opts.Dialect,
 			YAML:                  opts.Runtime.YAML(),

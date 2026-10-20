@@ -294,7 +294,7 @@ func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 	result, err := atlashclrender.RenderInspected(db, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(c.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", result.Data))
 	return parsed
 }
@@ -328,12 +328,12 @@ func TestRenderedSchemaIsStableAcrossAParseAndRerender(t *testing.T) {
 	first, err := atlashclrender.RenderInspected(everyTouchedConstruct(), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parsedOnce, err := atlashcl.ParseWithOptions(first.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsedOnce, err := atlashcl.ParseWithOptions(t.Context(), first.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", first.Data))
 	second, err := atlashclrender.RenderInspected(parsedOnce, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parsedTwice, err := atlashcl.ParseWithOptions(second.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsedTwice, err := atlashcl.ParseWithOptions(t.Context(), second.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", second.Data))
 	third, err := atlashclrender.RenderInspected(parsedTwice, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.Postgres})
 

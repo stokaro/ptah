@@ -41,7 +41,7 @@ func TestParseMaterializedViewRefusesRetiredRefreshStrategy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := atlashcl.Parse([]byte(`
+			_, err := atlashcl.Parse(t.Context(), []byte(`
 materialized "user_stats" {
   as               = "SELECT count(*) FROM users"
   refresh_strategy = `+test.value+`
@@ -61,7 +61,7 @@ materialized "user_stats" {
 func TestParseMaterializedViewWithoutRefreshStrategyIsAccepted(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 materialized "user_stats" {
   schema  = schema.public
   as      = "SELECT count(*) FROM users"
@@ -79,7 +79,7 @@ materialized "user_stats" {
 func TestParseMaterializedViewRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 materialized "user_stats" {
   as       = "SELECT count(*) FROM users"
   populate = true
@@ -103,7 +103,7 @@ func TestMaterializedViewRetiredAttributeGoAnnotationParity(t *testing.T) {
 //ptah:schema:matview name="user_stats" body="SELECT count(*) FROM users" refresh_strategy="concurrently"
 type UserStatsMatView struct{}
 `)
-	_, hclErr := atlashcl.Parse([]byte(`
+	_, hclErr := atlashcl.Parse(t.Context(), []byte(`
 materialized "user_stats" {
   as               = "SELECT count(*) FROM users"
   refresh_strategy = "concurrently"

@@ -44,7 +44,7 @@ func TestRenderedRevokeRoundTrips(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.Diagnostics, qt.HasLen, 0)
 
-			parsed, err := atlashcl.ParseWithOptions(result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "rendered.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)
@@ -93,7 +93,7 @@ func TestParseRevoke_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			document := "schema \"public\" {}\n\ntable \"t\" {\n  schema = schema.public\n  column \"id\" {\n    type = int\n  }\n}\n\n" + test.body
 
-			parsed, err := atlashcl.ParseWithOptions([]byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: builtintest.
 				Runtime().HCL(),
 			},
 			)

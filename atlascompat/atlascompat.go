@@ -53,16 +53,16 @@ const AtlasSumFileName = "atlas.sum"
 // document's indexes have no MySQL block size. Read a document with
 // [ParseAtlasHCLWithOptions] and the HCL set of a runtime, such as the bundled
 // one engine/builtin.Bundled returns, for both.
-func ParseAtlasHCL(data []byte, filename string) (*schemamodel.Database, error) {
-	return atlashcl.Parse(data, filename)
+func ParseAtlasHCL(ctx context.Context, data []byte, filename string) (*schemamodel.Database, error) {
+	return atlashcl.Parse(ctx, data, filename)
 }
 
 // ParseAtlasHCLFile parses an Atlas schema HCL file into Ptah's Go schema IR.
 // It refuses project files, and selects no owner, on the same terms as
 // [ParseAtlasHCL]: a file carrying an owner's block, such as a `synonym` or a
 // `hypertable`, needs [ParseAtlasHCLWithOptions] with a runtime's HCL set.
-func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
-	return atlashcl.ParseFile(path)
+func ParseAtlasHCLFile(ctx context.Context, path string) (*schemamodel.Database, error) {
+	return atlashcl.ParseFile(ctx, path)
 }
 
 // ParseHCLOptions configures [ParseAtlasHCLWithOptions].
@@ -80,12 +80,12 @@ type ParseHCLOptions struct {
 
 // ParseAtlasHCLWithOptions is [ParseAtlasHCL] with the owners whose blocks
 // the document may carry.
-func ParseAtlasHCLWithOptions(data []byte, filename string, opts ParseHCLOptions) (*schemamodel.Database, error) {
+func ParseAtlasHCLWithOptions(ctx context.Context, data []byte, filename string, opts ParseHCLOptions) (*schemamodel.Database, error) {
 	owners := opts.HCL
 	if !owners.Selected() {
 		owners = hclext.None()
 	}
-	return atlashcl.ParseWithOptions(data, filename, atlashcl.Options{HCL: owners, Dialect: opts.Dialect})
+	return atlashcl.ParseWithOptions(ctx, data, filename, atlashcl.Options{HCL: owners, Dialect: opts.Dialect})
 }
 
 // ParseSQLOptions configures ParseSQL.

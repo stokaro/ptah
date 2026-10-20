@@ -15,7 +15,7 @@ import (
 func TestParseSequenceFullOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "order_seq" {
   type      = bigint
   start     = 1000
@@ -41,7 +41,7 @@ sequence "order_seq" {
 func TestParseSequenceMinimal(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
@@ -55,7 +55,7 @@ sequence "s" {}
 func TestParseSequenceSchemaOwnedByAndIfNotExists(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   schema        = schema.app
   owned_by      = "orders.id"
@@ -76,7 +76,7 @@ sequence "s" {
 func TestParseSequenceTwoLabelSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "app" "s" {}
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
@@ -88,7 +88,7 @@ sequence "app" "s" {}
 func TestParseSequenceRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   nonsense = true
 }
@@ -99,7 +99,7 @@ sequence "s" {
 func TestParseSequenceRejectsNonIntegerStart(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   start = 1.5
 }
@@ -110,7 +110,7 @@ sequence "s" {
 func TestParseSequenceRejectsNonIntegerType(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   type = text
 }
@@ -121,7 +121,7 @@ sequence "s" {
 func TestParseSequenceRejectsOverflowingStart(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   start = 99999999999999999999
 }
@@ -132,7 +132,7 @@ sequence "s" {
 func TestParseSequenceCanonicalizesTypeAlias(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   type = int8
 }
@@ -145,7 +145,7 @@ sequence "s" {
 func TestParseSequenceRejectsNestedBlock(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 sequence "s" {
   owner {
     column = column.orders.id
@@ -158,7 +158,7 @@ sequence "s" {
 func TestParseDomainFullOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 domain "email" {
   type  = text
   null  = false
@@ -178,7 +178,7 @@ domain "email" {
 func TestParseDomainNullableByDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 domain "nickname" {
   type = varchar(64)
 }
@@ -192,7 +192,7 @@ domain "nickname" {
 func TestParseDomainSchemaAndDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 schema "app" {}
 
 domain "positive" {
@@ -214,7 +214,7 @@ domain "positive" {
 func TestParseDomainDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseTypeHCL([]byte(`
+	db, err := parseTypeHCL(t.Context(), []byte(`
 domain "created" {
   type    = timestamptz
   default = sql("now()")
@@ -229,7 +229,7 @@ domain "created" {
 func TestParseDomainRequiresType(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 domain "x" {}
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*domain "x" requires type.*`)
@@ -238,7 +238,7 @@ domain "x" {}
 func TestParseDomainRejectsUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseTypeHCL([]byte(`
+	_, err := parseTypeHCL(t.Context(), []byte(`
 domain "x" {
   type     = text
   nonsense = true
@@ -280,7 +280,7 @@ func TestParseDomain_NoOwnerReadsIt_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.ParseWithOptions([]byte(test.document), "schema.hcl", test.options)
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.document), "schema.hcl", test.options)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(db, qt.IsNil)

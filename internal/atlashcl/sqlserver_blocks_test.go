@@ -22,7 +22,7 @@ import (
 func TestParseSynonymAndExtendedProperty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "dbo" {
 }
 
@@ -71,7 +71,7 @@ extended_property "MS_Description" {
 func TestParseSynonymAcceptsTheSchemaLabel(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 synonym "reporting" "s_users" {
   target = "other.dbo.users"
 }
@@ -158,7 +158,7 @@ synonym "s_users" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := parseWithOwners([]byte(test.document), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte(test.document), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, ".*"+test.want+".*")
 		})

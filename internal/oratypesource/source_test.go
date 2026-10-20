@@ -144,7 +144,7 @@ func TestHCL_RoundTripsAnOracleDocument(t *testing.T) {
 
 			written, err := atlashclrender.Render(declared, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Target: test.target})
 			c.Assert(err, qt.IsNil)
-			read, err := atlashcl.ParseWithOptions(written.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.readFor})
+			read, err := atlashcl.ParseWithOptions(t.Context(), written.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Dialect: test.readFor})
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(containsDialect(string(written.Data)), qt.Equals, test.wantAttribute)

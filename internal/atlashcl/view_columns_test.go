@@ -56,7 +56,7 @@ func TestParseViewColumnsNameTheOutput_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(viewColumnDocument(
+			db, err := atlashcl.Parse(t.Context(), viewColumnDocument(
 				row.blockType,
 				"SELECT id, label FROM t",
 				"column \"ident\" {\n  }\n  column \"name\" {\n  }",
@@ -80,7 +80,7 @@ func TestParseViewColumnsNameTheOutput_HappyPath(t *testing.T) {
 func TestParseViewWithoutColumnsIsUnchanged_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(viewColumnDocument("view", "SELECT id, label FROM t", ""), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), viewColumnDocument("view", "SELECT id, label FROM t", ""), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Views, qt.HasLen, 1)
@@ -141,7 +141,7 @@ func TestParseViewColumns_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(viewColumnDocument("view", row.body, row.nested), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), viewColumnDocument("view", row.body, row.nested), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)

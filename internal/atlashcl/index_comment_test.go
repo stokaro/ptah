@@ -13,7 +13,7 @@ import (
 func TestParseIndexComment(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = text
@@ -35,7 +35,7 @@ table "users" {
 func TestParseIndexCommentAbsentIsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = text
@@ -73,7 +73,7 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(goDB.Indexes, qt.HasLen, 1)
 
-	hclDB, err := atlashcl.Parse([]byte(`
+	hclDB, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = text

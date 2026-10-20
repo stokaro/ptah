@@ -64,7 +64,7 @@ coordination_node "app" "other" {}
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(output.Files) > 0, qt.IsTrue)
 			for _, file := range output.Files {
-				db, err := atlashcl.ParseWithOptions([]byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+				db, err := atlashcl.ParseWithOptions(t.Context(), []byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 				c.Assert(err, qt.IsNil)
 				c.Assert(db.NotDescribed.IsZero(), qt.IsTrue)
 				c.Assert(db.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "locks")).State, qt.Equals, schemaext.Uninspected)
@@ -89,7 +89,7 @@ func TestSplitPreservesExplicitHCLModelsInEveryFile(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(output.Files) > 0, qt.IsTrue)
 			for _, file := range output.Files {
-				parsed, err := atlashcl.ParseWithOptions([]byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+				parsed, err := atlashcl.ParseWithOptions(t.Context(), []byte(file.Data), file.Path, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 				c.Assert(err, qt.IsNil)
 				c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, known)), qt.IsTrue)
 			}

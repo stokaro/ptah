@@ -32,7 +32,7 @@ revokes:
     on_database: true
 `
 
-	db, err := yamlschema.Parse(noOwners, []byte(document))
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Roles, qt.DeepEquals, []schemamodel.Role{
@@ -66,7 +66,7 @@ revokes:
     ` + kind.Attribute + `: app.events
 `
 
-			db, err := yamlschema.Parse(noOwners, []byte(document))
+			db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Grants, qt.DeepEquals, []schemamodel.Grant{
@@ -91,7 +91,7 @@ func TestParse_ObjectGrants_FailurePath(t *testing.T) {
     on_external_table: app.events
 `
 
-	db, err := yamlschema.Parse(noOwners, []byte(document))
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
 
 	c.Assert(err, qt.ErrorMatches, `.*grant "readers_read" names a target with both on_topic and on_external_table; a grant names one object`)
 	c.Assert(db, qt.IsNil)

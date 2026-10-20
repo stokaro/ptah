@@ -20,7 +20,7 @@ import (
 func TestParse_RowDeletionPolicyIsAPlatformGroup(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   events:
     platform:
@@ -53,7 +53,7 @@ tables:
 func TestParse_RowDeletionPolicyHasNoBareKey(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 tables:
   events:
     row_deletion_column: created_at

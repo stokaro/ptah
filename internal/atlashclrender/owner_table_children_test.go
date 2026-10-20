@@ -51,7 +51,7 @@ func TestRender_OwnerTableChildrenRoundTrip(t *testing.T) {
 			document.Tables = append(document.Tables, schemamodel.Table{Schema: "other", Name: "t", StructName: "OtherTable"})
 			result, err := atlashclrender.Render(document, atlashclrender.Options{HCL: owners})
 			c.Assert(err, qt.IsNil)
-			_, err = atlashcl.ParseWithOptions(result.Data, "schema.hcl", atlashcl.Options{HCL: owners})
+			_, err = atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: owners})
 			c.Assert(err, qt.IsNil)
 			c.Assert(claims, qt.HasLen, 1)
 			c.Assert(claims[0].Table, qt.DeepEquals, &hclext.Table{Schema: "app", Name: "t", Struct: "app.t"})

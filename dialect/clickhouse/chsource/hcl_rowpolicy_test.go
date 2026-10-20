@@ -42,7 +42,7 @@ func TestHCLRowPolicyRoundTrip(t *testing.T) {
  row_policy " p.name " {
  on = table.orders
  ` + test.attributes + "\n}"
-			db, err := atlashcl.ParseWithOptions([]byte(source), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(source), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			want := []schemaext.Object{{Ref: chschema.RowPolicyRef("a.b", "orders", " p.name "), Value: &test.want, Targets: []string{platform.ClickHouse}}}
 			c.Assert(must.Must(db.FeatureObjects.All()), qt.DeepEquals, want)
@@ -50,7 +50,7 @@ func TestHCLRowPolicyRoundTrip(t *testing.T) {
 			encoded, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
 			c.Assert(err, qt.IsNil)
 			c.Assert(encoded.Diagnostics, qt.HasLen, 0)
-			again, err := atlashcl.ParseWithOptions(encoded.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			again, err := atlashcl.ParseWithOptions(t.Context(), encoded.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(must.Must(again.FeatureObjects.All()), qt.DeepEquals, want)
 		})
@@ -59,7 +59,7 @@ func TestHCLRowPolicyRoundTrip(t *testing.T) {
 
 func TestHCLRowPolicyNamesAreScopedToTheirTables(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(`row_policy "tenant" { on = table.app.orders }
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`row_policy "tenant" { on = table.app.orders }
  row_policy "tenant" { on = table.app.invoices }
  row_policy "tenant" { on = table.other.orders }`), "policies.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
@@ -67,7 +67,7 @@ func TestHCLRowPolicyNamesAreScopedToTheirTables(t *testing.T) {
 	encoded, err := atlashclrender.Render(db, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: platform.ClickHouse})
 	c.Assert(err, qt.IsNil)
 	c.Assert(encoded.Diagnostics, qt.HasLen, 0)
-	again, err := atlashcl.ParseWithOptions(encoded.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	again, err := atlashcl.ParseWithOptions(t.Context(), encoded.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.FeatureObjects, qt.DeepEquals, db.FeatureObjects)
 }
@@ -86,7 +86,7 @@ func TestHCLRowPolicyRefusals(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.ParseWithOptions([]byte(test.source), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(test.source), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.ErrorMatches, "(?s).*"+test.reason+".*")
 			c.Assert(db, qt.IsNil)
 		})
@@ -95,10 +95,10 @@ func TestHCLRowPolicyRefusals(t *testing.T) {
 
 func TestHCLRowPolicyRequiresSelectedOwner(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(`row_policy "p" { on = table.orders }`), "policy.hcl", atlashcl.Options{HCL: hclext.None()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`row_policy "p" { on = table.orders }`), "policy.hcl", atlashcl.Options{HCL: hclext.None()})
 	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported top-level block "row_policy".*`)
 	c.Assert(db, qt.IsNil)
-	empty, err := atlashcl.ParseWithOptions(nil, "empty.hcl", atlashcl.Options{HCL: hclext.None()})
+	empty, err := atlashcl.ParseWithOptions(t.Context(), nil, "empty.hcl", atlashcl.Options{HCL: hclext.None()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(empty.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "orders", "p")).State, qt.Equals, schemaext.Uninspected)
 }
@@ -123,7 +123,7 @@ func TestHCLRowPolicyExportRefusesIncompleteKnowledge(t *testing.T) {
 
 func TestHCLRowPolicyRefusesStrictCEAndKeepsFullMode(t *testing.T) {
 	c := qt.New(t)
-	db, err := atlashcl.ParseWithOptions([]byte(`row_policy "p" { on = table.orders }`), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	db, err := atlashcl.ParseWithOptions(t.Context(), []byte(`row_policy "p" { on = table.orders }`), "policy.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(atlascompatpolicy.StrictCE().ValidateDesiredSchema(db), qt.ErrorMatches, `(?s).*desired schema object.*strict compatibility does not support database dialect "clickhouse"`)
 	c.Assert(atlascompatpolicy.Full().ValidateDesiredSchema(db), qt.IsNil)

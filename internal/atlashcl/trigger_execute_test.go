@@ -71,7 +71,7 @@ func TestParseTriggerExecuteBindsADeclaredFunction_HappyPath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(triggerDocument(row.lines), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), triggerDocument(row.lines), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Triggers, qt.HasLen, 1)
@@ -94,7 +94,7 @@ func TestParseTriggerExecuteBindsADeclaredFunction_HappyPath(t *testing.T) {
 func TestParseTriggerBodyStillOwnsItsFunction_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse(triggerDocument(`as = "BEGIN RETURN NEW; END;"`), "schema.hcl")
+	db, err := atlashcl.Parse(t.Context(), triggerDocument(`as = "BEGIN RETURN NEW; END;"`), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Triggers, qt.HasLen, 1)
@@ -142,7 +142,7 @@ func TestParseTriggerExecute_FailurePath(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := atlashcl.Parse(triggerDocument(row.lines), "schema.hcl")
+			db, err := atlashcl.Parse(t.Context(), triggerDocument(row.lines), "schema.hcl")
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want+`.*`)
 			c.Assert(db, qt.IsNil)

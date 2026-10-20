@@ -44,7 +44,7 @@ func TestCompareWithDialect_AnUnstatedSecurityModeIsTheEnginesOwn(t *testing.T) 
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+			desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 
 			diff, err := schemadiff.CompareWithDialect(t.Context(), desired, reportedProcedure(test.language, test.security),
 				test.dialect, must.Must(builtin.New()))
@@ -78,7 +78,7 @@ func TestCompareWithDialect_AnUnstatedSecurityModeReplacesAnInvokerRoutine(t *te
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+			desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 
 			diff, err := schemadiff.CompareWithDialect(t.Context(), desired, reportedProcedure(test.language, "INVOKER"),
 				test.dialect, must.Must(builtin.New()))
@@ -103,7 +103,7 @@ func TestCompareWithDialect_AnUnstatedSecurityModeKeepsAnInvokerRoutine(t *testi
 	} {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			desired := must.Must(atlashcl.Parse([]byte(languageProcedure), "schema.hcl"))
+			desired := must.Must(atlashcl.Parse(t.Context(), []byte(languageProcedure), "schema.hcl"))
 
 			diff, err := schemadiff.CompareWithDialect(t.Context(), desired, reportedProcedure(test.language, "INVOKER"),
 				test.dialect, must.Must(builtin.New()))

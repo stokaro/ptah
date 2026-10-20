@@ -27,7 +27,7 @@ func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []strin
 func TestParseTablesColumnsPrimaryKeyAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -69,7 +69,7 @@ table "users" {
 func TestParseAtlasPostgreSQLTwoLabelTableBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "public" {}
 
 table "public" "users" {
@@ -103,7 +103,7 @@ table "public" "users" {
 func TestParseAtlasPostgreSQLTwoLabelTableRejectsConflictingSchemaAttr(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 schema "public" {}
 schema "audit" {}
 
@@ -121,7 +121,7 @@ table "public" "users" {
 func TestParseAtlasPostgreSQLSchemaQualifiedForeignKeyRefs(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "auth" {}
 schema "billing" {}
 
@@ -172,7 +172,7 @@ table "invoices" {
 func TestParseTablePartition(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "main" {}
 
 table "metrics" {
@@ -215,7 +215,7 @@ table "metrics" {
 func TestParseTablePartitionRequiresColumnOrBy(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parseWithOwners([]byte(`
+	_, err := parseWithOwners(t.Context(), []byte(`
 table "metrics" {
   column "x" {
     type = integer
@@ -232,7 +232,7 @@ table "metrics" {
 func TestParsePostgreSQLEnumBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 enum "status" {
@@ -270,7 +270,7 @@ table "users" {
 func TestParseEnumRequiresStringValues(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 enum "status" {
   values = ["active", 1]
 }
@@ -281,7 +281,7 @@ enum "status" {
 func TestParsePrimaryKeyParts(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "tokens" {
@@ -321,7 +321,7 @@ table "tokens" {
 func TestParsePrimaryKeyInclude(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -354,7 +354,7 @@ table "users" {
 func TestParsePrimaryKeyType(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -383,7 +383,7 @@ table "users" {
 func TestParsePrimaryKeyTypeRejectsUnknownValue(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -403,7 +403,7 @@ table "users" {
 func TestParseSQLiteTableOptions(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "events" {
@@ -428,7 +428,7 @@ table "events" {
 func TestParseMySQLTableAutoIncrement(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -456,7 +456,7 @@ table "users" {
 func TestParseMySQLTableCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -482,7 +482,7 @@ table "users" {
 func TestParseMySQLColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "name" {
     null = false
@@ -504,7 +504,7 @@ table "users" {
 func TestParseSQLiteTableOptionsRejectNonBool(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "events" {
   strict = "true"
   column "id" {
@@ -518,7 +518,7 @@ table "events" {
 func TestParseIndexParts(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "rank" {
     type = int
@@ -561,7 +561,7 @@ table "users" {
 func TestParseIndexInclude(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "name" {
     type = text
@@ -584,7 +584,7 @@ table "users" {
 func TestParsePostgreSQLIndexStorageParams(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "c" {
     type = int
@@ -605,7 +605,7 @@ table "users" {
 func TestParsePostgreSQLIndexStorageParamsRejectsDuplicateAliases(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "c" {
     type = int
@@ -624,7 +624,7 @@ table "users" {
 func TestParsePostgreSQLNullsDistinctIndexAndUnique(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "c" {
     type = int
@@ -664,7 +664,7 @@ table "users" {
 func TestParsePostgreSQLIndexNullsDistinctRequiresUnique(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "c" {
     type = int
@@ -681,7 +681,7 @@ table "users" {
 func TestParseFulltextIndexParser(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "bio" {
     type = text
@@ -704,7 +704,7 @@ table "users" {
 func TestParseRejectsIndexParserWithoutFulltext(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "bio" {
     type = text
@@ -721,7 +721,7 @@ table "users" {
 func TestParseRejectsIndexColumnsAndOnBlocks(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = varchar(255)
@@ -740,7 +740,7 @@ table "users" {
 func TestParseSchemaComment(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "public" {
   comment = "This is a test schema"
 }
@@ -759,7 +759,7 @@ schema "public" {
 func TestParseSchemaCharsetAndCollate(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "app" {
   charset = "utf8mb4"
   collate = "utf8mb4_0900_ai_ci"
@@ -779,7 +779,7 @@ schema "app" {
 func TestParseCompositePrimaryKeyAndForeignKey(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {}
 
 table "users" {
@@ -827,7 +827,7 @@ table "posts" {
 func TestParseCompositeForeignKey(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "accounts" {
   column "tenant_id" {
     type = int
@@ -875,7 +875,7 @@ table "posts" {
 func TestParseDefaultsAndChecks(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "accounts" {
   column "id" {
     type = bigint
@@ -909,7 +909,7 @@ table "accounts" {
 func TestParseColumnUnsignedAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "invoices" {
   column "subtotal" {
     type     = decimal(12,2)
@@ -930,7 +930,7 @@ table "invoices" {
 func TestParseUnlabeledCheckBlock(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "accounts" {
   column "status" {
     type = text
@@ -950,7 +950,7 @@ table "accounts" {
 func TestParseMultipleUnlabeledCheckBlocks(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "accounts" {
   column "status" {
     type = text
@@ -974,7 +974,7 @@ table "accounts" {
 func TestParseEmptyLiteralDefault(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "name" {
     type = varchar(255)
@@ -992,7 +992,7 @@ table "users" {
 func TestParseBracketQuotedColumnReferences(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email,normalized" {
     type = text
@@ -1010,7 +1010,7 @@ table "users" {
 func TestParseGeneratedColumns(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "slug" {
     type = text
@@ -1036,7 +1036,7 @@ table "users" {
 func TestParseIdentityColumn(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -1060,7 +1060,7 @@ table "users" {
 func TestParseIdentityColumnDefaultsGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -1080,7 +1080,7 @@ table "users" {
 func TestParseIdentityColumnRejectsUnsupportedAttrs(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -1097,7 +1097,7 @@ table "users" {
 func TestParseIdentityColumnRejectsInvalidGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -1113,7 +1113,7 @@ table "users" {
 func TestParseColumnOnUpdateExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "updated_at" {
     null      = false
@@ -1199,7 +1199,7 @@ table "users" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			_, err := atlashcl.Parse(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -1208,7 +1208,7 @@ table "users" {
 func TestParseRejectsUnsupportedSchemaAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 schema "main" {
   owner = "app"
 }
@@ -1219,7 +1219,7 @@ schema "main" {
 func TestParseRejectsIndexExprPrefix(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = varchar(255)
@@ -1272,7 +1272,7 @@ func TestParseRejectsInvalidIndexParts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := atlashcl.Parse([]byte(`
+			_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "email" {
     type = varchar(255)
@@ -1289,7 +1289,7 @@ table "users" {
 func TestParseRejectsForeignKeyWithUnknownLocalColumn(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	_, err := atlashcl.Parse(t.Context(), []byte(`
 table "users" {
   column "id" {
     type = int
@@ -1312,7 +1312,7 @@ table "posts" {
 func TestParsePostgreSQLSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "public" {}
 
 extension "pg_trgm" {
@@ -1431,7 +1431,7 @@ permission {
 func TestParseExtensionSchema(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 schema "extensions" {}
 extension "pg_trgm" {
   schema = schema.extensions
@@ -1469,7 +1469,7 @@ variable "target" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseWithOwners(fmt.Appendf(nil, `%s
+			db, err := parseWithOwners(t.Context(), fmt.Appendf(nil, `%s
 extension "pg_trgm" {
   schema = %s
 }
@@ -1505,7 +1505,7 @@ variable "target" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners(fmt.Appendf(nil, `%s
+			_, err := parseWithOwners(t.Context(), fmt.Appendf(nil, `%s
 extension "pg_trgm" {
   schema = %s
 }
@@ -1585,7 +1585,7 @@ table "users" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners([]byte(test.input), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte(test.input), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}

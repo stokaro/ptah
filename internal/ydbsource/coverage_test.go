@@ -55,14 +55,14 @@ func TestEmptySourcesRecordSupportedFeatureNamespaces(t *testing.T) {
 			return goschema.ParseFS(builtintest.Annotations(), fstest.MapFS{}, ".")
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "YAML", parse: func() (*schemamodel.Database, error) {
-			return yamlschema.Parse(builtintest.Runtime().YAML(), []byte("{}"))
+			return yamlschema.Parse(t.Context(), builtintest.Runtime().YAML(), []byte("{}"))
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "YQL", parse: func() (*schemamodel.Database, error) {
 			db, _, err := sqlschema.ReadWith(t.Context(), nil, "ydb", nil, yqlOwners())
 			return &db, err
 		}, changefeeds: schemaext.Complete, coordination: schemaext.Complete},
 		{name: "HCL", parse: func() (*schemamodel.Database, error) {
-			return atlashcl.ParseWithOptions(nil, "empty.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			return atlashcl.ParseWithOptions(t.Context(), nil, "empty.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 		}, changefeeds: schemaext.Uninspected},
 	}
 	for _, test := range tests {
@@ -111,7 +111,7 @@ func TestExportsDoNotTurnCoordinationLimitsIntoAbsence(t *testing.T) {
 			c.Assert(goErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(hclErr, qt.IsNil)
 			c.Assert(files, qt.IsNil)
-			parsed, err := atlashcl.ParseWithOptions(hcl.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+			parsed, err := atlashcl.ParseWithOptions(t.Context(), hcl.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 			c.Assert(err, qt.IsNil)
 			c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, db.FeatureCoverage)), qt.IsTrue)
 		})
@@ -222,7 +222,7 @@ func TestExportsPreserveOrRefuseCompleteSubjectsInUnmanagedNamespaces(t *testing
 	}}))
 	result, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: withNode}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
 	c.Assert(err, qt.IsNil)
-	parsed, err := atlashcl.ParseWithOptions(result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "export.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, withNode.SelectKinds([]schemaext.Kind{ydbcoordination.Kind}))), qt.IsTrue)
 }

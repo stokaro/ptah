@@ -37,7 +37,7 @@ func TestParse_RefusesTheRetiredRefreshStrategy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := yamlschema.Parse(noOwners, []byte(`
+			_, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 matviews:
   user_stats:
     body: SELECT count(*) FROM users
@@ -56,7 +56,7 @@ matviews:
 func TestParse_AcceptsAMaterializedViewWithoutTheAttribute(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := yamlschema.Parse(noOwners, []byte(`
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(`
 matviews:
   user_stats:
     body: SELECT count(*) FROM users

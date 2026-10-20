@@ -117,8 +117,8 @@ type stagedOutput struct {
 
 // Export renders Go annotations to HCL and optionally applies one validated
 // cleanup plan after the output has been committed.
-func Export(opts Options) (Result, error) {
-	return export(opts, exportHooks{})
+func Export(ctx context.Context, opts Options) (Result, error) {
+	return export(ctx, opts, exportHooks{})
 }
 
 // exportHooks injects deterministic mutations into the publication sequence.
@@ -142,12 +142,12 @@ func (h exportHooks) runBeforeCommit() {
 	}
 }
 
-func export(opts Options, hooks exportHooks) (Result, error) {
+func export(ctx context.Context, opts Options, hooks exportHooks) (Result, error) {
 	plan, err := prepareExport(opts)
 	if err != nil {
 		return Result{}, err
 	}
-	rendered, err := renderExport(plan)
+	rendered, err := renderExport(ctx, plan)
 	if err != nil {
 		return Result{}, err
 	}
@@ -235,7 +235,7 @@ func prepareExport(opts Options) (exportPlan, error) {
 	}, nil
 }
 
-func renderExport(plan exportPlan) (renderedExport, error) {
+func renderExport(ctx context.Context, plan exportPlan) (renderedExport, error) {
 	db, err := goschema.ParseFS(plan.options.Annotations, plan.snapshot.FS(), ".")
 	if err != nil {
 		return renderedExport{}, fmt.Errorf("parse Go annotations: %w", err)
@@ -272,7 +272,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 	}
 	diagnostics = append(diagnostics, normalization...)
 	sortDiagnostics(diagnostics)
-	canonicalHCL, exportedDB, err := canonicalRoundTrip(rendered.Data, plan.options.Annotations.CoverageVocabulary(), plan.options.HCL)
+	canonicalHCL, exportedDB, err := canonicalRoundTrip(ctx, rendered.Data, plan.options.Annotations.CoverageVocabulary(), plan.options.HCL)
 	if err != nil {
 		return renderedExport{}, err
 	}
@@ -283,7 +283,7 @@ func renderExport(plan exportPlan) (renderedExport, error) {
 		return renderedExport{}, ErrNoExportableSchema
 	}
 	if plan.options.Cleanup {
-		if err := plan.cleanup.ValidateParsed(context.Background(), plan.options.Annotations, db, exportedDB); err != nil {
+		if err := plan.cleanup.ValidateParsed(ctx, plan.options.Annotations, db, exportedDB); err != nil {
 			return renderedExport{}, fmt.Errorf("validate Go annotation cleanup coverage: %w", err)
 		}
 	}
@@ -459,11 +459,11 @@ func resolvePaths(opts Options) (rootDir, outputPath string, err error) {
 	return rootDir, outputPath, nil
 }
 
-func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) ([]byte, *schemamodel.Database, error) {
+func canonicalRoundTrip(ctx context.Context, data []byte, vocabulary coverage.Vocabulary, hcl hclext.Set) ([]byte, *schemamodel.Database, error) {
 	hclOptions := atlashcl.Options{CoverageVocabulary: vocabulary, HCL: hcl}
-	parsed, err := atlashcl.ParseWithOptions(data, "schema.hcl", hclOptions)
+	parsed, err := atlashcl.ParseWithOptions(ctx, data, "schema.hcl", hclOptions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: parse generated schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: parse generated schema: %w", ErrInvalidHCL, err)
 	}
 	canonical, err := atlashclrender.Render(parsed, atlashclrender.Options{HCL: hcl, CoverageVocabulary: vocabulary})
 	if err != nil {
@@ -475,9 +475,9 @@ func canonicalRoundTrip(data []byte, vocabulary coverage.Vocabulary, hcl hclext.
 	if !bytes.Equal(canonical.Data, data) {
 		return nil, nil, fmt.Errorf("%w: canonical render changed the generated schema", ErrInvalidHCL)
 	}
-	reparsed, err := atlashcl.ParseWithOptions(canonical.Data, "schema.hcl", hclOptions)
+	reparsed, err := atlashcl.ParseWithOptions(ctx, canonical.Data, "schema.hcl", hclOptions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: parse canonical schema: %v", ErrInvalidHCL, err)
+		return nil, nil, fmt.Errorf("%w: parse canonical schema: %w", ErrInvalidHCL, err)
 	}
 	stable, err := atlashclrender.Render(reparsed, atlashclrender.Options{HCL: hcl, CoverageVocabulary: vocabulary})
 	if err != nil {

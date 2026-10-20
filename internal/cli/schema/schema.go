@@ -586,7 +586,7 @@ func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error 
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	result, err := goannotationexport.Export(goannotationexport.Options{
+	result, err := goannotationexport.Export(cmd.Context(), goannotationexport.Options{
 		Annotations: owners.Annotations(),
 		HCL:         owners.HCL(),
 		RootDir:     rootDir,

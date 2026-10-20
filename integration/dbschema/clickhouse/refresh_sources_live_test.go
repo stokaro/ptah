@@ -27,12 +27,12 @@ func refreshSourceDeclaration(c *qt.C, format, source, view string, clause *stri
 		if clause != nil {
 			attribute = fmt.Sprintf("    refresh: %q\n", *clause)
 		}
-		db, err = yamlschema.Parse(runtime.YAML(), []byte(fmt.Sprintf("matviews:\n  %s:\n    body: SELECT count() AS c FROM %s\n%s", view, source, attribute)))
+		db, err = yamlschema.Parse(c.Context(), runtime.YAML(), []byte(fmt.Sprintf("matviews:\n  %s:\n    body: SELECT count() AS c FROM %s\n%s", view, source, attribute)))
 	case "hcl":
 		if clause != nil {
 			attribute = fmt.Sprintf("  refresh = %q\n", *clause)
 		}
-		db, err = atlashcl.ParseWithOptions([]byte(fmt.Sprintf("materialized %q {\n  as = %q\n%s}\n", view, "SELECT count() AS c FROM "+source, attribute)), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+		db, err = atlashcl.ParseWithOptions(c.Context(), []byte(fmt.Sprintf("materialized %q {\n  as = %q\n%s}\n", view, "SELECT count() AS c FROM "+source, attribute)), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	}
 	c.Assert(err, qt.IsNil)
 	c.Assert(db, qt.IsNotNil)
@@ -71,7 +71,7 @@ func TestRefreshYAMLAndHCLApplyAndReverseLive(t *testing.T) {
 				exported, err := atlashclrender.Render(desired, atlashclrender.Options{HCL: must.Must(builtin.New()).HCL(), Dialect: "clickhouse"})
 				c.Assert(err, qt.IsNil)
 				c.Assert(exported.Diagnostics, qt.HasLen, 0)
-				reloaded, err := atlashcl.ParseWithOptions(exported.Data, "copy.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
+				reloaded, err := atlashcl.ParseWithOptions(t.Context(), exported.Data, "copy.hcl", atlashcl.Options{HCL: must.Must(builtin.New()).HCL()})
 				c.Assert(err, qt.IsNil)
 				assertConverged(c, conn, reloaded, current)
 				applyStatements(c, conn, reverse)

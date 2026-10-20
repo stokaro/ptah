@@ -190,6 +190,16 @@ This metadata does not yet connect native YAML capture to the transport.
 Source range capture, value conversion, and normalized model placement remain
 required application-adapter work before an external owner can read YAML files.
 
+## Cancellation during source interpretation
+
+Schema loading carries the caller context through file and directory reads,
+external command output, and selected SQL and HCL owner calls. The external
+command deadline covers output interpretation as well as process execution.
+An owner result received after cancellation cannot become a desired schema.
+Public YAML and Atlas HCL parsing APIs take the context explicitly; no
+old-signature wrapper substitutes a background context. This is required before
+source decoding can safely call an independent process.
+
 ## Consequences
 
 Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify

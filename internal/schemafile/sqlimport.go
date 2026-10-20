@@ -1,6 +1,7 @@
 package schemafile
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -127,12 +128,12 @@ func hasDriveLetter(value string) bool {
 // directory -- and what the file adds is merged into it. reads is the reader's
 // document over the same model, which carries what the model cannot; see
 // [sqlschema.Document].
-func loadSQLWithImports(
+func loadSQLWithImports(ctx context.Context,
 	root, path string, opts Options, visited map[string]struct{}, depth int,
 	document *schemamodel.Database, reads *sqlschema.Document,
 ) error {
 	return walkSQLImports(root, path, visited, depth, func(path string, data []byte) error {
-		own, _, err := readSQLFile(path, data, opts, reads)
+		own, _, err := readSQLFile(ctx, path, data, opts, reads)
 		if err != nil {
 			return err
 		}
@@ -205,13 +206,13 @@ func walkSQLImports(
 // re-finalized nor merged: only a document that actually pulled in another one
 // needs the merge pass, and running it unconditionally would change what a
 // single file means.
-func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, error) {
+func loadSQLFileTree(ctx context.Context, resolved string, opts Options) (*schemamodel.Database, error) {
 	if readsAsLoad(opts) {
 		var script sqlScript
 		if err := script.addTree(resolved); err != nil {
 			return nil, err
 		}
-		return script.read(opts)
+		return script.read(ctx, opts)
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
@@ -222,13 +223,11 @@ func loadSQLFileTree(resolved string, opts Options) (*schemamodel.Database, erro
 		return nil, fmt.Errorf("parse SQL schema file %s: %w", resolved, err)
 	}
 	if len(imports) == 0 {
-		return loadSQLFile(resolved, opts)
+		return loadSQLFile(ctx, resolved, opts)
 	}
 	merged := &schemamodel.Database{}
 	reads := sqlschema.NewDocument(merged)
-	if err := loadSQLWithImports(
-		filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, reads,
-	); err != nil {
+	if err := loadSQLWithImports(ctx, filepath.Dir(resolved), resolved, opts, make(map[string]struct{}), 0, merged, reads); err != nil {
 		return nil, err
 	}
 	schemamodel.Finalize(merged)

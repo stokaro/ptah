@@ -143,7 +143,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := parseTypeHCL([]byte(tt.hcl), "schema.hcl")
+			db, err := parseTypeHCL(t.Context(), []byte(tt.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
 			c.Assert(db.Fields[0].Default, qt.Equals, tt.want)
@@ -238,9 +238,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			db, err := atlashcl.ParseWithOptions(
-				[]byte(tt.hcl), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Vars: tt.vars},
-			)
+			db, err := atlashcl.ParseWithOptions(t.Context(), []byte(tt.hcl), "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL(), Vars: tt.vars})
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
 			c.Assert(db.Fields[0].Default, qt.Equals, tt.want)
@@ -400,7 +398,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseTypeHCL([]byte(tt.hcl), "schema.hcl")
+			_, err := parseTypeHCL(t.Context(), []byte(tt.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})
 	}
@@ -524,7 +522,7 @@ table "t" {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseTypeHCL([]byte(tt.hcl), "schema.hcl")
+			db, err := parseTypeHCL(t.Context(), []byte(tt.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tt.read(db), qt.DeepEquals, tt.want)

@@ -503,6 +503,9 @@ v0.13.0 ptah.run/migration/schemadiff/difftypes
 # rather than a dialect switch in the shared converter. A runtime without the
 # rules would read the literal as raw text, so the wider type is required
 # rather than asserted. Pre-v1, so no compatibility is owed.
+# #4204 adds a required caller context to ParseAtlasHCL, ParseAtlasHCLFile,
+# and ParseAtlasHCLWithOptions so selected owner decoding remains cancelable.
+# The former signatures are not retained.
 v0.13.0 ptah.run/atlascompat
 
 # #4140 moves TimescaleDB hypertables and continuous aggregates to the
@@ -606,6 +609,9 @@ v0.13.0 ptah.run/migration/schemadiff
 # schemasource.Formats, the readers of each output format, which
 # ptah.run/sourceformats.New returns for the bundled readers: the SQL and HCL
 # readers link feature owners, and the neutral package must not.
+# #4204 adds a caller context to every Formats reader and YAML parser.
+# Output interpretation shares the schema command timeout. Atlas HCL entry
+# points also require a context; no old-signature wrappers remain.
 # Formats.ReadHCL takes the caller's dialect so a target-scoped block selects
 # its model without importing a concrete owner. This changes
 # behavior; pre-v1, so no compatibility is owed under the authorized

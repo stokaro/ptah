@@ -129,7 +129,7 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
@@ -180,7 +180,7 @@ table "t" {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			db, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Indexes, qt.HasLen, 1)
@@ -194,7 +194,7 @@ table "t" {
 func TestParseReadsAPrimaryKeyColumnThroughTheParsedExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "t" {
   column "n" { type = int }
   primary_key {
@@ -212,7 +212,7 @@ table "t" {
 func TestParseReadsAPartitionColumnThroughTheParsedExpression(t *testing.T) {
 	c := qt.New(t)
 
-	db, err := parseWithOwners([]byte(`
+	db, err := parseWithOwners(t.Context(), []byte(`
 table "t" {
   column "n" { type = int }
   partition {
@@ -377,7 +377,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}
@@ -443,7 +443,7 @@ table "t" {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, err := parseWithOwners([]byte(test.hcl), "schema.hcl")
+			_, err := parseWithOwners(t.Context(), []byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
 	}

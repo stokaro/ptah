@@ -36,7 +36,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	before, err := goschema.ParseDir(builtintest.Annotations(), root)
 	c.Assert(err, qt.IsNil)
 
-	result, err := goannotationexport.Export(goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
+	result, err := goannotationexport.Export(t.Context(), goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
 		Annotations: builtintest.Annotations(),
 		RootDir:     root,
 		OutputPath:  output,
@@ -93,7 +93,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(hclText, qt.Contains, `name = "users_no_overlap"`)
 	c.Assert(hclText, qt.Not(qt.Contains), "embedded")
 
-	after, err := atlashcl.ParseFileWithOptions(output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	after, err := atlashcl.ParseFileWithOptions(t.Context(), output, atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredExtensions(after), qt.DeepEquals, declaredExtensions(before))
 	c.Assert(declaredExtensions(before), qt.Not(qt.HasLen), 0)

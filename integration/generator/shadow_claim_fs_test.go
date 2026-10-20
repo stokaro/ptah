@@ -63,7 +63,7 @@ func verifyMigrationWithShadow(ctx context.Context, dir, shadowURL string) error
 		return err
 	}
 	defer dbschema.CloseAndWarn(target)
-	desired, err := yamlschema.Parse(builtintest.Runtime().YAML(), []byte(`
+	desired, err := yamlschema.Parse(ctx, builtintest.Runtime().YAML(), []byte(`
 tables:
   users:
     columns:

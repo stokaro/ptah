@@ -1,6 +1,7 @@
 package pgextensionsource_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -52,7 +53,7 @@ func TestReaders_OneDeclarationDecodesAlikeFromGoAndYAML(t *testing.T) {
 
 	fromGo := parseGo(c, "extensions.go",
 		`//ptah:schema:extension name="pg_trgm" schema="ext" version="1.6" comment="trigrams" if_not_exists="true"`)
-	fromYAML := must.Must(yamlschema.Parse(yamlOwners, []byte("extensions:\n  pg_trgm:\n    schema: ext\n    version: 1.6\n"+
+	fromYAML := must.Must(yamlschema.Parse(t.Context(), yamlOwners, []byte("extensions:\n  pg_trgm:\n    schema: ext\n    version: 1.6\n"+
 		"    comment: trigrams\n    if_not_exists: true\n")))
 
 	want := &pgextension.DesiredExtension{Schema: "ext", Version: "1.6", Comment: "trigrams", IfNotExists: true}
@@ -114,13 +115,13 @@ type source struct {
 }
 
 // parsers reads a source by its format.
-var parsers = map[string]func(text string) (*schemamodel.Database, error){
-	"go": func(text string) (*schemamodel.Database, error) {
+var parsers = map[string]func(context.Context, string) (*schemamodel.Database, error){
+	"go": func(_ context.Context, text string) (*schemamodel.Database, error) {
 		db, err := goschema.ParseSource(goOwners, "extensions.go", goSource(text))
 		return &db, err
 	},
-	"yaml": func(text string) (*schemamodel.Database, error) {
-		return yamlschema.Parse(yamlOwners, []byte(text))
+	"yaml": func(ctx context.Context, text string) (*schemamodel.Database, error) {
+		return yamlschema.Parse(ctx, yamlOwners, []byte(text))
 	},
 }
 
@@ -128,12 +129,12 @@ var parsers = map[string]func(text string) (*schemamodel.Database, error){
 // are merged.
 func load(c *qt.C, sources []source) (*schemamodel.Database, error) {
 	c.Helper()
-	merged, err := parsers[sources[0].format](sources[0].text)
+	merged, err := parsers[sources[0].format](c.Context(), sources[0].text)
 	if err != nil {
 		return nil, err
 	}
 	for _, next := range sources[1:] {
-		db, err := parsers[next.format](next.text)
+		db, err := parsers[next.format](c.Context(), next.text)
 		if err != nil {
 			return nil, err
 		}
