@@ -1,0 +1,52 @@
+name: Go Module Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-module-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  nested-modules:
+    name: nested-modules (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
+      - name: Build and test every nested module
+        shell: bash
+        env:
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          root="$PWD"
+          scripts/list-go-modules.sh --selftest
+          while read -r module; do
+            if [ "$module" = . ]; then
+              continue
+            fi
+            echo "::group::$module"
+            go -C "$module" mod download
+            go -C "$module" build ./...
+            go -C "$module" test -race ./... -timeout 10m
+            # A module's integration tree has one complete contour. The
+            # existing runner enforces layout, execution, and no skipped tests.
+            if [ -n "$(git ls-files "$module/integration/*_test.go")" ]; then
+              go run ./internal/cmd/testcontour --dir "$root/$module" --tags integration --race --timeout 10m
+            fi
+            echo '::endgroup::'
+          done < <(scripts/list-go-modules.sh)

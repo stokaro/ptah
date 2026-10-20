@@ -5,6 +5,7 @@ tools_dir="${1:?usage: install-protobuf-export-tools.sh <tools-directory>}"
 buf_version="${BUF_VERSION:-v1.72.0}"
 protoc_version="${PROTOC_VERSION:-35.1}"
 protoc_gen_go_version="${PROTOC_GEN_GO_VERSION:-v1.36.11}"
+protoc_gen_go_grpc_version="${PROTOC_GEN_GO_GRPC_VERSION:-v1.5.1}"
 
 case "$(uname -s)-$(uname -m)" in
 Linux-x86_64)
@@ -34,6 +35,8 @@ mkdir -p "$tools_dir/bin"
 GOBIN="$tools_dir/bin" go install "github.com/bufbuild/buf/cmd/buf@${buf_version}"
 GOBIN="$tools_dir/bin" go install "google.golang.org/protobuf/cmd/protoc-gen-go@${protoc_gen_go_version}"
 
+GOBIN="$tools_dir/bin" go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${protoc_gen_go_grpc_version}"
+
 archive="$tools_dir/protoc.zip"
 curl --fail --location --silent --show-error \
 	"https://github.com/protocolbuffers/protobuf/releases/download/v${protoc_version}/protoc-${protoc_version}-${protoc_platform}.zip" \
@@ -47,12 +50,14 @@ fi
 unzip -q "$archive" -d "$tools_dir"
 rm "$archive"
 
+actual_protoc_gen_go_grpc_version="$("$tools_dir/bin/protoc-gen-go-grpc" --version)"
 actual_buf_version="$("$tools_dir/bin/buf" --version)"
 actual_protoc_version="$("$tools_dir/bin/protoc" --version)"
 actual_protoc_gen_go_version="$("$tools_dir/bin/protoc-gen-go" --version)"
 if [[ "$actual_buf_version" != "${buf_version#v}" ||
 	"$actual_protoc_version" != "libprotoc ${protoc_version}" ||
-	"$actual_protoc_gen_go_version" != "protoc-gen-go ${protoc_gen_go_version}" ]]; then
+	"$actual_protoc_gen_go_version" != "protoc-gen-go ${protoc_gen_go_version}" ||
+ "$actual_protoc_gen_go_grpc_version" != "protoc-gen-go-grpc ${protoc_gen_go_grpc_version#v}" ]]; then
 	printf 'installed Protobuf tool versions do not match the requested versions:\n' >&2
 	printf '  buf: %s\n  protoc: %s\n  protoc-gen-go: %s\n' \
 		"$actual_buf_version" "$actual_protoc_version" "$actual_protoc_gen_go_version" >&2

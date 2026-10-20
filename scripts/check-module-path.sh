@@ -56,6 +56,7 @@ corpus() {
 status=0
 ours=0
 foreign=0
+independent=0
 
 hits="$(corpus -z | xargs -0 grep -nF -- "$retired_token" 2>/dev/null || true)"
 if [ -n "$hits" ]; then
@@ -66,11 +67,22 @@ if [ -n "$hits" ]; then
 	status=1
 fi
 
-# Every module in the tree declares the current path. Discovered rather than
-# listed, so a module added later is covered by existing.
+# Application modules declare the current path. The neutral provider SDK has
+# its own publicly resolvable module identity (#4204), pinned to one exact
+# directory below. Neither another module nor another SDK spelling is exempt.
+# Module discovery still covers every tracked or untracked declaration.
 while IFS= read -r modfile; do
 	declared="$(sed -n 's/^module //p' "$modfile" | head -1)"
-	case "$declared" in
+ if [[ "$modfile" == "provider-sdk/go.mod" ]]; then
+  if [[ "$declared" != "github.com/stokaro/ptah/provider-sdk" ]]; then
+   echo "check-module-path: provider SDK must declare github.com/stokaro/ptah/provider-sdk" >&2
+   status=1
+  else
+   independent=$((independent + 1))
+  fi
+  continue
+ fi
+ case "$declared" in
 	"${current_module}" | "${current_module}"/*)
 		ours=$((ours + 1))
 		;;
@@ -100,4 +112,4 @@ fi
 # The counts are separate because they are different claims. A run that folded
 # the fixture module into the total would report more agreement than it measured.
 echo "check-module-path: OK (${files} files name no retired organisation;" \
-	"${ours} of ${modules} modules declare ${current_module}, ${foreign} stand for other code)"
+	"${ours} of ${modules} modules declare ${current_module}, ${foreign} stand for other code, ${independent} independent provider SDK)"
