@@ -12,7 +12,7 @@ import (
 
 func TestServerRequiresAdvertisedServices(t *testing.T) {
 	c := qt.New(t)
-	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test"}}}
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}}
 	server := transport.Server{Description: description, Sessions: &sessions{}}
 	c.Assert(server.Validate(), qt.IsNil)
 	server.Sessions = (*sessions)(nil)

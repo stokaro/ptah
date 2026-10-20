@@ -151,6 +151,9 @@ func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*prot
 	if result.GetId() == "" || result.GetEngine() != request.GetEngine() {
 		return nil, fmt.Errorf("%w: invalid session identity", provider.ErrProtocol)
 	}
+	if err := provider.ValidateIdentifierRules(result.GetIdentifiers()); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

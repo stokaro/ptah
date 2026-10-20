@@ -25,7 +25,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 
 | Operation | Required result |
 | --- | --- |
-| `Describe` | Exact revision, provider identity, semantic identity, engines, and advertised features. |
+| `Describe` | Exact revision, provider identity, semantic identity, engines, identifier comparison rules, and advertised features. |
 | `Open` | A nonempty session handle for the requested canonical engine. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
@@ -121,3 +121,9 @@ checksum and identity refusal; and parent death.
 
 This SDK-level evidence does not establish a completed native CLI workflow.
 That acceptance condition belongs to #4204's application integration.
+
+Each engine declares its offline identifier comparison rules. Each opened session
+reports the effective rules and default schema. Missing rules, unknown comparison
+modes, and unknown index namespaces are refused. The experimental contract
+supports exact and ASCII-insensitive comparison; it makes no claim about other
+collation semantics. Hosts must not infer these rules from a built-in target.

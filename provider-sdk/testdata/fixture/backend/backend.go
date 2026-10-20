@@ -33,9 +33,15 @@ type session struct {
 
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-1",
-		Engines:  []*protocol.Engine{{Id: "fixture", Features: []string{"tables", "columns"}}},
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-tables-2",
+		Engines:  []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns"}, Identifiers: identifierRules()}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature}}
+}
+
+func identifierRules() *protocol.IdentifierRules {
+	return &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE,
+		ColumnNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE, IndexNames: protocol.IdentifierRules_ASCII_CASE_INSENSITIVE,
+		IndexNamespace: protocol.IdentifierRules_SCHEMA}
 }
 
 // Open creates an independent connection pool without changing the schema.
@@ -70,7 +76,7 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 		p.sessions = make(map[string]*session)
 	}
 	p.sessions[id] = &session{db: database, path: path, fault: u.Query().Get("fault")}
-	return &protocol.Session{Id: id, Engine: "fixture", Database: path, ServerVersion: "fixture-1"}, nil
+	return &protocol.Session{Id: id, Engine: "fixture", Database: path, ServerVersion: "fixture-1", DefaultSchema: "main", Identifiers: identifierRules()}, nil
 }
 
 func (p *Provider) lookup(id string) (*session, error) {

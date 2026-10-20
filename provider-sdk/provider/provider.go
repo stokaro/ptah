@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 1
+const Revision uint32 = 2
 
 const (
 	// InspectFeature advertises complete, scoped catalog inspection.
@@ -79,6 +79,9 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 		if engine == nil || !validName(engine.GetId()) {
 			return fmt.Errorf("%w: invalid engine ID", ErrProtocol)
 		}
+		if err := ValidateIdentifierRules(engine.GetIdentifiers()); err != nil {
+			return err
+		}
 		for _, name := range append([]string{engine.GetId()}, engine.GetAliases()...) {
 			if !validName(name) || names[name] {
 				return fmt.Errorf("%w: invalid or conflicting engine name %q", ErrProtocol, name)
@@ -95,6 +98,27 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateIdentifierRules refuses missing or unknown comparison facts. The
+// experimental contract supports exact and ASCII-insensitive comparison only.
+func ValidateIdentifierRules(rules *protocol.IdentifierRules) error {
+	if rules == nil {
+		return fmt.Errorf("%w: identifier rules are required", ErrProtocol)
+	}
+	for _, comparison := range []protocol.IdentifierRules_Comparison{rules.GetTableNames(), rules.GetColumnNames(), rules.GetIndexNames()} {
+		switch comparison {
+		case protocol.IdentifierRules_EXACT, protocol.IdentifierRules_ASCII_CASE_INSENSITIVE:
+		default:
+			return fmt.Errorf("%w: unsupported identifier comparison", ErrProtocol)
+		}
+	}
+	switch rules.GetIndexNamespace() {
+	case protocol.IdentifierRules_TABLE, protocol.IdentifierRules_SCHEMA:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported index namespace", ErrProtocol)
+	}
 }
 
 func validName(name string) bool {
