@@ -248,8 +248,8 @@ func featureObjectScopeName(ref objectidentity.ID) string {
 		}
 	}
 	name := strings.Join(parts, ".")
-	if ref.Signature != "" {
-		name += "(" + ref.Signature + ")"
+	if !ref.Signature.IsZero() {
+		name += "(" + ref.SignatureText() + ")"
 	}
 	return name
 }

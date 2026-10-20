@@ -389,7 +389,7 @@ func TestIdentity_PathWritesTheSignature(t *testing.T) {
 	c := qt.New(t)
 	id := objectidentity.ID{Kind: "example.org/routine", Schema: objectidentity.Part{Source: "app", Normalized: "app"},
 		Parent: objectidentity.Part{Source: "pkg", Normalized: "pkg"}, Name: objectidentity.Part{Source: "f", Normalized: "f"},
-		Signature: "integer"}
+		Signature: objectidentity.NewParts(objectidentity.Part{Source: "integer", Normalized: "integer"})}
 
 	c.Assert(id.Path(), qt.Equals, "app.pkg.f(integer)")
 	c.Assert(id.String(), qt.Equals, "example.org/routine app.pkg.f(integer)")

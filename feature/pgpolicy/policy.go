@@ -237,7 +237,7 @@ func Table(ref objectidentity.ID) objectidentity.ID {
 func ValidatePolicyRef(ref objectidentity.ID) error {
 	if ref.Kind != objectidentity.Kind(PolicyKind) || ref.Name.Source == "" || ref.Name.Normalized == "" ||
 		ref.Parent.Source == "" || ref.Parent.Normalized == "" || ref.Schema.Source == "" || ref.Schema.Normalized == "" ||
-		!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" {
+		!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Signature.IsZero() {
 		return fmt.Errorf("%w: a row-security policy requires a schema, a table and a name", schemaext.ErrInvalidValue)
 	}
 	return nil

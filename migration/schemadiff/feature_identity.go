@@ -72,7 +72,7 @@ func bindFacetCoverage(coverage schemaext.Coverage, target string, semantics ide
 		}
 		tableScoped := semantics.IndexNamespace != identifier.IndexNamespaceSchema
 		hasParent := !ref.Parent.Empty()
-		if !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" || tableScoped != hasParent {
+		if !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Signature.IsZero() || tableScoped != hasParent {
 			return schemaext.Coverage{}, fmt.Errorf("%w: invalid index coverage identity %s", schemaext.ErrInvalidValue, ref)
 		}
 		schema := ref.Schema.Source

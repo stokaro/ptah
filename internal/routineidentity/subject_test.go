@@ -1,4 +1,4 @@
-package routineargs_test
+package routineidentity_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 )
 
 // TestSubject_ADeclarationAndItsCatalogRowAreOneRoutine pins that a setting
@@ -28,8 +28,8 @@ func TestSubject_ADeclarationAndItsCatalogRowAreOneRoutine(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			declared := routineargs.Subject(builder, test.kind, "public.f", test.declared)
-			reported := routineargs.Subject(builder, test.kind, "f", test.catalog)
+			declared := routineidentity.Subject(builder, test.kind, "public.f", test.declared)
+			reported := routineidentity.Subject(builder, test.kind, "f", test.catalog)
 
 			c.Assert(declared.Equal(reported), qt.IsTrue, qt.Commentf("%s and %s", declared, reported))
 		})
@@ -42,8 +42,8 @@ func TestSubject_KeepsAFunctionApartFromAProcedure(t *testing.T) {
 	c := qt.New(t)
 	builder := objectidentity.NewBuilder(identifier.ForDialect("sqlserver"))
 
-	function := routineargs.Subject(builder, "", "dbo.f", "")
-	procedure := routineargs.Subject(builder, "procedure", "dbo.f", "")
+	function := routineidentity.Subject(builder, "", "dbo.f", "")
+	procedure := routineidentity.Subject(builder, "procedure", "dbo.f", "")
 
 	c.Assert(function.Kind, qt.Equals, objectidentity.KindFunction)
 	c.Assert(procedure.Kind, qt.Equals, objectidentity.KindProcedure)
@@ -56,8 +56,8 @@ func TestSubject_TellsOverloadsApart(t *testing.T) {
 	c := qt.New(t)
 	builder := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
 
-	integer := routineargs.Subject(builder, "function", "public.f", "a int")
-	text := routineargs.Subject(builder, "function", "public.f", "a text")
+	integer := routineidentity.Subject(builder, "function", "public.f", "a int")
+	text := routineidentity.Subject(builder, "function", "public.f", "a text")
 
 	c.Assert(integer.Equal(text), qt.IsFalse)
 }

@@ -255,7 +255,7 @@ func RowPolicyTable(ref objectidentity.ID) objectidentity.ID {
 // the database's policies as not described instead of listing the tables it
 // happened to see.
 func ValidateRowPolicyRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(RowPolicyKind) || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" {
+	if ref.Kind != objectidentity.Kind(RowPolicyKind) || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Signature.IsZero() {
 		return fmt.Errorf("%w: a ClickHouse row policy reference has kind %q and no catalog or signature", schemaext.ErrInvalidValue, RowPolicyKind)
 	}
 	if ref.Name.Source == "" || ref.Name.Normalized == "" {

@@ -151,8 +151,8 @@ func Owned(ref objectidentity.ID) sqlext.Declaration {
 		}
 	}
 	name := strings.Join(parts, ".")
-	if ref.Signature != "" {
-		name += "(" + ref.Signature + ")"
+	if !ref.Signature.IsZero() {
+		name += "(" + ref.SignatureText() + ")"
 	}
 	return declaration(strings.ReplaceAll(noun, "-", " "), name)
 }

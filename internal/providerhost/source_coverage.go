@@ -47,26 +47,35 @@ func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, e
 	return schemaext.Knowledge{State: state, Reason: knowledge.GetReason()}, nil
 }
 
-// Source and comparison paths must have matching component boundaries. The
+// Source and comparison tuples must have matching component boundaries. The
 // wire permits other normalization shapes; refuse those until native placement
 // can preserve both shapes without inventing source spellings.
 func sourceIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
-	if len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
-		return objectidentity.ID{}, unsupported("structured overload identity in native YAML placement")
+	path, err := sourceParts(source.GetPath(), normalized.GetPath(), "path")
+	if err != nil {
+		return objectidentity.ID{}, err
 	}
-	if len(source.GetPath()) != len(normalized.GetPath()) {
-		return objectidentity.ID{}, unsupported("normalization changing path component count in native YAML placement")
-	}
-	parts := make([]objectidentity.Part, len(source.GetPath()))
-	for i, part := range source.GetPath() {
-		parts[i] = objectidentity.Part{Source: part, Normalized: normalized.GetPath()[i]}
+	overload, err := sourceParts(source.GetOverload(), normalized.GetOverload(), "overload")
+	if err != nil {
+		return objectidentity.ID{}, err
 	}
 	return objectidentity.ID{Kind: objectidentity.Kind(source.GetKind()),
 		Database:  objectidentity.Part{Source: source.GetDatabase(), Normalized: normalized.GetDatabase()},
 		Catalog:   objectidentity.Part{Source: source.GetCatalog(), Normalized: normalized.GetCatalog()},
 		Schema:    objectidentity.Part{Source: source.GetSchema(), Normalized: normalized.GetSchema()},
-		Namespace: objectidentity.NewParts(parts...),
-		Name:      objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
+		Namespace: path, Signature: overload,
+		Name: objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
+}
+
+func sourceParts(source, normalized []string, label string) (objectidentity.Parts, error) {
+	if len(source) != len(normalized) {
+		return objectidentity.Parts{}, unsupported("normalization changing " + label + " component count in native YAML placement")
+	}
+	parts := make([]objectidentity.Part, len(source))
+	for i, part := range source {
+		parts[i] = objectidentity.Part{Source: part, Normalized: normalized[i]}
+	}
+	return objectidentity.NewParts(parts...), nil
 }
 
 // Kind-wide coverage has no target scope in the shared schema. A model another

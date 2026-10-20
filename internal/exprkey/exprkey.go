@@ -157,6 +157,10 @@ func encode(id objectidentity.ID) string {
 	for _, part := range id.Namespace.Values() {
 		path = append(path, part.Normalized)
 	}
+	var signature []string
+	for _, part := range id.Signature.Values() {
+		signature = append(signature, part.Normalized)
+	}
 	return lengthPrefixed(
 		string(id.Kind),
 		id.Database.Normalized,
@@ -165,7 +169,7 @@ func encode(id objectidentity.ID) string {
 		id.Schema.Normalized,
 		id.Parent.Normalized,
 		id.Name.Normalized,
-		id.Signature,
+		lengthPrefixed(signature...),
 	)
 }
 

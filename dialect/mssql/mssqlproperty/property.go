@@ -8,7 +8,6 @@ package mssqlproperty
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/objectidentity"
@@ -147,14 +146,14 @@ func (p Property) Label() string {
 // SQL Server's default collation compares names without case, so a
 // declaration that spells a table `Docs` and a read that reports `docs` name
 // one table. The schema and the name take their slots, and the table and the
-// column the signature, each quoted so no spelling of one can pass for
-// another. The parent slot stays empty: a property is not a child the table's
+// column the signature as separate components, so neither can forge a
+// boundary in the other. The parent slot stays empty: a property is not a child the table's
 // own transition creates or drops, and its owner plans it alone, ordered by
 // what it reads.
 func (p Property) Ref() objectidentity.ID {
 	ref := objectidentity.ID{Kind: objectidentity.Kind(Kind), Schema: part(p.Schema), Name: part(p.Name)}
 	if strings.TrimSpace(p.Table) != "" {
-		ref.Signature = strconv.Quote(fold(p.Table)) + " " + strconv.Quote(fold(p.Column))
+		ref.Signature = objectidentity.NewParts(part(p.Table), part(p.Column))
 	}
 	return ref
 }
@@ -167,16 +166,14 @@ func RefAddress(ref objectidentity.ID) (Property, bool) {
 		return Property{}, false
 	}
 	address := Property{Schema: ref.Schema.Source, Name: ref.Name.Source}
-	if ref.Signature == "" {
+	parts := ref.Signature.Values()
+	if len(parts) == 0 {
 		return address, true
 	}
-	quotedTable, quotedColumn, found := strings.Cut(ref.Signature, " ")
-	table, tableErr := strconv.Unquote(quotedTable)
-	column, columnErr := strconv.Unquote(quotedColumn)
-	if !found || tableErr != nil || columnErr != nil {
+	if len(parts) != 2 || parts[0].Normalized == "" {
 		return Property{}, false
 	}
-	address.Table, address.Column = table, column
+	address.Table, address.Column = parts[0].Normalized, parts[1].Normalized
 	return address, true
 }
 

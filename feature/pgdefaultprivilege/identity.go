@@ -58,7 +58,7 @@ func tuple(grantor, objectType, grantee string) (string, error) {
 // rules. A service holding those rules can rebuild the identity with Ref.
 func IdentityOf(ref objectidentity.ID) (Identity, error) {
 	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != objectidentity.Kind(DefaultPrivilegeKind) || ref.Catalog != (objectidentity.Part{}) ||
-		ref.Parent != (objectidentity.Part{}) || ref.Signature != "" || ref.Name.Quoted || ref.Name.Defaulted ||
+		ref.Parent != (objectidentity.Part{}) || !ref.Signature.IsZero() || ref.Name.Quoted || ref.Name.Defaulted ||
 		ref.Schema.Quoted || ref.Schema.Defaulted {
 		return Identity{}, fmt.Errorf("%w: invalid default privilege reference", schemaext.ErrInvalidValue)
 	}
