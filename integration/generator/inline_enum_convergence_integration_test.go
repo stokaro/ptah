@@ -8,14 +8,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"ptah.run/core/planext"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"

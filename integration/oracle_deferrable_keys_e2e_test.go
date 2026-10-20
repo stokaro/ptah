@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"ptah.run/core/planext"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"

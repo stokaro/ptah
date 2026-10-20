@@ -10,14 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"ptah.run/core/planext"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/goschema"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"

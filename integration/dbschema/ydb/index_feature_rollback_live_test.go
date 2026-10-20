@@ -5,10 +5,9 @@ package ydb_test
 import (
 	"testing"
 
-	"ptah.run/core/planext"
-
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
