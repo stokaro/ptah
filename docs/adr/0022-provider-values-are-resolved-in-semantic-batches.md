@@ -144,8 +144,11 @@ remain required before the SDK can replace the in-process source owners.
 ## Host model resolution
 
 Negotiation carries each complete canonical JSON model definition beside its
-SHA-256 digest. The SDK and host share lossless JSON normalization. Numbers
-retain their source text; duplicate keys and malformed Unicode are refused.
+SHA-256 digest. The SDK and host normalize JSON without losing numeric text.
+Duplicate keys and malformed Unicode are refused. Their implementations remain
+independent because public host contracts cannot depend on an external SDK,
+and the SDK cannot import the host. A shared-input test checks their outputs
+and refusals at the application boundary, where both modules are available.
 
 The host registers desired and observed model codecs in the common schema
 registry. Its codec definition binds the owner definition, executable digest,
