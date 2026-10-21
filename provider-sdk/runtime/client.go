@@ -152,13 +152,13 @@ func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*prot
 	if err != nil {
 		return nil, remoteError(call, "open session", err)
 	}
-	if result.GetId() == "" || result.GetEngine() != request.GetEngine() {
-		return nil, fmt.Errorf("%w: invalid session identity", provider.ErrProtocol)
-	}
-	if err := provider.ValidateIdentifierRules(result.GetIdentifiers()); err != nil {
+	if err := provider.ValidateSession(request.GetEngine(), result); err != nil {
+		if result.GetId() != "" {
+			return nil, errors.Join(err, c.CloseSession(context.WithoutCancel(ctx), result.GetId()))
+		}
 		return nil, err
 	}
-	return result, nil
+	return proto.CloneOf(result), nil
 }
 
 // CloseSession releases the named session. It never opens a replacement.

@@ -51,6 +51,7 @@ type Server struct {
 	SourceDecoder   provider.SourceDecoder
 	ValueConverter  provider.ValueConverter
 	ModelComparer   provider.ModelComparer
+	FeaturePlanner  provider.FeaturePlanner
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -73,6 +74,7 @@ func (s Server) Validate() error {
 		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
 		{provider.ConvertValuesFeature, !nilService(s.ValueConverter)},
 		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
+		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -149,7 +151,19 @@ func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest)
 	if !s.hasEngine(request.GetEngine()) {
 		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
 	}
-	return s.server.Sessions.Open(ctx, request)
+	result, err := s.server.Sessions.Open(ctx, proto.CloneOf(request))
+	if err != nil {
+		return nil, err
+	}
+	if err := provider.ValidateSession(request.GetEngine(), result); err != nil {
+		if result.GetId() != "" {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), CallTimeout)
+			defer cancel()
+			_ = s.server.Sessions.Close(cleanup, &protocol.CloseRequest{SessionId: result.GetId()})
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return proto.CloneOf(result), nil
 }
 
 func (s *serverAdapter) hasEngine(name string) bool {

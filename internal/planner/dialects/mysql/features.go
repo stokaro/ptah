@@ -86,7 +86,11 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		request.Changes = append(request.Changes, table.FeatureChanges...)
 		names[subject.Key()] = table.TableName
 	}
-	graph, err := featurehost.NewGraph(featureOwner, nodes, withKeyReplacements(builder, nodes, pgeffects.Sequence(builder, nodes)), windows)
+	metadata := make([]featureplan.CommonStep, len(nodes))
+	for i, effects := range withKeyReplacements(builder, nodes, pgeffects.Sequence(builder, nodes)) {
+		metadata[i].Effects = effects
+	}
+	graph, err := featurehost.NewGraph(featureOwner, nodes, metadata, windows)
 	if err != nil {
 		return nil, nil, err
 	}

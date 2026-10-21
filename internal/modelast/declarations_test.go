@@ -64,8 +64,8 @@ func (handoffRuntime) PlanDeclarations(context.Context, featureplan.DeclarationR
 	contribution := func(name string, action plangraph.Action) plangraph.Contribution[featureplan.Operation] {
 		id := plangraph.StepID{Owner: "example.org/lowering", Name: name}
 		return plangraph.Contribution[featureplan.Operation]{Owner: id.Owner, Steps: []plangraph.Step[featureplan.Operation]{{ID: id,
-			Payload: featureplan.Operation{Role: ast.StatementExtension, Payload: &probeStatement{Name: name}},
-			Effects: []plangraph.Effect{{Subject: subject, Action: action}}}}}
+			Payload:     featureplan.Operation{Role: ast.StatementExtension, Payload: &probeStatement{Name: name}},
+			Transaction: plangraph.TransactionForbidden, Effects: []plangraph.Effect{{Subject: subject, Action: action}}}}}
 	}
 	return featureplan.DeclarationResult{Complete: true, Contributions: []plangraph.Contribution[featureplan.Operation]{
 		contribution("a-read", plangraph.Read), contribution("z-create", plangraph.Create),
@@ -87,8 +87,8 @@ func TestStandaloneLoweringOrdersOwnersByTheirEffects(t *testing.T) {
 	}, modelast.Lowering{Context: t.Context(), Runtime: handoffRuntime{}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(visited, qt.DeepEquals, []ast.Node{
-		&ast.ExtensionStatement{Payload: &probeStatement{Name: "z-create"}},
-		&ast.ExtensionStatement{Payload: &probeStatement{Name: "a-read"}},
+		&ast.ExtensionStatement{Payload: &probeStatement{Name: "z-create"}, Transaction: plangraph.TransactionForbidden},
+		&ast.ExtensionStatement{Payload: &probeStatement{Name: "a-read"}, Transaction: plangraph.TransactionForbidden},
 	})
 }
 

@@ -89,8 +89,9 @@ type Planner interface {
 
 // Options configures high-level planner helpers.
 type Options struct {
-	// Capabilities describes the concrete target server. An empty set uses the
-	// dialect's default capability preset.
+	// Capabilities describes the concrete target server. Built-in planners use
+	// the dialect preset when it is empty. External providers receive the set
+	// unchanged, so missing facts never select a built-in preset.
 	Capabilities capability.Capabilities
 	// ConcurrentIndexes requests PostgreSQL CREATE INDEX CONCURRENTLY for all
 	// newly added indexes when the target supports it.

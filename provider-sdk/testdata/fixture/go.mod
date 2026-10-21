@@ -3,7 +3,7 @@ module example.com/ptah-fixture-provider
 go 1.26.5
 
 require (
-	github.com/stokaro/ptah/provider-sdk v0.0.0-20261021040638-e2ce289a4538
+	github.com/stokaro/ptah/provider-sdk v0.0.0-20261021065317-849a8bb89aa7
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.60.1
 )

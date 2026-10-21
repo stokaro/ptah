@@ -117,11 +117,11 @@ func verifyAtlasSchemaPlanFile(
 		}
 	}
 
-	// One dialect-aware statement list, split the way the apply path splits it,
-	// so what is verified here is what apply would run.
-	statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
+	// Use the saved units and their owner requirements throughout rehearsal.
+	statements := plan.StatementSQL()
 	if err := rehearseAtlasSchemaApplyPlan(cmd, conn, rehearsePlanParams{
-		runtime: runtime,
+		runtime:      runtime,
+		transactions: plan.OwnerTransactions(),
 		// Never skip the replay: a matching from-fingerprint says the plan was
 		// computed against this database, not that its statements reach --to,
 		// and the second question is the one these verbs exist to answer.

@@ -26,7 +26,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | Operation | Required result |
 | --- | --- |
 | `Describe` | Exact revision, provider identity, semantic identity, engines, identifier comparison rules, and advertised features. |
-| `Open` | A nonempty session handle for the requested canonical engine. Credentials belong in this request, never in process arguments. |
+| `Open` | A session handle for the requested engine, identifier rules, and established server capabilities. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
@@ -34,8 +34,15 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
+| `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
+
+Session capabilities preserve presence: an explicit `false` is an established
+answer, while an absent key remains unknown. The SDK validates names and the host
+validates its capability vocabulary and dependencies. Invalid session replies
+return no usable handle; both transport boundaries attempt to close a returned
+handle before refusing the reply.
 
 Common records represent tables and columns explicitly. Native records use a
 versioned provider-owned envelope. Structured references keep database, schema,
@@ -237,7 +244,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 12 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 14 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -297,7 +304,7 @@ fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
-adapters, native planning, transactions, and history
+adapters, complete native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 
 ## Observed model coverage
@@ -374,5 +381,67 @@ semantics and refuse any role or context they cannot implement.
 Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
-through this contract. It does not establish a feature-planning, transaction, or
-history service; these remain required before official-engine extraction.
+through this contract. Contextual feature planning uses the service below.
+Transaction and history services remain required before official-engine extraction.
+
+## Contextual feature planning
+
+`models.plan` advertises `PlanFeatures`. Each engine assigns a service its change,
+parent, and operation model kinds. Parent assignment is independent of changed
+facets: a table operation must account for attached state even when no setting
+changed.
+
+The request captures declaration and inspection records separately, including
+common children, normalized feature values, exclusions, and independent coverage
+sources. Missing observations do not establish absence. Identifier components,
+capability values, and common graph step identities retain their original
+boundaries. An established false capability is distinct from a missing fact.
+
+A successful reply accounts for every input change and every assigned parent
+model. Each contributed operation must appear in a receipt. Dependencies may
+refer to common steps; explicit rewrites name the common operations they replace.
+The host must validate ownership, rewrite effects, and the complete graph before
+using a contribution. The SDK never orders a partial graph or treats a receipt
+as evidence of execution.
+
+Transaction requirements, operation placement, phases, and conservative impact
+assessments travel as explicit metadata. Unknown values remain unknown. A
+completed refusal contains diagnostics and no operations, rewrites, or successful
+receipts. Cancellation and malformed replies discard the complete batch.
+
+The host registers these services and binds their ownership into captured model
+identities. Its adapter preserves common definitions, normalized feature values,
+coverage sources, graph metadata, and receipts. Unmapped common properties and
+conflicting primary-key facet slots are refused before the RPC.
+
+The common migration planner dispatches native changes and parent assessments
+through the selected runtime, then schedules the complete shared graph. It
+retains unchanged captured tables and supplies exact common column operands.
+Common column and table removals follow the feature windows. Unsupported inline
+common definitions remain errors; the host never strips native settings to make
+a common statement render. A replacement in the default phase inherits its
+source steps' boundaries instead of joining the ordinary feature window. An
+explicit phase adds its window constraints; conflicting boundaries refuse the
+complete graph.
+
+An independent SDK-only fixture exercises the production planner, shared graph,
+rendering, statement execution, and inspection. It checks captured ALTER parents,
+parent receipts without changed native values, common column replacement, graph
+conflicts, completed refusals, and cancellation. The replacement preserves the
+actual common operand even when it differs from the final desired column. The
+test caller executes without a transaction.
+
+Owner transaction requirements survive AST lowering. A forbidden transaction
+reaches migration classification. A mixed plan that the generator cannot split
+safely is refused. The external planner refuses a required transaction because
+provider transaction sessions are not implemented.
+
+Prepared schema apply, saved JSON plans, and dev rehearsal check owner
+requirements before executing any statement. The JSON plan preserves each
+statement's requirements. Editing assessed SQL needs a fresh owner assessment;
+Atlas HCL output refuses metadata it cannot preserve. Session capability facts
+retain the difference between an established false value and an unknown value.
+
+Provider transaction sessions, raw SQL assessment, history services, and official
+provider extraction remain part of #4204.
+These tests do not qualify YDB extraction or the migration history backend.

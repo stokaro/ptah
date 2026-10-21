@@ -168,8 +168,8 @@ Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
 Change models enter the shared comparison runtime through the contextual
 service below. Operation models retain captured safety facts and use the
-selected target renderer. Native planning and engine transaction and history
-services still require application adapters.
+selected target renderer. Native planning uses the shared graph described below.
+Engine transaction and history services still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -271,8 +271,8 @@ matching it by table name and schema would drop part of its identity.
 
 Facets of columns and indexes also require placement adapters. Conflicting
 values for the same model and subject across engines are refused by the shared
-collections. These gaps, HCL and Go annotation capture, and native planning
-remain part of #4204. The fixture's retention value proves transport and schema
+collections. These gaps, HCL and Go annotation capture, and completion of native
+planning remain part of #4204. The fixture's retention value proves transport and schema
 placement; it does not implement SQLite retention or qualify YDB extraction.
 
 ## Observed capture
@@ -358,7 +358,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 12 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 14 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -477,9 +477,9 @@ The independent retention fixture exercises native objects and column facets,
 changed and unchanged values, explicit actions, unknown coverage, exclusions,
 and change capture and decoding. It establishes global and subject knowledge
 only; bounded regions remain undecided in that synthetic owner. It does not
-execute retention changes or qualify any official database engine. Native
-planning, transaction and history services, full source support, and
-official-engine extraction remain part of #4204.
+execute retention changes or qualify any official database engine. Rewrite and
+execution qualification, transaction and history services, full source support,
+and official-engine extraction remain part of #4204.
 
 
 ## Captured operation rendering
@@ -508,6 +508,77 @@ whole batch. A successful earlier unit is not exposed as a usable prefix.
 The independent fixture normalizes and executes table creation, renaming, and
 removal through an operation model. Inspection proves the database changes;
 round trips prove that operation assessments are recomputed. This exercises
-operation transport and rendering. Feature planning still needs a contextual
-service that contributes receipts, dependencies, and effects to the host graph.
+operation transport and rendering. The contextual planning adapter described
+below binds receipts, dependencies, and effects for the selected runtime. The
+common migration planner dispatches the service through the shared graph.
 Transaction and history services remain separate work before YDB extraction.
+
+
+### Contextual planning transport
+
+`PlanFeatures` carries captured declarations and observations, normalized native
+changes, common graph steps, and explicit parent assignments. Each service owns
+its declared change and operation models. Parent models are assigned separately
+so an unchanged facet still receives assessment when its table is changed or
+dropped.
+
+A completed reply contains ordered receipts for every input change and parent
+assignment. Every contributed operation has a receipt. Graph identities retain
+owner and name separately; effects retain bound object identities. Explicit
+rewrite claims name common steps with known footprints. The host must check the
+replacement effects and schedule all contributions together.
+
+The SDK validates the complete exchange at both boundaries. It isolates owner
+inputs, refuses successful output alongside diagnostics, and discards a reply
+after cancellation. Transaction requirements are data, not evidence that an
+executor honored them. The application adapter must preserve them through the
+final execution boundary before native planning is qualified.
+
+The host adapter registers the planning service and includes its assignments in
+provider and model identities. It maps declarations and observations separately,
+preserves excluded facets and independent coverage sources, and refuses unmapped
+common properties. Primary-key facets use the shared capture authority; a value
+on another primary-key slot is refused even when the authoritative slot is empty.
+
+The common migration planner sends native changes, parent actions, unchanged
+captured tables, and exact common column operands through the selected runtime.
+Its shared graph places prerequisites and types before common table creations,
+ordinary feature operations before common column and table removals, and drops
+of prerequisites and types after those removals. Conflicts and unsupported
+placements discard the complete plan. Unsupported inline definitions still fail
+before rendering; planning never strips settings to fit the common wire model.
+Default-phase replacements inherit their common source boundaries. An explicit
+phase adds window constraints, so an incompatible phase refuses the complete
+graph instead of moving the source operation.
+
+Owner transaction requirements survive lowering to AST envelopes. Migration
+classification recognizes a forbidden transaction without a built-in dialect
+profile. An unsafe split of common and native work remains a refusal. The
+external planner refuses required transactions while provider sessions have no
+transaction service. Prepared schema apply, saved JSON plans, and dev rehearsal
+retain requirements in statement order and refuse a conflicting mode before
+executing any statement. An edit to assessed SQL needs a fresh owner assessment.
+Atlas HCL output refuses requirements it cannot preserve. Provider transaction
+sessions and raw SQL assessment remain unfinished.
+
+An independent SDK-only fixture exercises this production planner, shared graph,
+rendering, explicit unwrapped execution, and inspection. It checks unchanged
+captured parents, parent receipts without changed native values, graph conflicts,
+completed refusals, required-transaction refusal, and cancellation. A common
+column replacement uses the exact accepted operand, emits once, and retains its
+transaction requirement. The fixture refuses unsupported operand properties.
+Transaction enforcement through every final executor remains part of #4204
+before this service can support YDB extraction.
+
+### Session capability facts
+
+An opened session carries the capabilities established for that server. Presence
+is preserved: false is a measured answer, and absence remains unknown. The SDK
+validates capability names without importing the host registry. The host checks
+its vocabulary and dependencies before exposing server facts to planning.
+Session capability claims do not establish transaction-session support.
+
+Both transport boundaries validate newly opened sessions. Invalid replies return
+no usable handle and trigger an attempt to close any returned handle. Returned
+maps are independent snapshots, so later owner mutation cannot change captured
+server facts.

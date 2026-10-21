@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/internal/txrequire"
 )
@@ -76,5 +77,27 @@ func TestNodeRequiresAutocommit_NoDialect(t *testing.T) {
 				c.Assert(txrequire.NodeRequiresAutocommit(dialect, node), qt.IsFalse)
 			})
 		}
+	}
+}
+
+func TestOwnerTransactionRequirementDoesNotNeedBuiltinDialect(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		node ast.Node
+		want bool
+	}{
+		{"standalone", &ast.ExtensionStatement{Transaction: plangraph.TransactionForbidden}, true},
+		{"alter", &ast.AlterTableNode{Operations: []ast.AlterOperation{&ast.ExtensionAlterOperation{Transaction: plangraph.TransactionForbidden}}}, true},
+		{"list", &ast.StatementList{Statements: []ast.Node{&ast.ExtensionStatement{Transaction: plangraph.TransactionForbidden}}}, true},
+		{"required", &ast.ExtensionStatement{Transaction: plangraph.TransactionRequired}, false},
+		{"optional", &ast.ExtensionStatement{Transaction: plangraph.TransactionAllowed}, false},
+		{"unknown", &ast.ExtensionStatement{}, false},
+		{"nil", (*ast.ExtensionStatement)(nil), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(txrequire.NodeRequiresAutocommit("example.org/external", test.node), qt.Equals, test.want)
+			c.Assert(txrequire.Kind(test.node), qt.Equals, txrequire.KindUnsplittable)
+		})
 	}
 }

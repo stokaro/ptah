@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/planext"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -143,7 +144,8 @@ type ApplyOptions struct {
 }
 
 type ApplyPlan struct {
-	statements []string
+	statements   []string
+	transactions [][]plangraph.Transaction
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -246,7 +248,7 @@ func PlanApply(
 	if err := computation.undecided.Err(); err != nil {
 		return ApplyPlan{}, err
 	}
-	return ApplyPlan{statements: computation.executionStatements()}, nil
+	return ApplyPlan{statements: computation.executionStatements(), transactions: computation.executionTransactions()}, nil
 }
 
 // executionStatements is the DDL followed by the data. A row belongs in a
@@ -279,7 +281,8 @@ func (c applyComputation) dataIndex() int {
 // packaging (fingerprints) reuses the exact planning inputs instead of
 // re-reading the database.
 type applyComputation struct {
-	statements []string
+	statements   []string
+	transactions [][]plangraph.Transaction
 	// owned holds, position for position with statements, the verdict of
 	// the owned feature operation that rendered each statement, when
 	// [ApplyOptions.assessOwnedOperations] asked; a zero entry is a statement
@@ -474,18 +477,8 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 		}
-		planned := plan.PlannedStatements()
-		computation.statements = make([]string, 0, len(planned))
-		statementNodes := make([]int, 0, len(planned))
-		for _, statement := range planned {
-			computation.statements = append(computation.statements, statement.SQL)
-			statementNodes = append(statementNodes, statement.Node)
-		}
-		if opts.assessOwnedOperations {
-			computation.owned, err = safety.OwnerVerdicts(plan.Request.Nodes, statementNodes)
-			if err != nil {
-				return applyComputation{}, fmt.Errorf("assess owned operations: %w", err)
-			}
+		if err := computation.captureRenderedStatements(plan, opts); err != nil {
+			return applyComputation{}, err
 		}
 	}
 	// The data stage runs whether or not the schema changed. A release that
@@ -973,7 +966,7 @@ func PrepareApply(
 	}
 	return ApplyRuntimePlan{
 		runtime:   opts.Runtime,
-		plan:      ApplyPlan{statements: computation.executionStatements()},
+		plan:      ApplyPlan{statements: computation.executionStatements(), transactions: computation.executionTransactions()},
 		dryRun:    opts.DryRun,
 		conn:      conn,
 		txMode:    opts.TxMode,
@@ -1057,8 +1050,7 @@ func (p ApplyRuntimePlan) Execute(ctx context.Context) error {
 		return errors.New("schema apply execution requires database connection")
 	}
 
-	p.conn.SchemaWriter().SetDryRun(false)
-	return ApplySQL(ctx, p.conn, p.txMode, p.SQL())
+	return p.ExecuteSQL(ctx, p.SQL())
 }
 
 func ApplySQL(

@@ -95,6 +95,7 @@ func TestHostRetainsSourceNamesAndCompleteGraphMetadata(t *testing.T) {
 	c.Assert(step.Payload[0], qt.DeepEquals, ast.NewComment("owner note"))
 	alter := step.Payload[1].(*ast.AlterTableNode)
 	c.Assert(alter.Name, qt.Equals, `public."Orders.Log"`)
+	c.Assert(ast.OwnerTransactions(alter), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
 	payload := alter.Operations[0].(*ast.ExtensionAlterOperation).Payload.(*operation)
 	original.Payload.Payload.(*operation).Values[0] = "mutated"
 	reply.Contributions[0].Steps[0].Effects[0].Action = plangraph.Drop
@@ -136,7 +137,7 @@ func TestHostLowersStandaloneOperationsWithoutTableBindings(t *testing.T) {
 	selected := selectedRuntime{Runtime: must.Must(engine.New()), plan: func(context.Context, featureplan.Request) (featureplan.Result, error) { return reply, nil }}
 	result, err := featurehost.Plan(t.Context(), selected, request, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Contributions[0].Steps[0].Payload[1], qt.DeepEquals, &ast.ExtensionStatement{Payload: &operation{Values: []string{"captured"}}})
+	c.Assert(result.Contributions[0].Steps[0].Payload[1], qt.DeepEquals, &ast.ExtensionStatement{Payload: &operation{Values: []string{"captured"}}, Transaction: plangraph.TransactionForbidden})
 }
 
 func TestHostRetainsCommonRewriteReceiptsThroughLowering(t *testing.T) {

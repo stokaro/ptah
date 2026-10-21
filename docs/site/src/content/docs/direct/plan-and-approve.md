@@ -145,6 +145,12 @@ statement had stays beside the new one. Plan again to get fresh verdicts. The
 Atlas `.plan.hcl` format stores only the SQL, so a plan read back from it
 carries the text's verdict alone.
 
+Owner transaction requirements are stored in each JSON statement's
+`transactions` array. Apply and dev rehearsal reject a mode that contradicts a
+recorded requirement before executing the plan. A changed statement sequence
+needs a fresh owner assessment when the plan carries these requirements. Atlas
+HCL output refuses such a plan because it cannot preserve the requirements.
+
 `from_fingerprint` describes the schemas the database URL covers. A URL that
 names no schema covers every schema in the database; one pinned with
 `search_path` covers that schema alone. When the desired schema names a schema

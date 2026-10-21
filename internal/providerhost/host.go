@@ -116,7 +116,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	if err != nil {
 		return catalog.ProviderIdentity{}, err
 	}
-	// Version 4 is a fixed host-owned JSON projection. Repeated protocol fields
+	// Version 8 binds session capability capture and owner transaction enforcement
+	// to the host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
 	// database addresses are deliberately absent.
 	projection := struct {
@@ -129,7 +130,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		Models             []modelIdentity              `json:"models"`
 		YAMLKeys           []yamlKeyIdentity            `json:"yaml_keys"`
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
-	}{4,
+		Planning           []planningIdentityContract   `json:"planning"`
+	}{8,
 		t.engine.GetId(),
 		featureSet(t.host.description.GetFeatures()),
 		featureSet(t.engine.GetFeatures()),
@@ -137,7 +139,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		rules,
 		modelIdentities(t.engine.GetValueModels()),
 		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
-		comparisonContracts(t.engine.GetComparisons())}
+		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)

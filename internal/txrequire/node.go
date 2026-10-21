@@ -2,9 +2,11 @@ package txrequire
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/descriptortable"
 )
@@ -28,12 +30,20 @@ import (
 // refuses such a mix rather than splitting it (migration/generator: "cannot be
 // split automatically"), and that refusal depends on this answer.
 //
-// Which nodes leave the file is what the engine's descriptor states: a
+// Owner operations carry explicit transaction requirements, independent of
+// built-in dialect descriptors. A forbidden transaction routes the operation
+// out of the transactional file. This does not establish an ordering for
+// splitting a mixed plan; Kind keeps such operations unsplittable.
+//
+// For common operations, the engine's descriptor states: a
 // concurrent index build or drop where its grammar has one
 // (ConcurrentIndexes), an enum value where it commits before a use
 // (Migration.EnumValuesCommitFirst), and a constraint validation where the
 // online grammar is NOT VALID (OnlineAlter).
 func NodeRequiresAutocommit(dialect string, node ast.Node) bool {
+	if slices.Contains(ast.OwnerTransactions(node), plangraph.TransactionForbidden) {
+		return true
+	}
 	rules := autocommitRules.Get(dialect)
 	switch typed := node.(type) {
 	case *ast.IndexNode:

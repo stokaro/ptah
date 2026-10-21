@@ -13,8 +13,28 @@ import (
 )
 
 type operation struct {
-	Action string  `json:"action"`
-	To     *string `json:"to,omitempty"`
+	Action      string       `json:"action"`
+	Transaction string       `json:"transaction,omitempty"`
+	To          *string      `json:"to,omitempty"`
+	Column      *addedColumn `json:"column,omitempty"`
+}
+
+type addedColumn struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Nullable *bool  `json:"nullable"`
+}
+
+func (col *addedColumn) validate() error {
+	if col == nil || col.Name == "" || strings.ContainsRune(col.Name, 0) || col.Nullable == nil {
+		return fmt.Errorf("add-column requires a complete column")
+	}
+	switch col.Type {
+	case "INTEGER", "TEXT", "REAL", "BLOB":
+		return nil
+	default:
+		return fmt.Errorf("unsupported added column type")
+	}
 }
 
 func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
@@ -38,8 +58,18 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	if _, present := fields["to"]; present && op.Action != "rename" {
 		return nil, fmt.Errorf("only rename accepts a target")
 	}
+	if op.Transaction != "" && op.Transaction != "required" {
+		return nil, fmt.Errorf("unknown transaction requirement")
+	}
+	if _, present := fields["column"]; present && op.Action != "add-column" {
+		return nil, fmt.Errorf("only add-column accepts a column")
+	}
 	impact := protocol.ChangeSemantics_ADDITIVE
 	switch op.Action {
+	case "add-column":
+		if err := op.Column.validate(); err != nil {
+			return nil, err
+		}
 	case "create":
 		if op.To != nil {
 			return nil, fmt.Errorf("create cannot rename")
@@ -74,6 +104,14 @@ func (p *owner) NormalizeValues(ctx context.Context, r *protocol.NormalizeValues
 	for _, input := range r.GetValues() {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if input.GetRepresentation() == protocol.ValueInput_CHANGE {
+			value, err := normalizeChange(input)
+			if err != nil {
+				return nil, err
+			}
+			result.Values = append(result.Values, value)
+			continue
 		}
 		if input.GetRepresentation() == protocol.ValueInput_OPERATION {
 			value, err := normalize(input)
@@ -135,6 +173,15 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 	subject := value.GetValue().GetOwner()
 	name := quote(subject.GetName())
 	switch op.Action {
+	case "add-column":
+		if native.GetRole() != protocol.NativeOperation_ALTER_TABLE || !proto.Equal(native.GetParent(), subject) {
+			return "", fmt.Errorf("add-column requires its actual table parent")
+		}
+		sql := "ALTER TABLE " + name + " ADD COLUMN " + quote(op.Column.Name) + " " + op.Column.Type
+		if !*op.Column.Nullable {
+			sql += " NOT NULL"
+		}
+		return sql + ";", nil
 	case "rename":
 		if native.GetRole() != protocol.NativeOperation_ALTER_TABLE || !proto.Equal(native.GetParent(), subject) {
 			return "", fmt.Errorf("rename requires its actual table parent")

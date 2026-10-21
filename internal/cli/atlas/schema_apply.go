@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -663,6 +664,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			sqlText = edited
 			statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
 		}
+		if err := plan.PreflightExecution(sqlText); err != nil {
+			return "", err
+		}
 		formattedPlan := ""
 		if formatOutput {
 			var err error
@@ -713,13 +717,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "", nil
 		}
 
-		if opts.edit {
-			// The edited SQL replaces the prepared plan as the executable payload.
-			conn.SchemaWriter().SetDryRun(false)
-			if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
-				return "", fmt.Errorf("apply schema changes: %w", err)
-			}
-		} else if err := plan.Execute(cmd.Context()); err != nil {
+		if err := plan.ExecuteSQL(cmd.Context(), sqlText); err != nil {
 			return "", fmt.Errorf("apply schema changes: %w", err)
 		}
 		if formatOutput {
@@ -934,12 +932,13 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			}
 		}
 
-		// One statement list is derived here and used for everything that follows
-		// — display, policy validation, rehearsal, and execution — so the list
-		// that gets verified is exactly the list that runs. Splitting with the
-		// connection dialect matters for the MySQL family, whose backslash escapes
-		// change where a string literal ends.
-		statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
+		// Retain the saved boundaries for display, policy validation, rehearsal,
+		// and execution. Provider execution units must not be split by host SQL
+		// grammar after their requirements have been checked.
+		if err := plan.PreflightTransaction(txMode); err != nil {
+			return "", err
+		}
+		statements := plan.StatementSQL()
 		formattedPlan := ""
 		if opts.formatOutput {
 			formattedPlan, err = renderAtlasSchemaApplyFormat(opts, conn.Info().Dialect, statements)
@@ -968,6 +967,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			policy:              rehearseWhenUnverified,
 			format:              planFormat,
 			statements:          statements,
+			transactions:        plan.OwnerTransactions(),
 			desired:             desired,
 			exclude:             plan.Exclude,
 			txMode:              txMode,
@@ -991,7 +991,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		}
 
 		conn.SchemaWriter().SetDryRun(false)
-		if err := atlasschema.ApplyStatements(cmd.Context(), conn, txMode, statements); err != nil {
+		if err := plan.Execute(cmd.Context(), conn, txMode); err != nil {
 			return "", fmt.Errorf("apply schema changes: %w", err)
 		}
 		// The semantic end-state verification mirrors Atlas: always on whenever a
@@ -1020,12 +1020,13 @@ type rehearsePlanParams struct {
 	runtime engine.SchemaRuntime
 	// policy selects whether a plan whose fingerprint already verified may
 	// skip the replay.
-	policy     planRehearsalPolicy
-	format     atlasschema.PlanFormat
-	statements []string
-	desired    *schemamodel.Database
-	exclude    []string
-	txMode     migrator.MigrationTxMode
+	policy       planRehearsalPolicy
+	format       atlasschema.PlanFormat
+	statements   []string
+	transactions [][]plangraph.Transaction
+	desired      *schemamodel.Database
+	exclude      []string
+	txMode       migrator.MigrationTxMode
 	// devURL is the operator-supplied dev database, empty when none was given.
 	devURL string
 	// targetURL is the database the plan applies to; the simulation refuses a
@@ -1165,6 +1166,7 @@ func rehearseAtlasSchemaApplyPlan(
 		DesiredURLs:         params.desiredURLs,
 		Exclude:             params.exclude,
 		TxMode:              params.txMode,
+		OwnerTransactions:   params.transactions,
 		DevServerDisposable: params.devServerDisposable,
 	})
 }

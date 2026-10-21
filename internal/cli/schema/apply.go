@@ -571,6 +571,9 @@ func runSchemaApplyOnLockedSession(
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
+	if err := plan.PreflightExecution(sqlText); err != nil {
+		return "", err
+	}
 	info := conn.Info()
 	if err := atlasschema.PreflightApplyTransaction(info.Dialect, info.Capabilities, txMode, statements); err != nil {
 		return "", err
@@ -597,13 +600,7 @@ func runSchemaApplyOnLockedSession(
 	}
 
 	run.evidence.Dispatched = true
-	if opts.edit {
-		// The edited SQL replaces the prepared plan as the executable payload.
-		conn.SchemaWriter().SetDryRun(false)
-		if err := atlasschema.ApplySQL(ctx, conn, txMode, sqlText); err != nil {
-			return "", fmt.Errorf("apply schema changes: %w", err)
-		}
-	} else if err := plan.Execute(ctx); err != nil {
+	if err := plan.ExecuteSQL(ctx, sqlText); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil
@@ -720,6 +717,9 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
+	if err := plan.PreflightTransaction(txMode); err != nil {
+		return "", err
+	}
 	info := conn.Info()
 	if err := atlasschema.PreflightApplyTransaction(
 		info.Dialect, info.Capabilities, txMode, plan.StatementSQL(),
@@ -736,7 +736,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 
 	conn.SchemaWriter().SetDryRun(false)
 	run.evidence.Dispatched = true
-	if err := atlasschema.ApplySQL(ctx, conn, txMode, plan.SQL()); err != nil {
+	if err := plan.Execute(ctx, conn, txMode); err != nil {
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	return atlasschema.ApplyOutcomeApplied, nil

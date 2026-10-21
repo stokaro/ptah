@@ -11,6 +11,8 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
+
+	"ptah.run/core/platform/capability"
 )
 
 func modelIdentityTarget() *target {
@@ -152,4 +154,20 @@ func TestModelsRefuseEngineDependentOmissionLabels(t *testing.T) {
 			c.Assert(target.host.initializeModels(), qt.ErrorIs, provider.ErrProtocol)
 		})
 	}
+}
+
+func TestSessionCapabilitiesPreserveEstablishedFalseAndRejectUnknownNames(t *testing.T) {
+	c := qt.New(t)
+	target := modelIdentityTarget()
+	remote := &protocol.Session{Identifiers: proto.CloneOf(target.engine.Identifiers), Capabilities: map[string]bool{"transactional_ddl": false}}
+	info, err := target.sessionInfo(remote)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Capabilities.Established(capability.TransactionalDDL), qt.IsTrue)
+	c.Assert(info.Capabilities.Has(capability.TransactionalDDL), qt.IsFalse)
+	c.Assert(info.Capabilities.Established(capability.ForeignKeys), qt.IsFalse)
+	remote.Capabilities["transactional_ddl"] = true
+	c.Assert(info.Capabilities.Has(capability.TransactionalDDL), qt.IsFalse)
+	remote.Capabilities["unknown_capability"] = false
+	_, err = target.sessionInfo(remote)
+	c.Assert(err, qt.ErrorMatches, ".*provider session capabilities.*")
 }

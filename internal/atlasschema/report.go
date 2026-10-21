@@ -6,6 +6,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/internal/providerdiagnostic"
+	"ptah.run/internal/txrequire"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -94,8 +95,8 @@ const (
 	// RefusalLockTimeout means another session held the schema apply lock
 	// longer than --lock-timeout allowed.
 	RefusalLockTimeout RefusalCode = "lock-timeout"
-	// RefusalTransactionPreflight means a statement cannot run inside the
-	// transaction the transaction mode asks for.
+	// RefusalTransactionPreflight means a statement conflicts with the
+	// requested transaction mode.
 	RefusalTransactionPreflight RefusalCode = "transaction-preflight"
 	// RefusalSimulationFailed means the plan failed its rehearsal on the
 	// --dev-url database, and the command did not send it to the target.
@@ -312,6 +313,7 @@ func refusalFor(err error) *Refusal {
 	var stale *StalePlanError
 	var fenced *ProtectedTableError
 	var preflight *TransactionPreflightError
+	var ownerRequirement *txrequire.OwnerRequirementError
 	var simulation *SimulationError
 	switch {
 	case errors.As(err, &stale):
@@ -329,7 +331,7 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalProtectedTable, Tables: fenced.Tables}
 	case IsLockTimeout(err):
 		return &Refusal{Code: RefusalLockTimeout}
-	case errors.As(err, &preflight):
+	case errors.As(err, &preflight), errors.As(err, &ownerRequirement):
 		return &Refusal{Code: RefusalTransactionPreflight}
 	case errors.As(err, &simulation):
 		return &Refusal{Code: RefusalSimulationFailed}

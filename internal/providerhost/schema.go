@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/planext"
@@ -37,6 +38,7 @@ func (h *Host) Provider() engine.Provider {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())
 		selected.registerComparisons(&result)
+		selected.registerPlanning(&result)
 		if slices.Contains(h.description.GetFeatures(), provider.ConvertValuesFeature) {
 			if kinds := h.conversionKinds(declared.GetId()); len(kinds) > 0 {
 				result.Conversions = append(result.Conversions, engine.Conversion{Target: declared.GetId(), Kinds: kinds, Service: selected})
@@ -49,7 +51,9 @@ func (h *Host) Provider() engine.Provider {
 func (t *target) registration() engine.Target {
 	return engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t,
 		SchemaRendering: t, Validation: t, Preparation: t, Creations: t, Splitter: t,
-		Planner: func(options planext.Options) planext.Planner { return commonPlanner{options: options} },
+		Planner: func(options planext.Options) planext.Planner {
+			return commonPlanner{options: options, target: t.engine.GetId(), assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
+		},
 	}
 }
 

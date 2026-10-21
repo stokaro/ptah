@@ -244,7 +244,7 @@ func atlasPlanTestPlanApplier(
 				return err
 			}
 		}
-		statements := atlasschema.SplitApplyStatements(plan.SQL(), conn.Info().Dialect)
+		statements := plan.StatementSQL()
 		if len(statements) == 0 {
 			return fmt.Errorf("plan file %s carries no statement", path)
 		}
@@ -253,7 +253,7 @@ func atlasPlanTestPlanApplier(
 			return err
 		}
 		conn.SchemaWriter().SetDryRun(false)
-		return atlasschema.ApplyStatements(ctx, conn, txMode, statements)
+		return plan.Execute(ctx, conn, txMode)
 	}
 }
 
