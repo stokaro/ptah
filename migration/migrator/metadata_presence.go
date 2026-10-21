@@ -33,6 +33,14 @@ func (m *Migrator) MetadataPresent(ctx context.Context) (bool, error) {
 	if err := m.validateMetadataInputs(); err != nil {
 		return false, err
 	}
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return false, err
+	}
+	if store != nil {
+		snapshot, err := store.Read(ctx, m.providerHistoryTable())
+		return snapshot.Exists, err
+	}
 	return m.migrationsTableExists(ctx)
 }
 
@@ -66,6 +74,14 @@ func (m *Migrator) validateMetadataInputs() error {
 // layout has one shape, and this reports false for it.
 func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
 	if err := m.validateMetadataInputs(); err != nil {
+		return false, err
+	}
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return false, err
+	}
+	if store != nil {
+		_, err := store.Read(ctx, m.providerHistoryTable())
 		return false, err
 	}
 	// This one selects from the table itself rather than from the catalog, so

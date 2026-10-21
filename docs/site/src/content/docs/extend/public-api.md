@@ -807,6 +807,27 @@ opens an independent handle, preserves its provider identity, schema scope, and 
 and closes it after the callback, including on failure. Closing the scoped
 connection inside that callback leaves cleanup with `WithSession`.
 
+Use `DatabaseConnection.HistoryStore` to access native revision storage on the
+active session or transaction. `HistoryTable` keeps schema, table, and native
+or Atlas representation separate. `HistoryRecord` preserves exact revision
+identity, progress, hashes, timestamps, direction, and diagnostics. Reads return
+a complete `HistorySnapshot` or an error, including for an oversized history.
+
+`Prepare` validates or creates storage and refuses incompatible layouts.
+`CompareAndSwap` atomically compares the complete expected record before a
+replacement or deletion. A missing expected record inserts only if absent.
+Within a transaction, success confirms execution; commit establishes durability.
+A lost acknowledgment leaves the outcome unknown and never permits replay.
+
+An executor installed by `WithExecutor` must expose its own transaction-bound
+history store. A missing service is refused, without switching to the parent
+session's unwrapped store. The subprocess adapter prevents commit after a
+dispatched history failure. SQL-backed connections retain their SQL storage path.
+
+The common migrator can read provider history for status. Versioned execution,
+provider lock ownership, and official-engine qualification remain required in
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
+
 Native sessions do not expose `database/sql` handles. Raw queries, raw execution,
 SQL transactions, and isolated SQL-query callbacks return
 `ptaherr.ErrUnsupportedFeature`. Schema operations use the selected reader and

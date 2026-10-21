@@ -637,3 +637,17 @@ not establish transactional DDL, and Spanner DDL remains unwrapped.
 The SDK and independent fixture establish this boundary. Migrator integration,
 provider lock primitives, and qualification of the official engines remain
 required before #4204 is complete.
+
+## Bind host history access to the active executor
+
+`DatabaseConnection.HistoryStore` exposes neutral host records without importing
+SDK transport types into the migrator. A native session supplies its bound store.
+An active transaction must supply its own store; absence cannot fall back to
+unwrapped writes on the parent session. The subprocess adapter serializes history
+with execution and finish, and a dispatched history failure prevents commit.
+
+The common migrator reads provider history through the same ordering, progress,
+identity, and dirty-state rules as SQL-backed history. Dry-run initialization
+reads storage without creating it. Providers validate layout and ownership;
+the host does not send SQL catalog queries or upgrade statements to native
+sessions. Versioned writes and lock ownership remain unfinished under #4204.

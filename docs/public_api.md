@@ -4272,6 +4272,28 @@ connections. Unregistered schemes cannot select bundled drivers, and a failed
 provider connection never falls back to one. `NativeTargets` returns a private
 copy of the scheme-to-engine mapping without opening a session.
 
+`dbschema.DatabaseConnection.HistoryStore` exposes typed revision storage on a
+native session or its active transaction. SQL-backed connections return no
+native store and retain their SQL storage path. A native connection without a
+history service refuses the operation. An executor installed by `WithExecutor`
+must provide its own transaction-bound store; the connection never substitutes
+the parent session's unwrapped store.
+
+`HistoryTable` names the schema, table, and `NativeHistory` or `AtlasHistory`
+representation. `HistoryRecord` preserves exact identity and stored progress,
+source hashes, timestamps, direction, and diagnostics. `HistorySnapshot`
+distinguishes a missing store from an empty complete one. `HistoryStore.Read`
+refuses incomplete results. `Prepare` validates or creates storage without
+upgrading an incompatible layout. `CompareAndSwap` atomically compares the
+entire expected record before replacement or deletion; a missing expected
+record means insert only if absent. Lost acknowledgments never permit replay.
+
+The subprocess adapter shares the transaction handle with schema execution.
+A dispatched history failure prevents commit. The common migrator reads these
+records through its existing status, progress, and identity checks. Versioned
+execution, session-owned locks, and official-provider qualification remain
+required work in #4204.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,

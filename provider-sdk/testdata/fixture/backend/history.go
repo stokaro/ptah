@@ -103,8 +103,12 @@ func (p *Provider) PrepareHistory(ctx context.Context, request *protocol.Prepare
 			return nil, err
 		}
 	}
-	if _, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable()); err != nil {
+	exists, err = checkHistoryTable(ctx, runner, table, request.GetScope().GetTable())
+	if err != nil {
 		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("fixture history store disappeared during preparation")
 	}
 	return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_APPLIED), nil
 }

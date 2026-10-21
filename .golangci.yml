@@ -241,6 +241,7 @@ linters:
       # in both directions, and asserts the linter above is enabled.
       packages:
         - database/sql
+        - example.com/ptah-fixture-provider/backend
         - ptah.run/dbschema
         - ptah.run/internal/atlasscript
         - ptah.run/internal/connector

@@ -1084,6 +1084,14 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 		return nil
 	}
 
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return m.initializeProviderHistory(ctx, store)
+	}
+
 	// Before any statement, including the dry run's inspection: a named engine
 	// the revision table cannot be is a refusal, not a table.
 	if err := revisionEngineRefusal(m.connectionDialect(), m.migrationsEngine); err != nil {
@@ -1342,15 +1350,7 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 // Every command reads the table through here, so each one refuses that
 // history rather than answering from its own reading of it.
 func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error) {
-	revisions, err := queryMigrationRows(
-		ctx,
-		m,
-		(*Migrator).getRevisionsSQL,
-		m.scanRevisionRow,
-		"failed to query migration revisions",
-		"failed to scan migration revision",
-		"error iterating migration revisions",
-	)
+	revisions, err := m.readRevisionRows(ctx)
 	if err != nil {
 		return nil, err
 	}

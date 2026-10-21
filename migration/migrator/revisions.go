@@ -1231,8 +1231,19 @@ func (m *Migrator) forceAppliedConflictClause() string {
 // exactly the recovery run this guard exists to send the operator towards
 // (#966).
 func (m *Migrator) dirtyRevision(ctx context.Context) (*MigrationRevision, error) {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		revisions, err := m.GetRevisions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return firstDirtyRevision(revisions), nil
+	}
 	var revision *MigrationRevision
-	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+	err = m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
 		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getDirtyRevisionSQL())
 		args := []any{migrationStateApplied}
 		if scoped.revisionTableFormat.isAtlas() {
@@ -1257,8 +1268,16 @@ func (m *Migrator) getMigrationRevision(ctx context.Context, migration *Migratio
 }
 
 func (m *Migrator) getRevisionByVersionArg(ctx context.Context, version any) (*MigrationRevision, error) {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		return m.providerRevisionByVersion(ctx, version)
+	}
+
 	var revision *MigrationRevision
-	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+	err = m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
 		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getRevisionSQL())
 		scanned, err := scoped.scanRevisionRow(
 			scoped.conn.QueryRowContext(ctx, query, version),
