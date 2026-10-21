@@ -5,9 +5,12 @@ package providerhost
 
 import (
 	"context"
+	"testing"
+
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
@@ -18,7 +21,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
-	"testing"
 )
 
 func TestTransactionsRequireSelectedEngineAndGlobalService(t *testing.T) {

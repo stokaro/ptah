@@ -88,6 +88,7 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	}
 	if err := ctx.Err(); err != nil {
 		rollbackErr := tx.Rollback()
+		record.outcome = protocol.TransactionResult_ROLLED_BACK
 		if rollbackErr != nil {
 			record.outcome = protocol.TransactionResult_UNKNOWN
 		}
