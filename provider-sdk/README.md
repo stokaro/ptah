@@ -36,6 +36,8 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
+| `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
+| `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
 Session capabilities preserve presence: an explicit `false` is an established
@@ -64,6 +66,31 @@ provider crash reports `ErrOutcomeUnknown`. The SDK does not reconnect or replay
 the request. The caller must inspect actual state before deciding how to proceed.
 Cancellation before dispatch sends nothing. Killing a provider does not prove
 that a database transaction rolled back.
+
+## Session transactions
+
+`sessions.transactions` advertises the optional transaction service and requires
+`units.execute`. Each supporting engine also declares `sessions.transactions`.
+A service declaration does not establish transactional DDL; the opened session
+must report that capability separately.
+
+The caller chooses a transaction ID before `BeginTransaction`. The provider
+reserves it before opening a database transaction and binds it to that session.
+`Execute.transaction_id` selects the handle; an empty ID selects unwrapped
+execution. `APPLIED` inside a transaction confirms execution, not commit.
+
+`FinishTransaction` accepts commit or rollback and reports `COMMITTED`,
+`ROLLED_BACK`, `NOT_STARTED`, or `UNKNOWN`. A rollback of an unused ID fences a
+late begin. The provider serializes begin, execution, and finish, and retains
+terminal results until session close. Repeated finish requests return the stored
+state without repeating a database operation. Closing the session rolls back
+unfinished transactions and prevents later begin or execution.
+
+A malformed or lost begin reply triggers bounded rollback of the exact requested
+handle. Cleanup failures remain visible. A lost finish reply remains unknown;
+the SDK never retries the write. Confirmed opposite states return both the result
+and `ErrExecution`. Invalid replies expose no result and wrap `ErrOutcomeUnknown`.
+Providers must keep transaction lifetime independent of the begin RPC context.
 
 ## Trust and process lifetime
 
@@ -244,7 +271,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 14 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 15 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -304,7 +331,7 @@ fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
-adapters, complete native planning, transactions, and history
+adapters, complete native planning, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 
 ## Observed model coverage
@@ -382,7 +409,7 @@ Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
 through this contract. Contextual feature planning uses the service below.
-Transaction and history services remain required before official-engine extraction.
+History services and official-engine transaction qualification remain required before extraction.
 
 ## Contextual feature planning
 
@@ -433,8 +460,8 @@ test caller executes without a transaction.
 
 Owner transaction requirements survive AST lowering. A forbidden transaction
 reaches migration classification. A mixed plan that the generator cannot split
-safely is refused. The external planner refuses a required transaction because
-provider transaction sessions are not implemented.
+safely is refused. The external planner accepts a required transaction only when
+the selected engine advertises the service and transactional DDL is established.
 
 Prepared schema apply, saved JSON plans, and dev rehearsal check owner
 requirements before executing any statement. The JSON plan preserves each
@@ -442,6 +469,14 @@ statement's requirements. Editing assessed SQL needs a fresh owner assessment;
 Atlas HCL output refuses metadata it cannot preserve. Session capability facts
 retain the difference between an established false value and an unknown value.
 
-Provider transaction sessions, raw SQL assessment, history services, and official
-provider extraction remain part of #4204.
+Raw SQL assessment, history services, and official provider extraction remain
+part of #4204.
 These tests do not qualify YDB extraction or the migration history backend.
+
+The host schema writer binds each execution to its negotiated transaction and
+refuses commit after a failed or uncertain statement. Commit and rollback keep
+confirmed terminal results. A lost commit reply remains unknown until an explicit
+cleanup request or inspection establishes state. Rollback can run after caller
+cancellation. The independent transaction fixture checks real commit, rollback,
+session cleanup, handle isolation, late-begin fencing, and native schema apply
+with `file` and `all` transaction modes.

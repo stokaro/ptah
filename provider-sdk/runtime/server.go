@@ -46,6 +46,7 @@ type Server struct {
 	Inspector       provider.Inspector
 	Renderer        provider.Renderer
 	Executor        provider.Executor
+	Transactions    provider.Transactions
 	SQLAnalyzer     provider.SQLAnalyzer
 	ValueNormalizer provider.ValueNormalizer
 	SourceDecoder   provider.SourceDecoder
@@ -69,6 +70,7 @@ func (s Server) Validate() error {
 		{provider.InspectFeature, !nilService(s.Inspector)},
 		{provider.RenderFeature, !nilService(s.Renderer)},
 		{provider.ExecuteFeature, !nilService(s.Executor)},
+		{provider.TransactionsFeature, !nilService(s.Transactions)},
 		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},
 		{provider.NormalizeValuesFeature, !nilService(s.ValueNormalizer)},
 		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
@@ -213,6 +215,10 @@ func (s *serverAdapter) Render(ctx context.Context, request *protocol.RenderRequ
 }
 
 func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
+	request = proto.CloneOf(request)
+	if request.GetTransactionId() != "" && nilService(s.server.Transactions) {
+		return nil, status.Error(codes.Unimplemented, "transactions are unavailable")
+	}
 	if s.server.Executor == nil {
 		return nil, status.Error(codes.Unimplemented, "execution is unavailable")
 	}

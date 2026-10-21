@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/planner/featurehost"
@@ -37,12 +38,12 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	if err != nil {
 		return nil, err
 	}
-	// The external session currently executes unwrapped units and has no real
-	// transaction handle. Retaining metadata alone cannot satisfy a requirement.
+	// A required transaction needs a negotiated engine service as well as
+	// established transactional DDL. Metadata alone cannot provide atomicity.
 	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
-			if step.Transaction == plangraph.TransactionRequired {
-				return nil, fmt.Errorf("%w: provider operation %s/%s requires a transaction; provider transaction sessions are not implemented",
+			if step.Transaction == plangraph.TransactionRequired && (!p.transactions || !p.options.Capabilities.Has(capability.TransactionalDDL)) {
+				return nil, fmt.Errorf("%w: provider operation %s/%s requires a transaction; transaction sessions and transactional DDL must be established",
 					ptaherr.ErrUnsupportedFeature, step.ID.Owner, step.ID.Name)
 			}
 		}

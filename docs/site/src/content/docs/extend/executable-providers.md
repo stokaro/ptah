@@ -143,9 +143,12 @@ ptah schema apply --provider-config providers.json \
   --tx-mode none --auto-approve
 ```
 
-The experimental adapter does not provide transactions. `--tx-mode none` permits
-committed prefixes; a later failure does not undo earlier operations. Other
-transaction modes are refused before execution. Prepared apply and saved JSON
+A provider can support `--tx-mode file` and `--tx-mode all` by advertising
+transaction sessions for the selected engine and establishing transactional DDL
+on the opened session. Otherwise these modes are refused before execution.
+`--tx-mode none` permits committed prefixes; a later failure does not undo
+earlier operations. A lost commit reply reports an unknown outcome and is never
+automatically retried. Prepared apply and saved JSON
 plans preserve owner transaction requirements and refuse a conflicting mode
 before sending any statement. Dev rehearsal checks the same requirements.
 Editing SQL with owner transaction requirements needs a fresh owner assessment;

@@ -1102,11 +1102,10 @@ func applyStatements(
 			return fmt.Errorf("begin schema apply transaction: %w", err)
 		}
 		if err := executeApplyStatements(ctx, tx, statements); err != nil {
-			_ = tx.Rollback()
-			return err
+			return errors.Join(err, tx.Rollback())
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit schema apply transaction: %w", err)
+			return fmt.Errorf("commit schema apply transaction: %w", errors.Join(err, tx.Rollback()))
 		}
 		return nil
 	default:

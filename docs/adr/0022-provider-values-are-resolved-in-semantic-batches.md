@@ -169,7 +169,8 @@ Loading it requires the selected owner to reconstruct the semantic projection.
 Change models enter the shared comparison runtime through the contextual
 service below. Operation models retain captured safety facts and use the
 selected target renderer. Native planning uses the shared graph described below.
-Engine transaction and history services still require application adapters.
+Engine history services still require application adapters. Transaction
+qualification remains specific to each engine.
 
 ## Cancellation during source interpretation
 
@@ -358,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 14 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 15 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -478,7 +479,7 @@ changed and unchanged values, explicit actions, unknown coverage, exclusions,
 and change capture and decoding. It establishes global and subject knowledge
 only; bounded regions remain undecided in that synthetic owner. It does not
 execute retention changes or qualify any official database engine. Rewrite and
-execution qualification, transaction and history services, full source support,
+execution qualification, history services, full source support,
 and official-engine extraction remain part of #4204.
 
 
@@ -511,7 +512,7 @@ round trips prove that operation assessments are recomputed. This exercises
 operation transport and rendering. The contextual planning adapter described
 below binds receipts, dependencies, and effects for the selected runtime. The
 common migration planner dispatches the service through the shared graph.
-Transaction and history services remain separate work before YDB extraction.
+History services and YDB transaction qualification remain required before extraction.
 
 
 ### Contextual planning transport
@@ -554,12 +555,12 @@ graph instead of moving the source operation.
 Owner transaction requirements survive lowering to AST envelopes. Migration
 classification recognizes a forbidden transaction without a built-in dialect
 profile. An unsafe split of common and native work remains a refusal. The
-external planner refuses required transactions while provider sessions have no
-transaction service. Prepared schema apply, saved JSON plans, and dev rehearsal
+external planner refuses required transactions unless the selected engine
+negotiates transaction sessions and establishes transactional DDL. Prepared schema apply, saved JSON plans, and dev rehearsal
 retain requirements in statement order and refuse a conflicting mode before
 executing any statement. An edit to assessed SQL needs a fresh owner assessment.
-Atlas HCL output refuses requirements it cannot preserve. Provider transaction
-sessions and raw SQL assessment remain unfinished.
+Atlas HCL output refuses requirements it cannot preserve. Raw SQL assessment
+remains unfinished.
 
 An independent SDK-only fixture exercises this production planner, shared graph,
 rendering, explicit unwrapped execution, and inspection. It checks unchanged
@@ -582,3 +583,29 @@ Both transport boundaries validate newly opened sessions. Invalid replies return
 no usable handle and trigger an attempt to close any returned handle. Returned
 maps are independent snapshots, so later owner mutation cannot change captured
 server facts.
+
+### Transaction ownership and uncertain completion
+
+`sessions.transactions` negotiates session-bound begin and finish RPCs. The
+caller chooses each transaction ID before dispatch so a failed begin reply can
+trigger cleanup of the exact handle. A provider reserves the ID before opening
+the database transaction. A rollback of an unused ID fences a delayed begin.
+Begin, execution, finish, and session close serialize within that ownership.
+
+Execution carries the transaction ID. Its applied count confirms statements
+executed inside the transaction, not a commit. Finish reports committed, rolled
+back, not started, or unknown. Confirmed terminal results survive until session
+close; duplicate finish calls cannot repeat the database operation. Transaction
+lifetime belongs to the session rather than the begin RPC context. Session close
+rolls back unfinished handles and prevents later begin or execution.
+
+The host schema writer requires both the selected engine's service advertisement
+and established transactional DDL. An available data transaction does not prove
+atomic schema changes. Failed execution prevents commit; bounded rollback remains
+available after cancellation. The host never retries an uncertain commit.
+
+An independent SQLite-backed provider exercises actual schema commit, rollback,
+failed-prefix rollback, lost commit replies, concurrent begin cleanup, session
+isolation, and native schema apply. This establishes the adapter contract, not
+YDB, DuckDB, or Spanner qualification. History persistence still needs a typed
+service that uses these same session and transaction handles.

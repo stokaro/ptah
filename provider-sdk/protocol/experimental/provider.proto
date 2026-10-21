@@ -20,6 +20,8 @@ service Provider {
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
   rpc Execute(ExecuteRequest) returns (Execution);
+  rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
+  rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
 }
 
 message Empty {}
@@ -218,6 +220,41 @@ message ExecuteRequest {
   // Correlation only. A request ID does not promise exactly-once execution.
   string request_id = 2;
   repeated Unit units = 3;
+  // Empty executes outside an explicit transaction. Otherwise the handle must
+  // belong to session_id and remain active. APPLIED confirms execution within
+  // that transaction, not a commit.
+  string transaction_id = 4;
+}
+
+// The caller chooses the handle before dispatch, so a lost begin reply does not
+// prevent explicit rollback. A repeated begin never creates another transaction.
+message BeginTransactionRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+}
+message Transaction {
+  string session_id = 1;
+  string id = 2;
+}
+message FinishTransactionRequest {
+  enum Action { ACTION_UNSPECIFIED = 0; COMMIT = 1; ROLLBACK = 2; }
+  string session_id = 1;
+  string transaction_id = 2;
+  Action action = 3;
+}
+message TransactionResult {
+  enum Outcome {
+    UNKNOWN = 0;
+    COMMITTED = 1;
+    ROLLED_BACK = 2;
+    // The handle never acquired a transaction and is fenced against a late
+    // begin. This is a successful rollback, but not a successful commit.
+    NOT_STARTED = 3;
+  }
+  Outcome outcome = 1;
+  string diagnostic_code = 2;
+  // Provider-authored, redacted text. Never include credentials or raw URLs.
+  string message = 3;
 }
 message Execution {
   enum Outcome {

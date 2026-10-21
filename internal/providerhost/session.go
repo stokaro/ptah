@@ -94,12 +94,6 @@ func (s *session) DropAllTables(context.Context) error {
 	}
 	return unsupported("database cleanup")
 }
-func (s *session) BeginTransaction(context.Context) (catalog.SchemaTransaction, error) {
-	if s.IsDryRun() {
-		return dryTransaction{}, nil
-	}
-	return nil, unsupported("transactions")
-}
 func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -113,15 +107,16 @@ func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error
 	if s.IsDryRun() {
 		return nil
 	}
-	result, err := s.target.host.client.Execute(ctx, &protocol.ExecuteRequest{
-		SessionId: s.remote.GetId(), RequestId: rand.Text(),
+	return s.execute(ctx, "", sql)
+}
+
+func (s *session) execute(ctx context.Context, transactionID, sql string) error {
+	_, err := s.target.host.client.Execute(ctx, &protocol.ExecuteRequest{
+		SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID,
 		Units: []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: sql}}},
 	})
 	if err != nil {
 		return fmt.Errorf("provider execution failed; inspect the database before retrying: %w", err)
-	}
-	if result.GetOutcome() != protocol.Execution_APPLIED {
-		return fmt.Errorf("provider execution outcome is %s (%d confirmed units); inspect the database before retrying", result.GetOutcome(), result.GetAppliedCount())
 	}
 	return nil
 }

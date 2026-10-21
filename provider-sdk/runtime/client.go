@@ -203,6 +203,12 @@ func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*
 // outcome. A request canceled before dispatch sends nothing. Request IDs do not
 // enable replay, and this method performs no application-level retries.
 func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
+	request = proto.CloneOf(request)
+	if request.GetTransactionId() != "" {
+		if err := c.requireTransactions(); err != nil {
+			return nil, err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

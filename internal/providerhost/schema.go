@@ -52,7 +52,8 @@ func (t *target) registration() engine.Target {
 	return engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t,
 		SchemaRendering: t, Validation: t, Preparation: t, Creations: t, Splitter: t,
 		Planner: func(options planext.Options) planext.Planner {
-			return commonPlanner{options: options, target: t.engine.GetId(), assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
+			return commonPlanner{options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
+				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}
 }
