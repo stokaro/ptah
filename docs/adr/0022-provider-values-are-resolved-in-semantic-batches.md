@@ -650,7 +650,7 @@ The common migrator reads provider history through the same ordering, progress,
 identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
-sessions. Ordinary revision writes use the same typed store. Set, repair, checksum reconciliation,
+sessions. Ordinary revision writes use the same typed store. Set, logging,
 lock ownership, and default versioned CLI integration remain unfinished under #4204.
 
 ## Preserve uncertain outcomes across the host boundary
@@ -710,7 +710,7 @@ Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
 complete versioned workflow. The fixture does not yet implement Atlas storage.
-Set, repair, checksum reconciliation, logging, tags, locking, and Atlas
+Set, logging, tags, locking, and Atlas
 storage qualification remain required before this history slice can merge.
 
 ## Keep history transactions independent of transactional DDL
@@ -734,3 +734,34 @@ baseline restrictions, and lost mutation or commit replies. A lost reply on the
 last revision rolls back the earlier revisions too. This proves the host path;
 YDB storage, lock ownership, and official-engine qualification remain required
 under #4204.
+
+## Keep repair and checksum policy in the common migrator
+
+Native repair replaces the exact stored record after the common migrator has
+checked direction, committed progress, source hashes, and recovery options.
+Resuming an unknown statement outcome is refused even with force. An operator
+can complete manual recovery without replaying SQL, or resume a confirmed
+prefix and let the common executor record the remaining progress. A completed
+rollback removes its revision. Lost write acknowledgments remain unknown;
+repair does not repeat the write or mark an uncertain result successful.
+
+Checksum reconciliation uses the same projection planner as SQL-backed history.
+The provider path reads and validates a complete snapshot inside a data
+transaction, plans the replacement hashes, and compares each whole prior record.
+A failure rolls back the batch. A commit error retains uncertainty while cleanup
+releases a transaction that may still be active. Migration bodies already
+completed before reconciliation are not undone or replayed by this cleanup.
+
+Independent process checks cover resumed up and down repair, manual recovery,
+force restrictions, lost repair receipts, a late checksum refusal, and lost
+checksum commit requests and replies. They use native storage with Atlas-format
+source directories for running-hash qualification. They do not qualify Atlas
+storage itself. Set, logs, tags, locks, default CLI integration, and official
+engine qualification remain part of #4204.
+
+A prior applied-time cutoff is evidence for the stored hashes, not a unique
+history identifier. Several cutoffs can prove the same complete stored cohort
+when later revisions retain their application-time hashes. The shared verifier
+accepts any complete proof and still checks every row. Partial reconciliation
+and edited source hashes remain refusals. Deterministic SQL-backed and native
+process tests cover recovery after an atomic reconciliation rollback.

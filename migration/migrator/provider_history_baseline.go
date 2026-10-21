@@ -2,31 +2,17 @@ package migrator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/revisiontable"
 )
 
 func (m *Migrator) baselineProviderMigrations(ctx context.Context, store dbschema.HistoryStore, migrations []*Migration, opts BaselineOptions) error {
-	owner, ok := store.(dbschema.HistoryTransactor)
-	if !ok {
-		return fmt.Errorf("%w: baseline requires provider history transactions", ptaherr.ErrUnsupportedFeature)
-	}
-	tx, err := owner.BeginHistoryTransaction(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to begin baseline transaction: %w", err)
-	}
-	if err := m.writeProviderBaseline(ctx, tx, migrations, opts); err != nil {
-		return errors.Join(err, tx.Rollback())
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit baseline transaction: %w", errors.Join(err, tx.Rollback()))
-	}
-	return nil
+	return withProviderHistoryTransaction(ctx, store, "baseline", func(tx dbschema.HistoryStore) error {
+		return m.writeProviderBaseline(ctx, tx, migrations, opts)
+	})
 }
 
 func (m *Migrator) writeProviderBaseline(ctx context.Context, store dbschema.HistoryStore, migrations []*Migration, opts BaselineOptions) error {

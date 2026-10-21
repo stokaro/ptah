@@ -3584,6 +3584,9 @@ func (m *Migration) atlasOperatorVersion() string {
 }
 
 func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migration) error {
+	if handled, err := m.forceAppliedProviderRevision(ctx, migration); handled {
+		return err
+	}
 	if m.revisionsMutate() {
 		revision, err := m.getMigrationRevision(ctx, migration)
 		if err != nil {

@@ -315,6 +315,9 @@ func atlasAppliedProjectionHashes(
 // reconciliation rollback from a partially committed or edited history. Rows
 // applied after the candidate cutoff must retain the projection from their own
 // application-time group; a current hash alone is not historical evidence.
+// More than one cutoff can prove the same stored history: later rows may still
+// carry their application-time hashes. Any complete proof suffices because the
+// requested reconciliation target is the same current projection for every row.
 func atlasCoherentHistoricalProjectionMatches(
 	migrations []*Migration,
 	revisionsByKey map[string]MigrationRevision,
@@ -353,7 +356,6 @@ func atlasCoherentHistoricalProjectionMatches(
 		projectionsByAppliedAt[cutoff.UTC().Format(time.RFC3339Nano)] = projection
 	}
 
-	matches := 0
 	for _, previousProjection := range projections {
 		if atlasStoredChecksumsMatchProjectionCohort(
 			migrations,
@@ -362,10 +364,10 @@ func atlasCoherentHistoricalProjectionMatches(
 			currentProjection,
 			projectionsByAppliedAt,
 		) {
-			matches++
+			return true
 		}
 	}
-	return matches == 1
+	return false
 }
 
 func atlasStoredChecksumsMatchProjectionCohort(
@@ -467,16 +469,18 @@ func (m *Migrator) reconcileAppliedMigrationChecksums(
 	if m.conn.Writer().IsDryRun() || !m.metadataAvailable || m.legacyRevisionTable {
 		return nil
 	}
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return m.reconcileProviderChecksums(ctx, store, migrations)
+	}
 	revisions, err := m.GetRevisions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to read revisions for checksum reconciliation: %w", err)
 	}
-	revisionsByKey := appliedRevisionsByKey(revisions)
-	projection, err := atlasAppliedProjectionHashes(migrations, revisionsByKey, implicitAtlasProjectionFloor(migrations, revisions))
-	if err != nil {
-		return err
-	}
-	updates, err := m.planAppliedMigrationChecksumReconciliation(migrations, revisionsByKey, projection)
+	updates, err := m.checksumReconciliationPlan(migrations, revisions)
 	if err != nil {
 		return err
 	}
@@ -520,7 +524,17 @@ func (m *Migrator) reconcileAppliedMigrationChecksums(
 	return nil
 }
 
+func (m *Migrator) checksumReconciliationPlan(migrations []*Migration, revisions []MigrationRevision) ([]atlasChecksumUpdate, error) {
+	revisionsByKey := appliedRevisionsByKey(revisions)
+	projection, err := atlasAppliedProjectionHashes(migrations, revisionsByKey, implicitAtlasProjectionFloor(migrations, revisions))
+	if err != nil {
+		return nil, err
+	}
+	return m.planAppliedMigrationChecksumReconciliation(migrations, revisionsByKey, projection)
+}
+
 type atlasChecksumUpdate struct {
+	identity    string
 	version     string
 	checksum    string
 	revisionArg any
@@ -552,6 +566,7 @@ func (m *Migrator) planAppliedMigrationChecksumReconciliation(
 			continue
 		}
 		updates = append(updates, atlasChecksumUpdate{
+			identity:    m.persistedRevisionIdentity(migration),
 			version:     migration.RevisionVersion(),
 			checksum:    desired,
 			revisionArg: m.migrationRevisionVersionArg(migration),

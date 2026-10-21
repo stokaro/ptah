@@ -201,6 +201,9 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 	if !exists {
 		return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_REFUSED), nil
 	}
+	if s.rejectsChecksumReconciliation(request) {
+		return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_REFUSED), nil
+	}
 	query, args, err := historyMutation(table, request)
 	if err != nil {
 		return nil, err
@@ -224,6 +227,14 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 		return nil, fmt.Errorf("fixture lost history acknowledgment")
 	}
 	return historyResult(request.GetScope(), request.GetRequestId(), outcome), nil
+}
+
+// rejectsChecksumReconciliation isolates the injected late refusal from the
+// storage implementation. Inserts and normal completion updates still succeed.
+func (s *session) rejectsChecksumReconciliation(request *protocol.MutateHistoryRequest) bool {
+	return s.fault == "reject-checksum-last" && request.GetExpected().GetState() == protocol.HistoryRevision_APPLIED &&
+		request.GetReplacement().GetState() == protocol.HistoryRevision_APPLIED && request.GetReplacement().GetVersion() == "4" &&
+		request.GetExpected().GetChecksum() != request.GetReplacement().GetChecksum()
 }
 
 func historyMutation(table string, request *protocol.MutateHistoryRequest) (string, []any, error) {
