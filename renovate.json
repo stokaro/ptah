@@ -153,6 +153,16 @@
         "golang"
       ],
       "enabled": false
+    },
+    {
+      "description": "The provider SDK is developed in this repository. Update its pinned version with the host adapter and independent provider acceptance tests when they adopt a contract change. Following every repository commit creates digest-only pull requests without a new SDK implementation.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/stokaro/ptah/provider-sdk"
+      ],
+      "enabled": false
     }
   ]
 }
