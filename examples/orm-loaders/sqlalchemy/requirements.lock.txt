@@ -1,7 +1,7 @@
 annotated-doc==0.0.4
 asynch==0.3.1
 atlas-provider-sqlalchemy==0.4.1
-certifi==2026.7.22
+certifi==2026.10.19
 charset-normalizer==3.4.9
 ciso8601==2.3.3
 clickhouse-driver==0.2.11
