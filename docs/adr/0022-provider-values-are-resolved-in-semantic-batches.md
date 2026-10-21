@@ -333,7 +333,9 @@ Overlapping regions intersect knowledge. Independent sources also intersect,
 retaining separate claims so one source cannot fill another source's unknown
 area. Target projection filters regions before identity lookup. Explicit subject
 and parent claims retain their priority. A comparison reply cannot introduce a
-complete region behind an uninspected global summary.
+complete region behind an uninspected global summary. A merged subject claim
+must be supported across every retained target name. Without a target resolver,
+a possible alias cannot justify discarding a negative namespace claim.
 
 Coverage wire format 2 stores these domains without a scalar compatibility
 reader. This changes behavior; pre-v1, so compatibility with older Ptah is not

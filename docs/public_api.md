@@ -1386,7 +1386,9 @@ Call `Coverage.ForTarget` before looking up claims for a selected engine.
 `Coverage.Lookup` gives explicit subject and parent claims priority over namespace
 regions. Overlapping regions combine conservatively. `Coverage.Merge` intersects
 source knowledge point by point, so disjoint complete regions cannot establish
-complete coverage together. `Unscoped` reports a conservative global claim;
+complete coverage together. A merged subject claim must hold across every
+retained target name. Knowledge from another engine cannot complete that claim.
+`Unscoped` reports a conservative global claim;
 `IsUninspected` checks every captured claim, including bounded regions.
 
 Coverage documents and `ptah:feature-coverage` headers use format 2. They preserve
