@@ -123,6 +123,23 @@ func TestInspectClientRejectsUnboundPeerState(t *testing.T) {
 	c.Assert(result, qt.IsNil)
 }
 
+func TestInspectClientPreservesAndValidatesNamespaceRegions(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{{
+		Scope:     &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: "Database", Normalized: "database"}},
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "partial read"},
+	}}
+	client := &Client{description: description, rpc: &inspectionPeer{result: snapshot}}
+	result, err := client.Inspect(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, snapshot), qt.IsTrue)
+	snapshot.Coverage.Kinds[0].Regions[0].Scope.Database.Normalized = ""
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+}
+
 func TestInspectServerCannotEraseRequestedScope(t *testing.T) {
 	c := qt.New(t)
 	description, request, snapshot := inspectionExchange()

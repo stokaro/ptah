@@ -78,7 +78,26 @@ func (p *observedProvider) Inspect(ctx context.Context, request *protocol.Inspec
 	absent.Subject.Name, absent.NormalizedSubject.Name = "Absent", "absent"
 	absent.Knowledge.State = protocol.ModelKnowledge_ABSENT
 	snapshot.Coverage.Subjects = append(snapshot.Coverage.Subjects, absent)
+	if strings.HasPrefix(table.Identity.Name, "scoped-") {
+		complete := &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{
+			Database:   &protocol.NamespaceComponent{Source: table.Identity.Database, Normalized: table.Identity.Database},
+			Catalog:    &protocol.NamespaceComponent{Source: "catalog", Normalized: "catalog"},
+			Schema:     &protocol.NamespaceComponent{Source: "Private", Normalized: "private"},
+			PathPrefix: []*protocol.NamespaceComponent{{Source: "a/b", Normalized: "a/b"}, {Source: "C", Normalized: "c"}},
+		}, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
+		unknown := proto.CloneOf(complete)
+		unknown.Scope.PathPrefix = append(unknown.Scope.PathPrefix, &protocol.NamespaceComponent{Source: "Hidden", Normalized: "hidden"})
+		unknown.Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "nested namespace was not inspected"}
+		snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{complete, unknown}
+	}
 	switch table.Identity.Name {
+	case "scoped-foreign-database":
+		snapshot.Coverage.Kinds[0].Regions[0].Scope.Database = &protocol.NamespaceComponent{Source: "foreign", Normalized: "foreign"}
+	case "scoped-unbound-database":
+		snapshot.Coverage.Kinds[0].Regions[0].Scope.Database = nil
+	case "scoped-normalized-database":
+		snapshot.Coverage.Kinds[0].Regions[0].Scope.Database.Normalized = "foreign"
+
 	case "coverage-mismatch":
 		snapshot.Coverage.Subjects[0].NormalizedSubject.Name = "another"
 	case "bad-feature":

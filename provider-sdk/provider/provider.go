@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 7
+const Revision uint32 = 8
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:

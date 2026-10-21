@@ -178,7 +178,7 @@ comparison and migration backend operations remain required work in #4204; see [
 
 ## Captured extension sources
 
-Experimental revision 7 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 8 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -260,7 +260,23 @@ normalized owner to match its coverage subject. A failure discards the entire
 snapshot. Hosts retain the engine, target features, model contract, and
 normalized subject when capturing the owner-defined canonical projection.
 
-Schema-filtered native coverage is refused because the coverage contract cannot
-yet retain namespace limits. An uninspected or unrepresentable model requires a
-reason; observed coverage cannot request defaults. Namespace-scoped coverage
-and native migration planning remain work in #4204.
+Each model declares knowledge outside its namespace regions and within each
+region. Database, catalog, and schema qualifiers preserve source and normalized
+spelling. An absent qualifier is a wildcard; a present empty qualifier matches
+only an empty component. Path prefixes retain whole components. Regions belong
+to the operation's selected engine. An uninspected or unrepresentable region
+requires a reason and overrides overlapping completeness. Explicit subject
+records take precedence. Duplicate normalized regions, invalid components, and
+namespace-wide absence or defaults are refused. A model can carry at most
+4,096 regions.
+
+The host preserves native regions qualified by the exact session database and
+adds the selected engine boundary. It refuses unbound, foreign, or renamed
+database scopes. Such regions grant no completeness to common table or column
+identities, which omit the database component. Full-document source decoding
+still requires unrestricted complete model knowledge and refuses regions.
+
+Schema-filtered native inspection remains refused until the owner can bind
+request selectors, namespace boundaries, and common identities together.
+Observed-to-desired export and native migration planning also remain work in
+#4204. These limits apply even when a provider supplies namespace regions.

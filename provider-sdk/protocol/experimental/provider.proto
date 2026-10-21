@@ -429,9 +429,31 @@ message ModelKnowledge {
   State state = 1;
   string reason = 2;
 }
+// A component retains both authored and owner-normalized spelling. An absent
+// component is a wildcard; a present empty component matches only an empty name.
+message NamespaceComponent {
+  string source = 1;
+  string normalized = 2;
+}
+// A namespace is relative to the engine selected by the surrounding operation.
+// Path prefixes compare whole components, never delimiter-joined strings.
+message ModelNamespace {
+  NamespaceComponent database = 1;
+  NamespaceComponent catalog = 2;
+  NamespaceComponent schema = 3;
+  repeated NamespaceComponent path_prefix = 4;
+}
+message ModelNamespaceKnowledge {
+  ModelNamespace scope = 1;
+  ModelKnowledge knowledge = 2;
+}
 message ModelKindCoverage {
   ValueModel model = 1;
+  // Knowledge outside every declared region. With no regions it is global.
   ModelKnowledge knowledge = 2;
+  // Matching regions combine conservatively: unknown or unrepresentable
+  // knowledge overrides completeness. Specific subjects take precedence.
+  repeated ModelNamespaceKnowledge regions = 3;
 }
 message ModelSubjectCoverage {
   string kind = 1;
