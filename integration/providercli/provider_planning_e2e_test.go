@@ -267,3 +267,53 @@ func TestProviderPlanningAccountsForUnchangedParentModels(t *testing.T) {
 	c.Assert(refused.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(refused.Parents, qt.HasLen, 0)
 }
+
+func columnRewriteDiff(request featureplan.Request) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IdentifierSemantics: &request.Identifiers,
+		TablesModified: []difftypes.TableDiff{{TableName: "planned",
+			ColumnsAdded: difftypes.ColumnChanges{{Name: "added", Type: "REAL", Nullable: true}},
+			Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "planned"},
+				Fields: []schemamodel.Field{{Name: "Id", Type: "INTEGER", Primary: true}, {Name: "added", Type: "TEXT"}}},
+			Current: schemacapture.TableObservation{Table: catalog.Table{Name: "planned"}},
+		}},
+	}
+}
+
+func TestProviderCommonPlannerRewritesExactColumnOperand(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "operation-models")
+	connection := observedConnection(c, host, "planned")
+	request := providerPlanningRequest(c, runtime)
+	diff := columnRewriteDiff(request)
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	c.Assert(ast.OwnerOperations(nodes[0]), qt.HasLen, 1)
+	c.Assert(ast.OwnerTransactions(nodes[0]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
+	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.IsTrue)
+	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
+	c.Assert(err, qt.IsNil)
+	// The common operand differs from the final declaration. The replacement
+	// must preserve that operand and emit it exactly once.
+	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`ALTER TABLE "planned" ADD COLUMN "added" REAL;`})
+	c.Assert(connection.Writer().ExecuteSQL(c.Context(), rendered.SQL()), qt.IsNil)
+	observed, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.Tables, qt.HasLen, 1)
+	c.Assert(observed.Tables[0].Columns, qt.HasLen, 2)
+	c.Assert(observed.Tables[0].Columns[1].Name, qt.Equals, "added")
+	c.Assert(observed.Tables[0].Columns[1].DataType, qt.Equals, "REAL")
+	c.Assert(observed.Tables[0].Columns[1].IsNullable, qt.Equals, "YES")
+}
+
+func TestProviderCommonPlannerRefusesUnsupportedRewriteOperand(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "operation-models")
+	request := providerPlanningRequest(c, runtime)
+	diff := columnRewriteDiff(request)
+	diff.TablesModified[0].ColumnsAdded[0].Primary = true
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
+	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported added column properties.*`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(nodes, qt.IsNil)
+}

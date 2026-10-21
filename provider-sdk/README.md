@@ -413,18 +413,23 @@ through the selected runtime, then schedules the complete shared graph. It
 retains unchanged captured tables and supplies exact common column operands.
 Common column and table removals follow the feature windows. Unsupported inline
 common definitions remain errors; the host never strips native settings to make
-a common statement render.
+a common statement render. A replacement in the default phase inherits its
+source steps' boundaries instead of joining the ordinary feature window. An
+explicit phase adds its window constraints; conflicting boundaries refuse the
+complete graph.
 
 An independent SDK-only fixture exercises the production planner, shared graph,
 rendering, statement execution, and inspection. It checks captured ALTER parents,
-parent receipts without changed native values, graph conflicts, completed
-refusals, and cancellation. The test caller executes without a transaction.
+parent receipts without changed native values, common column replacement, graph
+conflicts, completed refusals, and cancellation. The replacement preserves the
+actual common operand even when it differs from the final desired column. The
+test caller executes without a transaction.
 
 Owner transaction requirements survive AST lowering. A forbidden transaction
 reaches migration classification. A mixed plan that the generator cannot split
 safely is refused. The external planner refuses a required transaction because
 provider transaction sessions are not implemented.
 
-Rewrite acceptance and transaction enforcement through every execution path
-remain part of #4204, alongside history services and official provider extraction.
+Transaction enforcement through every execution path remains part of #4204,
+alongside history services and official provider extraction.
 These tests do not qualify YDB extraction or the migration history backend.

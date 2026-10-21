@@ -547,6 +547,9 @@ ordinary feature operations before common column and table removals, and drops
 of prerequisites and types after those removals. Conflicts and unsupported
 placements discard the complete plan. Unsupported inline definitions still fail
 before rendering; planning never strips settings to fit the common wire model.
+Default-phase replacements inherit their common source boundaries. An explicit
+phase adds window constraints, so an incompatible phase refuses the complete
+graph instead of moving the source operation.
 
 Owner transaction requirements survive lowering to AST envelopes. Migration
 classification recognizes a forbidden transaction without a built-in dialect
@@ -557,6 +560,8 @@ transaction service; retaining the metadata is not evidence of enforcement.
 An independent SDK-only fixture exercises this production planner, shared graph,
 rendering, explicit unwrapped execution, and inspection. It checks unchanged
 captured parents, parent receipts without changed native values, graph conflicts,
-completed refusals, required-transaction refusal, and cancellation. Rewrite
-acceptance and transaction enforcement through every final executor remain part
-of #4204 before this service can support YDB extraction.
+completed refusals, required-transaction refusal, and cancellation. A common
+column replacement uses the exact accepted operand, emits once, and retains its
+transaction requirement. The fixture refuses unsupported operand properties.
+Transaction enforcement through every final executor remains part of #4204
+before this service can support YDB extraction.

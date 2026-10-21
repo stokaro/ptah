@@ -272,3 +272,63 @@ func TestGraphRetainsIndependentCommonOperands(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(refused, qt.IsNil)
 }
+
+func rewriteResult() featurehost.Result {
+	step := ownerStep("replacement", plangraph.Create)
+	return featurehost.Result{
+		Contributions: []plangraph.Contribution[[]ast.Node]{{Owner: step.ID.Owner, Steps: []plangraph.Step[[]ast.Node]{step}}},
+		Rewrites:      []plangraph.Rewrite{{Sources: []plangraph.StepID{{Owner: "example.org/host", Name: "common/000001"}}, Replacement: step.ID}},
+	}
+}
+
+func rewriteGraph(t *testing.T) *featurehost.Graph {
+	t.Helper()
+	step := ownerStep("replacement", plangraph.Create)
+	return must.Must(featurehost.NewGraph("example.org/host", commonNodes(), []featureplan.CommonStep{{}, {Effects: step.Effects}, {}, {}}, prerequisiteWindows()))
+}
+
+func TestGraphRewriteKeepsSourcePosition(t *testing.T) {
+	c := qt.New(t)
+	graph := rewriteGraph(t)
+	result := rewriteResult()
+	ordinary := ownerStep("ordinary", plangraph.Create)
+	result.Contributions[0].Steps = append(result.Contributions[0].Steps, ordinary)
+	reader := ownerStep("reader", plangraph.Read)
+	reader.ID.Owner = "example.org/reader"
+	reader.Effects[0].Subject = result.Contributions[0].Steps[0].Effects[0].Subject
+	result.Contributions = append(result.Contributions, plangraph.Contribution[[]ast.Node]{Owner: reader.ID.Owner, Steps: []plangraph.Step[[]ast.Node]{reader}})
+
+	nodes, err := graph.Schedule(t.Context(), result)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(comments(nodes), qt.DeepEquals, []string{"schemas", "replacement", "ordinary", "reader", "tables", "drop tables"})
+}
+
+func TestGraphRewriteRefusesInvalidConstraints(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(*featurehost.Result)
+		want error
+	}{
+		{"an explicit phase cannot move the source", func(result *featurehost.Result) {
+			result.Phases = map[plangraph.StepID]featureplan.Phase{result.Rewrites[0].Replacement: featureplan.PhaseDependent}
+		}, plangraph.ErrCycle},
+		{"a missing source cannot escape the window", func(result *featurehost.Result) {
+			result.Rewrites[0].Sources[0].Name = "missing"
+		}, plangraph.ErrInvalid},
+		{"a replacement must retain the source footprint", func(result *featurehost.Result) {
+			result.Contributions[0].Steps[0].Effects = nil
+		}, plangraph.ErrInvalid},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			graph := rewriteGraph(t)
+			result := rewriteResult()
+			test.edit(&result)
+			nodes, err := graph.Schedule(t.Context(), result)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorIs, test.want)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}

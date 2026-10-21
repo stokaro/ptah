@@ -187,9 +187,11 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 }
 
 // Schedule joins the owners' contributions to the common sequence and returns
-// the nodes in plan order. Each feature step joins one window: a step whose
-// operation asked for [featureplan.PhaseDependent] joins the dependent
-// window; one that asked for [featureplan.PhasePrerequisite] joins the
+// the nodes in plan order. A default-phase rewrite replacement inherits its
+// sources' boundaries instead of joining a feature window. An explicit phase
+// adds its window constraints to those boundaries. Other steps join one window:
+// a step whose operation asked for [featureplan.PhaseDependent] joins the
+// dependent window; one that asked for [featureplan.PhasePrerequisite] joins the
 // prerequisite removal window when it drops an object and the prerequisite
 // creation window otherwise, and is refused by a graph without them; one that
 // asked for [featureplan.PhaseType] joins the type removal window when it
@@ -210,9 +212,18 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 	}
 	common := plangraph.Contribution[[]ast.Node]{Owner: g.contribution.Owner,
 		Steps: slices.Clone(g.contribution.Steps), Dependencies: slices.Clone(g.contribution.Dependencies)}
+	replacements := make(map[plangraph.StepID]bool, len(features.Rewrites))
+	for _, rewrite := range features.Rewrites {
+		replacements[rewrite.Replacement] = true
+	}
 	recreated := createdObjects(features)
 	for _, contribution := range features.Contributions {
 		for _, step := range contribution.Steps {
+			// ScheduleRewritten validates the claim and transfers source edges.
+			// Adding the default window here can contradict those same edges.
+			if replacements[step.ID] && features.Phases[step.ID] == featureplan.PhaseDefault {
+				continue
+			}
 			drops, rebuilds := false, false
 			for _, effect := range step.Effects {
 				if effect.Action == plangraph.Drop {

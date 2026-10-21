@@ -31,7 +31,7 @@ func normalizeChange(input *protocol.ValueInput) (*protocol.NormalizedValue, err
 
 // PlanFeatures is offline. Executable table operations are derived from the
 // captured change, and only the host can order them against its common graph.
-func (*owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
+func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
 	transactional, known := request.GetCapabilities()["transactional_ddl"]
 	if !known || transactional {
 		return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: "Fixture requires explicit nontransactional DDL"}}}, nil
@@ -49,17 +49,29 @@ func (*owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRe
 		contribution.Steps = append(contribution.Steps, step)
 		result.Changes = append(result.Changes, &protocol.PlanningReceipt{Subject: proto.CloneOf(change.GetSubject()), Kind: changeKind, Strategy: "Apply the captured table action", Steps: []*protocol.StepIdentity{proto.CloneOf(step.Id)}})
 	}
-	if len(contribution.Steps) > 0 {
-		result.Contributions = append(result.Contributions, contribution)
-	}
 	for _, table := range request.GetTables() {
 		if table.GetAction() == protocol.PlanningTable_CONTEXT {
 			continue
 		}
+		steps, rewrites, err := p.planColumnRewrites(request, table)
+		if err != nil {
+			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
+				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "column", Message: err.Error(),
+			}}}, nil
+		}
+		contribution.Steps = append(contribution.Steps, steps...)
+		result.Rewrites = append(result.Rewrites, rewrites...)
+		var ids []*protocol.StepIdentity
+		for _, step := range steps {
+			ids = append(ids, proto.CloneOf(step.Id))
+		}
 		for _, kind := range request.GetParentKinds() {
 			result.Parents = append(result.Parents, &protocol.PlanningParentReceipt{Action: table.GetAction(), Receipt: &protocol.PlanningReceipt{
-				Subject: proto.CloneOf(table.GetSubject()), Kind: kind, Strategy: "Accept fixture common table operation"}})
+				Subject: proto.CloneOf(table.GetSubject()), Kind: kind, Strategy: "Assess common operations and replace supported column additions", Steps: ids}})
 		}
+	}
+	if len(contribution.Steps) > 0 {
+		result.Contributions = append(result.Contributions, contribution)
 	}
 	return result, nil
 }
@@ -80,7 +92,7 @@ func planTableChange(change *protocol.PlanningChange, id string) (*protocol.Plan
 	switch op.Action {
 	case "drop":
 		action = protocol.PlanningEffect_DROP
-	case "rename":
+	case "rename", "add-column":
 		role, action = protocol.NativeOperation_ALTER_TABLE, protocol.PlanningEffect_ALTER
 		parent = proto.CloneOf(change.GetSubject())
 	}
