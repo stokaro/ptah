@@ -65,3 +65,22 @@ func desiredTableCoverage(c *qt.C, subjects []schemaext.SubjectCoverage) schemae
 	c.Assert(err, qt.IsNil)
 	return coverage
 }
+
+func TestComparisonRetainsUnknownRelativeTableNamespace(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	model := desiredTableCoverage(c, nil).KindRecords()[0].Model
+	domain, err := schemaext.NewScopedKnowledge(schemaext.Knowledge{State: schemaext.Complete}, schemaext.NamespaceKnowledge{Scope: schemaext.NamespaceScope{SubjectKinds: []objectidentity.Kind{objectidentity.KindTable}, Database: &objectidentity.Part{}, Catalog: &objectidentity.Part{}, Schema: &objectidentity.Part{}, PathExact: true}, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "relative namespace was not inspected"}})
+	c.Assert(err, qt.IsNil)
+	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model, Knowledge: domain}}, nil)
+	c.Assert(err, qt.IsNil)
+	semantics := identifier.ForDialect("clickhouse")
+	semantics.DefaultSchema = "connection_database"
+	desired := &schemamodel.Database{FeatureCoverage: coverage, Tables: []schemamodel.Table{{Name: "events", StructName: "Event"}}, Fields: []schemamodel.Field{{Name: "id", StructName: "Event", Type: "UInt64", Primary: true}}}
+	diff, diagnostics, err := schemadiff.CompareReportingUndecidedAdditions(c.Context(), desired, &catalog.Database{}, &config.CompareOptions{Dialect: "clickhouse", IdentifierSemantics: &semantics}, runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnostics.Features, qt.HasLen, 0)
+	subject := objectidentity.NewBuilder(semantics).TableParts("", "events")
+	c.Assert(diff.TablePreparation.Source[0].Desired.FeatureCoverage.Lookup(model.Kind, subject).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(desired.FeatureCoverage.Equal(coverage), qt.IsTrue)
+}

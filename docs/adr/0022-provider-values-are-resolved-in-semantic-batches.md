@@ -388,8 +388,39 @@ a possible alias cannot justify discarding a negative namespace claim.
 
 Coverage wire format 2 stores these domains without a scalar compatibility
 reader. This changes behavior; pre-v1, so compatibility with older Ptah is not
-owed. Common table binding refuses bounded domains until owner binding can
-transform their namespace limits with the subjects. Rebinding only explicit
-subjects could move a table outside an unknown region and authorize a drop.
-Inspection maps owner-bound namespaces at capture. Later common table rebinding,
-contextual comparison, planning, and faithful source export remain work in #4204.
+owed. Rebinding only explicit subjects could move a table outside an unknown
+region and authorize a drop. Inspection maps owner-bound namespaces at capture.
+Common identity binding then transforms typed relative bounds with their
+subjects. Contextual provider comparison, planning, and faithful source export
+remain work in #4204.
+
+## Binding namespace limits for comparison
+
+`KnowledgeDomain.MapScopes` preserves each source's outside knowledge and every
+region's knowledge while rebinding its scope. A region may split by subject
+kind; it cannot disappear. Each callback input and output is copied. Errors,
+invalid scopes, and size-limit violations return no partial domain. The caller
+owns the identity transformation; the shared model does not infer one.
+
+The common binder uses one subject-kind classification for explicit claims and
+namespace regions. Comparison binds tables, table-owned objects, indexes, and
+routines. Reverse creation binds tables and their children. Connection defaults,
+identifier folding, quoted names, and index namespaces follow the same builders
+on both paths. Verbatim table binding retains whether a schema came from the
+connection, so a later binding can apply a different connection default.
+Independent source claims and overlapping unknown regions remain
+independent after their names collide under the selected rules.
+
+The binder resolves the target before mapping. Bound regions name the selected
+canonical target, so an alias cannot grant the transformed scope to another
+engine. A database-qualified or namespace-qualified native region keeps its
+coordinates. Relative common regions require explicit subject kinds, an exact
+empty database, and an exact namespace path. Common tables, indexes, and routines
+also require an exact empty catalog. Ambiguous native parent bounds remain
+refused. These refusals prevent a wildcard from mixing identities that move
+with identities that stay qualified.
+
+The synthetic provider proves that captured namespace limits can pass this
+binding after its process closes. Public comparison tests retain an unknown
+relative namespace in the source snapshot used for planning. Neither test
+qualifies a provider's contextual comparison or change-planning service.

@@ -1396,8 +1396,16 @@ retained target name. Knowledge from another engine cannot complete that claim.
 Coverage documents and `ptah:feature-coverage` headers use format 2. They preserve
 namespace boundaries through encoding and representation conversion and refuse
 scalar knowledge records. Source formats that only carry global limits refuse
-bounded domains. Common table identity binding also refuses bounded domains
-until an owner can bind their namespaces together with the table subjects.
+bounded domains. `KnowledgeDomain.MapScopes` transforms every region while
+retaining its knowledge and independent source. It can split a region but
+refuses an erased region or a partial result. Inputs and results are copied.
+The caller must use the same identity rules for regions and explicit subjects.
+
+Common identity binding projects the selected target, then binds typed relative
+namespace regions together with their subjects. Table parents, index namespaces,
+routine schemas, and connection defaults follow the same builders on both paths.
+Qualified native regions keep their database and path components. Ambiguous
+regions without sufficient subject kinds or identity bounds remain refused.
 
 `Coverage.SelectSubjects` projects explicit subject and parent records while
 retaining the source's kind-wide knowledge. Apply the same projection to schema
