@@ -23,8 +23,9 @@ const (
 
 // Isolation is explicit. Providers refuse levels they cannot establish; they
 // never silently substitute a weaker level. DEFAULT selects the engine default
-// and makes no serializable guarantee. SERIALIZABLE includes range reads, so a
-// transaction cannot commit writes based on a stale history snapshot.
+// and makes no serializable guarantee. SERIALIZABLE includes range reads; the
+// reads and writes of committed transactions must be equivalent to a serial
+// execution, including observations that a revision is absent.
 type TransactionIsolation int32
 
 const (

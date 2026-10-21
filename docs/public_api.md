@@ -4302,7 +4302,11 @@ and default versioned CLI integration remain required work in #4204.
 without requiring transactional DDL. Its handle exposes history operations,
 commit, and rollback, with no schema executor. Nested transactions, dry-run
 writes, and preparation inside a transaction are refused. The caller still
-owns migration locking. Native baseline uses this transaction for its complete
+owns migration locking. `BeginHistoryTransaction` requires an explicit
+`HistoryIsolationDefault` or `HistoryIsolationSerializable`. The provider must
+establish that level or refuse it. Serializable isolation protects the complete
+history read, including absent rows; the default makes no such guarantee.
+Native baseline uses this transaction for its complete
 revision batch and checks dirty state, existing records, and versions above
 the baseline before writing. A lost commit reply remains an unknown outcome;
 cleanup never authorizes replay.

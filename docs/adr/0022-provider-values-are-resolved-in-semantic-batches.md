@@ -359,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 16 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 17 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -720,7 +720,18 @@ roll back. `HistoryTransactor` opens the existing session transaction service
 through a restricted `HistoryTransaction` handle. The handle offers revision
 storage and finish operations; its dynamic type has no schema executor. Schema
 transactions still require established transactional DDL. Neither interface
-claims a distributed migration lock or serializable isolation.
+claims a distributed migration lock. History callers explicitly select default
+or serializable isolation. The SDK carries that level in both begin and reply;
+missing, unknown, or substituted levels are refused. Providers must establish
+the requested guarantee or return an error. Serializable isolation covers range
+reads, including absent revisions. Committed reads and writes must be equivalent
+to a serial execution. Default isolation makes no such promise.
+
+The independent SQLite process test makes two history transactions read the
+same empty range, then insert different identities. After one commits, the
+other cannot commit its write based on that snapshot. A fresh transaction sees
+the committed row and can proceed. The fixture also refuses serializable begins
+when its connection enables uncommitted reads, without leaving a handle active.
 
 Baseline validates stored revisions and writes the selected batch in this data
 transaction. SQL and native stores share the dirty-state, nonempty-store, and

@@ -35,12 +35,12 @@ func (s *session) BeginTransaction(ctx context.Context) (catalog.SchemaTransacti
 	if !s.info.Capabilities.Has(capability.TransactionalDDL) {
 		return nil, unsupported("transactions without established transactional DDL")
 	}
-	return s.beginProviderTransaction(ctx)
+	return s.beginProviderTransaction(ctx, protocol.TransactionIsolation_DEFAULT)
 }
 
 // beginProviderTransaction opens the shared remote handle. Callers choose the
 // restricted history surface or establish transactional DDL before exposing SQL.
-func (s *session) beginProviderTransaction(ctx context.Context) (*transaction, error) {
+func (s *session) beginProviderTransaction(ctx context.Context, isolation protocol.TransactionIsolation) (*transaction, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s *session) beginProviderTransaction(ctx context.Context) (*transaction, e
 	if !s.target.supportsTransactions() {
 		return nil, unsupported("transactions for the selected engine")
 	}
-	handle, err := s.target.host.client.BeginTransaction(ctx, &protocol.BeginTransactionRequest{SessionId: s.remote.GetId(), TransactionId: rand.Text()})
+	handle, err := s.target.host.client.BeginTransaction(ctx, &protocol.BeginTransactionRequest{SessionId: s.remote.GetId(), TransactionId: rand.Text(), Isolation: isolation})
 	if err != nil {
 		return nil, nativeOutcomeError(err)
 	}

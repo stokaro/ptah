@@ -53,7 +53,7 @@ func TestTransactionLifetimeSurvivesBeginCallAndRecordsFinalState(t *testing.T) 
 			c := qt.New(t)
 			owner := &backend.TransactionalProvider{}
 			session := openTransactionSession(c, owner, transactionAddress(c))
-			request := &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: "transaction"}
+			request := &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: "transaction"}
 			call, cancel := context.WithCancel(c.Context())
 			handle, err := owner.BeginTransaction(call, request)
 			cancel()
@@ -82,12 +82,12 @@ func TestTransactionCloseRollsBackAndSessionIdentityCannotBeSubstituted(t *testi
 	address := transactionAddress(c)
 	session := openTransactionSession(c, owner, address)
 	other := openTransactionSession(c, owner, transactionAddress(c))
-	handle, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: "transaction"})
+	handle, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: "transaction"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(executeTransactionSQL(c, owner, other.GetId(), handle.GetId(), `CREATE TABLE "wrong" ("id" INTEGER);`).GetOutcome(), qt.Equals, protocol.Execution_NOT_STARTED)
 	c.Assert(executeTransactionSQL(c, owner, session.GetId(), handle.GetId(), `CREATE TABLE "abandoned" ("id" INTEGER);`).GetOutcome(), qt.Equals, protocol.Execution_APPLIED)
 	c.Assert(owner.Close(c.Context(), &protocol.CloseRequest{SessionId: session.GetId()}), qt.IsNil)
-	_, err = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: "late"})
+	_, err = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: "late"})
 	c.Assert(err, qt.IsNotNil)
 	fresh := openTransactionSession(c, owner, address)
 	c.Assert(tablePresent(c, owner, fresh.GetId(), "abandoned"), qt.IsFalse)
@@ -102,13 +102,13 @@ func TestRollbackFencesConcurrentAndLateBegins(t *testing.T) {
 		beginDone := make(chan struct{})
 		go func() {
 			defer close(beginDone)
-			_, _ = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: id})
+			_, _ = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: id})
 		}()
 		result, err := owner.FinishTransaction(c.Context(), &protocol.FinishTransactionRequest{SessionId: session.GetId(), TransactionId: id, Action: protocol.FinishTransactionRequest_ROLLBACK})
 		<-beginDone
 		c.Assert(err, qt.IsNil)
 		c.Assert(slices.Contains([]protocol.TransactionResult_Outcome{protocol.TransactionResult_NOT_STARTED, protocol.TransactionResult_ROLLED_BACK}, result.GetOutcome()), qt.IsTrue)
-		_, err = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: id})
+		_, err = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: id})
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(executeTransactionSQL(c, owner, session.GetId(), id, `CREATE TABLE "late" ("id" INTEGER);`).GetOutcome(), qt.Equals, protocol.Execution_NOT_STARTED)
 	}

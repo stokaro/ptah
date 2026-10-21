@@ -186,11 +186,20 @@ func historyWireRecord(format dbschema.HistoryFormat, row *dbschema.HistoryRecor
 // cannot recover schema execution by asserting the history transaction's type.
 type historyTransaction struct{ historyStore }
 
-func (h historyStore) BeginHistoryTransaction(ctx context.Context) (dbschema.HistoryTransaction, error) {
+func (h historyStore) BeginHistoryTransaction(ctx context.Context, isolation dbschema.HistoryIsolation) (dbschema.HistoryTransaction, error) {
 	if h.transaction != nil {
 		return nil, unsupported("nested history transactions")
 	}
-	tx, err := h.session.beginProviderTransaction(ctx)
+	var level protocol.TransactionIsolation
+	switch isolation {
+	case dbschema.HistoryIsolationDefault:
+		level = protocol.TransactionIsolation_DEFAULT
+	case dbschema.HistoryIsolationSerializable:
+		level = protocol.TransactionIsolation_SERIALIZABLE
+	default:
+		return nil, unsupported("history transaction isolation")
+	}
+	tx, err := h.session.beginProviderTransaction(ctx, level)
 	if err != nil {
 		return nil, err
 	}

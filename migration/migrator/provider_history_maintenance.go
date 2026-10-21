@@ -17,7 +17,7 @@ func withProviderHistoryTransaction(ctx context.Context, store dbschema.HistoryS
 	if !ok {
 		return fmt.Errorf("%w: %s requires provider history transactions", ptaherr.ErrUnsupportedFeature, operation)
 	}
-	tx, err := owner.BeginHistoryTransaction(ctx)
+	tx, err := owner.BeginHistoryTransaction(ctx, dbschema.HistoryIsolationDefault)
 	if err != nil {
 		return fmt.Errorf("failed to begin %s transaction: %w", operation, err)
 	}

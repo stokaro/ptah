@@ -52,7 +52,7 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateTransactionRequest(request.GetSessionId(), request.GetTransactionId()); err != nil {
+	if err := provider.ValidateBeginTransactionRequest(request); err != nil {
 		return nil, err
 	}
 	s, err := p.lookup(request.GetSessionId())
@@ -82,7 +82,7 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	// database/sql ties a transaction to its begin context. The RPC context ends
 	// when its reply is sent, so the session owns the lifetime instead. The pool
 	// has one connection and the active check prevents waiting behind another tx.
-	tx, err := s.db.BeginTx(context.WithoutCancel(ctx), nil)
+	tx, err := s.beginDatabaseTransaction(ctx, request.GetIsolation())
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,31 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 		return nil, errors.Join(err, rollbackErr)
 	}
 	record.tx, record.outcome, s.active = tx, protocol.TransactionResult_UNKNOWN, id
-	return &protocol.Transaction{SessionId: request.GetSessionId(), Id: id}, nil
+	return &protocol.Transaction{SessionId: request.GetSessionId(), Id: id, Isolation: request.GetIsolation()}, nil
+}
+
+// The fixture opens private SQLite connections. Its driver ignores the isolation
+// option, so inspect the actual connection setting before claiming serializable
+// isolation. WAL snapshots refuse a write after a concurrent commit.
+func (s *session) beginDatabaseTransaction(ctx context.Context, isolation protocol.TransactionIsolation) (*sql.Tx, error) {
+	opts := &sql.TxOptions{}
+	if isolation == protocol.TransactionIsolation_SERIALIZABLE {
+		opts.Isolation = sql.LevelSerializable
+	}
+	tx, err := s.db.BeginTx(context.WithoutCancel(ctx), opts)
+	if err != nil {
+		return nil, err
+	}
+	if isolation == protocol.TransactionIsolation_SERIALIZABLE {
+		var uncommitted int
+		if err := tx.QueryRowContext(ctx, "PRAGMA read_uncommitted").Scan(&uncommitted); err != nil {
+			return nil, errors.Join(err, tx.Rollback())
+		}
+		if uncommitted != 0 {
+			return nil, errors.Join(fmt.Errorf("fixture cannot establish serializable isolation with read_uncommitted enabled"), tx.Rollback())
+		}
+	}
+	return tx, nil
 }
 
 // FinishTransaction retains terminal results and fences handles that never

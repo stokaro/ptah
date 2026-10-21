@@ -83,12 +83,25 @@ type HistoryTransaction interface {
 	Rollback() error
 }
 
+// HistoryIsolation selects the data guarantee for a history transaction.
+// The zero value is invalid; callers choose a level explicitly.
+type HistoryIsolation uint8
+
+const (
+	// HistoryIsolationDefault uses the engine default without promising serializability.
+	HistoryIsolationDefault HistoryIsolation = iota + 1
+	// HistoryIsolationSerializable protects the complete history read, including
+	// absent rows, against concurrent writes that would invalidate later mutations.
+	HistoryIsolationSerializable
+)
+
 // HistoryTransactor optionally opens data transactions on a session's history
 // store. It must bind the transaction to that session, refuse nested transactions
 // and dry runs, and return an error when atomic history writes are unavailable.
+// The requested isolation must be established or refused, never weakened.
 // Closing the session releases its unfinished transactions.
 type HistoryTransactor interface {
-	BeginHistoryTransaction(context.Context) (HistoryTransaction, error)
+	BeginHistoryTransaction(context.Context, HistoryIsolation) (HistoryTransaction, error)
 }
 
 // HistoryStoreProvider binds history access to the implementing session or

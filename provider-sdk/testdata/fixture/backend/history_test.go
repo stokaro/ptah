@@ -47,7 +47,7 @@ func TestHistoryAndSchemaShareCommitOrRollback(t *testing.T) {
 			c.Assert(readHistory(c, owner, scope).GetExists(), qt.IsFalse)
 			prepareHistory(c, owner, scope)
 			c.Assert(readHistory(c, owner, scope).GetExists(), qt.IsTrue)
-			tx, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: "tx"})
+			tx, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: "tx"})
 			c.Assert(err, qt.IsNil)
 			scope.TransactionId = tx.GetId()
 			c.Assert(executeTransactionSQL(c, owner, session.GetId(), tx.GetId(), `CREATE TABLE "records" ("id" INTEGER NOT NULL PRIMARY KEY);`).GetOutcome(), qt.Equals, protocol.Execution_APPLIED)
@@ -100,7 +100,7 @@ func TestHistoryRefusesForeignAndClosedTransactionHandles(t *testing.T) {
 	second := openTransactionSession(c, owner, address)
 	scope := nativeHistoryScope(first.GetId())
 	prepareHistory(c, owner, scope)
-	_, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: first.GetId(), TransactionId: "tx"})
+	_, err := owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: first.GetId(), TransactionId: "tx"})
 	c.Assert(err, qt.IsNil)
 	foreign := nativeHistoryScope(second.GetId())
 	foreign.TransactionId = "tx"
