@@ -614,5 +614,8 @@ write; the fixture never reroutes it through the execution transaction.
 
 Process tests cover commit and rollback, journal durability, immutable pages,
 atomic deletion, invalid layouts, triggers, lost replies, and handle cleanup.
-Published-module process acceptance and host adapters for this service remain
-required under #4204.
+Host adapters preserve these scopes and translate uncertainty into the common
+migration error contract. Failed transaction-bound tag operations prevent commit;
+rollback and reader cleanup remain available. The common migrator retains its
+best-effort journal policy. Published-module adoption and official-engine
+qualification remain required under #4204.

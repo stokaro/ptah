@@ -78,6 +78,8 @@ type MigrationLogStoreProvider interface {
 // removed an existing label; an earlier existence check is not sufficient proof.
 // Mutations preserve ptaherr.ErrOutcomeUnknown without automatic replay.
 // Preparation and reads verify ownership and layout. Reads create no storage.
+// Prepare creates a missing store only outside an execution transaction. Inside
+// a transaction it validates an existing store or refuses without creating one.
 type MigrationTagsStore interface {
 	Prepare(context.Context, MigrationMetadataTable) error
 	Put(context.Context, MigrationMetadataTable, MigrationTagRecord) error

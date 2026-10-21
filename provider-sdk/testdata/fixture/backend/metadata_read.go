@@ -192,6 +192,7 @@ func (p *Provider) ReadMetadataPage(ctx context.Context, request *protocol.ReadM
 		end++
 	}
 	page.Complete = end == count
+	s.injectMetadataPageFault(request, record, page)
 	if err := provider.ValidateMetadataPage(request, page); err != nil {
 		return nil, err
 	}
@@ -200,6 +201,15 @@ func (p *Provider) ReadMetadataPage(ctx context.Context, request *protocol.ReadM
 		return nil, fmt.Errorf("fixture lost metadata page reply")
 	}
 	return page, nil
+}
+
+func (s *session) injectMetadataPageFault(request *protocol.ReadMetadataPageRequest, record *metadataSnapshot, page *protocol.MetadataPage) {
+	if request.Page > 0 && s.fault == "repeat-metadata-record" && len(page.Tags) != 0 {
+		page.Tags[0] = proto.CloneOf(record.tags[0])
+	}
+	if request.Page > 0 && s.fault == "change-metadata-existence" {
+		page.Exists, page.Complete, page.Tags, page.Logs = false, true, nil, nil
+	}
 }
 
 // CloseMetadataRead releases a snapshot or fences its caller-selected ID before
@@ -226,6 +236,9 @@ func (p *Provider) CloseMetadataRead(ctx context.Context, request *protocol.Meta
 		s.metadataReaders[request.ReaderId] = record
 	}
 	record.close()
+	if s.fault == "lost-metadata-close" {
+		return nil, fmt.Errorf("fixture lost metadata close receipt")
+	}
 	return metadataReadResult(request), nil
 }
 

@@ -906,8 +906,8 @@ This avoids requiring a complete event journal in one RPC response.
 
 Unit tests exercise these host contracts with an in-memory native session.
 They do not establish subprocess storage or database durability. Experimental SDK revision 20 defines typed metadata RPCs and validates request
-and receipt identity. Published-module process acceptance, host adapters, and
-official-engine qualification remain required under #4204.
+and receipt identity. Published-module adoption and official-engine
+qualification remain required under #4204.
 
 
 The experimental SDK metadata service uses typed event and tag records. Write
@@ -923,5 +923,21 @@ are limited to 64 MiB; oversized snapshots are refused without a usable prefix.
 The protocol bounds individual pages instead of imposing that fixture limit.
 Independent process tests cover commit, rollback, immutable snapshots, atomic
 deletions, lost acknowledgments, incompatible layouts, and reader cleanup.
-These tests still require acceptance against a published SDK revision before
-host adoption and official-engine qualification under #4204.
+These tests still require acceptance against a published SDK revision.
+Official-engine qualification remains a separate requirement under #4204.
+
+
+The host metadata adapters reuse the history adapter's transaction ordering and
+failure handling. Durable log storage selects the parent session; tag storage
+selects the active execution handle. A dispatched tag failure prevents commit,
+while rollback and snapshot cleanup remain available. Readers reject changed
+existence or repeated identities across pages and discard partial results.
+Close retains its outcome and does not retry an uncertain cleanup.
+
+Common-migrator process tests leave locking and logging enabled. They check
+apply and rollback across transaction modes, unknown journal acknowledgments,
+transaction failure after a lost tag receipt, and reader cleanup after failure,
+transaction finish, and session close. Independent SQL reads verify journal and
+tag columns because the fixture inspector deliberately refuses table definitions
+outside its narrow grammar. This evidence does not establish a complete fixture
+schema inspector or official-engine qualification.

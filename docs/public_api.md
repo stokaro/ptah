@@ -5349,5 +5349,10 @@ success, cancellation, or failure, and discards partial results on errors.
 Reads do not create storage; preparation validates ownership and layout.
 
 These interfaces and common policies are host contracts. Experimental SDK
-revision 20 defines log and tag RPCs. Published-module process acceptance,
-host adapters, and engine qualification remain required under #4204.
+revision 20 defines log and tag RPCs. Host adapters bind them to the negotiated
+session and transaction. A dispatched tag failure prevents commit while leaving
+rollback available. Reader cleanup remains available after execution failure,
+transaction finish, or session close. Cleanup errors are retained and partial
+read results are discarded. Preparation inside a transaction validates existing
+storage and refuses to create it. Published-module adoption and official-engine
+qualification remain required under #4204.
