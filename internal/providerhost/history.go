@@ -174,6 +174,9 @@ func historyWireRecord(format dbschema.HistoryFormat, row *dbschema.HistoryRecor
 		OperatorVersion: row.OperatorVersion, PartialHashes: slices.Clone(row.PartialHashes), AtlasType: row.AtlasType}
 	wireFormat := protocol.HistoryScope_NATIVE
 	if format == dbschema.AtlasHistory {
+		if row.State != "" || row.Direction != "" {
+			return nil, fmt.Errorf("Atlas history must not supply derived state or direction")
+		}
 		wireFormat = protocol.HistoryScope_ATLAS
 	}
 	if err := provider.ValidateHistoryRevision(wireFormat, result); err != nil {

@@ -22,17 +22,20 @@ type historyRunner interface {
 }
 
 func historyTable(scope *protocol.HistoryScope) (string, error) {
-	if scope.GetFormat() != protocol.HistoryScope_NATIVE || scope.GetSchema() != "" && scope.GetSchema() != "main" {
-		return "", fmt.Errorf("fixture history supports native storage in main only")
+	if scope.GetSchema() != "" && scope.GetSchema() != "main" {
+		return "", fmt.Errorf("fixture history supports storage in main only")
 	}
 	return quote(scope.GetTable()), nil
 }
 
-func historyDDL(table string) string {
+func historyDDL(table string, format protocol.HistoryScope_Format) string {
+	if format == protocol.HistoryScope_ATLAS {
+		return atlasHistoryDDL(table)
+	}
 	return "CREATE TABLE " + table + ` ("version" TEXT NOT NULL PRIMARY KEY, "revision" BLOB NOT NULL)`
 }
 
-func checkHistoryTable(ctx context.Context, runner historyRunner, table, name string) (bool, error) {
+func checkHistoryTable(ctx context.Context, runner historyRunner, table, name string, format protocol.HistoryScope_Format) (bool, error) {
 	var kind, definition string
 	err := runner.QueryRowContext(ctx, "SELECT type, sql FROM main.sqlite_schema WHERE name = ? COLLATE NOCASE", name).Scan(&kind, &definition)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -41,7 +44,17 @@ func checkHistoryTable(ctx context.Context, runner historyRunner, table, name st
 	if err != nil {
 		return false, err
 	}
-	if kind != "table" || definition != historyDDL(table) {
+	if kind != "table" {
+		return false, fmt.Errorf("fixture history storage is not a table")
+	}
+	if format == protocol.HistoryScope_ATLAS {
+		if err := checkAtlasHistoryColumns(ctx, runner, table); err != nil {
+			return false, err
+		}
+		if err := checkAtlasHistoryIndexes(ctx, runner, table); err != nil {
+			return false, err
+		}
+	} else if definition != historyDDL(table, format) {
 		return false, fmt.Errorf("fixture history storage has an incompatible layout")
 	}
 	var triggers int
@@ -73,8 +86,8 @@ func historyResult(scope *protocol.HistoryScope, id string, outcome protocol.His
 	return &protocol.HistoryResult{Scope: proto.CloneOf(scope), RequestId: id, Outcome: outcome}
 }
 
-// PrepareHistory creates the fixture's native storage layout. Existing tables
-// must match exactly and have no triggers; an earlier layout is never upgraded.
+// PrepareHistory creates native or Atlas storage. Existing tables must satisfy
+// the selected layout and have no triggers; an earlier layout is never upgraded.
 func (p *Provider) PrepareHistory(ctx context.Context, request *protocol.PrepareHistoryRequest) (*protocol.HistoryResult, error) {
 	if err := provider.ValidatePrepareHistoryRequest(request); err != nil {
 		return nil, err
@@ -93,17 +106,17 @@ func (p *Provider) PrepareHistory(ctx context.Context, request *protocol.Prepare
 	if err != nil {
 		return nil, err
 	}
-	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable())
+	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable(), request.GetScope().GetFormat())
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		ddl := strings.Replace(historyDDL(table), "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS main.", 1)
+		ddl := strings.Replace(historyDDL(table, request.GetScope().GetFormat()), "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS main.", 1)
 		if _, err := runner.ExecContext(ctx, ddl); err != nil {
 			return nil, err
 		}
 	}
-	exists, err = checkHistoryTable(ctx, runner, table, request.GetScope().GetTable())
+	exists, err = checkHistoryTable(ctx, runner, table, request.GetScope().GetTable(), request.GetScope().GetFormat())
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +146,7 @@ func (p *Provider) ReadHistory(ctx context.Context, request *protocol.ReadHistor
 	if err != nil {
 		return nil, err
 	}
-	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable())
+	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable(), request.GetScope().GetFormat())
 	if err != nil {
 		return nil, err
 	}
@@ -141,30 +154,12 @@ func (p *Provider) ReadHistory(ctx context.Context, request *protocol.ReadHistor
 	if !exists {
 		return result, nil
 	}
-	rows, err := runner.QueryContext(ctx, "SELECT version, revision FROM main."+table+" ORDER BY version LIMIT ?", request.GetMaxRevisions()+1)
+	if request.GetScope().GetFormat() == protocol.HistoryScope_ATLAS {
+		result.Revisions, err = readAtlasHistory(ctx, runner, table, request.GetMaxRevisions(), nil)
+	} else {
+		result.Revisions, err = readNativeHistory(ctx, runner, table, request.GetMaxRevisions())
+	}
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var key string
-		var payload []byte
-		if err := rows.Scan(&key, &payload); err != nil {
-			return nil, err
-		}
-		row := &protocol.HistoryRevision{}
-		if !bytes.HasPrefix(payload, []byte(historyEncoding)) {
-			return nil, fmt.Errorf("fixture history has an incompatible encoding")
-		}
-		if err := proto.Unmarshal(payload[len(historyEncoding):], row); err != nil {
-			return nil, err
-		}
-		if row.GetVersion() != key {
-			return nil, fmt.Errorf("fixture history row changed its identity")
-		}
-		result.Revisions = append(result.Revisions, row)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if err := provider.ValidateHistorySnapshot(request, result); err != nil {
@@ -190,38 +185,17 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	runner, err := s.historyRunner(request.GetScope().GetTransactionId())
-	if err != nil {
-		return nil, err
-	}
-	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable())
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_REFUSED), nil
-	}
 	if s.rejectsChecksumReconciliation(request) {
 		return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_REFUSED), nil
 	}
-	query, args, err := historyMutation(table, request)
+	var outcome protocol.HistoryResult_Outcome
+	if request.GetScope().GetFormat() == protocol.HistoryScope_ATLAS {
+		outcome, err = s.mutateAtlasHistory(ctx, request, table)
+	} else {
+		outcome, err = s.mutateNativeHistory(ctx, request, table)
+	}
 	if err != nil {
 		return nil, err
-	}
-	result, err := runner.ExecContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return nil, err
-	}
-	outcome := protocol.HistoryResult_CONFLICT
-	if changed == 1 {
-		outcome = protocol.HistoryResult_APPLIED
-	}
-	if changed < 0 || changed > 1 {
-		return nil, fmt.Errorf("fixture history mutation changed an unexpected number of rows")
 	}
 	if s.fault == "lost-history" || s.fault == "lost-history-last" && request.GetReplacement().GetVersion() == "10" {
 		return nil, fmt.Errorf("fixture lost history acknowledgment")
@@ -232,9 +206,12 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 // rejectsChecksumReconciliation isolates the injected late refusal from the
 // storage implementation. Inserts and normal completion updates still succeed.
 func (s *session) rejectsChecksumReconciliation(request *protocol.MutateHistoryRequest) bool {
-	return s.fault == "reject-checksum-last" && request.GetExpected().GetState() == protocol.HistoryRevision_APPLIED &&
-		request.GetReplacement().GetState() == protocol.HistoryRevision_APPLIED && request.GetReplacement().GetVersion() == "4" &&
-		request.GetExpected().GetChecksum() != request.GetReplacement().GetChecksum()
+	if s.fault != "reject-checksum-last" || request.GetExpected() == nil || request.GetReplacement() == nil || request.GetReplacement().GetVersion() != "4" || request.GetExpected().GetChecksum() == request.GetReplacement().GetChecksum() {
+		return false
+	}
+	expected := proto.CloneOf(request.GetExpected())
+	expected.Checksum = request.GetReplacement().GetChecksum()
+	return proto.Equal(expected, request.GetReplacement())
 }
 
 func historyMutation(table string, request *protocol.MutateHistoryRequest) (string, []any, error) {
@@ -258,4 +235,69 @@ func historyMutation(table string, request *protocol.MutateHistoryRequest) (stri
 	default:
 		return "UPDATE " + table + " SET revision = ? WHERE version = ? AND revision = ?", []any{replacement, request.GetExpected().GetVersion(), expected}, nil
 	}
+}
+
+func readNativeHistory(ctx context.Context, runner historyRunner, table string, limit uint32) ([]*protocol.HistoryRevision, error) {
+	var result []*protocol.HistoryRevision
+	rows, err := runner.QueryContext(ctx, "SELECT version, revision FROM main."+table+" ORDER BY version LIMIT ?", limit+1)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var key string
+		var payload []byte
+		if err := rows.Scan(&key, &payload); err != nil {
+			return nil, err
+		}
+		row := &protocol.HistoryRevision{}
+		if !bytes.HasPrefix(payload, []byte(historyEncoding)) {
+			return nil, fmt.Errorf("fixture history has an incompatible encoding")
+		}
+		if err := proto.Unmarshal(payload[len(historyEncoding):], row); err != nil {
+			return nil, err
+		}
+		if row.GetVersion() != key {
+			return nil, fmt.Errorf("fixture history row changed its identity")
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *session) mutateNativeHistory(ctx context.Context, request *protocol.MutateHistoryRequest, table string) (protocol.HistoryResult_Outcome, error) {
+	runner, err := s.historyRunner(request.GetScope().GetTransactionId())
+	if err != nil {
+		return protocol.HistoryResult_UNKNOWN, err
+	}
+	exists, err := checkHistoryTable(ctx, runner, table, request.GetScope().GetTable(), request.GetScope().GetFormat())
+	if err != nil {
+		return protocol.HistoryResult_UNKNOWN, err
+	}
+	if !exists {
+		return protocol.HistoryResult_REFUSED, nil
+	}
+	query, args, err := historyMutation(table, request)
+	if err != nil {
+		return protocol.HistoryResult_UNKNOWN, err
+	}
+	result, err := runner.ExecContext(ctx, query, args...)
+	if err != nil {
+		return protocol.HistoryResult_UNKNOWN, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return protocol.HistoryResult_UNKNOWN, err
+	}
+	outcome := protocol.HistoryResult_CONFLICT
+	if changed == 1 {
+		outcome = protocol.HistoryResult_APPLIED
+	}
+	if changed < 0 || changed > 1 {
+		return protocol.HistoryResult_UNKNOWN, fmt.Errorf("fixture history mutation changed an unexpected number of rows")
+	}
+	return outcome, nil
 }

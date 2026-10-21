@@ -29,8 +29,9 @@ type HistoryTable struct {
 
 // HistoryRecord contains stored revision facts without migration policy. Version
 // preserves exact identity, including an empty Atlas identity. Native versions
-// use canonical signed decimal spelling. State and Direction are explicit;
-// providers must not derive recovery decisions from them.
+// use canonical signed decimal spelling. State and Direction are stored fields
+// only for native history. Atlas records leave both empty; the migrator derives
+// them from progress, errors, and operator identity.
 type HistoryRecord struct {
 	Version         string
 	Description     string

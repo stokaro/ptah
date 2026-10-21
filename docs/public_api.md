@@ -4281,7 +4281,9 @@ the parent session's unwrapped store.
 
 `HistoryTable` names the schema, table, and `NativeHistory` or `AtlasHistory`
 representation. `HistoryRecord` preserves exact identity and stored progress,
-source hashes, timestamps, direction, and diagnostics. `HistorySnapshot`
+source hashes, timestamps, and diagnostics. Native records carry stored state
+and direction. Atlas records leave those fields empty; the common migrator
+derives them from progress, diagnostics, and operator identity. `HistorySnapshot`
 distinguishes a missing store from an empty complete one. `HistoryStore.Read`
 refuses incomplete results. `Prepare` validates or creates storage without
 upgrading an incompatible layout. `CompareAndSwap` atomically compares the
@@ -4328,7 +4330,14 @@ inserted without executing migration SQL. Native storage and its change summary
 use numeric keys even for an Atlas source with exact identities. Setting zero
 removes every native revision, including stored nonpositive keys. Failed or
 uncertain operations return no successful change summary and never replay
-automatically. Actual Atlas storage qualification remains required under #4204.
+automatically.
+
+Atlas storage preserves exact string identities and metadata rows.
+An existing Atlas row changes only its type during set; its stored diagnostics
+and progress remain intact. Independent SQLite process tests cover shared
+SQL/provider storage, baseline, apply and rollback, external-write conflicts,
+and uncertain set commits. Official-engine storage qualification remains required
+under #4204.
 
 `catalog.CancellationRollback` exposes transaction-lifetime evidence after
 `Rollback` is attempted. SQL-backed writers report cancellation of the context

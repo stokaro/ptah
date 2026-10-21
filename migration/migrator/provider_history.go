@@ -72,6 +72,9 @@ func (m *Migrator) providerHistoryRevisions(snapshot dbschema.HistorySnapshot) (
 			return nil, fmt.Errorf("provider history contains duplicate revision identities")
 		}
 		seen[record.Version] = true
+		if m.providerHistoryMetadata(record) {
+			continue
+		}
 		revision, err := m.providerHistoryRevision(record)
 		if err != nil {
 			return nil, err
@@ -93,9 +96,6 @@ func (m *Migrator) providerHistoryRevision(record dbschema.HistoryRecord) (Migra
 	revision := MigrationRevision{Description: record.Description, State: record.State, Direction: MigrationDirection(record.Direction), Applied: record.Applied, Total: record.Total,
 		Error: record.Error, ErrorStatement: record.ErrorStatement, ExecutionTime: record.ExecutionTime, Checksum: record.Checksum, AppliedAt: record.AppliedAt,
 		OperatorVersion: record.OperatorVersion, AtlasType: AtlasRevisionType(record.AtlasType), partialHashes: slices.Clone(record.PartialHashes)}
-	if revision.Direction != MigrationDirectionUp && revision.Direction != MigrationDirectionDown {
-		return MigrationRevision{}, fmt.Errorf("provider history contains an invalid revision direction")
-	}
 	if err := m.bindProviderRevisionIdentity(record, &revision); err != nil {
 		return MigrationRevision{}, err
 	}
@@ -140,12 +140,17 @@ func (m *Migrator) bindProviderRevisionIdentity(record dbschema.HistoryRecord, r
 			return err
 		}
 		revision.Version = version
-		if revision.State != atlasRevisionState(*revision) || revision.Direction != atlasRevisionDirection(revision.OperatorVersion) {
-			return fmt.Errorf("provider Atlas history state disagrees with stored metadata")
+		if record.State != "" || record.Direction != "" {
+			return fmt.Errorf("provider Atlas history must not supply derived state or direction")
 		}
+		revision.State = atlasRevisionState(*revision)
+		revision.Direction = atlasRevisionDirection(revision.OperatorVersion)
 		return nil
 	}
 
+	if revision.Direction != MigrationDirectionUp && revision.Direction != MigrationDirectionDown {
+		return fmt.Errorf("provider history contains an invalid revision direction")
+	}
 	version, err := strconv.ParseInt(record.Version, 10, 64)
 	if err != nil || strconv.FormatInt(version, 10) != record.Version {
 		return fmt.Errorf("provider history contains a non-canonical numeric revision identity")
@@ -159,4 +164,15 @@ func (m *Migrator) bindProviderRevisionIdentity(record dbschema.HistoryRecord, r
 		return err
 	}
 	return nil
+}
+
+func (m *Migrator) providerHistoryMetadata(record dbschema.HistoryRecord) bool {
+	return m.revisionTableFormat.isAtlas() && m.isAtlasMetadataRevisionVersion(record.Version)
+}
+
+func (m *Migrator) providerRecordState(record dbschema.HistoryRecord) string {
+	if m.revisionTableFormat.isAtlas() {
+		return atlasRevisionState(MigrationRevision{Applied: record.Applied, Total: record.Total, Error: record.Error, OperatorVersion: record.OperatorVersion})
+	}
+	return record.State
 }

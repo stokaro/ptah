@@ -41,6 +41,9 @@ func (m *Migrator) mutateStoredProviderRevision(ctx context.Context, store dbsch
 			return fmt.Errorf("provider history contains duplicate revision identities")
 		}
 		seen[record.Version] = true
+		if m.providerHistoryMetadata(record) {
+			continue
+		}
 		if _, err := m.providerHistoryRevision(record); err != nil {
 			return err
 		}
@@ -54,7 +57,7 @@ func (m *Migrator) mutateStoredProviderRevision(ctx context.Context, store dbsch
 	}
 	if after != nil {
 		if m.revisionTableFormat.isAtlas() {
-			after.State = atlasRevisionState(MigrationRevision{Applied: after.Applied, Total: after.Total, Error: after.Error, OperatorVersion: after.OperatorVersion})
+			after.State, after.Direction = "", ""
 		}
 		if _, err := m.providerHistoryRevision(*after); err != nil {
 			return err
@@ -108,7 +111,7 @@ func (m *Migrator) beginProviderRevision(ctx context.Context, conn *dbschema.Dat
 
 func (m *Migrator) restartProviderRevision(ctx context.Context, conn *dbschema.DatabaseConnection, migration *Migration, startedAt time.Time, applied int) (bool, error) {
 	return m.editProviderRevision(ctx, conn, migration, func(record *dbschema.HistoryRecord) error {
-		if record.State == migrationStateApplied || record.Error == unknownStatementOutcomeError {
+		if m.providerRecordState(*record) == migrationStateApplied || record.Error == unknownStatementOutcomeError {
 			return fmt.Errorf("provider history revision %s changed before retry; inspect durable state", record.Version)
 		}
 		pending, err := m.pendingProviderRevision(migration, startedAt, applied)
@@ -193,7 +196,7 @@ func (m *Migrator) failProviderRevision(ctx context.Context, failed failedRevisi
 		applied = migrationAppliedFloor(ctx)
 	}
 	return m.editProviderRevision(ctx, m.conn, failed.migration, func(record *dbschema.HistoryRecord) error {
-		if record.State == migrationStateApplied && txMode != MigrationTxModeNone {
+		if m.providerRecordState(*record) == migrationStateApplied && txMode != MigrationTxModeNone {
 			return fmt.Errorf("refusing to replace completed provider revision %s with failure", record.Version)
 		}
 		m.providerRevisionProgress(record, failed.migration, failed.startedAt, applied, failed.total, failed.direction)

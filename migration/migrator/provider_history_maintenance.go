@@ -78,7 +78,7 @@ func (m *Migrator) writeProviderChecksums(ctx context.Context, store dbschema.Hi
 	}
 	for _, update := range updates {
 		before, ok := byIdentity[update.identity]
-		if !ok || before.State != migrationStateApplied {
+		if !ok || m.providerRecordState(before) != migrationStateApplied {
 			return fmt.Errorf("provider revision %s is not applied during checksum reconciliation", update.version)
 		}
 		after := before

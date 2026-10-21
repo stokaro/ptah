@@ -48,6 +48,7 @@ func (m *Migrator) providerBaselineRecord(migration *Migration) dbschema.History
 		State: migrationStateApplied, Direction: string(MigrationDirectionUp), Applied: total, Total: total,
 		AppliedAt: time.Now().UTC(), Checksum: migrationRevisionHash(migration)}
 	if m.revisionTableFormat.isAtlas() {
+		record.State, record.Direction = "", ""
 		record.Description = migration.atlasFilenameDescription()
 		record.AtlasType = uint32(AtlasRevisionTypeBaseline)
 		record.Applied, record.Total, record.Checksum = 0, 0, ""

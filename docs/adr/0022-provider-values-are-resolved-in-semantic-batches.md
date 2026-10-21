@@ -359,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 17 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 18 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -709,9 +709,9 @@ transactional-DDL capability rather than a built-in dialect name.
 Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
-complete versioned workflow. The fixture does not yet implement Atlas storage.
-Logging, tags, locking, and Atlas
-storage qualification remain required before this history slice can merge.
+complete versioned workflow. The fixture also implements Atlas storage using
+ordinary revision columns. Logging, tags, locking, and complete Atlas maintenance
+qualification remain required before this history slice can merge.
 
 ## Keep history transactions independent of transactional DDL
 
@@ -796,5 +796,28 @@ keys. SQL and provider storage use these same decisions.
 
 Process qualification covers native storage, late mutation acknowledgment loss,
 lost commit requests and replies, refusal of weaker isolation, dry runs, and
-fresh-session recovery. Atlas record projection is present, but qualification
-of actual Atlas storage remains required under #4204.
+fresh-session recovery. Atlas storage has separate process checks against its
+ordinary revision columns, including tables created through the SQL path.
+
+## Derive Atlas revision state from stored facts
+
+Atlas records contain exact identities, progress, hashes, timestamps, type bits,
+diagnostics, and operator identity. They do not store native state or direction.
+The SDK refuses those derived fields on Atlas records. The common migrator uses
+the same derivation as its SQL reader, including the pending rollback marker.
+Providers implement storage without deciding migration state.
+
+The independent SQLite fixture reads and writes ordinary Atlas revision columns.
+It verifies column types, key identity, binary collation, and the absence of
+triggers and foreign keys. A comparison covers the complete canonical record;
+SQL null and empty diagnostics have the same representation. An unwrapped
+comparison and write uses one serializable data transaction. A caller-owned
+transaction retains its commit boundary.
+
+Process tests exchange the same database between SQL and provider connections.
+They cover metadata preservation, empty exact identities, baseline, apply and
+rollback, dirty-row set, external-write conflicts, and lost acknowledgments.
+Schema effects are inspected through the independent SQL connection: the fixture's
+schema reader does not accept the full Atlas table grammar. Repair, checksum
+reconciliation, and official-engine qualification still require Atlas-specific
+evidence under #4204.
