@@ -74,6 +74,12 @@ func TestMigrateUpJSONReportsAFailedRun(t *testing.T) {
 	c.Assert(result.Status, qt.IsNotNil)
 	c.Assert(result.Status.DirtyRevision, qt.IsNotNil)
 	c.Assert(result.Status.DirtyRevision.Version, qt.Equals, int64(3))
+	c.Assert(result.Failure, qt.DeepEquals, &migrator.RunFailure{
+		Version:    3,
+		VersionKey: "3",
+		Statement:  2,
+		Statements: 2,
+	}, qt.Commentf("the second statement of migration 3 is the one SQLite refused"))
 }
 
 // TestMigrateUpJSONReportsADryRun keeps a preview from reading as work.
