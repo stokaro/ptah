@@ -19,7 +19,7 @@ func validateStepIdentity(id *protocol.StepIdentity) error {
 	return nil
 }
 
-func validatePlanningContext(request *protocol.PlanFeaturesRequest) error {
+func validatePlanningContext(description *protocol.Description, request *protocol.PlanFeaturesRequest) error {
 	// Identifier facts and capability names have the same contract in both
 	// contextual services; neither service infers a missing capability value.
 	context := &protocol.CompareModelsRequest{Identifiers: request.GetIdentifiers(), Capabilities: request.GetCapabilities()}
@@ -51,10 +51,9 @@ func validatePlanningContext(request *protocol.PlanFeaturesRequest) error {
 		if err := validatePlanningMetadata(step.GetMetadata()); err != nil {
 			return err
 		}
-		if column := step.GetAddedColumn(); column != nil {
-			if err := validateDeclaredColumn(column); err != nil {
-				return err
-			}
+
+		if err := validateCommonPlanningOperand(description, request, step); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -164,6 +163,28 @@ func validateCapturedFeatures(description *protocol.Description, request *protoc
 		slices.Sort(service.OwnerKinds)
 		service.OwnerKinds = slices.Compact(service.OwnerKinds)
 		if err := validateComparisonState(description, context, service, representation, entry.state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCommonPlanningOperand(description *protocol.Description, request *protocol.PlanFeaturesRequest, step *protocol.CommonPlanningStep) error {
+	if step.GetParent() != nil {
+		if err := ValidateComparisonIdentity(step.GetParent()); err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(request.GetTables(), func(table *protocol.PlanningTable) bool {
+			return CompareIdentities(table.GetSubject(), step.GetParent()) == 0
+		}) {
+			return fmt.Errorf("%w: common planning step names an uncaptured parent", ErrProtocol)
+		}
+	}
+	if column := step.GetAddedColumn(); column != nil {
+		if step.GetParent() == nil {
+			return fmt.Errorf("%w: column addition requires its captured parent", ErrProtocol)
+		}
+		if err := validatePlanningColumn(description, request, column); err != nil {
 			return err
 		}
 	}

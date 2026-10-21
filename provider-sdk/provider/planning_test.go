@@ -219,3 +219,62 @@ func TestPlanningDescriptionRequiresExclusiveModelAssignments(t *testing.T) {
 		})
 	}
 }
+
+func plannedColumnRequest() (*protocol.Description, *protocol.PlanFeaturesRequest) {
+	d, request, _ := planningExchange()
+	step := request.CommonSteps[0]
+	step.Parent = proto.CloneOf(request.Tables[0].Subject)
+	step.AddedColumn = &protocol.PlanningColumn{Name: "owner_id", Type: "INTEGER", EnumType: true,
+		Default: &protocol.PlanningDefault{ValueSet: true},
+		ForeignKey: &protocol.PlanningForeignKey{Table: "owners", Columns: []string{"id"}, Deferrable: true,
+			Facets: []*protocol.CapturedFacet{{Kind: request.ParentKinds[0], Targets: []string{"other"}}}},
+	}
+	return d, request
+}
+
+func TestPlanningColumnWireRetainsPresenceAndNestedFacets(t *testing.T) {
+	c := qt.New(t)
+	d, request := plannedColumnRequest()
+	c.Assert(provider.ValidatePlanningRequest(d, request), qt.IsNil)
+	data, err := proto.Marshal(request)
+	c.Assert(err, qt.IsNil)
+	roundTrip := new(protocol.PlanFeaturesRequest)
+	c.Assert(proto.Unmarshal(data, roundTrip), qt.IsNil)
+	c.Assert(proto.Equal(roundTrip, request), qt.IsTrue)
+	column := roundTrip.CommonSteps[0].AddedColumn
+	c.Assert(column.Default, qt.Not(qt.IsNil))
+	c.Assert(column.Default.ValueSet, qt.IsTrue)
+	c.Assert(column.Default.Value, qt.Equals, "")
+	c.Assert(column.EnumType, qt.IsTrue)
+	c.Assert(column.ForeignKey.Facets[0].Targets, qt.DeepEquals, []string{"other"})
+	c.Assert(column.ForeignKey.Facets[0].Value, qt.IsNil)
+	c.Assert(provider.ValidatePlanningRequest(d, roundTrip), qt.IsNil)
+}
+
+func TestPlanningColumnRefusesMissingContextAndFacetScope(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*protocol.CommonPlanningStep)
+	}{
+		{"missing parent", func(s *protocol.CommonPlanningStep) { s.Parent = nil }},
+		{"unknown parent", func(s *protocol.CommonPlanningStep) { s.Parent.Name.Normalized = "unknown" }},
+		{"missing type", func(s *protocol.CommonPlanningStep) { s.AddedColumn.Type = "" }},
+		{"missing referenced table", func(s *protocol.CommonPlanningStep) { s.AddedColumn.ForeignKey.Table = "" }},
+		{"missing referenced columns", func(s *protocol.CommonPlanningStep) { s.AddedColumn.ForeignKey.Columns = nil }},
+		{"unscoped exclusion", func(s *protocol.CommonPlanningStep) { s.AddedColumn.ForeignKey.Facets[0].Targets = nil }},
+		{"unowned facet", func(s *protocol.CommonPlanningStep) { s.AddedColumn.ForeignKey.Facets[0].Kind = "foreign" }},
+		{"duplicate facet", func(s *protocol.CommonPlanningStep) {
+			f := s.AddedColumn.ForeignKey.Facets[0]
+			s.AddedColumn.ForeignKey.Facets = append(s.AddedColumn.ForeignKey.Facets, proto.CloneOf(f))
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			d, request := plannedColumnRequest()
+			c.Assert(provider.ValidatePlanningRequest(d, request), qt.IsNil)
+			test.mutate(request.CommonSteps[0])
+			c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorIs, provider.ErrProtocol)
+		})
+	}
+}

@@ -44,7 +44,7 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if !slices.Equal(request.GetParentKinds(), expected) {
 		return fmt.Errorf("%w: planning parent assignment changed", ErrProtocol)
 	}
-	if err := validatePlanningContext(request); err != nil {
+	if err := validatePlanningContext(description, request); err != nil {
 		return err
 	}
 	if err := validatePlanningChanges(description, request, service); err != nil {

@@ -7503,7 +7503,8 @@ type CommonPlanningStep struct {
 	Id       *StepIdentity          `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Metadata *PlanningMetadata      `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// The actual operand, when this step adds a column. No host AST is sent.
-	AddedColumn   *DeclaredColumn `protobuf:"bytes,3,opt,name=added_column,json=addedColumn,proto3" json:"added_column,omitempty"`
+	AddedColumn   *PlanningColumn     `protobuf:"bytes,3,opt,name=added_column,json=addedColumn,proto3" json:"added_column,omitempty"`
+	Parent        *ComparisonIdentity `protobuf:"bytes,4,opt,name=parent,proto3" json:"parent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7552,9 +7553,16 @@ func (x *CommonPlanningStep) GetMetadata() *PlanningMetadata {
 	return nil
 }
 
-func (x *CommonPlanningStep) GetAddedColumn() *DeclaredColumn {
+func (x *CommonPlanningStep) GetAddedColumn() *PlanningColumn {
 	if x != nil {
 		return x.AddedColumn
+	}
+	return nil
+}
+
+func (x *CommonPlanningStep) GetParent() *ComparisonIdentity {
+	if x != nil {
+		return x.Parent
 	}
 	return nil
 }
@@ -10578,6 +10586,483 @@ func (x *ObservedConstraint) GetHashShardBuckets() int64 {
 	return 0
 }
 
+// PlanningColumn describes the accepted common operation operand. It remains
+// separate from a source declaration: defaults have explicit presence and enum
+// identity comes from capture, never from the spelling of a type name.
+type PlanningColumn struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Name                  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type                  string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	TypeRawSql            bool                   `protobuf:"varint,3,opt,name=type_raw_sql,json=typeRawSql,proto3" json:"type_raw_sql,omitempty"`
+	TypeIsDeclaredText    bool                   `protobuf:"varint,4,opt,name=type_is_declared_text,json=typeIsDeclaredText,proto3" json:"type_is_declared_text,omitempty"`
+	EnumType              bool                   `protobuf:"varint,5,opt,name=enum_type,json=enumType,proto3" json:"enum_type,omitempty"`
+	Nullable              bool                   `protobuf:"varint,6,opt,name=nullable,proto3" json:"nullable,omitempty"`
+	Primary               bool                   `protobuf:"varint,7,opt,name=primary,proto3" json:"primary,omitempty"`
+	Unique                bool                   `protobuf:"varint,8,opt,name=unique,proto3" json:"unique,omitempty"`
+	AutoIncrement         bool                   `protobuf:"varint,9,opt,name=auto_increment,json=autoIncrement,proto3" json:"auto_increment,omitempty"`
+	IdentityGeneration    string                 `protobuf:"bytes,10,opt,name=identity_generation,json=identityGeneration,proto3" json:"identity_generation,omitempty"`
+	IdentityStart         string                 `protobuf:"bytes,11,opt,name=identity_start,json=identityStart,proto3" json:"identity_start,omitempty"`
+	IdentityIncrement     string                 `protobuf:"bytes,12,opt,name=identity_increment,json=identityIncrement,proto3" json:"identity_increment,omitempty"`
+	IdentityOptions       string                 `protobuf:"bytes,13,opt,name=identity_options,json=identityOptions,proto3" json:"identity_options,omitempty"`
+	Default               *PlanningDefault       `protobuf:"bytes,14,opt,name=default,proto3" json:"default,omitempty"`
+	Check                 string                 `protobuf:"bytes,15,opt,name=check,proto3" json:"check,omitempty"`
+	CheckName             string                 `protobuf:"bytes,16,opt,name=check_name,json=checkName,proto3" json:"check_name,omitempty"`
+	CheckNotEnforced      bool                   `protobuf:"varint,17,opt,name=check_not_enforced,json=checkNotEnforced,proto3" json:"check_not_enforced,omitempty"`
+	NotNullConstraintName string                 `protobuf:"bytes,18,opt,name=not_null_constraint_name,json=notNullConstraintName,proto3" json:"not_null_constraint_name,omitempty"`
+	GeneratedExpression   string                 `protobuf:"bytes,19,opt,name=generated_expression,json=generatedExpression,proto3" json:"generated_expression,omitempty"`
+	GeneratedKind         string                 `protobuf:"bytes,20,opt,name=generated_kind,json=generatedKind,proto3" json:"generated_kind,omitempty"`
+	Collation             string                 `protobuf:"bytes,21,opt,name=collation,proto3" json:"collation,omitempty"`
+	Comment               string                 `protobuf:"bytes,22,opt,name=comment,proto3" json:"comment,omitempty"`
+	ForeignKey            *PlanningForeignKey    `protobuf:"bytes,23,opt,name=foreign_key,json=foreignKey,proto3" json:"foreign_key,omitempty"`
+	Facets                []*CapturedFacet       `protobuf:"bytes,24,rep,name=facets,proto3" json:"facets,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PlanningColumn) Reset() {
+	*x = PlanningColumn{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningColumn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningColumn) ProtoMessage() {}
+
+func (x *PlanningColumn) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningColumn.ProtoReflect.Descriptor instead.
+func (*PlanningColumn) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{114}
+}
+
+func (x *PlanningColumn) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetTypeRawSql() bool {
+	if x != nil {
+		return x.TypeRawSql
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetTypeIsDeclaredText() bool {
+	if x != nil {
+		return x.TypeIsDeclaredText
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetEnumType() bool {
+	if x != nil {
+		return x.EnumType
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetNullable() bool {
+	if x != nil {
+		return x.Nullable
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetPrimary() bool {
+	if x != nil {
+		return x.Primary
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetUnique() bool {
+	if x != nil {
+		return x.Unique
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetAutoIncrement() bool {
+	if x != nil {
+		return x.AutoIncrement
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetIdentityGeneration() string {
+	if x != nil {
+		return x.IdentityGeneration
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetIdentityStart() string {
+	if x != nil {
+		return x.IdentityStart
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetIdentityIncrement() string {
+	if x != nil {
+		return x.IdentityIncrement
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetIdentityOptions() string {
+	if x != nil {
+		return x.IdentityOptions
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetDefault() *PlanningDefault {
+	if x != nil {
+		return x.Default
+	}
+	return nil
+}
+
+func (x *PlanningColumn) GetCheck() string {
+	if x != nil {
+		return x.Check
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetCheckName() string {
+	if x != nil {
+		return x.CheckName
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetCheckNotEnforced() bool {
+	if x != nil {
+		return x.CheckNotEnforced
+	}
+	return false
+}
+
+func (x *PlanningColumn) GetNotNullConstraintName() string {
+	if x != nil {
+		return x.NotNullConstraintName
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetGeneratedExpression() string {
+	if x != nil {
+		return x.GeneratedExpression
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetGeneratedKind() string {
+	if x != nil {
+		return x.GeneratedKind
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetCollation() string {
+	if x != nil {
+		return x.Collation
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *PlanningColumn) GetForeignKey() *PlanningForeignKey {
+	if x != nil {
+		return x.ForeignKey
+	}
+	return nil
+}
+
+func (x *PlanningColumn) GetFacets() []*CapturedFacet {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
+}
+
+type PlanningDefault struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	ValueSet      bool                   `protobuf:"varint,2,opt,name=value_set,json=valueSet,proto3" json:"value_set,omitempty"`
+	Expression    string                 `protobuf:"bytes,3,opt,name=expression,proto3" json:"expression,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningDefault) Reset() {
+	*x = PlanningDefault{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningDefault) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningDefault) ProtoMessage() {}
+
+func (x *PlanningDefault) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningDefault.ProtoReflect.Descriptor instead.
+func (*PlanningDefault) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{115}
+}
+
+func (x *PlanningDefault) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *PlanningDefault) GetValueSet() bool {
+	if x != nil {
+		return x.ValueSet
+	}
+	return false
+}
+
+func (x *PlanningDefault) GetExpression() string {
+	if x != nil {
+		return x.Expression
+	}
+	return ""
+}
+
+type PlanningForeignKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Table         string                 `protobuf:"bytes,1,opt,name=table,proto3" json:"table,omitempty"`
+	Column        string                 `protobuf:"bytes,2,opt,name=column,proto3" json:"column,omitempty"`
+	Columns       []string               `protobuf:"bytes,3,rep,name=columns,proto3" json:"columns,omitempty"`
+	OnDelete      string                 `protobuf:"bytes,4,opt,name=on_delete,json=onDelete,proto3" json:"on_delete,omitempty"`
+	OnUpdate      string                 `protobuf:"bytes,5,opt,name=on_update,json=onUpdate,proto3" json:"on_update,omitempty"`
+	Name          string                 `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	Deferrable    bool                   `protobuf:"varint,7,opt,name=deferrable,proto3" json:"deferrable,omitempty"`
+	Initially     string                 `protobuf:"bytes,8,opt,name=initially,proto3" json:"initially,omitempty"`
+	Match         string                 `protobuf:"bytes,9,opt,name=match,proto3" json:"match,omitempty"`
+	NotEnforced   bool                   `protobuf:"varint,10,opt,name=not_enforced,json=notEnforced,proto3" json:"not_enforced,omitempty"`
+	Facets        []*CapturedFacet       `protobuf:"bytes,11,rep,name=facets,proto3" json:"facets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningForeignKey) Reset() {
+	*x = PlanningForeignKey{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningForeignKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningForeignKey) ProtoMessage() {}
+
+func (x *PlanningForeignKey) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningForeignKey.ProtoReflect.Descriptor instead.
+func (*PlanningForeignKey) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{116}
+}
+
+func (x *PlanningForeignKey) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetColumn() string {
+	if x != nil {
+		return x.Column
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetColumns() []string {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *PlanningForeignKey) GetOnDelete() string {
+	if x != nil {
+		return x.OnDelete
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetOnUpdate() string {
+	if x != nil {
+		return x.OnUpdate
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetDeferrable() bool {
+	if x != nil {
+		return x.Deferrable
+	}
+	return false
+}
+
+func (x *PlanningForeignKey) GetInitially() string {
+	if x != nil {
+		return x.Initially
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetMatch() string {
+	if x != nil {
+		return x.Match
+	}
+	return ""
+}
+
+func (x *PlanningForeignKey) GetNotEnforced() bool {
+	if x != nil {
+		return x.NotEnforced
+	}
+	return false
+}
+
+func (x *PlanningForeignKey) GetFacets() []*CapturedFacet {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
+}
+
+// CapturedFacet retains a value or an explicit target exclusion in its exact
+// common operand slot. Its enclosing operand supplies the grammatical owner.
+type CapturedFacet struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Targets       []string               `protobuf:"bytes,2,rep,name=targets,proto3" json:"targets,omitempty"`
+	Value         *NormalizedValue       `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapturedFacet) Reset() {
+	*x = CapturedFacet{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapturedFacet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapturedFacet) ProtoMessage() {}
+
+func (x *CapturedFacet) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapturedFacet.ProtoReflect.Descriptor instead.
+func (*CapturedFacet) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{117}
+}
+
+func (x *CapturedFacet) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CapturedFacet) GetTargets() []string {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+func (x *CapturedFacet) GetValue() *NormalizedValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -11182,11 +11667,12 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05EARLY\x10\x01\"\x96\x01\n" +
 	"\x12PlanningDependency\x12@\n" +
 	"\x06before\x18\x01 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x06before\x12>\n" +
-	"\x05after\x18\x02 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x05after\"\xe7\x01\n" +
+	"\x05after\x18\x02 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x05after\"\xaf\x02\n" +
 	"\x12CommonPlanningStep\x128\n" +
 	"\x02id\x18\x01 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x02id\x12H\n" +
 	"\bmetadata\x18\x02 \x01(\v2,.ptah.provider.experimental.PlanningMetadataR\bmetadata\x12M\n" +
-	"\fadded_column\x18\x03 \x01(\v2*.ptah.provider.experimental.DeclaredColumnR\vaddedColumn\"\x86\x03\n" +
+	"\fadded_column\x18\x03 \x01(\v2*.ptah.provider.experimental.PlanningColumnR\vaddedColumn\x12F\n" +
+	"\x06parent\x18\x04 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\x06parent\"\x86\x03\n" +
 	"\x11PlanningOperation\x12D\n" +
 	"\x04role\x18\x01 \x01(\x0e20.ptah.provider.experimental.NativeOperation.RoleR\x04role\x12F\n" +
 	"\x06parent\x18\x02 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\x06parent\x12A\n" +
@@ -11564,7 +12050,61 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\f_update_ruleB\x0f\n" +
 	"\r_check_clauseB\x11\n" +
 	"\x0f_nulls_distinctB\x0f\n" +
-	"\r_using_method2\xc5\t\n" +
+	"\r_using_method\"\xda\a\n" +
+	"\x0ePlanningColumn\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12 \n" +
+	"\ftype_raw_sql\x18\x03 \x01(\bR\n" +
+	"typeRawSql\x121\n" +
+	"\x15type_is_declared_text\x18\x04 \x01(\bR\x12typeIsDeclaredText\x12\x1b\n" +
+	"\tenum_type\x18\x05 \x01(\bR\benumType\x12\x1a\n" +
+	"\bnullable\x18\x06 \x01(\bR\bnullable\x12\x18\n" +
+	"\aprimary\x18\a \x01(\bR\aprimary\x12\x16\n" +
+	"\x06unique\x18\b \x01(\bR\x06unique\x12%\n" +
+	"\x0eauto_increment\x18\t \x01(\bR\rautoIncrement\x12/\n" +
+	"\x13identity_generation\x18\n" +
+	" \x01(\tR\x12identityGeneration\x12%\n" +
+	"\x0eidentity_start\x18\v \x01(\tR\ridentityStart\x12-\n" +
+	"\x12identity_increment\x18\f \x01(\tR\x11identityIncrement\x12)\n" +
+	"\x10identity_options\x18\r \x01(\tR\x0fidentityOptions\x12E\n" +
+	"\adefault\x18\x0e \x01(\v2+.ptah.provider.experimental.PlanningDefaultR\adefault\x12\x14\n" +
+	"\x05check\x18\x0f \x01(\tR\x05check\x12\x1d\n" +
+	"\n" +
+	"check_name\x18\x10 \x01(\tR\tcheckName\x12,\n" +
+	"\x12check_not_enforced\x18\x11 \x01(\bR\x10checkNotEnforced\x127\n" +
+	"\x18not_null_constraint_name\x18\x12 \x01(\tR\x15notNullConstraintName\x121\n" +
+	"\x14generated_expression\x18\x13 \x01(\tR\x13generatedExpression\x12%\n" +
+	"\x0egenerated_kind\x18\x14 \x01(\tR\rgeneratedKind\x12\x1c\n" +
+	"\tcollation\x18\x15 \x01(\tR\tcollation\x12\x18\n" +
+	"\acomment\x18\x16 \x01(\tR\acomment\x12O\n" +
+	"\vforeign_key\x18\x17 \x01(\v2..ptah.provider.experimental.PlanningForeignKeyR\n" +
+	"foreignKey\x12A\n" +
+	"\x06facets\x18\x18 \x03(\v2).ptah.provider.experimental.CapturedFacetR\x06facets\"d\n" +
+	"\x0fPlanningDefault\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x1b\n" +
+	"\tvalue_set\x18\x02 \x01(\bR\bvalueSet\x12\x1e\n" +
+	"\n" +
+	"expression\x18\x03 \x01(\tR\n" +
+	"expression\"\xe4\x02\n" +
+	"\x12PlanningForeignKey\x12\x14\n" +
+	"\x05table\x18\x01 \x01(\tR\x05table\x12\x16\n" +
+	"\x06column\x18\x02 \x01(\tR\x06column\x12\x18\n" +
+	"\acolumns\x18\x03 \x03(\tR\acolumns\x12\x1b\n" +
+	"\ton_delete\x18\x04 \x01(\tR\bonDelete\x12\x1b\n" +
+	"\ton_update\x18\x05 \x01(\tR\bonUpdate\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"deferrable\x18\a \x01(\bR\n" +
+	"deferrable\x12\x1c\n" +
+	"\tinitially\x18\b \x01(\tR\tinitially\x12\x14\n" +
+	"\x05match\x18\t \x01(\tR\x05match\x12!\n" +
+	"\fnot_enforced\x18\n" +
+	" \x01(\bR\vnotEnforced\x12A\n" +
+	"\x06facets\x18\v \x03(\v2).ptah.provider.experimental.CapturedFacetR\x06facets\"\x80\x01\n" +
+	"\rCapturedFacet\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
+	"\atargets\x18\x02 \x03(\tR\atargets\x12A\n" +
+	"\x05value\x18\x03 \x01(\v2+.ptah.provider.experimental.NormalizedValueR\x05value2\xc5\t\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -11593,7 +12133,7 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 21)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 119)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 123)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(YAMLSourceKey_Scope)(0),            // 0: ptah.provider.experimental.YAMLSourceKey.Scope
 	(IdentifierRules_Comparison)(0),     // 1: ptah.provider.experimental.IdentifierRules.Comparison
@@ -11730,11 +12270,15 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(*ObservedColumn)(nil),              // 132: ptah.provider.experimental.ObservedColumn
 	(*ObservedIndex)(nil),               // 133: ptah.provider.experimental.ObservedIndex
 	(*ObservedConstraint)(nil),          // 134: ptah.provider.experimental.ObservedConstraint
-	nil,                                 // 135: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	nil,                                 // 136: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	nil,                                 // 137: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	nil,                                 // 138: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	nil,                                 // 139: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	(*PlanningColumn)(nil),              // 135: ptah.provider.experimental.PlanningColumn
+	(*PlanningDefault)(nil),             // 136: ptah.provider.experimental.PlanningDefault
+	(*PlanningForeignKey)(nil),          // 137: ptah.provider.experimental.PlanningForeignKey
+	(*CapturedFacet)(nil),               // 138: ptah.provider.experimental.CapturedFacet
+	nil,                                 // 139: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	nil,                                 // 140: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	nil,                                 // 141: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	nil,                                 // 142: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	nil,                                 // 143: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	24,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
@@ -11771,7 +12315,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	4,   // 31: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
 	27,  // 32: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
 	37,  // 33: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	135, // 34: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	139, // 34: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
 	28,  // 35: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
 	40,  // 36: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
 	40,  // 37: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
@@ -11882,7 +12426,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	26,  // 142: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
 	96,  // 143: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
 	97,  // 144: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	136, // 145: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	140, // 145: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
 	90,  // 146: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
 	90,  // 147: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
 	91,  // 148: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
@@ -11914,94 +12458,100 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	105, // 174: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
 	105, // 175: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
 	107, // 176: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	125, // 177: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.DeclaredColumn
-	4,   // 178: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	82,  // 179: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
-	51,  // 180: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	18,  // 181: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
-	105, // 182: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
-	107, // 183: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	110, // 184: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
-	111, // 185: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
-	108, // 186: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
-	105, // 187: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
-	105, // 188: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
-	82,  // 189: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	51,  // 190: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	82,  // 191: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 192: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
-	115, // 193: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
-	20,  // 194: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	19,  // 195: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
-	82,  // 196: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
-	82,  // 197: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	20,  // 198: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	123, // 199: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	131, // 200: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
-	97,  // 201: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	137, // 202: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	114, // 203: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
-	119, // 204: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
-	118, // 205: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
-	118, // 206: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
-	109, // 207: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
-	112, // 208: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
-	115, // 209: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
-	116, // 210: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
-	113, // 211: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
-	117, // 212: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
-	90,  // 213: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
-	90,  // 214: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
-	124, // 215: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
-	125, // 216: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
-	126, // 217: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	129, // 218: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
-	128, // 219: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
-	130, // 220: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	122, // 221: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	127, // 222: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	138, // 223: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	82,  // 224: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	82,  // 225: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	132, // 226: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
-	133, // 227: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
-	134, // 228: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
-	130, // 229: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	122, // 230: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	82,  // 231: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
-	127, // 232: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	139, // 233: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	82,  // 234: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	82,  // 235: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	22,  // 236: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	29,  // 237: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	31,  // 238: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	32,  // 239: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	39,  // 240: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	44,  // 241: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	73,  // 242: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	48,  // 243: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	78,  // 244: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
-	98,  // 245: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
-	120, // 246: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
-	42,  // 247: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	23,  // 248: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	30,  // 249: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	21,  // 250: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	33,  // 251: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	41,  // 252: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	45,  // 253: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	74,  // 254: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	50,  // 255: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	50,  // 256: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
-	102, // 257: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
-	121, // 258: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
-	43,  // 259: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	248, // [248:260] is the sub-list for method output_type
-	236, // [236:248] is the sub-list for method input_type
-	236, // [236:236] is the sub-list for extension type_name
-	236, // [236:236] is the sub-list for extension extendee
-	0,   // [0:236] is the sub-list for field type_name
+	135, // 177: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.PlanningColumn
+	82,  // 178: ptah.provider.experimental.CommonPlanningStep.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	4,   // 179: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	82,  // 180: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 181: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	18,  // 182: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
+	105, // 183: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	107, // 184: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	110, // 185: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
+	111, // 186: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
+	108, // 187: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
+	105, // 188: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
+	105, // 189: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
+	82,  // 190: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 191: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	82,  // 192: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	105, // 193: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
+	115, // 194: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
+	20,  // 195: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	19,  // 196: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
+	82,  // 197: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 198: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	20,  // 199: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	123, // 200: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	131, // 201: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
+	97,  // 202: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	141, // 203: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	114, // 204: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
+	119, // 205: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
+	118, // 206: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
+	118, // 207: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
+	109, // 208: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
+	112, // 209: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
+	115, // 210: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
+	116, // 211: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
+	113, // 212: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
+	117, // 213: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
+	90,  // 214: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
+	90,  // 215: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
+	124, // 216: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
+	125, // 217: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
+	126, // 218: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	129, // 219: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
+	128, // 220: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
+	130, // 221: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	122, // 222: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	127, // 223: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	142, // 224: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	82,  // 225: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 226: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	132, // 227: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
+	133, // 228: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
+	134, // 229: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
+	130, // 230: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	122, // 231: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	82,  // 232: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
+	127, // 233: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	143, // 234: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	82,  // 235: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 236: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	136, // 237: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
+	137, // 238: ptah.provider.experimental.PlanningColumn.foreign_key:type_name -> ptah.provider.experimental.PlanningForeignKey
+	138, // 239: ptah.provider.experimental.PlanningColumn.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	138, // 240: ptah.provider.experimental.PlanningForeignKey.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	51,  // 241: ptah.provider.experimental.CapturedFacet.value:type_name -> ptah.provider.experimental.NormalizedValue
+	22,  // 242: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	29,  // 243: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	31,  // 244: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	32,  // 245: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	39,  // 246: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	44,  // 247: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	73,  // 248: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	48,  // 249: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	78,  // 250: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	98,  // 251: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
+	120, // 252: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
+	42,  // 253: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	23,  // 254: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	30,  // 255: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	21,  // 256: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	33,  // 257: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	41,  // 258: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	45,  // 259: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	74,  // 260: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	50,  // 261: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	50,  // 262: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	102, // 263: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
+	121, // 264: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
+	43,  // 265: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	254, // [254:266] is the sub-list for method output_type
+	242, // [242:254] is the sub-list for method input_type
+	242, // [242:242] is the sub-list for extension type_name
+	242, // [242:242] is the sub-list for extension extendee
+	0,   // [0:242] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -12059,7 +12609,7 @@ func file_protocol_experimental_provider_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
 			NumEnums:      21,
-			NumMessages:   119,
+			NumMessages:   123,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

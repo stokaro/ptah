@@ -772,7 +772,8 @@ message CommonPlanningStep {
   StepIdentity id = 1;
   PlanningMetadata metadata = 2;
   // The actual operand, when this step adds a column. No host AST is sent.
-  DeclaredColumn added_column = 3;
+  PlanningColumn added_column = 3;
+  ComparisonIdentity parent = 4;
 }
 message PlanningOperation {
   NativeOperation.Role role = 1;
@@ -1081,4 +1082,55 @@ message ObservedConstraint {
   repeated ComparisonIdentity requires = 22;
   string comment = 23;
   int64 hash_shard_buckets = 24;
+}
+
+// PlanningColumn describes the accepted common operation operand. It remains
+// separate from a source declaration: defaults have explicit presence and enum
+// identity comes from capture, never from the spelling of a type name.
+message PlanningColumn {
+  string name = 1;
+  string type = 2;
+  bool type_raw_sql = 3;
+  bool type_is_declared_text = 4;
+  bool enum_type = 5;
+  bool nullable = 6;
+  bool primary = 7;
+  bool unique = 8;
+  bool auto_increment = 9;
+  string identity_generation = 10;
+  string identity_start = 11;
+  string identity_increment = 12;
+  string identity_options = 13;
+  PlanningDefault default = 14;
+  string check = 15;
+  string check_name = 16;
+  bool check_not_enforced = 17;
+  string not_null_constraint_name = 18;
+  string generated_expression = 19;
+  string generated_kind = 20;
+  string collation = 21;
+  string comment = 22;
+  PlanningForeignKey foreign_key = 23;
+  repeated CapturedFacet facets = 24;
+}
+message PlanningDefault { string value = 1; bool value_set = 2; string expression = 3; }
+message PlanningForeignKey {
+  string table = 1;
+  string column = 2;
+  repeated string columns = 3;
+  string on_delete = 4;
+  string on_update = 5;
+  string name = 6;
+  bool deferrable = 7;
+  string initially = 8;
+  string match = 9;
+  bool not_enforced = 10;
+  repeated CapturedFacet facets = 11;
+}
+// CapturedFacet retains a value or an explicit target exclusion in its exact
+// common operand slot. Its enclosing operand supplies the grammatical owner.
+message CapturedFacet {
+  string kind = 1;
+  repeated string targets = 2;
+  NormalizedValue value = 3;
 }
