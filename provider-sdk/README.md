@@ -109,6 +109,12 @@ can name an existing transaction. The owner must use the same transaction as
 `Execute`, including visibility of uncommitted revision changes. Closing the
 session or restarting the process invalidates those handles.
 
+A host can use the transaction service only for revision data without requiring
+transactional DDL. The host's history handle exposes no SQL executor. Preparing
+storage precedes the transaction; nested transactions and dry-run writes are
+refused. Migration locking remains the caller's responsibility. These handles
+do not establish serializable isolation.
+
 `ReadHistory` returns a consistent complete snapshot, distinguishing a missing
 store from an empty one. The caller sets a positive limit of at most 10,000
 revisions. Exceeding that limit or the transport message bound is an error;

@@ -61,6 +61,10 @@ func (m *Migrator) readRevisionRows(ctx context.Context) ([]MigrationRevision, e
 	if !snapshot.Exists {
 		return nil, fmt.Errorf("provider history store disappeared after initialization")
 	}
+	return m.providerHistoryRevisions(snapshot)
+}
+
+func (m *Migrator) providerHistoryRevisions(snapshot dbschema.HistorySnapshot) ([]MigrationRevision, error) {
 	revisions := make([]MigrationRevision, 0, len(snapshot.Records))
 	seen := make(map[string]bool, len(snapshot.Records))
 	for _, record := range snapshot.Records {

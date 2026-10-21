@@ -72,6 +72,25 @@ type HistoryStore interface {
 	CompareAndSwap(context.Context, HistoryTable, *HistoryRecord, *HistoryRecord) error
 }
 
+// HistoryTransaction groups revision reads and writes in one atomic data
+// transaction. It exposes no schema executor and makes no transactional DDL
+// promise. Preparation is refused; prepare storage before beginning. Callers
+// retain responsibility for migration locking. A failed commit can have an
+// unknown outcome and must not cause automatic replay.
+type HistoryTransaction interface {
+	HistoryStore
+	Commit() error
+	Rollback() error
+}
+
+// HistoryTransactor optionally opens data transactions on a session's history
+// store. It must bind the transaction to that session, refuse nested transactions
+// and dry runs, and return an error when atomic history writes are unavailable.
+// Closing the session releases its unfinished transactions.
+type HistoryTransactor interface {
+	BeginHistoryTransaction(context.Context) (HistoryTransaction, error)
+}
+
 // HistoryStoreProvider binds history access to the implementing session or
 // transaction. A transaction must not return its parent session's unwrapped
 // store. Lack of support returns an error rather than another connection.

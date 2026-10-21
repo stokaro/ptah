@@ -23,22 +23,26 @@ func (m *Migrator) mutateProviderRevision(ctx context.Context, conn *dbschema.Da
 	if err != nil || store == nil {
 		return err != nil, err
 	}
+	return true, m.mutateStoredProviderRevision(ctx, store, migration, change)
+}
+
+func (m *Migrator) mutateStoredProviderRevision(ctx context.Context, store dbschema.HistoryStore, migration *Migration, change func(*dbschema.HistoryRecord) (*dbschema.HistoryRecord, error)) error {
 	snapshot, err := store.Read(ctx, m.providerHistoryTable())
 	if err != nil {
-		return true, err
+		return err
 	}
 	if !snapshot.Exists {
-		return true, fmt.Errorf("provider history store disappeared before revision mutation")
+		return fmt.Errorf("provider history store disappeared before revision mutation")
 	}
 	var before *dbschema.HistoryRecord
 	seen := make(map[string]bool, len(snapshot.Records))
 	for _, record := range snapshot.Records {
 		if seen[record.Version] {
-			return true, fmt.Errorf("provider history contains duplicate revision identities")
+			return fmt.Errorf("provider history contains duplicate revision identities")
 		}
 		seen[record.Version] = true
 		if _, err := m.providerHistoryRevision(record); err != nil {
-			return true, err
+			return err
 		}
 		if record.Version == m.persistedRevisionIdentity(migration) {
 			before = &record
@@ -46,17 +50,17 @@ func (m *Migrator) mutateProviderRevision(ctx context.Context, conn *dbschema.Da
 	}
 	after, err := change(before)
 	if err != nil {
-		return true, err
+		return err
 	}
 	if after != nil {
 		if m.revisionTableFormat.isAtlas() {
 			after.State = atlasRevisionState(MigrationRevision{Applied: after.Applied, Total: after.Total, Error: after.Error, OperatorVersion: after.OperatorVersion})
 		}
 		if _, err := m.providerHistoryRevision(*after); err != nil {
-			return true, err
+			return err
 		}
 	}
-	return true, store.CompareAndSwap(ctx, m.providerHistoryTable(), before, after)
+	return store.CompareAndSwap(ctx, m.providerHistoryTable(), before, after)
 }
 
 func (m *Migrator) editProviderRevision(ctx context.Context, conn *dbschema.DatabaseConnection, migration *Migration, edit func(*dbschema.HistoryRecord) error) (bool, error) {

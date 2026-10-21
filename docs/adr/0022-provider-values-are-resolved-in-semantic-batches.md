@@ -650,7 +650,7 @@ The common migrator reads provider history through the same ordering, progress,
 identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
-sessions. Ordinary revision writes use the same typed store. History maintenance,
+sessions. Ordinary revision writes use the same typed store. Set, repair, checksum reconciliation,
 lock ownership, and default versioned CLI integration remain unfinished under #4204.
 
 ## Preserve uncertain outcomes across the host boundary
@@ -710,5 +710,27 @@ Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
 complete versioned workflow. The fixture does not yet implement Atlas storage.
-Baseline, set, repair, logging, tags, data-only transactions, locking, and Atlas
+Set, repair, checksum reconciliation, logging, tags, locking, and Atlas
 storage qualification remain required before this history slice can merge.
+
+## Keep history transactions independent of transactional DDL
+
+YDB needs atomic revision-data writes without a claim that schema changes can
+roll back. `HistoryTransactor` opens the existing session transaction service
+through a restricted `HistoryTransaction` handle. The handle offers revision
+storage and finish operations; its dynamic type has no schema executor. Schema
+transactions still require established transactional DDL. Neither interface
+claims a distributed migration lock or serializable isolation.
+
+Baseline validates stored revisions and writes the selected batch in this data
+transaction. SQL and native stores share the dirty-state, nonempty-store, and
+above-baseline policy. Preparation occurs before beginning. Failure rolls back
+the batch; a failed commit attempts cleanup and retains its uncertain outcome.
+No migration body runs, and no SQL history statements cross the provider boundary.
+
+An independent provider fixture advertises history and transactions without
+transactional DDL. Process tests exercise commit, rollback, baseline, forced
+baseline restrictions, and lost mutation or commit replies. A lost reply on the
+last revision rolls back the earlier revisions too. This proves the host path;
+YDB storage, lock ownership, and official-engine qualification remain required
+under #4204.

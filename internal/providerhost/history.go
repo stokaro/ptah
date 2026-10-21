@@ -181,3 +181,21 @@ func historyWireRecord(format dbschema.HistoryFormat, row *dbschema.HistoryRecor
 	}
 	return result, nil
 }
+
+// A named wrapper keeps ExecuteSQL out of the dynamic method set too: callers
+// cannot recover schema execution by asserting the history transaction's type.
+type historyTransaction struct{ historyStore }
+
+func (h historyStore) BeginHistoryTransaction(ctx context.Context) (dbschema.HistoryTransaction, error) {
+	if h.transaction != nil {
+		return nil, unsupported("nested history transactions")
+	}
+	tx, err := h.session.beginProviderTransaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return historyTransaction{historyStore{session: h.session, transaction: tx}}, nil
+}
+
+func (h historyTransaction) Commit() error   { return h.transaction.Commit() }
+func (h historyTransaction) Rollback() error { return h.transaction.Rollback() }

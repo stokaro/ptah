@@ -4295,8 +4295,17 @@ to import the provider SDK. The common migrator reads and writes these
 records through its existing execution, status, progress, and identity checks.
 Ordinary apply and rollback use exact record comparisons. A pending revision
 records uncertainty before execution; an unconfirmed commit never overwrites
-a durable applied revision. History maintenance, logging, session-owned locks,
+a durable applied revision. Set, repair, checksum reconciliation, logging, session-owned locks,
 and default versioned CLI integration remain required work in #4204.
+
+`dbschema.HistoryTransactor` opens a `HistoryTransaction` for revision data
+without requiring transactional DDL. Its handle exposes history operations,
+commit, and rollback, with no schema executor. Nested transactions, dry-run
+writes, and preparation inside a transaction are refused. The caller still
+owns migration locking. Native baseline uses this transaction for its complete
+revision batch and checks dirty state, existing records, and versions above
+the baseline before writing. A lost commit reply remains an unknown outcome;
+cleanup never authorizes replay.
 
 `catalog.CancellationRollback` exposes transaction-lifetime evidence after
 `Rollback` is attempted. SQL-backed writers report cancellation of the context

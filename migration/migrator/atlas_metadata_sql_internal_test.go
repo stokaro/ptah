@@ -197,7 +197,6 @@ func TestAtlasVersionNumberExpression_MapsOpaqueRevisionIdentitiesToRuntimeOrder
 		"ELSE CAST(0 AS BIGINT) END"
 	c.Assert(m.atlasVersionNumberExpression(), qt.Equals, wantMapping)
 	c.Assert(m.getVersionSQL(), qt.Contains, wantMapping)
-	c.Assert(m.countRevisionsAboveSQL(), qt.Contains, wantMapping)
 	deleteSQL, _ := m.deleteAtlasSetRevisionsAbove(nil, nil, 1, nil)
 	c.Assert(deleteSQL, qt.Contains, wantMapping)
 	// The native delete is not in this list: it compares an integer column and
@@ -356,7 +355,7 @@ func TestAtlasVersionNumberExpression_UsesHighestRuntimeForRepeatedHistoricalIde
 	c.Assert(expression, qt.Matches, `^CASE version WHEN '2' THEN 20 ELSE .+ END$`)
 }
 
-// TestAtlasUnfilteredRevisionSQL_CarriesNullGuard pins the three Atlas-format
+// TestAtlasUnfilteredRevisionSQL_CarriesNullGuard pins the Atlas-format
 // statements that select over every revision row. They have no
 // atlasMetadataRowPredicate of their own, so the cast guard is their only
 // protection against a dot-prefixed metadata row.
@@ -368,7 +367,6 @@ func TestAtlasUnfilteredRevisionSQL_CarriesNullGuard(t *testing.T) {
 		sql  string
 	}{
 		{name: "get version", sql: m.getVersionSQL()},
-		{name: "count revisions above", sql: m.countRevisionsAboveSQL()},
 		{name: "delete atlas revisions above", sql: mustAtlasSetDeleteSQL(m)},
 	}
 
@@ -399,7 +397,6 @@ func TestAtlasFilteredRevisionSQL_ExcludesMetadataRows(t *testing.T) {
 		{name: "applied revisions", sql: m.getAppliedRevisionsSQL()},
 		{name: "all revisions", sql: m.getRevisionsSQL()},
 		{name: "dirty revision", sql: m.getDirtyRevisionSQL()},
-		{name: "count revisions", sql: m.countRevisionsSQL()},
 	}
 
 	for _, tt := range tests {
@@ -448,7 +445,6 @@ func TestAtlasFilteredRevisionSQL_IncludesRetiredDotIdentityAndExcludesKnownMeta
 				m.getAppliedRevisionsSQL(),
 				m.getRevisionsSQL(),
 				m.getDirtyRevisionSQL(),
-				m.countRevisionsSQL(),
 			} {
 				c.Assert(sql, qt.Contains, generatedPredicate)
 			}
@@ -499,7 +495,6 @@ func TestPtahRevisionSQL_HasNoMetadataFilter(t *testing.T) {
 		"get version":        m.getVersionSQL(),
 		"applied migrations": m.getAppliedMigrationsSQL(),
 		"all revisions":      m.getRevisionsSQL(),
-		"count revisions":    m.countRevisionsSQL(),
 		"applied revisions":  m.getAppliedRevisionsSQL(),
 	} {
 		c.Assert(sql, qt.Not(qt.Contains), atlasMetadataRowPredicate,

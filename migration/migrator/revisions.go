@@ -801,20 +801,6 @@ func (m *Migrator) forceAppliedAtlasUpdateSQL() string {
 	)
 }
 
-func (m *Migrator) countRevisionsSQL() string {
-	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`, m.qualifiedMigrationsTable(), m.atlasRevisionRowPredicate())
-	}
-	return fmt.Sprintf(`SELECT COUNT(*) FROM %s`, m.qualifiedMigrationsTable())
-}
-
-func (m *Migrator) countRevisionsAboveSQL() string {
-	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s > ?`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
-	}
-	return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE version > ?`, m.qualifiedMigrationsTable())
-}
-
 // deleteRevisionsAboveSQL renders the delete a `set` runs over the NATIVE
 // revision table, whose version column is an integer.
 //
@@ -972,9 +958,8 @@ func atlasVersionNumberIsNull(revisionVersion string) bool {
 // atlasVersionNumberExpression renders the numeric form of the version column.
 //
 // The CASE arm turns dot-prefixed metadata rows into NULL before the cast, and
-// it is the ONLY protection for the three statements that have no
-// [atlasMetadataRowPredicate] filter of their own: getVersionSQL (MAX over
-// every row), countRevisionsAboveSQL, and deleteRevisionsAboveSQL. Without it,
+// it protects statements without their own [atlasMetadataRowPredicate] filter:
+// getVersionSQL (MAX over every row) and deleteAtlasSetRevisionsAbove. Without it,
 // a strict dialect fails those statements outright — PostgreSQL reports
 // `invalid input syntax for type bigint: ".atlas_cloud_identifier"` — so
 // GetCurrentVersion and SetAtlasRevision would error on any database Atlas
@@ -2436,22 +2421,16 @@ func (m *Migrator) baselineLocked(ctx context.Context, opts BaselineOptions) err
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
-	if err := m.failIfDirty(ctx); err != nil {
-		return err
-	}
-	revisionCount, err := m.revisionCount(ctx)
+	store, err := m.conn.HistoryStore()
 	if err != nil {
 		return err
 	}
-	if revisionCount > 0 && !opts.Force {
-		return fmt.Errorf("schema migrations table is not empty; rerun with force to baseline anyway")
+	if store != nil {
+		err = m.baselineProviderMigrations(ctx, store, migrations, opts)
+	} else {
+		err = m.baselineSQLMigrations(ctx, migrations, opts)
 	}
-	if opts.Force {
-		if err := m.failIfRevisionAboveBaseline(ctx, opts.Version); err != nil {
-			return err
-		}
-	}
-	if err := m.baselineMigrations(ctx, migrations); err != nil {
+	if err != nil {
 		return err
 	}
 	m.reportBaselineSkippedChecks(migrations)
@@ -2518,13 +2497,34 @@ func (m *Migrator) migrationsAtOrBelow(version int64) []*Migration {
 	return out
 }
 
-func (m *Migrator) revisionCount(ctx context.Context) (int, error) {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsSQL())
-	var count int
-	if err := m.conn.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count migration revisions: %w", err)
+func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migration, opts BaselineOptions) error {
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return err
 	}
-	return count, nil
+	if err := validateBaselineRevisions(revisions, opts); err != nil {
+		return err
+	}
+	return m.baselineMigrations(ctx, migrations)
+}
+
+// validateBaselineRevisions is shared by SQL and native stores. The caller
+// holds the migration lock; native stores also read through the data transaction.
+func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions) error {
+	for _, revision := range revisions {
+		if revision.Dirty {
+			return &DirtyMigrationError{Revision: revision}
+		}
+	}
+	if len(revisions) > 0 && !opts.Force {
+		return fmt.Errorf("schema migrations table is not empty; rerun with force to baseline anyway")
+	}
+	for _, revision := range revisions {
+		if revision.Version > opts.Version {
+			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", opts.Version)
+		}
+	}
+	return nil
 }
 
 func (m *Migrator) baselineMigrations(ctx context.Context, migrations []*Migration) error {
@@ -2552,18 +2552,6 @@ func (m *Migrator) baselineMigrationsNoTransaction(ctx context.Context, migratio
 
 func (m *Migrator) writeBaselineMigrations(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
 	return m.writeBaselineMigrationRows(ctx, conn, migrations)
-}
-
-func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int64) error {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsAboveSQL())
-	var count int
-	if err := m.conn.QueryRowContext(ctx, query, version).Scan(&count); err != nil {
-		return fmt.Errorf("failed to inspect migration revisions above baseline: %w", err)
-	}
-	if count > 0 {
-		return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", version)
-	}
-	return nil
 }
 
 func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {

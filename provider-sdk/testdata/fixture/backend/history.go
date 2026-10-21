@@ -220,7 +220,7 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 	if changed < 0 || changed > 1 {
 		return nil, fmt.Errorf("fixture history mutation changed an unexpected number of rows")
 	}
-	if s.fault == "lost-history" {
+	if s.fault == "lost-history" || s.fault == "lost-history-last" && request.GetReplacement().GetVersion() == "10" {
 		return nil, fmt.Errorf("fixture lost history acknowledgment")
 	}
 	return historyResult(request.GetScope(), request.GetRequestId(), outcome), nil
