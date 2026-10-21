@@ -21,7 +21,7 @@ import (
 func TestMigrateDiffProjectExcludePreservesFullReplayPostgresLive(t *testing.T) {
 	c := qt.New(t)
 	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
-	devURL := newCleanGateDatabase(c, adminURL, nil)
+	devURL := withCleanGateQuery(newCleanGateDatabase(c, adminURL, nil), "search_path=public")
 	targetURL := newCleanGateDatabase(c, adminURL, nil)
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
