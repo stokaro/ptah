@@ -935,7 +935,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// Retain the saved boundaries for display, policy validation, rehearsal,
 		// and execution. Provider execution units must not be split by host SQL
 		// grammar after their requirements have been checked.
-		if err := plan.PreflightTransaction(txMode); err != nil {
+		if err := plan.PreflightTransaction(txMode, conn); err != nil {
 			return "", err
 		}
 		statements := plan.StatementSQL()

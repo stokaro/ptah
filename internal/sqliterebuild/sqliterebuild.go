@@ -85,6 +85,23 @@ func BeginTransactionForAnySQL(
 	return conn.SchemaWriter().BeginTransaction(ctx)
 }
 
+// OpensTransaction reports whether BeginTransaction on conn opens a database
+// transaction. A built-in target without capability.DDLInsideTransaction gets
+// the unwrapped executor instead, so in every transaction mode each statement
+// runs and takes effect on its own. A requirement about the transaction a
+// statement runs in has to be judged against this answer, not against the
+// mode's name.
+func OpensTransaction(conn *dbschema.DatabaseConnection) bool {
+	return OpensTransactionOn(conn.Info(), conn.Writer())
+}
+
+// OpensTransactionOn is OpensTransaction for a server and writer that are not
+// yet a connection.
+func OpensTransactionOn(info catalog.ServerInfo, writer catalog.SchemaExecutor) bool {
+	_, unwrapped := beginWithoutTransaction(info, writer)
+	return !unwrapped
+}
+
 // beginWithoutTransaction answers for a target that refuses schema statements
 // inside an explicit transaction, and reports whether it did.
 //

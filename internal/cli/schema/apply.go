@@ -717,7 +717,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
-	if err := plan.PreflightTransaction(txMode); err != nil {
+	if err := plan.PreflightTransaction(txMode, conn); err != nil {
 		return "", err
 	}
 	info := conn.Info()
