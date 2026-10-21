@@ -80,6 +80,26 @@ func TestNodeRequiresAutocommit_NoDialect(t *testing.T) {
 	}
 }
 
+// A dialect whose migrator opens no transaction has no transactional file
+// for an owner's forbidden statement to leave; one that opens a transaction
+// sends it out.
+func TestOwnerForbiddenTransactionLeavesOnlyATransactionalFile(t *testing.T) {
+	node := &ast.ExtensionStatement{Transaction: plangraph.TransactionForbidden}
+	for dialect, want := range map[string]bool{
+		platform.YDB:        false,
+		platform.ClickHouse: false,
+		platform.Spanner:    false,
+		platform.Postgres:   true,
+		platform.MySQL:      true,
+		platform.SQLite:     true,
+	} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(txrequire.NodeRequiresAutocommit(dialect, node), qt.Equals, want)
+		})
+	}
+}
+
 func TestOwnerTransactionRequirementDoesNotNeedBuiltinDialect(t *testing.T) {
 	for _, test := range []struct {
 		name string

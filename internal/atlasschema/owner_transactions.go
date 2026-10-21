@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/plangraph"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
+	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -22,7 +23,18 @@ func (c applyComputation) executionTransactions() [][]plangraph.Transaction {
 	return slices.Insert(result, c.dataIndex(), make([][]plangraph.Transaction, len(c.dataStatements))...)
 }
 
-func checkOwnerTransactions(requirements [][]plangraph.Transaction, mode migrator.MigrationTxMode) error {
+// checkOwnerTransactions judges owner requirements against the transaction the
+// execution on conn opens. On a target whose schema statements run unwrapped,
+// the all and file modes open none, so a forbidden transaction holds there and
+// a required one cannot. Without a connection the mode alone decides, which
+// refuses every forbidden transaction those modes name.
+func checkOwnerTransactions(requirements [][]plangraph.Transaction, mode migrator.MigrationTxMode, conn *dbschema.DatabaseConnection) error {
+	return checkOwnerTransactionsOpening(requirements, mode, conn == nil || sqliterebuild.OpensTransaction(conn))
+}
+
+// checkOwnerTransactionsOpening is checkOwnerTransactions once it is known
+// whether the all and file modes open a transaction on the target.
+func checkOwnerTransactionsOpening(requirements [][]plangraph.Transaction, mode migrator.MigrationTxMode, opensTransaction bool) error {
 	if !hasOwnerTransactions(requirements) {
 		return nil
 	}
@@ -30,7 +42,7 @@ func checkOwnerTransactions(requirements [][]plangraph.Transaction, mode migrato
 	case migrator.MigrationTxModeNone:
 		return txrequire.CheckRequirements(requirements, false)
 	case migrator.MigrationTxModeAll, migrator.MigrationTxModeFile:
-		return txrequire.CheckRequirements(requirements, true)
+		return txrequire.CheckRequirements(requirements, opensTransaction)
 	default:
 		return fmt.Errorf("%w: unknown schema apply transaction mode %q", ptaherr.ErrUnsupportedFeature, mode)
 	}
@@ -43,7 +55,7 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 	if sqlText != p.SQL() && hasOwnerTransactions(p.plan.transactions) {
 		return fmt.Errorf("%w: edited SQL with owner transaction requirements needs a new owner assessment", ptaherr.ErrUnsupportedFeature)
 	}
-	return checkOwnerTransactions(p.plan.transactions, p.txMode)
+	return checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn)
 }
 
 // ExecuteSQL executes the prepared SQL or an edit that PreflightExecution can
@@ -66,10 +78,11 @@ func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error 
 	return ApplySQL(ctx, p.conn, p.txMode, sqlText)
 }
 
-// PreflightTransaction checks the owner requirements retained by a saved plan.
-// It does not replace target fingerprint verification or SQL-based preflight.
-func (p PlanFile) PreflightTransaction(mode migrator.MigrationTxMode) error {
-	return checkOwnerTransactions(p.OwnerTransactions(), mode)
+// PreflightTransaction checks the owner requirements retained by a saved plan
+// against the transaction mode opens on conn. It does not replace target
+// fingerprint verification or SQL-based preflight.
+func (p PlanFile) PreflightTransaction(mode migrator.MigrationTxMode, conn *dbschema.DatabaseConnection) error {
+	return checkOwnerTransactions(p.OwnerTransactions(), mode, conn)
 }
 
 // OwnerTransactions returns independent requirements in StatementSQL order.
@@ -90,7 +103,7 @@ func hasOwnerTransactions(requirements [][]plangraph.Transaction) bool {
 // Execute runs a saved plan's exact statements after checking owner transaction
 // requirements. The caller must verify the target and approve the plan first.
 func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode) error {
-	if err := p.PreflightTransaction(mode); err != nil {
+	if err := p.PreflightTransaction(mode, conn); err != nil {
 		return err
 	}
 	return ApplyStatements(ctx, conn, mode, p.StatementSQL())

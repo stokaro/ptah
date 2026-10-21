@@ -93,3 +93,33 @@ func (e *recordingExecutor) ExecuteSQL(_ context.Context, sqlExpr string, _ ...a
 }
 
 func (e *recordingExecutor) IsDryRun() bool { return false }
+
+// TestOpensTransactionOn_AnswersAsBeginTransactionDoes holds the answer an
+// owner's transaction requirement is judged by to the wrapper decision itself:
+// a target that runs unwrapped opens no transaction in any mode.
+func TestOpensTransactionOn_AnswersAsBeginTransactionDoes(t *testing.T) {
+	provider := catalog.ProviderIdentity{ID: "example.org/provider"}
+	tests := []struct {
+		name   string
+		info   catalog.ServerInfo
+		writer catalog.SchemaExecutor
+		want   bool
+	}{
+		{"PostgreSQL takes the wrapper", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.Postgres)}, &recordingExecutor{}, true},
+		{"MySQL takes the wrapper", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.MySQL)}, &recordingExecutor{}, true},
+		{"YDB runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.YDB)}, &recordingExecutor{}, false},
+		{"ClickHouse runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.ClickHouse)}, &recordingExecutor{}, false},
+		{"Spanner runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.Spanner)}, &recordingExecutor{}, false},
+		// An external provider's writer accepts or refuses the transaction it
+		// is asked for, whatever the built-in profile beside it says.
+		{"an external provider is asked for the transaction", catalog.ServerInfo{Provider: provider, Capabilities: capability.ForDialect(platform.YDB)}, &recordingExecutor{}, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, unwrapped := beginWithoutTransaction(test.info, test.writer)
+			c.Assert(OpensTransactionOn(test.info, test.writer), qt.Equals, test.want)
+			c.Assert(OpensTransactionOn(test.info, test.writer), qt.Equals, !unwrapped)
+		})
+	}
+}

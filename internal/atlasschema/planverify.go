@@ -103,7 +103,7 @@ func RehearsePlanStatements(
 	if opts.OwnerTransactions != nil && len(opts.OwnerTransactions) != len(statements) {
 		return errors.New("plan rehearsal transaction requirements do not match the statements")
 	}
-	if err := checkOwnerTransactions(opts.OwnerTransactions, opts.TxMode); err != nil {
+	if err := checkOwnerTransactions(opts.OwnerTransactions, opts.TxMode, conn); err != nil {
 		return err
 	}
 	if conn == nil {

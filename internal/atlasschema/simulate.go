@@ -108,7 +108,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	if !slices.Equal(statements, p.Statements()) && hasOwnerTransactions(p.plan.transactions) {
 		return errors.New("edited SQL with owner transaction requirements needs a new owner assessment")
 	}
-	if err := checkOwnerTransactions(p.plan.transactions, p.txMode); err != nil {
+	if err := checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn); err != nil {
 		return err
 	}
 	if p.conn == nil {

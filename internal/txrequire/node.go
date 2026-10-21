@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/ddltx"
 	"ptah.run/internal/descriptortable"
 )
 
@@ -33,7 +34,10 @@ import (
 // Owner operations carry explicit transaction requirements, independent of
 // built-in dialect descriptors. A forbidden transaction routes the operation
 // out of the transactional file. This does not establish an ordering for
-// splitting a mixed plan; Kind keeps such operations unsplittable.
+// splitting a mixed plan; Kind keeps such operations unsplittable. On a
+// dialect whose migrator opens no transaction (ddltx.NoTransaction) there is
+// no transactional file to leave, so the requirement holds where the operation
+// already is.
 //
 // For common operations, the engine's descriptor states: a
 // concurrent index build or drop where its grammar has one
@@ -41,10 +45,10 @@ import (
 // (Migration.EnumValuesCommitFirst), and a constraint validation where the
 // online grammar is NOT VALID (OnlineAlter).
 func NodeRequiresAutocommit(dialect string, node ast.Node) bool {
-	if slices.Contains(ast.OwnerTransactions(node), plangraph.TransactionForbidden) {
+	rules := autocommitRules.Get(dialect)
+	if !rules.noTransaction && slices.Contains(ast.OwnerTransactions(node), plangraph.TransactionForbidden) {
 		return true
 	}
-	rules := autocommitRules.Get(dialect)
 	switch typed := node.(type) {
 	case *ast.IndexNode:
 		return rules.concurrentIndexes && typed.Concurrently
@@ -72,6 +76,9 @@ type autocommitNodes struct {
 	concurrentIndexes    bool
 	enumValues           bool
 	constraintValidation bool
+	// noTransaction says the migrator runs every statement unwrapped, so no
+	// statement can be inside a transaction it would have to leave.
+	noTransaction bool
 }
 
 // autocommitRules holds the answer of every dialect. A generator asks once
@@ -82,6 +89,7 @@ var autocommitRules = descriptortable.New(func(described descriptor.Dialect) aut
 		concurrentIndexes:    described.ConcurrentIndexes,
 		enumValues:           described.Migration.EnumValuesCommitFirst,
 		constraintValidation: described.OnlineAlter == descriptor.OnlineAlterNotValid,
+		noTransaction:        ddltx.Class(described.DDLTransactions) == ddltx.NoTransaction,
 	}
 })
 
