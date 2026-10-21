@@ -425,6 +425,9 @@ func acquireSessionLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	if lock, handled, err := nativeLock(ctx, session, name, timeout); handled {
+		return lock, err
+	}
 	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
 }
 
@@ -436,6 +439,9 @@ func acquirePreviewLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	if handled, err := nativePreviewLock(session); handled {
+		return nil, err
+	}
 	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
 }
 
@@ -466,6 +472,10 @@ func Acquire(
 	if name == "" {
 		return nil, errors.New("advisory lock name must not be empty")
 	}
+	if lock, handled, err := nativeLock(ctx, conn, name, timeout); handled {
+		return lock, err
+	}
+
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	services := servicesOf(dialect)
 	if !services.Locks() {

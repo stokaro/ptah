@@ -183,9 +183,15 @@ checks read a row that exists only in the uncommitted transaction. A lost lock
 fences schema execution, history writes, and commits, while rollback remains
 available. Process-death checks retain the schema write committed before death.
 
-Host lock guards and official-engine ownership checks remain required under
-#4204. The fixture does not qualify YDB coordination leases or the default
-versioned migration workflow.
+The host uses these locks through its shared migration lock guard. It retries
+only confirmed busy results, cancels guarded work after ownership loss, and
+retains uncertainty through release. The common migrator process checks keep
+locking enabled across its transaction modes. Provider lock previews are refused
+because this protocol does not establish acquisition without writes.
+
+Official-engine ownership checks remain required under #4204. The fixture does
+not qualify YDB coordination leases or the default versioned migration workflow;
+logging, tags, and read-only lock previews still need provider support.
 
 ## Trust and process lifetime
 

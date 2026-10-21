@@ -25,6 +25,7 @@ type session struct {
 	info      catalog.ServerInfo
 	dry       atomic.Bool
 	closed    atomic.Bool
+	lockLost  atomic.Bool
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -111,6 +112,9 @@ func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error
 }
 
 func (s *session) execute(ctx context.Context, transactionID, sql string) error {
+	if err := s.lockError(); err != nil {
+		return err
+	}
 	_, err := s.target.host.client.Execute(ctx, &protocol.ExecuteRequest{
 		SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID,
 		Units: []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: sql}}},

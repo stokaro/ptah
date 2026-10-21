@@ -4297,7 +4297,7 @@ to import the provider SDK. The common migrator reads and writes these
 records through its existing execution, status, progress, and identity checks.
 Ordinary apply and rollback use exact record comparisons. A pending revision
 records uncertainty before execution; an unconfirmed commit never overwrites
-a durable applied revision. Logging, session-owned locks,
+a durable applied revision. Logging, tags,
 and default versioned CLI integration remain required work in #4204.
 
 `dbschema.HistoryTransactor` opens a `HistoryTransaction` for revision data
@@ -5300,3 +5300,29 @@ that omits `LANGUAGE`. It is valid only with the quoted-body routine grammar.
 An explicit `LANGUAGE` clause takes precedence. An empty default means that
 the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
 Spanner state `plpgsql`.
+
+
+### Provider session locks
+
+`DatabaseConnection.SessionLocker` selects a native session's `SessionLocker`.
+SQL-backed connections return nil and retain their SQL lock path. Native
+connections without `SessionLockProvider`, or with a nil service, refuse.
+Acquire before opening a transaction; a transaction-bound connection cannot
+acquire through its parent session.
+
+`SessionLocker.TryLock` makes one nonblocking attempt with a fresh handle. Only
+`ErrSessionLockBusy` permits another attempt. An uncertain acquisition matches
+`ptaherr.ErrOutcomeUnknown` and must not be retried. A successful `SessionLock`
+offers `Check` and `Release`. Checks establish current ownership; loss matches
+`ErrSessionLockLost` and permanently fences further writes. Release is idempotent
+and preserves loss or uncertainty while cleaning up the original handle.
+Session close releases its remaining resources.
+
+The common migrator uses this service with its existing lock name, timeout,
+no-wait, cancellation, and explicit skip policy. It watches ownership and cancels
+guarded work after loss. A fresh check before release prevents stale ownership
+from becoming a success report. Lock loss does not establish database rollback;
+combined migration and release failures retain `ptaherr.ErrOutcomeUnknown`.
+Provider preview locking refuses because the experimental protocol does not
+establish acquisition without writes. Logging, tags, and default CLI integration
+remain required under #4204.

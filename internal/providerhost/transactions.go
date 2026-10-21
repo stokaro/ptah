@@ -47,6 +47,9 @@ func (s *session) beginProviderTransaction(ctx context.Context, isolation protoc
 	if s.closed.Load() {
 		return nil, fmt.Errorf("provider session is closed")
 	}
+	if err := s.lockError(); err != nil {
+		return nil, err
+	}
 	if s.IsDryRun() {
 		return nil, unsupported("history transactions during a dry run")
 	}
@@ -112,6 +115,9 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 		}
 		if t.executionErr != nil {
 			return fmt.Errorf("provider transaction cannot commit after failed execution: %w", t.executionErr)
+		}
+		if err := t.session.lockError(); err != nil {
+			return err
 		}
 		t.commitTried = true
 	} else {

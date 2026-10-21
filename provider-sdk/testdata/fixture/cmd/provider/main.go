@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"example.com/ptah-fixture-provider/backend"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
 )
 
@@ -18,7 +19,11 @@ func main() {
 		}
 	}
 	owner := &backend.Provider{}
-	err := runtime.Serve(runtime.Server{Description: backend.Description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
+	description := backend.Description()
+	description.SemanticIdentity = "fixture-schema-locks-1"
+	description.Features = append(description.Features, provider.LocksFeature)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.LocksFeature)
+	err := runtime.Serve(runtime.Server{Description: description, Locks: owner, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

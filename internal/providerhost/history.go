@@ -66,6 +66,10 @@ func (h historyStore) use(ctx context.Context, use func() error) error {
 	if h.session.closed.Load() {
 		return fmt.Errorf("provider session is closed")
 	}
+	if err := h.session.lockError(); err != nil {
+		return err
+	}
+
 	err := nativeOutcomeError(use())
 	if h.transaction != nil && err != nil {
 		h.transaction.executionErr = err

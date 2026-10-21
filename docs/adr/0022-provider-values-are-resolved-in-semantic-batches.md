@@ -867,5 +867,21 @@ process death, and write refusal after ownership loss. A process death after a
 committed schema statement releases the lock without undoing that statement.
 A lost lock before commit leaves the transaction available for explicit rollback.
 
-Host lock guards, default CLI use, and official-engine checks remain required
-under #4204. This fixture does not establish YDB coordination lease behavior.
+The host exposes the service through `dbschema.SessionLocker` on the same
+execution session. Shared lock acquisition selects it before built-in dialect
+services. Missing native support refuses the operation rather than selecting a
+no-op lock. Only confirmed busy results permit a fresh attempt; the host owns
+waiting, no-wait behavior, timeout, and cancellation. A watcher checks ownership
+and cancels guarded work after loss. Release verifies current ownership again,
+cleans up even after loss, and retains uncertainty from execution or cleanup.
+A session that lost or cannot establish ownership refuses further writes.
+
+Independent process tests run the common migrator with locking enabled across
+its transaction modes. A competing process times out without executing schema
+changes. Loss cancels the guard, commit failure retains an unknown outcome, and
+loss discovered during release does not undo already committed schema or history.
+Lock acquisition on an active transaction is refused. Preview lock acquisition
+also refuses: this SDK revision does not establish a read-only acquisition.
+
+Default versioned CLI use, logging, tags, read-only lock previews, and
+official-engine checks remain required under #4204. This fixture does not establish YDB coordination lease behavior.
