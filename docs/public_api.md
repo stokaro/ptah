@@ -5326,3 +5326,28 @@ combined migration and release failures retain `ptaherr.ErrOutcomeUnknown`.
 Provider preview locking refuses because the experimental protocol does not
 establish acquisition without writes. Logging, tags, and default CLI integration
 remain required under #4204.
+
+### Provider migration logs and tags
+
+`DatabaseConnection.MigrationLogStore` selects durable event storage on the
+native session, including when the connection has an active execution handle.
+`MigrationTagsStore` selects the active handle's tag storage. An execution
+handle without tag support refuses instead of writing through its parent.
+SQL-backed connections return nil and retain their SQL storage paths.
+
+`MigrationLogRecord` carries stored events. The common migrator retains event
+ordering, attempt pairing, actor provenance, and best-effort logging policy.
+`MigrationTagRecord` carries a movable label and its numeric version. Version
+zero is valid; lookup distinguishes it from absence. Delete reports whether
+its atomic mutation removed a label. Neither store retries an uncertain write.
+
+Both stores read through `MigrationMetadataReader` snapshots. Each
+`MigrationMetadataPage` has a bounded record count, fixed existence, and an
+explicit completion marker. The common reader refuses repeated identities,
+inconsistent pages, and empty nonterminal pages. It closes the snapshot after
+success, cancellation, or failure, and discards partial results on errors.
+Reads do not create storage; preparation validates ownership and layout.
+
+These interfaces and common policies are host contracts. Experimental SDK
+revision 19 does not yet expose log or tag RPCs. Subprocess implementation and
+engine qualification remain required under #4204.

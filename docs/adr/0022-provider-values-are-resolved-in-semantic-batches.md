@@ -885,3 +885,26 @@ also refuses: this SDK revision does not establish a read-only acquisition.
 
 Default versioned CLI use, logging, tags, read-only lock previews, and
 official-engine checks remain required under #4204. This fixture does not establish YDB coordination lease behavior.
+
+
+## Keep event and tag policy in the common migrator
+
+The host defines typed log and tag storage contracts in `dbschema`. Log writes
+use the session's durable store so an execution rollback cannot erase the
+attempt. Tags bind to the active execution handle. An unsupported handle
+refuses instead of selecting its parent's store.
+
+The provider owns physical storage, namespace checks, layout validation, and
+atomic mutations. The common migrator owns event pairing, ordering, tag
+normalization, and the distinction between a missing tag and version zero.
+A failed log append remains a warning. Unknown writes are not replayed.
+
+Read handles expose immutable snapshots in bounded pages. The host rejects
+repeated identities and inconsistent or non-progressing pages. It closes each
+handle even after cancellation and discards partial results on failure.
+This avoids requiring a complete event journal in one RPC response.
+
+Unit tests exercise these host contracts with an in-memory native session.
+They do not establish subprocess storage or database durability. SDK revision
+19 still lacks log and tag RPCs; that implementation and official-engine
+qualification remain required under #4204.
