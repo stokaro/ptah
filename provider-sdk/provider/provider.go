@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 8
+const Revision uint32 = 9
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -80,8 +80,8 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 	if strings.TrimSpace(value.GetProviderId()) == "" || value.GetVersion() == "" || value.GetSemanticIdentity() == "" {
 		return fmt.Errorf("%w: provider identity, version, and semantic identity are required", ErrProtocol)
 	}
-	if slices.Contains(value.GetFeatures(), DecodeSourceFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
-		return fmt.Errorf("%w: source decoding requires value normalization", ErrProtocol)
+	if err := validateSemanticServices(value); err != nil {
+		return err
 	}
 	names := make(map[string]bool)
 	for _, engine := range value.GetEngines() {
@@ -111,6 +111,16 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 		if !slices.Contains(value.GetFeatures(), feature) {
 			return fmt.Errorf("%w: required feature %q is unavailable", ErrProtocol, feature)
 		}
+	}
+	return nil
+}
+
+func validateSemanticServices(value *protocol.Description) error {
+	if slices.Contains(value.GetFeatures(), DecodeSourceFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: source decoding requires value normalization", ErrProtocol)
+	}
+	if slices.Contains(value.GetFeatures(), ConvertValuesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: value conversion requires value normalization", ErrProtocol)
 	}
 	return nil
 }

@@ -28,7 +28,7 @@ func main() {
 	description.SemanticIdentity += "-observed-models"
 	owner := &observedProvider{Provider: &backend.Provider{}}
 	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner,
-		Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner})
+		Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -151,4 +151,8 @@ func normalizedOwner(ref *protocol.Reference) *protocol.Reference {
 		result.Path[0] = "another"
 	}
 	return result
+}
+
+func (p *observedProvider) ConvertValues(ctx context.Context, request *protocol.ConvertValuesRequest) (*protocol.NormalizedValues, error) {
+	return backend.ConvertValues(ctx, request, p)
 }

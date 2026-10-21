@@ -20,7 +20,7 @@ func main() {
 	description := backend.Description()
 	description.SemanticIdentity += "-namespaced-yaml"
 	owner := &namespacedProvider{Provider: &backend.Provider{}}
-	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner})
+	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -106,4 +106,8 @@ func normalizeOwner(value *protocol.NormalizedValue) {
 	for i, part := range value.NormalizedOwner.GetOverload() {
 		value.NormalizedOwner.Overload[i] = strings.ToLower(part)
 	}
+}
+
+func (p *namespacedProvider) ConvertValues(ctx context.Context, request *protocol.ConvertValuesRequest) (*protocol.NormalizedValues, error) {
+	return backend.ConvertValues(ctx, request, p)
 }
