@@ -13,6 +13,9 @@ func validateNormalizationFacts(representation protocol.ValueInput_Representatio
 	if err := validateComparisonIdentities(value.GetRequiredObjects()); err != nil {
 		return err
 	}
+	if err := validateOperationFacts(representation, value.GetOperationSemantics()); err != nil {
+		return err
+	}
 	semantics := value.GetChangeSemantics()
 	if representation != protocol.ValueInput_CHANGE {
 		if semantics != nil {
@@ -38,4 +41,27 @@ func validateNormalizationFacts(representation protocol.ValueInput_Representatio
 
 func comparisonReason(reason string) bool {
 	return reason != "" && utf8.ValidString(reason) && strings.TrimSpace(reason) == reason && !strings.ContainsFunc(reason, func(r rune) bool { return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' })
+}
+
+func validateOperationFacts(representation protocol.ValueInput_Representation, facts *protocol.OperationSemantics) error {
+	if representation != protocol.ValueInput_OPERATION {
+		if facts != nil {
+			return fmt.Errorf("%w: operation semantics require an operation representation", ErrProtocol)
+		}
+		return nil
+	}
+	if facts == nil || !comparisonReason(facts.GetReason()) || !comparisonReason(facts.GetAccessReason()) {
+		return fmt.Errorf("%w: operation semantics require explicit effect assessments", ErrProtocol)
+	}
+	switch facts.GetImpact() {
+	case protocol.ChangeSemantics_UNKNOWN, protocol.ChangeSemantics_ADDITIVE, protocol.ChangeSemantics_BEHAVIORAL, protocol.ChangeSemantics_DESTRUCTIVE:
+	default:
+		return fmt.Errorf("%w: unrecognized operation impact", ErrProtocol)
+	}
+	switch facts.GetAccess() {
+	case protocol.ChangeSemantics_ACCESS_UNKNOWN, protocol.ChangeSemantics_UNCHANGED, protocol.ChangeSemantics_WIDENS, protocol.ChangeSemantics_NARROWS:
+	default:
+		return fmt.Errorf("%w: unrecognized operation access assessment", ErrProtocol)
+	}
+	return nil
 }

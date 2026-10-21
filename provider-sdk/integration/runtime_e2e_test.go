@@ -152,8 +152,11 @@ func TestIndependentProviderProcess(t *testing.T) {
 	t.Run("message size is bounded", func(t *testing.T) {
 		c := qt.New(t)
 		client := start(c, options)
-		result, err := client.Render(c.Context(), &protocol.RenderRequest{Engine: "fixture", TargetFeatures: []string{strings.Repeat("x", transport.MaxMessageBytes)}})
-		c.Assert(err, qt.IsNotNil)
+		result, err := client.Render(c.Context(), &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{{
+			Id: "large", Object: &protocol.Reference{Kind: "table", Name: strings.Repeat("x", transport.MaxMessageBytes)},
+			Operation: &protocol.Change_CreateTable{CreateTable: &protocol.Table{Columns: []*protocol.Column{{Name: "id", Type: "INTEGER", PrimaryKey: true}}}},
+		}}})
+		c.Assert(err, qt.ErrorMatches, `provider render failed \(ResourceExhausted\)`)
 		c.Assert(result, qt.IsNil)
 	})
 

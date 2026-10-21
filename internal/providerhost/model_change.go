@@ -50,6 +50,9 @@ func (m *modelContract) payload(value *resolvedModel) schemaext.Payload {
 	if m.key.representation == schemaext.Change {
 		return &resolvedChange{model: value}
 	}
+	if m.key.representation == schemaext.Operation {
+		return &resolvedOperation{model: value}
+	}
 	return value
 }
 

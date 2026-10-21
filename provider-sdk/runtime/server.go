@@ -195,17 +195,7 @@ func (s *serverAdapter) Render(ctx context.Context, request *protocol.RenderRequ
 	if s.server.Renderer == nil {
 		return nil, status.Error(codes.Unimplemented, "rendering is unavailable")
 	}
-	if !s.hasEngine(request.GetEngine()) {
-		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
-	}
-	result, err := s.server.Renderer.Render(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	if err := provider.ValidateRender(request, result); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return result, nil
+	return serveOffline(ctx, s.server.Description, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatch, s.server.Renderer.Render)
 }
 
 func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {

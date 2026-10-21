@@ -237,7 +237,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 11 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 12 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -357,3 +357,22 @@ Shared conversion and codecs retain the captured payloads and bounded coverage.
 Full-document source decoding still requires unrestricted complete model
 knowledge and refuses regions. Native migration planning and faithful source
 export remain work in #4204.
+
+## Captured native operations
+
+An `OPERATION` model is distinct from desired values and comparison changes.
+Normalization reconstructs its impact and access assessments from the complete
+payload. Hosts can clone and persist captured operations without reaching the
+provider; decoding requires owner normalization again.
+
+A native `Render` input carries the captured operation and its grammatical role.
+A table alteration also carries its actual parent. The owner renders a complete
+execution unit, including the table statement. Capability facts preserve a known
+false value separately from a missing answer. Providers must revalidate payload
+semantics and refuse any role or context they cannot implement.
+
+Rendering validates the whole batch at both transport boundaries. Cancellation,
+foreign models, incomplete replies, and changed provenance discard all output.
+The independent operation fixture executes table creation, renaming, and removal
+through this contract. It does not establish a feature-planning, transaction, or
+history service; these remain required before official-engine extraction.
