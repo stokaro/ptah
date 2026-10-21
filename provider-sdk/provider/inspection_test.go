@@ -153,3 +153,18 @@ func TestInspectionNormalizationMustRetainCoverageIdentity(t *testing.T) {
 	normalized.Complete = false
 	c.Assert(provider.ValidateNormalizedInspection(description, request, snapshot, normalized), qt.ErrorIs, provider.ErrProtocol)
 }
+
+func TestInspectionRegionsCannotReplaceRequestScopeBinding(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspection()
+	_, scoped := scopedModelCoverage()
+	snapshot.Coverage.Kinds[0].Regions = scoped.Kinds[0].Regions
+	batch, err := provider.InspectionValues(description, request, snapshot)
+	c.Assert(err, qt.IsNil)
+	c.Assert(batch.Values, qt.HasLen, 1)
+	request.Schemas = []string{"Private"}
+	batch, err = provider.InspectionValues(description, request, snapshot)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, ".*requires owner scope binding")
+	c.Assert(batch, qt.IsNil)
+}

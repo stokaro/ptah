@@ -33,7 +33,7 @@ type session struct {
 
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-7",
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-8",
 		Engines: []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature},
 			Identifiers: identifierRules(), ValueModels: valueModels(), YamlSourceKeys: yamlSourceKeys()}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature, provider.DecodeSourceFeature}}
