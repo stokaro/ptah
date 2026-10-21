@@ -33,6 +33,9 @@ const (
 	Provider_Execute_FullMethodName           = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName  = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName = "/ptah.provider.experimental.Provider/FinishTransaction"
+	Provider_ReadHistory_FullMethodName       = "/ptah.provider.experimental.Provider/ReadHistory"
+	Provider_PrepareHistory_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareHistory"
+	Provider_MutateHistory_FullMethodName     = "/ptah.provider.experimental.Provider/MutateHistory"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -57,6 +60,9 @@ type ProviderClient interface {
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
+	ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error)
+	PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
 }
 
 type providerClient struct {
@@ -207,6 +213,36 @@ func (c *providerClient) FinishTransaction(ctx context.Context, in *FinishTransa
 	return out, nil
 }
 
+func (c *providerClient) ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistorySnapshot)
+	err := c.cc.Invoke(ctx, Provider_ReadHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistoryResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistoryResult)
+	err := c.cc.Invoke(ctx, Provider_MutateHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -229,6 +265,9 @@ type ProviderServer interface {
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
+	ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error)
+	PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error)
+	MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -280,6 +319,15 @@ func (UnimplementedProviderServer) BeginTransaction(context.Context, *BeginTrans
 }
 func (UnimplementedProviderServer) FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FinishTransaction not implemented")
+}
+func (UnimplementedProviderServer) ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadHistory not implemented")
+}
+func (UnimplementedProviderServer) PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareHistory not implemented")
+}
+func (UnimplementedProviderServer) MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateHistory not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -554,6 +602,60 @@ func _Provider_FinishTransaction_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ReadHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadHistory(ctx, req.(*ReadHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareHistory(ctx, req.(*PrepareHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateHistory(ctx, req.(*MutateHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -616,6 +718,18 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FinishTransaction",
 			Handler:    _Provider_FinishTransaction_Handler,
+		},
+		{
+			MethodName: "ReadHistory",
+			Handler:    _Provider_ReadHistory_Handler,
+		},
+		{
+			MethodName: "PrepareHistory",
+			Handler:    _Provider_PrepareHistory_Handler,
+		},
+		{
+			MethodName: "MutateHistory",
+			Handler:    _Provider_MutateHistory_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

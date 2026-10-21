@@ -38,6 +38,9 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
 | `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
+| `ReadHistory` | A complete bounded snapshot of exact revision records in the selected session and transaction. |
+| `PrepareHistory` | Verified or newly created history storage, without upgrading an earlier layout. |
+| `MutateHistory` | An atomic comparison and write of one exact revision, with a confirmed or unknown outcome. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
 Session capabilities preserve presence: an explicit `false` is an established
@@ -91,6 +94,42 @@ handle. Cleanup failures remain visible. A lost finish reply remains unknown;
 the SDK never retries the write. Confirmed opposite states return both the result
 and `ErrExecution`. Invalid replies expose no result and wrap `ErrOutcomeUnknown`.
 Providers must keep transaction lifetime independent of the begin RPC context.
+
+## Revision storage
+
+`sessions.history` advertises the optional `History` service globally and for
+its supporting engines. It provides storage primitives; migration ordering,
+checksums, dirty-state recovery, and repair decisions belong to the host.
+History support alone promises no distributed lock.
+
+Every request names a session, schema, table, and native or Atlas representation.
+Identifiers are separate components, never SQL fragments. Reads and mutations
+can name an existing transaction. The owner must use the same transaction as
+`Execute`, including visibility of uncommitted revision changes. Closing the
+session or restarting the process invalidates those handles.
+
+`ReadHistory` returns a consistent complete snapshot, distinguishing a missing
+store from an empty one. The caller sets a positive limit of at most 10,000
+revisions. Exceeding that limit or the transport message bound is an error;
+no partial history is returned. Exact identities, direction, progress, source
+hashes, diagnostics, timestamps, and Atlas fields survive transport.
+
+`PrepareHistory` runs outside transactions. It validates storage ownership and
+layout and creates a missing store. It refuses incompatible existing layouts
+and does not upgrade them. `MutateHistory` atomically compares the entire
+expected record before replacing or deleting it. An absent expected record
+means insert only if absent. A conflict changes nothing. Changing a record's
+identity is refused.
+
+`APPLIED` within a transaction confirms execution, not commit. A lost or
+malformed acknowledgment leaves the outcome unknown. Neither the transport
+nor a request ID permits automatic replay. The host must stop and reconcile
+history and live state before another attempt.
+
+The independent SQLite fixture exercises these storage primitives. Connecting
+all migrator operations, lock ownership, and official-engine qualification
+remains required work in #4204; this service alone does not enable versioned
+migrations through subprocess providers.
 
 ## Trust and process lifetime
 
@@ -271,7 +310,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 15 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 16 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -409,7 +448,7 @@ Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
 through this contract. Contextual feature planning uses the service below.
-History services and official-engine transaction qualification remain required before extraction.
+Host history integration and official-engine transaction qualification remain required before extraction.
 
 ## Contextual feature planning
 

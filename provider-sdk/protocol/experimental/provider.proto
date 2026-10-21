@@ -22,6 +22,9 @@ service Provider {
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
+  rpc ReadHistory(ReadHistoryRequest) returns (HistorySnapshot);
+  rpc PrepareHistory(PrepareHistoryRequest) returns (HistoryResult);
+  rpc MutateHistory(MutateHistoryRequest) returns (HistoryResult);
 }
 
 message Empty {}
@@ -1173,4 +1176,77 @@ message CapturedFacet {
   string kind = 1;
   repeated string targets = 2;
   NormalizedValue value = 3;
+}
+
+// HistoryScope binds a store to a live session and optionally its transaction.
+// Schema and table are identifier components, never SQL fragments. A provider
+// must validate storage ownership and layout before reading or adopting it.
+message HistoryScope {
+  enum Format { FORMAT_UNSPECIFIED = 0; NATIVE = 1; ATLAS = 2; }
+  string session_id = 1;
+  string transaction_id = 2;
+  string schema = 3;
+  string table = 4;
+  Format format = 5;
+}
+// HistoryRevision carries stored facts. The host owns ordering, checksums,
+// retry decisions, and recovery. Version preserves exact identity, including
+// an empty Atlas identity. Native versions use canonical signed decimal text.
+message HistoryRevision {
+  enum State { STATE_UNSPECIFIED = 0; PENDING = 1; APPLIED = 2; FAILED = 3; }
+  enum Direction { DIRECTION_UNSPECIFIED = 0; UP = 1; DOWN = 2; }
+  string version = 1;
+  string description = 2;
+  State state = 3;
+  Direction direction = 4;
+  uint64 applied = 5;
+  uint64 total = 6;
+  string error = 7;
+  string error_statement = 8;
+  int64 execution_nanoseconds = 9;
+  string checksum = 10;
+  // Unix time is split so the entire Go time range is not forced into int64
+  // nanoseconds. Nanos is in [0, 999999999].
+  int64 applied_at_seconds = 11;
+  int32 applied_at_nanos = 12;
+  string operator_version = 13;
+  repeated string partial_hashes = 14;
+  uint32 atlas_type = 15;
+}
+// ReadHistory returns a complete consistent snapshot or an error. A provider
+// refuses a store exceeding max_revisions; truncation is never a valid reply.
+message ReadHistoryRequest {
+  HistoryScope scope = 1;
+  uint32 max_revisions = 2;
+}
+message HistorySnapshot {
+  HistoryScope scope = 1;
+  bool exists = 2;
+  bool complete = 3;
+  repeated HistoryRevision revisions = 4;
+}
+// PrepareHistory creates missing storage and verifies existing storage. It
+// does not upgrade an old layout or modify revision rows. Preparation runs
+// outside transactions; engines with nontransactional DDL must support it too.
+message PrepareHistoryRequest {
+  HistoryScope scope = 1;
+  string request_id = 2;
+}
+// MutateHistory is one atomic compare-and-swap. A missing expected row means
+// insert only if absent; a missing replacement means delete the exact expected
+// row. Replacing a row cannot change its version. No receipt permits replay.
+// Under a caller transaction, APPLIED confirms the mutation, not its commit.
+message MutateHistoryRequest {
+  HistoryScope scope = 1;
+  string request_id = 2;
+  HistoryRevision expected = 3;
+  HistoryRevision replacement = 4;
+}
+message HistoryResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; CONFLICT = 2; REFUSED = 3; }
+  HistoryScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+  string diagnostic_code = 4;
+  string message = 5;
 }
