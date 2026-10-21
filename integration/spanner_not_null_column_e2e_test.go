@@ -95,7 +95,9 @@ func TestSpannerNotNullColumnE2E_FailurePath(t *testing.T) {
 	applied, appliedErr, err := runPtahSplitStreams(ctx, []string{
 		"schema", "apply", "--schema-file", schema, "--db-url", dbURL, "--auto-approve",
 	})
-	c.Assert(err, qt.ErrorMatches, `(?s).*SQL: ALTER TABLE "items" ALTER COLUMN "name" SET NOT NULL`,
+	// Apply runs the plan's statements as planned, so the failed one is
+	// reported with the notice the plan wrote above it.
+	c.Assert(err, qt.ErrorMatches, `(?s).*SQL: (?:--[^\n]*\n)*ALTER TABLE "items" ALTER COLUMN "name" SET NOT NULL`,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", applied, appliedErr))
 	c.Assert(spannerColumnNullable(c, ctx, conn, "name"), qt.Equals, "YES")
 
