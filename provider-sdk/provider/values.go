@@ -89,6 +89,9 @@ func ValidateNormalizedValues(description *protocol.Description, request *protoc
 	}
 	for i, input := range request.GetValues() {
 		output := result.GetValues()[i]
+		if err := validateNormalizationFacts(input.GetRepresentation(), output); err != nil {
+			return err
+		}
 		before, after := input.GetValue(), output.GetValue()
 		if output.GetId() != input.GetId() || after == nil || before.GetProviderId() != after.GetProviderId() ||
 			before.GetKind() != after.GetKind() || before.GetSchemaVersion() != after.GetSchemaVersion() ||

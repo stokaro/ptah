@@ -50,6 +50,7 @@ type Server struct {
 	ValueNormalizer provider.ValueNormalizer
 	SourceDecoder   provider.SourceDecoder
 	ValueConverter  provider.ValueConverter
+	ModelComparer   provider.ModelComparer
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -71,6 +72,7 @@ func (s Server) Validate() error {
 		{provider.NormalizeValuesFeature, !nilService(s.ValueNormalizer)},
 		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
 		{provider.ConvertValuesFeature, !nilService(s.ValueConverter)},
+		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
