@@ -604,6 +604,14 @@ unless the file opts out with `-- +ptah no_transaction` or
 `-- atlas:txmode none`. So a statement whose meaning depends on the transaction,
 such as `SET LOCAL lock_timeout`, means the same thing in both.
 
+PostgreSQL replay keeps consecutive migrations on one pinned physical session.
+`CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` can stage data for later
+statements and migrations. The session's `pg_temp` relation names are available;
+another session's `pg_temp_<number>` namespace remains protected. Ptah discards
+the physical session on success, failure, or cancellation, so temporary tables
+cannot leak into the next replay. This does not permit role changes, external
+commands, or mutations of protected server namespaces.
+
 A migration that no longer executes — here one that alters a table dropped by
 an earlier edit — fails the replay (exit `2`):
 

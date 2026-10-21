@@ -5,10 +5,11 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func validatePostgresReplayStatementBase(dialect string, tokens []lexer.Token) error {
+func (p protection) validateBase(tokens []lexer.Token) error {
 	if len(tokens) == 0 {
 		return nil
 	}
+	dialect := p.dialect
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "COPY" && isExternalPostgresCopy(tokens) {
 		return replay.Refuse(dialect, "external COPY")
@@ -25,10 +26,18 @@ func validatePostgresReplayStatementBase(dialect string, tokens []lexer.Token) e
 	if isGlobalPostgresDDL(tokens) {
 		return replay.Refuse(dialect, replay.DescribeStatementObject(tokens))
 	}
-	if replay.UsesTemporaryObject(tokens) {
+	if replay.UsesTemporaryObject(tokens) && (!p.sessionTables || !createsTemporaryTable(tokens)) {
 		return replay.Refuse(dialect, "TEMP object")
 	}
 	return nil
+}
+
+func createsTemporaryTable(tokens []lexer.Token) bool {
+	if !replay.TokenSequenceAt(tokens, 0, "CREATE") {
+		return false
+	}
+	kind := replay.StatementObjectKindIndex(tokens)
+	return kind != replay.MutationTargetNotFound && replay.NormalizedIdentifier(tokens[kind]) == "TABLE"
 }
 
 func isGlobalPostgresDDL(tokens []lexer.Token) bool {

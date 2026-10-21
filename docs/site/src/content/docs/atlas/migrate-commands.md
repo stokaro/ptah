@@ -1017,6 +1017,11 @@ multiple database or migration-directory sources, nested `env://` references,
 dialect mismatches, and source/dev aliases fail before Ptah connects to the
 dev database.
 
+The selected environment's `exclude` patterns and `schema.mode` limits apply
+to both sides of the authoring comparison. Every migration still replays in
+full. An excluded table is outside this comparison, so verify its definition
+with a separate live comparison when another workflow owns its changes.
+
 Use an Atlas migration directory as the desired state:
 
 ```bash

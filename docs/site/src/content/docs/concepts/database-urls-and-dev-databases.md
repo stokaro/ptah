@@ -196,7 +196,7 @@ cases run in a dev realm in that database.
   dedicated disposable database before replay.
 - **Cross-realm operations fail before execution.** Ptah rejects direct
   statements that switch or mutate another database, protected namespace,
-  server, cluster, temporary namespace, external file, or attached SQLite
+  server, cluster, another session's temporary namespace, external file, or attached SQLite
   database. It also rejects statement forms whose nested SQL cannot be
   confined safely during replay.
 - **Replay cleanup is serialized by realm.** PostgreSQL, YugabyteDB, MySQL,
@@ -252,6 +252,12 @@ it, and is refused. A setting that ends with its transaction is accepted:
 - `SET LOCAL` and `SET CONSTRAINTS`;
 - `set_config(name, value, true)`, with the name written as a string and `true`
   written as the keyword.
+
+PostgreSQL `CREATE TEMP TABLE` and `CREATE TEMPORARY TABLE` are accepted on the
+replay's pinned physical session. Later statements and migrations can use those
+tables, including through `pg_temp`. Ptah discards that session after success,
+failure, or cancellation. Explicit `pg_temp_<number>` targets remain protected;
+the replay cannot take ownership of another session's temporary tables.
 
 Replay runs each migration the way `migrations up` does, in one transaction
 unless the file opts out with `-- +ptah no_transaction` or

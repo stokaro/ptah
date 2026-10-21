@@ -26,6 +26,8 @@ type ReplayGuard struct {
 	// baseline words a refusal as the rehearsal baseline's; see
 	// [BaselineGuard].
 	baseline bool
+	// session is set only by a caller that discards its pinned replay session.
+	session bool
 }
 
 // ReplayRealm is how much of the dev server a replay may change.
@@ -83,6 +85,15 @@ func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 // the two ways to that realm.
 func NewDevReplayGuard(info catalog.ServerInfo) *ReplayGuard {
 	return NewReplayGuard(info, DevReplayRealm(info)).WithServerRealmRemedy(devdocker.OwnedServerRemedy)
+}
+
+// WithSessionScope returns a guard for a replay that owns one pinned physical
+// session and discards it on success, failure, and cancellation. The caller
+// must enforce that lifecycle. Database and server confinement remain in force.
+func (g *ReplayGuard) WithSessionScope() *ReplayGuard {
+	guard := *g
+	guard.session = true
+	return &guard
 }
 
 // DevReplayRealm is how much of the dev server reached through info a run may
@@ -177,7 +188,9 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 		}
 		return replay.Refuse(unsupportedDialect, "unsupported dialect")
 	}
-	return g.guard.Validate(stmt, realm.scope(g.info.Schema))
+	scope := realm.scope(g.info.Schema)
+	scope.Session = g.session
+	return g.guard.Validate(stmt, scope)
 }
 
 // replayGuard returns the guard of the engine dialect names, folded through

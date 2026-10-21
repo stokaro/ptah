@@ -19,6 +19,10 @@ import (
 // Scope is how much of the dev server one statement may change. The zero
 // value confines it to the dev database.
 type Scope struct {
+	// Session reports that replay owns one pinned physical session and
+	// discards it after every outcome. Session-local objects cannot survive
+	// that boundary; it does not grant access to another session's objects.
+	Session bool
 	// Database is the database the dev connection selected, as
 	// catalog.ServerInfo.Schema names it. It is empty when the connection
 	// selected none.

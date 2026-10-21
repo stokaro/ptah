@@ -66,6 +66,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 	tests := []struct {
 		name         string
 		policy       atlasschema.DiffPolicy
+		exclude      []string
 		wantErr      bool
 		wantContains string
 	}{
@@ -74,6 +75,10 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			policy:       atlasschema.DiffPolicy{},
 			wantErr:      true,
 			wantContains: `virtual table "docs" (module fts5)`,
+		},
+		{
+			name:    "an excluded table is outside the comparison",
+			exclude: []string{"docs"},
 		},
 		{
 			name:    "a plan whose table drops the policy removes is not refused",
@@ -105,7 +110,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			_, _, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, conn.Info().Schema,
 				&schemamodel.Database{FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))},
-				devclean.Baseline{}, nil, nil, tt.policy, selectedRuntime(c),
+				devclean.Baseline{}, tt.exclude, nil, nil, tt.policy, selectedRuntime(c),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -148,7 +153,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, nil, nil,
+		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, nil, nil, nil,
 		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
@@ -178,7 +183,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	_, diff, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, conn.Info().Schema,
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
-		devclean.Baseline{}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
+		devclean.Baseline{}, nil, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)

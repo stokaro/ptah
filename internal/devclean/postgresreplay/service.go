@@ -33,7 +33,7 @@ func (g guard) Validate(stmt string, scope replay.Scope) error {
 	if scope.Server && postgresServerWideOperation(tokens, scope) != "" {
 		return validatePostgresServerWideStatement(g.dialect, tokens)
 	}
-	return validatePostgresReplayStatement(g.dialect, tokens)
+	return validatePostgresReplayStatement(g.dialect, tokens, scope)
 }
 
 // lexerOptions reads the family's standard-conforming string literals.

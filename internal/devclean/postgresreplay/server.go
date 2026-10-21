@@ -26,8 +26,9 @@ import (
 //     how the SQL the run executes afterwards is parsed or run;
 //   - FOREIGN DATA WRAPPER, SERVER, USER MAPPING, SUBSCRIPTION, IMPORT FOREIGN
 //     SCHEMA, dblink and an external COPY: they reach past the container;
-//   - session and transaction control, TEMP objects and a mutation of a
-//     protected namespace, for the reasons the database realm refuses them.
+//   - session and transaction control and a mutation of a protected namespace,
+//     for the reasons the database realm refuses them. Session-local tables
+//     depend on the discarded replay session, not on server ownership.
 //
 // A routine body and a DO block are opaque, so what they execute is not read.
 // They are lifted because a migration that defines a function or creates its
