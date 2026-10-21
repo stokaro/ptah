@@ -75,10 +75,11 @@ func yamlKeyIdentities(claims []*protocol.YAMLSourceKey) []yamlKeyIdentity {
 
 func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error) {
 	type engineModel struct {
-		Model       modelIdentity        `json:"model"`
-		Features    []string             `json:"features"`
-		Identifiers identifier.Semantics `json:"identifiers"`
-		YAMLKeys    []yamlKeyIdentity    `json:"yaml_keys"`
+		Model       modelIdentity                `json:"model"`
+		Features    []string                     `json:"features"`
+		Identifiers identifier.Semantics         `json:"identifiers"`
+		YAMLKeys    []yamlKeyIdentity            `json:"yaml_keys"`
+		Comparisons []comparisonIdentityContract `json:"comparisons"`
 	}
 	engines := make(map[string]engineModel, len(contract.engines))
 	for name, model := range contract.engines {
@@ -87,7 +88,11 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 		if err != nil {
 			return nil, err
 		}
-		engines[name] = engineModel{Model: identityOfModel(model), Features: featureSet(declared.GetFeatures()), Identifiers: rules, YAMLKeys: yamlKeyIdentities(declared.GetYamlSourceKeys())}
+		engines[name] = engineModel{Model: identityOfModel(model),
+			Features:    featureSet(declared.GetFeatures()),
+			Identifiers: rules,
+			YAMLKeys:    yamlKeyIdentities(declared.GetYamlSourceKeys()),
+			Comparisons: comparisonContracts(declared.GetComparisons())}
 	}
 	definition := struct {
 		Format           string                 `json:"format"`
@@ -104,4 +109,30 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 		return nil, err
 	}
 	return schemaext.CanonicalJSON(data)
+}
+
+// comparisonIdentityContract binds placement and semantic ownership into the
+// recorded contract. Declaration order does not alter ownership.
+type comparisonIdentityContract struct {
+	ID          string   `json:"id"`
+	Placement   string   `json:"placement"`
+	Kinds       []string `json:"kinds"`
+	ChangeKinds []string `json:"change_kinds"`
+	OwnerKinds  []string `json:"owner_kinds"`
+	Actions     []string `json:"actions"`
+}
+
+func comparisonContracts(declarations []*protocol.ModelComparison) []comparisonIdentityContract {
+	result := make([]comparisonIdentityContract, 0, len(declarations))
+	for _, declaration := range declarations {
+		result = append(result,
+			comparisonIdentityContract{ID: declaration.GetId(),
+				Placement:   declaration.GetPlacement().String(),
+				Kinds:       featureSet(declaration.GetKinds()),
+				ChangeKinds: featureSet(declaration.GetChangeKinds()),
+				OwnerKinds:  featureSet(declaration.GetOwnerKinds()),
+				Actions:     featureSet(declaration.GetActions())})
+	}
+	slices.SortFunc(result, func(a, b comparisonIdentityContract) int { return strings.Compare(a.ID, b.ID) })
+	return result
 }

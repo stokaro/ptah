@@ -33,6 +33,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
+| `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -174,8 +175,42 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
-comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and
+observed objects and facets, and dispatches contextual comparison to their owner.
+Native planning and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+
+## Contextual model comparison
+
+The optional `models.compare` service uses a `ModelComparer`. Each engine names
+its comparison services and assigns model kinds, change kinds, and either native
+object placement or common facet owner kinds. Object services also declare their
+supported explicit actions. A model has one comparison owner per engine.
+
+`CompareModels` receives desired and observed states, identifier rules, capability
+facts, parent lifecycles, and the context relevant to its placement. Object
+context includes explicit actions, declared relations, roles, columns, required
+objects, exclusions, and the database path. Facet context includes common
+constraint definitions. A missing capability differs from an explicit false.
+
+Bound identity components retain source and normalized spelling, quoting, and
+connection defaults. Parent, namespace path, and signature remain separate.
+Coverage retains each independent source and its outside and bounded claims.
+Sources intersect; a complete region cannot supply another source's missing
+knowledge. Empty values do not establish absence. An excluded facet retains its
+model, subject, and target binding, and permits no change or diagnostic.
+
+The owner validates complete payload semantics again. Captured canonical
+projections do not prove desired/observed equivalence. Results include effective
+desired schema, normalized `CHANGE` values, and explicit undecided diagnostics.
+Both transport boundaries refuse incomplete replies and unowned models. The
+host's comparison runtime enforces common migration policy before planning.
+
+Normalization of a change requires explicit replacement and state-removal facts,
+impact and access assessments, and reasons. Unknown impact and access remain
+explicit assessments. Required object identities are structured values. These
+facts must be reconstructed from the complete payload when it is decoded;
+persisted metadata cannot stand in for owner validation. Planning and execution
+of native changes require their own services and are not supplied by comparison.
 
 ## Desired and observed conversion
 
@@ -202,7 +237,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 10 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 11 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -320,5 +355,5 @@ Native `schema inspect --format json` returns common schema data and warns about
 omitted objects and facets using these labels. It is not a lossless model export.
 Shared conversion and codecs retain the captured payloads and bounded coverage.
 Full-document source decoding still requires unrestricted complete model
-knowledge and refuses regions. Contextual comparison, native migration planning,
-and faithful source export remain work in #4204.
+knowledge and refuses regions. Native migration planning and faithful source
+export remain work in #4204.

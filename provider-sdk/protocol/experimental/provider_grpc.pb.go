@@ -28,6 +28,7 @@ const (
 	Provider_DecodeSource_FullMethodName    = "/ptah.provider.experimental.Provider/DecodeSource"
 	Provider_NormalizeValues_FullMethodName = "/ptah.provider.experimental.Provider/NormalizeValues"
 	Provider_ConvertValues_FullMethodName   = "/ptah.provider.experimental.Provider/ConvertValues"
+	Provider_CompareModels_FullMethodName   = "/ptah.provider.experimental.Provider/CompareModels"
 	Provider_Execute_FullMethodName         = "/ptah.provider.experimental.Provider/Execute"
 )
 
@@ -48,6 +49,7 @@ type ProviderClient interface {
 	DecodeSource(ctx context.Context, in *DecodeSourceRequest, opts ...grpc.CallOption) (*DecodedSource, error)
 	NormalizeValues(ctx context.Context, in *NormalizeValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	ConvertValues(ctx context.Context, in *ConvertValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
+	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 }
 
@@ -149,6 +151,16 @@ func (c *providerClient) ConvertValues(ctx context.Context, in *ConvertValuesReq
 	return out, nil
 }
 
+func (c *providerClient) CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComparedModels)
+	err := c.cc.Invoke(ctx, Provider_CompareModels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Execution)
@@ -176,6 +188,7 @@ type ProviderServer interface {
 	DecodeSource(context.Context, *DecodeSourceRequest) (*DecodedSource, error)
 	NormalizeValues(context.Context, *NormalizeValuesRequest) (*NormalizedValues, error)
 	ConvertValues(context.Context, *ConvertValuesRequest) (*NormalizedValues, error)
+	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	mustEmbedUnimplementedProviderServer()
 }
@@ -213,6 +226,9 @@ func (UnimplementedProviderServer) NormalizeValues(context.Context, *NormalizeVa
 }
 func (UnimplementedProviderServer) ConvertValues(context.Context, *ConvertValuesRequest) (*NormalizedValues, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConvertValues not implemented")
+}
+func (UnimplementedProviderServer) CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompareModels not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -400,6 +416,24 @@ func _Provider_ConvertValues_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_CompareModels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompareModelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CompareModels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CompareModels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CompareModels(ctx, req.(*CompareModelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExecuteRequest)
 	if err := dec(in); err != nil {
@@ -460,6 +494,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConvertValues",
 			Handler:    _Provider_ConvertValues_Handler,
+		},
+		{
+			MethodName: "CompareModels",
+			Handler:    _Provider_CompareModels_Handler,
 		},
 		{
 			MethodName: "Execute",

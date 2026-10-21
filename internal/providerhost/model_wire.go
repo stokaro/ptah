@@ -62,8 +62,10 @@ func modelRepresentation(representation protocol.ValueInput_Representation) (sch
 		return schemaext.Desired, nil
 	case protocol.ValueInput_OBSERVED:
 		return schemaext.Observed, nil
+	case protocol.ValueInput_CHANGE:
+		return schemaext.Change, nil
 	default:
-		return "", unsupported("native operation and change model adaptation")
+		return "", unsupported("native operation model adaptation")
 	}
 }
 
@@ -73,6 +75,8 @@ func protocolRepresentation(representation schemaext.Representation) protocol.Va
 		return protocol.ValueInput_DESIRED
 	case schemaext.Observed:
 		return protocol.ValueInput_OBSERVED
+	case schemaext.Change:
+		return protocol.ValueInput_CHANGE
 	default:
 		return protocol.ValueInput_REPRESENTATION_UNSPECIFIED
 	}

@@ -14,7 +14,7 @@ func (d KnowledgeDomain) MapScopes(bind func(NamespaceScope) ([]NamespaceScope, 
 	if len(d.sources) == 0 {
 		return d, nil
 	}
-	sources := make([]knowledgeSource, len(d.sources))
+	sources := make([]KnowledgeSource, len(d.sources))
 	for i, source := range d.sources {
 		sources[i].Outside = source.Outside
 		for _, region := range source.Regions {

@@ -166,9 +166,10 @@ equality, encoding, and fingerprints remain local after provider shutdown.
 
 Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
-Operation and change models remain refused until their native adapters exist.
-Native object comparison, planning, and engine transaction and history
-services still require application adapters.
+Operation models remain refused until their native adapters exist. Change
+models enter the shared comparison runtime through the contextual service
+described below. Native planning and engine transaction and history services
+still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -357,7 +358,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 10 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 11 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -424,3 +425,58 @@ The synthetic provider proves that captured namespace limits can pass this
 binding after its process closes. Public comparison tests retain an unknown
 relative namespace in the source snapshot used for planning. Neither test
 qualifies a provider's contextual comparison or change-planning service.
+
+
+## Contextual comparison transport
+
+An engine assigns native object models or attached facet models to named
+`CompareModels` services. Each declaration includes its change models, facet
+owner kinds, and supported native actions. The host freezes these declarations
+in both provider and model identities. Changing placement or semantic ownership
+invalidates an earlier captured contract.
+
+The request preserves the complete shared comparison context. Identity parts
+carry their source and normalized spelling, quoting, and default markers.
+Parents, namespace paths, and overload signatures have distinct coordinates.
+The capture-phase `Reference` remains an owner's source identity; the bound
+comparison identity represents the later host phase without parsing a joined
+name or exporting a host interface. Capability maps retain established false
+answers separately from missing facts.
+
+Coverage transports independent knowledge sources, each with an outside claim
+and bounded regions. `KnowledgeDomain.Sources` returns independent snapshots;
+the adapter restores each source and intersects them. Flattening their regions
+would let one source grant authority another source lacks. Subject claims,
+explicit empty namespace parts, common parents, exact paths, and target limits
+survive the round trip.
+
+Object batches carry common parent lifecycles, explicit actions, declared
+relations, roles and columns, exclusions, required objects, and the database
+path. Facet batches carry their owner lifecycles and desired and observed
+constraint definitions. Deliberately excluded facets retain their model,
+subject, and target binding even though their value is absent. The response
+must preserve each exclusion and cannot return a change or diagnostic for it.
+
+The owner revalidates payload semantics before comparing desired and observed
+states. It returns the effective desired schema, typed changes, and undecided
+reasons as one atomic reply. The shared engine still validates declaration
+retention, coverage limits, related subjects, parent ownership, and migration
+policy. The transport does not replace those rules. A missing comparison
+service remains a refusal rather than a successful no-op.
+
+A normalized change explicitly states whether it replaces a common owner or
+removes state, and carries impact and access assessments with reasons. The
+local change adapter implements the shared change and effect interfaces using
+these captured facts. Required object identities use the same bound component
+format. Canonical projections include the facts; the persistence format holds
+only complete owner input and its frozen binding. Decoding invokes owner
+normalization to reconstruct the facts. Cloning, encoding, and effect queries
+remain local after the provider process closes.
+
+The independent retention fixture exercises native objects and column facets,
+changed and unchanged values, explicit actions, unknown coverage, exclusions,
+and change capture and decoding. It establishes global and subject knowledge
+only; bounded regions remain undecided in that synthetic owner. It does not
+execute retention changes or qualify any official database engine. Native
+planning, operation rendering, transaction and history services, full source
+support, and official-engine extraction remain part of #4204.

@@ -44,7 +44,7 @@ func (d KnowledgeDomain) lookupForMerge(subject objectidentity.ID, targets []str
 	return result
 }
 
-func (s knowledgeSource) mergeKnowledge(subject objectidentity.ID, target string) Knowledge {
+func (s KnowledgeSource) mergeKnowledge(subject objectidentity.ID, target string) Knowledge {
 	result := Knowledge{State: Complete}
 	guaranteed := false
 	for _, region := range s.Regions {
