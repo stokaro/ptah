@@ -53,7 +53,7 @@ func ownedRegistry(owner string, codecs []Codec) (Registry, error) {
 func registryCoverage(registry Registry, kind Kind, representation Representation, knowledge Knowledge, subjects []SubjectCoverage) (Coverage, error) {
 	for _, definition := range registry.Definitions() {
 		if definition.Kind == kind && definition.Representation == representation {
-			return NewCoverage(representation, []KindCoverage{{Model: definition, Knowledge: knowledge}}, subjects)
+			return NewCoverage(representation, []KindCoverage{{Model: definition, Knowledge: GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return Coverage{}, fmt.Errorf("%w: the codecs define no %s model of kind %q", ErrInvalidValue, representation, kind)

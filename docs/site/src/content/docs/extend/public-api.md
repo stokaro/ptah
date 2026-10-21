@@ -308,6 +308,27 @@ Comparison binds table and index coverage to connection identifiers and the defa
 database; reverse CREATE projection binds table coverage. Binding preserves explicit
 schemas, knowledge limits, and source snapshots and rejects colliding claims.
 
+`schemaext.KindCoverage.Knowledge` carries an immutable `KnowledgeDomain`.
+`GlobalKnowledge` describes an unrestricted namespace. `NewScopedKnowledge`
+bounds knowledge by target, database, catalog, schema, or structured path prefix.
+`SubjectKinds` selects identity kinds, `Parent` selects a column's owning table,
+and `PathExact` requires the complete path to match.
+A nil qualifier matches every value; an empty qualifier matches only an empty
+component. Select the target before lookup. Merging sources requires both to
+establish completeness at the requested identity.
+
+Coverage format 2 preserves these boundaries in serialized schemas and feature
+coverage headers. Formats that only preserve global limits refuse bounded
+claims. `KnowledgeDomain.MapScopes` transforms regions without changing their
+knowledge or merging independent sources. An error or an erased region discards
+the whole result.
+
+Common identity binding moves typed relative bounds with their subjects, using
+the selected target's connection defaults and identifier rules. Unknown parent
+regions stay unknown. Qualified native namespaces remain intact. Regions that
+mix common and qualified identities without sufficient bounds remain refused.
+Executable-provider comparison and planning services still require SDK support.
+
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering
 explicit records. Use it with the same object projection; removing an override

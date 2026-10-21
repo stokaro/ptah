@@ -19,11 +19,18 @@ import (
 // that reads the result checks a policy's parent table without the
 // connection's default schema. A policy bound to it here has no declared
 // parent table there.
-func normalizeFeatureFacets(ctx context.Context, conn Connection, desired *schemamodel.Database, current *catalog.Database, info catalog.ServerInfo, runtime schemaext.FacetNormalizationService) (*schemamodel.Database, error) {
+func normalizeFeatureFacets(ctx context.Context, conn Connection, desired *schemamodel.Database, current *catalog.Database, info catalog.ServerInfo, runtime interface {
+	schemaext.FacetNormalizationService
+	schemaext.TargetResolver
+}) (*schemamodel.Database, error) {
 	if info.Dialect == "" || !slices.ContainsFunc(desired.FacetSlots(), func(facets *schemaext.Facets) bool { return !facets.IsZero() }) {
 		return desired, nil
 	}
-	identity, err := comparisonTableIdentities(desired, current, &config.CompareOptions{Dialect: info.Dialect, IdentifierSemantics: &info.IdentifierSemantics})
+	selected, err := runtime.ResolveTarget(info.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := comparisonTableIdentities(desired, current, &config.CompareOptions{Dialect: info.Dialect, IdentifierSemantics: &info.IdentifierSemantics}, selected)
 	if err != nil {
 		return nil, err
 	}

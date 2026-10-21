@@ -60,7 +60,7 @@ func TestPlansDefinedTableRemoval(t *testing.T) {
 	table := objectidentity.ID{Kind: objectidentity.KindTable, Name: objectidentity.Part{Source: "docs", Normalized: "docs"}}
 	claim := func(knowledge schemaext.Knowledge) schemaext.Coverage {
 		return must.Must(schemaext.NewCoverage(schemaext.Desired,
-			[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+			[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 			[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: table, Knowledge: knowledge}}))
 	}
 	tests := []struct {

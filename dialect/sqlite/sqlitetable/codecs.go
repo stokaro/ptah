@@ -54,7 +54,7 @@ func TableCoverage(representation schemaext.Representation, knowledge schemaext.
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == TableKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: SQLite table options coverage requires a schema representation", schemaext.ErrInvalidValue)

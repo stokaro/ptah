@@ -13,7 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
 )
@@ -81,7 +81,7 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 	builder := objectidentity.NewBuilder(semantics)
 	for i := range db.Functions {
 		function := &db.Functions[i]
-		slots = append(slots, facetOwnerSlot{routineargs.Subject(builder, function.Kind, function.Name, function.Parameters), &function.Facets})
+		slots = append(slots, facetOwnerSlot{routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters), &function.Facets})
 	}
 	return slots, nil
 }
@@ -210,7 +210,7 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 	}
 	for i := range db.Functions {
 		function := &db.Functions[i]
-		slots = append(slots, facetOwnerSlot{routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters), &function.Facets})
+		slots = append(slots, facetOwnerSlot{routineidentity.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters), &function.Facets})
 	}
 	return slots
 }

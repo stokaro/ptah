@@ -123,12 +123,12 @@ func (o Objects) Select(keep func(objectidentity.ID) bool) Objects {
 }
 
 // ForParent captures the direct children of a table identified
-// by catalog, schema, and name. It compares normalized components, never dotted
+// by database, catalog, schema, namespace path, and name. It compares normalized
+// components, never dotted
 // diagnostic strings. Parentage is derived from the single object collection.
 func (o Objects) ForParent(parent objectidentity.ID) Objects {
 	return o.Select(func(ref objectidentity.ID) bool {
-		return ref.Catalog.Normalized == parent.Catalog.Normalized &&
-			ref.Schema.Normalized == parent.Schema.Normalized &&
+		return ref.SameNamespace(parent) &&
 			ref.Parent.Normalized != "" && ref.Parent.Normalized == parent.Name.Normalized
 	})
 }
@@ -207,11 +207,13 @@ func (o Objects) Refs() []objectidentity.ID {
 func CompareRefs(a, b objectidentity.ID) int {
 	return cmp.Or(
 		cmp.Compare(a.Kind, b.Kind),
+		cmp.Compare(a.Database.Normalized, b.Database.Normalized),
 		cmp.Compare(a.Catalog.Normalized, b.Catalog.Normalized),
 		cmp.Compare(a.Schema.Normalized, b.Schema.Normalized),
+		a.Namespace.Compare(b.Namespace),
 		cmp.Compare(a.Parent.Normalized, b.Parent.Normalized),
 		cmp.Compare(a.Name.Normalized, b.Name.Normalized),
-		cmp.Compare(a.Signature, b.Signature),
+		a.Signature.Compare(b.Signature),
 	)
 }
 

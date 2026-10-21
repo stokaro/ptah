@@ -106,7 +106,7 @@ func validateSourceCoverage(description *protocol.Description, engine string, do
 	}
 	for i, model := range document.GetModels() {
 		record := coverage.GetKinds()[i]
-		if !proto.Equal(record.GetModel(), model) || record.GetKnowledge().GetState() != protocol.ModelKnowledge_COMPLETE {
+		if !proto.Equal(record.GetModel(), model) || record.GetKnowledge().GetState() != protocol.ModelKnowledge_COMPLETE || len(record.GetRegions()) != 0 {
 			return sourceError("decoded model scope is changed or incomplete")
 		}
 	}

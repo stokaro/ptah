@@ -49,6 +49,8 @@ type Server struct {
 	SQLAnalyzer     provider.SQLAnalyzer
 	ValueNormalizer provider.ValueNormalizer
 	SourceDecoder   provider.SourceDecoder
+	ValueConverter  provider.ValueConverter
+	ModelComparer   provider.ModelComparer
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -69,6 +71,8 @@ func (s Server) Validate() error {
 		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},
 		{provider.NormalizeValuesFeature, !nilService(s.ValueNormalizer)},
 		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
+		{provider.ConvertValuesFeature, !nilService(s.ValueConverter)},
+		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -174,11 +178,14 @@ func (s *serverAdapter) Inspect(ctx context.Context, request *protocol.InspectRe
 	if request.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "session ID is required")
 	}
-	result, err := s.server.Inspector.Inspect(ctx, request)
+	result, err := s.server.Inspector.Inspect(ctx, proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateSchema(result); err != nil {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if _, err := provider.InspectionValues(s.server.Description, request, result); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return result, nil
@@ -188,17 +195,7 @@ func (s *serverAdapter) Render(ctx context.Context, request *protocol.RenderRequ
 	if s.server.Renderer == nil {
 		return nil, status.Error(codes.Unimplemented, "rendering is unavailable")
 	}
-	if !s.hasEngine(request.GetEngine()) {
-		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
-	}
-	result, err := s.server.Renderer.Render(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	if err := provider.ValidateRender(request, result); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	return result, nil
+	return serveOffline(ctx, s.server.Description, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatch, s.server.Renderer.Render)
 }
 
 func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {

@@ -82,7 +82,7 @@ func TestOwnerDocumentEmptyInputNeedsExplicitCoverage(t *testing.T) {
 				c.Assert(document.Fragments, qt.HasLen, 0)
 				claim, claimErr := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{
 					Model:     schemaext.CodecIdentity{Owner: "example.org/paint", Kind: shadeKind, Representation: schemaext.Desired, Version: 1, Definition: "test-definition"},
-					Knowledge: schemaext.Knowledge{State: state, Reason: "explicit test knowledge"},
+					Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "explicit test knowledge"}),
 				}}, nil)
 				return yamlext.DocumentResult{Coverage: claim}, claimErr
 			}))

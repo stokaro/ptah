@@ -16,6 +16,8 @@ service Provider {
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc DecodeSource(DecodeSourceRequest) returns (DecodedSource);
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
+  rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
+  rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -42,6 +44,7 @@ message Engine {
   IdentifierRules identifiers = 5;
   repeated ValueModel value_models = 6;
   repeated YAMLSourceKey yaml_source_keys = 7;
+  repeated ModelComparison comparisons = 8;
 }
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
 // The host refuses collisions with common keys or other selected owners.
@@ -124,11 +127,21 @@ message Schema {
   repeated Table tables = 2;
   repeated Envelope native_objects = 3;
   repeated Disposition dispositions = 4;
+  // Explicit observed knowledge. Empty kinds enroll no models and establish no
+  // native-object absence, even when the common-table snapshot is complete.
+  ModelCoverage coverage = 5;
+  // Binds empty snapshots and owner values to the inspected session's target.
+  string engine = 6;
+  repeated string target_features = 7;
+  // Ordered owner interpretations of the exact requested schema selectors.
+  repeated InspectionScopeBinding scope_bindings = 8;
 }
 message Table {
   Reference identity = 1;
   repeated Column columns = 2;
   repeated Envelope facets = 3;
+  // Required in inspection replies, including tables with no model facets.
+  Reference normalized_identity = 4;
 }
 message Column {
   string name = 1;
@@ -161,13 +174,28 @@ message Change {
     Empty drop_table = 4;
     Column add_column = 5;
     string drop_column = 6;
-    Envelope native = 7;
+    NativeOperation native = 7;
   }
+}
+// NativeOperation retains the grammatical context of a captured OPERATION.
+// The owner revalidates its payload before rendering; metadata is not authority.
+message NativeOperation {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    STATEMENT = 1;
+    ALTER_TABLE = 2;
+  }
+  NormalizedValue value = 1;
+  Role role = 2;
+  // Required only for ALTER_TABLE. The owner renders the complete statement.
+  Reference parent = 3;
 }
 message RenderRequest {
   string engine = 1;
   repeated Change changes = 2;
   repeated string target_features = 3;
+  // Established false and absent capability facts remain distinct.
+  map<string, bool> capabilities = 4;
 }
 message Unit {
   string change_id = 1;
@@ -276,6 +304,13 @@ message NormalizedValue {
   // representation. It never substitutes serialized Protobuf or raw payload.
   string canonical_format = 4;
   bytes canonical_projection = 5;
+  // Pure dependency facts computed by the owner, not inferred from payloads.
+  repeated ComparisonIdentity required_objects = 6;
+  // Required only for CHANGE. Decoding recomputes these facts from the complete
+  // captured change payload; persisted metadata is never trusted on its own.
+  ChangeSemantics change_semantics = 7;
+  // Required only for OPERATION, reconstructed from the captured payload.
+  OperationSemantics operation_semantics = 8;
 }
 
 // SourcePosition uses a zero-based offset into the original encoded bytes and
@@ -410,6 +445,9 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
+  // Optional plural label for omission reports. This declares no count metrics.
+  // Only desired and observed models may supply a trimmed, single-line label.
+  string display_name = 9;
 }
 message ModelKnowledge {
   enum State {
@@ -423,9 +461,31 @@ message ModelKnowledge {
   State state = 1;
   string reason = 2;
 }
+// A component retains both authored and owner-normalized spelling. An absent
+// component is a wildcard; a present empty component matches only an empty name.
+message NamespaceComponent {
+  string source = 1;
+  string normalized = 2;
+}
+// A namespace is relative to the engine selected by the surrounding operation.
+// Path prefixes compare whole components, never delimiter-joined strings.
+message ModelNamespace {
+  NamespaceComponent database = 1;
+  NamespaceComponent catalog = 2;
+  NamespaceComponent schema = 3;
+  repeated NamespaceComponent path_prefix = 4;
+}
+message ModelNamespaceKnowledge {
+  ModelNamespace scope = 1;
+  ModelKnowledge knowledge = 2;
+}
 message ModelKindCoverage {
   ValueModel model = 1;
+  // Knowledge outside every declared region. With no regions it is global.
   ModelKnowledge knowledge = 2;
+  // Matching regions combine conservatively: unknown or unrepresentable
+  // knowledge overrides completeness. Specific subjects take precedence.
+  repeated ModelNamespaceKnowledge regions = 3;
 }
 message ModelSubjectCoverage {
   string kind = 1;
@@ -473,4 +533,210 @@ message SourceModelValue {
   // Provenance resolves against the original captured fragment, never output
   // synthesized by the provider. Even an inherited default has a trace.
   SourceTrace source = 3;
+}
+
+// ConvertValues interprets a complete captured batch in the other schema
+// representation without a session. Source normalization is context, not proof
+// that the owner may skip validation. Conversion cannot rename an object or
+// establish inspection knowledge.
+message ConvertValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  ValueInput.Representation from = 3;
+  ValueInput.Representation to = 4;
+  repeated NormalizedValue values = 5;
+}
+
+// One selector may name several engine-defined namespaces. Empty namespaces
+// explicitly resolve the selector to no objects. Bindings grant no coverage.
+message InspectionScopeBinding {
+  string selector = 1;
+  repeated ModelNamespace namespaces = 2;
+}
+
+// ModelComparison assigns contextual models and change representations to one
+// owner batch. A model has one placement per engine; facets name common owners.
+message ModelComparison {
+  string id = 1;
+  enum Placement { PLACEMENT_UNSPECIFIED = 0; OBJECTS = 1; FACETS = 2; }
+  Placement placement = 2;
+  repeated string kinds = 3;
+  repeated string change_kinds = 4;
+  repeated string owner_kinds = 5;
+  repeated string actions = 6;
+}
+
+// ComparisonPart records an already-bound identity component. These facts keep
+// authored spelling and connection defaults distinct from equality. Comparison
+// never reparses a delimiter-joined name to recover a component boundary.
+message ComparisonPart {
+  string source = 1;
+  string normalized = 2;
+  bool quoted = 3;
+  bool defaulted = 4;
+}
+message ComparisonIdentity {
+  string kind = 1;
+  ComparisonPart database = 2;
+  ComparisonPart catalog = 3;
+  ComparisonPart schema = 4;
+  repeated ComparisonPart path = 5;
+  ComparisonPart parent = 6;
+  ComparisonPart name = 7;
+  repeated ComparisonPart signature = 8;
+}
+// ComparisonNamespace describes host-bound coverage, after capture and target
+// selection. It differs from an owner's inspection namespace: common parents,
+// explicit subject kinds, exact empty paths, and source target limits remain.
+message ComparisonNamespace {
+  repeated string targets = 1;
+  repeated string subject_kinds = 2;
+  ComparisonPart database = 3;
+  ComparisonPart catalog = 4;
+  ComparisonPart schema = 5;
+  ComparisonPart parent = 6;
+  repeated ComparisonPart path_prefix = 7;
+  bool path_exact = 8;
+}
+message ComparisonRegion {
+  ComparisonNamespace scope = 1;
+  ModelKnowledge knowledge = 2;
+}
+// Sources intersect independently. A complete region in one source cannot
+// supply authority missing from another source.
+message ComparisonKnowledgeSource {
+  ModelKnowledge outside = 1;
+  repeated ComparisonRegion regions = 2;
+}
+message ComparisonKindCoverage {
+  ValueModel model = 1;
+  repeated ComparisonKnowledgeSource sources = 2;
+}
+message ComparisonSubjectCoverage {
+  string kind = 1;
+  ComparisonIdentity subject = 2;
+  ModelKnowledge knowledge = 3;
+  repeated string targets = 4;
+}
+message ComparisonCoverage {
+  repeated ComparisonKindCoverage kinds = 1;
+  repeated ComparisonSubjectCoverage subjects = 2;
+}
+// A missing value is a deliberately excluded facet, with a nonempty target
+// binding. It is not an absent object or a request to restore defaults.
+message ComparisonRecord {
+  ComparisonIdentity subject = 1;
+  string kind = 2;
+  repeated string targets = 3;
+  NormalizedValue value = 4;
+}
+message ComparisonState {
+  ValueInput.Representation representation = 1;
+  repeated ComparisonRecord records = 2;
+  ComparisonCoverage coverage = 3;
+}
+message ComparisonParent {
+  ComparisonIdentity subject = 1;
+  bool desired = 2;
+  bool current = 3;
+}
+message RequestedChange {
+  ComparisonIdentity subject = 1;
+  string action = 2;
+}
+message ComparisonExclusion {
+  string kind = 1;
+  string name = 2;
+}
+message ComparisonColumn {
+  ComparisonIdentity table = 1;
+  string name = 2;
+  string type = 3;
+}
+message ComparisonConstraint {
+  ComparisonIdentity subject = 1;
+  string type = 2;
+  repeated string columns = 3;
+}
+message ResolvedIdentifier {
+  string name = 1;
+  string key = 2;
+}
+message ComparisonIdentifiers {
+  IdentifierRules rules = 1;
+  string default_schema = 2;
+  string catalog_collation = 3;
+  repeated ResolvedIdentifier resolved_names = 4;
+}
+// CompareModels is an offline contextual operation. It has no session handle,
+// cannot inspect a database, and returns either the whole reply or an error.
+// The host enforces common migration policy on the result before planning.
+message CompareModelsRequest {
+  string engine = 1;
+  string comparison_id = 2;
+  repeated string target_features = 3;
+  ComparisonIdentifiers identifiers = 4;
+  // Missing keys mean unestablished facts; false is an established refusal.
+  map<string, bool> capabilities = 5;
+  repeated string kinds = 6;
+  ComparisonState desired = 7;
+  ComparisonState current = 8;
+  repeated ComparisonParent parents = 9;
+  repeated RequestedChange requests = 10;
+  repeated ComparisonIdentity declared_relations = 11;
+  repeated ComparisonIdentity declared_roles = 12;
+  string database_path = 13;
+  repeated ComparisonExclusion exclusions = 14;
+  repeated ComparisonColumn declared_columns = 15;
+  repeated ComparisonIdentity required = 16;
+  repeated ComparisonConstraint desired_constraints = 17;
+  repeated ComparisonConstraint current_constraints = 18;
+}
+message ChangeSemantics {
+  optional bool replaces_owner = 1;
+  optional bool removes_state = 2;
+  enum Impact {
+    IMPACT_UNSPECIFIED = 0;
+    UNKNOWN = 1;
+    ADDITIVE = 2;
+    BEHAVIORAL = 3;
+    DESTRUCTIVE = 4;
+  }
+  Impact impact = 3;
+  string reason = 4;
+  enum Access {
+    ACCESS_UNSPECIFIED = 0;
+    ACCESS_UNKNOWN = 1;
+    UNCHANGED = 2;
+    WIDENS = 3;
+    NARROWS = 4;
+  }
+  Access access = 5;
+  string access_reason = 6;
+}
+message ComparedChange {
+  string kind = 1;
+  ComparisonIdentity subject = 2;
+  // A normalized CHANGE model whose complete payload reconstructs its facts.
+  NormalizedValue value = 3;
+}
+message ComparisonUndecided {
+  string kind = 1;
+  // Absent only for an object model's entire unknown namespace.
+  ComparisonIdentity subject = 2;
+  string reason = 3;
+}
+message ComparedModels {
+  bool complete = 1;
+  ComparisonState desired = 2;
+  repeated ComparedChange changes = 3;
+  repeated ComparisonUndecided undecided = 4;
+}
+
+// OperationSemantics carries local safety facts without rendering or I/O.
+message OperationSemantics {
+  ChangeSemantics.Impact impact = 1;
+  string reason = 2;
+  ChangeSemantics.Access access = 3;
+  string access_reason = 4;
 }

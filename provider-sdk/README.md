@@ -32,6 +32,8 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
+| `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -173,13 +175,69 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. Native object/facet adaptation in the host, frontend capture, contextual
-comparison, and migration backend operations remain required
-work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and
+observed objects and facets, and dispatches contextual comparison to their owner.
+Native planning and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+
+## Contextual model comparison
+
+The optional `models.compare` service uses a `ModelComparer`. Each engine names
+its comparison services and assigns model kinds, change kinds, and either native
+object placement or common facet owner kinds. Object services also declare their
+supported explicit actions. A model has one comparison owner per engine.
+
+`CompareModels` receives desired and observed states, identifier rules, capability
+facts, parent lifecycles, and the context relevant to its placement. Object
+context includes explicit actions, declared relations, roles, columns, required
+objects, exclusions, and the database path. Facet context includes common
+constraint definitions. A missing capability differs from an explicit false.
+
+Bound identity components retain source and normalized spelling, quoting, and
+connection defaults. Parent, namespace path, and signature remain separate.
+Coverage retains each independent source and its outside and bounded claims.
+Sources intersect; a complete region cannot supply another source's missing
+knowledge. Empty values do not establish absence. An excluded facet retains its
+model, subject, and target binding, and permits no change or diagnostic.
+
+The owner validates complete payload semantics again. Captured canonical
+projections do not prove desired/observed equivalence. Results include effective
+desired schema, normalized `CHANGE` values, and explicit undecided diagnostics.
+Both transport boundaries refuse incomplete replies and unowned models. The
+host's comparison runtime enforces common migration policy before planning.
+
+Normalization of a change requires explicit replacement and state-removal facts,
+impact and access assessments, and reasons. Unknown impact and access remain
+explicit assessments. Required object identities are structured values. These
+facts must be reconstructed from the complete payload when it is decoded;
+persisted metadata cannot stand in for owner validation. Planning and execution
+of native changes require their own services and are not supplied by comparison.
+
+## Desired and observed conversion
+
+The optional `values.convert` service uses a `ValueConverter` alongside
+`values.normalize`. It receives one complete batch, its source and destination
+representations, and the captured target features. No session is needed.
+
+The owner interprets source payloads again. Supplied canonical projections are
+context, not proof of validation. Destination schema versions, encodings,
+definition digests, payloads, and canonical formats follow the destination model.
+The ordered IDs, model kinds, source identities, and normalized identity tuples
+must remain unchanged. Required features may change only within the selected
+profile. An error, cancellation, or incomplete response discards the whole batch.
+
+The host registers conversion only for advertised services and paired desired
+and observed models. A batch mixing captured engine or feature profiles is
+refused. Conversion cannot establish inspection coverage. The shared conversion
+pipeline retains bounded knowledge, object identities, and facet placement;
+unknown namespaces remain unknown. Clone, encoding, and equality remain local.
+
+This service does not resolve schema selectors or implement contextual
+comparison and planning. Inspection binds selectors separately through the
+owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 6 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 12 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -241,3 +299,80 @@ retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
 adapters, native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
+
+## Observed model coverage
+
+`Inspect` returns its engine, selected target features, and explicit observed
+model coverage even for an empty database. The host matches the engine and
+features to the inspected session. A missing coverage record is not evidence
+that a model has no objects.
+
+`provider.InspectionValues` validates native objects, table facets, and column
+facets against their negotiated model definitions and complete subject records.
+It returns an independent batch for `NormalizeValues`. Native objects use their
+model kind as their identity kind. Table facets name their table, and column
+facets use `provider.ColumnReference` to keep the table and column names as
+separate components.
+
+After normalization, `provider.ValidateNormalizedInspection` requires every
+normalized owner to match its coverage subject. A failure discards the entire
+snapshot. Hosts retain the engine, target features, model contract, and
+normalized subject when capturing the owner-defined canonical projection.
+
+Each model declares knowledge outside its namespace regions and within each
+region. Database, catalog, and schema qualifiers preserve source and normalized
+spelling. An absent qualifier is a wildcard; a present empty qualifier matches
+only an empty component. Path prefixes retain whole components. Regions belong
+to the operation's selected engine. An uninspected or unrepresentable region
+requires a reason and overrides overlapping completeness. Explicit subject
+records take precedence. Duplicate normalized regions, invalid components, and
+namespace-wide absence or defaults are refused. A model can carry at most
+4,096 regions.
+
+The host requires the exact session database on bindings and coverage regions.
+It retains native coordinates and maps common table and column regions to shared
+identities. Subject-kind limits and exact empty paths keep these coordinate
+spaces separate. A column path becomes its parent table; unknown parent regions
+remain unknown after this mapping. Unbound, foreign, or renamed databases and
+inconsistent common identifier normalization cause refusal.
+
+A filtered inspection returns one `scope_bindings` entry per requested selector,
+in request order. Each entry maps that selector to structured owner namespaces.
+An empty namespace list means an empty selection, not global authority. Bindings
+never grant coverage. Every returned table has a `normalized_identity`, even
+without facets. Tables, coverage subjects, and whole coverage regions must fit
+inside the bound namespaces. Filtered replies cannot claim global completeness
+or include dispositions without normalized identities. Requests and bindings
+are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+
+Desired and observed models may declare a plural `display_name` for omission
+reports. It must be trimmed single-line text and agree across engines that share
+a model representation. The host freezes this label in the contract and reports
+captured values locally, without interpreting payloads or declaring count metrics.
+An absent label does not get a host-invented substitute.
+
+Native `schema inspect --format json` returns common schema data and warns about
+omitted objects and facets using these labels. It is not a lossless model export.
+Shared conversion and codecs retain the captured payloads and bounded coverage.
+Full-document source decoding still requires unrestricted complete model
+knowledge and refuses regions. Native migration planning and faithful source
+export remain work in #4204.
+
+## Captured native operations
+
+An `OPERATION` model is distinct from desired values and comparison changes.
+Normalization reconstructs its impact and access assessments from the complete
+payload. Hosts can clone and persist captured operations without reaching the
+provider; decoding requires owner normalization again.
+
+A native `Render` input carries the captured operation and its grammatical role.
+A table alteration also carries its actual parent. The owner renders a complete
+execution unit, including the table statement. Capability facts preserve a known
+false value separately from a missing answer. Providers must revalidate payload
+semantics and refuse any role or context they cannot implement.
+
+Rendering validates the whole batch at both transport boundaries. Cancellation,
+foreign models, incomplete replies, and changed provenance discard all output.
+The independent operation fixture executes table creation, renaming, and removal
+through this contract. It does not establish a feature-planning, transaction, or
+history service; these remain required before official-engine extraction.

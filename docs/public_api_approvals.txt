@@ -851,3 +851,9 @@ v0.13.0 ptah.run/dbschema
 # signature changes function-value assignments; callers update them directly.
 # The selected services remain owned by their providers. Pre-v1, so no compatibility is owed.
 v0.13.0 ptah.run/engine/builtin
+
+# #4204 replaces ID.Signature's joined string with immutable Parts. Source and
+# normalized overload components keep their boundaries. Callers use NewParts
+# or the routine builder; legacy scalar JSON is refused. Pre-v1, so no
+# compatibility is owed.
+v0.13.0 ptah.run/core/objectidentity

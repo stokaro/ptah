@@ -44,6 +44,10 @@ func TestSourceDecodingRefusesChangedScopeAndPartialProvenance(t *testing.T) {
 		{"unknown coverage", func(v *protocol.DecodedSource) {
 			v.Documents[0].Coverage.Kinds[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "unknown"}
 		}},
+		{"bounded document knowledge", func(v *protocol.DecodedSource) {
+			_, scoped := scopedModelCoverage()
+			v.Documents[0].Coverage.Kinds[0].Regions = scoped.Kinds[0].Regions
+		}},
 		{"absent value", func(v *protocol.DecodedSource) {
 			v.Documents[0].Coverage.Subjects[0].Knowledge.State = protocol.ModelKnowledge_ABSENT
 		}},

@@ -68,7 +68,7 @@ func hangSide(objects ...schemaext.Object) featureselect.Side {
 	var kinds []schemaext.KindCoverage
 	for _, model := range hangRuntime().Codecs().Definitions() {
 		if model.Representation == schemaext.Desired {
-			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 		}
 	}
 	var subjects []schemaext.SubjectCoverage

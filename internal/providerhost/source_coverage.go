@@ -19,7 +19,7 @@ func (h *Host) sourceCoverage(engine string, source *protocol.ModelCoverage) (sc
 			return schemaext.Coverage{}, fmt.Errorf("decoded YAML coverage model is not registered")
 		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
-			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: yamlModelKnowledge(contract)})
+			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(yamlModelKnowledge(contract))})
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {
@@ -47,18 +47,35 @@ func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, e
 	return schemaext.Knowledge{State: state, Reason: knowledge.GetReason()}, nil
 }
 
-// The shared identity currently has one parent component and no database or
-// path tuple. Refuse richer identities instead of folding their components into
-// strings or silently dropping them. Extending that identity is separate from
-// normalizing the provider-owned payload retained in resolvedModel.
+// Source and comparison tuples must have matching component boundaries. The
+// wire permits other normalization shapes; refuse those until native placement
+// can preserve both shapes without inventing source spellings.
 func sourceIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
-	if source.GetDatabase() != "" || normalized.GetDatabase() != "" || len(source.GetPath()) != 0 || len(normalized.GetPath()) != 0 || len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
-		return objectidentity.ID{}, unsupported("structured database, path, or overload identity in native YAML placement")
+	path, err := sourceParts(source.GetPath(), normalized.GetPath(), "path")
+	if err != nil {
+		return objectidentity.ID{}, err
+	}
+	overload, err := sourceParts(source.GetOverload(), normalized.GetOverload(), "overload")
+	if err != nil {
+		return objectidentity.ID{}, err
 	}
 	return objectidentity.ID{Kind: objectidentity.Kind(source.GetKind()),
-		Catalog: objectidentity.Part{Source: source.GetCatalog(), Normalized: normalized.GetCatalog()},
-		Schema:  objectidentity.Part{Source: source.GetSchema(), Normalized: normalized.GetSchema()},
-		Name:    objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
+		Database:  objectidentity.Part{Source: source.GetDatabase(), Normalized: normalized.GetDatabase()},
+		Catalog:   objectidentity.Part{Source: source.GetCatalog(), Normalized: normalized.GetCatalog()},
+		Schema:    objectidentity.Part{Source: source.GetSchema(), Normalized: normalized.GetSchema()},
+		Namespace: path, Signature: overload,
+		Name: objectidentity.Part{Source: source.GetName(), Normalized: normalized.GetName()}}, nil
+}
+
+func sourceParts(source, normalized []string, label string) (objectidentity.Parts, error) {
+	if len(source) != len(normalized) {
+		return objectidentity.Parts{}, unsupported("normalization changing " + label + " component count in native YAML placement")
+	}
+	parts := make([]objectidentity.Part, len(source))
+	for i, part := range source {
+		parts[i] = objectidentity.Part{Source: part, Normalized: normalized[i]}
+	}
+	return objectidentity.NewParts(parts...), nil
 }
 
 // Kind-wide coverage has no target scope in the shared schema. A model another

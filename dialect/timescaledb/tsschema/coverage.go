@@ -17,7 +17,7 @@ func Coverage(kind schemaext.Kind, representation schemaext.Representation, know
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
-	return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+	return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 }
 
 // CompleteCoverage enrolls both models with complete knowledge: the source

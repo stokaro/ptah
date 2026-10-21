@@ -88,13 +88,9 @@ func (h *Host) sourceContribution(engine string, tables yamlext.Tables, source *
 	if contract == nil {
 		return yamlext.Contribution{}, fmt.Errorf("decoded YAML model is not registered")
 	}
-	payload, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
+	resolved, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
 	if err != nil {
 		return yamlext.Contribution{}, err
-	}
-	resolved, ok := payload.(schemaext.Value)
-	if !ok {
-		return yamlext.Contribution{}, fmt.Errorf("decoded YAML model has no desired value")
 	}
 	subject, err := sourceIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
 	if err != nil {
@@ -105,6 +101,9 @@ func (h *Host) sourceContribution(engine string, tables yamlext.Tables, source *
 	case protocol.SourceModelValue_NATIVE_OBJECT:
 		result.Object = &schemaext.Object{Ref: subject, Value: resolved, Targets: []string{engine}}
 	case protocol.SourceModelValue_FACET:
+		if !subject.Database.Empty() || !subject.Catalog.Empty() || !subject.Namespace.IsZero() || !subject.Signature.IsZero() {
+			return yamlext.Contribution{}, unsupported("native YAML table facet with database, catalog, path, or overload qualification")
+		}
 		index, err := sourceTable(tables, value.GetValue().GetOwner())
 		if err != nil {
 			return yamlext.Contribution{}, err

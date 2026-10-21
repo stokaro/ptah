@@ -74,7 +74,7 @@ func TestProviderYAMLTableFacetAndEmptyCoverage(t *testing.T) {
 	empty, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte("tables: {}\n"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(empty.FeatureCoverage.KindRecords(), qt.HasLen, 1)
-	c.Assert(empty.FeatureCoverage.KindRecords()[0].Knowledge.State, qt.Equals, schemaext.Complete)
+	c.Assert(empty.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)
 	c.Assert(empty.FeatureCoverage.SubjectRecords(), qt.HasLen, 0)
 }
 
@@ -106,12 +106,12 @@ func TestProviderYAMLDoesNotClaimAbsenceForOtherFormats(t *testing.T) {
 	db, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte("tables: {}\n"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.FeatureCoverage.KindRecords(), qt.HasLen, 1)
-	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.State, qt.Equals, schemaext.Uninspected)
-	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Reason, qt.Contains, "every registered engine")
+	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().Reason, qt.Contains, "every registered engine")
 	source := []byte("tables:\n  records:\n    columns:\n      id: {type: INTEGER}\n    retention: {seconds: 60}\n")
 	db, err = yamlschema.Parse(c.Context(), runtime.YAML(), source)
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
 	c.Assert(db.FeatureCoverage.SubjectRecords()[0].Knowledge.State, qt.Equals, schemaext.Complete)
 	c.Assert(db.FeatureCoverage.SubjectRecords()[0].Targets, qt.DeepEquals, []string{"fixture"})
 }

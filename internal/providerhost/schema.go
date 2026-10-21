@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/stokaro/ptah/provider-sdk/provider"
+
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -18,6 +20,13 @@ import (
 // No built-in renderer, planner, or capability preset supplies missing behavior.
 func (h *Host) Provider() engine.Provider {
 	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs), YAML: h.yamlExtension()}
+	for _, codec := range result.Codecs {
+		contract := h.models[modelKey{kind: codec.Prototype.Kind(), representation: codec.Representation}]
+		if contract.displayName != "" {
+			result.Reporting = append(result.Reporting, engine.Reporting{Representation: contract.key.representation,
+				Definitions: []schemaext.ReportDefinition{{Kind: contract.key.kind, DisplayName: contract.displayName}}, Service: modelReporter{contract: contract}})
+		}
+	}
 	for i := range result.Codecs {
 		result.Codecs[i].Definition = slices.Clone(result.Codecs[i].Definition)
 	}
@@ -27,6 +36,12 @@ func (h *Host) Provider() engine.Provider {
 	for _, declared := range h.description.GetEngines() {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())
+		selected.registerComparisons(&result)
+		if slices.Contains(h.description.GetFeatures(), provider.ConvertValuesFeature) {
+			if kinds := h.conversionKinds(declared.GetId()); len(kinds) > 0 {
+				result.Conversions = append(result.Conversions, engine.Conversion{Target: declared.GetId(), Kinds: kinds, Service: selected})
+			}
+		}
 	}
 	return result
 }

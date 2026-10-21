@@ -177,7 +177,7 @@ func facetCoverage(registry schemaext.Registry, representation schemaext.Represe
 	var definitions []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {
 		if (model.Kind == conversionFirst || model.Kind == conversionSecond) && model.Representation == representation {
-			definitions = append(definitions, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: state, Reason: "source knowledge"}})
+			definitions = append(definitions, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "source knowledge"})})
 		}
 	}
 	return must.Must(schemaext.NewCoverage(representation, definitions, claims))

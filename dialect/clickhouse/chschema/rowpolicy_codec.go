@@ -57,7 +57,7 @@ func RowPolicyCoverage(representation schemaext.Representation, knowledge schema
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == RowPolicyKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: row policy coverage requires a schema representation", schemaext.ErrInvalidValue)

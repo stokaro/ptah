@@ -73,8 +73,8 @@ func encodedDeclaration(object schemaext.Object) (annotation.EncodedDirective, e
 // not gain authority to remove objects through a successful export.
 func requireAnnotationCoverage(known schemaext.Coverage) error {
 	for _, record := range known.KindRecords() {
-		if record.Knowledge.State != schemaext.Complete {
-			return fmt.Errorf("%w: Go annotations cannot preserve synonym namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+		if record.Knowledge.Unscoped().State != schemaext.Complete {
+			return fmt.Errorf("%w: Go annotations cannot preserve synonym namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	for _, record := range known.SubjectRecords() {

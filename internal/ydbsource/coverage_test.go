@@ -160,7 +160,7 @@ func TestGoExportRefusesDifferentSourceModels(t *testing.T) {
 			t.Run(string(original.Kind)+"/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
 				captured := must.Must(schemaext.NewCoverage(test.model.Representation,
-					[]schemaext.KindCoverage{{Model: test.model, Knowledge: complete}}, nil))
+					[]schemaext.KindCoverage{{Model: test.model, Knowledge: schemaext.GlobalKnowledge(complete)}}, nil))
 				files, err := goschematogo.Render(t.Context(), &schemamodel.Database{FeatureCoverage: captured},
 					goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb"})
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -276,4 +276,24 @@ func withHCLBlockCoverage(c *qt.C, known schemaext.Coverage) schemaext.Coverage 
 		c.Assert(err, qt.IsNil)
 	}
 	return combined
+}
+
+func TestHCLPreservesCoordinationNamespaceBounds(t *testing.T) {
+	c := qt.New(t)
+	initial, err := ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)
+	c.Assert(err, qt.IsNil)
+	records := initial.KindRecords()
+	records[0].Knowledge, err = schemaext.NewScopedKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "outside inspected schema"}, schemaext.NamespaceKnowledge{
+		Scope: schemaext.NamespaceScope{Schema: &objectidentity.Part{Source: "app", Normalized: "app"}}, Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+	})
+	c.Assert(err, qt.IsNil)
+	known, err := schemaext.NewCoverage(schemaext.Desired, records, nil)
+	c.Assert(err, qt.IsNil)
+	rendered, err := atlashclrender.Render(&schemamodel.Database{FeatureCoverage: known}, atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "ydb"})
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "scoped.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.FeatureCoverage.Equal(withHCLBlockCoverage(c, known)), qt.IsTrue)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("app", "missing")).State, qt.Equals, schemaext.Complete)
+	c.Assert(parsed.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("other", "missing")).State, qt.Equals, schemaext.Uninspected)
 }

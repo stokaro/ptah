@@ -116,19 +116,28 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	if err != nil {
 		return catalog.ProviderIdentity{}, err
 	}
-	// Version 3 is a fixed host-owned JSON projection. Repeated protocol fields
+	// Version 4 is a fixed host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
 	// database addresses are deliberately absent.
 	projection := struct {
-		Version            int                  `json:"version"`
-		Engine             string               `json:"engine"`
-		ProviderFeatures   []string             `json:"provider_features"`
-		EngineFeatures     []string             `json:"engine_features"`
-		SessionFeatures    []string             `json:"session_features"`
-		OfflineIdentifiers identifier.Semantics `json:"offline_identifiers"`
-		Models             []modelIdentity      `json:"models"`
-		YAMLKeys           []yamlKeyIdentity    `json:"yaml_keys"`
-	}{3, t.engine.GetId(), featureSet(t.host.description.GetFeatures()), featureSet(t.engine.GetFeatures()), featureSet(session.GetFeatures()), rules, modelIdentities(t.engine.GetValueModels()), yamlKeyIdentities(t.engine.GetYamlSourceKeys())}
+		Version            int                          `json:"version"`
+		Engine             string                       `json:"engine"`
+		ProviderFeatures   []string                     `json:"provider_features"`
+		EngineFeatures     []string                     `json:"engine_features"`
+		SessionFeatures    []string                     `json:"session_features"`
+		OfflineIdentifiers identifier.Semantics         `json:"offline_identifiers"`
+		Models             []modelIdentity              `json:"models"`
+		YAMLKeys           []yamlKeyIdentity            `json:"yaml_keys"`
+		Comparisons        []comparisonIdentityContract `json:"comparisons"`
+	}{4,
+		t.engine.GetId(),
+		featureSet(t.host.description.GetFeatures()),
+		featureSet(t.engine.GetFeatures()),
+		featureSet(session.GetFeatures()),
+		rules,
+		modelIdentities(t.engine.GetValueModels()),
+		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
+		comparisonContracts(t.engine.GetComparisons())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)
