@@ -710,8 +710,8 @@ Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
 complete versioned workflow. The fixture also implements Atlas storage using
-ordinary revision columns. Logging, tags, locking, and complete Atlas maintenance
-qualification remain required before this history slice can merge.
+ordinary revision columns. Logging, tags, locking, and the default versioned CLI
+workflow remain required before this history slice can merge.
 
 ## Keep history transactions independent of transactional DDL
 
@@ -818,6 +818,23 @@ Process tests exchange the same database between SQL and provider connections.
 They cover metadata preservation, empty exact identities, baseline, apply and
 rollback, dirty-row set, external-write conflicts, and lost acknowledgments.
 Schema effects are inspected through the independent SQL connection: the fixture's
-schema reader does not accept the full Atlas table grammar. Repair, checksum
-reconciliation, and official-engine qualification still require Atlas-specific
-evidence under #4204.
+schema reader does not accept the full Atlas table grammar. Official-engine
+qualification remains required under #4204.
+
+Atlas repair tests start with partial up and down histories written by the SQL
+migrator. The provider resumes the uncommitted suffix and refuses a changed
+committed prefix, including when force is selected. A partially completed
+rollback stays dirty until its remaining statements finish and its row is deleted.
+Manual recovery can replace an uncertain record only after the operator resolves
+the database state.
+
+Checksum tests insert an out-of-order migration into an Atlas source directory.
+A late refusal rolls back all checksum replacements while preserving completed
+migration bodies. Lost commit requests and replies retain unknown outcomes;
+a fresh session reads the stored hashes before recovery. The SQL reader verifies
+the final cohort, and changed source bytes remain an error.
+
+A process-death test exits the provider after a committed DDL statement and before
+its acknowledgment. A fresh process sees the pending Atlas record and refuses
+forced statement resumption. After the operator applies the missing statement,
+explicit metadata repair completes without replaying the committed prefix.

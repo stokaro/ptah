@@ -4336,8 +4336,11 @@ Atlas storage preserves exact string identities and metadata rows.
 An existing Atlas row changes only its type during set; its stored diagnostics
 and progress remain intact. Independent SQLite process tests cover shared
 SQL/provider storage, baseline, apply and rollback, external-write conflicts,
-and uncertain set commits. Official-engine storage qualification remains required
-under #4204.
+and uncertain set commits. Atlas repair also resumes SQL-written committed
+prefixes and refuses changed prefixes or unknown statement outcomes. Checksum
+reconciliation retains atomic batches and uncertainty across lost commit replies.
+A process-death check verifies recovery after committed DDL without its receipt.
+Official-engine storage qualification remains required under #4204.
 
 `catalog.CancellationRollback` exposes transaction-lifetime evidence after
 `Rollback` is attempted. SQL-backed writers report cancellation of the context
