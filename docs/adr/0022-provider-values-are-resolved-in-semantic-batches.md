@@ -187,7 +187,7 @@ Other source formats cannot carry YAML claims. The host includes this grammar in
 with key and model declaration order normalized as sets.
 
 This metadata does not yet connect native YAML capture to the transport.
-Source range capture, value conversion, and normalized model placement remain
+Value conversion and normalized model placement remain
 required application-adapter work before an external owner can read YAML files.
 
 ## Cancellation during source interpretation
@@ -214,6 +214,20 @@ unchanged, including decimal exponents beyond machine ranges. Finite numbers
 can be converted to exact JSON number syntax without expanding exponents or
 rounding. Nonfinite YAML values remain distinguishable at capture; a transport
 that accepts only finite numbers must refuse them explicitly.
+
+Every captured node carries a range in the original source bytes, including
+its exclusive end. Character columns from the parser are converted to byte
+columns using the source encoding. UTF-8 and UTF-16 BOMs, supplementary Unicode,
+and YAML line breaks keep their original offsets. An alias has its own range
+and shares the captured declaration node; the declaration retains its range.
+
+The maintained YAML decoder still owns schema decoding and structural checks.
+A pinned AST-only parser supplies end marks because the decoder's node API
+exposes only start positions. Before accepting a range, capture checks the
+node's kind, start position, tag, value, anchor, and child count against the
+primary parse. A disagreement fails before owner dispatch. This dependency
+supplies source locations; it does not decode Go values or select schema
+semantics. No owner keys means no range-index pass.
 
 A document owner returns contributions and desired coverage in one result.
 Missing fragments do not establish absence. The registry validates model
