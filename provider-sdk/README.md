@@ -14,7 +14,8 @@ owns integration with the application and extraction of the official providers.
 The SDK imports no Ptah application package or database driver. Providers own
 their drivers and may build with a different dependency graph from the host.
 The independent fixture module under `testdata/fixture` uses SQLite through its
-own driver. Its local `replace` is development wiring, not a published dependency.
+own driver and a pinned published SDK version. It has no local `replace`;
+process acceptance builds run with `GOWORK=off`.
 
 `protocol/experimental` contains generated Protobuf messages and the gRPC service.
 `provider` defines service contracts and validates complete results.

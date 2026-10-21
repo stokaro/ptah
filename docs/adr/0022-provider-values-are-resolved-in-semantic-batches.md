@@ -359,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 15 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 16 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -609,3 +609,31 @@ failed-prefix rollback, lost commit replies, concurrent begin cleanup, session
 isolation, and native schema apply. This establishes the adapter contract, not
 YDB, DuckDB, or Spanner qualification. History persistence still needs a typed
 service that uses these same session and transaction handles.
+
+## Typed revision storage in the session owner
+
+The experimental history service transports stored revision facts rather than
+SQL queries or migration commands. The host keeps its existing policy for
+ordering, checksums, partial progress, retry, and repair. Native and Atlas
+representation are explicit; an exact empty Atlas identity is preserved.
+
+A history scope names the live session, optional transaction, schema, table,
+and representation. The provider validates storage ownership and layout before
+use. Preparation creates missing storage outside transactions and refuses
+incompatible layouts. No earlier history decoder or upgrade path is added.
+
+Reads produce a consistent complete snapshot within a caller-selected bound.
+Oversized histories fail explicitly. A mutation compares the complete expected
+row and performs one atomic insert, replacement, or deletion. A conflict makes
+no change. This prevents stale record replacement; it does not replace a
+migration lock or serialize whole migration plans.
+
+Execution and history mutations use the same transaction handle where the
+engine supports it. A mutation acknowledgment within that transaction proves
+execution only. Lost acknowledgments stop the workflow and require
+reconciliation; request IDs never authorize replay. YDB data transactions do
+not establish transactional DDL, and Spanner DDL remains unwrapped.
+
+The SDK and independent fixture establish this boundary. Migrator integration,
+provider lock primitives, and qualification of the official engines remain
+required before #4204 is complete.
