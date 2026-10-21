@@ -311,6 +311,8 @@ schemas, knowledge limits, and source snapshots and rejects colliding claims.
 `schemaext.KindCoverage.Knowledge` carries an immutable `KnowledgeDomain`.
 `GlobalKnowledge` describes an unrestricted namespace. `NewScopedKnowledge`
 bounds knowledge by target, database, catalog, schema, or structured path prefix.
+`SubjectKinds` selects identity kinds, `Parent` selects a column's owning table,
+and `PathExact` requires the complete path to match.
 A nil qualifier matches every value; an empty qualifier matches only an empty
 component. Select the target before lookup. Merging sources requires both to
 establish completeness at the requested identity.
@@ -318,8 +320,9 @@ establish completeness at the requested identity.
 Coverage format 2 preserves these boundaries in serialized schemas and feature
 coverage headers. Formats that only preserve global limits refuse bounded
 claims. Common table identity binding requires owner support for those bounds
-and currently refuses them. Executable-provider inspection still requires its
-SDK scope adapter; this shared contract alone does not enable scoped CLI reads.
+and currently refuses them. Executable-provider inspection maps owner-bound
+namespaces during capture, preserving unknown parent regions. That mapping does
+not authorize later table rebinding to discard those limits.
 
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering

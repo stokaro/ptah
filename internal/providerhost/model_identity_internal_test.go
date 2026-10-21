@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 )
 
 func modelIdentityTarget() *target {
@@ -119,4 +120,36 @@ func TestYAMLGrammarIdentityIgnoresDeclarationOrder(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.ContractSHA256, qt.Equals, before.ContractSHA256)
 	c.Assert(string(reorderedDefinition), qt.Equals, string(definition))
+}
+
+func TestModelDisplayNameChangesFrozenDefinitions(t *testing.T) {
+	c := qt.New(t)
+	target := yamlIdentityTarget()
+	contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
+	before, err := target.identity(nil)
+	c.Assert(err, qt.IsNil)
+	definition, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	target.engine.ValueModels[0].DisplayName = "retention values"
+	after, err := target.identity(nil)
+	c.Assert(err, qt.IsNil)
+	changed, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	c.Assert(after.ContractSHA256, qt.Not(qt.Equals), before.ContractSHA256)
+	c.Assert(string(changed), qt.Not(qt.Equals), string(definition))
+}
+
+func TestModelsRefuseEngineDependentOmissionLabels(t *testing.T) {
+	for _, label := range []string{"", "different values"} {
+		t.Run(label, func(t *testing.T) {
+			c := qt.New(t)
+			target := yamlIdentityTarget()
+			target.engine.ValueModels[0].DisplayName = "retention values"
+			other := proto.CloneOf(target.engine)
+			other.Id = "other"
+			other.ValueModels[0].DisplayName = label
+			target.host.description.Engines = append(target.host.description.Engines, other)
+			c.Assert(target.host.initializeModels(), qt.ErrorIs, provider.ErrProtocol)
+		})
+	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/dbschema"
 	"ptah.run/internal/convert/features"
 )
 
@@ -18,7 +19,7 @@ func TestProviderConversionPreservesObjectsFacetsAndBoundedKnowledge(t *testing.
 	c := qt.New(t)
 	host, runtime := yamlProviderCommand(c, "observed-models")
 	connection := observedConnection(c, host, "scoped-native")
-	observed, err := connection.Reader().ReadSchema()
+	observed, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(connection.Close(), qt.IsNil)
 	// Conversion needs the owner's process, but no open database session.

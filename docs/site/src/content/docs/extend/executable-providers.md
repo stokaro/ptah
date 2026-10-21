@@ -167,17 +167,21 @@ use database, catalog, path, or overload qualification. Normalization that
 changes the path or overload component count is refused. Native planning for these objects remains part of
 [issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
-`schema inspect` refuses native object and facet coverage because it requests
-an explicit schema scope that the experimental contract cannot yet retain.
-The Go catalog reader can capture these models when reading a complete session.
+`schema inspect` accepts objects and facets when the provider binds every requested
+schema selector to explicit namespaces. Returned tables, subjects, and coverage
+regions must stay within those bounds. Unknown parent-table regions remain
+unknown after capture. Invalid or widened bindings cause refusal.
 A failed or canceled read returns no partial catalog. Complete inspection of one
 session does not establish global absence across databases or engines; explicit
 subject facts are preserved.
 
 Providers may advertise offline conversion between desired and observed models.
 The shared conversion pipeline preserves native identities, facets, and bounded
-inspection knowledge. Conversion alone does not resolve the schema scope needed
-by `schema inspect`, and does not qualify native object planning.
+inspection knowledge. JSON inspection exports common schema data and warns about
+omitted objects and facets using model names declared by the provider. It does
+not preserve those payloads; use the shared model codecs to retain captured data.
+Providers without omission labels cannot produce this report. Conversion and
+inspection do not qualify native object planning or faithful source export.
 
 ## Resolve failures
 

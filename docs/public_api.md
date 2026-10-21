@@ -1378,7 +1378,9 @@ absence, requested defaults, complete inspection, and unrepresentable state.
 `KindCoverage.Knowledge` is an immutable `KnowledgeDomain`. `GlobalKnowledge`
 states an unrestricted claim. `NewScopedKnowledge` records an outside claim and
 bounded `NamespaceKnowledge` regions. `NamespaceScope` selects target names,
-database, catalog, schema, and whole namespace path components. A nil qualifier
+database, catalog, schema, and whole namespace path components. `SubjectKinds`
+limits identity kinds, `Parent` limits a column's owning table, and `PathExact`
+requires the whole path to match. A nil qualifier
 is unrestricted; a present empty qualifier matches only the empty component.
 Source spelling is preserved; matching uses owner-normalized components.
 

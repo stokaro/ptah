@@ -191,7 +191,8 @@ func bindInspectionScope(request *protocol.InspectRequest, snapshot *protocol.Sc
 		case "scope-foreign-database":
 			snapshot.ScopeBindings[0].Namespaces[0].Database = &protocol.NamespaceComponent{Source: "other", Normalized: "other"}
 		case "scope-parent-unknown":
-			snapshot.Coverage.Kinds[0].Regions = append(snapshot.Coverage.Kinds[0].Regions, &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: table.Identity.Database, Normalized: table.Identity.Database},
+			snapshot.Coverage.Kinds[0].Regions = append(snapshot.Coverage.Kinds[0].Regions, &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{
+				Database:   &protocol.NamespaceComponent{Source: table.Identity.Database, Normalized: table.Identity.Database},
 				Catalog:    &protocol.NamespaceComponent{},
 				Schema:     &protocol.NamespaceComponent{},
 				PathPrefix: []*protocol.NamespaceComponent{{Source: "Missing.Parent", Normalized: "missing.parent"}}},
