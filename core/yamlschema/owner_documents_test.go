@@ -99,6 +99,12 @@ func TestOwnerDocumentRefusesMalformedInputBeforeDispatch(t *testing.T) {
 	cases := []struct{ name, input string }{
 		{"duplicate owner key", "shades: {x: {value: 1, value: 2}}"},
 		{"cyclic alias", "shades: &loop [*loop]"},
+		{"invalid integer", "shades: !!int 1.25"},
+		{"invalid integer prefix", "shades: !!int _123"},
+		{"invalid float separator", "shades: !!float .1__2"},
+		{"invalid float", "shades: !!float not-a-number"},
+		{"invalid merge", "shades: {<<: 1}"},
+		{"duplicate numeric key", "shades: {1: one, 1: another}"},
 		{"unknown top key", "misspelled: {}"},
 		{"unknown table key", "tables: {a: {misspelled: {}}}"},
 		{"multiple documents", "shades: {}\n---\npalettes: {}"},
@@ -145,4 +151,45 @@ func TestOwnerDocumentFailureDiscardsContributions(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+func TestOwnerDocumentPreservesNumbersBeyondMachineRanges(t *testing.T) {
+	cases := []struct{ name, scalar, tag, value string }{
+		{"large integer", "!!int 340282366920938463463374607431768211457", "!!int", "340282366920938463463374607431768211457"},
+		{"large decimal", "!!float 1.234567890123456789e1000", "!!float", "1.234567890123456789e1000"},
+		{"small decimal", "!!float 1.234567890123456789e-1000", "!!float", "1.234567890123456789e-1000"},
+		{"nonfinite float", "!!float .inf", "!!float", ".inf"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			calls := 0
+			owners, err := yamlext.NewSet(documentOwner(func(_ context.Context, document yamlext.Document) (yamlext.DocumentResult, error) {
+				calls++
+				c.Assert(document.Fragments[0].Node.Tag, qt.Equals, test.tag)
+				c.Assert(document.Fragments[0].Node.Value, qt.Equals, test.value)
+				return yamlext.DocumentResult{}, nil
+			}))
+			c.Assert(err, qt.IsNil)
+			_, err = yamlschema.Parse(t.Context(), owners, []byte("shades: "+test.scalar+"\n"))
+			c.Assert(err, qt.IsNil)
+			c.Assert(calls, qt.Equals, 1)
+		})
+	}
+}
+
+func TestOwnerDocumentKeepsNumericAnchorGraph(t *testing.T) {
+	c := qt.New(t)
+	owners, err := yamlext.NewSet(documentOwner(func(_ context.Context, document yamlext.Document) (yamlext.DocumentResult, error) {
+		value := document.Fragments[0].Node.Content[1]
+		alias := document.Fragments[1].Node.Content[1]
+		c.Assert(value.Tag, qt.Equals, "!!int")
+		c.Assert(value.Value, qt.Equals, "340282366920938463463374607431768211457")
+		c.Assert(alias.Kind, qt.Equals, yamlext.AliasNode)
+		c.Assert(alias.Alias, qt.Equals, value)
+		return yamlext.DocumentResult{}, nil
+	}))
+	c.Assert(err, qt.IsNil)
+	_, err = yamlschema.Parse(t.Context(), owners, []byte("shades: {amount: &amount !!int 340282366920938463463374607431768211457}\npalettes: {amount: *amount}\n"))
+	c.Assert(err, qt.IsNil)
 }

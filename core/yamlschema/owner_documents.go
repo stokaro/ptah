@@ -58,10 +58,9 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 }
 
 // captureFragment validates extension nodes that bypass typed YAML decoding.
-// The temporary decoded value is discarded; the capture retains exact syntax.
+// Validation does not coerce numeric scalars to machine-sized Go values.
 func captureFragment(path []string, table int, node *yaml.Node, nodes map[*yaml.Node]*yamlext.Node) (yamlext.Fragment, error) {
-	var checked any
-	if err := node.Decode(&checked); err != nil {
+	if err := validateOwnerSyntax(node); err != nil {
 		return yamlext.Fragment{}, fmt.Errorf("parse YAML schema: %w", err)
 	}
 	return yamlext.Fragment{Path: path, Table: table, Node: captureNode(node, nodes)}, nil
