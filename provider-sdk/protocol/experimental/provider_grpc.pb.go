@@ -19,18 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Provider_Describe_FullMethodName        = "/ptah.provider.experimental.Provider/Describe"
-	Provider_Open_FullMethodName            = "/ptah.provider.experimental.Provider/Open"
-	Provider_Close_FullMethodName           = "/ptah.provider.experimental.Provider/Close"
-	Provider_Inspect_FullMethodName         = "/ptah.provider.experimental.Provider/Inspect"
-	Provider_Render_FullMethodName          = "/ptah.provider.experimental.Provider/Render"
-	Provider_AnalyzeSQL_FullMethodName      = "/ptah.provider.experimental.Provider/AnalyzeSQL"
-	Provider_DecodeSource_FullMethodName    = "/ptah.provider.experimental.Provider/DecodeSource"
-	Provider_NormalizeValues_FullMethodName = "/ptah.provider.experimental.Provider/NormalizeValues"
-	Provider_ConvertValues_FullMethodName   = "/ptah.provider.experimental.Provider/ConvertValues"
-	Provider_CompareModels_FullMethodName   = "/ptah.provider.experimental.Provider/CompareModels"
-	Provider_PlanFeatures_FullMethodName    = "/ptah.provider.experimental.Provider/PlanFeatures"
-	Provider_Execute_FullMethodName         = "/ptah.provider.experimental.Provider/Execute"
+	Provider_Describe_FullMethodName          = "/ptah.provider.experimental.Provider/Describe"
+	Provider_Open_FullMethodName              = "/ptah.provider.experimental.Provider/Open"
+	Provider_Close_FullMethodName             = "/ptah.provider.experimental.Provider/Close"
+	Provider_Inspect_FullMethodName           = "/ptah.provider.experimental.Provider/Inspect"
+	Provider_Render_FullMethodName            = "/ptah.provider.experimental.Provider/Render"
+	Provider_AnalyzeSQL_FullMethodName        = "/ptah.provider.experimental.Provider/AnalyzeSQL"
+	Provider_DecodeSource_FullMethodName      = "/ptah.provider.experimental.Provider/DecodeSource"
+	Provider_NormalizeValues_FullMethodName   = "/ptah.provider.experimental.Provider/NormalizeValues"
+	Provider_ConvertValues_FullMethodName     = "/ptah.provider.experimental.Provider/ConvertValues"
+	Provider_CompareModels_FullMethodName     = "/ptah.provider.experimental.Provider/CompareModels"
+	Provider_PlanFeatures_FullMethodName      = "/ptah.provider.experimental.Provider/PlanFeatures"
+	Provider_Execute_FullMethodName           = "/ptah.provider.experimental.Provider/Execute"
+	Provider_BeginTransaction_FullMethodName  = "/ptah.provider.experimental.Provider/BeginTransaction"
+	Provider_FinishTransaction_FullMethodName = "/ptah.provider.experimental.Provider/FinishTransaction"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -53,6 +55,8 @@ type ProviderClient interface {
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
+	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
+	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
 }
 
 type providerClient struct {
@@ -183,6 +187,26 @@ func (c *providerClient) Execute(ctx context.Context, in *ExecuteRequest, opts .
 	return out, nil
 }
 
+func (c *providerClient) BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Transaction)
+	err := c.cc.Invoke(ctx, Provider_BeginTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransactionResult)
+	err := c.cc.Invoke(ctx, Provider_FinishTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -203,6 +227,8 @@ type ProviderServer interface {
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
+	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
+	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -248,6 +274,12 @@ func (UnimplementedProviderServer) PlanFeatures(context.Context, *PlanFeaturesRe
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
+}
+func (UnimplementedProviderServer) BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BeginTransaction not implemented")
+}
+func (UnimplementedProviderServer) FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FinishTransaction not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -486,6 +518,42 @@ func _Provider_Execute_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_BeginTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).BeginTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_BeginTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).BeginTransaction(ctx, req.(*BeginTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_FinishTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FinishTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).FinishTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_FinishTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).FinishTransaction(ctx, req.(*FinishTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -540,6 +608,14 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Execute",
 			Handler:    _Provider_Execute_Handler,
+		},
+		{
+			MethodName: "BeginTransaction",
+			Handler:    _Provider_BeginTransaction_Handler,
+		},
+		{
+			MethodName: "FinishTransaction",
+			Handler:    _Provider_FinishTransaction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

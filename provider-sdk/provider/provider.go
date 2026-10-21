@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 14
+const Revision uint32 = 15
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -113,6 +113,9 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 }
 
 func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
+	if slices.Contains(engine.GetFeatures(), TransactionsFeature) && !slices.Contains(description.GetFeatures(), TransactionsFeature) {
+		return fmt.Errorf("%w: engine transactions require the transaction service", ErrProtocol)
+	}
 	if err := validateValueModels(engine.GetValueModels()); err != nil {
 		return err
 	}
@@ -126,6 +129,9 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 }
 
 func validateSemanticServices(value *protocol.Description) error {
+	if slices.Contains(value.GetFeatures(), TransactionsFeature) && !slices.Contains(value.GetFeatures(), ExecuteFeature) {
+		return fmt.Errorf("%w: transactions require execution", ErrProtocol)
+	}
 	if slices.Contains(value.GetFeatures(), PlanFeaturesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: feature planning requires value normalization", ErrProtocol)
 	}
