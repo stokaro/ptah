@@ -41,11 +41,9 @@ func TestHistorySnapshotPreservesEmptyAndExactAtlasIdentities(t *testing.T) {
 	c := qt.New(t)
 	scope := historyScope()
 	scope.Format = protocol.HistoryScope_ATLAS
-	empty := historyRevision()
-	empty.Version = ""
-	padded := historyRevision()
-	padded.Version = "001"
-	plain := historyRevision()
+	empty := &protocol.HistoryRevision{Version: ""}
+	padded := &protocol.HistoryRevision{Version: "001"}
+	plain := &protocol.HistoryRevision{Version: "1"}
 	request := &protocol.ReadHistoryRequest{Scope: scope, MaxRevisions: 10}
 	result := &protocol.HistorySnapshot{Scope: proto.CloneOf(scope), Exists: true, Complete: true, Revisions: []*protocol.HistoryRevision{empty, padded, plain}}
 	c.Assert(provider.ValidateHistorySnapshot(request, result), qt.IsNil)
@@ -128,4 +126,27 @@ func TestHistoryAdvertisementRequiresGlobalService(t *testing.T) {
 	c.Assert(provider.ValidateDescription(desc, nil), qt.ErrorIs, provider.ErrProtocol)
 	desc.Features = append(desc.Features, provider.HistoryFeature)
 	c.Assert(provider.ValidateDescription(desc, []string{provider.HistoryFeature}), qt.IsNil)
+}
+
+func TestHistoryStateBelongsToTheStoredRepresentation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		format protocol.HistoryScope_Format
+		row    *protocol.HistoryRevision
+		want   error
+	}{
+		{"native requires state", protocol.HistoryScope_NATIVE, &protocol.HistoryRevision{Version: "1", Direction: protocol.HistoryRevision_UP}, provider.ErrProtocol},
+		{"native requires direction", protocol.HistoryScope_NATIVE, &protocol.HistoryRevision{Version: "1", State: protocol.HistoryRevision_APPLIED}, provider.ErrProtocol},
+		{"native retains stored state", protocol.HistoryScope_NATIVE, historyRevision(), nil},
+		{"Atlas carries raw facts", protocol.HistoryScope_ATLAS, &protocol.HistoryRevision{Version: "", Applied: 1, Total: 2, Error: "partial", OperatorVersion: "owner", AtlasType: 2}, nil},
+		{"Atlas refuses derived state", protocol.HistoryScope_ATLAS, &protocol.HistoryRevision{State: protocol.HistoryRevision_FAILED}, provider.ErrProtocol},
+		{"Atlas refuses derived direction", protocol.HistoryScope_ATLAS, &protocol.HistoryRevision{Direction: protocol.HistoryRevision_DOWN}, provider.ErrProtocol},
+		{"Atlas refuses unknown state", protocol.HistoryScope_ATLAS, &protocol.HistoryRevision{State: 99}, provider.ErrProtocol},
+		{"Atlas refuses invalid progress", protocol.HistoryScope_ATLAS, &protocol.HistoryRevision{Applied: 2, Total: 1}, provider.ErrProtocol},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(provider.ValidateHistoryRevision(test.format, test.row), qt.ErrorIs, test.want)
+		})
+	}
 }

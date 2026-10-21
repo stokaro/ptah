@@ -11770,9 +11770,11 @@ func (x *HistoryScope) GetFormat() HistoryScope_Format {
 // retry decisions, and recovery. Version preserves exact identity, including
 // an empty Atlas identity. Native versions use canonical signed decimal text.
 type HistoryRevision struct {
-	state                protoimpl.MessageState    `protogen:"open.v1"`
-	Version              string                    `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	Description          string                    `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Version     string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	// Native storage carries explicit state and direction. Atlas storage must
+	// leave both unspecified; the host derives them from the stored facts.
 	State                HistoryRevision_State     `protobuf:"varint,3,opt,name=state,proto3,enum=ptah.provider.experimental.HistoryRevision_State" json:"state,omitempty"`
 	Direction            HistoryRevision_Direction `protobuf:"varint,4,opt,name=direction,proto3,enum=ptah.provider.experimental.HistoryRevision_Direction" json:"direction,omitempty"`
 	Applied              uint64                    `protobuf:"varint,5,opt,name=applied,proto3" json:"applied,omitempty"`

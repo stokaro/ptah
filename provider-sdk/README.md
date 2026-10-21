@@ -124,7 +124,10 @@ refused. Migration locking remains the caller's responsibility. Serializable iso
 store from an empty one. The caller sets a positive limit of at most 10,000
 revisions. Exceeding that limit or the transport message bound is an error;
 no partial history is returned. Exact identities, direction, progress, source
-hashes, diagnostics, timestamps, and Atlas fields survive transport.
+hashes, diagnostics, timestamps, and Atlas fields survive transport. Native
+records carry explicit state and direction. Atlas records leave those fields
+unspecified: the host derives them from progress, errors, and operator identity.
+The SDK refuses provider-supplied derived state in the Atlas representation.
 
 `PrepareHistory` runs outside transactions. It validates storage ownership and
 layout and creates a missing store. It refuses incompatible existing layouts
@@ -322,7 +325,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 17 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 18 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

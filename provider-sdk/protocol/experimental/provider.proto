@@ -1211,6 +1211,8 @@ message HistoryRevision {
   enum Direction { DIRECTION_UNSPECIFIED = 0; UP = 1; DOWN = 2; }
   string version = 1;
   string description = 2;
+  // Native storage carries explicit state and direction. Atlas storage must
+  // leave both unspecified; the host derives them from the stored facts.
   State state = 3;
   Direction direction = 4;
   uint64 applied = 5;

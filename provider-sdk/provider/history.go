@@ -76,16 +76,36 @@ func ValidateHistoryRevision(format protocol.HistoryScope_Format, row *protocol.
 	if row == nil {
 		return fmt.Errorf("%w: missing history revision", ErrProtocol)
 	}
-	if format == protocol.HistoryScope_NATIVE {
-		version, err := strconv.ParseInt(row.GetVersion(), 10, 64)
-		if err != nil || strconv.FormatInt(version, 10) != row.GetVersion() {
-			return fmt.Errorf("%w: native history version is not canonical", ErrProtocol)
+	if err := validateHistoryRepresentation(format, row); err != nil {
+		return err
+	}
+	if row.GetApplied() > row.GetTotal() || row.GetTotal() > uint64(^uint32(0)>>1) || row.GetExecutionNanoseconds() < 0 {
+		return fmt.Errorf("%w: invalid history progress or duration", ErrProtocol)
+	}
+	if row.GetAppliedAtNanos() < 0 || row.GetAppliedAtNanos() >= 1e9 || row.GetAppliedAtSeconds() < -62135596800 || row.GetAppliedAtSeconds() > 253402300799 {
+		return fmt.Errorf("%w: invalid history timestamp", ErrProtocol)
+	}
+	return nil
+}
+
+// Atlas stores progress, errors, and operator identity, not derived state or
+// direction. Only the host interprets those facts as migration policy.
+func validateHistoryRepresentation(format protocol.HistoryScope_Format, row *protocol.HistoryRevision) error {
+	if format == protocol.HistoryScope_ATLAS {
+		if row.GetState() != protocol.HistoryRevision_STATE_UNSPECIFIED || row.GetDirection() != protocol.HistoryRevision_DIRECTION_UNSPECIFIED {
+			return fmt.Errorf("%w: Atlas history must not supply derived state or direction", ErrProtocol)
 		}
-		if row.GetAtlasType() != 0 || len(row.GetPartialHashes()) != 0 {
-			return fmt.Errorf("%w: native history contains Atlas fields", ErrProtocol)
-		}
-	} else if format != protocol.HistoryScope_ATLAS {
+		return nil
+	}
+	if format != protocol.HistoryScope_NATIVE {
 		return fmt.Errorf("%w: unknown history format", ErrProtocol)
+	}
+	version, err := strconv.ParseInt(row.GetVersion(), 10, 64)
+	if err != nil || strconv.FormatInt(version, 10) != row.GetVersion() {
+		return fmt.Errorf("%w: native history version is not canonical", ErrProtocol)
+	}
+	if row.GetAtlasType() != 0 || len(row.GetPartialHashes()) != 0 {
+		return fmt.Errorf("%w: native history contains Atlas fields", ErrProtocol)
 	}
 	switch row.GetState() {
 	case protocol.HistoryRevision_PENDING, protocol.HistoryRevision_APPLIED, protocol.HistoryRevision_FAILED:
@@ -94,12 +114,6 @@ func ValidateHistoryRevision(format protocol.HistoryScope_Format, row *protocol.
 	}
 	if row.GetDirection() != protocol.HistoryRevision_UP && row.GetDirection() != protocol.HistoryRevision_DOWN {
 		return fmt.Errorf("%w: unknown history direction", ErrProtocol)
-	}
-	if row.GetApplied() > row.GetTotal() || row.GetTotal() > uint64(^uint32(0)>>1) || row.GetExecutionNanoseconds() < 0 {
-		return fmt.Errorf("%w: invalid history progress or duration", ErrProtocol)
-	}
-	if row.GetAppliedAtNanos() < 0 || row.GetAppliedAtNanos() >= 1e9 || row.GetAppliedAtSeconds() < -62135596800 || row.GetAppliedAtSeconds() > 253402300799 {
-		return fmt.Errorf("%w: invalid history timestamp", ErrProtocol)
 	}
 	return nil
 }
