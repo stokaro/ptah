@@ -37,6 +37,9 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := ValidateModelCoverage(description, snapshot.GetEngine(), coverage); err != nil {
 		return nil, err
 	}
+	if err := validateReservedModels(description, snapshot); err != nil {
+		return nil, err
+	}
 	if err := validateInspectionScope(request, snapshot); err != nil {
 		return nil, err
 	}

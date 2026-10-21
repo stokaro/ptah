@@ -44,6 +44,10 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 		return nil, err
 	}
 	result := &catalog.Database{}
+	result.ReservedNames, err = r.reservedNames(snapshot)
+	if err != nil {
+		return nil, err
+	}
 	result.FeatureCoverage, err = r.observedCoverage(snapshot.GetCoverage())
 	if err != nil {
 		return nil, err

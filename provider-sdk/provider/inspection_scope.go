@@ -40,6 +40,11 @@ func validateInspectionScope(request *protocol.InspectRequest, snapshot *protoco
 	if len(snapshot.GetDispositions()) != 0 {
 		return fmt.Errorf("%w: filtered dispositions require normalized scope identity", ErrProtocol)
 	}
+	for _, reserved := range snapshot.GetReservedObjects() {
+		if !withinInspectionScopes(scopes, reserved.GetNormalizedObject()) {
+			return fmt.Errorf("%w: reserved object is outside the requested scope", ErrProtocol)
+		}
+	}
 	for _, table := range snapshot.GetTables() {
 		if !withinInspectionScopes(scopes, table.GetNormalizedIdentity()) {
 			return fmt.Errorf("%w: inspected table is outside the requested scope", ErrProtocol)

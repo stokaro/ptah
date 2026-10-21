@@ -374,7 +374,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 20 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 21 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -481,6 +481,28 @@ without facets. Tables, coverage subjects, and whole coverage regions must fit
 inside the bound namespaces. Filtered replies cannot claim global completeness
 or include dispositions without normalized identities. Requests and bindings
 are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+
+`Schema.reserved_objects` records positively identified provider-owned history,
+lock, log, or tag storage. Providers validate native ownership and layout before
+omitting it from managed observations. A familiar name alone is insufficient.
+Each record supplies source and normalized identities and every object kind
+that shares the name. Reservations must include their own kind. Native conflict
+kinds require negotiated observed models and explicit `UNREPRESENTABLE` subject
+coverage with a reason, even inside a completely inspected namespace.
+
+At most 4,096 conflict identities may be reserved. Missing identities, unknown
+purposes, overloaded storage, duplicate source or normalized names, and overlap
+with managed observations are refused. Common table conflicts cannot carry a
+catalog or path. Filtered reservations must fit the requested namespaces.
+
+The host binds reservations to the live database and common identifier rules.
+Its catalog retains the occupied names through filtering and JSON snapshots.
+Comparison refuses desired collisions, foreign keys and discovered feature
+references into reserved storage, and removal of a containing schema. Unknown
+feature references refuse comparison when reservations exist. These protections
+apply to schema comparison; direct SQL remains an explicit execution operation.
+The official YDB provider still needs native reservation classification under
+#4204. The synthetic fixture validates the host contract only.
 
 Desired and observed models may declare a plural `display_name` for omission
 reports. It must be trimmed single-line text and agree across engines that share

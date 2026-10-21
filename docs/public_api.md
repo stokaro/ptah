@@ -5356,3 +5356,19 @@ transaction finish, or session close. Cleanup errors are retained and partial
 read results are discarded. Preparation inside a transaction validates existing
 storage and refuses to create it. Published-module adoption and official-engine
 qualification remain required under #4204.
+
+### Provider-owned storage reservations
+
+`catalog.Database.ReservedNames` records positively identified operational
+storage outside desired schema management. Each `catalog.ReservedName` binds
+an engine, provider ID, purpose, and structured identity. A provider declares one
+record for each conflicting object kind. The source and normalized components
+survive catalog JSON snapshots and observation filtering.
+
+Schema comparison refuses desired collisions, foreign keys and discovered
+feature references into reserved storage, and removal of a containing schema.
+Incomplete feature reference discovery refuses comparison when reservations
+exist. Operational storage is not added to the desired schema. These checks do
+not intercept direct SQL execution. Experimental SDK revision 21 transports
+these observations; published-module adoption and official YDB classification
+remain required under #4204.

@@ -154,6 +154,9 @@ message Schema {
   repeated string target_features = 7;
   // Ordered owner interpretations of the exact requested schema selectors.
   repeated InspectionScopeBinding scope_bindings = 8;
+  // Positively identified operational storage, outside desired schema management.
+  // Omission from tables or native_objects never makes these names available.
+  repeated ReservedObject reserved_objects = 9;
 }
 message Table {
   Reference identity = 1;
@@ -1393,4 +1396,21 @@ message MetadataPage {
   bool complete = 4;
   repeated MigrationLogRecord logs = 5;
   repeated MigrationTagRecord tags = 6;
+}
+
+// The provider verifies ownership and native layout before reserving storage.
+// Familiar names alone do not prove ownership. Conflict kinds state which
+// object families share this name; the host must not infer engine namespaces.
+message ReservedObject {
+  Reference object = 1;
+  Reference normalized_object = 2;
+  enum Purpose {
+    PURPOSE_UNSPECIFIED = 0;
+    HISTORY = 1;
+    LOCK = 2;
+    LOG = 3;
+    TAG = 4;
+  }
+  Purpose purpose = 3;
+  repeated string conflict_kinds = 4;
 }

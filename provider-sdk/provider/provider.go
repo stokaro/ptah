@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 20
+const Revision uint32 = 21
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -197,6 +197,9 @@ func validName(name string) bool {
 func ValidateSchema(value *protocol.Schema) error {
 	if value == nil || !value.GetComplete() {
 		return ErrIncomplete
+	}
+	if err := validateReservedObjects(value); err != nil {
+		return err
 	}
 	for _, disposition := range value.GetDispositions() {
 		switch disposition.GetState() {

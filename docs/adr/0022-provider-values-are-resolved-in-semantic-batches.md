@@ -360,7 +360,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 20 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 21 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -966,3 +966,30 @@ destructive-statement refusal and its explicit override, absent metadata reads,
 and trust refusal before provider startup. These are local development checks
 until the host and fixture adopt a published SDK revision. They do not qualify
 read-only lock previews or the official engines.
+
+## Provider-owned storage remains occupied
+
+Experimental revision 21 adds explicit storage reservations to inspection.
+History, locks, logs, and tags remain outside desired schema management, but
+omitting their tables or native objects must not establish that their names are
+available. The provider verifies native ownership and layout and declares the
+conflicting object kinds. The host does not infer engine namespace sharing.
+
+Reservations carry structured source and normalized identities. Native conflicts
+require explicit unrepresentable subject knowledge. The SDK rejects overlap
+with managed observations and validates request scope. The host binds the
+records to the session database and identifier rules, then preserves them as
+`catalog.Database.ReservedNames`. Filters retain these facts even when they
+remove ordinary objects from the managed description.
+
+Comparison refuses explicit desired collisions and foreign keys into reserved
+storage before table preparation. It also refuses containing-schema removal,
+discovered feature references, and incomplete feature reference discovery when
+reserved storage is present. Catalog JSON snapshots retain the observations;
+common desired-schema export does not declare operational storage. Direct SQL
+is outside this schema-comparison contract.
+
+This changes the experimental contract without aliases or older readers.
+Published-module adoption and native YDB ownership classification remain part
+of #4204. The synthetic subprocess fixture establishes transport and comparison
+behavior, not official-engine qualification.

@@ -65,6 +65,8 @@ type binding struct {
 // the tables, columns and functions it binds. Incomplete is the owner's
 // reason when that list is not exhaustive, and empty when it is.
 type Bound struct {
+	// Attachment is the common table this object is attached to, if any.
+	Attachment objectidentity.ID
 	Object     objectidentity.ID
 	References []objectidentity.ID
 	Incomplete string
@@ -75,7 +77,7 @@ type Bound struct {
 func (b Bindings) Objects() []Bound {
 	result := make([]Bound, 0, len(b.objects))
 	for _, bound := range b.objects {
-		result = append(result, Bound{Object: bound.ref, References: slices.Clone(bound.references), Incomplete: bound.incomplete})
+		result = append(result, Bound{Object: bound.ref, Attachment: bound.attachment, References: slices.Clone(bound.references), Incomplete: bound.incomplete})
 	}
 	slices.SortFunc(result, func(a, b Bound) int { return schemaext.CompareRefs(a.Object, b.Object) })
 	return result

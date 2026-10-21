@@ -144,6 +144,7 @@ func excludeDatabase(
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
+	state.noteReservedNames(filtered.ReservedNames)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
 	return filtered, ExcludeReport{Unmatched: state.unmatchedSelectors()}, nil
@@ -1671,6 +1672,7 @@ func stripGeneratedFieldForeignKey(field schemamodel.Field) schemamodel.Field {
 
 func cloneDatabase(schema *catalog.Database) *catalog.Database {
 	return &catalog.Database{
+		ReservedNames:   slices.Clone(schema.ReservedNames),
 		FeatureObjects:  schema.FeatureObjects,
 		FeatureCoverage: schema.FeatureCoverage,
 		Schemas:         slices.Clone(schema.Schemas),

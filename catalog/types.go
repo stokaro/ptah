@@ -52,6 +52,8 @@ import (
 // NotDescribed records what the read deliberately did not look at, which is a
 // different fact from an object being absent; see that field.
 type Database struct {
+	// ReservedNames preserves provider-owned storage exclusions during comparison.
+	ReservedNames []ReservedName `json:"reserved_names,omitempty"`
 	// FeatureObjects holds individually named feature objects, including table-owned children.
 	FeatureObjects schemaext.Objects `json:"feature_objects,omitzero"`
 	// FeatureCoverage records the model definitions and scopes this source actually describes.
