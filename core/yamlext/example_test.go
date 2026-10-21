@@ -35,3 +35,29 @@ func ExampleExtension_document() {
 	// limits: !!int 9007199254740993
 	// options: !!null null
 }
+
+// ExampleSourceRange shows how byte offsets preserve authored quoting and
+// Unicode while the decoded value remains available separately.
+func ExampleSourceRange() {
+	owners, err := yamlext.NewSet(yamlext.Extension{
+		Owner: "example.org/syntax", Sections: []yamlext.Section{{Key: "color"}},
+		Document: func(_ context.Context, document yamlext.Document) (yamlext.DocumentResult, error) {
+			node := document.Fragments[0].Node
+			span := node.Range
+			fmt.Println(string(document.Source[span.Start.ByteOffset:span.End.ByteOffset]))
+			fmt.Println(node.Value)
+			return yamlext.DocumentResult{}, nil
+		},
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	_, err = yamlschema.Parse(context.Background(), owners, []byte("color: \"blå\"\n"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// "blå"
+	// blå
+}

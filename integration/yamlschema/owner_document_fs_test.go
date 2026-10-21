@@ -55,3 +55,26 @@ func TestOwnerFileRetainsNumbersBeyondMachineRanges(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(calls, qt.Equals, 1)
 }
+
+func TestOwnerFileRangesKeepOriginalBytes(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "ranges.yaml")
+	source := []byte("shades: &colors [\"é😀\"]\r\npalettes: *colors\r\n")
+	c.Assert(os.WriteFile(path, source, 0o600), qt.IsNil)
+	owners, err := yamlext.NewSet(yamlext.Extension{Owner: "example.org/paint",
+		Sections: []yamlext.Section{{Key: "shades"}, {Key: "palettes"}},
+		Document: func(_ context.Context, document yamlext.Document) (yamlext.DocumentResult, error) {
+			c.Assert(document.Filename, qt.Equals, path)
+			c.Assert(document.Source, qt.DeepEquals, source)
+			definition := document.Fragments[0].Node
+			alias := document.Fragments[1].Node
+			c.Assert(alias.Alias, qt.Equals, definition)
+			c.Assert(string(document.Source[definition.Range.Start.ByteOffset:definition.Range.End.ByteOffset]), qt.Equals, "&colors [\"é😀\"]")
+			c.Assert(string(document.Source[alias.Range.Start.ByteOffset:alias.Range.End.ByteOffset]), qt.Equals, "*colors")
+			return yamlext.DocumentResult{}, nil
+		},
+	})
+	c.Assert(err, qt.IsNil)
+	_, err = yamlschema.ParseFile(t.Context(), owners, path)
+	c.Assert(err, qt.IsNil)
+}
