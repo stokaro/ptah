@@ -60,6 +60,9 @@ type InspectSourceOptions struct {
 	Exclude []string
 	// Format is the Atlas --format value or Go template.
 	Format string
+	// NativeJSON preserves the scoped desired model through its feature codecs
+	// for the named json format. Atlas templates retain their report shape.
+	NativeJSON bool
 	// Diagnostics receives non-fatal rendering diagnostics.
 	Diagnostics io.Writer
 	// SuppressRoleCoverageNote omits the Ptah-only role coverage note while
@@ -261,6 +264,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 		Include:                  opts.Include,
 		Exclude:                  opts.Exclude,
 		Format:                   opts.Format,
+		NativeJSON:               opts.NativeJSON,
 		Diagnostics:              opts.Diagnostics,
 		SuppressRoleCoverageNote: opts.SuppressRoleCoverageNote,
 		OmitAtlasRefusedBlocks:   opts.OmitAtlasRefusedBlocks,

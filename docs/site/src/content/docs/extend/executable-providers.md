@@ -197,11 +197,13 @@ subject facts are preserved.
 
 Providers may advertise offline conversion between desired and observed models.
 The shared conversion pipeline preserves native identities, facets, and bounded
-inspection knowledge. JSON inspection exports common schema data and warns about
-omitted objects and facets using model names declared by the provider. It does
-not preserve those payloads; use the shared model codecs to retain captured data.
-Providers without omission labels cannot produce this report. Conversion and
-inspection do not qualify native object planning or faithful source export.
+inspection knowledge. Native JSON inspection exports the desired schema through
+the selected model codecs. It retains provider objects, facets, and coverage,
+including exact namespace and overload identities. Model payload bytes are
+base64-encoded inside the host envelope. Failed conversion or encoding returns
+no document. JSON is diagnostic output and is not accepted as a schema source.
+Conversion and inspection do not qualify native object planning or source-format
+export.
 
 ## Run versioned migrations
 

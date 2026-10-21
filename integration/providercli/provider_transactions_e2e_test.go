@@ -169,7 +169,7 @@ func TestProviderTransactionsThroughNativeCLI(t *testing.T) {
 		c.Assert(output, qt.Contains, `"outcome": "unknown"`)
 		c.Assert(diagnostics, qt.Contains, "UNKNOWN")
 		fixture.address = strings.Split(fixture.address, "?")[0]
-		c.Assert(fixture.success(c, "inspect", "--format", "json"), qt.Contains, `"name":"items"`)
+		c.Assert(fixture.success(c, "inspect", "--format", "json"), qt.Contains, `"Name": "items"`)
 	})
 	for _, mode := range []string{"file", "all"} {
 		t.Run(mode, func(t *testing.T) {
@@ -179,8 +179,8 @@ func TestProviderTransactionsThroughNativeCLI(t *testing.T) {
 			applied := fixture.success(c, "apply", "--plan", fixture.planPath, "--tx-mode", mode, "--auto-approve", "--json")
 			c.Assert(applied, qt.Contains, `"outcome": "applied"`)
 			observed := fixture.success(c, "inspect", "--format", "json")
-			c.Assert(observed, qt.Contains, `"name":"items"`)
-			c.Assert(observed, qt.Contains, `"name":"second"`)
+			c.Assert(observed, qt.Contains, `"Name": "items"`)
+			c.Assert(observed, qt.Contains, `"Name": "second"`)
 			c.Assert(fixture.plan(c), qt.Contains, `"outcome": "no-changes"`)
 		})
 	}

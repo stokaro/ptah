@@ -18,7 +18,10 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/engine"
+	"ptah.run/internal/featurejson"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/tableidentity"
 )
@@ -131,7 +134,7 @@ func TestProviderInspectionCancellationDiscardsWholeCatalog(t *testing.T) {
 	c.Assert(db, qt.IsNil)
 }
 
-func TestNativeCLIInspectReportsProviderPayloadOmissions(t *testing.T) {
+func TestNativeCLIInspectPreservesProviderModelsAndCoverage(t *testing.T) {
 	c := qt.New(t)
 	executable := independentCLIProviderCommand(c, "observed-models")
 	data, err := os.ReadFile(executable)
@@ -149,14 +152,37 @@ func TestNativeCLIInspectReportsProviderPayloadOmissions(t *testing.T) {
 	c.Cleanup(func() { c.Check(connection.Close(), qt.IsNil) })
 	c.Assert(connection.Writer().ExecuteSQL(ctx, `CREATE TABLE "a.b" ("Id" INTEGER NOT NULL PRIMARY KEY);`), qt.IsNil)
 	c.Assert(connection.Close(), qt.IsNil)
-	host.Close()
+	runtime, err := engine.New(host.Provider())
+	c.Assert(err, qt.IsNil)
 	output, diagnostics, code := f.run(c, c.Context(), "inspect", "--format", "json")
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
 	c.Assert(json.Valid([]byte(output)), qt.IsTrue)
 	c.Assert(output, qt.Contains, `"a.b"`)
-	c.Assert(output, qt.Not(qt.Contains), "9007199254740993")
-	c.Assert(diagnostics, qt.Contains, "retention values (3)")
-	c.Assert(strings.Count(diagnostics, "retention values (1)"), qt.Equals, 2)
+	c.Assert(diagnostics, qt.Not(qt.Contains), "retention values")
+	var restored schemamodel.Database
+	c.Assert(featurejson.Unmarshal(c.Context(), runtime.Codecs(), schemaext.Desired, []byte(output), &restored), qt.IsNil)
+	host.Close()
+	c.Assert(restored.FeatureObjects.Len(), qt.Equals, 3)
+	c.Assert(restored.Tables, qt.HasLen, 1)
+	c.Assert(restored.Tables[0].Name, qt.Equals, "a.b")
+	c.Assert(restored.Fields, qt.HasLen, 1)
+	kind := schemaext.Kind("example.org/fixture/retention")
+	identity, found := runtime.Codecs().Identity(kind, schemaext.Desired)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(restored.FeatureCoverage.KindRecords()[0].Model, qt.DeepEquals, identity)
+	for _, ref := range restored.FeatureObjects.Refs() {
+		c.Assert(ref.Namespace.Values(), qt.DeepEquals, []objectidentity.Part{{Source: "a/b", Normalized: "a/b"}, {Source: "c", Normalized: "c"}})
+		c.Assert(restored.FeatureCoverage.Lookup(kind, ref).State, qt.Equals, schemaext.Complete)
+	}
+	c.Assert(restored.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
+	for _, facets := range []schemaext.Facets{restored.Tables[0].Facets, restored.Fields[0].Facets} {
+		encoded, err := runtime.Codecs().EncodeFacets(c.Context(), schemaext.Desired, facets)
+		c.Assert(err, qt.IsNil)
+		c.Assert(encoded, qt.HasLen, 1)
+		var record struct{ Payload []byte }
+		c.Assert(json.Unmarshal(encoded[0].Value.Payload, &record), qt.IsNil)
+		c.Assert(string(record.Payload), qt.Equals, `{"seconds":9007199254740993}`)
+	}
 }
 
 func TestProviderInspectionRetainsNativeNamespaceAuthority(t *testing.T) {
