@@ -2742,9 +2742,10 @@ func (x *NormalizedValue) GetCanonicalProjection() []byte {
 	return nil
 }
 
-// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
-// byte-column coordinates. It describes the captured source, not a temporary
-// rendering of its evaluated values.
+// SourcePosition uses a zero-based offset into the original encoded bytes and
+// one-based line and byte-column coordinates in that same encoding. A BOM
+// contributes bytes to the first column. Coordinates never refer to a temporary
+// rendering of evaluated values.
 type SourcePosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ByteOffset    uint64                 `protobuf:"varint,1,opt,name=byte_offset,json=byteOffset,proto3" json:"byte_offset,omitempty"`

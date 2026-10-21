@@ -227,8 +227,9 @@ knowledge are distinct. Absence and defaults need a specific subject; observed
 coverage cannot request defaults. An incomplete source result is refused.
 
 Source traces name an original document and fragment and follow typed keys,
-indices, attributes, child blocks, or labels. Coordinates use zero-based UTF-8
-byte offsets and one-based lines and byte columns. Authored values require
+indices, attributes, child blocks, or labels. Coordinates use zero-based offsets into the original encoded bytes and
+one-based lines and byte columns in that encoding. A BOM contributes bytes to
+the first column; UTF-16 source is not silently re-encoded. Authored values require
 positions; inherited defaults can lack an authored position. A missing path is
 an error, distinct from an inherited default with no position. Validation reads
 no files, checks bounds and cycles, and limits depth and batch size.
@@ -236,6 +237,7 @@ no files, checks bounds and cycles, and limits depth and batch size.
 The independent fixture exercises evaluated YAML, HCL, and Go annotation
 fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
-retention to SQLite. The application frontends do not yet capture sources for
-this RPC. Official-engine adapters, native planning, transactions, and history
+retention to SQLite. The host YAML frontend captures negotiated document and
+table keys for this RPC. The host HCL and Go annotation adapters, official-engine
+adapters, native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
