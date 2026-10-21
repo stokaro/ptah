@@ -242,7 +242,7 @@ func ResolveRowPolicyRef(semantics identifier.Semantics, ref objectidentity.ID) 
 // RowPolicyTable returns the identity of the table a row policy reference is
 // on.
 func RowPolicyTable(ref objectidentity.ID) objectidentity.ID {
-	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }
 
 // ValidateRowPolicyRef requires an identity of this kind with a table and a
@@ -255,7 +255,7 @@ func RowPolicyTable(ref objectidentity.ID) objectidentity.ID {
 // the database's policies as not described instead of listing the tables it
 // happened to see.
 func ValidateRowPolicyRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(RowPolicyKind) || !ref.Catalog.Empty() || ref.Signature != "" {
+	if ref.Kind != objectidentity.Kind(RowPolicyKind) || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Signature.IsZero() {
 		return fmt.Errorf("%w: a ClickHouse row policy reference has kind %q and no catalog or signature", schemaext.ErrInvalidValue, RowPolicyKind)
 	}
 	if ref.Name.Source == "" || ref.Name.Normalized == "" {

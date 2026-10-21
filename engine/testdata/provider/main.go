@@ -260,7 +260,7 @@ func verifyRelations(runtime *engine.Runtime) error {
 	var kinds []schemaext.KindCoverage
 	for _, model := range runtime.Codecs().Definitions() {
 		if model.Representation == schemaext.Desired {
-			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 		}
 	}
 	coverage, err := schemaext.NewCoverage(schemaext.Desired, kinds, nil)

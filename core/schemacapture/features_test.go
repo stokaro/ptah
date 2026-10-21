@@ -75,7 +75,7 @@ func TestCaptureCloneRetainsFeatureState(t *testing.T) {
 func featureCoverage(c *qt.C, representation schemaext.Representation, parent objectidentity.ID) schemaext.Coverage {
 	coverage, err := schemaext.NewCoverage(representation, []schemaext.KindCoverage{{
 		Model:     schemaext.CodecIdentity{Owner: "example.org/provider", Kind: "example.org/labels", Representation: representation, Version: 1, Definition: "fixture-definition"},
-		Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete}),
 	}}, []schemaext.SubjectCoverage{{Kind: "example.org/labels", Subject: parent, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "siblings were not read"}}})
 	c.Assert(err, qt.IsNil)
 	return coverage

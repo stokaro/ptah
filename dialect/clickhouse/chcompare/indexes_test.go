@@ -107,7 +107,7 @@ func indexCoverage(runtime *engine.Runtime, representation schemaext.Representat
 		return v.Kind == chschema.IndexKind && v.Representation == representation
 	})]
 	return must.Must(schemaext.NewCoverage(representation,
-		[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+		[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 		[]schemaext.SubjectCoverage{{Kind: chschema.IndexKind, Subject: subject, Knowledge: schemaext.Knowledge{State: state, Reason: "source knowledge"}}},
 	))
 }

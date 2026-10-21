@@ -26,7 +26,7 @@ func observedStorageCoverage() schemaext.Coverage {
 	model := models[slices.IndexFunc(models, func(v schemaext.CodecIdentity) bool {
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 	})]
-	return must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+	return must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil))
 }
 
 // A direct planner fixture carries the same complete parent observation as a

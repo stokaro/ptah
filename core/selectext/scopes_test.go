@@ -51,7 +51,7 @@ func TestSet_DescribeScopesRoutesObjectsAndCoverage(t *testing.T) {
 	alias := held.Subject
 	alias.Name.Source = "HELD"
 	coverage := must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{
-		{Model: schemaext.CodecIdentity{Owner: "example.org/a", Kind: a, Representation: schemaext.Desired, Version: 1, Definition: "definition"}, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
+		{Model: schemaext.CodecIdentity{Owner: "example.org/a", Kind: a, Representation: schemaext.Desired, Version: 1, Definition: "definition"}, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})},
 	}, []schemaext.SubjectCoverage{
 		{Kind: a, Subject: alias, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}, {Kind: a, Subject: unknown.Subject, Knowledge: schemaext.Knowledge{Reason: "class is unknown"}},
 	}))

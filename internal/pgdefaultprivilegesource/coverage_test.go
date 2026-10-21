@@ -52,7 +52,7 @@ func TestSourceLimits_RoundTripPreservesUnknownScopes(t *testing.T) {
 			for _, read := range []*schemamodel.Database{&goRead, hclRead} {
 				known := read.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
 				c.Assert(known.KindRecords(), qt.HasLen, 1)
-				c.Assert(known.KindRecords()[0].Knowledge.State == schemaext.Complete, qt.Equals, test.namespace.State == schemaext.Complete)
+				c.Assert(known.KindRecords()[0].Knowledge.Unscoped().State == schemaext.Complete, qt.Equals, test.namespace.State == schemaext.Complete)
 				c.Assert(known.SubjectRecords(), qt.HasLen, len(test.subjects))
 				for _, subject := range test.subjects {
 					c.Assert(known.Lookup(pgdefaultprivilege.DefaultPrivilegeKind, subject).State, qt.Equals, schemaext.Uninspected)

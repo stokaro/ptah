@@ -44,7 +44,7 @@ func (r *Runtime) snapshotDeclarations(ctx context.Context, request featureplan.
 		if seen[object.Ref.Key()] || object.Ref.Kind != objectidentity.Kind(object.Value.Kind()) {
 			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: duplicate declaration", schemaext.ErrInvalidValue)
 		}
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: object.Ref.Catalog, Schema: object.Ref.Schema, Name: object.Ref.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: object.Ref.Database, Namespace: object.Ref.Namespace, Catalog: object.Ref.Catalog, Schema: object.Ref.Schema, Name: object.Ref.Parent}
 		if !object.Ref.Parent.Empty() && !declared[parent.Key()] {
 			return featureplan.DeclarationRequest{}, fmt.Errorf("%w: declaration %s is a child of a table the request does not declare", schemaext.ErrInvalidValue, object.Ref)
 		}

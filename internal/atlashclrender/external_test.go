@@ -54,5 +54,5 @@ func TestRender_ReportsTheExternalObjectsItLeavesOut(t *testing.T) {
 
 // featurePath is the path a feature object's loss is reported at.
 func featurePath(ref objectidentity.ID) string {
-	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)
+	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.SignatureText())
 }

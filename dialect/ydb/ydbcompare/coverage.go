@@ -17,7 +17,7 @@ func effectiveCoverage(request schemaext.ObjectComparisonRequest, streams map[ob
 			return schemaext.Coverage{}, err
 		}
 		kinds = definition.KindRecords()
-		kinds[0].Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the desired source did not describe changefeeds"}
+		kinds[0].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the desired source did not describe changefeeds"})
 	}
 	records := make(map[objectidentity.Key]schemaext.SubjectCoverage)
 	for _, record := range request.Desired.Coverage.SubjectRecords() {

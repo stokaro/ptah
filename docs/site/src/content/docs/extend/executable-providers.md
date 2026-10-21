@@ -160,6 +160,20 @@ Inspection reports `items`. The second command reports `"outcome": "no-changes"`
 The CLI closes sessions and terminates its provider processes on success and
 failure.
 
+Native YAML objects retain the provider's database, ordered namespace path,
+and overload components through schema capture and serialization. Identical
+names with different paths or overloads remain distinct. YAML table facets cannot
+use database, catalog, path, or overload qualification. Normalization that
+changes the path or overload component count is refused. Native planning for these objects remains part of
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
+
+`schema inspect` refuses native object and facet coverage because it requests
+an explicit schema scope that the experimental contract cannot yet retain.
+The Go catalog reader can capture these models when reading a complete session.
+A failed or canceled read returns no partial catalog. Complete inspection of one
+session does not establish global absence across databases or engines; explicit
+subject facts are preserved.
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,
@@ -188,8 +202,14 @@ A provider crash, lost response, or cancellation after dispatch can report
 does not automatically retry execution, and terminating a provider does not prove
 rollback. A stale plan refuses application after the target changes.
 
-This adapter does not support native objects, engine-specific facets, managed
-data, database cleanup, or isolated execution of untrusted SQL. It does not add
+YAML loading accepts document and table keys explicitly declared by the selected
+provider. It preserves exact numbers and source locations and requires complete
+interpretation and coverage from the owner. Unknown keys and unsupported values
+are refused. This source-loading support does not make native objects or
+engine-specific facets available to planning and execution yet.
+
+The execution adapter does not support managed data, database cleanup, or
+isolated execution of untrusted SQL. It does not add
 provider selection to `ptah-compat` or other native command groups. Project-file
 URLs and saved plans do not select a provider: pass `--provider-engine` with
 `--provider-config` for those workflows. The selected connection scope refuses

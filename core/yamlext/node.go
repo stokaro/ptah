@@ -17,9 +17,10 @@ const (
 
 // Node preserves the source syntax that an owner interprets. Numbers retain
 // their authored scalar spelling and are never converted through floating point.
+// Explicit numeric tags do not impose machine integer or floating-point ranges.
 // Tags distinguish strings, numbers, booleans and explicit nulls. Nodes may
 // share alias targets. Original bytes, quoting and comments remain available in
-// Document.Source; Line and Column locate the value in those bytes.
+// Document.Source; Range locates the value in those original bytes.
 type Node struct {
 	// Kind selects the node shape. The zero value is invalid.
 	Kind NodeKind
@@ -33,8 +34,31 @@ type Node struct {
 	Content []*Node
 	// Alias is the referenced node for AliasNode and nil for other shapes.
 	Alias *Node
-	// Line is the one-based source line where the value starts.
+	// Range spans this node's authored content. An alias has its own range;
+	// Alias.Range identifies the declaration it references.
+	Range SourceRange
+}
+
+// SourcePosition locates an original source byte. ByteOffset is zero-based;
+// Line and Column are one-based, and Column counts bytes in the source encoding.
+// A BOM contributes bytes to the first column. The zero value is unknown.
+type SourcePosition struct {
+	// ByteOffset indexes Document.Source, including an encoding BOM if present.
+	ByteOffset int
+	// Line is the YAML source line, treating CRLF as one line break.
 	Line int
-	// Column is the one-based source character column where the value starts.
+	// Column counts original bytes from the start of Line.
 	Column int
+}
+
+// SourceRange bounds authored content with an inclusive Start and exclusive
+// End. Collection ranges include their values and any closing flow delimiter.
+// A block scalar ends after its last content character, before trailing line
+// breaks and comments. An implicit empty scalar can have equal endpoints.
+// The zero value is unknown; parsing source produces known ranges.
+type SourceRange struct {
+	// Start is the first byte of the authored node, including tags and anchors.
+	Start SourcePosition
+	// End is the first byte after the node's content.
+	End SourcePosition
 }

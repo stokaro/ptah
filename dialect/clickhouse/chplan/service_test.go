@@ -36,7 +36,7 @@ func requestFixture() featureplan.Request {
 	model := models[slices.IndexFunc(models, func(v schemaext.CodecIdentity) bool {
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 	})]
-	coverage := must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+	coverage := must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil))
 	table := featureplan.Table{Subject: subject, Action: featureplan.AlterTable}
 	table.Current.Table = catalog.Table{Name: "events", Facets: must.Must(schemaext.NewFacets(before)), Columns: []catalog.Column{{Name: "old_time", DataType: "DateTime"}}}
 	table.Current.FeatureCoverage = coverage

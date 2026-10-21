@@ -28,7 +28,7 @@ func observedTableCoverage() schemaext.Coverage {
 		models[model.Representation] = model
 	}
 	return must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{
-		Model: models[schemaext.Observed], Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		Model: models[schemaext.Observed], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete}),
 	}}, nil))
 }
 

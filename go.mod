@@ -24,13 +24,14 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/oasdiff/yaml3 v0.0.14
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sijms/go-ora/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stokaro/ptah/provider-sdk v0.0.0-20261020204702-9f004f4f2c1b
+	github.com/stokaro/ptah/provider-sdk v0.0.0-20261020230049-8d88e2c90b3a
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260810123728-f0c151ab31b9
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.5.3

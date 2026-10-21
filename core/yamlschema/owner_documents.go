@@ -1,6 +1,7 @@
 package yamlschema
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -15,11 +16,11 @@ import (
 // bindings exist. Nodes remain uncoerced, and absent keys produce no fragment.
 func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Database, owners yamlext.Set, data []byte, filename string) error {
 	input := yamlext.Document{Filename: filename, Source: data, Tables: d.documentTables(db)}
-	nodes := make(map[*yaml.Node]*yamlext.Node)
+	capture := ownerCapture{data: data, nodes: make(map[yamlNodeOrigin]*yamlext.Node)}
 	for _, key := range sortedKeys(d.Owned) {
 		if owners.DocumentKey("", key) {
 			node := d.Owned[key]
-			fragment, err := captureFragment([]string{key}, -1, &node, nodes)
+			fragment, err := capture.fragment([]string{key}, -1, &node)
 			if err != nil {
 				return err
 			}
@@ -30,7 +31,7 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 		for _, key := range sortedKeys(d.Tables[table.Key].Owned) {
 			if owners.DocumentKey(yamlext.EntryTable, key) {
 				node := d.Tables[table.Key].Owned[key]
-				fragment, err := captureFragment([]string{yamlext.EntryTable, table.Key, key}, index, &node, nodes)
+				fragment, err := capture.fragment([]string{yamlext.EntryTable, table.Key, key}, index, &node)
 				if err != nil {
 					return err
 				}
@@ -39,10 +40,7 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 		}
 	}
 	slices.SortStableFunc(input.Fragments, func(a, b yamlext.Fragment) int {
-		if a.Node.Line != b.Node.Line {
-			return a.Node.Line - b.Node.Line
-		}
-		return a.Node.Column - b.Node.Column
+		return cmp.Compare(a.Node.Range.Start.ByteOffset, b.Node.Range.Start.ByteOffset)
 	})
 	result, err := owners.DecodeDocuments(ctx, input)
 	if err != nil {
@@ -57,31 +55,44 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 	return err
 }
 
-// captureFragment validates extension nodes that bypass typed YAML decoding.
-// The temporary decoded value is discarded; the capture retains exact syntax.
-func captureFragment(path []string, table int, node *yaml.Node, nodes map[*yaml.Node]*yamlext.Node) (yamlext.Fragment, error) {
-	var checked any
-	if err := node.Decode(&checked); err != nil {
+// fragment validates extension nodes that bypass typed YAML decoding.
+// Validation does not coerce numeric scalars to machine-sized Go values.
+func (c *ownerCapture) fragment(path []string, table int, node *yaml.Node) (yamlext.Fragment, error) {
+	if err := validateOwnerSyntax(node); err != nil {
 		return yamlext.Fragment{}, fmt.Errorf("parse YAML schema: %w", err)
 	}
-	return yamlext.Fragment{Path: path, Table: table, Node: captureNode(node, nodes)}, nil
+	captured, err := c.node(node)
+	if err != nil {
+		return yamlext.Fragment{}, fmt.Errorf("parse YAML schema: %w", err)
+	}
+	return yamlext.Fragment{Path: path, Table: table, Node: captured}, nil
 }
 
-func captureNode(node *yaml.Node, nodes map[*yaml.Node]*yamlext.Node) *yamlext.Node {
+func (c *ownerCapture) node(node *yaml.Node) (*yamlext.Node, error) {
 	if node == nil {
-		return nil
+		return nil, nil
 	}
-	if captured, exists := nodes[node]; exists {
-		return captured
+	span, err := c.sourceRange(node)
+	if err != nil {
+		return nil, err
+	}
+	// Owned mapping values copy their root yaml.Node. Source identity keeps an
+	// alias of such a root attached to the same captured node.
+	origin := yamlNodeOrigin{node.Kind, node.Line, node.Column}
+	if captured, exists := c.nodes[origin]; exists {
+		return captured, nil
 	}
 	captured := &yamlext.Node{Kind: captureKind(node.Kind), Tag: node.Tag, Value: node.Value, Anchor: node.Anchor,
-		Line: node.Line, Column: node.Column, Content: make([]*yamlext.Node, len(node.Content))}
-	nodes[node] = captured
+		Range: span, Content: make([]*yamlext.Node, len(node.Content))}
+	c.nodes[origin] = captured
 	for index, child := range node.Content {
-		captured.Content[index] = captureNode(child, nodes)
+		captured.Content[index], err = c.node(child)
+		if err != nil {
+			return nil, err
+		}
 	}
-	captured.Alias = captureNode(node.Alias, nodes)
-	return captured
+	captured.Alias, err = c.node(node.Alias)
+	return captured, err
 }
 
 func captureKind(kind yaml.Kind) yamlext.NodeKind {

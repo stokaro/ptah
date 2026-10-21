@@ -14,14 +14,14 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/internal/mssqlroutineprep"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 )
 
 func TestService_LowerDesired(t *testing.T) {
 	c := qt.New(t)
 	builder := objectidentity.NewBuilder(identifier.ForDialect("sqlserver"))
-	before := routineargs.Subject(builder, "procedure", "dbo.p", "@a AS INT")
-	after := routineargs.Subject(builder, "procedure", "dbo.p", "@a INT")
+	before := routineidentity.Subject(builder, "procedure", "dbo.p", "@a AS INT")
+	after := routineidentity.Subject(builder, "procedure", "dbo.p", "@a INT")
 	original := &schemamodel.Database{Functions: []schemamodel.Function{{Name: "dbo.p", Kind: "procedure", Parameters: "@a AS INT"}},
 		FeatureCoverage: must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{Kind: mssqlschema.RoutineOptionsKind, Subject: before, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not declared"}}})),
 	}

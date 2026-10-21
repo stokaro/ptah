@@ -57,8 +57,8 @@ func tuple(grantor, objectType, grantee string) (string, error) {
 // checks the normalized tuple's shape without choosing the target's folding
 // rules. A service holding those rules can rebuild the identity with Ref.
 func IdentityOf(ref objectidentity.ID) (Identity, error) {
-	if ref.Kind != objectidentity.Kind(DefaultPrivilegeKind) || ref.Catalog != (objectidentity.Part{}) ||
-		ref.Parent != (objectidentity.Part{}) || ref.Signature != "" || ref.Name.Quoted || ref.Name.Defaulted ||
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != objectidentity.Kind(DefaultPrivilegeKind) || ref.Catalog != (objectidentity.Part{}) ||
+		ref.Parent != (objectidentity.Part{}) || !ref.Signature.IsZero() || ref.Name.Quoted || ref.Name.Defaulted ||
 		ref.Schema.Quoted || ref.Schema.Defaulted {
 		return Identity{}, fmt.Errorf("%w: invalid default privilege reference", schemaext.ErrInvalidValue)
 	}

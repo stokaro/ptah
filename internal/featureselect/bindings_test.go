@@ -93,7 +93,7 @@ func side(representation schemaext.Representation, objects ...schemaext.Object) 
 	kinds := make([]schemaext.KindCoverage, 0)
 	for _, model := range fixtureRuntime().Codecs().Definitions() {
 		if model.Representation == representation {
-			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 		}
 	}
 	var subjects []schemaext.SubjectCoverage

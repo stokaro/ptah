@@ -153,13 +153,23 @@ func ViewBody(body string) string {
 // come from the lengths written in front of each component, never from a
 // separator a component could contain.
 func encode(id objectidentity.ID) string {
+	var path []string
+	for _, part := range id.Namespace.Values() {
+		path = append(path, part.Normalized)
+	}
+	var signature []string
+	for _, part := range id.Signature.Values() {
+		signature = append(signature, part.Normalized)
+	}
 	return lengthPrefixed(
 		string(id.Kind),
+		id.Database.Normalized,
+		lengthPrefixed(path...),
 		id.Catalog.Normalized,
 		id.Schema.Normalized,
 		id.Parent.Normalized,
 		id.Name.Normalized,
-		id.Signature,
+		lengthPrefixed(signature...),
 	)
 }
 

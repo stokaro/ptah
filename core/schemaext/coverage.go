@@ -37,8 +37,8 @@ type Knowledge struct {
 // KindCoverage enrolls one precise model definition in a source's claims.
 // Registry growth cannot add entries to an already captured source description.
 type KindCoverage struct {
-	Model     CodecIdentity `json:"model"`
-	Knowledge Knowledge     `json:"knowledge"`
+	Model     CodecIdentity   `json:"model"`
+	Knowledge KnowledgeDomain `json:"knowledge"`
 }
 
 // SubjectCoverage overrides a kind-wide claim for one structured subject.
@@ -118,10 +118,7 @@ func validateKindCoverage(representation Representation, record KindCoverage) er
 	if !model.Kind.Valid() || !Kind(model.Owner).Valid() || model.Version == 0 || model.Definition == "" || model.Representation != representation {
 		return fmt.Errorf("%w: incomplete or mismatched coverage model", ErrInvalidValue)
 	}
-	if record.Knowledge.State == Absent || record.Knowledge.State == Defaulted {
-		return fmt.Errorf("%w: absence/default assertions require a specific subject", ErrInvalidValue)
-	}
-	return validateKnowledge(representation, record.Knowledge)
+	return record.Knowledge.validate()
 }
 
 func validateKnowledge(representation Representation, knowledge Knowledge) error {
@@ -144,22 +141,29 @@ func validateKnowledge(representation Representation, knowledge Knowledge) error
 // Lookup returns a subject override or the enrolled kind's claim. A kind the
 // source did not enroll remains uninspected even if the current runtime knows it.
 func (c Coverage) Lookup(kind Kind, subject objectidentity.ID) Knowledge {
-	if record, found := c.subjects[subjectKey{kind: kind, ref: subject.Key()}]; found {
+	if record, found := c.subjectRecord(kind, subject); found {
 		return record.Knowledge
+	}
+	if record, found := c.kinds[kind]; found {
+		return record.Knowledge.Lookup(subject)
+	}
+	return Knowledge{State: Uninspected, Reason: "this source did not describe the feature kind"}
+}
+
+func (c Coverage) subjectRecord(kind Kind, subject objectidentity.ID) (SubjectCoverage, bool) {
+	if record, found := c.subjects[subjectKey{kind: kind, ref: subject.Key()}]; found {
+		return record, true
 	}
 	// Named feature objects use their value kind as their identity kind. Their
 	// Parent component names a table; common column/index facets do not take
 	// this path because their subject kind remains the common envelope kind.
 	if subject.Kind == objectidentity.Kind(kind) && !subject.Parent.Empty() {
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: subject.Database, Namespace: subject.Namespace, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
 		if record, found := c.subjects[subjectKey{kind: kind, ref: parent.Key()}]; found {
-			return record.Knowledge
+			return record, true
 		}
 	}
-	if record, found := c.kinds[kind]; found {
-		return record.Knowledge
-	}
-	return Knowledge{State: Uninspected, Reason: "this source did not describe the feature kind"}
+	return SubjectCoverage{}, false
 }
 
 // SubjectKnowledge returns only an explicit subject claim. A concrete observed

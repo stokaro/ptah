@@ -14,10 +14,18 @@ import (
 // Claims about table-owned feature objects are bound as [BindObjects] binds
 // the objects, and index claims are left to the caller, whose index namespace
 // decides their shape. Explicit schemas and knowledge limits survive;
-// collisions are refused.
+// collisions are refused. Namespace domains require owner binding before this
+// common adapter can resolve relative table names; it refuses those domains.
 func BindCoverage(coverage schemaext.Coverage, target string, semantics identifier.Semantics) (schemaext.Coverage, error) {
 	if coverage.IsZero() {
 		return coverage, nil
+	}
+	// A namespace can limit omitted subjects too. Rebinding only explicit
+	// subjects could move a table outside an unknown region and grant absence.
+	for _, record := range coverage.KindRecords() {
+		if record.Knowledge.HasNamespaceScopes() {
+			return schemaext.Coverage{}, fmt.Errorf("%w: namespace-scoped coverage requires owner binding before table identity resolution", schemaext.ErrInvalidValue)
+		}
 	}
 	subjects := coverage.SubjectRecords()
 	for i, record := range subjects {
@@ -31,7 +39,7 @@ func BindCoverage(coverage schemaext.Coverage, target string, semantics identifi
 			subjects[i].Subject = bindOwned(ref, target, semantics)
 			continue
 		}
-		if !ref.Catalog.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
+		if !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Parent.Empty() || !ref.Signature.IsZero() {
 			return schemaext.Coverage{}, fmt.Errorf("%w: invalid table coverage identity %s", schemaext.ErrInvalidValue, ref)
 		}
 		schema := ref.Schema.Source

@@ -62,7 +62,7 @@ func loweringCoverage(representation schemaext.Representation, knowledge schemae
 		Model: schemaext.CodecIdentity{
 			Owner: "example.org/lowering", Kind: loweringKind, Representation: representation, Version: 1, Definition: "fixture-definition",
 		},
-		Knowledge: knowledge,
+		Knowledge: schemaext.GlobalKnowledge(knowledge),
 	}}, subjects))
 }
 

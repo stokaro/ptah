@@ -19,7 +19,7 @@ func clickhouseTableCapture(schema, name string) schemacapture.TableObservation 
 	model := models[slices.IndexFunc(models, func(v schemaext.CodecIdentity) bool {
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 	})]
-	coverage := must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+	coverage := must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil))
 	return schemacapture.TableObservation{
 		Table:           catalog.Table{Schema: schema, Name: name, Type: "TABLE", Facets: must.Must(schemaext.NewFacets(&chschema.ObservedTable{Engine: "MergeTree", OrderBy: "tuple()"}))},
 		FeatureCoverage: coverage,

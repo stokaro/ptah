@@ -217,7 +217,7 @@ func relationOwner(subject RelationSubject) (objectidentity.ID, bool) {
 		return ref, true
 	}
 	if !ref.Parent.Empty() {
-		return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}, true
+		return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}, true
 	}
 	return objectidentity.ID{}, false
 }
