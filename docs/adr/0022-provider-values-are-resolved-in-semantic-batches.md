@@ -458,7 +458,7 @@ subject, and target binding even though their value is absent. The response
 must preserve each exclusion and cannot return a change or diagnostic for it.
 
 The owner revalidates payload semantics before comparing desired and observed
-states. It returns effective desired state, typed changes, and undecided
+states. It returns the effective desired schema, typed changes, and undecided
 reasons as one atomic reply. The shared engine still validates declaration
 retention, coverage limits, related subjects, parent ownership, and migration
 policy. The transport does not replace those rules. A missing comparison

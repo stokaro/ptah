@@ -201,7 +201,7 @@ model, subject, and target binding, and permits no change or diagnostic.
 
 The owner validates complete payload semantics again. Captured canonical
 projections do not prove desired/observed equivalence. Results include effective
-desired state, normalized `CHANGE` values, and explicit undecided diagnostics.
+desired schema, normalized `CHANGE` values, and explicit undecided diagnostics.
 Both transport boundaries refuse incomplete replies and unowned models. The
 host's comparison runtime enforces common migration policy before planning.
 
