@@ -27,15 +27,17 @@ type Provider struct {
 	sessions map[string]*session
 }
 type session struct {
-	mu           sync.Mutex
-	closed       bool
-	transactions map[string]*transaction
-	locks        map[string]*sessionLock
-	lockLost     bool
-	active       string
-	db           *sql.DB
-	path         string
-	fault        string
+	mu              sync.Mutex
+	closed          bool
+	transactions    map[string]*transaction
+	locks           map[string]*sessionLock
+	metadataReaders map[string]*metadataSnapshot
+	logDB           *sql.DB
+	lockLost        bool
+	active          string
+	db              *sql.DB
+	path            string
+	fault           string
 }
 
 // Description declares the fixture's intentionally narrow service contract.

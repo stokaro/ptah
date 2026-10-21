@@ -107,7 +107,7 @@ func TestRollbackFencesConcurrentAndLateBegins(t *testing.T) {
 		result, err := owner.FinishTransaction(c.Context(), &protocol.FinishTransactionRequest{SessionId: session.GetId(), TransactionId: id, Action: protocol.FinishTransactionRequest_ROLLBACK})
 		<-beginDone
 		c.Assert(err, qt.IsNil)
-		c.Assert(slices.Contains([]protocol.TransactionResult_Outcome{protocol.TransactionResult_NOT_STARTED, protocol.TransactionResult_ROLLED_BACK}, result.GetOutcome()), qt.IsTrue)
+		c.Assert([]protocol.TransactionResult_Outcome{protocol.TransactionResult_NOT_STARTED, protocol.TransactionResult_ROLLED_BACK}, qt.Contains, result.GetOutcome())
 		_, err = owner.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: id})
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(executeTransactionSQL(c, owner, session.GetId(), id, `CREATE TABLE "late" ("id" INTEGER);`).GetOutcome(), qt.Equals, protocol.Execution_NOT_STARTED)

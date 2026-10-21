@@ -359,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 19 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 20 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -905,6 +905,23 @@ handle even after cancellation and discards partial results on failure.
 This avoids requiring a complete event journal in one RPC response.
 
 Unit tests exercise these host contracts with an in-memory native session.
-They do not establish subprocess storage or database durability. SDK revision
-19 still lacks log and tag RPCs; that implementation and official-engine
-qualification remain required under #4204.
+They do not establish subprocess storage or database durability. Experimental SDK revision 20 defines typed metadata RPCs and validates request
+and receipt identity. Published-module process acceptance, host adapters, and
+official-engine qualification remain required under #4204.
+
+
+The experimental SDK metadata service uses typed event and tag records. Write
+receipts bind the exact scope and request. Unknown results never authorize
+replay. Reader receipts also bind a caller-selected handle and page number.
+SDK client and server adapters close that same handle after uncertain opening
+or advancement. A detached timeout bounds cleanup without erasing the failure.
+
+The SQLite fixture stores ordinary event and tag columns. A separate pool owned
+by the session handles durable journal writes. Tags use the selected transaction.
+Finishing a transaction invalidates its readers. Materialized fixture snapshots
+are limited to 64 MiB; oversized snapshots are refused without a usable prefix.
+The protocol bounds individual pages instead of imposing that fixture limit.
+Independent process tests cover commit, rollback, immutable snapshots, atomic
+deletions, lost acknowledgments, incompatible layouts, and reader cleanup.
+These tests still require acceptance against a published SDK revision before
+host adoption and official-engine qualification under #4204.

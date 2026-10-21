@@ -25,6 +25,12 @@ service Provider {
   rpc ReadHistory(ReadHistoryRequest) returns (HistorySnapshot);
   rpc PrepareHistory(PrepareHistoryRequest) returns (HistoryResult);
   rpc MutateHistory(MutateHistoryRequest) returns (HistoryResult);
+  rpc PrepareMetadata(PrepareMetadataRequest) returns (MetadataResult);
+  rpc MutateMetadata(MutateMetadataRequest) returns (MetadataResult);
+  rpc LookupMetadataTag(LookupMetadataTagRequest) returns (MetadataTagResult);
+  rpc OpenMetadataRead(MetadataReadRequest) returns (MetadataReadResult);
+  rpc ReadMetadataPage(ReadMetadataPageRequest) returns (MetadataPage);
+  rpc CloseMetadataRead(MetadataReadRequest) returns (MetadataReadResult);
   rpc TryLock(LockRequest) returns (LockResult);
   rpc CheckLock(LockRequest) returns (LockResult);
   rpc ReleaseLock(LockRequest) returns (LockResult);
@@ -1298,4 +1304,93 @@ message LockResult {
   LockScope scope = 1;
   string request_id = 2;
   Outcome outcome = 3;
+}
+
+// MetadataScope identifies an exact store and its execution handle. LOG writes
+// are durable session operations and never carry a transaction ID.
+message MetadataScope {
+  enum Kind { UNSPECIFIED = 0; LOG = 1; TAGS = 2; }
+  string session_id = 1;
+  string transaction_id = 2;
+  string schema = 3;
+  string table = 4;
+  Kind kind = 5;
+}
+message MigrationLogRecord {
+  string run_id = 1;
+  int64 sequence = 2;
+  string operation = 3;
+  int64 version = 4;
+  string state = 5;
+  string actor = 6;
+  string actor_source = 7;
+  string checksum = 8;
+  int64 at_seconds = 9;
+  int32 at_nanos = 10;
+  string error = 11;
+}
+message MigrationTagRecord {
+  string name = 1;
+  int64 version = 2;
+  int64 recorded_at_seconds = 3;
+  int32 recorded_at_nanos = 4;
+}
+message PrepareMetadataRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+}
+message MutateMetadataRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  oneof mutation {
+    MigrationLogRecord append_log = 3;
+    MigrationTagRecord put_tag = 4;
+    string delete_tag = 5;
+  }
+}
+message MetadataResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; REJECTED = 2; }
+  MetadataScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+  // Only DELETE_TAG can set deleted. False confirms atomic absence.
+  bool deleted = 4;
+}
+message LookupMetadataTagRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  string name = 3;
+}
+message MetadataTagResult {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  bool found = 3;
+  MigrationTagRecord record = 4;
+}
+// The caller chooses a fresh reader ID before opening. Close fences that ID
+// even when it reaches the owner before open, and is idempotent for the scope.
+message MetadataReadRequest {
+  MetadataScope scope = 1;
+  string reader_id = 2;
+  string request_id = 3;
+}
+message MetadataReadResult {
+  MetadataScope scope = 1;
+  string reader_id = 2;
+  string request_id = 3;
+}
+// Pages advance exactly once, starting at zero. An unknown read reply must
+// close the snapshot rather than replay a cursor advance.
+message ReadMetadataPageRequest {
+  MetadataReadRequest reader = 1;
+  uint64 page = 2;
+  uint32 max_records = 3;
+}
+message MetadataPage {
+  MetadataReadResult reader = 1;
+  uint64 page = 2;
+  bool exists = 3;
+  bool complete = 4;
+  repeated MigrationLogRecord logs = 5;
+  repeated MigrationTagRecord tags = 6;
 }

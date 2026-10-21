@@ -36,6 +36,12 @@ const (
 	Provider_ReadHistory_FullMethodName       = "/ptah.provider.experimental.Provider/ReadHistory"
 	Provider_PrepareHistory_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareHistory"
 	Provider_MutateHistory_FullMethodName     = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_PrepareMetadata_FullMethodName   = "/ptah.provider.experimental.Provider/PrepareMetadata"
+	Provider_MutateMetadata_FullMethodName    = "/ptah.provider.experimental.Provider/MutateMetadata"
+	Provider_LookupMetadataTag_FullMethodName = "/ptah.provider.experimental.Provider/LookupMetadataTag"
+	Provider_OpenMetadataRead_FullMethodName  = "/ptah.provider.experimental.Provider/OpenMetadataRead"
+	Provider_ReadMetadataPage_FullMethodName  = "/ptah.provider.experimental.Provider/ReadMetadataPage"
+	Provider_CloseMetadataRead_FullMethodName = "/ptah.provider.experimental.Provider/CloseMetadataRead"
 	Provider_TryLock_FullMethodName           = "/ptah.provider.experimental.Provider/TryLock"
 	Provider_CheckLock_FullMethodName         = "/ptah.provider.experimental.Provider/CheckLock"
 	Provider_ReleaseLock_FullMethodName       = "/ptah.provider.experimental.Provider/ReleaseLock"
@@ -66,6 +72,12 @@ type ProviderClient interface {
 	ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error)
 	PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
 	MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
+	MutateMetadata(ctx context.Context, in *MutateMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
+	LookupMetadataTag(ctx context.Context, in *LookupMetadataTagRequest, opts ...grpc.CallOption) (*MetadataTagResult, error)
+	OpenMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error)
+	ReadMetadataPage(ctx context.Context, in *ReadMetadataPageRequest, opts ...grpc.CallOption) (*MetadataPage, error)
+	CloseMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error)
 	TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 	CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 	ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
@@ -249,6 +261,66 @@ func (c *providerClient) MutateHistory(ctx context.Context, in *MutateHistoryReq
 	return out, nil
 }
 
+func (c *providerClient) PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateMetadata(ctx context.Context, in *MutateMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataResult)
+	err := c.cc.Invoke(ctx, Provider_MutateMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) LookupMetadataTag(ctx context.Context, in *LookupMetadataTagRequest, opts ...grpc.CallOption) (*MetadataTagResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataTagResult)
+	err := c.cc.Invoke(ctx, Provider_LookupMetadataTag_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) OpenMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataReadResult)
+	err := c.cc.Invoke(ctx, Provider_OpenMetadataRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadMetadataPage(ctx context.Context, in *ReadMetadataPageRequest, opts ...grpc.CallOption) (*MetadataPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataPage)
+	err := c.cc.Invoke(ctx, Provider_ReadMetadataPage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CloseMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataReadResult)
+	err := c.cc.Invoke(ctx, Provider_CloseMetadataRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LockResult)
@@ -304,6 +376,12 @@ type ProviderServer interface {
 	ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error)
 	PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error)
 	MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error)
+	PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error)
+	MutateMetadata(context.Context, *MutateMetadataRequest) (*MetadataResult, error)
+	LookupMetadataTag(context.Context, *LookupMetadataTagRequest) (*MetadataTagResult, error)
+	OpenMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error)
+	ReadMetadataPage(context.Context, *ReadMetadataPageRequest) (*MetadataPage, error)
+	CloseMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error)
 	TryLock(context.Context, *LockRequest) (*LockResult, error)
 	CheckLock(context.Context, *LockRequest) (*LockResult, error)
 	ReleaseLock(context.Context, *LockRequest) (*LockResult, error)
@@ -367,6 +445,24 @@ func (UnimplementedProviderServer) PrepareHistory(context.Context, *PrepareHisto
 }
 func (UnimplementedProviderServer) MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MutateHistory not implemented")
+}
+func (UnimplementedProviderServer) PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareMetadata not implemented")
+}
+func (UnimplementedProviderServer) MutateMetadata(context.Context, *MutateMetadataRequest) (*MetadataResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateMetadata not implemented")
+}
+func (UnimplementedProviderServer) LookupMetadataTag(context.Context, *LookupMetadataTagRequest) (*MetadataTagResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LookupMetadataTag not implemented")
+}
+func (UnimplementedProviderServer) OpenMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenMetadataRead not implemented")
+}
+func (UnimplementedProviderServer) ReadMetadataPage(context.Context, *ReadMetadataPageRequest) (*MetadataPage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadMetadataPage not implemented")
+}
+func (UnimplementedProviderServer) CloseMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseMetadataRead not implemented")
 }
 func (UnimplementedProviderServer) TryLock(context.Context, *LockRequest) (*LockResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TryLock not implemented")
@@ -704,6 +800,114 @@ func _Provider_MutateHistory_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_PrepareMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareMetadata(ctx, req.(*PrepareMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateMetadata(ctx, req.(*MutateMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_LookupMetadataTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupMetadataTagRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).LookupMetadataTag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_LookupMetadataTag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).LookupMetadataTag(ctx, req.(*LookupMetadataTagRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_OpenMetadataRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetadataReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).OpenMetadataRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_OpenMetadataRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).OpenMetadataRead(ctx, req.(*MetadataReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadMetadataPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadMetadataPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadMetadataPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadMetadataPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadMetadataPage(ctx, req.(*ReadMetadataPageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CloseMetadataRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetadataReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CloseMetadataRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CloseMetadataRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CloseMetadataRead(ctx, req.(*MetadataReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_TryLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(LockRequest)
 	if err := dec(in); err != nil {
@@ -832,6 +1036,30 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MutateHistory",
 			Handler:    _Provider_MutateHistory_Handler,
+		},
+		{
+			MethodName: "PrepareMetadata",
+			Handler:    _Provider_PrepareMetadata_Handler,
+		},
+		{
+			MethodName: "MutateMetadata",
+			Handler:    _Provider_MutateMetadata_Handler,
+		},
+		{
+			MethodName: "LookupMetadataTag",
+			Handler:    _Provider_LookupMetadataTag_Handler,
+		},
+		{
+			MethodName: "OpenMetadataRead",
+			Handler:    _Provider_OpenMetadataRead_Handler,
+		},
+		{
+			MethodName: "ReadMetadataPage",
+			Handler:    _Provider_ReadMetadataPage_Handler,
+		},
+		{
+			MethodName: "CloseMetadataRead",
+			Handler:    _Provider_CloseMetadataRead_Handler,
 		},
 		{
 			MethodName: "TryLock",

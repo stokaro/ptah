@@ -173,6 +173,7 @@ func (p *Provider) FinishTransaction(ctx context.Context, request *protocol.Fini
 	}
 	record.outcome = finishDatabaseTransaction(record.tx, request.GetAction())
 	record.tx, s.active = nil, ""
+	s.closeTransactionMetadata(request.GetTransactionId())
 	if s.fault == "lost-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
 		return nil, fmt.Errorf("fixture lost commit reply")
 	}
@@ -208,6 +209,12 @@ func (s *session) close() error {
 	}
 	for _, record := range s.locks {
 		failures = append(failures, record.release())
+	}
+	for _, reader := range s.metadataReaders {
+		reader.close()
+	}
+	if s.logDB != nil {
+		failures = append(failures, s.logDB.Close())
 	}
 	failures = append(failures, s.db.Close())
 	return errors.Join(failures...)

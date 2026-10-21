@@ -5349,5 +5349,5 @@ success, cancellation, or failure, and discards partial results on errors.
 Reads do not create storage; preparation validates ownership and layout.
 
 These interfaces and common policies are host contracts. Experimental SDK
-revision 19 does not yet expose log or tag RPCs. Subprocess implementation and
-engine qualification remain required under #4204.
+revision 20 defines log and tag RPCs. Published-module process acceptance,
+host adapters, and engine qualification remain required under #4204.

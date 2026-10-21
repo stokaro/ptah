@@ -372,7 +372,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 19 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 20 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -581,3 +581,38 @@ cleanup request or inspection establishes state. Rollback can run after caller
 cancellation. The independent transaction fixture checks real commit, rollback,
 session cleanup, handle isolation, late-begin fencing, and native schema apply
 with `file` and `all` transaction modes.
+
+
+### Migration logs and tags
+
+The optional `sessions.migration-metadata` service stores typed event and tag
+records. Supporting engines advertise it as well. The host owns migration
+ordering, event pairing, tag normalization, and recovery. Providers own storage,
+layout validation, atomic mutations, and current lock ownership checks.
+
+A log scope uses the session's durable store and cannot name an execution
+transaction. A tag scope selects the active handle. Preparation inside a
+transaction validates an existing store; it cannot create one. A missing tag
+differs from a tag selecting version zero. Delete reports actual atomic removal.
+Unknown mutation outcomes do not permit automatic replay.
+
+Snapshot readers use caller-selected, single-use handles. Pages carry an exact
+request receipt, a page number, existence, and explicit completion. The record
+and byte bounds apply per page. Missing stores produce an empty complete page
+without creating storage. Duplicate or inconsistent page records are refused.
+Closing a reader fences late opens; session close releases remaining readers.
+Transaction finish invalidates readers bound to that transaction.
+
+The SDK cleans up the same reader after uncertain opening or page advancement.
+Cleanup has a separate bounded context and does not erase the original failure.
+The unit tests cover malformed receipts, cancellation, page bounds, and no
+mutation replay. The SQLite fixture uses ordinary event and tag columns. It
+materializes each snapshot with a 64 MiB limit and refuses larger snapshots.
+The limit applies to the fixture, not the protocol. Its durable log uses a
+separate connection pool owned by the session. SQLite can refuse a concurrent
+write; the fixture never reroutes it through the execution transaction.
+
+Process tests cover commit and rollback, journal durability, immutable pages,
+atomic deletion, invalid layouts, triggers, lost replies, and handle cleanup.
+Published-module process acceptance and host adapters for this service remain
+required under #4204.
