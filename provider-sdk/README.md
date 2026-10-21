@@ -298,7 +298,7 @@ fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
-adapters, native planning, transactions, and history
+adapters, complete native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 
 ## Observed model coverage
@@ -375,8 +375,8 @@ semantics and refuse any role or context they cannot implement.
 Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
-through this contract. It does not establish a feature-planning, transaction, or
-history service; these remain required before official-engine extraction.
+through this contract. Contextual feature planning uses the service below.
+Transaction and history services remain required before official-engine extraction.
 
 ## Contextual feature planning
 
@@ -408,12 +408,23 @@ identities. Its adapter preserves common definitions, normalized feature values,
 coverage sources, graph metadata, and receipts. Unmapped common properties and
 conflicting primary-key facet slots are refused before the RPC.
 
-An independent SDK-only fixture exercises change planning through the selected
-runtime, shared graph, rendering, statement execution, and inspection. It also
-checks captured ALTER parents, graph conflicts, completed refusals, and
-cancellation. The test caller explicitly executes without a transaction.
+The common migration planner dispatches native changes and parent assessments
+through the selected runtime, then schedules the complete shared graph. It
+retains unchanged captured tables and supplies exact common column operands.
+Common column and table removals follow the feature windows. Unsupported inline
+common definitions remain errors; the host never strips native settings to make
+a common statement render.
 
-The common migration planner still needs to dispatch these services and retain
-transaction requirements through execution. Parent receipts and rewrites still
-need independent-process acceptance. This work remains part of #4204; the
-transport does not qualify YDB extraction or the migration history backend.
+An independent SDK-only fixture exercises the production planner, shared graph,
+rendering, statement execution, and inspection. It checks captured ALTER parents,
+parent receipts without changed native values, graph conflicts, completed
+refusals, and cancellation. The test caller executes without a transaction.
+
+Owner transaction requirements survive AST lowering. A forbidden transaction
+reaches migration classification. A mixed plan that the generator cannot split
+safely is refused. The external planner refuses a required transaction because
+provider transaction sessions are not implemented.
+
+Rewrite acceptance and transaction enforcement through every execution path
+remain part of #4204, alongside history services and official provider extraction.
+These tests do not qualify YDB extraction or the migration history backend.

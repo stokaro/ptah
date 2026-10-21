@@ -168,8 +168,8 @@ Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
 Change models enter the shared comparison runtime through the contextual
 service below. Operation models retain captured safety facts and use the
-selected target renderer. Native planning and engine transaction and history
-services still require application adapters.
+selected target renderer. Native planning uses the shared graph described below.
+Engine transaction and history services still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -271,8 +271,8 @@ matching it by table name and schema would drop part of its identity.
 
 Facets of columns and indexes also require placement adapters. Conflicting
 values for the same model and subject across engines are refused by the shared
-collections. These gaps, HCL and Go annotation capture, and native planning
-remain part of #4204. The fixture's retention value proves transport and schema
+collections. These gaps, HCL and Go annotation capture, and completion of native
+planning remain part of #4204. The fixture's retention value proves transport and schema
 placement; it does not implement SQLite retention or qualify YDB extraction.
 
 ## Observed capture
@@ -477,9 +477,9 @@ The independent retention fixture exercises native objects and column facets,
 changed and unchanged values, explicit actions, unknown coverage, exclusions,
 and change capture and decoding. It establishes global and subject knowledge
 only; bounded regions remain undecided in that synthetic owner. It does not
-execute retention changes or qualify any official database engine. Native
-planning, transaction and history services, full source support, and
-official-engine extraction remain part of #4204.
+execute retention changes or qualify any official database engine. Rewrite and
+execution qualification, transaction and history services, full source support,
+and official-engine extraction remain part of #4204.
 
 
 ## Captured operation rendering
@@ -510,7 +510,7 @@ removal through an operation model. Inspection proves the database changes;
 round trips prove that operation assessments are recomputed. This exercises
 operation transport and rendering. The contextual planning adapter described
 below binds receipts, dependencies, and effects for the selected runtime. The
-common migration planner still needs to dispatch the service.
+common migration planner dispatches the service through the shared graph.
 Transaction and history services remain separate work before YDB extraction.
 
 
@@ -540,11 +540,23 @@ preserves excluded facets and independent coverage sources, and refuses unmapped
 common properties. Primary-key facets use the shared capture authority; a value
 on another primary-key slot is refused even when the authoritative slot is empty.
 
-An independent SDK-only fixture sends captured changes through the selected
-runtime and shared graph, renders the returned operations, executes statements,
-and inspects the result. It also exercises captured ALTER parents, common-graph
-conflicts, completed refusals, and cancellation. The caller explicitly executes
-without a transaction. This proves the transport and graph adapter path; the
-common migration planner does not yet dispatch the service. Transaction
-requirements must survive the final executor, and parent receipts and rewrites
-need separate-process acceptance before this service can support YDB extraction.
+The common migration planner sends native changes, parent actions, unchanged
+captured tables, and exact common column operands through the selected runtime.
+Its shared graph places prerequisites and types before common table creations,
+ordinary feature operations before common column and table removals, and drops
+of prerequisites and types after those removals. Conflicts and unsupported
+placements discard the complete plan. Unsupported inline definitions still fail
+before rendering; planning never strips settings to fit the common wire model.
+
+Owner transaction requirements survive lowering to AST envelopes. Migration
+classification recognizes a forbidden transaction without a built-in dialect
+profile. An unsafe split of common and native work remains a refusal. The
+external planner refuses required transactions while provider sessions have no
+transaction service; retaining the metadata is not evidence of enforcement.
+
+An independent SDK-only fixture exercises this production planner, shared graph,
+rendering, explicit unwrapped execution, and inspection. It checks unchanged
+captured parents, parent receipts without changed native values, graph conflicts,
+completed refusals, required-transaction refusal, and cancellation. Rewrite
+acceptance and transaction enforcement through every final executor remain part
+of #4204 before this service can support YDB extraction.

@@ -37,7 +37,7 @@ func (*owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRe
 		return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: "Fixture requires explicit nontransactional DDL"}}}, nil
 	}
 	contribution := &protocol.PlanningContribution{Owner: "example.org/fixture"}
-	result := &protocol.PlannedFeatures{Complete: true, Contributions: []*protocol.PlanningContribution{contribution}}
+	result := &protocol.PlannedFeatures{Complete: true}
 	for i, change := range request.GetChanges() {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -48,6 +48,18 @@ func (*owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRe
 		}
 		contribution.Steps = append(contribution.Steps, step)
 		result.Changes = append(result.Changes, &protocol.PlanningReceipt{Subject: proto.CloneOf(change.GetSubject()), Kind: changeKind, Strategy: "Apply the captured table action", Steps: []*protocol.StepIdentity{proto.CloneOf(step.Id)}})
+	}
+	if len(contribution.Steps) > 0 {
+		result.Contributions = append(result.Contributions, contribution)
+	}
+	for _, table := range request.GetTables() {
+		if table.GetAction() == protocol.PlanningTable_CONTEXT {
+			continue
+		}
+		for _, kind := range request.GetParentKinds() {
+			result.Parents = append(result.Parents, &protocol.PlanningParentReceipt{Action: table.GetAction(), Receipt: &protocol.PlanningReceipt{
+				Subject: proto.CloneOf(table.GetSubject()), Kind: kind, Strategy: "Accept fixture common table operation"}})
+		}
 	}
 	return result, nil
 }
@@ -72,8 +84,12 @@ func planTableChange(change *protocol.PlanningChange, id string) (*protocol.Plan
 		role, action = protocol.NativeOperation_ALTER_TABLE, protocol.PlanningEffect_ALTER
 		parent = proto.CloneOf(change.GetSubject())
 	}
+	transaction := protocol.PlanningMetadata_FORBIDDEN
+	if op.Transaction == "required" {
+		transaction = protocol.PlanningMetadata_REQUIRED
+	}
 	return &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: "table/" + id},
 		Operation: &protocol.PlanningOperation{Value: value, Role: role, Parent: parent},
-		Metadata: &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.OperationSemantics.Impact, Reason: value.OperationSemantics.Reason,
+		Metadata: &protocol.PlanningMetadata{Transaction: transaction, Impact: value.OperationSemantics.Impact, Reason: value.OperationSemantics.Reason,
 			Effects: []*protocol.PlanningEffect{{Subject: proto.CloneOf(change.GetSubject()), Action: action}}}}, nil
 }

@@ -116,7 +116,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	if err != nil {
 		return catalog.ProviderIdentity{}, err
 	}
-	// Version 4 is a fixed host-owned JSON projection. Repeated protocol fields
+	// Version 6 binds the common planner dispatch and transaction requirements
+	// to the host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
 	// database addresses are deliberately absent.
 	projection := struct {
@@ -130,7 +131,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		YAMLKeys           []yamlKeyIdentity            `json:"yaml_keys"`
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
 		Planning           []planningIdentityContract   `json:"planning"`
-	}{5,
+	}{6,
 		t.engine.GetId(),
 		featureSet(t.host.description.GetFeatures()),
 		featureSet(t.engine.GetFeatures()),

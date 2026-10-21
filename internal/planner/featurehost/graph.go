@@ -108,11 +108,12 @@ const (
 var windowNames = [windowCount]string{"prerequisite-creations", "type-creations", "feature-creations", "dependent-operations",
 	"feature-removals", "type-removals", "prerequisite-removals"}
 
-// NewGraph builds the graph of nodes under owner. effects holds each node's
-// effects, or is nil when the host knows none; a node with an unknown
-// footprint orders nothing beyond its position. Windows outside the sequence
-// or out of order are refused.
-func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, windows Windows) (*Graph, error) {
+// NewGraph builds the graph of nodes under owner. Metadata describes each node,
+// or is nil when the host knows none. IDs must be empty; the graph assigns them.
+// Unknown footprints order nothing beyond position. Common operands and parent
+// identities reach feature owners without exposing mutable graph state. Windows
+// outside the sequence or out of order are refused.
+func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep, windows Windows) (*Graph, error) {
 	positions := map[int]Span{creationWindow: {windows.Creation, windows.Creation}, dependentWindow: {windows.Dependent, windows.Dependent}, removalWindow: {windows.Removal, windows.Removal}}
 	if windows.Prerequisites != nil {
 		positions[prerequisiteCreationWindow] = Span{windows.Prerequisites.Creation, windows.Prerequisites.Creation}
@@ -129,8 +130,8 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 	if !slices.IsSorted(ordered) || ordered[0] < 0 || ordered[len(ordered)-1] > len(nodes) {
 		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, ordered, len(nodes))
 	}
-	if effects != nil && len(effects) != len(nodes) {
-		return nil, fmt.Errorf("%w: %d effect lists for %d common nodes", schemaext.ErrInvalidValue, len(effects), len(nodes))
+	if metadata != nil && len(metadata) != len(nodes) {
+		return nil, fmt.Errorf("%w: %d metadata records for %d common nodes", schemaext.ErrInvalidValue, len(metadata), len(nodes))
 	}
 	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil,
 		types: windows.Types != nil}
@@ -147,26 +148,32 @@ func NewGraph(owner string, nodes []ast.Node, effects [][]plangraph.Effect, wind
 			break
 		}
 		step := plangraph.Step[[]ast.Node]{ID: plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", i)}, Payload: []ast.Node{nodes[i]}}
-		if effects != nil {
-			step.Effects = slices.Clone(effects[i])
+		var description featureplan.CommonStep
+		if metadata != nil {
+			description = metadata[i].Clone()
+			if description.ID != (plangraph.StepID{}) {
+				return nil, fmt.Errorf("%w: common node metadata supplies a step ID", schemaext.ErrInvalidValue)
+			}
+			step.Effects, step.Transaction, step.Impact = description.Effects, description.Transaction, description.Impact
 		}
-		graph.append(step)
+		graph.append(step, description)
 	}
 	return graph, nil
 }
 
 func (g *Graph) marker(name string) plangraph.StepID {
 	id := plangraph.StepID{Owner: g.contribution.Owner, Name: name}
-	g.append(plangraph.Step[[]ast.Node]{ID: id})
+	g.append(plangraph.Step[[]ast.Node]{ID: id}, featureplan.CommonStep{})
 	return id
 }
 
-func (g *Graph) append(step plangraph.Step[[]ast.Node]) {
+func (g *Graph) append(step plangraph.Step[[]ast.Node], description featureplan.CommonStep) {
 	if count := len(g.contribution.Steps); count > 0 {
 		g.contribution.Dependencies = append(g.contribution.Dependencies, plangraph.Dependency{Before: g.contribution.Steps[count-1].ID, After: step.ID})
 	}
 	g.contribution.Steps = append(g.contribution.Steps, step)
-	g.steps = append(g.steps, featureplan.CommonStep{ID: step.ID, Effects: slices.Clone(step.Effects)})
+	description.ID = step.ID
+	g.steps = append(g.steps, description.Clone())
 }
 
 // CommonSteps returns the steps an owner orders itself against, markers

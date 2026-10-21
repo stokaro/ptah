@@ -13,8 +13,9 @@ import (
 )
 
 type operation struct {
-	Action string  `json:"action"`
-	To     *string `json:"to,omitempty"`
+	Action      string  `json:"action"`
+	Transaction string  `json:"transaction,omitempty"`
+	To          *string `json:"to,omitempty"`
 }
 
 func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
@@ -37,6 +38,9 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	}
 	if _, present := fields["to"]; present && op.Action != "rename" {
 		return nil, fmt.Errorf("only rename accepts a target")
+	}
+	if op.Transaction != "" && op.Transaction != "required" {
+		return nil, fmt.Errorf("unknown transaction requirement")
 	}
 	impact := protocol.ChangeSemantics_ADDITIVE
 	switch op.Action {

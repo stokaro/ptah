@@ -114,7 +114,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 				return err
 			}
 			contribution.Dependencies = append(contribution.Dependencies, placed...)
-			payload, err := featureops.Nodes(step.Payload, names)
+			payload, err := featureops.Nodes(step.Payload, names, step.Transaction)
 			if err != nil {
 				return err
 			}

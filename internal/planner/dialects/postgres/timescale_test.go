@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -202,7 +203,7 @@ func TestPlanner_PlansAnAddedHypertable(t *testing.T) {
 		&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{hypertableChange("readings", nil, &tsschema.DesiredHypertable{Column: "time", ChunkInterval: "1 day"})}})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(nodes, qt.DeepEquals, []ast.Node{&ast.ExtensionStatement{Payload: &tsast.CreateHypertable{
+	c.Assert(nodes, qt.DeepEquals, []ast.Node{&ast.ExtensionStatement{Transaction: plangraph.TransactionAllowed, Payload: &tsast.CreateHypertable{
 		Table: "readings", Hypertable: tsschema.DesiredHypertable{Column: "time", ChunkInterval: "1 day"},
 	}}})
 }

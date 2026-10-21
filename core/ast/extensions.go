@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 )
 
@@ -29,6 +30,9 @@ const (
 // requires an explicitly registered handler for its kind and grammatical role.
 type ExtensionStatement struct {
 	Payload ExtensionPayload
+	// Transaction retains the owner's execution requirement for this complete
+	// operation. The zero value is unknown. Rendering SQL does not satisfy it.
+	Transaction plangraph.Transaction
 }
 
 // Accept hands the extension boundary to the visitor.
@@ -39,6 +43,9 @@ func (n *ExtensionStatement) Accept(visitor Visitor) error { return visitor.Visi
 // target support and then reports that the real ALTER TABLE parent is required.
 type ExtensionAlterOperation struct {
 	Payload ExtensionPayload
+	// Transaction retains the owner's execution requirement for this complete
+	// operation. The zero value is unknown. Rendering SQL does not satisfy it.
+	Transaction plangraph.Transaction
 }
 
 // Accept hands the extension boundary to the visitor.
@@ -115,24 +122,46 @@ func PlacementOf(node Node) ExtensionPlacement {
 // reads, so the two cannot disagree about what a node carries.
 func OwnerOperations(node Node) []ExtensionPayload {
 	owned, _ := ownerParts(node)
-	return owned
+	var result []ExtensionPayload
+	for _, operation := range owned {
+		result = append(result, operation.payload)
+	}
+	return result
+}
+
+// OwnerTransactions returns the execution requirement of every owner operation
+// in node, in the same order as OwnerOperations. A nil envelope contributes an
+// unknown requirement. The returned slice is independent. Empty means no owner
+// operations, not permission to run common statements without a transaction.
+func OwnerTransactions(node Node) []plangraph.Transaction {
+	owned, _ := ownerParts(node)
+	result := make([]plangraph.Transaction, len(owned))
+	for i, operation := range owned {
+		result[i] = operation.transaction
+	}
+	return result
+}
+
+type ownerOperation struct {
+	payload     ExtensionPayload
+	transaction plangraph.Transaction
 }
 
 // ownerParts walks the node shapes that can carry owner operations and
 // returns their payloads and the number of other operations and statements
 // beside them.
-func ownerParts(node Node) (owned []ExtensionPayload, other int) {
+func ownerParts(node Node) (owned []ownerOperation, other int) {
 	switch typed := node.(type) {
 	case *ExtensionStatement:
 		if typed == nil {
-			return []ExtensionPayload{nil}, 0
+			return []ownerOperation{{}}, 0
 		}
-		return []ExtensionPayload{typed.Payload}, 0
+		return []ownerOperation{{payload: typed.Payload, transaction: typed.Transaction}}, 0
 	case *ExtensionAlterOperation:
 		if typed == nil {
-			return []ExtensionPayload{nil}, 0
+			return []ownerOperation{{}}, 0
 		}
-		return []ExtensionPayload{typed.Payload}, 0
+		return []ownerOperation{{payload: typed.Payload, transaction: typed.Transaction}}, 0
 	case *AlterTableNode:
 		if typed == nil {
 			return nil, 0
@@ -144,10 +173,10 @@ func ownerParts(node Node) (owned []ExtensionPayload, other int) {
 				continue
 			}
 			if extension == nil {
-				owned = append(owned, nil)
+				owned = append(owned, ownerOperation{})
 				continue
 			}
-			owned = append(owned, extension.Payload)
+			owned = append(owned, ownerOperation{payload: extension.Payload, transaction: extension.Transaction})
 		}
 		return owned, other
 	case *StatementList:

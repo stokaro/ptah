@@ -61,7 +61,7 @@ func Plan(ctx context.Context, runtime featureplan.Runtime, request featureplan.
 	for i, feature := range result.Contributions {
 		contribution := plangraph.Contribution[[]ast.Node]{Owner: feature.Owner, Dependencies: slices.Clone(feature.Dependencies)}
 		for _, step := range feature.Steps {
-			nodes, err := featureops.Nodes(step.Payload, names)
+			nodes, err := featureops.Nodes(step.Payload, names, step.Transaction)
 			if err != nil {
 				return Result{}, err
 			}

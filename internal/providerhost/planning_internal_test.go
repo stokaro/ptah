@@ -4,6 +4,8 @@ package providerhost
 // private adapter state, not observable in the public planning result.
 
 import (
+	"context"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -12,15 +14,19 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/engine"
 )
 
 func planningFixture(c *qt.C) (modelPlanner, *resolvedModel) {
@@ -365,4 +371,80 @@ func TestPlanningReplyBindsOperationsAndGraphMetadata(t *testing.T) {
 	reply.Contributions[0].Steps[0].Operation.Value.Value.Payload[0] = 'x'
 	c.Assert(step.Payload.Notes, qt.DeepEquals, []string{"Owner requires this order"})
 	c.Assert(string(step.Payload.Payload.(*resolvedOperation).model.wire.Payload), qt.Equals, "{}")
+}
+
+// commonPlanRecorder observes the production host request without a process.
+// Transport behavior is covered by integration/providercli.
+type commonPlanRecorder struct {
+	*engine.Runtime
+	request featureplan.Request
+}
+
+func (r *commonPlanRecorder) PlanFeatures(_ context.Context, request featureplan.Request) (featureplan.Result, error) {
+	r.request = request
+	return featureplan.Result{Complete: true}, nil
+}
+
+func TestCommonPlanRetainsUnchangedContextAndExactColumnOperand(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.Semantics{DefaultSchema: "main", TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceTable}
+	builder := objectidentity.NewBuilder(semantics)
+	parent := builder.TableParts("main", "Orders.Log")
+	unchanged := schemapreparation.Table{Subject: builder.TableParts("main", "unchanged"),
+		Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "unchanged", Schema: "main"}, Fields: []schemamodel.Field{{Name: "kept", Type: "INTEGER"}}},
+		Current: schemacapture.TableObservation{Table: catalog.Table{Name: "unchanged", Schema: "main", Comment: "captured"}},
+	}
+	modified := difftypes.TableDiff{TableName: `main."Orders.Log"`,
+		Desired:      schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "Orders.Log", Schema: "main"}, Fields: []schemamodel.Field{{Name: "added", Type: "INTEGER"}}},
+		Current:      schemacapture.TableObservation{Table: catalog.Table{Name: "Orders.Log", Schema: "main", Columns: []catalog.Column{{Name: "removed", DataType: "TEXT", ColumnDefault: new("captured")}}}},
+		ColumnsAdded: difftypes.ColumnChanges{{Name: "added", Type: "TEXT"}}, ColumnsRemoved: difftypes.ColumnChanges{{Name: "removed", Type: "TEXT"}},
+	}
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &semantics, CurrentDatabasePath: "/captured", TablesModified: []difftypes.TableDiff{modified},
+		TablePreparation: &schemapreparation.Capture{Prepared: []schemapreparation.Table{unchanged}}}
+	base, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	runtime := &commonPlanRecorder{Runtime: base}
+	capabilities := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: false})
+	nodes, err := (commonPlanner{target: "fixture", options: planext.Options{Capabilities: capabilities}, assessParents: true}).GenerateMigrationAST(c.Context(), runtime, diff)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	c.Assert(runtime.request.DatabasePath, qt.Equals, "/captured")
+	c.Assert(runtime.request.Capabilities, qt.DeepEquals, capabilities)
+	c.Assert(runtime.request.Tables, qt.HasLen, 2)
+	c.Assert(runtime.request.Tables[0].Action, qt.Equals, featureplan.ParentAction(""))
+	c.Assert(runtime.request.Tables[0].Current.Table.Comment, qt.Equals, "captured")
+	c.Assert(runtime.request.Tables[1].Action, qt.Equals, featureplan.AlterTable)
+	c.Assert(runtime.request.Tables[1].Subject, qt.DeepEquals, parent)
+	c.Assert(runtime.request.Tables[1].Desired.Fields[0].Type, qt.Equals, "INTEGER")
+	index := slices.IndexFunc(runtime.request.CommonSteps, func(step featureplan.CommonStep) bool { return step.AddedColumn != nil })
+	c.Assert(index, qt.Not(qt.Equals), -1)
+	operand := runtime.request.CommonSteps[index].AddedColumn
+	c.Assert(operand.Type, qt.Equals, "TEXT")
+	c.Assert(operand.Name, qt.Equals, "added")
+	c.Assert(nodes[0].(*ast.AlterTableNode).Operations[0], qt.Satisfies, func(op ast.AlterOperation) bool { _, ok := op.(*ast.AddColumnOperation); return ok })
+	c.Assert(nodes[1].(*ast.AlterTableNode).Operations[0], qt.Satisfies, func(op ast.AlterOperation) bool { _, ok := op.(*ast.DropColumnOperation); return ok })
+	runtime.request.Tables[0].Desired.Fields[0].Type = "changed"
+	c.Assert(diff.TablePreparation.Prepared[0].Desired.Fields[0].Type, qt.Equals, "INTEGER")
+}
+
+func TestCommonPlanningContextRefusesAmbiguousParents(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		names []string
+	}{
+		{"duplicate parent", []string{"same", "same"}},
+		{"name disagrees", []string{"other"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+			for _, name := range test.names {
+				diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreation{Name: name, Table: schemamodel.Table{Name: "same"}})
+			}
+			request, names, err := (commonPlanner{target: "fixture"}).planningContext(diff)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(request, qt.DeepEquals, featureplan.Request{})
+			c.Assert(names, qt.IsNil)
+		})
+	}
 }

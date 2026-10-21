@@ -12,17 +12,22 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/engine"
 	"ptah.run/internal/planner/featurehost"
+	"ptah.run/migration/planner"
 )
 
 const planningChangeModel = schemaext.Kind("example.org/fixture/table-change")
@@ -144,7 +149,7 @@ func TestProviderPlanningConflictingCommonEffectsDiscardGraph(t *testing.T) {
 	_, runtime := yamlProviderCommand(c, "operation-models")
 	request := providerPlanningRequest(c, runtime)
 	common := &ast.CreateTableNode{Name: "planned", Columns: []*ast.ColumnNode{{Name: "id", Type: "INTEGER"}}}
-	effects := [][]plangraph.Effect{{{Subject: request.Changes[0].Subject, Action: plangraph.Create}}}
+	effects := []featureplan.CommonStep{{Effects: []plangraph.Effect{{Subject: request.Changes[0].Subject, Action: plangraph.Create}}}}
 	graph, err := featurehost.NewGraph("ptah.run/common", []ast.Node{common}, effects, featurehost.Windows{Creation: 1, Dependent: 1, Removal: 1})
 	c.Assert(err, qt.IsNil)
 	request.CommonSteps = graph.CommonSteps()
@@ -153,4 +158,112 @@ func TestProviderPlanningConflictingCommonEffectsDiscardGraph(t *testing.T) {
 	nodes, err := graph.Schedule(c.Context(), features)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(nodes, qt.IsNil)
+}
+
+func commonPlanningDiff(request featureplan.Request, name string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{IdentifierSemantics: &request.Identifiers, FeatureChanges: request.Changes,
+		TablesAdded: difftypes.TableChanges{{Name: name, Table: schemamodel.Table{Name: name},
+			Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", Primary: true}}}},
+	}
+}
+
+func TestProviderCommonPlannerDispatchesAndExecutesCompleteGraph(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "operation-models")
+	connection := observedConnection(c, host, "seed")
+	request := providerPlanningRequest(c, runtime)
+	diff := commonPlanningDiff(request, "common")
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	c.Assert(ast.OwnerTransactions(nodes[1]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
+	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.IsTrue)
+	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
+	// Execution is explicit here. This checks the production planner and its
+	// transaction classification, without claiming migration history support.
+	for _, sql := range rendered.Fragments {
+		c.Assert(connection.Writer().ExecuteSQL(c.Context(), sql), qt.IsNil)
+	}
+	observed, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(slices.ContainsFunc(observed.Tables, func(table catalog.Table) bool { return table.Name == "common" }), qt.IsTrue)
+	c.Assert(slices.ContainsFunc(observed.Tables, func(table catalog.Table) bool { return table.Name == "planned" }), qt.IsTrue)
+}
+
+func TestProviderCommonPlannerCapturesUnchangedParents(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "operation-models")
+	request := providerPlanningRequest(c, runtime)
+	subject := request.Changes[0].Subject
+	request.Changes[0].Value = planningChange(c, runtime, "planned", `{"action":"rename","to":"renamed"}`)
+	diff := &difftypes.SchemaDiff{IdentifierSemantics: &request.Identifiers, FeatureChanges: request.Changes,
+		TablePreparation: &schemapreparation.Capture{Prepared: []schemapreparation.Table{{Subject: subject,
+			Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "planned", Schema: "main"}},
+			Current: schemacapture.TableObservation{Table: catalog.Table{Name: "planned", Schema: "main"}},
+		}}},
+	}
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
+	c.Assert(err, qt.IsNil)
+	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`ALTER TABLE "planned" RENAME TO "renamed";`})
+	diff.TablePreparation = nil
+	nodes, err = planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(nodes, qt.IsNil)
+}
+
+func TestProviderCommonPlannerRefusesBeforeReturningCommonPrefix(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "operation-models")
+	request := providerPlanningRequest(c, runtime)
+	required := planningChange(c, runtime, "planned", `{"action":"create","transaction":"required"}`)
+	for _, test := range []struct {
+		name    string
+		common  string
+		value   schemaext.ChangeValue
+		caps    capability.Capabilities
+		message string
+		kind    error
+	}{
+		{"transaction required", "common", required, request.Capabilities, ".*requires a transaction.*", ptaherr.ErrUnsupportedFeature},
+		{"unknown capabilities", "common", request.Changes[0].Value, capability.Capabilities{}, ".*explicit nontransactional DDL.*", ptaherr.ErrUnsupportedFeature},
+		{"common collision", "planned", request.Changes[0].Value, request.Capabilities, ".*", ptaherr.ErrInvalidSchemaDiff},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := commonPlanningDiff(request, test.common)
+			diff.FeatureChanges = slices.Clone(diff.FeatureChanges)
+			diff.FeatureChanges[0].Value = test.value
+			nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: test.caps})
+			c.Assert(err, qt.ErrorMatches, test.message)
+			c.Assert(err, qt.ErrorIs, test.kind)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+func TestProviderPlanningAccountsForUnchangedParentModels(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "operation-models")
+	request := providerPlanningRequest(c, runtime)
+	request.Changes = nil
+	subject := objectidentity.NewBuilder(request.Identifiers).TableParts("main", "common")
+	request.Tables = []featureplan.Table{{Subject: subject, Action: featureplan.CreateTable,
+		Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "common", Schema: "main"}}}}
+	result, err := runtime.PlanFeatures(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	c.Assert(result.Contributions, qt.HasLen, 0)
+	c.Assert(result.Parents, qt.HasLen, 1)
+	c.Assert(result.Parents[0].Subject, qt.DeepEquals, subject)
+	c.Assert(result.Parents[0].Kind, qt.Equals, schemaext.Kind("example.org/fixture/retention"))
+	c.Assert(result.Parents[0].Action, qt.Equals, featureplan.CreateTable)
+	request.Capabilities = capability.Capabilities{}
+	refused, err := runtime.PlanFeatures(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(refused.Err(request), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(refused.Parents, qt.HasLen, 0)
 }
