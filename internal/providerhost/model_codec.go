@@ -22,10 +22,11 @@ type modelKey struct {
 }
 
 type modelContract struct {
-	key        modelKey
-	engines    map[string]*protocol.ValueModel
-	definition json.RawMessage
-	signature  string
+	displayName string
+	key         modelKey
+	engines     map[string]*protocol.ValueModel
+	definition  json.RawMessage
+	signature   string
 }
 
 // resolvedModel contains only values validated by an explicit owner batch. It
@@ -61,8 +62,11 @@ func (h *Host) initializeModels() error {
 			}
 			contract := h.models[key]
 			if contract == nil {
-				contract = &modelContract{key: key, engines: make(map[string]*protocol.ValueModel)}
+				contract = &modelContract{key: key, displayName: model.GetDisplayName(), engines: make(map[string]*protocol.ValueModel)}
 				h.models[key] = contract
+			}
+			if contract.displayName != model.GetDisplayName() {
+				return fmt.Errorf("%w: model display name differs across engines", provider.ErrProtocol)
 			}
 			contract.engines[engine.GetId()] = model
 		}

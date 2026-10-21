@@ -21,6 +21,15 @@ func TestModelDefinitionsAreNegotiatedExactly(t *testing.T) {
 		{"noncanonical definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(` {"type":"object"} `) }},
 		{"duplicate definition key", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"object","type":"object"}`) }},
 		{"different definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"string"}`) }},
+		{"multiline label", func(m *protocol.ValueModel) { m.DisplayName = "retention\nvalues" }},
+		{"padded label", func(m *protocol.ValueModel) { m.DisplayName = " retention values" }},
+		{"Unicode line separator", func(m *protocol.ValueModel) { m.DisplayName = "retention\u2028values" }},
+		{"invalid UTF-8 label", func(m *protocol.ValueModel) { m.DisplayName = string([]byte{0xff}) }},
+		{"operation label", func(m *protocol.ValueModel) {
+			m.Representation = protocol.ValueInput_OPERATION
+			m.SourceFormats = nil
+			m.DisplayName = "operations"
+		}},
 		{"missing kind", func(m *protocol.ValueModel) { m.Kind = "" }},
 		{"missing version", func(m *protocol.ValueModel) { m.SchemaVersion = 0 }},
 		{"missing encoding", func(m *protocol.ValueModel) { m.Encoding = "" }},
@@ -61,4 +70,15 @@ func TestModelDefinitionsAreNegotiatedExactly(t *testing.T) {
 	result = normalizedValues(r)
 	result.Values[0].Value.DefinitionSha256 = strings.Repeat("b", 64)
 	c.Assert(provider.ValidateNormalizedValues(d, r, result), qt.ErrorIs, provider.ErrProtocol)
+}
+
+func TestModelDisplayNameIsOptionalOwnerMetadata(t *testing.T) {
+	for _, label := range []string{"", "retention values", "保存期間"} {
+		t.Run(label, func(t *testing.T) {
+			c := qt.New(t)
+			description, _ := valueInputs()
+			description.Engines[0].ValueModels[0].DisplayName = label
+			c.Assert(provider.ValidateDescription(description, nil), qt.IsNil)
+		})
+	}
 }

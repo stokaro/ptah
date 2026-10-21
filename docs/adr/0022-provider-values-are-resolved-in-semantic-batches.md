@@ -280,11 +280,11 @@ Inspection returns an explicit engine, target features, and observed coverage,
 even when the database has no common tables or native objects. The SDK checks
 model definitions, source identities, and complete subject coverage before
 exposing a normalization batch. Column facets identify their parent table as a
-separate path component. Schema-filtered native coverage is refused until the
-owner binds request selectors to namespace limits. The native `schema inspect` path
-passes explicit schema names, so it refuses these model-bearing snapshots.
-An end-to-end test pins the empty output and error until scoped capture is
-implemented; catalog-reader support is not CLI inspection qualification.
+separate path component. Filtered inspection binds each requested selector to
+owner-defined namespaces in request order. Bindings interpret the selection;
+they establish no knowledge. Tables and coverage subjects must stay inside them,
+and each coverage region must fit wholly inside one bound namespace. A filtered
+reply cannot claim global completeness. An empty binding means an empty selection.
 
 The host matches the returned target and features to the opened session, then
 normalizes all native objects and common table and column facets in one call.
@@ -309,16 +309,29 @@ complete enrolled document scope.
 The host accepts native regions only when their database component preserves
 the exact nonempty session database. It adds the selected engine to each region
 and retains all remaining qualifiers and path components. Global completeness
-still becomes uninspected. Common table and column identities omit the database,
-so they cannot acquire completeness from these native regions; explicit subject
-records retain their facts. Unbound, foreign, or renamed database scopes cause
-refusal of the whole catalog.
+still becomes uninspected. Native regions select only the model's native subject
+kind. Common table and column regions omit the database and catalog, retain the
+session default schema, and require an exact empty namespace path. A column's
+wire path moves into its parent field. Subject-kind limits prevent either
+coordinate space from claiming knowledge in the other. Unknown parent regions
+survive this mapping. Unbound, foreign, or renamed database scopes and common
+normalization mismatches cause refusal of the whole catalog.
 
-Binding request selectors and common identities remains required for native CLI
-inspection, comparison, and planning in #4204. The synthetic observed-model
-fixture proves transport, bounded native capture, codecs, and local coverage
-after process shutdown. It does not implement SQLite retention or qualify an
-official engine.
+Every inspected table supplies a normalized identity, including tables without
+facets. The host checks it against the negotiated common identifier semantics.
+Filtered dispositions remain refused because they lack a normalized identity.
+The synthetic fixture proves filtered native CLI inspection and bounded common
+and native capture. It does not implement SQLite retention or qualify an engine.
+
+Desired and observed models may supply a static plural display name. The name
+must agree across engines that share that model representation and participates
+in frozen contract and model digests. The local reporting adapter validates
+captured values and supplies omission metadata without payload metrics or an RPC.
+Missing labels remain missing reporting support; the host invents no substitute.
+
+Native JSON inspection uses the common schema format. It warns about omitted
+native objects and facets with owner labels. The shared conversion and codecs
+retain their payloads separately. JSON output does not qualify lossless export.
 
 ## Semantic representation conversion
 
@@ -339,13 +352,12 @@ the batch even when a service returns a result afterward.
 The host registers paired model kinds under the selected engine's conversion
 service. The shared schema pipeline retains object and facet placement and
 converts coverage definitions without widening their knowledge. No conversion
-response supplies new coverage. This completes a prerequisite for export;
-request selector binding remains required before native CLI inspection accepts
-model-bearing snapshots.
+response supplies new coverage. Filtered inspection supplies selector bindings
+before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 9 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 10 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -361,7 +373,8 @@ extracted engines, not only the fixture, to pass that evidence.
 
 A kind claim carries an immutable domain with an outside claim and explicit
 namespace regions. Regions retain structured database, catalog, schema, and path
-components, plus target names. Nil qualifiers are unrestricted; present empty
+components, plus target names, subject kinds, and parent components. A scope can
+require its path to match exactly instead of accepting descendants. Nil qualifiers are unrestricted; present empty
 qualifiers match only empty identity components. Matching uses normalized parts,
 and capture preserves their source spelling.
 
@@ -378,5 +391,5 @@ reader. This changes behavior; pre-v1, so compatibility with older Ptah is not
 owed. Common table binding refuses bounded domains until owner binding can
 transform their namespace limits with the subjects. Rebinding only explicit
 subjects could move a table outside an unknown region and authorize a drop.
-Owner binding of request selectors and common identities, plus native CLI
-export, remain required work in #4204.
+Inspection maps owner-bound namespaces at capture. Later common table rebinding,
+contextual comparison, planning, and faithful source export remain work in #4204.

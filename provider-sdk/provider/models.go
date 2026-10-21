@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/stokaro/ptah/provider-sdk/modeljson"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -26,6 +28,9 @@ func validateValueModels(models []*protocol.ValueModel) error {
 		case protocol.ValueInput_DESIRED, protocol.ValueInput_OBSERVED, protocol.ValueInput_OPERATION, protocol.ValueInput_CHANGE:
 		default:
 			return fmt.Errorf("%w: unknown model representation", ErrProtocol)
+		}
+		if err := validateModelDisplayName(model); err != nil {
+			return err
 		}
 		if err := validateModelSourceFormats(model); err != nil {
 			return err
@@ -92,6 +97,20 @@ func validateModelDefinition(model *protocol.ValueModel) error {
 	digest := sha256.Sum256(canonical)
 	if hex.EncodeToString(digest[:]) != model.GetDefinitionSha256() {
 		return fmt.Errorf("%w: model definition digest differs from its content", ErrProtocol)
+	}
+	return nil
+}
+
+func validateModelDisplayName(model *protocol.ValueModel) error {
+	label := model.GetDisplayName()
+	if label == "" {
+		return nil
+	}
+	if (model.GetRepresentation() != protocol.ValueInput_DESIRED && model.GetRepresentation() != protocol.ValueInput_OBSERVED) ||
+		!utf8.ValidString(label) || strings.TrimSpace(label) != label || strings.ContainsFunc(label, func(r rune) bool {
+		return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
+	}) {
+		return fmt.Errorf("%w: model display name requires a single-line desired or observed label", ErrProtocol)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ func (r reader) observedCoverage(source *protocol.ModelCoverage) (schemaext.Cove
 		if knowledge.State == schemaext.Complete {
 			knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "inspection covers one session, not the global model namespace"}
 		}
-		domain, err := r.observedNamespaceKnowledge(knowledge, record.GetRegions())
+		domain, err := r.observedNamespaceKnowledge(kind, knowledge, record.GetRegions())
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
@@ -62,17 +62,15 @@ func observedKnowledge(value *protocol.ModelKnowledge) (schemaext.Knowledge, err
 	return schemaext.Knowledge{State: state, Reason: value.GetReason()}, nil
 }
 
-// Native namespace claims retain their database qualification. Common table and
-// column identities omit it, so these regions cannot grant them completeness.
-// Their explicit subject records remain available until owner binding can map
-// namespace boundaries and subjects together.
-func (r reader) observedNamespaceKnowledge(outside schemaext.Knowledge, regions []*protocol.ModelNamespaceKnowledge) (schemaext.KnowledgeDomain, error) {
-	claims := make([]schemaext.NamespaceKnowledge, 0, len(regions))
+// Native objects retain wire namespace coordinates. Common tables and columns
+// use disjoint subject-kind scopes with the session database removed and the
+// column's final path component moved into Parent, as observedIdentity does.
+func (r reader) observedNamespaceKnowledge(kind schemaext.Kind, outside schemaext.Knowledge, regions []*protocol.ModelNamespaceKnowledge) (schemaext.KnowledgeDomain, error) {
+	var claims []schemaext.NamespaceKnowledge
 	for _, region := range regions {
 		scope := region.GetScope()
-		database := scope.GetDatabase()
-		if database == nil || database.GetSource() == "" || database.GetSource() != r.session.remote.GetDatabase() || database.GetNormalized() != database.GetSource() {
-			return schemaext.KnowledgeDomain{}, unsupported("observed namespace coverage outside the exact session database")
+		if err := r.validateInspectionNamespace(scope); err != nil {
+			return schemaext.KnowledgeDomain{}, err
 		}
 		knowledge, err := observedKnowledge(region.GetKnowledge())
 		if err != nil {
@@ -80,14 +78,56 @@ func (r reader) observedNamespaceKnowledge(outside schemaext.Knowledge, regions 
 		}
 		path := make([]objectidentity.Part, len(scope.GetPathPrefix()))
 		for i, component := range scope.GetPathPrefix() {
-			path[i] = objectidentity.Part{Source: component.GetSource(), Normalized: component.GetNormalized()}
+			path[i] = *namespacePart(component)
 		}
 		claims = append(claims, schemaext.NamespaceKnowledge{Scope: schemaext.NamespaceScope{
-			Targets: []string{r.session.remote.GetEngine()}, Database: namespacePart(database),
-			Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...),
+			SubjectKinds: []objectidentity.Kind{objectidentity.Kind(kind)}, Targets: []string{r.session.remote.GetEngine()},
+			Database: namespacePart(scope.GetDatabase()), Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...),
 		}, Knowledge: knowledge})
+		common, err := r.commonNamespaceScopes(scope)
+		if err != nil {
+			return schemaext.KnowledgeDomain{}, err
+		}
+		for _, bound := range common {
+			claims = append(claims, schemaext.NamespaceKnowledge{Scope: bound, Knowledge: knowledge})
+		}
 	}
 	return schemaext.NewScopedKnowledge(outside, claims...)
+}
+
+func (r reader) validateInspectionNamespace(scope *protocol.ModelNamespace) error {
+	database := scope.GetDatabase()
+	if database == nil || database.GetSource() == "" || database.GetSource() != r.session.remote.GetDatabase() || database.GetNormalized() != database.GetSource() {
+		return unsupported("observed namespace coverage outside the exact session database")
+	}
+	return nil
+}
+
+func (r reader) commonNamespaceScopes(scope *protocol.ModelNamespace) ([]schemaext.NamespaceScope, error) {
+	// These wire regions contain no common identities, whose catalog is empty
+	// and whose only path component, on columns, is their owning table.
+	if scope.GetCatalog().GetNormalized() != "" || len(scope.GetPathPrefix()) > 1 {
+		return nil, nil
+	}
+	semantics := r.session.info.IdentifierSemantics
+	common := schemaext.NamespaceScope{PathExact: true, Targets: []string{r.session.remote.GetEngine()}, Database: &objectidentity.Part{}, Catalog: &objectidentity.Part{}}
+	if schema := scope.GetSchema(); schema != nil {
+		if schema.GetNormalized() != semantics.TableIdentityKey(schema.GetSource()) {
+			return nil, unsupported("common namespace schema normalization")
+		}
+		resolved := objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema.GetSource(), "").Schema
+		common.Schema = &resolved
+	}
+	if path := scope.GetPathPrefix(); len(path) == 1 {
+		if path[0].GetNormalized() != semantics.TableIdentityKey(path[0].GetSource()) {
+			return nil, unsupported("common namespace parent normalization")
+		}
+		common.Parent = namespacePart(path[0])
+		common.SubjectKinds = []objectidentity.Kind{objectidentity.KindColumn}
+		return []schemaext.NamespaceScope{common}, nil
+	}
+	common.SubjectKinds = []objectidentity.Kind{objectidentity.KindTable, objectidentity.KindColumn}
+	return []schemaext.NamespaceScope{common}, nil
 }
 
 func namespacePart(component *protocol.NamespaceComponent) *objectidentity.Part {

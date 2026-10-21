@@ -131,11 +131,15 @@ message Schema {
   // Binds empty snapshots and owner values to the inspected session's target.
   string engine = 6;
   repeated string target_features = 7;
+  // Ordered owner interpretations of the exact requested schema selectors.
+  repeated InspectionScopeBinding scope_bindings = 8;
 }
 message Table {
   Reference identity = 1;
   repeated Column columns = 2;
   repeated Envelope facets = 3;
+  // Required in inspection replies, including tables with no model facets.
+  Reference normalized_identity = 4;
 }
 message Column {
   string name = 1;
@@ -417,6 +421,9 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
+  // Optional plural label for omission reports. This declares no count metrics.
+  // Only desired and observed models may supply a trimmed, single-line label.
+  string display_name = 9;
 }
 message ModelKnowledge {
   enum State {
@@ -514,4 +521,11 @@ message ConvertValuesRequest {
   ValueInput.Representation from = 3;
   ValueInput.Representation to = 4;
   repeated NormalizedValue values = 5;
+}
+
+// One selector may name several engine-defined namespaces. Empty namespaces
+// explicitly resolve the selector to no objects. Bindings grant no coverage.
+message InspectionScopeBinding {
+  string selector = 1;
+  repeated ModelNamespace namespaces = 2;
 }

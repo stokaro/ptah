@@ -90,6 +90,9 @@ func (p *observedProvider) Inspect(ctx context.Context, request *protocol.Inspec
 		unknown.Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "nested namespace was not inspected"}
 		snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{complete, unknown}
 	}
+
+	bindInspectionScope(request, snapshot)
+
 	switch table.Identity.Name {
 	case "scoped-foreign-database":
 		snapshot.Coverage.Kinds[0].Regions[0].Scope.Database = &protocol.NamespaceComponent{Source: "foreign", Normalized: "foreign"}
@@ -139,9 +142,10 @@ func normalizedOwner(ref *protocol.Reference) *protocol.Reference {
 	result := proto.CloneOf(ref)
 	result.Name = strings.ToLower(result.Name)
 	if result.Kind == "table" || result.Kind == "column" {
-		result.Schema = strings.ToLower(result.Schema)
+		result.Name = backend.NormalizeCommonIdentifier(ref.Name)
+		result.Schema = backend.NormalizeCommonIdentifier(result.Schema)
 		for i, part := range result.Path {
-			result.Path[i] = strings.ToLower(part)
+			result.Path[i] = backend.NormalizeCommonIdentifier(part)
 		}
 	}
 	for i, part := range result.Overload {
@@ -155,4 +159,44 @@ func normalizedOwner(ref *protocol.Reference) *protocol.Reference {
 
 func (p *observedProvider) ConvertValues(ctx context.Context, request *protocol.ConvertValuesRequest) (*protocol.NormalizedValues, error) {
 	return backend.ConvertValues(ctx, request, p)
+}
+
+func bindInspectionScope(request *protocol.InspectRequest, snapshot *protocol.Schema) {
+	table := snapshot.Tables[0]
+	if len(request.GetSchemas()) > 0 {
+		native := &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: table.Identity.Database, Normalized: table.Identity.Database},
+			Catalog:    &protocol.NamespaceComponent{Source: "catalog", Normalized: "catalog"},
+			Schema:     &protocol.NamespaceComponent{Source: "private", Normalized: "private"},
+			PathPrefix: []*protocol.NamespaceComponent{{Source: "a/b", Normalized: "a/b"}, {Source: "c", Normalized: "c"}}}
+		for _, binding := range snapshot.ScopeBindings {
+			binding.Namespaces = append(binding.Namespaces, proto.CloneOf(native))
+		}
+		if len(snapshot.Coverage.Kinds[0].Regions) == 0 {
+			snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{{Scope: native, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}
+		}
+		snapshot.Coverage.Kinds[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "outside requested namespaces"}
+		snapshot.Coverage.Kinds[0].Regions = append(snapshot.Coverage.Kinds[0].Regions, &protocol.ModelNamespaceKnowledge{Scope: proto.CloneOf(snapshot.ScopeBindings[0].Namespaces[0]),
+			Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
+		switch table.Identity.Name {
+		case "scope-missing":
+			snapshot.ScopeBindings = nil
+		case "scope-renamed":
+			snapshot.ScopeBindings[0].Selector = "other"
+		case "scope-widened":
+			snapshot.Coverage.Kinds[0].Regions[0].Scope.PathPrefix = nil
+		case "scope-outside":
+			snapshot.Coverage.Subjects[0].NormalizedSubject.Schema = "outside"
+		case "scope-table-outside":
+			snapshot.Tables[0].NormalizedIdentity.Schema = "outside"
+		case "scope-foreign-database":
+			snapshot.ScopeBindings[0].Namespaces[0].Database = &protocol.NamespaceComponent{Source: "other", Normalized: "other"}
+		case "scope-parent-unknown":
+			snapshot.Coverage.Kinds[0].Regions = append(snapshot.Coverage.Kinds[0].Regions, &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{
+				Database:   &protocol.NamespaceComponent{Source: table.Identity.Database, Normalized: table.Identity.Database},
+				Catalog:    &protocol.NamespaceComponent{},
+				Schema:     &protocol.NamespaceComponent{},
+				PathPrefix: []*protocol.NamespaceComponent{{Source: "Missing.Parent", Normalized: "missing.parent"}}},
+				Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "uninspected parent"}})
+		}
+	}
 }

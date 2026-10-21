@@ -197,12 +197,12 @@ pipeline retains bounded knowledge, object identities, and facet placement;
 unknown namespaces remain unknown. Clone, encoding, and equality remain local.
 
 This service does not resolve schema selectors or implement contextual
-comparison and planning. Native CLI inspection of model-bearing snapshots still
-requires owner scope binding.
+comparison and planning. Inspection binds selectors separately through the
+owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 9 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 10 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -294,13 +294,31 @@ records take precedence. Duplicate normalized regions, invalid components, and
 namespace-wide absence or defaults are refused. A model can carry at most
 4,096 regions.
 
-The host preserves native regions qualified by the exact session database and
-adds the selected engine boundary. It refuses unbound, foreign, or renamed
-database scopes. Such regions grant no completeness to common table or column
-identities, which omit the database component. Full-document source decoding
-still requires unrestricted complete model knowledge and refuses regions.
+The host requires the exact session database on bindings and coverage regions.
+It retains native coordinates and maps common table and column regions to shared
+identities. Subject-kind limits and exact empty paths keep these coordinate
+spaces separate. A column path becomes its parent table; unknown parent regions
+remain unknown after this mapping. Unbound, foreign, or renamed databases and
+inconsistent common identifier normalization cause refusal.
 
-Schema-filtered native inspection remains refused until the owner can bind
-request selectors, namespace boundaries, and common identities together.
-Observed-to-desired export and native migration planning also remain work in
-#4204. These limits apply even when a provider supplies namespace regions.
+A filtered inspection returns one `scope_bindings` entry per requested selector,
+in request order. Each entry maps that selector to structured owner namespaces.
+An empty namespace list means an empty selection, not global authority. Bindings
+never grant coverage. Every returned table has a `normalized_identity`, even
+without facets. Tables, coverage subjects, and whole coverage regions must fit
+inside the bound namespaces. Filtered replies cannot claim global completeness
+or include dispositions without normalized identities. Requests and bindings
+are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+
+Desired and observed models may declare a plural `display_name` for omission
+reports. It must be trimmed single-line text and agree across engines that share
+a model representation. The host freezes this label in the contract and reports
+captured values locally, without interpreting payloads or declaring count metrics.
+An absent label does not get a host-invented substitute.
+
+Native `schema inspect --format json` returns common schema data and warns about
+omitted objects and facets using these labels. It is not a lossless model export.
+Shared conversion and codecs retain the captured payloads and bounded coverage.
+Full-document source decoding still requires unrestricted complete model
+knowledge and refuses regions. Contextual comparison, native migration planning,
+and faithful source export remain work in #4204.

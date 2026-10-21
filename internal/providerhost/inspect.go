@@ -33,6 +33,9 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if snapshot.GetEngine() != r.session.remote.GetEngine() || !slices.Equal(featureSet(snapshot.GetTargetFeatures()), featureSet(r.session.remote.GetFeatures())) {
 		return nil, fmt.Errorf("%w: inspection target differs from session", provider.ErrProtocol)
 	}
+	if err := r.validateInspectionBindings(snapshot.GetScopeBindings()); err != nil {
+		return nil, err
+	}
 	if len(snapshot.GetDispositions()) != 0 {
 		return nil, unsupported("inspection dispositions")
 	}
@@ -92,6 +95,9 @@ func (r reader) table(value *protocol.Table) (catalog.Table, error) {
 		(ref.GetDisplayName() != "" && ref.GetDisplayName() != ref.GetName()) {
 		return catalog.Table{}, unsupported("this table identity")
 	}
+	if _, err := r.observedIdentity(ref, value.GetNormalizedIdentity()); err != nil {
+		return catalog.Table{}, err
+	}
 	result := catalog.Table{Name: ref.GetName(), Schema: ref.GetSchema(), Type: "TABLE", RowStatsUnknown: true}
 	seen := make(map[string]bool)
 	for i, column := range value.GetColumns() {
@@ -114,4 +120,18 @@ func (r reader) table(value *protocol.Table) (catalog.Table, error) {
 		})
 	}
 	return result, nil
+}
+
+func (r reader) validateInspectionBindings(bindings []*protocol.InspectionScopeBinding) error {
+	for _, binding := range bindings {
+		for _, scope := range binding.GetNamespaces() {
+			if err := r.validateInspectionNamespace(scope); err != nil {
+				return err
+			}
+			if _, err := r.commonNamespaceScopes(scope); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

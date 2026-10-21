@@ -3,6 +3,7 @@ package schemaext
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"ptah.run/core/objectidentity"
@@ -13,6 +14,12 @@ import (
 // empty component. PathPrefix matches whole components, never string prefixes.
 // Targets follow TargetSelection, and empty Targets applies to every target.
 type NamespaceScope struct {
+	// PathExact requires PathPrefix to name the entire namespace path.
+	PathExact bool `json:"path_exact,omitempty"`
+	// SubjectKinds limits subject types; an empty list accepts any kind.
+	SubjectKinds []objectidentity.Kind `json:"subject_kinds,omitempty"`
+	// Parent limits the owning object; nil accepts any parent.
+	Parent     *objectidentity.Part `json:"parent,omitempty"`
 	Targets    []string             `json:"targets,omitempty"`
 	Database   *objectidentity.Part `json:"database,omitempty"`
 	Catalog    *objectidentity.Part `json:"catalog,omitempty"`
@@ -29,6 +36,10 @@ type NamespaceKnowledge struct {
 
 func (s NamespaceScope) clone() NamespaceScope {
 	s.Targets = slices.Clone(s.Targets)
+	s.SubjectKinds = slices.Clone(s.SubjectKinds)
+	if s.Parent != nil {
+		s.Parent = new(*s.Parent)
+	}
 	if s.Database != nil {
 		s.Database = new(*s.Database)
 	}
@@ -47,11 +58,15 @@ func (s NamespaceScope) normalized() (NamespaceScope, error) {
 	if err != nil {
 		return NamespaceScope{}, err
 	}
+
+	if err := s.normalizeSubjectKinds(); err != nil {
+		return NamespaceScope{}, err
+	}
 	s.Targets = targets
-	if len(s.Targets) == 0 && s.Database == nil && s.Catalog == nil && s.Schema == nil && s.PathPrefix.IsZero() {
+	if s.unbounded() {
 		return NamespaceScope{}, fmt.Errorf("%w: namespace scope has no boundary", ErrInvalidValue)
 	}
-	for _, part := range []*objectidentity.Part{s.Database, s.Catalog, s.Schema} {
+	for _, part := range []*objectidentity.Part{s.Database, s.Catalog, s.Schema, s.Parent} {
 		if part != nil && (!utf8.ValidString(part.Source) || !utf8.ValidString(part.Normalized) || (part.Source == "") != (part.Normalized == "")) {
 			return NamespaceScope{}, fmt.Errorf("%w: namespace qualifier lacks its source or normalized form", ErrInvalidValue)
 		}
@@ -65,11 +80,12 @@ func (s NamespaceScope) normalized() (NamespaceScope, error) {
 }
 
 func (s NamespaceScope) matches(subject objectidentity.ID) bool {
-	if !matchesQualifier(s.Database, subject.Database) || !matchesQualifier(s.Catalog, subject.Catalog) || !matchesQualifier(s.Schema, subject.Schema) {
+	if (len(s.SubjectKinds) > 0 && !slices.Contains(s.SubjectKinds, subject.Kind)) || !matchesQualifier(s.Parent, subject.Parent) ||
+		!matchesQualifier(s.Database, subject.Database) || !matchesQualifier(s.Catalog, subject.Catalog) || !matchesQualifier(s.Schema, subject.Schema) {
 		return false
 	}
 	prefix, path := s.PathPrefix.Values(), subject.Namespace.Values()
-	if len(prefix) > len(path) {
+	if len(prefix) > len(path) || (s.PathExact && len(prefix) != len(path)) {
 		return false
 	}
 	for i, part := range prefix {
@@ -82,4 +98,18 @@ func (s NamespaceScope) matches(subject objectidentity.ID) bool {
 
 func matchesQualifier(scope *objectidentity.Part, subject objectidentity.Part) bool {
 	return scope == nil || scope.Normalized == subject.Normalized
+}
+
+func (s NamespaceScope) normalizeSubjectKinds() error {
+	slices.Sort(s.SubjectKinds)
+	for i, kind := range s.SubjectKinds {
+		if strings.TrimSpace(string(kind)) == "" || !utf8.ValidString(string(kind)) || (i > 0 && s.SubjectKinds[i-1] == kind) {
+			return fmt.Errorf("%w: invalid or repeated namespace subject kind", ErrInvalidValue)
+		}
+	}
+	return nil
+}
+
+func (s NamespaceScope) unbounded() bool {
+	return len(s.Targets) == 0 && s.Database == nil && s.Catalog == nil && s.Schema == nil && s.PathPrefix.IsZero() && !s.PathExact && s.Parent == nil && len(s.SubjectKinds) == 0
 }

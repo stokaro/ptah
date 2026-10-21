@@ -81,6 +81,12 @@ func TestProviderInspectionCapturesObjectsAndFacets(t *testing.T) {
 	c.Assert(string(wire.Payload), qt.Equals, `{"seconds":9007199254740993}`)
 	c.Assert(connection.Close(), qt.IsNil)
 	host.Close()
+	values, err := restoredFacets.Values()
+	c.Assert(err, qt.IsNil)
+	report, err := runtime.ReportFeatures(c.Context(), schemaext.ReportingRequest{Representation: schemaext.Observed, Values: values})
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Definitions, qt.DeepEquals, []schemaext.ReportDefinition{{Kind: kind, DisplayName: "retention values"}})
+	c.Assert(report.Values, qt.DeepEquals, []schemaext.ValueReport{{Kind: kind}})
 	offline, err := runtime.Codecs().EncodeObjects(c.Context(), schemaext.Observed, restored)
 	c.Assert(err, qt.IsNil)
 	c.Assert(offline, qt.DeepEquals, objects)
@@ -101,10 +107,15 @@ func TestProviderInspectionRefusalDiscardsWholeCatalog(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
-	connection := observedConnection(c, host, "filtered")
-	db, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(db, qt.IsNil)
+	for _, name := range []string{"scope-missing", "scope-renamed", "scope-widened", "scope-outside", "scope-table-outside", "scope-foreign-database"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			connection := observedConnection(c, host, name)
+			db, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(db, qt.IsNil)
+		})
+	}
 }
 
 func TestProviderInspectionCancellationDiscardsWholeCatalog(t *testing.T) {
@@ -119,7 +130,7 @@ func TestProviderInspectionCancellationDiscardsWholeCatalog(t *testing.T) {
 	c.Assert(db, qt.IsNil)
 }
 
-func TestNativeCLIInspectRefusesUnrepresentableProviderScope(t *testing.T) {
+func TestNativeCLIInspectReportsProviderPayloadOmissions(t *testing.T) {
 	c := qt.New(t)
 	executable := independentCLIProviderCommand(c, "observed-models")
 	data, err := os.ReadFile(executable)
@@ -139,9 +150,12 @@ func TestNativeCLIInspectRefusesUnrepresentableProviderScope(t *testing.T) {
 	c.Assert(connection.Close(), qt.IsNil)
 	host.Close()
 	output, diagnostics, code := f.run(c, c.Context(), "inspect", "--format", "json")
-	c.Assert(code, qt.Equals, 2)
-	c.Assert(output, qt.Equals, "")
-	c.Assert(diagnostics, qt.Contains, "provider inspect failed")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(json.Valid([]byte(output)), qt.IsTrue)
+	c.Assert(output, qt.Contains, `"a.b"`)
+	c.Assert(output, qt.Not(qt.Contains), "9007199254740993")
+	c.Assert(diagnostics, qt.Contains, "retention values (3)")
+	c.Assert(strings.Count(diagnostics, "retention values (1)"), qt.Equals, 2)
 }
 
 func TestProviderInspectionRetainsNativeNamespaceAuthority(t *testing.T) {
@@ -197,4 +211,48 @@ func TestProviderInspectionRetainsNativeNamespaceAuthority(t *testing.T) {
 	c.Assert(connection.Close(), qt.IsNil)
 	host.Close()
 	c.Assert(restored.Lookup(kind, missing).State, qt.Equals, schemaext.Complete)
+}
+
+func TestFilteredInspectionMapsCommonAndNativeNamespaces(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "observed-models")
+	connection := observedConnection(c, host, "scope-parent-unknown")
+	db, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
+	c.Assert(err, qt.IsNil)
+	kind := schemaext.Kind("example.org/fixture/retention")
+	builder := objectidentity.NewBuilder(connection.Info().IdentifierSemantics)
+	missing := builder.TableParts("", "missing")
+	column := builder.ColumnParts("", "missing", "other")
+	unknown := builder.ColumnParts("", "Missing.Parent", "other")
+	c.Assert(db.FeatureCoverage.Lookup(kind, missing).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(kind, column).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(kind, unknown).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(kind, builder.TableParts("", "Missing.Parent")).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.Lookup(kind, builder.TableParts("other", "missing")).State, qt.Equals, schemaext.Uninspected)
+	foreign := missing
+	foreign.Namespace = objectidentity.NewParts(objectidentity.Part{Source: "extra", Normalized: "extra"})
+	c.Assert(db.FeatureCoverage.Lookup(kind, foreign).State, qt.Equals, schemaext.Uninspected)
+	foreign = missing
+	foreign.Kind = objectidentity.Kind(kind)
+	c.Assert(db.FeatureCoverage.Lookup(kind, foreign).State, qt.Equals, schemaext.Uninspected)
+	native := db.FeatureObjects.Refs()[0]
+	native.Name = objectidentity.Part{Source: "Missing", Normalized: "missing"}
+	c.Assert(db.FeatureCoverage.Lookup(kind, native).State, qt.Equals, schemaext.Complete)
+	document, err := runtime.Codecs().EncodeCoverage(c.Context(), schemaext.Observed, db.FeatureCoverage)
+	c.Assert(err, qt.IsNil)
+	restored, err := runtime.Codecs().DecodeCoverage(c.Context(), document)
+	c.Assert(err, qt.IsNil)
+	c.Assert(restored.Lookup(kind, unknown).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(restored.Lookup(kind, column).State, qt.Equals, schemaext.Complete)
+}
+
+func TestFilteredInspectionPreservesNonASCIICommonIdentifiers(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "observed-models")
+	connection := observedConnection(c, host, "ÄBC")
+	db, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables[0].Name, qt.Equals, "ÄBC")
+	builder := objectidentity.NewBuilder(connection.Info().IdentifierSemantics)
+	c.Assert(db.FeatureCoverage.Lookup("example.org/fixture/retention", builder.TableParts("", "ÄBC")).State, qt.Equals, schemaext.Complete)
 }
