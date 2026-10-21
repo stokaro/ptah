@@ -3497,12 +3497,7 @@ func (m *Migrator) failResumedMigrationDirection(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
-	execErr := &MigrationExecutionError{
-		Err:            fmt.Errorf("failed to execute SQL statement: %w", failure),
-		Statement:      event.Statement,
-		StatementIndex: event.Index,
-		Total:          event.Total,
-	}
+	execErr := sentStatementError(fmt.Errorf("failed to execute SQL statement: %w", failure), event.Statement, event.Index, event.Total)
 	if direction == MigrationDirectionDown {
 		return m.failRollbackWithDirtyStateWithMode(
 			ctx,

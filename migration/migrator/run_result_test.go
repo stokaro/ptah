@@ -196,8 +196,77 @@ func TestRunResultOverARealFailure(t *testing.T) {
 			c.Assert(after.DirtyRevision, qt.IsNotNil)
 			c.Assert(after.DirtyRevision.Applied, qt.Equals, test.applied)
 			c.Assert(after.DirtyRevision.Total, qt.Equals, test.statement)
+			// SQLite's driver reports no SQLSTATE, so the failure names the
+			// statement and carries no code.
+			c.Assert(result.Failure, qt.DeepEquals, &migrator.RunFailure{
+				Version:    1,
+				VersionKey: "1",
+				Statement:  3,
+				Statements: 3,
+			})
 		})
 	}
+}
+
+// TestRunResultDocumentNamesTheFailedStatement pins the wire names a caller
+// that must not read the error message parses instead.
+func TestRunResultDocumentNamesTheFailedStatement(t *testing.T) {
+	c := qt.New(t)
+	conn := runSQLiteConnection(c, "run-failure-document.sqlite")
+	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"0000000001_first.up.sql":    {Data: []byte("CREATE TABLE first (id INTEGER PRIMARY KEY);\n")},
+		"0000000001_first.down.sql":  {Data: []byte("DROP TABLE first;\n")},
+		"0000000002_second.up.sql":   {Data: []byte("CREATE TABLE second (id INTEGER PRIMARY KEY);\nINSERT INTO absent VALUES (1);\n")},
+		"0000000002_second.down.sql": {Data: []byte("DROP TABLE second;\n")},
+	})
+	c.Assert(err, qt.IsNil)
+	runErr := mig.MigrateUp(c.Context())
+	c.Assert(runErr, qt.IsNotNil)
+	after, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+
+	encoded, err := json.Marshal(migrator.NewRunResult(migrator.RunEvidence{
+		Plan:  &migrator.MigrationPlan{Versions: []int64{1, 2}},
+		After: after,
+		Err:   runErr,
+	}))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(encoded), qt.Contains, `"failure":{"version":2,"version_key":"2","statement":2,"statements":2}`)
+}
+
+// TestRunResultHasNoFailureForARefusalBeforeAnyStatement keeps the failure
+// object about statements the database saw. A statement validator refuses a
+// statement by position too, before any statement runs, so the database never
+// answered it and there is nothing for the object to report.
+func TestRunResultHasNoFailureForARefusalBeforeAnyStatement(t *testing.T) {
+	c := qt.New(t)
+	conn := runSQLiteConnection(c, "run-refused.sqlite")
+	refusal := errors.New("unsafe second statement")
+	mig, err := migrator.NewFSMigrator(conn, fstest.MapFS{
+		"0000000001_refused.up.sql": {Data: []byte(
+			"CREATE TABLE alpha (id INTEGER PRIMARY KEY);\n" +
+				"ATTACH DATABASE 'other.db' AS aux;\n",
+		)},
+		"0000000001_refused.down.sql": {Data: []byte("DROP TABLE alpha;\n")},
+	}, migrator.WithStatementValidator(&statementValidatorRecorder{
+		reject: "ATTACH DATABASE 'other.db' AS aux",
+		err:    refusal,
+	}))
+	c.Assert(err, qt.IsNil)
+	runErr := mig.MigrateUp(c.Context())
+	c.Assert(runErr, qt.ErrorIs, refusal)
+	after, err := mig.GetMigrationStatus(c.Context())
+	c.Assert(err, qt.IsNil)
+
+	result := migrator.NewRunResult(migrator.RunEvidence{
+		Plan:  &migrator.MigrationPlan{Versions: []int64{1}},
+		After: after,
+		Err:   runErr,
+	})
+
+	c.Assert(result.Error, qt.Not(qt.Equals), "")
+	c.Assert(result.Failure, qt.IsNil)
 }
 
 // TestRunResultDocumentCarriesItsContractVersion pins what a consumer reads
