@@ -17,8 +17,12 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	if request.Target != t.engine.GetId() {
 		return renderer.Result{}, fmt.Errorf("provider rendering target changed")
 	}
-	if request.Capabilities.Len() != 0 {
-		return renderer.Result{}, unsupported("common capability profiles")
+	if err := request.Capabilities.Validate(); err != nil {
+		return renderer.Result{}, err
+	}
+	capabilities := make(map[string]bool)
+	for name, value := range request.Capabilities.All() {
+		capabilities[string(name)] = value
 	}
 	changes := make([]*protocol.Change, 0, len(request.Nodes))
 	for i, node := range request.Nodes {
@@ -27,12 +31,15 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 			return renderer.Result{}, err
 		}
 		change.Id = strconv.Itoa(i)
+		if native := change.GetNative(); native != nil {
+			native.Value.Id = change.Id
+		}
 		changes = append(changes, change)
 	}
 	if len(changes) == 0 {
 		return renderer.Result{Complete: true}, nil
 	}
-	result, err := t.host.client.Render(ctx, &protocol.RenderRequest{Engine: t.engine.GetId(), Changes: changes, TargetFeatures: t.engine.GetFeatures()})
+	result, err := t.host.client.Render(ctx, &protocol.RenderRequest{Engine: t.engine.GetId(), Changes: changes, TargetFeatures: t.engine.GetFeatures(), Capabilities: capabilities})
 	if err != nil {
 		return renderer.Result{}, err
 	}
@@ -59,6 +66,11 @@ func (t *target) reference(name string) (*protocol.Reference, error) {
 
 func (t *target) change(node ast.Node) (*protocol.Change, error) {
 	switch node := node.(type) {
+	case *ast.ExtensionStatement:
+		if node == nil {
+			return nil, unsupported("nil native statement")
+		}
+		return t.nativeOperation(node.Payload, protocol.NativeOperation_STATEMENT, nil)
 	case *ast.CreateTableNode:
 		if node == nil {
 			return nil, unsupported("nil table nodes")
@@ -114,6 +126,11 @@ func (t *target) alter(node *ast.AlterTableNode) (*protocol.Change, error) {
 	}
 	change := &protocol.Change{Object: ref}
 	switch operation := node.Operations[0].(type) {
+	case *ast.ExtensionAlterOperation:
+		if operation == nil {
+			return nil, unsupported("nil native alteration")
+		}
+		return t.nativeOperation(operation.Payload, protocol.NativeOperation_ALTER_TABLE, ref)
 	case *ast.AddColumnOperation:
 		if operation == nil {
 			return nil, unsupported("nil alteration")

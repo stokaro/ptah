@@ -166,10 +166,10 @@ equality, encoding, and fingerprints remain local after provider shutdown.
 
 Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
-Operation models remain refused until their native adapters exist. Change
-models enter the shared comparison runtime through the contextual service
-described below. Native planning and engine transaction and history services
-still require application adapters.
+Change models enter the shared comparison runtime through the contextual
+service below. Operation models retain captured safety facts and use the
+selected target renderer. Native planning and engine transaction and history
+services still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -358,7 +358,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 11 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 12 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -478,5 +478,36 @@ changed and unchanged values, explicit actions, unknown coverage, exclusions,
 and change capture and decoding. It establishes global and subject knowledge
 only; bounded regions remain undecided in that synthetic owner. It does not
 execute retention changes or qualify any official database engine. Native
-planning, operation rendering, transaction and history services, full source
-support, and official-engine extraction remain part of #4204.
+planning, transaction and history services, full source support, and
+official-engine extraction remain part of #4204.
+
+
+## Captured operation rendering
+
+An operation is a separate model representation. Its codec returns a typed AST
+payload with pure local cloning, encoding, impact, and access assessments. It
+cannot be used as a desired value or comparison change. Persistence contains
+owner input and its frozen model binding; decoding asks the owner to reconstruct
+the operation facts. Canonical projections include those facts, so an approved
+operation cannot retain its fingerprint after its assessment changes.
+
+The existing coarse `Render` service accepts captured native operations beside
+common changes. Each native input names its grammatical role. An `ALTER TABLE`
+operation carries the actual parent as a structured reference; a standalone
+operation carries none. The owner validates the role and parent and emits the
+whole executable unit. The host never constructs SQL from a native payload.
+Captured operations must match the selected engine and target feature profile.
+Rendering capabilities remain explicit, including established false values.
+
+Both transport boundaries validate ownership, model definitions, captured
+facts, and input provenance. The server gives owner code a copy, so mutating an
+input cannot change the identity against which its reply is checked. A late
+reply after cancellation, a malformed unit, or an owner refusal discards the
+whole batch. A successful earlier unit is not exposed as a usable prefix.
+
+The independent fixture normalizes and executes table creation, renaming, and
+removal through an operation model. Inspection proves the database changes;
+round trips prove that operation assessments are recomputed. This exercises
+operation transport and rendering. Feature planning still needs a contextual
+service that contributes receipts, dependencies, and effects to the host graph.
+Transaction and history services remain separate work before YDB extraction.

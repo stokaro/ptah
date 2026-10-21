@@ -134,6 +134,13 @@ func (m *modelContract) value(payload schemaext.Payload) (*resolvedModel, error)
 			value = change.model
 		}
 	}
+	if m.key.representation == schemaext.Operation {
+		operation, found := payload.(*resolvedOperation)
+		ok = found && operation != nil
+		if ok {
+			value = operation.model
+		}
+	}
 	if !ok || value == nil || value.kind != m.key.kind || value.signature != m.signature || value.wire.Format != 1 || len(value.canonical) == 0 {
 		return nil, fmt.Errorf("%w: model value is unresolved or belongs to another contract", schemaext.ErrInvalidValue)
 	}
@@ -156,6 +163,7 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 		Projection       []byte               `json:"projection"`
 		Required         []dependencyIdentity `json:"required"`
 		Change           *changeFacts         `json:"change"`
+		Operation        *operationFacts      `json:"operation"`
 	}{m.signature,
 		wire.Engine,
 		featureSet(wire.Features),
@@ -164,7 +172,7 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 		normalized.GetCanonicalFormat(),
 		normalized.GetCanonicalProjection(),
 		(&resolvedModel{normalized: normalized}).dependencyIdentities(),
-		normalizedChangeFacts(normalized.GetChangeSemantics())}
+		normalizedChangeFacts(normalized.GetChangeSemantics()), normalizedOperationFacts(normalized.GetOperationSemantics())}
 	data, err := json.Marshal(projection)
 	if err != nil {
 		return nil, err

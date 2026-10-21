@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/stokaro/ptah/provider-sdk/modeljson"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
-	"strings"
 )
 
 type operation struct {
@@ -57,12 +58,15 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 		return nil, fmt.Errorf("unknown action")
 	}
 	ref := input.GetValue().GetOwner()
-	if ref.GetKind() != "table" || ref.GetName() == "" || ref.GetDatabase() != "" || ref.GetCatalog() != "" || len(ref.GetPath()) != 0 || len(ref.GetOverload()) != 0 || (ref.GetSchema() != "" && ref.GetSchema() != "main") || strings.ContainsRune(ref.GetName(), 0) {
+	if ref.GetKind() != "table" || ref.GetName() == "" || ref.GetDatabase() != "" || ref.GetCatalog() != "" ||
+		len(ref.GetPath()) != 0 || len(ref.GetOverload()) != 0 || (ref.GetSchema() != "" && ref.GetSchema() != "main") || strings.ContainsRune(ref.GetName(), 0) {
 		return nil, fmt.Errorf("fixture operation requires a common table")
 	}
 	value := proto.CloneOf(input.GetValue())
 	value.Payload = canonical
-	return &protocol.NormalizedValue{Id: input.GetId(), Value: value, NormalizedOwner: proto.CloneOf(ref), CanonicalFormat: "table-operation-v1", CanonicalProjection: bytes.Clone(canonical), OperationSemantics: &protocol.OperationSemantics{Impact: impact, Reason: "Table " + op.Action, Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "The operation changes no grants"}}, nil
+	return &protocol.NormalizedValue{Id: input.GetId(), Value: value, NormalizedOwner: proto.CloneOf(ref),
+		CanonicalFormat: "table-operation-v1", CanonicalProjection: bytes.Clone(canonical),
+		OperationSemantics: &protocol.OperationSemantics{Impact: impact, Reason: "Table " + op.Action, Access: protocol.ChangeSemantics_UNCHANGED, AccessReason: "The operation changes no grants"}}, nil
 }
 
 func (p *owner) NormalizeValues(ctx context.Context, r *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
@@ -102,9 +106,9 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 			result.Units = append(result.Units, rendered.GetUnits()...)
 			continue
 		}
-		readOnly, known := r.GetCapabilities()["fixture.read-only"]
-		if !known || readOnly {
-			return nil, fmt.Errorf("fixture requires a known writable target")
+		transactional, known := r.GetCapabilities()["transactional_ddl"]
+		if !known || transactional {
+			return nil, fmt.Errorf("fixture requires explicit nontransactional DDL")
 		}
 		sql, err := renderNative(change.GetNative())
 		if err != nil {
@@ -141,7 +145,7 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 			return "", fmt.Errorf("standalone table operation required")
 		}
 		if op.Action == "create" {
-			return "CREATE TABLE " + name + " (id INTEGER NOT NULL PRIMARY KEY);", nil
+			return "CREATE TABLE " + name + ` ("id" INTEGER NOT NULL PRIMARY KEY);`, nil
 		}
 		return "DROP TABLE " + name + ";", nil
 	default:
