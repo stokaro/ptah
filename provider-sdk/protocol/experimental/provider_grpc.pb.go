@@ -36,6 +36,9 @@ const (
 	Provider_ReadHistory_FullMethodName       = "/ptah.provider.experimental.Provider/ReadHistory"
 	Provider_PrepareHistory_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareHistory"
 	Provider_MutateHistory_FullMethodName     = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_TryLock_FullMethodName           = "/ptah.provider.experimental.Provider/TryLock"
+	Provider_CheckLock_FullMethodName         = "/ptah.provider.experimental.Provider/CheckLock"
+	Provider_ReleaseLock_FullMethodName       = "/ptah.provider.experimental.Provider/ReleaseLock"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -63,6 +66,9 @@ type ProviderClient interface {
 	ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error)
 	PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
 	MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
+	CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
+	ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 }
 
 type providerClient struct {
@@ -243,6 +249,36 @@ func (c *providerClient) MutateHistory(ctx context.Context, in *MutateHistoryReq
 	return out, nil
 }
 
+func (c *providerClient) TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_TryLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_CheckLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_ReleaseLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -268,6 +304,9 @@ type ProviderServer interface {
 	ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error)
 	PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error)
 	MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error)
+	TryLock(context.Context, *LockRequest) (*LockResult, error)
+	CheckLock(context.Context, *LockRequest) (*LockResult, error)
+	ReleaseLock(context.Context, *LockRequest) (*LockResult, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -328,6 +367,15 @@ func (UnimplementedProviderServer) PrepareHistory(context.Context, *PrepareHisto
 }
 func (UnimplementedProviderServer) MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MutateHistory not implemented")
+}
+func (UnimplementedProviderServer) TryLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TryLock not implemented")
+}
+func (UnimplementedProviderServer) CheckLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckLock not implemented")
+}
+func (UnimplementedProviderServer) ReleaseLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLock not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -656,6 +704,60 @@ func _Provider_MutateHistory_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_TryLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).TryLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_TryLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).TryLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CheckLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CheckLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CheckLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CheckLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReleaseLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReleaseLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReleaseLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReleaseLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -730,6 +832,18 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MutateHistory",
 			Handler:    _Provider_MutateHistory_Handler,
+		},
+		{
+			MethodName: "TryLock",
+			Handler:    _Provider_TryLock_Handler,
+		},
+		{
+			MethodName: "CheckLock",
+			Handler:    _Provider_CheckLock_Handler,
+		},
+		{
+			MethodName: "ReleaseLock",
+			Handler:    _Provider_ReleaseLock_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

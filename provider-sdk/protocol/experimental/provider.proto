@@ -25,6 +25,9 @@ service Provider {
   rpc ReadHistory(ReadHistoryRequest) returns (HistorySnapshot);
   rpc PrepareHistory(PrepareHistoryRequest) returns (HistoryResult);
   rpc MutateHistory(MutateHistoryRequest) returns (HistoryResult);
+  rpc TryLock(LockRequest) returns (LockResult);
+  rpc CheckLock(LockRequest) returns (LockResult);
+  rpc ReleaseLock(LockRequest) returns (LockResult);
 }
 
 message Empty {}
@@ -1265,4 +1268,34 @@ message HistoryResult {
   Outcome outcome = 3;
   string diagnostic_code = 4;
   string message = 5;
+}
+
+// LockScope identifies one acquisition attempt within a live session. The name
+// addresses the database's exclusion namespace; lock_id is never reused.
+message LockScope {
+  string session_id = 1;
+  string lock_id = 2;
+  string name = 3;
+}
+// Each RPC has a fresh request_id. TryLock is one nonblocking attempt, not a
+// transport-managed wait or retry. Only a confirmed BUSY permits a new attempt.
+message LockRequest {
+  LockScope scope = 1;
+  string request_id = 2;
+}
+// ACQUIRED confirms current ownership, never an indefinitely valid lease.
+// NOT_ACQUIRED from ReleaseLock fences a delayed TryLock with the same handle.
+// LOST is terminal: that session must refuse further execution and writes.
+message LockResult {
+  enum Outcome {
+    UNKNOWN = 0;
+    ACQUIRED = 1;
+    BUSY = 2;
+    RELEASED = 3;
+    NOT_ACQUIRED = 4;
+    LOST = 5;
+  }
+  LockScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
 }

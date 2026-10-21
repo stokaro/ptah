@@ -42,6 +42,9 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `ReadHistory` | A complete bounded snapshot of exact revision records in the selected session and transaction. |
 | `PrepareHistory` | Verified or newly created history storage, without upgrading an earlier layout. |
 | `MutateHistory` | An atomic comparison and write of one exact revision, with a confirmed or unknown outcome. |
+| `TryLock` | One nonblocking acquisition attempt bound to its session, name, and single-use handle. |
+| `CheckLock` | Current ownership evidence, confirmed loss, or uncertainty for that exact handle. |
+| `ReleaseLock` | Confirmed release or fenced absence, without retrying an uncertain operation. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
 Session capabilities preserve presence: an explicit `false` is an established
@@ -145,6 +148,36 @@ The independent SQLite fixture exercises these storage primitives. Connecting
 all migrator operations, lock ownership, and official-engine qualification
 remains required work in #4204; this service alone does not enable versioned
 migrations through subprocess providers.
+
+## Session-owned locks
+
+`sessions.locks` advertises the optional `Locks` service globally and for each
+supporting engine. The provider owns the database exclusion mechanism. The host
+owns the wait policy, cancellation, and the decision to run under the lock.
+
+Every attempt names a session, exact lock name, and single-use lock ID. Every RPC
+has a separate request ID. Receipts must echo the full scope and request identity.
+`TryLock` makes one nonblocking attempt. A confirmed `BUSY` permits a new attempt
+with a new lock ID; a lost reply does not. `ReleaseLock` of an unused ID fences a
+late acquisition. Closing the session releases its locks and fences later calls.
+
+`CheckLock` asks the provider to establish current ownership, including the
+freshness of any lease. An earlier `ACQUIRED` receipt is not proof that a later
+statement remains protected. Providers must check the locks guarding a session
+before execution, history writes, and transaction commits. Lost or uncertain
+ownership fences further work on that session; cleanup remains available.
+A lock loss during execution does not prove that the database rolled back.
+
+Both transport boundaries attempt bounded release after an uncertain acquisition.
+Cleanup names the original requested handle, even if the reply substitutes one.
+It runs after caller cancellation and preserves the original uncertainty. Failed
+cleanup remains an error. The transport never retries acquisition or release.
+
+SDK tests cover exact scope binding, operation-specific outcomes, cancellation,
+malformed receipts, cleanup failure, and independent request and response storage.
+Host lock guards, independent process exclusion, and official-engine ownership
+checks remain required under #4204. These transport tests do not establish a
+working migration lock.
 
 ## Trust and process lifetime
 
@@ -325,7 +358,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 18 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 19 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
