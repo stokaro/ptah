@@ -405,7 +405,7 @@ func TestCommonPlanRetainsUnchangedContextAndExactColumnOperand(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	runtime := &commonPlanRecorder{Runtime: base}
 	capabilities := capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: false})
-	nodes, err := (commonPlanner{target: "fixture", options: planext.Options{Capabilities: capabilities}, assessParents: true}).GenerateMigrationAST(c.Context(), runtime, diff)
+	nodes, err := (commonPlanner{target: "fixture", options: planext.Options{Capabilities: capabilities}, assessParents: true, commonTables: true}).GenerateMigrationAST(c.Context(), runtime, diff)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	c.Assert(runtime.request.DatabasePath, qt.Equals, "/captured")

@@ -22,7 +22,7 @@ a host that supports the artifact's protocol.
 
 ## Check availability
 
-The official provider ID is `stokaro/ptah-ydb-plugin`. Its designated repository
+The official provider ID is `github.com/stokaro/ptah-ydb-plugin`. Its designated repository
 is [stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin).
 The catalog recognizes `ydb` and `ydbs` as engine names.
 
@@ -48,7 +48,7 @@ policy. An empty `installations` array means this invocation selected no manifes
 When you have a compatible YDB artifact, verify its publisher and checksum
 before authorizing it. Create an explicit manifest using the
 [executable-provider procedure](../../executable-providers/#select-the-executable).
-Set `provider_id` to `stokaro/ptah-ydb-plugin` and declare the canonical engine
+Set `provider_id` to `github.com/stokaro/ptah-ydb-plugin` and declare the canonical engine
 `ydb`. Copy the artifact's actual aliases into `engines[].aliases`.
 
 

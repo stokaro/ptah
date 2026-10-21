@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/stokaro/ptah/provider-sdk/provider"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
@@ -18,6 +20,7 @@ type commonPlanner struct {
 	target        string
 	assessParents bool
 	transactions  bool
+	commonTables  bool
 }
 
 func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
@@ -26,6 +29,9 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	}
 	if diff == nil {
 		return nil, fmt.Errorf("provider planner requires a diff")
+	}
+	if !p.commonTables && (len(diff.TablesAdded) > 0 || len(diff.TablesRemoved) > 0 || len(diff.TablesModified) > 0) {
+		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
 		return nil, err

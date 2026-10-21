@@ -47,8 +47,8 @@ type target struct {
 	engine *protocol.Engine
 }
 
-// Start verifies the selected artifact and negotiates the experimental common
-// table contract. A failure releases the subprocess and returns no host.
+// Start verifies the selected artifact and negotiates experimental services.
+// A failure releases the subprocess and returns no host.
 func Start(ctx context.Context, spec Spec) (*Host, error) {
 	client, err := providerruntime.Start(ctx, providerruntime.Options{
 		Executable: spec.Executable, SHA256: spec.SHA256, ProviderID: spec.ProviderID,
@@ -63,10 +63,6 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		if err := providercatalog.CheckOwnership(spec.ProviderID, engine.GetId(), engine.GetAliases()); err != nil {
 			client.Close()
 			return nil, fmt.Errorf("%w: %s", provider.ErrProtocol, err)
-		}
-		if !slices.Contains(engine.GetFeatures(), provider.CommonTableIdentityFeature) {
-			client.Close()
-			return nil, fmt.Errorf("%w: engine %q does not declare the common table identity contract", provider.ErrProtocol, engine.GetId())
 		}
 		host.targets[engine.GetId()] = &target{host: host, engine: engine}
 	}

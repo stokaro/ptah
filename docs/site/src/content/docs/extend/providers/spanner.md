@@ -22,7 +22,7 @@ a host that supports the artifact's protocol.
 
 ## Check availability
 
-The official provider ID is `stokaro/ptah-spanner-plugin`. Its designated repository
+The official provider ID is `github.com/stokaro/ptah-spanner-plugin`. Its designated repository
 is [stokaro/ptah-spanner-plugin](https://github.com/stokaro/ptah-spanner-plugin).
 The catalog recognizes `spanner`, `cloudspanner`, `google-spanner`, and `google_spanner` as engine names.
 
@@ -47,7 +47,7 @@ policy. An empty `installations` array means this invocation selected no manifes
 When you have a compatible Spanner artifact, verify its publisher and checksum
 before authorizing it. Create an explicit manifest using the
 [executable-provider procedure](../../executable-providers/#select-the-executable).
-Set `provider_id` to `stokaro/ptah-spanner-plugin` and declare the canonical engine
+Set `provider_id` to `github.com/stokaro/ptah-spanner-plugin` and declare the canonical engine
 `spanner`. Copy the artifact's actual aliases into `engines[].aliases`.
 
 

@@ -21,7 +21,12 @@ import (
 
 func migrationProviderSpec(c *qt.C) providerhost.Spec {
 	c.Helper()
-	binary := independentCLIProviderCommand(c, "metadata")
+	return migrationProviderCommandSpec(c, "metadata")
+}
+
+func migrationProviderCommandSpec(c *qt.C, name string) providerhost.Spec {
+	c.Helper()
+	binary := independentCLIProviderCommand(c, name)
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)
@@ -49,7 +54,16 @@ func runProviderMigration(c *qt.C, f providerCLI, verb string, args ...string) s
 
 func TestProviderMigrationsNativeLifecycle(t *testing.T) {
 	c := qt.New(t)
-	spec := migrationProviderSpec(c)
+	providerMigrationsLifecycle(t, migrationProviderSpec(c))
+}
+
+func TestProviderMigrationsWithoutCommonTables(t *testing.T) {
+	c := qt.New(t)
+	providerMigrationsLifecycle(t, migrationProviderCommandSpec(c, "native-migrations"))
+}
+
+func providerMigrationsLifecycle(t *testing.T, spec providerhost.Spec) {
+	t.Helper()
 	for _, mode := range []string{"file", "none", "all"} {
 		t.Run(mode, func(t *testing.T) {
 			c := qt.New(t)

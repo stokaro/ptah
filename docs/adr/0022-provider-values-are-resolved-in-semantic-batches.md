@@ -993,3 +993,27 @@ This changes the experimental contract without aliases or older readers.
 Published-module adoption and native YDB ownership classification remain part
 of #4204. The synthetic subprocess fixture establishes transport and comparison
 behavior, not official-engine qualification.
+
+## Common table semantics are required by table workflows
+
+Provider startup does not require `schema.common-table-identity.v1`. A native
+engine can provide SQL analysis, sessions, history, locks, and metadata without
+promising that the host's common table model captures its semantics.
+
+The host registers schema rendering, validation, table preparation, and creation
+projection only for engines that declare this contract. Shared comparison then
+refuses a missing preparation service, including for an empty desired schema.
+The common planner refuses table changes without the contract. AST rendering
+also checks before lowering a common table or column operation. Provider-owned
+operations keep their separate model, planning, and rendering contracts.
+
+An independent process fixture without common table semantics exercises native
+migration execution, rollback, history, logs, and tags. It also verifies startup
+without opening a database and schema-plan refusal without a saved artifact.
+These checks do not establish native table comparison for the official engines.
+
+Official provider IDs use `github.com/stokaro/ptah-<engine>-plugin`. The owner
+must satisfy the same namespaced identity contract as the engine runtime and
+its model codecs. Repository shorthand is not an executable provider identity.
+This changes the experimental manifest contract; pre-v1, no compatibility with
+the earlier owner spelling is owed. The catalog accepts no alias for it.

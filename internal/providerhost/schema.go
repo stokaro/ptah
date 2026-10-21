@@ -49,13 +49,32 @@ func (h *Host) Provider() engine.Provider {
 }
 
 func (t *target) registration() engine.Target {
-	return engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t,
-		SchemaRendering: t, Validation: t, Preparation: t, Creations: t, Splitter: t,
+	result := engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t, Splitter: t,
 		Planner: func(options planext.Options) planext.Planner {
 			return commonPlanner{options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
+				commonTables:  t.supportsCommonTables(),
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}
+	if t.supportsCommonTables() {
+		result.SchemaRendering, result.Validation = t, t
+		result.Preparation, result.Creations = t, t
+	}
+	return result
+}
+
+// supportsCommonTables gates shared table interpretation, not native services.
+// Rendering and planning also use this contract because they accept both common
+// table changes and provider-owned operations.
+func (t *target) supportsCommonTables() bool {
+	return slices.Contains(t.engine.GetFeatures(), provider.CommonTableIdentityFeature)
+}
+
+func (t *target) requireCommonTables() error {
+	if !t.supportsCommonTables() {
+		return unsupported("common table operations without " + provider.CommonTableIdentityFeature)
+	}
+	return nil
 }
 
 func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaRequest) (renderer.SchemaResult, error) {

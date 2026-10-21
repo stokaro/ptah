@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/engine"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
 )
@@ -16,7 +17,7 @@ func TestCatalogRecognizesExplicitSelectors(t *testing.T) {
 		{"docker://ydb/26", "ydb"}, {"duckdb:/tmp/example.db", "duckdb"},
 		{"duckdb://file.db", "duckdb"}, {"docker://duckdb/latest", "duckdb"},
 		{"cloudspanner", "spanner"}, {"spanner://user:secret@host/db", "spanner"},
-		{"docker://spanner/emulator", "spanner"}, {"stokaro/ptah-spanner-plugin", "spanner"},
+		{"docker://spanner/emulator", "spanner"}, {"github.com/stokaro/ptah-spanner-plugin", "spanner"},
 		{"postgres://host/spanner", ""}, {"file://ydb/schema.sql", ""},
 		{"CREATE TABLE ydb (id INT)", ""}, {"unknown", ""}, {"duckdb.sql", ""},
 	} {
@@ -32,7 +33,7 @@ func TestCatalogRecognizesExplicitSelectors(t *testing.T) {
 func TestCatalogOwnershipAndCopies(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(providercatalog.CheckOwnership("example.org/third-party", "custom", []string{"customs"}), qt.IsNil)
-	c.Assert(providercatalog.CheckOwnership("stokaro/ptah-ydb-plugin", "ydb", []string{"ydbs"}), qt.IsNil)
+	c.Assert(providercatalog.CheckOwnership("github.com/stokaro/ptah-ydb-plugin", "ydb", []string{"ydbs"}), qt.IsNil)
 	c.Assert(providercatalog.CheckOwnership("example.org/third-party", "ydb", []string{"ydbs"}), qt.ErrorMatches, `.*official owner.*ptah-ydb-plugin.*`)
 	first, found := providercatalog.Lookup("ydb")
 	c.Assert(found, qt.IsTrue)
@@ -67,4 +68,13 @@ func TestMissingDiagnosticPreservesGuidance(t *testing.T) {
 			c.Assert(decoded.Error(), qt.Contains, entry.SetupURL)
 		})
 	}
+}
+
+func TestOfficialOwnersRegisterWithTheEngineRuntime(t *testing.T) {
+	c := qt.New(t)
+	for _, entry := range providercatalog.Entries() {
+		_, err := engine.New(engine.Provider{ID: entry.ProviderID, Targets: []engine.Target{{Name: entry.EngineID}}})
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", entry.EngineID))
+	}
+	c.Assert(providercatalog.CheckOwnership("stokaro/ptah-ydb-plugin", "ydb", nil), qt.IsNotNil)
 }

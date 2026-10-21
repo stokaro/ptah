@@ -269,13 +269,22 @@ modes, and unknown index namespaces are refused. The experimental contract
 supports exact and ASCII-insensitive comparison; it makes no claim about other
 collation semantics. Hosts must not infer these rules from a built-in target.
 
-The experimental application adapter currently requires each engine to declare
-`schema.common-table-identity.v1`. This promises common table and column comparison
-semantics without implicit schema objects, undeclared facets, additional creation
+The experimental application adapter requires `schema.common-table-identity.v1`
+for common table rendering, preparation, comparison, and planning. This promises
+common table and column comparison semantics without implicit schema objects,
+undeclared facets, additional creation
 defaults, or type coercions. A provider must refuse declarations outside that
-contract. A missing feature does not select a built-in implementation. Engines
-with additional semantics need corresponding protocol operations before this
-adapter can support them.
+contract. A missing feature does not select a built-in implementation. Providers
+without this feature can start, inspect, analyze SQL, and run reviewed SQL
+migrations through their declared session, history, lock, and metadata services.
+Provider-owned planning operations retain their separately negotiated contracts.
+Engines with additional table semantics need corresponding protocol operations
+before the adapter can compare or plan their tables.
+
+The application runtime requires namespaced provider IDs and model kinds, such
+as `github.com/stokaro/ptah-ydb-plugin` and
+`github.com/stokaro/ptah-ydb-plugin/column-properties`. Official manifests use
+the provider ID from the catalog; repository shorthand is not an alias.
 
 `AnalyzeSQL` accounts for every source byte with a statement span or whitespace.
 It preserves source tokens, canonical tokens, and line numbers. A provider refuses

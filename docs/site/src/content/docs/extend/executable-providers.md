@@ -36,7 +36,10 @@ Provider selection is available on these native commands:
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
-additional protocol support. [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
+additional protocol support. Providers without this feature can still start,
+inspect, and run reviewed SQL migrations through their declared services.
+Schema comparison and common table planning remain unavailable for those providers.
+[Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 
 ## Select the executable
