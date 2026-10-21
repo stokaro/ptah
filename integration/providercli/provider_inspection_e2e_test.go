@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/tableidentity"
 )
 
 func observedConnection(c *qt.C, host *providerhost.Host, table string) *dbschema.DatabaseConnection {
@@ -255,4 +256,26 @@ func TestFilteredInspectionPreservesNonASCIICommonIdentifiers(t *testing.T) {
 	c.Assert(db.Tables[0].Name, qt.Equals, "ÄBC")
 	builder := objectidentity.NewBuilder(connection.Info().IdentifierSemantics)
 	c.Assert(db.FeatureCoverage.Lookup("example.org/fixture/retention", builder.TableParts("", "ÄBC")).State, qt.Equals, schemaext.Complete)
+}
+
+func TestProviderInspectionCoverageBindsForComparisonOffline(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "observed-models")
+	connection := observedConnection(c, host, "scope-parent-unknown")
+	db, err := dbschema.ReadSchemaWithSchemas(connection, []string{"main"})
+	c.Assert(err, qt.IsNil)
+	semantics := connection.Info().IdentifierSemantics
+	selected, err := runtime.ResolveTarget("fixture")
+	c.Assert(err, qt.IsNil)
+	c.Assert(connection.Close(), qt.IsNil)
+	host.Close()
+	bound, err := tableidentity.BindComparisonCoverage(db.FeatureCoverage, selected, semantics)
+	c.Assert(err, qt.IsNil)
+	builder := objectidentity.NewBuilder(semantics)
+	c.Assert(bound.Lookup("example.org/fixture/retention", builder.ColumnParts("", "Missing.Parent", "column")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(bound.Lookup("example.org/fixture/retention", builder.ColumnParts("", "known-parent", "column")).State, qt.Equals, schemaext.Complete)
+	native := db.FeatureObjects.Refs()[0]
+	native.Name = objectidentity.Part{Source: "Other", Normalized: "other"}
+	c.Assert(bound.Lookup("example.org/fixture/retention", native).State, qt.Equals, schemaext.Complete)
+	c.Assert(bound.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
 }

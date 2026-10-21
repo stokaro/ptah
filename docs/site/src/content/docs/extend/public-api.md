@@ -319,10 +319,15 @@ establish completeness at the requested identity.
 
 Coverage format 2 preserves these boundaries in serialized schemas and feature
 coverage headers. Formats that only preserve global limits refuse bounded
-claims. Common table identity binding requires owner support for those bounds
-and currently refuses them. Executable-provider inspection maps owner-bound
-namespaces during capture, preserving unknown parent regions. That mapping does
-not authorize later table rebinding to discard those limits.
+claims. `KnowledgeDomain.MapScopes` transforms regions without changing their
+knowledge or merging independent sources. An error or an erased region discards
+the whole result.
+
+Common identity binding moves typed relative bounds with their subjects, using
+the selected target's connection defaults and identifier rules. Unknown parent
+regions stay unknown. Qualified native namespaces remain intact. Regions that
+mix common and qualified identities without sufficient bounds remain refused.
+Executable-provider comparison and planning services still require SDK support.
 
 Table selection preserves the selected tables' feature children and their source
 coverage. `Coverage.SelectSubjects` keeps kind-wide knowledge while filtering

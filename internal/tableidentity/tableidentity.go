@@ -15,8 +15,5 @@ func Subject(schema, name, dialect string, semantics identifier.Semantics) objec
 	if described, _ := platform.Lookup(dialect); !described.Comparison.VerbatimTableNames {
 		return objectidentity.NewBuilder(semantics).TableParts(schema, name)
 	}
-	if schema == "" {
-		schema = semantics.DefaultSchema
-	}
 	return objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name)
 }

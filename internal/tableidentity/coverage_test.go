@@ -26,7 +26,9 @@ func TestBindCoverageRefusesUnboundNamespaceLimits(t *testing.T) {
 	semantics := identifier.ForDialect("postgres")
 	bound := tableidentity.Subject("", "orders", "postgres", semantics)
 	c.Assert(source.Lookup(model.Kind, bound).State, qt.Equals, schemaext.Complete)
-	result, err := tableidentity.BindCoverage(source, "postgres", semantics)
+	selected, err := schemaext.NewTargetSelection("postgres")
+	c.Assert(err, qt.IsNil)
+	result, err := tableidentity.BindCoverage(source, selected, semantics)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(result.IsZero(), qt.IsTrue)
 }
