@@ -196,16 +196,7 @@ func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) 
 
 // Render validates the complete batch and exposes no prefix on failure.
 func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
-	defer cancel()
-	result, err := c.rpc.Render(call, request)
-	if err != nil {
-		return nil, remoteError(call, "render", err)
-	}
-	if err := provider.ValidateRender(request, result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return callOffline(ctx, c.description, proto.CloneOf(request), "render", provider.ValidateRenderRequest, provider.ValidateRenderedBatch, c.rpc.Render)
 }
 
 // Execute sends a validated batch once. Any lost or invalid reply is an unknown

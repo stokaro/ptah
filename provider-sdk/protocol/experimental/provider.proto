@@ -174,13 +174,28 @@ message Change {
     Empty drop_table = 4;
     Column add_column = 5;
     string drop_column = 6;
-    Envelope native = 7;
+    NativeOperation native = 7;
   }
+}
+// NativeOperation retains the grammatical context of a captured OPERATION.
+// The owner revalidates its payload before rendering; metadata is not authority.
+message NativeOperation {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    STATEMENT = 1;
+    ALTER_TABLE = 2;
+  }
+  NormalizedValue value = 1;
+  Role role = 2;
+  // Required only for ALTER_TABLE. The owner renders the complete statement.
+  Reference parent = 3;
 }
 message RenderRequest {
   string engine = 1;
   repeated Change changes = 2;
   repeated string target_features = 3;
+  // Established false and absent capability facts remain distinct.
+  map<string, bool> capabilities = 4;
 }
 message Unit {
   string change_id = 1;
@@ -294,6 +309,8 @@ message NormalizedValue {
   // Required only for CHANGE. Decoding recomputes these facts from the complete
   // captured change payload; persisted metadata is never trusted on its own.
   ChangeSemantics change_semantics = 7;
+  // Required only for OPERATION, reconstructed from the captured payload.
+  OperationSemantics operation_semantics = 8;
 }
 
 // SourcePosition uses a zero-based offset into the original encoded bytes and
@@ -714,4 +731,12 @@ message ComparedModels {
   ComparisonState desired = 2;
   repeated ComparedChange changes = 3;
   repeated ComparisonUndecided undecided = 4;
+}
+
+// OperationSemantics carries local safety facts without rendering or I/O.
+message OperationSemantics {
+  ChangeSemantics.Impact impact = 1;
+  string reason = 2;
+  ChangeSemantics.Access access = 3;
+  string access_reason = 4;
 }
