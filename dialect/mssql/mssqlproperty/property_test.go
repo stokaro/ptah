@@ -1,6 +1,7 @@
 package mssqlproperty_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -214,4 +215,28 @@ func TestPlanService_OrdersAroundTheOwner(t *testing.T) {
 		{Subject: flag.Ref(), Action: plangraph.Create},
 		{Subject: objectidentity.NewBuilder(semantics).ColumnParts("app", "docs", "title"), Action: plangraph.Read},
 	})
+}
+
+func TestRefAddressKeepsTableAndColumnBoundaries(t *testing.T) {
+	for _, row := range []struct{ table, column string }{
+		{"Table With Spaces", "Column With Spaces"},
+		{`A"B`, `C"D`},
+		{"Table With Spaces", ""},
+	} {
+		t.Run(row.table+row.column, func(t *testing.T) {
+			c := qt.New(t)
+			original := property("App", row.table, row.column, "Note", "value")
+			ref := original.Ref()
+			c.Assert(ref.Signature.Values()[0].Source, qt.Equals, row.table)
+			c.Assert(ref.Signature.Values()[1].Source, qt.Equals, row.column)
+			address, ok := mssqlproperty.RefAddress(ref)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(address.Table, qt.Equals, strings.ToLower(row.table))
+			c.Assert(address.Column, qt.Equals, strings.ToLower(row.column))
+			c.Assert(address.Schema, qt.Equals, "App")
+		})
+	}
+	c := qt.New(t)
+	left, right := property("App", "a b", "c", "Note", ""), property("App", "a", "b c", "Note", "")
+	c.Assert(left.Ref().Equal(right.Ref()), qt.IsFalse)
 }

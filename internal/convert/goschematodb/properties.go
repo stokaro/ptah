@@ -109,7 +109,7 @@ func projectedFacetCoverage(source schemaext.Coverage, slots []creationFacetSlot
 				return schemaext.Coverage{}, fmt.Errorf("%w: projected facet %q", schemaext.ErrUnknownCodec, kind)
 			}
 			if !added[kind] {
-				kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only projected declarations describe these settings"}})
+				kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only projected declarations describe these settings"})})
 				added[kind] = true
 			}
 			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: slot.subject, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})

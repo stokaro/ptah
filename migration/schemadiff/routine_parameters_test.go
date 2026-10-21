@@ -14,7 +14,7 @@ import (
 	"ptah.run/dialect/mssql/mssqldiff"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -54,7 +54,7 @@ func TestCompareSQLServerRoutineParameters_KeepsCoverage_FailurePath(t *testing.
 	c := qt.New(t)
 	desired := parameterRoutine("auditor", "@a AS INT")
 	desired.Functions[0].Facets = schemaext.Facets{}
-	subject := routineargs.Subject(objectidentity.NewBuilder(identifier.ForDialect("sqlserver")), "procedure", "dbo.p", "@a AS INT")
+	subject := routineidentity.Subject(objectidentity.NewBuilder(identifier.ForDialect("sqlserver")), "procedure", "dbo.p", "@a AS INT")
 	desired.FeatureCoverage = must.Must(mssqlschema.RoutineOptionsCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, []schemaext.SubjectCoverage{{Kind: mssqlschema.RoutineOptionsKind, Subject: subject, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source cannot describe the options"}}}))
 	diff, err := schemadiff.CompareWithDialect(t.Context(), desired, heldParameterRoutine(), "sqlserver", must.Must(builtin.New()))
 	c.Assert(err, qt.ErrorMatches, `.*schema comparison is incomplete:.*source cannot describe the options`)

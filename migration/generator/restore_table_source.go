@@ -101,7 +101,7 @@ func restoredSubject(ref objectidentity.ID, parents map[objectidentity.Key]objec
 	if _, found := parents[ref.Key()]; found {
 		return true
 	}
-	parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 	_, found := parents[parent.Key()]
 	return !ref.Parent.Empty() && found
 }
@@ -145,7 +145,7 @@ func restoreTableCoverage(source schemaext.Coverage, removals difftypes.TableRem
 				}
 				continue
 			}
-			record.Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this model was captured only for removed tables"}
+			record.Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this model was captured only for removed tables"})
 			kinds[kind] = record
 		}
 	}

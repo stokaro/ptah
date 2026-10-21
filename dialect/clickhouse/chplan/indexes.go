@@ -378,6 +378,5 @@ func assessIndexParent(request featureplan.Request, table featureplan.Table) (st
 }
 
 func indexOf(index, table objectidentity.ID) bool {
-	return table.Kind == objectidentity.KindTable && index.Catalog.Normalized == table.Catalog.Normalized &&
-		index.Schema.Normalized == table.Schema.Normalized && index.Parent.Normalized == table.Name.Normalized
+	return table.Kind == objectidentity.KindTable && index.SameNamespace(table) && index.Parent.Normalized == table.Name.Normalized
 }

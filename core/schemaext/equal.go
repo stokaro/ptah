@@ -40,7 +40,9 @@ func (o Objects) Equal(other Objects) bool {
 // Equal compares recorded model definitions, directions, and knowledge claims.
 // Unenrolled and explicitly uninspected kinds remain distinct captured sources.
 func (c Coverage) Equal(other Coverage) bool {
-	return c.representation == other.representation && maps.Equal(c.kinds, other.kinds) &&
+	return c.representation == other.representation && maps.EqualFunc(c.kinds, other.kinds, func(a, b KindCoverage) bool {
+		return a.Model == b.Model && a.Knowledge.Equal(b.Knowledge)
+	}) &&
 		maps.EqualFunc(c.subjects, other.subjects, func(a, b SubjectCoverage) bool {
 			return a.Kind == b.Kind && a.Subject == b.Subject && a.Knowledge == b.Knowledge && slices.Equal(a.Targets, b.Targets)
 		})

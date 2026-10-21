@@ -85,7 +85,7 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 }
 
 func projectedChildOf(parent, child objectidentity.ID) bool {
-	return child.Catalog.Normalized == parent.Catalog.Normalized && child.Schema.Normalized == parent.Schema.Normalized &&
+	return child.SameNamespace(parent) &&
 		child.Parent.Normalized != "" && child.Parent.Normalized == parent.Name.Normalized
 }
 

@@ -182,7 +182,7 @@ func TestTableComparisonPreservesExplicitLimitsWithoutValues(t *testing.T) {
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 	})]
 	request.Current.Coverage = must.Must(schemaext.NewCoverage(schemaext.Observed,
-		[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+		[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 		[]schemaext.SubjectCoverage{{Kind: chschema.TableKind, Subject: request.Owners[0].Subject, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "inspection failed"}}},
 	))
 	result, err := runtime.CompareFacets(t.Context(), request)
@@ -205,7 +205,7 @@ func TestTableComparisonRetainsUnknownState(t *testing.T) {
 				return v.Kind == chschema.TableKind && v.Representation == schemaext.Observed
 			})]
 			request.Current.Coverage = must.Must(schemaext.NewCoverage(schemaext.Observed,
-				[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+				[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 				[]schemaext.SubjectCoverage{{Kind: chschema.TableKind, Subject: request.Owners[0].Subject, Knowledge: schemaext.Knowledge{State: state, Reason: "incomplete inspection"}}},
 			))
 			result, err := runtime.CompareFacets(t.Context(), request)

@@ -88,7 +88,10 @@ func encodedLimits(known schemaext.Coverage) ([]annotation.EncodedLimit, error) 
 		if kind.Model.Kind != pgdefaultprivilege.DefaultPrivilegeKind {
 			return nil, fmt.Errorf("%w: unrelated default privilege coverage model", schemaext.ErrInvalidValue)
 		}
-		wholeUnknown = kind.Knowledge.State != schemaext.Complete
+		if kind.Knowledge.HasNamespaceScopes() {
+			return nil, fmt.Errorf("%w: this source format cannot preserve namespace coverage boundaries", ptaherr.ErrUnsupportedFeature)
+		}
+		wholeUnknown = kind.Knowledge.Unscoped().State != schemaext.Complete
 		if wholeUnknown {
 			result = append(result, annotation.EncodedLimit{Kind: string(LimitKind)})
 		}

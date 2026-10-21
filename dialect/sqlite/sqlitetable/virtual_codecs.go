@@ -55,7 +55,7 @@ func VirtualCoverage(representation schemaext.Representation, knowledge schemaex
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == VirtualKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: SQLite virtual table coverage requires a schema representation", schemaext.ErrInvalidValue)

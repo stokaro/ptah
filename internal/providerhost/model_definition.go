@@ -12,6 +12,7 @@ import (
 )
 
 type modelIdentity struct {
+	DisplayName      string          `json:"display_name"`
 	Kind             string          `json:"kind"`
 	Representation   string          `json:"representation"`
 	Version          uint32          `json:"version"`
@@ -28,7 +29,7 @@ func identityOfModel(model *protocol.ValueModel) modelIdentity {
 		formats = append(formats, format.String())
 	}
 	slices.Sort(formats)
-	return modelIdentity{Kind: model.GetKind(), Representation: model.GetRepresentation().String(), Version: model.GetSchemaVersion(),
+	return modelIdentity{DisplayName: model.GetDisplayName(), Kind: model.GetKind(), Representation: model.GetRepresentation().String(), Version: model.GetSchemaVersion(),
 		Encoding: model.GetEncoding(), DefinitionSHA256: model.GetDefinitionSha256(), Definition: slices.Clone(model.GetDefinitionJson()),
 		CanonicalFormat: model.GetCanonicalFormat(), SourceFormats: formats}
 }

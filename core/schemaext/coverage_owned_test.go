@@ -30,7 +30,7 @@ func TestOwnedCoverage_HappyPath(t *testing.T) {
 	c.Assert(records[0].Model.Owner, qt.Equals, "example.org/provider")
 	c.Assert(records[0].Model.Kind, qt.Equals, widgetKind)
 	c.Assert(records[0].Model.Representation, qt.Equals, schemaext.Observed)
-	c.Assert(records[0].Knowledge, qt.DeepEquals, schemaext.Knowledge{State: schemaext.Complete})
+	c.Assert(records[0].Knowledge.Unscoped(), qt.DeepEquals, schemaext.Knowledge{State: schemaext.Complete})
 	c.Assert(coverage.Lookup(widgetKind, subject).State, qt.Equals, schemaext.Unrepresentable)
 	c.Assert(coverage.Lookup(widgetKind, widgetRef("table", "other")).State, qt.Equals, schemaext.Complete)
 	c.Assert(coverage.Lookup(otherKind, subject).State, qt.Equals, schemaext.Uninspected)

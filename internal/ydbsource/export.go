@@ -78,10 +78,13 @@ func exportFamilyLimits(known schemaext.Coverage, family sourceFamily, model sch
 		if record.Model != model {
 			return nil, fmt.Errorf("%w: %s coverage uses a model the source cannot reproduce", ptaherr.ErrUnsupportedFeature, family.label)
 		}
-		if record.Knowledge.State != schemaext.Complete && !sourceLimitRepresentable(record.Knowledge, unmanagedNamespaceReason(family.label)) {
-			return nil, fmt.Errorf("%w: %s namespace is not fully described: %s", ptaherr.ErrUnsupportedFeature, family.label, record.Knowledge.Reason)
+		if record.Knowledge.HasNamespaceScopes() {
+			return nil, fmt.Errorf("%w: this source format cannot preserve namespace coverage boundaries", ptaherr.ErrUnsupportedFeature)
 		}
-		namespace = record.Knowledge.State
+		if record.Knowledge.Unscoped().State != schemaext.Complete && !sourceLimitRepresentable(record.Knowledge.Unscoped(), unmanagedNamespaceReason(family.label)) {
+			return nil, fmt.Errorf("%w: %s namespace is not fully described: %s", ptaherr.ErrUnsupportedFeature, family.label, record.Knowledge.Unscoped().Reason)
+		}
+		namespace = record.Knowledge.Unscoped().State
 	}
 	var limits []coverage.Object
 	if namespace == schemaext.Uninspected {

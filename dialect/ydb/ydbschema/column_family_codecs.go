@@ -110,7 +110,7 @@ func ColumnFamiliesCoverage(representation schemaext.Representation, knowledge s
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == ColumnFamiliesKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: column family coverage requires a schema representation", schemaext.ErrInvalidValue)

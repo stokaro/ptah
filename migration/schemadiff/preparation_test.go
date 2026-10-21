@@ -144,7 +144,7 @@ func observePreparationTables(c *qt.C, db *catalog.Database, keys map[string]str
 	}
 	for _, model := range runtime.Codecs().Definitions() {
 		if model.Kind == chschema.TableKind && model.Representation == schemaext.Observed {
-			db.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, subjects))
+			db.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, subjects))
 		}
 	}
 }

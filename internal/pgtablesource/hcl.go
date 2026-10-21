@@ -102,8 +102,8 @@ func exportCoverage(coverage schemaext.Coverage) error {
 		}
 	}
 	for _, record := range coverage.KindRecords() {
-		if (record.Model.Kind == pgtable.PersistenceKind || record.Model.Kind == pgtable.PartitionKind) && record.Knowledge.State == schemaext.Unrepresentable {
-			return fmt.Errorf("%w: table %s cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Model.Kind, record.Knowledge.Reason)
+		if (record.Model.Kind == pgtable.PersistenceKind || record.Model.Kind == pgtable.PartitionKind) && record.Knowledge.Unscoped().State == schemaext.Unrepresentable {
+			return fmt.Errorf("%w: table %s cannot be exported without losing its coverage: %s", ptaherr.ErrUnsupportedFeature, record.Model.Kind, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	return nil

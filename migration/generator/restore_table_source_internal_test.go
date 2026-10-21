@@ -116,7 +116,7 @@ func restoredFeatureCoverage(c *qt.C, direction schemaext.Representation, subjec
 	c.Helper()
 	coverage, err := schemaext.NewCoverage(direction, []schemaext.KindCoverage{{
 		Model:     schemaext.CodecIdentity{Owner: "example.org/restoration", Kind: restoredFeatureKind, Version: 1, Definition: "captured definition", Representation: direction},
-		Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+		Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete}),
 	}}, subjects)
 	c.Assert(err, qt.IsNil)
 	return coverage

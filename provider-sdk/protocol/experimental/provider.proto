@@ -16,6 +16,7 @@ service Provider {
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc DecodeSource(DecodeSourceRequest) returns (DecodedSource);
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
+  rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -124,11 +125,21 @@ message Schema {
   repeated Table tables = 2;
   repeated Envelope native_objects = 3;
   repeated Disposition dispositions = 4;
+  // Explicit observed knowledge. Empty kinds enroll no models and establish no
+  // native-object absence, even when the common-table snapshot is complete.
+  ModelCoverage coverage = 5;
+  // Binds empty snapshots and owner values to the inspected session's target.
+  string engine = 6;
+  repeated string target_features = 7;
+  // Ordered owner interpretations of the exact requested schema selectors.
+  repeated InspectionScopeBinding scope_bindings = 8;
 }
 message Table {
   Reference identity = 1;
   repeated Column columns = 2;
   repeated Envelope facets = 3;
+  // Required in inspection replies, including tables with no model facets.
+  Reference normalized_identity = 4;
 }
 message Column {
   string name = 1;
@@ -278,9 +289,10 @@ message NormalizedValue {
   bytes canonical_projection = 5;
 }
 
-// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
-// byte-column coordinates. It describes the captured source, not a temporary
-// rendering of its evaluated values.
+// SourcePosition uses a zero-based offset into the original encoded bytes and
+// one-based line and byte-column coordinates in that same encoding. A BOM
+// contributes bytes to the first column. Coordinates never refer to a temporary
+// rendering of evaluated values.
 message SourcePosition {
   uint64 byte_offset = 1;
   uint32 line = 2;
@@ -409,6 +421,9 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
+  // Optional plural label for omission reports. This declares no count metrics.
+  // Only desired and observed models may supply a trimmed, single-line label.
+  string display_name = 9;
 }
 message ModelKnowledge {
   enum State {
@@ -422,9 +437,31 @@ message ModelKnowledge {
   State state = 1;
   string reason = 2;
 }
+// A component retains both authored and owner-normalized spelling. An absent
+// component is a wildcard; a present empty component matches only an empty name.
+message NamespaceComponent {
+  string source = 1;
+  string normalized = 2;
+}
+// A namespace is relative to the engine selected by the surrounding operation.
+// Path prefixes compare whole components, never delimiter-joined strings.
+message ModelNamespace {
+  NamespaceComponent database = 1;
+  NamespaceComponent catalog = 2;
+  NamespaceComponent schema = 3;
+  repeated NamespaceComponent path_prefix = 4;
+}
+message ModelNamespaceKnowledge {
+  ModelNamespace scope = 1;
+  ModelKnowledge knowledge = 2;
+}
 message ModelKindCoverage {
   ValueModel model = 1;
+  // Knowledge outside every declared region. With no regions it is global.
   ModelKnowledge knowledge = 2;
+  // Matching regions combine conservatively: unknown or unrepresentable
+  // knowledge overrides completeness. Specific subjects take precedence.
+  repeated ModelNamespaceKnowledge regions = 3;
 }
 message ModelSubjectCoverage {
   string kind = 1;
@@ -472,4 +509,23 @@ message SourceModelValue {
   // Provenance resolves against the original captured fragment, never output
   // synthesized by the provider. Even an inherited default has a trace.
   SourceTrace source = 3;
+}
+
+// ConvertValues interprets a complete captured batch in the other schema
+// representation without a session. Source normalization is context, not proof
+// that the owner may skip validation. Conversion cannot rename an object or
+// establish inspection knowledge.
+message ConvertValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  ValueInput.Representation from = 3;
+  ValueInput.Representation to = 4;
+  repeated NormalizedValue values = 5;
+}
+
+// One selector may name several engine-defined namespaces. Empty namespaces
+// explicitly resolve the selector to no objects. Bindings grant no coverage.
+message InspectionScopeBinding {
+  string selector = 1;
+  repeated ModelNamespace namespaces = 2;
 }

@@ -60,7 +60,7 @@ func VectorIndexCoverage(representation schemaext.Representation, knowledge sche
 	}
 	for _, model := range registry.Definitions() {
 		if model.Kind == VectorIndexKind && model.Representation == representation {
-			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: knowledge}}, subjects)
+			return schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 		}
 	}
 	return schemaext.Coverage{}, fmt.Errorf("%w: vector index coverage requires a schema representation", schemaext.ErrInvalidValue)

@@ -44,7 +44,7 @@ func widgetCoverage() (schemaext.Coverage, error) {
 		return schemaext.Coverage{}, err
 	}
 	model, _ := registry.Identity(widgetKind, schemaext.Desired)
-	return schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil)
+	return schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil)
 }
 
 // widgetOwner declares //ptah:schema:widget, which sets a level on the table

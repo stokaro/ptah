@@ -259,7 +259,7 @@ func TestReadWith_DropTableRemovesItsChildren(t *testing.T) {
 	runtime := markRuntime()
 	var kinds []schemaext.KindCoverage
 	for _, model := range runtime.Codecs().Definitions() {
-		kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+		kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 	}
 	builder := objectidentity.NewBuilder(identifier.ForDialect("postgres"))
 	subjects := []schemaext.SubjectCoverage{

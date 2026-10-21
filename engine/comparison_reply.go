@@ -140,7 +140,7 @@ func comparisonParent(parents []schemaext.ParentState, subject objectidentity.ID
 	if subject.Parent.Empty() {
 		return schemaext.ParentState{}, false
 	}
-	ref := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
+	ref := objectidentity.ID{Kind: objectidentity.KindTable, Database: subject.Database, Namespace: subject.Namespace, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
 	for _, parent := range parents {
 		if parent.Subject.Key() == ref.Key() {
 			return parent, true

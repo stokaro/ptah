@@ -233,7 +233,7 @@ func FamiliesKnown(coverage schemaext.Coverage) bool {
 	}
 	for _, record := range coverage.KindRecords() {
 		if record.Model.Kind == ydbschema.ColumnFamiliesKind {
-			return record.Knowledge.State == schemaext.Complete || record.Knowledge.State == schemaext.Absent
+			return record.Knowledge.Unscoped().State == schemaext.Complete || record.Knowledge.Unscoped().State == schemaext.Absent
 		}
 	}
 	return false

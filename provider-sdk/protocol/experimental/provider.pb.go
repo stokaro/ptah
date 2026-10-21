@@ -604,7 +604,7 @@ func (x SourceModelValue_Placement) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SourceModelValue_Placement.Descriptor instead.
 func (SourceModelValue_Placement) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{52, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{55, 0}
 }
 
 type Empty struct {
@@ -1475,6 +1475,14 @@ type Schema struct {
 	Tables        []*Table               `protobuf:"bytes,2,rep,name=tables,proto3" json:"tables,omitempty"`
 	NativeObjects []*Envelope            `protobuf:"bytes,3,rep,name=native_objects,json=nativeObjects,proto3" json:"native_objects,omitempty"`
 	Dispositions  []*Disposition         `protobuf:"bytes,4,rep,name=dispositions,proto3" json:"dispositions,omitempty"`
+	// Explicit observed knowledge. Empty kinds enroll no models and establish no
+	// native-object absence, even when the common-table snapshot is complete.
+	Coverage *ModelCoverage `protobuf:"bytes,5,opt,name=coverage,proto3" json:"coverage,omitempty"`
+	// Binds empty snapshots and owner values to the inspected session's target.
+	Engine         string   `protobuf:"bytes,6,opt,name=engine,proto3" json:"engine,omitempty"`
+	TargetFeatures []string `protobuf:"bytes,7,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	// Ordered owner interpretations of the exact requested schema selectors.
+	ScopeBindings []*InspectionScopeBinding `protobuf:"bytes,8,rep,name=scope_bindings,json=scopeBindings,proto3" json:"scope_bindings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1537,13 +1545,43 @@ func (x *Schema) GetDispositions() []*Disposition {
 	return nil
 }
 
+func (x *Schema) GetCoverage() *ModelCoverage {
+	if x != nil {
+		return x.Coverage
+	}
+	return nil
+}
+
+func (x *Schema) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *Schema) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *Schema) GetScopeBindings() []*InspectionScopeBinding {
+	if x != nil {
+		return x.ScopeBindings
+	}
+	return nil
+}
+
 type Table struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Identity      *Reference             `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
-	Columns       []*Column              `protobuf:"bytes,2,rep,name=columns,proto3" json:"columns,omitempty"`
-	Facets        []*Envelope            `protobuf:"bytes,3,rep,name=facets,proto3" json:"facets,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Identity *Reference             `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	Columns  []*Column              `protobuf:"bytes,2,rep,name=columns,proto3" json:"columns,omitempty"`
+	Facets   []*Envelope            `protobuf:"bytes,3,rep,name=facets,proto3" json:"facets,omitempty"`
+	// Required in inspection replies, including tables with no model facets.
+	NormalizedIdentity *Reference `protobuf:"bytes,4,opt,name=normalized_identity,json=normalizedIdentity,proto3" json:"normalized_identity,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Table) Reset() {
@@ -1593,6 +1631,13 @@ func (x *Table) GetColumns() []*Column {
 func (x *Table) GetFacets() []*Envelope {
 	if x != nil {
 		return x.Facets
+	}
+	return nil
+}
+
+func (x *Table) GetNormalizedIdentity() *Reference {
+	if x != nil {
+		return x.NormalizedIdentity
 	}
 	return nil
 }
@@ -2742,9 +2787,10 @@ func (x *NormalizedValue) GetCanonicalProjection() []byte {
 	return nil
 }
 
-// SourcePosition uses a zero-based UTF-8 byte offset and one-based line and
-// byte-column coordinates. It describes the captured source, not a temporary
-// rendering of its evaluated values.
+// SourcePosition uses a zero-based offset into the original encoded bytes and
+// one-based line and byte-column coordinates in that same encoding. A BOM
+// contributes bytes to the first column. Coordinates never refer to a temporary
+// rendering of evaluated values.
 type SourcePosition struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ByteOffset    uint64                 `protobuf:"varint,1,opt,name=byte_offset,json=byteOffset,proto3" json:"byte_offset,omitempty"`
@@ -3866,8 +3912,11 @@ type ValueModel struct {
 	// Full owner definition, canonicalized with modeljson.Canonical. Its exact
 	// SHA-256 must match definition_sha256. It is a nonempty JSON object.
 	DefinitionJson []byte `protobuf:"bytes,8,opt,name=definition_json,json=definitionJson,proto3" json:"definition_json,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Optional plural label for omission reports. This declares no count metrics.
+	// Only desired and observed models may supply a trimmed, single-line label.
+	DisplayName   string `protobuf:"bytes,9,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ValueModel) Reset() {
@@ -3956,6 +4005,13 @@ func (x *ValueModel) GetDefinitionJson() []byte {
 	return nil
 }
 
+func (x *ValueModel) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
 type ModelKnowledge struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         ModelKnowledge_State   `protobuf:"varint,1,opt,name=state,proto3,enum=ptah.provider.experimental.ModelKnowledge_State" json:"state,omitempty"`
@@ -4008,17 +4064,197 @@ func (x *ModelKnowledge) GetReason() string {
 	return ""
 }
 
-type ModelKindCoverage struct {
+// A component retains both authored and owner-normalized spelling. An absent
+// component is a wildcard; a present empty component matches only an empty name.
+type NamespaceComponent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Model         *ValueModel            `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Normalized    string                 `protobuf:"bytes,2,opt,name=normalized,proto3" json:"normalized,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NamespaceComponent) Reset() {
+	*x = NamespaceComponent{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamespaceComponent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamespaceComponent) ProtoMessage() {}
+
+func (x *NamespaceComponent) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamespaceComponent.ProtoReflect.Descriptor instead.
+func (*NamespaceComponent) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *NamespaceComponent) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *NamespaceComponent) GetNormalized() string {
+	if x != nil {
+		return x.Normalized
+	}
+	return ""
+}
+
+// A namespace is relative to the engine selected by the surrounding operation.
+// Path prefixes compare whole components, never delimiter-joined strings.
+type ModelNamespace struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Database      *NamespaceComponent    `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	Catalog       *NamespaceComponent    `protobuf:"bytes,2,opt,name=catalog,proto3" json:"catalog,omitempty"`
+	Schema        *NamespaceComponent    `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`
+	PathPrefix    []*NamespaceComponent  `protobuf:"bytes,4,rep,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelNamespace) Reset() {
+	*x = ModelNamespace{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelNamespace) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelNamespace) ProtoMessage() {}
+
+func (x *ModelNamespace) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelNamespace.ProtoReflect.Descriptor instead.
+func (*ModelNamespace) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ModelNamespace) GetDatabase() *NamespaceComponent {
+	if x != nil {
+		return x.Database
+	}
+	return nil
+}
+
+func (x *ModelNamespace) GetCatalog() *NamespaceComponent {
+	if x != nil {
+		return x.Catalog
+	}
+	return nil
+}
+
+func (x *ModelNamespace) GetSchema() *NamespaceComponent {
+	if x != nil {
+		return x.Schema
+	}
+	return nil
+}
+
+func (x *ModelNamespace) GetPathPrefix() []*NamespaceComponent {
+	if x != nil {
+		return x.PathPrefix
+	}
+	return nil
+}
+
+type ModelNamespaceKnowledge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         *ModelNamespace        `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
 	Knowledge     *ModelKnowledge        `protobuf:"bytes,2,opt,name=knowledge,proto3" json:"knowledge,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelNamespaceKnowledge) Reset() {
+	*x = ModelNamespaceKnowledge{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelNamespaceKnowledge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelNamespaceKnowledge) ProtoMessage() {}
+
+func (x *ModelNamespaceKnowledge) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelNamespaceKnowledge.ProtoReflect.Descriptor instead.
+func (*ModelNamespaceKnowledge) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ModelNamespaceKnowledge) GetScope() *ModelNamespace {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *ModelNamespaceKnowledge) GetKnowledge() *ModelKnowledge {
+	if x != nil {
+		return x.Knowledge
+	}
+	return nil
+}
+
+type ModelKindCoverage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Model *ValueModel            `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	// Knowledge outside every declared region. With no regions it is global.
+	Knowledge *ModelKnowledge `protobuf:"bytes,2,opt,name=knowledge,proto3" json:"knowledge,omitempty"`
+	// Matching regions combine conservatively: unknown or unrepresentable
+	// knowledge overrides completeness. Specific subjects take precedence.
+	Regions       []*ModelNamespaceKnowledge `protobuf:"bytes,3,rep,name=regions,proto3" json:"regions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ModelKindCoverage) Reset() {
 	*x = ModelKindCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4030,7 +4266,7 @@ func (x *ModelKindCoverage) String() string {
 func (*ModelKindCoverage) ProtoMessage() {}
 
 func (x *ModelKindCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4043,7 +4279,7 @@ func (x *ModelKindCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelKindCoverage.ProtoReflect.Descriptor instead.
 func (*ModelKindCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{45}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ModelKindCoverage) GetModel() *ValueModel {
@@ -4060,6 +4296,13 @@ func (x *ModelKindCoverage) GetKnowledge() *ModelKnowledge {
 	return nil
 }
 
+func (x *ModelKindCoverage) GetRegions() []*ModelNamespaceKnowledge {
+	if x != nil {
+		return x.Regions
+	}
+	return nil
+}
+
 type ModelSubjectCoverage struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Kind              string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
@@ -4072,7 +4315,7 @@ type ModelSubjectCoverage struct {
 
 func (x *ModelSubjectCoverage) Reset() {
 	*x = ModelSubjectCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4084,7 +4327,7 @@ func (x *ModelSubjectCoverage) String() string {
 func (*ModelSubjectCoverage) ProtoMessage() {}
 
 func (x *ModelSubjectCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4097,7 +4340,7 @@ func (x *ModelSubjectCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelSubjectCoverage.ProtoReflect.Descriptor instead.
 func (*ModelSubjectCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ModelSubjectCoverage) GetKind() string {
@@ -4139,7 +4382,7 @@ type ModelCoverage struct {
 
 func (x *ModelCoverage) Reset() {
 	*x = ModelCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4151,7 +4394,7 @@ func (x *ModelCoverage) String() string {
 func (*ModelCoverage) ProtoMessage() {}
 
 func (x *ModelCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4164,7 +4407,7 @@ func (x *ModelCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelCoverage.ProtoReflect.Descriptor instead.
 func (*ModelCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ModelCoverage) GetRepresentation() ValueInput_Representation {
@@ -4203,7 +4446,7 @@ type DecodeSourceRequest struct {
 
 func (x *DecodeSourceRequest) Reset() {
 	*x = DecodeSourceRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4215,7 +4458,7 @@ func (x *DecodeSourceRequest) String() string {
 func (*DecodeSourceRequest) ProtoMessage() {}
 
 func (x *DecodeSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4228,7 +4471,7 @@ func (x *DecodeSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodeSourceRequest.ProtoReflect.Descriptor instead.
 func (*DecodeSourceRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *DecodeSourceRequest) GetEngine() string {
@@ -4263,7 +4506,7 @@ type DecodedSource struct {
 
 func (x *DecodedSource) Reset() {
 	*x = DecodedSource{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4275,7 +4518,7 @@ func (x *DecodedSource) String() string {
 func (*DecodedSource) ProtoMessage() {}
 
 func (x *DecodedSource) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4288,7 +4531,7 @@ func (x *DecodedSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSource.ProtoReflect.Descriptor instead.
 func (*DecodedSource) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *DecodedSource) GetComplete() bool {
@@ -4318,7 +4561,7 @@ type DecodedSourceDocument struct {
 
 func (x *DecodedSourceDocument) Reset() {
 	*x = DecodedSourceDocument{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4330,7 +4573,7 @@ func (x *DecodedSourceDocument) String() string {
 func (*DecodedSourceDocument) ProtoMessage() {}
 
 func (x *DecodedSourceDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4343,7 +4586,7 @@ func (x *DecodedSourceDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSourceDocument.ProtoReflect.Descriptor instead.
 func (*DecodedSourceDocument) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *DecodedSourceDocument) GetId() string {
@@ -4377,7 +4620,7 @@ type DecodedSourceFragment struct {
 
 func (x *DecodedSourceFragment) Reset() {
 	*x = DecodedSourceFragment{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4389,7 +4632,7 @@ func (x *DecodedSourceFragment) String() string {
 func (*DecodedSourceFragment) ProtoMessage() {}
 
 func (x *DecodedSourceFragment) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4402,7 +4645,7 @@ func (x *DecodedSourceFragment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSourceFragment.ProtoReflect.Descriptor instead.
 func (*DecodedSourceFragment) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *DecodedSourceFragment) GetId() string {
@@ -4434,7 +4677,7 @@ type SourceModelValue struct {
 
 func (x *SourceModelValue) Reset() {
 	*x = SourceModelValue{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4446,7 +4689,7 @@ func (x *SourceModelValue) String() string {
 func (*SourceModelValue) ProtoMessage() {}
 
 func (x *SourceModelValue) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4459,7 +4702,7 @@ func (x *SourceModelValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceModelValue.ProtoReflect.Descriptor instead.
 func (*SourceModelValue) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{52}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *SourceModelValue) GetPlacement() SourceModelValue_Placement {
@@ -4479,6 +4722,140 @@ func (x *SourceModelValue) GetValue() *NormalizedValue {
 func (x *SourceModelValue) GetSource() *SourceTrace {
 	if x != nil {
 		return x.Source
+	}
+	return nil
+}
+
+// ConvertValues interprets a complete captured batch in the other schema
+// representation without a session. Source normalization is context, not proof
+// that the owner may skip validation. Conversion cannot rename an object or
+// establish inspection knowledge.
+type ConvertValuesRequest struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Engine         string                    `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	TargetFeatures []string                  `protobuf:"bytes,2,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	From           ValueInput_Representation `protobuf:"varint,3,opt,name=from,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"from,omitempty"`
+	To             ValueInput_Representation `protobuf:"varint,4,opt,name=to,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"to,omitempty"`
+	Values         []*NormalizedValue        `protobuf:"bytes,5,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ConvertValuesRequest) Reset() {
+	*x = ConvertValuesRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConvertValuesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConvertValuesRequest) ProtoMessage() {}
+
+func (x *ConvertValuesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConvertValuesRequest.ProtoReflect.Descriptor instead.
+func (*ConvertValuesRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ConvertValuesRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *ConvertValuesRequest) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *ConvertValuesRequest) GetFrom() ValueInput_Representation {
+	if x != nil {
+		return x.From
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ConvertValuesRequest) GetTo() ValueInput_Representation {
+	if x != nil {
+		return x.To
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ConvertValuesRequest) GetValues() []*NormalizedValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+// One selector may name several engine-defined namespaces. Empty namespaces
+// explicitly resolve the selector to no objects. Bindings grant no coverage.
+type InspectionScopeBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selector      string                 `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	Namespaces    []*ModelNamespace      `protobuf:"bytes,2,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InspectionScopeBinding) Reset() {
+	*x = InspectionScopeBinding{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectionScopeBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectionScopeBinding) ProtoMessage() {}
+
+func (x *InspectionScopeBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectionScopeBinding.ProtoReflect.Descriptor instead.
+func (*InspectionScopeBinding) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *InspectionScopeBinding) GetSelector() string {
+	if x != nil {
+		return x.Selector
+	}
+	return ""
+}
+
+func (x *InspectionScopeBinding) GetNamespaces() []*ModelNamespace {
+	if x != nil {
+		return x.Namespaces
 	}
 	return nil
 }
@@ -4571,16 +4948,21 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x0eInspectRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x18\n" +
-	"\aschemas\x18\x02 \x03(\tR\aschemas\"\xf9\x01\n" +
+	"\aschemas\x18\x02 \x03(\tR\aschemas\"\xdc\x03\n" +
 	"\x06Schema\x12\x1a\n" +
 	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x129\n" +
 	"\x06tables\x18\x02 \x03(\v2!.ptah.provider.experimental.TableR\x06tables\x12K\n" +
 	"\x0enative_objects\x18\x03 \x03(\v2$.ptah.provider.experimental.EnvelopeR\rnativeObjects\x12K\n" +
-	"\fdispositions\x18\x04 \x03(\v2'.ptah.provider.experimental.DispositionR\fdispositions\"\xc6\x01\n" +
+	"\fdispositions\x18\x04 \x03(\v2'.ptah.provider.experimental.DispositionR\fdispositions\x12E\n" +
+	"\bcoverage\x18\x05 \x01(\v2).ptah.provider.experimental.ModelCoverageR\bcoverage\x12\x16\n" +
+	"\x06engine\x18\x06 \x01(\tR\x06engine\x12'\n" +
+	"\x0ftarget_features\x18\a \x03(\tR\x0etargetFeatures\x12Y\n" +
+	"\x0escope_bindings\x18\b \x03(\v22.ptah.provider.experimental.InspectionScopeBindingR\rscopeBindings\"\x9e\x02\n" +
 	"\x05Table\x12A\n" +
 	"\bidentity\x18\x01 \x01(\v2%.ptah.provider.experimental.ReferenceR\bidentity\x12<\n" +
 	"\acolumns\x18\x02 \x03(\v2\".ptah.provider.experimental.ColumnR\acolumns\x12<\n" +
-	"\x06facets\x18\x03 \x03(\v2$.ptah.provider.experimental.EnvelopeR\x06facets\"\xf6\x01\n" +
+	"\x06facets\x18\x03 \x03(\v2$.ptah.provider.experimental.EnvelopeR\x06facets\x12V\n" +
+	"\x13normalized_identity\x18\x04 \x01(\v2%.ptah.provider.experimental.ReferenceR\x12normalizedIdentity\"\xf6\x01\n" +
 	"\x06Column\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
@@ -4789,7 +5171,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x04Root\x12\x14\n" +
 	"\x10ROOT_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aCONTENT\x10\x01\x12\x18\n" +
-	"\x14INHERITED_ATTRIBUTES\x10\x02\"\x9d\x03\n" +
+	"\x14INHERITED_ATTRIBUTES\x10\x02\"\xc0\x03\n" +
 	"\n" +
 	"ValueModel\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12]\n" +
@@ -4799,7 +5181,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x11definition_sha256\x18\x05 \x01(\tR\x10definitionSha256\x12)\n" +
 	"\x10canonical_format\x18\x06 \x01(\tR\x0fcanonicalFormat\x12X\n" +
 	"\x0esource_formats\x18\a \x03(\x0e21.ptah.provider.experimental.SourceDocument.FormatR\rsourceFormats\x12'\n" +
-	"\x0fdefinition_json\x18\b \x01(\fR\x0edefinitionJson\"\xdf\x01\n" +
+	"\x0fdefinition_json\x18\b \x01(\fR\x0edefinitionJson\x12!\n" +
+	"\fdisplay_name\x18\t \x01(\tR\vdisplayName\"\xdf\x01\n" +
 	"\x0eModelKnowledge\x12F\n" +
 	"\x05state\x18\x01 \x01(\x0e20.ptah.provider.experimental.ModelKnowledge.StateR\x05state\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"m\n" +
@@ -4810,10 +5193,25 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\n" +
 	"\x06ABSENT\x10\x03\x12\r\n" +
 	"\tDEFAULTED\x10\x04\x12\x13\n" +
-	"\x0fUNREPRESENTABLE\x10\x05\"\x9b\x01\n" +
+	"\x0fUNREPRESENTABLE\x10\x05\"L\n" +
+	"\x12NamespaceComponent\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1e\n" +
+	"\n" +
+	"normalized\x18\x02 \x01(\tR\n" +
+	"normalized\"\xbf\x02\n" +
+	"\x0eModelNamespace\x12J\n" +
+	"\bdatabase\x18\x01 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\bdatabase\x12H\n" +
+	"\acatalog\x18\x02 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\acatalog\x12F\n" +
+	"\x06schema\x18\x03 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\x06schema\x12O\n" +
+	"\vpath_prefix\x18\x04 \x03(\v2..ptah.provider.experimental.NamespaceComponentR\n" +
+	"pathPrefix\"\xa5\x01\n" +
+	"\x17ModelNamespaceKnowledge\x12@\n" +
+	"\x05scope\x18\x01 \x01(\v2*.ptah.provider.experimental.ModelNamespaceR\x05scope\x12H\n" +
+	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\xea\x01\n" +
 	"\x11ModelKindCoverage\x12<\n" +
 	"\x05model\x18\x01 \x01(\v2&.ptah.provider.experimental.ValueModelR\x05model\x12H\n" +
-	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\x8b\x02\n" +
+	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\x12M\n" +
+	"\aregions\x18\x03 \x03(\v23.ptah.provider.experimental.ModelNamespaceKnowledgeR\aregions\"\x8b\x02\n" +
 	"\x14ModelSubjectCoverage\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12?\n" +
 	"\asubject\x18\x02 \x01(\v2%.ptah.provider.experimental.ReferenceR\asubject\x12T\n" +
@@ -4844,7 +5242,18 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\tPlacement\x12\x19\n" +
 	"\x15PLACEMENT_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rNATIVE_OBJECT\x10\x01\x12\t\n" +
-	"\x05FACET\x10\x022\xf7\x06\n" +
+	"\x05FACET\x10\x02\"\xae\x02\n" +
+	"\x14ConvertValuesRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12'\n" +
+	"\x0ftarget_features\x18\x02 \x03(\tR\x0etargetFeatures\x12I\n" +
+	"\x04from\x18\x03 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x04from\x12E\n" +
+	"\x02to\x18\x04 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x02to\x12C\n" +
+	"\x06values\x18\x05 \x03(\v2+.ptah.provider.experimental.NormalizedValueR\x06values\"\x80\x01\n" +
+	"\x16InspectionScopeBinding\x12\x1a\n" +
+	"\bselector\x18\x01 \x01(\tR\bselector\x12J\n" +
+	"\n" +
+	"namespaces\x18\x02 \x03(\v2*.ptah.provider.experimental.ModelNamespaceR\n" +
+	"namespaces2\xe8\a\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -4854,7 +5263,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\n" +
 	"AnalyzeSQL\x12-.ptah.provider.experimental.AnalyzeSQLRequest\x1a'.ptah.provider.experimental.SQLAnalysis\x12j\n" +
 	"\fDecodeSource\x12/.ptah.provider.experimental.DecodeSourceRequest\x1a).ptah.provider.experimental.DecodedSource\x12s\n" +
-	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12\\\n" +
+	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12o\n" +
+	"\rConvertValues\x120.ptah.provider.experimental.ConvertValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.ExecutionBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
 var (
@@ -4870,7 +5280,7 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(YAMLSourceKey_Scope)(0),            // 0: ptah.provider.experimental.YAMLSourceKey.Scope
 	(IdentifierRules_Comparison)(0),     // 1: ptah.provider.experimental.IdentifierRules.Comparison
@@ -4928,126 +5338,147 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(*SourceTrace)(nil),                 // 53: ptah.provider.experimental.SourceTrace
 	(*ValueModel)(nil),                  // 54: ptah.provider.experimental.ValueModel
 	(*ModelKnowledge)(nil),              // 55: ptah.provider.experimental.ModelKnowledge
-	(*ModelKindCoverage)(nil),           // 56: ptah.provider.experimental.ModelKindCoverage
-	(*ModelSubjectCoverage)(nil),        // 57: ptah.provider.experimental.ModelSubjectCoverage
-	(*ModelCoverage)(nil),               // 58: ptah.provider.experimental.ModelCoverage
-	(*DecodeSourceRequest)(nil),         // 59: ptah.provider.experimental.DecodeSourceRequest
-	(*DecodedSource)(nil),               // 60: ptah.provider.experimental.DecodedSource
-	(*DecodedSourceDocument)(nil),       // 61: ptah.provider.experimental.DecodedSourceDocument
-	(*DecodedSourceFragment)(nil),       // 62: ptah.provider.experimental.DecodedSourceFragment
-	(*SourceModelValue)(nil),            // 63: ptah.provider.experimental.SourceModelValue
+	(*NamespaceComponent)(nil),          // 56: ptah.provider.experimental.NamespaceComponent
+	(*ModelNamespace)(nil),              // 57: ptah.provider.experimental.ModelNamespace
+	(*ModelNamespaceKnowledge)(nil),     // 58: ptah.provider.experimental.ModelNamespaceKnowledge
+	(*ModelKindCoverage)(nil),           // 59: ptah.provider.experimental.ModelKindCoverage
+	(*ModelSubjectCoverage)(nil),        // 60: ptah.provider.experimental.ModelSubjectCoverage
+	(*ModelCoverage)(nil),               // 61: ptah.provider.experimental.ModelCoverage
+	(*DecodeSourceRequest)(nil),         // 62: ptah.provider.experimental.DecodeSourceRequest
+	(*DecodedSource)(nil),               // 63: ptah.provider.experimental.DecodedSource
+	(*DecodedSourceDocument)(nil),       // 64: ptah.provider.experimental.DecodedSourceDocument
+	(*DecodedSourceFragment)(nil),       // 65: ptah.provider.experimental.DecodedSourceFragment
+	(*SourceModelValue)(nil),            // 66: ptah.provider.experimental.SourceModelValue
+	(*ConvertValuesRequest)(nil),        // 67: ptah.provider.experimental.ConvertValuesRequest
+	(*InspectionScopeBinding)(nil),      // 68: ptah.provider.experimental.InspectionScopeBinding
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	14, // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	16, // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	54, // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
-	15, // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
-	0,  // 4: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
-	1,  // 5: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	1,  // 6: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	1,  // 7: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	2,  // 8: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	17, // 9: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	16, // 10: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	24, // 11: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	18, // 12: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	26, // 13: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	17, // 14: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	25, // 15: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	18, // 16: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	18, // 17: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	17, // 18: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
-	3,  // 19: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	17, // 20: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	24, // 21: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	11, // 22: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	25, // 23: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	18, // 24: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
-	27, // 25: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	18, // 26: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	29, // 27: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	29, // 28: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
-	4,  // 29: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	35, // 30: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
-	36, // 31: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
-	5,  // 32: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
-	38, // 33: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	6,  // 34: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	18, // 35: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
-	40, // 36: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
-	18, // 37: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
-	17, // 38: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
-	41, // 39: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
-	41, // 40: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
-	42, // 41: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
-	11, // 42: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
-	17, // 43: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
-	44, // 44: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
-	45, // 45: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
-	43, // 46: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
-	46, // 47: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
-	42, // 48: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
-	43, // 49: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
-	48, // 50: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
-	45, // 51: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
-	47, // 52: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
-	42, // 53: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
-	42, // 54: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
-	17, // 55: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
-	15, // 56: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
-	17, // 57: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
-	45, // 58: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
-	42, // 59: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
-	43, // 60: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
-	47, // 61: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
-	7,  // 62: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
-	49, // 63: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
-	50, // 64: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
-	54, // 65: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
-	52, // 66: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
-	8,  // 67: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
-	6,  // 68: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	7,  // 69: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
-	9,  // 70: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
-	54, // 71: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	55, // 72: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	17, // 73: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
-	17, // 74: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
-	55, // 75: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	6,  // 76: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	56, // 77: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
-	57, // 78: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
-	51, // 79: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
-	61, // 80: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
-	58, // 81: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	62, // 82: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
-	63, // 83: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
-	10, // 84: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
-	40, // 85: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
-	53, // 86: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
-	12, // 87: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	19, // 88: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	21, // 89: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	22, // 90: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	28, // 91: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	33, // 92: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	59, // 93: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	37, // 94: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	31, // 95: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	13, // 96: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	20, // 97: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	11, // 98: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	23, // 99: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	30, // 100: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	34, // 101: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	60, // 102: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	39, // 103: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	32, // 104: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	96, // [96:105] is the sub-list for method output_type
-	87, // [87:96] is the sub-list for method input_type
-	87, // [87:87] is the sub-list for extension type_name
-	87, // [87:87] is the sub-list for extension extendee
-	0,  // [0:87] is the sub-list for field type_name
+	14,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	16,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	54,  // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
+	15,  // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
+	0,   // 4: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
+	1,   // 5: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	1,   // 6: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	1,   // 7: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	2,   // 8: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
+	17,  // 9: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	16,  // 10: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	24,  // 11: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	18,  // 12: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	26,  // 13: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	61,  // 14: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	68,  // 15: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
+	17,  // 16: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	25,  // 17: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	18,  // 18: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	17,  // 19: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
+	18,  // 20: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	17,  // 21: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	3,   // 22: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
+	17,  // 23: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	24,  // 24: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	11,  // 25: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	25,  // 26: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	18,  // 27: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.Envelope
+	27,  // 28: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	18,  // 29: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	29,  // 30: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	29,  // 31: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	4,   // 32: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
+	35,  // 33: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	36,  // 34: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	5,   // 35: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	38,  // 36: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	6,   // 37: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	18,  // 38: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
+	40,  // 39: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
+	18,  // 40: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
+	17,  // 41: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
+	41,  // 42: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
+	41,  // 43: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
+	42,  // 44: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
+	11,  // 45: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
+	17,  // 46: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
+	44,  // 47: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
+	45,  // 48: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
+	43,  // 49: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
+	46,  // 50: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
+	42,  // 51: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
+	43,  // 52: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
+	48,  // 53: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
+	45,  // 54: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
+	47,  // 55: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
+	42,  // 56: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
+	42,  // 57: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
+	17,  // 58: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
+	15,  // 59: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
+	17,  // 60: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
+	45,  // 61: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
+	42,  // 62: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
+	43,  // 63: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
+	47,  // 64: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
+	7,   // 65: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	49,  // 66: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	50,  // 67: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
+	54,  // 68: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
+	52,  // 69: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
+	8,   // 70: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
+	6,   // 71: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	7,   // 72: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
+	9,   // 73: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
+	56,  // 74: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
+	56,  // 75: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
+	56,  // 76: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
+	56,  // 77: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
+	57,  // 78: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
+	55,  // 79: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	54,  // 80: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	55,  // 81: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	58,  // 82: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
+	17,  // 83: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
+	17,  // 84: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
+	55,  // 85: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	6,   // 86: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	59,  // 87: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
+	60,  // 88: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
+	51,  // 89: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
+	64,  // 90: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
+	61,  // 91: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	65,  // 92: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
+	66,  // 93: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
+	10,  // 94: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	40,  // 95: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	53,  // 96: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
+	6,   // 97: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
+	6,   // 98: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
+	40,  // 99: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
+	57,  // 100: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
+	12,  // 101: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	19,  // 102: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	21,  // 103: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	22,  // 104: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	28,  // 105: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	33,  // 106: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	62,  // 107: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	37,  // 108: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	67,  // 109: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	31,  // 110: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	13,  // 111: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	20,  // 112: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	11,  // 113: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	23,  // 114: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	30,  // 115: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	34,  // 116: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	63,  // 117: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	39,  // 118: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	39,  // 119: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	32,  // 120: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	111, // [111:121] is the sub-list for method output_type
+	101, // [101:111] is the sub-list for method input_type
+	101, // [101:101] is the sub-list for extension type_name
+	101, // [101:101] is the sub-list for extension extendee
+	0,   // [0:101] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -5095,7 +5526,7 @@ func file_protocol_experimental_provider_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   53,
+			NumMessages:   58,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

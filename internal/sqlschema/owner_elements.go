@@ -19,7 +19,7 @@ func appendTableObjects(database *schemamodel.Database, databases []*schemamodel
 	result := database.FeatureObjects
 	for _, object := range all {
 		parent := childTable(databases, object.Ref, sourcePlatform)
-		if !object.Ref.Catalog.Empty() || parent == nil || parent.Schema != table.Schema || parent.Name != table.Name {
+		if !object.Ref.Database.Empty() || !object.Ref.Namespace.IsZero() || !object.Ref.Catalog.Empty() || parent == nil || parent.Schema != table.Schema || parent.Name != table.Name {
 			return fmt.Errorf("%w: owned element %s is not a child of table %s", schemaext.ErrInvalidValue, object.Ref, table.QualifiedName())
 		}
 		object.Ref = declaredChild(databases, object.Ref, sourcePlatform)

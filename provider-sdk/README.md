@@ -32,6 +32,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -173,13 +174,35 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. Native object/facet adaptation in the host, frontend capture, contextual
-comparison, and migration backend operations remain required
-work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
+comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+
+## Desired and observed conversion
+
+The optional `values.convert` service uses a `ValueConverter` alongside
+`values.normalize`. It receives one complete batch, its source and destination
+representations, and the captured target features. No session is needed.
+
+The owner interprets source payloads again. Supplied canonical projections are
+context, not proof of validation. Destination schema versions, encodings,
+definition digests, payloads, and canonical formats follow the destination model.
+The ordered IDs, model kinds, source identities, and normalized identity tuples
+must remain unchanged. Required features may change only within the selected
+profile. An error, cancellation, or incomplete response discards the whole batch.
+
+The host registers conversion only for advertised services and paired desired
+and observed models. A batch mixing captured engine or feature profiles is
+refused. Conversion cannot establish inspection coverage. The shared conversion
+pipeline retains bounded knowledge, object identities, and facet placement;
+unknown namespaces remain unknown. Clone, encoding, and equality remain local.
+
+This service does not resolve schema selectors or implement contextual
+comparison and planning. Inspection binds selectors separately through the
+owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 6 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 10 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -227,8 +250,9 @@ knowledge are distinct. Absence and defaults need a specific subject; observed
 coverage cannot request defaults. An incomplete source result is refused.
 
 Source traces name an original document and fragment and follow typed keys,
-indices, attributes, child blocks, or labels. Coordinates use zero-based UTF-8
-byte offsets and one-based lines and byte columns. Authored values require
+indices, attributes, child blocks, or labels. Coordinates use zero-based offsets into the original encoded bytes and
+one-based lines and byte columns in that encoding. A BOM contributes bytes to
+the first column; UTF-16 source is not silently re-encoded. Authored values require
 positions; inherited defaults can lack an authored position. A missing path is
 an error, distinct from an inherited default with no position. Validation reads
 no files, checks bounds and cycles, and limits depth and batch size.
@@ -236,6 +260,65 @@ no files, checks bounds and cycles, and limits depth and batch size.
 The independent fixture exercises evaluated YAML, HCL, and Go annotation
 fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
-retention to SQLite. The application frontends do not yet capture sources for
-this RPC. Official-engine adapters, native planning, transactions, and history
+retention to SQLite. The host YAML frontend captures negotiated document and
+table keys for this RPC. The host HCL and Go annotation adapters, official-engine
+adapters, native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
+
+## Observed model coverage
+
+`Inspect` returns its engine, selected target features, and explicit observed
+model coverage even for an empty database. The host matches the engine and
+features to the inspected session. A missing coverage record is not evidence
+that a model has no objects.
+
+`provider.InspectionValues` validates native objects, table facets, and column
+facets against their negotiated model definitions and complete subject records.
+It returns an independent batch for `NormalizeValues`. Native objects use their
+model kind as their identity kind. Table facets name their table, and column
+facets use `provider.ColumnReference` to keep the table and column names as
+separate components.
+
+After normalization, `provider.ValidateNormalizedInspection` requires every
+normalized owner to match its coverage subject. A failure discards the entire
+snapshot. Hosts retain the engine, target features, model contract, and
+normalized subject when capturing the owner-defined canonical projection.
+
+Each model declares knowledge outside its namespace regions and within each
+region. Database, catalog, and schema qualifiers preserve source and normalized
+spelling. An absent qualifier is a wildcard; a present empty qualifier matches
+only an empty component. Path prefixes retain whole components. Regions belong
+to the operation's selected engine. An uninspected or unrepresentable region
+requires a reason and overrides overlapping completeness. Explicit subject
+records take precedence. Duplicate normalized regions, invalid components, and
+namespace-wide absence or defaults are refused. A model can carry at most
+4,096 regions.
+
+The host requires the exact session database on bindings and coverage regions.
+It retains native coordinates and maps common table and column regions to shared
+identities. Subject-kind limits and exact empty paths keep these coordinate
+spaces separate. A column path becomes its parent table; unknown parent regions
+remain unknown after this mapping. Unbound, foreign, or renamed databases and
+inconsistent common identifier normalization cause refusal.
+
+A filtered inspection returns one `scope_bindings` entry per requested selector,
+in request order. Each entry maps that selector to structured owner namespaces.
+An empty namespace list means an empty selection, not global authority. Bindings
+never grant coverage. Every returned table has a `normalized_identity`, even
+without facets. Tables, coverage subjects, and whole coverage regions must fit
+inside the bound namespaces. Filtered replies cannot claim global completeness
+or include dispositions without normalized identities. Requests and bindings
+are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+
+Desired and observed models may declare a plural `display_name` for omission
+reports. It must be trimmed single-line text and agree across engines that share
+a model representation. The host freezes this label in the contract and reports
+captured values locally, without interpreting payloads or declaring count metrics.
+An absent label does not get a host-invented substitute.
+
+Native `schema inspect --format json` returns common schema data and warns about
+omitted objects and facets using these labels. It is not a lossless model export.
+Shared conversion and codecs retain the captured payloads and bounded coverage.
+Full-document source decoding still requires unrestricted complete model
+knowledge and refuses regions. Contextual comparison, native migration planning,
+and faithful source export remain work in #4204.

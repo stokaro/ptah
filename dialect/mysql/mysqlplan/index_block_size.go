@@ -281,8 +281,7 @@ func commonWrites(request featureplan.Request, subject objectidentity.ID) (bool,
 
 // indexOf reports whether index names an index or the primary key of table.
 func indexOf(index, table objectidentity.ID) bool {
-	return table.Kind == objectidentity.KindTable && index.Catalog.Normalized == table.Catalog.Normalized &&
-		index.Schema.Normalized == table.Schema.Normalized && index.Parent.Normalized == table.Name.Normalized
+	return table.Kind == objectidentity.KindTable && index.SameNamespace(table) && index.Parent.Normalized == table.Name.Normalized
 }
 
 func blockSizeRefusal(kind schemaext.Kind, err error, change, parent *int) featureplan.Result {

@@ -36,7 +36,7 @@ func TestWithoutRemovesTableFacetCoverageBeforeComparison(t *testing.T) {
 			{Schema: "app", Name: revisiontable.Atlas, Facets: facets},
 		},
 		FeatureCoverage: must.Must(schemaext.NewCoverage(schemaext.Observed,
-			[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables were inspected"}}},
+			[]schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables were inspected"})}},
 			[]schemaext.SubjectCoverage{
 				{Kind: chschema.TableKind, Subject: kept, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},
 				{Kind: chschema.TableKind, Subject: removed, Knowledge: schemaext.Knowledge{State: schemaext.Complete}},

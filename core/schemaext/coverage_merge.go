@@ -8,7 +8,9 @@ import (
 )
 
 // Merge combines source knowledge conservatively. Missing knowledge in either
-// source remains uninspected. Conflicting explicit claims or model definitions
+// source remains uninspected. A scalar subject claim must hold across every
+// retained target name; partial target authority stays unknown. Conflicting
+// explicit claims or model definitions
 // are errors. An accumulator must start with its first source's coverage; the
 // zero value describes an unknown source, not an identity for this operation.
 func (c Coverage) Merge(other Coverage) (Coverage, error) {
@@ -34,7 +36,7 @@ func (c Coverage) Merge(other Coverage) (Coverage, error) {
 	}
 	kinds := make([]KindCoverage, 0, len(models))
 	for kind, record := range models {
-		knowledge, err := mergeKnowledge(c.kindKnowledge(kind), other.kindKnowledge(kind))
+		knowledge, err := c.kindKnowledge(kind).Intersect(other.kindKnowledge(kind))
 		if err != nil {
 			return Coverage{}, err
 		}
@@ -48,22 +50,23 @@ func (c Coverage) Merge(other Coverage) (Coverage, error) {
 	maps.Copy(subjects, other.subjects)
 	overrides := make([]SubjectCoverage, 0, len(subjects))
 	for key, record := range subjects {
-		knowledge, err := mergeKnowledge(c.Lookup(record.Kind, record.Subject), other.Lookup(record.Kind, record.Subject))
+		targets := mergeTargets(c.subjects, other.subjects, key)
+		knowledge, err := mergeKnowledge(c.lookupForMerge(record.Kind, record.Subject, targets), other.lookupForMerge(record.Kind, record.Subject, targets))
 		if err != nil {
 			return Coverage{}, err
 		}
 		record.Knowledge = knowledge
-		record.Targets = mergeTargets(c.subjects, other.subjects, key)
+		record.Targets = targets
 		overrides = append(overrides, record)
 	}
 	return NewCoverage(direction, kinds, overrides)
 }
 
-func (c Coverage) kindKnowledge(kind Kind) Knowledge {
+func (c Coverage) kindKnowledge(kind Kind) KnowledgeDomain {
 	if record, found := c.kinds[kind]; found {
 		return record.Knowledge
 	}
-	return Knowledge{State: Uninspected, Reason: "one source did not describe the feature kind"}
+	return GlobalKnowledge(Knowledge{State: Uninspected, Reason: "one source did not describe the feature kind"})
 }
 
 func mergeKnowledge(a, b Knowledge) (Knowledge, error) {

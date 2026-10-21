@@ -141,8 +141,8 @@ func deleteColumnsExportContext(ctx context.Context, coverage schemaext.Coverage
 		}
 	}
 	for _, record := range coverage.KindRecords() {
-		if record.Knowledge.State == schemaext.Unrepresentable {
-			return fmt.Errorf("%w: ON DELETE column selections cannot be exported: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+		if record.Knowledge.Unscoped().State == schemaext.Unrepresentable {
+			return fmt.Errorf("%w: ON DELETE column selections cannot be exported: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	return nil

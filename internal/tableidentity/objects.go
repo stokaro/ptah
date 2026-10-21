@@ -42,7 +42,7 @@ func BindRef(ref objectidentity.ID, target string, semantics identifier.Semantic
 // bindOwned rebinds the table part of a table-owned identity and returns any
 // other identity as it is.
 func bindOwned(ref objectidentity.ID, target string, semantics identifier.Semantics) objectidentity.ID {
-	if ref.Parent.Empty() {
+	if ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() {
 		return ref
 	}
 	schema := ref.Schema.Source

@@ -40,7 +40,10 @@ func rangeLimits(known schemaext.Coverage) ([]annotation.EncodedLimit, error) {
 		if record.Model.Kind != pgtype.RangeKind {
 			return nil, fmt.Errorf("%w: unrelated range coverage model", schemaext.ErrInvalidValue)
 		}
-		wholeUnknown = record.Knowledge.State != schemaext.Complete
+		if record.Knowledge.HasNamespaceScopes() {
+			return nil, fmt.Errorf("%w: this source format cannot preserve namespace coverage boundaries", ptaherr.ErrUnsupportedFeature)
+		}
+		wholeUnknown = record.Knowledge.Unscoped().State != schemaext.Complete
 	}
 	if wholeUnknown {
 		limits = append(limits, annotation.EncodedLimit{Kind: string(coverage.Range)})

@@ -49,7 +49,7 @@ tables:
 		c.Assert(value.Content[5].Tag, qt.Equals, "!!int")
 		c.Assert(value.Content[5].Value, qt.Equals, "9007199254740993")
 		c.Assert(value.Content[7].Tag, qt.Equals, "!!null")
-		c.Assert(value.Line, qt.Equals, 2)
+		c.Assert(value.Range.Start.Line, qt.Equals, 2)
 		colors := document.Fragments[1].Node.Content[1]
 		c.Assert(colors.Content[1].Tag, qt.Equals, "!!str")
 		alias := document.Fragments[2].Node
@@ -82,7 +82,7 @@ func TestOwnerDocumentEmptyInputNeedsExplicitCoverage(t *testing.T) {
 				c.Assert(document.Fragments, qt.HasLen, 0)
 				claim, claimErr := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{
 					Model:     schemaext.CodecIdentity{Owner: "example.org/paint", Kind: shadeKind, Representation: schemaext.Desired, Version: 1, Definition: "test-definition"},
-					Knowledge: schemaext.Knowledge{State: state, Reason: "explicit test knowledge"},
+					Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "explicit test knowledge"}),
 				}}, nil)
 				return yamlext.DocumentResult{Coverage: claim}, claimErr
 			}))
@@ -104,6 +104,7 @@ func TestOwnerDocumentRefusesMalformedInputBeforeDispatch(t *testing.T) {
 		{"invalid float separator", "shades: !!float .1__2"},
 		{"invalid float", "shades: !!float not-a-number"},
 		{"invalid merge", "shades: {<<: 1}"},
+		{"unhashable merged key", "shades: {<<: {? [a, b]: value}}"},
 		{"duplicate numeric key", "shades: {1: one, 1: another}"},
 		{"unknown top key", "misspelled: {}"},
 		{"unknown table key", "tables: {a: {misspelled: {}}}"},
