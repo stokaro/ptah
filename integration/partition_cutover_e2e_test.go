@@ -68,7 +68,7 @@ INSERT INTO words VALUES (7, 'keep');
 	c.Assert(word, qt.Equals, "keep")
 	c.Assert(dev.conn.QueryRowContext(c.Context(), "SELECT count(*) FROM information_schema.columns WHERE table_name IN ('words', 'words_20261020', 'words_20261021') AND column_name = 'note'").Scan(&columns), qt.IsNil)
 	c.Assert(columns, qt.Equals, 3)
-	out, err = runPtahNativeWithError("schema", "plan", "--db-url", dev.url, "--schema-file", source, "--exclude", "words_[0-9]*")
+	out, err = runPtahNativeWithError("schema", "plan", "--db-url", dev.url, "--schema-file", source, "--exclude", "words_[0-9]*", "--output", plan)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema is synced")
 }
