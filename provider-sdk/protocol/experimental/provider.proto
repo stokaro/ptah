@@ -229,15 +229,28 @@ message ExecuteRequest {
   string transaction_id = 4;
 }
 
+// Isolation is explicit. Providers refuse levels they cannot establish; they
+// never silently substitute a weaker level. DEFAULT selects the engine default
+// and makes no serializable guarantee. SERIALIZABLE includes range reads, so a
+// transaction cannot commit writes based on a stale history snapshot.
+enum TransactionIsolation {
+  TRANSACTION_ISOLATION_UNSPECIFIED = 0;
+  DEFAULT = 1;
+  SERIALIZABLE = 2;
+}
+
 // The caller chooses the handle before dispatch, so a lost begin reply does not
 // prevent explicit rollback. A repeated begin never creates another transaction.
 message BeginTransactionRequest {
   string session_id = 1;
   string transaction_id = 2;
+  TransactionIsolation isolation = 3;
 }
 message Transaction {
   string session_id = 1;
   string id = 2;
+  // Must match the requested isolation exactly.
+  TransactionIsolation isolation = 3;
 }
 message FinishTransactionRequest {
   enum Action { ACTION_UNSPECIFIED = 0; COMMIT = 1; ROLLBACK = 2; }

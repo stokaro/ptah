@@ -40,7 +40,7 @@ func transactionClient(peer *transactionPeer) *Client {
 	return &Client{rpc: peer, description: &protocol.Description{Features: []string{provider.ExecuteFeature, provider.TransactionsFeature}}}
 }
 func beginRequest() *protocol.BeginTransactionRequest {
-	return &protocol.BeginTransactionRequest{SessionId: "session", TransactionId: "transaction"}
+	return &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session", TransactionId: "transaction"}
 }
 func finishRequest(action protocol.FinishTransactionRequest_Action) *protocol.FinishTransactionRequest {
 	return &protocol.FinishTransactionRequest{SessionId: "session", TransactionId: "transaction", Action: action}
@@ -51,7 +51,7 @@ func TestClientBeginCleansOnlyRequestedHandleAfterUnusableReply(t *testing.T) {
 		result *protocol.Transaction
 		err    error
 	}{
-		{"wrong handle", &protocol.Transaction{SessionId: "other", Id: "unrelated"}, nil},
+		{"wrong handle", &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "other", Id: "unrelated"}, nil},
 		{"missing handle", nil, nil},
 		{"lost reply", nil, status.Error(codes.Unavailable, "lost")},
 	} {
@@ -79,7 +79,7 @@ func TestClientBeginRetainsUncertainCleanupFailure(t *testing.T) {
 }
 func TestClientTransactionRepliesAreIndependentCopies(t *testing.T) {
 	c := qt.New(t)
-	peer := &transactionPeer{begin: &protocol.Transaction{SessionId: "session", Id: "transaction"}, finish: &protocol.TransactionResult{Outcome: protocol.TransactionResult_COMMITTED}}
+	peer := &transactionPeer{begin: &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session", Id: "transaction"}, finish: &protocol.TransactionResult{Outcome: protocol.TransactionResult_COMMITTED}}
 	client := transactionClient(peer)
 	handle, err := client.BeginTransaction(c.Context(), beginRequest())
 	c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func (o *transactionOwner) FinishTransaction(ctx context.Context, request *proto
 }
 func TestServerTransactionValidationAndCleanup(t *testing.T) {
 	c := qt.New(t)
-	peer := &transactionPeer{begin: &protocol.Transaction{SessionId: "wrong", Id: "wrong"}, finish: &protocol.TransactionResult{Outcome: protocol.TransactionResult_ROLLED_BACK}}
+	peer := &transactionPeer{begin: &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "wrong", Id: "wrong"}, finish: &protocol.TransactionResult{Outcome: protocol.TransactionResult_ROLLED_BACK}}
 	server := &serverAdapter{server: Server{Transactions: &transactionOwner{peer: peer}}}
 	_, err := server.BeginTransaction(c.Context(), nil)
 	c.Assert(status.Code(err), qt.Equals, codes.InvalidArgument)
@@ -188,4 +188,55 @@ func TestServerTransactionCancellationDoesNotDispatch(t *testing.T) {
 	c.Assert(status.Code(err), qt.Equals, codes.Canceled)
 	c.Assert(peer.begins, qt.HasLen, 0)
 	c.Assert(peer.finishes, qt.HasLen, 0)
+}
+
+func TestTransactionIsolationValidationPrecedesBothDispatches(t *testing.T) {
+	for _, isolation := range []protocol.TransactionIsolation{0, 99} {
+		t.Run(isolation.String(), func(t *testing.T) {
+			c := qt.New(t)
+			peer := &transactionPeer{}
+			request := beginRequest()
+			request.Isolation = isolation
+			_, err := transactionClient(peer).BeginTransaction(c.Context(), request)
+			c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+			server := &serverAdapter{server: Server{Transactions: &transactionOwner{peer: peer}}}
+			_, err = server.BeginTransaction(c.Context(), request)
+			c.Assert(status.Code(err), qt.Equals, codes.InvalidArgument)
+			c.Assert(peer.begins, qt.HasLen, 0)
+			c.Assert(peer.finishes, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestTransactionIsolationDowngradeCleansRequestedHandleAtBothBoundaries(t *testing.T) {
+	c := qt.New(t)
+	request := beginRequest()
+	request.Isolation = protocol.TransactionIsolation_SERIALIZABLE
+	peer := &transactionPeer{
+		begin:  &protocol.Transaction{SessionId: "session", Id: "transaction", Isolation: protocol.TransactionIsolation_DEFAULT},
+		finish: &protocol.TransactionResult{Outcome: protocol.TransactionResult_ROLLED_BACK},
+	}
+	result, err := transactionClient(peer).BeginTransaction(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+	c.Assert(peer.begins, qt.HasLen, 1)
+	c.Assert(peer.begins[0].GetIsolation(), qt.Equals, protocol.TransactionIsolation_SERIALIZABLE)
+	c.Assert(peer.finishes, qt.HasLen, 1)
+	c.Assert(proto.Equal(peer.finishes[0], finishRequest(protocol.FinishTransactionRequest_ROLLBACK)), qt.IsTrue)
+	server := &serverAdapter{server: Server{Transactions: &transactionOwner{peer: peer}}}
+	result, err = server.BeginTransaction(c.Context(), request)
+	c.Assert(status.Code(err), qt.Equals, codes.Internal)
+	c.Assert(result, qt.IsNil)
+	c.Assert(peer.begins, qt.HasLen, 2)
+	c.Assert(peer.begins[1].GetIsolation(), qt.Equals, protocol.TransactionIsolation_SERIALIZABLE)
+	c.Assert(peer.finishes, qt.HasLen, 2)
+	c.Assert(proto.Equal(peer.finishes[1], finishRequest(protocol.FinishTransactionRequest_ROLLBACK)), qt.IsTrue)
+	peer.begin.Isolation = protocol.TransactionIsolation_SERIALIZABLE
+	result, err = server.BeginTransaction(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.GetIsolation(), qt.Equals, protocol.TransactionIsolation_SERIALIZABLE)
+	result, err = transactionClient(peer).BeginTransaction(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.GetIsolation(), qt.Equals, protocol.TransactionIsolation_SERIALIZABLE)
+	c.Assert(peer.finishes, qt.HasLen, 2)
 }

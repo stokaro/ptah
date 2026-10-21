@@ -32,7 +32,7 @@ func (c *Client) BeginTransaction(ctx context.Context, request *protocol.BeginTr
 	if err := c.requireTransactions(); err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateTransactionRequest(request.GetSessionId(), request.GetTransactionId()); err != nil {
+	if err := provider.ValidateBeginTransactionRequest(request); err != nil {
 		return nil, err
 	}
 	call, cancel := context.WithTimeout(ctx, CallTimeout)
@@ -95,7 +95,7 @@ func (s *serverAdapter) BeginTransaction(ctx context.Context, request *protocol.
 		return nil, status.Error(codes.Unimplemented, "transactions are unavailable")
 	}
 	request = proto.CloneOf(request)
-	if err := provider.ValidateTransactionRequest(request.GetSessionId(), request.GetTransactionId()); err != nil {
+	if err := provider.ValidateBeginTransactionRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	result, err := s.server.Transactions.BeginTransaction(ctx, proto.CloneOf(request))

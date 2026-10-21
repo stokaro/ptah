@@ -24,6 +24,8 @@ const TransactionsFeature = "sessions.transactions"
 // unfinished transaction and prevents later begin or execution. A process
 // restart invalidates all handles. Implementations honor cancellation, preserve
 // uncertain outcomes, and never retry a write merely because its handle exists.
+// Begin must establish the requested isolation or refuse it. Advertising this
+// service does not promise support for every isolation level.
 type Transactions interface {
 	BeginTransaction(context.Context, *protocol.BeginTransactionRequest) (*protocol.Transaction, error)
 	FinishTransaction(context.Context, *protocol.FinishTransactionRequest) (*protocol.TransactionResult, error)
@@ -38,14 +40,31 @@ func ValidateTransactionRequest(sessionID, transactionID string) error {
 	return nil
 }
 
-// ValidateTransaction checks that a begin reply binds the exact requested
-// handle to its session. A malformed reply exposes no usable transaction.
-func ValidateTransaction(request *protocol.BeginTransactionRequest, result *protocol.Transaction) error {
+// ValidateBeginTransactionRequest checks the handle and explicit isolation.
+// Missing and unknown levels are refused before the provider is called.
+func ValidateBeginTransactionRequest(request *protocol.BeginTransactionRequest) error {
 	if err := ValidateTransactionRequest(request.GetSessionId(), request.GetTransactionId()); err != nil {
+		return err
+	}
+	switch request.GetIsolation() {
+	case protocol.TransactionIsolation_DEFAULT, protocol.TransactionIsolation_SERIALIZABLE:
+		return nil
+	default:
+		return fmt.Errorf("%w: explicit supported transaction isolation is required", ErrProtocol)
+	}
+}
+
+// ValidateTransaction checks that a begin reply binds the exact requested
+// handle to its session and isolation. A malformed reply exposes no usable transaction.
+func ValidateTransaction(request *protocol.BeginTransactionRequest, result *protocol.Transaction) error {
+	if err := ValidateBeginTransactionRequest(request); err != nil {
 		return err
 	}
 	if result == nil || result.GetId() != request.GetTransactionId() || result.GetSessionId() != request.GetSessionId() {
 		return fmt.Errorf("%w: transaction reply changed the requested handle or session", ErrProtocol)
+	}
+	if result.GetIsolation() != request.GetIsolation() {
+		return fmt.Errorf("%w: transaction reply changed the requested isolation", ErrProtocol)
 	}
 	return nil
 }

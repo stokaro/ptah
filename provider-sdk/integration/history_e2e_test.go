@@ -48,7 +48,7 @@ func TestIndependentProviderHistorySharesExecutionTransaction(t *testing.T) {
 			scope := processHistoryScope(session)
 			_, err := client.PrepareHistory(c.Context(), &protocol.PrepareHistoryRequest{Scope: scope, RequestId: "prepare"})
 			c.Assert(err, qt.IsNil)
-			tx, err := client.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{SessionId: session.GetId(), TransactionId: "transaction"})
+			tx, err := client.BeginTransaction(c.Context(), &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: session.GetId(), TransactionId: "transaction"})
 			c.Assert(err, qt.IsNil)
 			execute := execution(session.GetId())
 			execute.TransactionId = tx.GetId()

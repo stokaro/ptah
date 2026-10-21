@@ -80,6 +80,11 @@ must report that capability separately.
 
 The caller chooses a transaction ID before `BeginTransaction`. The provider
 reserves it before opening a database transaction and binds it to that session.
+The request explicitly selects `DEFAULT` or `SERIALIZABLE` isolation. The reply
+must echo that level. `DEFAULT` selects the engine default; `SERIALIZABLE`
+protects range reads as well as individual rows. The provider must refuse a
+level it cannot establish. Missing, unknown, and substituted levels are refused;
+a malformed reply triggers cleanup of the requested handle.
 `Execute.transaction_id` selects the handle; an empty ID selects unwrapped
 execution. `APPLIED` inside a transaction confirms execution, not commit.
 
@@ -112,8 +117,8 @@ session or restarting the process invalidates those handles.
 A host can use the transaction service only for revision data without requiring
 transactional DDL. The host's history handle exposes no SQL executor. Preparing
 storage precedes the transaction; nested transactions and dry-run writes are
-refused. Migration locking remains the caller's responsibility. These handles
-do not establish serializable isolation.
+refused. Migration locking remains the caller's responsibility. Serializable isolation requires an explicit `SERIALIZABLE` request;
+`DEFAULT` makes no such promise.
 
 `ReadHistory` returns a consistent complete snapshot, distinguishing a missing
 store from an empty one. The caller sets a positive limit of at most 10,000
@@ -317,7 +322,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 16 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 17 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
