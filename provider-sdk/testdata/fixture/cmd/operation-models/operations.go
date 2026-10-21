@@ -75,6 +75,14 @@ func (p *owner) NormalizeValues(ctx context.Context, r *protocol.NormalizeValues
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if input.GetRepresentation() == protocol.ValueInput_CHANGE {
+			value, err := normalizeChange(input)
+			if err != nil {
+				return nil, err
+			}
+			result.Values = append(result.Values, value)
+			continue
+		}
 		if input.GetRepresentation() == protocol.ValueInput_OPERATION {
 			value, err := normalize(input)
 			if err != nil {

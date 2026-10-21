@@ -80,6 +80,7 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 		Identifiers identifier.Semantics         `json:"identifiers"`
 		YAMLKeys    []yamlKeyIdentity            `json:"yaml_keys"`
 		Comparisons []comparisonIdentityContract `json:"comparisons"`
+		Planning    []planningIdentityContract   `json:"planning"`
 	}
 	engines := make(map[string]engineModel, len(contract.engines))
 	for name, model := range contract.engines {
@@ -92,7 +93,7 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 			Features:    featureSet(declared.GetFeatures()),
 			Identifiers: rules,
 			YAMLKeys:    yamlKeyIdentities(declared.GetYamlSourceKeys()),
-			Comparisons: comparisonContracts(declared.GetComparisons())}
+			Comparisons: comparisonContracts(declared.GetComparisons()), Planning: planningContracts(declared.GetPlanning())}
 	}
 	definition := struct {
 		Format           string                 `json:"format"`
@@ -134,5 +135,23 @@ func comparisonContracts(declarations []*protocol.ModelComparison) []comparisonI
 				Actions:     featureSet(declaration.GetActions())})
 	}
 	slices.SortFunc(result, func(a, b comparisonIdentityContract) int { return strings.Compare(a.ID, b.ID) })
+	return result
+}
+
+// Planning ownership is part of each captured model's interpretation. Reordering
+// declarations or vocabulary members does not change the semantic assignment.
+type planningIdentityContract struct {
+	ID         string   `json:"id"`
+	Changes    []string `json:"changes"`
+	Parents    []string `json:"parents"`
+	Operations []string `json:"operations"`
+}
+
+func planningContracts(declarations []*protocol.ModelPlanning) []planningIdentityContract {
+	result := make([]planningIdentityContract, 0, len(declarations))
+	for _, declaration := range declarations {
+		result = append(result, planningIdentityContract{ID: declaration.GetId(), Changes: featureSet(declaration.GetChangeKinds()), Parents: featureSet(declaration.GetParentKinds()), Operations: featureSet(declaration.GetOperationKinds())})
+	}
+	slices.SortFunc(result, func(a, b planningIdentityContract) int { return strings.Compare(a.ID, b.ID) })
 	return result
 }

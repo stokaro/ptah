@@ -20,7 +20,7 @@ type comparisonCapture struct {
 	captured bool
 }
 
-func (c *comparisonCapture) value(representation schemaext.Representation, payload schemaext.Value, id string) (*protocol.NormalizedValue, error) {
+func (c *comparisonCapture) value(representation schemaext.Representation, payload schemaext.Payload, id string) (*protocol.NormalizedValue, error) {
 	contract := c.target.host.models[modelKey{kind: payload.Kind(), representation: representation}]
 	if contract == nil || contract.engines[c.request.GetEngine()] == nil {
 		return nil, fmt.Errorf("%w: comparison model is unavailable", schemaext.ErrInvalidValue)

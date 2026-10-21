@@ -242,7 +242,7 @@ func TestPlanningColumnWireRetainsPresenceAndNestedFacets(t *testing.T) {
 	c.Assert(proto.Unmarshal(data, roundTrip), qt.IsNil)
 	c.Assert(proto.Equal(roundTrip, request), qt.IsTrue)
 	column := roundTrip.CommonSteps[0].AddedColumn
-	c.Assert(column.Default, qt.Not(qt.IsNil))
+	c.Assert(column.Default, qt.IsNotNil)
 	c.Assert(column.Default.ValueSet, qt.IsTrue)
 	c.Assert(column.Default.Value, qt.Equals, "")
 	c.Assert(column.EnumType, qt.IsTrue)

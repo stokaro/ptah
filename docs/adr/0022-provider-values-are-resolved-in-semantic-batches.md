@@ -508,8 +508,9 @@ whole batch. A successful earlier unit is not exposed as a usable prefix.
 The independent fixture normalizes and executes table creation, renaming, and
 removal through an operation model. Inspection proves the database changes;
 round trips prove that operation assessments are recomputed. This exercises
-operation transport and rendering. The contextual planning transport described below still needs an application
-adapter that joins receipts, dependencies, and effects to the host graph.
+operation transport and rendering. The contextual planning adapter described
+below binds receipts, dependencies, and effects for the selected runtime. The
+common migration planner still needs to dispatch the service.
 Transaction and history services remain separate work before YDB extraction.
 
 
@@ -533,6 +534,17 @@ after cancellation. Transaction requirements are data, not evidence that an
 executor honored them. The application adapter must preserve them through the
 final execution boundary before native planning is qualified.
 
-The transport implementation does not finish application integration. The host
-adapter, full graph acceptance, and a separate-process execution fixture remain
-required before this service can support YDB extraction.
+The host adapter registers the planning service and includes its assignments in
+provider and model identities. It maps declarations and observations separately,
+preserves excluded facets and independent coverage sources, and refuses unmapped
+common properties. Primary-key facets use the shared capture authority; a value
+on another primary-key slot is refused even when the authoritative slot is empty.
+
+An independent SDK-only fixture sends captured changes through the selected
+runtime and shared graph, renders the returned operations, executes statements,
+and inspects the result. It also exercises captured ALTER parents, common-graph
+conflicts, completed refusals, and cancellation. The caller explicitly executes
+without a transaction. This proves the transport and graph adapter path; the
+common migration planner does not yet dispatch the service. Transaction
+requirements must survive the final executor, and parent receipts and rewrites
+need separate-process acceptance before this service can support YDB extraction.

@@ -10,10 +10,13 @@ import (
 	"example.com/ptah-fixture-provider/backend"
 	"github.com/stokaro/ptah/provider-sdk/modeljson"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"google.golang.org/protobuf/proto"
 )
 
 const operationKind = "example.org/fixture/table-operation"
+const changeKind = "example.org/fixture/table-change"
 
 type owner struct{ *backend.Provider }
 
@@ -28,8 +31,13 @@ func main() {
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, &protocol.ValueModel{Kind: operationKind, Representation: protocol.ValueInput_OPERATION,
 		SchemaVersion: 1, Encoding: "json", DefinitionJson: definition,
 		DefinitionSha256: hex.EncodeToString(hash[:]), CanonicalFormat: "table-operation-v1"})
+	change := proto.CloneOf(d.Engines[0].ValueModels[len(d.Engines[0].ValueModels)-1])
+	change.Kind, change.Representation = changeKind, protocol.ValueInput_CHANGE
+	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
+	d.Features = append(d.Features, provider.PlanFeaturesFeature)
+	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, OperationKinds: []string{operationKind}}}
 	p := &owner{Provider: &backend.Provider{}}
-	if err := runtime.Serve(runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p}); err != nil {
+	if err := runtime.Serve(runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

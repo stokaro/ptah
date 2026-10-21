@@ -37,6 +37,7 @@ func (h *Host) Provider() engine.Provider {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())
 		selected.registerComparisons(&result)
+		selected.registerPlanning(&result)
 		if slices.Contains(h.description.GetFeatures(), provider.ConvertValuesFeature) {
 			if kinds := h.conversionKinds(declared.GetId()); len(kinds) > 0 {
 				result.Conversions = append(result.Conversions, engine.Conversion{Target: declared.GetId(), Kinds: kinds, Service: selected})

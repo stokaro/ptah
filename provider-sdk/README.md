@@ -403,7 +403,17 @@ assessments travel as explicit metadata. Unknown values remain unknown. A
 completed refusal contains diagnostics and no operations, rewrites, or successful
 receipts. Cancellation and malformed replies discard the complete batch.
 
-The SDK transport is implemented. The application adapter, complete graph
-integration, independent-process qualification, and execution of transaction
-requirements remain required work in #4204. This contract does not qualify YDB
-extraction or the migration history backend.
+The host registers these services and binds their ownership into captured model
+identities. Its adapter preserves common definitions, normalized feature values,
+coverage sources, graph metadata, and receipts. Unmapped common properties and
+conflicting primary-key facet slots are refused before the RPC.
+
+An independent SDK-only fixture exercises change planning through the selected
+runtime, shared graph, rendering, statement execution, and inspection. It also
+checks captured ALTER parents, graph conflicts, completed refusals, and
+cancellation. The test caller explicitly executes without a transaction.
+
+The common migration planner still needs to dispatch these services and retain
+transaction requirements through execution. Parent receipts and rewrites still
+need independent-process acceptance. This work remains part of #4204; the
+transport does not qualify YDB extraction or the migration history backend.

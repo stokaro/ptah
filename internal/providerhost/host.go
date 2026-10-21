@@ -129,7 +129,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		Models             []modelIdentity              `json:"models"`
 		YAMLKeys           []yamlKeyIdentity            `json:"yaml_keys"`
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
-	}{4,
+		Planning           []planningIdentityContract   `json:"planning"`
+	}{5,
 		t.engine.GetId(),
 		featureSet(t.host.description.GetFeatures()),
 		featureSet(t.engine.GetFeatures()),
@@ -137,7 +138,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		rules,
 		modelIdentities(t.engine.GetValueModels()),
 		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
-		comparisonContracts(t.engine.GetComparisons())}
+		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)
