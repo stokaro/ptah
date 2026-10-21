@@ -106,7 +106,7 @@ func compareReportingUndecidedAdditions(
 	}
 
 	diff := &difftypes.SchemaDiff{}
-	identity, err := comparisonTableIdentities(desired, database, opts)
+	identity, err := comparisonTableIdentities(desired, database, opts, selected)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

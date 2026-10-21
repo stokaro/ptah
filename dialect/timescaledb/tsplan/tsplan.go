@@ -359,8 +359,7 @@ func creates(step featureplan.CommonStep, table objectidentity.ID) bool {
 		if effect.Subject.Key() == table.Key() {
 			return true
 		}
-		return effect.Subject.Kind == objectidentity.KindColumn && effect.Subject.Catalog.Normalized == table.Catalog.Normalized &&
-			effect.Subject.Schema.Normalized == table.Schema.Normalized && effect.Subject.Parent.Normalized == table.Name.Normalized
+		return effect.Subject.Kind == objectidentity.KindColumn && effect.Subject.SameNamespace(table) && effect.Subject.Parent.Normalized == table.Name.Normalized
 	})
 }
 
@@ -369,8 +368,7 @@ func creates(step featureplan.CommonStep, table objectidentity.ID) bool {
 func occupies(step featureplan.CommonStep, aggregate objectidentity.ID) bool {
 	return slices.ContainsFunc(step.Effects, func(effect plangraph.Effect) bool {
 		return slices.Contains(relationKinds, effect.Subject.Kind) && effect.Action == plangraph.Create &&
-			effect.Subject.Catalog.Normalized == aggregate.Catalog.Normalized &&
-			effect.Subject.Schema.Normalized == aggregate.Schema.Normalized && effect.Subject.Name.Normalized == aggregate.Name.Normalized
+			effect.Subject.SameNamespace(aggregate) && effect.Subject.Name.Normalized == aggregate.Name.Normalized
 	})
 }
 

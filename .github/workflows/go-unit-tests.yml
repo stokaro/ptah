@@ -14,6 +14,11 @@ concurrency:
   group: go-unit-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Both Linux jobs use the same package boundary. The main job refuses a missing
+# census package instead of silently changing which tests the split covers.
+env:
+  SCHEMA_CENSUS_PACKAGE: ptah.run/internal/schemacensus
+
 jobs:
   scope:
     name: scope
@@ -80,9 +85,43 @@ jobs:
 
       - name: Run unit tests
         run: |
-          # Run unit tests excluding integration tests
-          # These tests don't require database connections
-          go test -v -race ./... -timeout 10m
+          set -euo pipefail
+          all_packages="$(go list ./...)"
+          unit_packages=()
+          census_found=false
+          while IFS= read -r package; do
+            if [ "$package" = "$SCHEMA_CENSUS_PACKAGE" ]; then
+              census_found=true
+            else
+              unit_packages+=("$package")
+            fi
+          done <<< "$all_packages"
+          if [ "$census_found" != true ] || [ "${#unit_packages[@]}" -eq 0 ]; then
+            echo "unit-test split requires the census package and remaining packages" >&2
+            exit 1
+          fi
+          go test -v -race "${unit_packages[@]}" -timeout 10m
+
+  # The census already took over six minutes with -race on a green run. Sharing
+  # its runner with compilation and the rest of the suite exhausted the job's
+  # 25-minute budget twice. Keep its tests and timeout, with an independent job.
+  schema-census:
+    name: schema-census
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Install dependencies
+        run: go mod download
+      - name: Run schema census with the race detector
+        run: go test -v -race "$SCHEMA_CENSUS_PACKAGE" -timeout 10m
 
   windows-publication:
     name: windows-publication
@@ -283,7 +322,7 @@ jobs:
   unit-test-gate:
     name: Unit test gate
     if: always() && github.event_name == 'pull_request'
-    needs: [scope, unit-tests, windows-publication, windows-unit-tests, js-wasm-build, build-tags]
+    needs: [scope, unit-tests, schema-census, windows-publication, windows-unit-tests, js-wasm-build, build-tags]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -293,6 +332,7 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE_SCOPE: ${{ needs.scope.outputs.code }}
           UNIT_RESULT: ${{ needs.unit-tests.result }}
+          SCHEMA_CENSUS_RESULT: ${{ needs.schema-census.result }}
           WINDOWS_PUBLICATION_RESULT: ${{ needs.windows-publication.result }}
           WINDOWS_UNIT_RESULT: ${{ needs.windows-unit-tests.result }}
           JS_WASM_RESULT: ${{ needs.js-wasm-build.result }}
@@ -303,6 +343,7 @@ jobs:
             --scope-result "$SCOPE_RESULT" \
             --scope "$CODE_SCOPE" \
             --scoped "unit-tests=$UNIT_RESULT" \
+            --scoped "schema-census=$SCHEMA_CENSUS_RESULT" \
             --scoped "windows-publication=$WINDOWS_PUBLICATION_RESULT" \
             --scoped "windows-unit-tests=$WINDOWS_UNIT_RESULT" \
             --scoped "js-wasm-build=$JS_WASM_RESULT" \

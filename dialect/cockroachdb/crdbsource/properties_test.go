@@ -116,5 +116,5 @@ func TestCoverage_MakesAMissingPolicyARequestForNone(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(coverage.Representation(), qt.Equals, schemaext.Desired)
 	c.Assert(coverage.KindRecords(), qt.HasLen, 1)
-	c.Assert(coverage.KindRecords()[0].Knowledge.State, qt.Equals, schemaext.Complete)
+	c.Assert(coverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)
 }

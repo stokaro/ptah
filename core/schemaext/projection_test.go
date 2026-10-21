@@ -19,7 +19,7 @@ func TestObjectProjectionPreservesSiblingsAndKnowledgeLimits(t *testing.T) {
 	model := models[0]
 	unknown := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only selected objects were read"}
 	created, changed, dropped, retained := widgetRef("table.with.dot", "created"), widgetRef("table.with.dot", "changed"), widgetRef("table.with.dot", "dropped"), widgetRef("table.with.dot", "retained")
-	coverage, err := schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: unknown}},
+	coverage, err := schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(unknown)}},
 		[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: created, Knowledge: schemaext.Knowledge{State: schemaext.Absent}}})
 	c.Assert(err, qt.IsNil)
 	objects, err := schemaext.NewObjects(
@@ -65,7 +65,7 @@ func TestObjectProjectionRefusesUnknownOrContradictorySourceState(t *testing.T) 
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Observed)))
 	c.Assert(err, qt.IsNil)
 	ref := widgetRef("table", "object")
-	enrolled := []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}
+	enrolled := []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}
 	present, err := schemaext.NewObjects(schemaext.Object{Ref: ref, Value: &widget{ID: widgetKind}})
 	c.Assert(err, qt.IsNil)
 	for _, test := range []struct {
@@ -116,7 +116,7 @@ func TestObjectProjectionValidatesCompleteBatchAndContext(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			var kinds []schemaext.KindCoverage
 			for _, definition := range registry.Definitions() {
-				kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+				kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 			}
 			coverage, err := schemaext.NewCoverage(schemaext.Observed, kinds, nil)
 			c.Assert(err, qt.IsNil)

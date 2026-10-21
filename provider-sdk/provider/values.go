@@ -29,25 +29,9 @@ func ValidateValueInputs(description *protocol.Description, request *protocol.No
 	if request == nil || description == nil || !slices.Contains(description.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: value normalization is unavailable", ErrProtocol)
 	}
-	var engine *protocol.Engine
-	for _, candidate := range description.GetEngines() {
-		if candidate.GetId() == request.GetEngine() {
-			engine = candidate
-			break
-		}
-	}
-	if engine == nil {
-		return fmt.Errorf("%w: value engine is not owned by this provider", ErrProtocol)
-	}
-	if err := validateValueModels(engine.GetValueModels()); err != nil {
+	_, features, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err != nil {
 		return err
-	}
-	features := make(map[string]bool)
-	for _, feature := range request.GetTargetFeatures() {
-		if feature == "" || features[feature] || !slices.Contains(engine.GetFeatures(), feature) {
-			return fmt.Errorf("%w: invalid or unsupported target feature", ErrProtocol)
-		}
-		features[feature] = true
 	}
 	ids := make(map[string]bool)
 	for _, input := range request.GetValues() {
@@ -105,6 +89,9 @@ func ValidateNormalizedValues(description *protocol.Description, request *protoc
 	}
 	for i, input := range request.GetValues() {
 		output := result.GetValues()[i]
+		if err := validateNormalizationFacts(input.GetRepresentation(), output); err != nil {
+			return err
+		}
 		before, after := input.GetValue(), output.GetValue()
 		if output.GetId() != input.GetId() || after == nil || before.GetProviderId() != after.GetProviderId() ||
 			before.GetKind() != after.GetKind() || before.GetSchemaVersion() != after.GetSchemaVersion() ||
@@ -120,4 +107,32 @@ func ValidateNormalizedValues(description *protocol.Description, request *protoc
 		}
 	}
 	return nil
+}
+
+// Normalization and inspection bind values to the same negotiated target.
+func valueTarget(description *protocol.Description, name string, targetFeatures []string) (*protocol.Engine, map[string]bool, error) {
+	if !validName(name) {
+		return nil, nil, fmt.Errorf("%w: value engine is missing", ErrProtocol)
+	}
+	var engine *protocol.Engine
+	for _, candidate := range description.GetEngines() {
+		if candidate.GetId() == name {
+			engine = candidate
+			break
+		}
+	}
+	if engine == nil {
+		return nil, nil, fmt.Errorf("%w: value engine is not owned by this provider", ErrProtocol)
+	}
+	if err := validateValueModels(engine.GetValueModels()); err != nil {
+		return nil, nil, err
+	}
+	features := make(map[string]bool)
+	for _, feature := range targetFeatures {
+		if feature == "" || features[feature] || !slices.Contains(engine.GetFeatures(), feature) {
+			return nil, nil, fmt.Errorf("%w: invalid or unsupported target feature", ErrProtocol)
+		}
+		features[feature] = true
+	}
+	return engine, features, nil
 }

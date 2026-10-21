@@ -21,8 +21,8 @@ func ReportUndescribed(w io.Writer, database *catalog.Database) {
 	}
 	known := database.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
 	for _, kind := range known.KindRecords() {
-		if unknown(kind.Knowledge) {
-			_, _ = fmt.Fprintf(w, "note: default privileges are not described: %s. A comparison leaves this scope unmanaged.\n", kind.Knowledge.Reason)
+		if unknown(kind.Knowledge.Unscoped()) {
+			_, _ = fmt.Fprintf(w, "note: default privileges are not described: %s. A comparison leaves this scope unmanaged.\n", kind.Knowledge.Unscoped().Reason)
 		}
 	}
 	for _, claim := range known.SubjectRecords() {

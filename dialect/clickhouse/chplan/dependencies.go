@@ -247,8 +247,7 @@ func storageDependencies(request featureplan.Request, table featureplan.Table, b
 }
 
 func columnOf(column, table objectidentity.ID) bool {
-	return column.Kind == objectidentity.KindColumn && column.Catalog.Normalized == table.Catalog.Normalized &&
-		column.Schema.Normalized == table.Schema.Normalized && column.Parent.Normalized == table.Name.Normalized
+	return column.Kind == objectidentity.KindColumn && column.SameNamespace(table) && column.Parent.Normalized == table.Name.Normalized
 }
 
 func usesColumn(request featureplan.Request, table featureplan.Table, references map[string]bool, column objectidentity.ID) bool {

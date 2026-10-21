@@ -17,7 +17,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 	"ptah.run/internal/tableidentity"
 	"ptah.run/migration/internal/identifiervalidation"
 )
@@ -239,7 +239,7 @@ func attachFeatureChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 			diff.FeatureChanges = append(diff.FeatureChanges, change)
 			continue
 		}
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: change.Subject.Database, Namespace: change.Subject.Namespace, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
 		if change.Subject.Kind == objectidentity.KindTable {
 			parent = change.Subject
 		}
@@ -414,15 +414,15 @@ func attachRoutineChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Datab
 	builder := objectidentity.NewBuilder(semantics)
 	declared := make(map[objectidentity.Key]schemamodel.Function, len(desired.Functions))
 	for _, function := range desired.Functions {
-		declared[routineargs.Subject(builder, function.Kind, function.Name, function.Parameters).Key()] = function
+		declared[routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters).Key()] = function
 	}
 	observed := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
 	for _, function := range current.Functions {
-		observed[routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
+		observed[routineidentity.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
 	}
 	positions := make(map[objectidentity.Key]int, len(diff.FunctionsModified))
 	for i, entry := range diff.FunctionsModified {
-		positions[routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters).Key()] = i
+		positions[routineidentity.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters).Key()] = i
 	}
 	for _, change := range changes {
 		if !isRoutineSubject(change.Subject) {
@@ -469,14 +469,14 @@ func refuseLossyRoutineReplacements(diff *difftypes.SchemaDiff, desired *schemam
 	exact := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
 	named := make(map[objectidentity.Key]catalog.Function, len(current.Functions))
 	for _, function := range current.Functions {
-		exact[routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
-		named[routineargs.Subject(builder, function.Kind, function.QualifiedName(), "").Key()] = function
+		exact[routineidentity.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters).Key()] = function
+		named[routineidentity.Subject(builder, function.Kind, function.QualifiedName(), "").Key()] = function
 	}
 	for _, entry := range diff.FunctionsModified {
-		subject := routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters)
+		subject := routineidentity.Subject(builder, entry.Desired.Kind, entry.Desired.Name, entry.Desired.Parameters)
 		routine, found := exact[subject.Key()]
 		if !found {
-			routine, found = named[routineargs.Subject(builder, entry.Desired.Kind, entry.Desired.Name, "").Key()]
+			routine, found = named[routineidentity.Subject(builder, entry.Desired.Kind, entry.Desired.Name, "").Key()]
 		}
 		if !found {
 			continue

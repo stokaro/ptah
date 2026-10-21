@@ -234,7 +234,7 @@ func TestSchemaConversionProjectsNamedConstraintFacets(t *testing.T) {
 			Facets: must.Must(schemaext.NewFacets(&facetValue{Number: 10, Representation: schemaext.Desired}))}}}
 	models := runtime.Codecs().Definitions()
 	model := slices.IndexFunc(models, func(model schemaext.CodecIdentity) bool { return model.Representation == schemaext.Desired })
-	desired.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: models[model], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+	desired.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: models[model], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil))
 	projected, err := goschematodb.ToDBSchema(t.Context(), desired, "postgres", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(projected.Constraints, qt.HasLen, 1)

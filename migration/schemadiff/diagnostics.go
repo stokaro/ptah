@@ -67,8 +67,12 @@ func (e *IncompleteComparisonError) Error() string {
 			descriptions = append(descriptions, fmt.Sprintf("%s namespace: %s", diagnostic.Kind, diagnostic.Reason))
 			continue
 		}
+		if !ref.Database.Empty() || !ref.Namespace.IsZero() {
+			descriptions = append(descriptions, fmt.Sprintf("%s (%s): %s", diagnostic.Kind, ref, diagnostic.Reason))
+			continue
+		}
 		descriptions = append(descriptions, fmt.Sprintf("%s (catalog %q, schema %q, parent %q, %s %q, signature %q): %s", diagnostic.Kind,
-			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.Signature, diagnostic.Reason))
+			ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Kind, ref.Name.Source, ref.SignatureText(), diagnostic.Reason))
 	}
 	return ErrIncompleteComparison.Error() + ": " + strings.Join(descriptions, "; ")
 }

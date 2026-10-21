@@ -90,3 +90,100 @@ func normalizationExchange() (*protocol.Description, *protocol.NormalizeValuesRe
 		NormalizedOwner: proto.CloneOf(value.Owner), CanonicalFormat: "example.org/value-v1", CanonicalProjection: []byte("canonical")}}}
 	return description, request, result
 }
+
+func inspectionExchange() (*protocol.Description, *protocol.InspectRequest, *protocol.Schema) {
+	description, values, _ := normalizationExchange()
+	description.Features = append(description.Features, provider.InspectFeature)
+	model := description.Engines[0].ValueModels[0]
+	model.Representation = protocol.ValueInput_OBSERVED
+	value := values.Values[0].Value
+	value.Owner.Kind = value.Kind
+	coverage := &protocol.ModelCoverage{Representation: protocol.ValueInput_OBSERVED,
+		Kinds:    []*protocol.ModelKindCoverage{{Model: proto.CloneOf(model), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}},
+		Subjects: []*protocol.ModelSubjectCoverage{{Kind: value.Kind, Subject: proto.CloneOf(value.Owner), NormalizedSubject: proto.CloneOf(value.Owner), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}},
+	}
+	return description, &protocol.InspectRequest{SessionId: "session"}, &protocol.Schema{Complete: true, Engine: "test", Coverage: coverage, NativeObjects: []*protocol.Envelope{value}}
+}
+
+func TestInspectClientRejectsUnboundPeerState(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	peer := &inspectionPeer{result: snapshot}
+	client := &Client{description: description, rpc: peer}
+	result, err := client.Inspect(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, snapshot), qt.IsTrue)
+	snapshot.Coverage = nil
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+	peer.err = status.Error(codes.Unavailable, "password=secret")
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorMatches, `provider inspect failed \(Unavailable\)`)
+	c.Assert(result, qt.IsNil)
+}
+
+func TestInspectClientPreservesAndValidatesNamespaceRegions(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{{
+		Scope:     &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: "Database", Normalized: "database"}},
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "partial read"},
+	}}
+	client := &Client{description: description, rpc: &inspectionPeer{result: snapshot}}
+	result, err := client.Inspect(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, snapshot), qt.IsTrue)
+	snapshot.Coverage.Kinds[0].Regions[0].Scope.Database.Normalized = ""
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+}
+
+func TestInspectServerCannotEraseRequestedScope(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	request.Schemas = []string{"selected"}
+	original := proto.CloneOf(request)
+	server := &serverAdapter{server: Server{Description: description, Inspector: &scopeErasingInspector{snapshot: snapshot}}}
+	result, err := server.Inspect(c.Context(), request)
+	c.Assert(status.Code(err), qt.Equals, codes.FailedPrecondition)
+	c.Assert(result, qt.IsNil)
+	c.Assert(proto.Equal(request, original), qt.IsTrue)
+}
+
+type inspectionPeer struct {
+	protocol.ProviderClient
+	result *protocol.Schema
+	err    error
+}
+
+func (p *inspectionPeer) Inspect(context.Context, *protocol.InspectRequest, ...grpc.CallOption) (*protocol.Schema, error) {
+	return p.result, p.err
+}
+
+type scopeErasingInspector struct{ snapshot *protocol.Schema }
+
+func (p *scopeErasingInspector) Inspect(_ context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
+	request.Schemas = nil
+	return p.snapshot, nil
+}
+
+func TestInspectClientValidatesOwnerSelectorBindings(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	request.Schemas = []string{"selected"}
+	ref := snapshot.Coverage.Subjects[0].NormalizedSubject
+	scope := &protocol.ModelNamespace{Schema: &protocol.NamespaceComponent{Source: ref.Schema, Normalized: ref.Schema}}
+	snapshot.ScopeBindings = []*protocol.InspectionScopeBinding{{Selector: "selected", Namespaces: []*protocol.ModelNamespace{scope}}}
+	snapshot.Coverage.Kinds[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "outside selection"}
+	snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{{Scope: proto.CloneOf(scope), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}
+	client := &Client{description: description, rpc: &inspectionPeer{result: snapshot}}
+	result, err := client.Inspect(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, snapshot), qt.IsTrue)
+	snapshot.ScopeBindings[0].Selector = "other"
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+}

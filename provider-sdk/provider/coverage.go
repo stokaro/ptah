@@ -36,10 +36,10 @@ func ValidateModelCoverage(description *protocol.Description, engine string, cov
 		if model == nil || declared == nil || !proto.Equal(model, declared) || kinds[model.GetKind()] {
 			return fmt.Errorf("%w: unknown, changed, or duplicate coverage model", ErrProtocol)
 		}
-		if record.GetKnowledge().GetState() == protocol.ModelKnowledge_ABSENT || record.GetKnowledge().GetState() == protocol.ModelKnowledge_DEFAULTED {
-			return fmt.Errorf("%w: absence and defaults require a specific subject", ErrProtocol)
+		if err := validateNamespaceKnowledge(coverage.GetRepresentation(), record.GetKnowledge()); err != nil {
+			return err
 		}
-		if err := validateKnowledge(coverage.GetRepresentation(), record.GetKnowledge()); err != nil {
+		if err := validateCoverageRegions(coverage.GetRepresentation(), record.GetRegions()); err != nil {
 			return err
 		}
 		kinds[model.GetKind()] = true

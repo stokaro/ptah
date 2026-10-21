@@ -23,7 +23,7 @@ func valueModels() []*protocol.ValueModel {
 	digest := sha256.Sum256(definition)
 	var models []*protocol.ValueModel
 	for _, representation := range []protocol.ValueInput_Representation{protocol.ValueInput_DESIRED, protocol.ValueInput_OBSERVED} {
-		models = append(models, &protocol.ValueModel{Kind: "example.org/fixture/retention", Representation: representation,
+		models = append(models, &protocol.ValueModel{DisplayName: "retention values", Kind: "example.org/fixture/retention", Representation: representation,
 			SchemaVersion: 1, Encoding: "json", DefinitionJson: definition, DefinitionSha256: hex.EncodeToString(digest[:]),
 			CanonicalFormat: "example.org/fixture/retention/seconds-json-v1"})
 	}

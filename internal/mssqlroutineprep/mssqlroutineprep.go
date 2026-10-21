@@ -15,7 +15,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/dialect/mssql/mssqlroutine"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 )
 
 // Service lowers routine parameters through SQL Server's owner. Its zero value
@@ -45,9 +45,9 @@ func (Service) LowerDesired(ctx context.Context, request schemapreparation.Lower
 			return nil, err
 		}
 		function := &result.Functions[i]
-		before := routineargs.Subject(builder, function.Kind, function.Name, function.Parameters)
+		before := routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters)
 		function.Parameters = mssqlroutine.NormalizeParameters(function.Parameters)
-		subjects[before.Key()] = routineargs.Subject(builder, function.Kind, function.Name, function.Parameters)
+		subjects[before.Key()] = routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters)
 	}
 	if result.FeatureCoverage.IsZero() {
 		return &result, nil

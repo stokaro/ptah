@@ -12,7 +12,7 @@ func TestCoverageMerge_UnknownSourcesAndSubjectLimitsSurvive(t *testing.T) {
 	c := qt.New(t)
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
-	known, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil)
+	known, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil)
 	c.Assert(err, qt.IsNil)
 	ref := widgetRef("items", "updates")
 	limited, err := schemaext.NewCoverage(schemaext.Desired, known.KindRecords(), []schemaext.SubjectCoverage{{Kind: widgetKind, Subject: ref, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "unknown setting"}}})
@@ -32,7 +32,7 @@ func TestCoverageMerge_RejectsConflictingClaimsAndDefinitions(t *testing.T) {
 	c := qt.New(t)
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
-	kinds := []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}
+	kinds := []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}
 	absent, err := schemaext.NewCoverage(schemaext.Desired, kinds, []schemaext.SubjectCoverage{{Kind: widgetKind, Subject: widgetRef("t", "v"), Knowledge: schemaext.Knowledge{State: schemaext.Absent}}})
 	c.Assert(err, qt.IsNil)
 	defaulted, err := schemaext.NewCoverage(schemaext.Desired, kinds, []schemaext.SubjectCoverage{{Kind: widgetKind, Subject: widgetRef("t", "v"), Knowledge: schemaext.Knowledge{State: schemaext.Defaulted}}})

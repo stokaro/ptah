@@ -131,7 +131,7 @@ func TestReadSchemaContext_ReadsDefaultPrivilegesUnderBothCapabilities(t *testin
 			c.Assert(capturedDefaultPrivileges(c, schema), qt.DeepEquals, test.want)
 			known := schema.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
 			c.Assert(known.KindRecords(), qt.HasLen, 1)
-			c.Assert(known.KindRecords()[0].Knowledge.State == schemaext.Complete, qt.Equals, test.complete)
+			c.Assert(known.KindRecords()[0].Knowledge.Unscoped().State == schemaext.Complete, qt.Equals, test.complete)
 			var classes []pgdefaultprivilege.Class
 			for _, claim := range known.SubjectRecords() {
 				class, err := pgdefaultprivilege.ClassOf(claim.Subject)

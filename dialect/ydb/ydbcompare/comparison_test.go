@@ -41,7 +41,7 @@ func source(c *qt.C, representation schemaext.Representation, knowledge schemaex
 		c.Assert(err, qt.IsNil)
 		if knowledge != schemaext.Complete {
 			kinds := coverage.KindRecords()
-			kinds[0].Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source did not enumerate streams"}
+			kinds[0].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source did not enumerate streams"})
 			coverage, err = schemaext.NewCoverage(representation, kinds, limits)
 			c.Assert(err, qt.IsNil)
 		}

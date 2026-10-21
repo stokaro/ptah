@@ -25,7 +25,7 @@ func observedIndexCoverage() schemaext.Coverage {
 	var kinds []schemaext.KindCoverage
 	for _, model := range must.Must(builtin.New()).Codecs().Definitions() {
 		if (model.Kind == chschema.TableKind || model.Kind == chschema.IndexKind) && model.Representation == schemaext.Observed {
-			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			kinds = append(kinds, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 		}
 	}
 	return must.Must(schemaext.NewCoverage(schemaext.Observed, kinds, nil))

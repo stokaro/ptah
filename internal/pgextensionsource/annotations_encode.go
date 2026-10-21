@@ -71,8 +71,8 @@ func extensionDirective(object schemaext.Object) (annotation.EncodedDirective, e
 // must not gain authority to remove extensions through a successful export.
 func requireAnnotationCoverage(known schemaext.Coverage) error {
 	for _, record := range known.KindRecords() {
-		if record.Knowledge.State != schemaext.Complete {
-			return fmt.Errorf("%w: Go annotations cannot preserve extension namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+		if record.Knowledge.Unscoped().State != schemaext.Complete {
+			return fmt.Errorf("%w: Go annotations cannot preserve extension namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	for _, record := range known.SubjectRecords() {

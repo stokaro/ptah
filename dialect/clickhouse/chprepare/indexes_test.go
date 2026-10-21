@@ -28,7 +28,7 @@ func indexCoverage(state schemaext.KnowledgeState, claims ...schemaext.SubjectCo
 		models[model.Representation] = model
 	}
 	return must.Must(schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{
-		Model: models[schemaext.Observed], Knowledge: schemaext.Knowledge{State: state, Reason: "captured index enumeration"},
+		Model: models[schemaext.Observed], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "captured index enumeration"}),
 	}}, claims))
 }
 

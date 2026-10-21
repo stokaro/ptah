@@ -39,10 +39,11 @@ func (h *Host) decodeModels(ctx context.Context, envelopes []schemaext.Envelope)
 		for i, value := range normalized.GetValues() {
 			index := group.indexes[i]
 			input := inputs[index]
-			result[index], err = input.contract.resolved(input.wire, value)
+			resolved, err := input.contract.resolved(input.wire, value)
 			if err != nil {
 				return nil, err
 			}
+			result[index] = input.contract.payload(resolved)
 		}
 	}
 	if err := ctx.Err(); err != nil {

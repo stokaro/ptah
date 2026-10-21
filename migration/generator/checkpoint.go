@@ -103,7 +103,7 @@ func checkpointEmptyDatabase(ctx context.Context, runtime Runtime) (*catalog.Dat
 	var kinds []schemaext.KindCoverage
 	for _, definition := range runtime.Codecs().Definitions() {
 		if definition.Representation == schemaext.Observed {
-			kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			kinds = append(kinds, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
 		}
 	}
 	coverage, err := schemaext.NewCoverage(schemaext.Observed, kinds, nil)

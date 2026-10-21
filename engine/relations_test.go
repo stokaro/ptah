@@ -200,7 +200,7 @@ func TestRelationsRefuseIncompleteContextWithoutLosingKnownDefinitions(t *testin
 		{name: "unenrolled namespace", prepare: func(r *schemaext.RelationRequest) { r.Coverage = schemaext.Coverage{} }, reply: func(*schemaext.RelationResult) {}},
 		{name: "namespace incompletely enumerated", prepare: func(r *schemaext.RelationRequest) {
 			kinds := r.Coverage.KindRecords()
-			kinds[0].Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "permission-limited source"}
+			kinds[0].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "permission-limited source"})
 			r.Coverage, _ = schemaext.NewCoverage(r.Representation, kinds, nil)
 		}, reply: func(*schemaext.RelationResult) {}},
 		{name: "unknown subject", prepare: func(r *schemaext.RelationRequest) {

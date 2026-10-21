@@ -147,6 +147,7 @@ func ConstraintSubject(table objectidentity.ID, kind, name string, semantics ide
 		return objectidentity.ID{}, false
 	}
 	subject := objectidentity.NewBuilder(semantics).ConstraintParts(table.Schema.Source, table.Name.Source, name)
+	subject.Database, subject.Namespace = table.Database, table.Namespace
 	subject.Catalog, subject.Schema, subject.Parent = table.Catalog, table.Schema, table.Name
 	return subject, !subject.Name.Empty()
 }

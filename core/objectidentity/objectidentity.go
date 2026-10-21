@@ -49,7 +49,9 @@ package objectidentity
 
 import (
 	"slices"
+	"strconv"
 	"strings"
+	"unique"
 
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/tableref"
@@ -157,20 +159,22 @@ func (p Part) Empty() bool {
 type ID struct {
 	// Kind is the object family.
 	Kind Kind `json:"kind,omitzero"`
-	// Catalog and Schema qualify the object. Catalog is empty on every dialect
-	// Ptah targets today and is modeled because a reference that cannot express
-	// it cannot refuse an invalid scope transition either.
-	Catalog Part `json:"catalog,omitzero"`
-	Schema  Part `json:"schema,omitzero"`
+	// Database, Catalog, and Schema retain distinct qualification levels.
+	Database Part `json:"database,omitzero"`
+	Catalog  Part `json:"catalog,omitzero"`
+	Schema   Part `json:"schema,omitzero"`
+	// Namespace retains ordered path components below the schema, separately
+	// from the object name and any owning table.
+	Namespace Parts `json:"namespace,omitzero"`
 	// Parent owns the object for a family that has one: the table a column,
 	// index, constraint or policy belongs to. Empty for a schema-level object.
 	Parent Part `json:"parent,omitzero"`
 	// Name is the object's own name.
 	Name Part `json:"name,omitzero"`
-	// Signature is a routine's overload identity -- the normalized argument
-	// type list. Two functions with the same name and different signatures are
-	// different objects, and a model without this cannot say so.
-	Signature string `json:"signature,omitzero"`
+	// Signature holds the ordered components that distinguish overloads of one
+	// named object. Routine arguments, grant privileges, and extended-property
+	// addresses retain their component boundaries and source spellings.
+	Signature Parts `json:"signature,omitzero"`
 }
 
 // Key is the value equality is decided on, and the type a map keys on.
@@ -187,11 +191,13 @@ type ID struct {
 // fields like any other.
 type Key struct {
 	kind      Kind
+	database  string
+	namespace unique.Handle[normalizedPartNode]
 	catalog   string
 	schema    string
 	parent    string
 	name      string
-	signature string
+	signature unique.Handle[normalizedPartNode]
 }
 
 // Kind returns the object family the key belongs to, which a diagnostic needs
@@ -205,11 +211,13 @@ func (k Key) Kind() Kind {
 func (id ID) Key() Key {
 	return Key{
 		kind:      id.Kind,
+		database:  id.Database.Normalized,
+		namespace: id.Namespace.key,
 		catalog:   id.Catalog.Normalized,
 		schema:    id.Schema.Normalized,
 		parent:    id.Parent.Normalized,
 		name:      id.Name.Normalized,
-		signature: id.Signature,
+		signature: id.Signature.key,
 	}
 }
 
@@ -218,13 +226,22 @@ func (id ID) Equal(other ID) bool {
 	return id.Key() == other.Key()
 }
 
+// SameNamespace reports whether the database, catalog, schema, and path match.
+// Parent selection must compare this entire scope before comparing table names.
+func (id ID) SameNamespace(other ID) bool {
+	return id.Database.Normalized == other.Database.Normalized &&
+		id.Catalog.Normalized == other.Catalog.Normalized &&
+		id.Schema.Normalized == other.Schema.Normalized && id.Namespace.Equal(other.Namespace)
+}
+
 // String renders the identity for a diagnostic, in the spelling the author
 // wrote: the kind, then the catalog, schema, parent and name that are present,
 // joined by dots. A component holding a dot or a double quote is written in
 // double quotes, with each double quote inside doubled, so two identities whose
 // components differ never render as the same text: the name `pw` in the schema
 // `ext` is `ext.pw`, and the name `ext.pw` with no schema is `"ext.pw"`
-// (stokaro/ptah#4276). String is for people; [ID.Key] is the comparison form.
+// (stokaro/ptah#4276). Database and namespace paths, when present, have
+// explicit labels before the qualified name. String is for people; [ID.Key] is the comparison form.
 func (id ID) String() string {
 	return string(id.Kind) + " " + id.Path()
 }
@@ -241,8 +258,15 @@ func (id ID) Path() string {
 	}
 	parts = append(parts, displayComponent(id.Name.Source))
 	rendered := strings.Join(parts, ".")
-	if id.Signature != "" {
-		rendered += "(" + id.Signature + ")"
+	if !id.Database.Empty() || !id.Namespace.IsZero() {
+		path := make([]string, 0)
+		for _, component := range id.Namespace.Values() {
+			path = append(path, strconv.Quote(component.Source))
+		}
+		rendered = "[database=" + strconv.Quote(id.Database.Source) + "; namespace=[" + strings.Join(path, ", ") + "]] " + rendered
+	}
+	if !id.Signature.IsZero() {
+		rendered += "(" + id.SignatureText() + ")"
 	}
 	return rendered
 }
@@ -484,7 +508,7 @@ func (b Builder) GrantParts(schema, object, role, privilege string) ID {
 		Schema:    owner.Schema,
 		Parent:    owner.Name,
 		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
-		Signature: strings.ToUpper(strings.TrimSpace(privilege)),
+		Signature: NewParts(Part{Source: strings.TrimSpace(privilege), Normalized: strings.ToUpper(strings.TrimSpace(privilege))}),
 	}
 }
 
@@ -587,11 +611,11 @@ const primaryKeyName = "PRIMARY KEY"
 // constraint, a constraint named PRIMARY KEY included.
 func PrimaryKeyOf(table ID) ID {
 	return ID{
-		Kind:    KindPrimaryKey,
-		Catalog: table.Catalog,
-		Schema:  table.Schema,
-		Parent:  table.Name,
-		Name:    Part{Source: primaryKeyName, Normalized: primaryKeyName},
+		Kind:     KindPrimaryKey,
+		Database: table.Database, Namespace: table.Namespace, Catalog: table.Catalog,
+		Schema: table.Schema,
+		Parent: table.Name,
+		Name:   Part{Source: primaryKeyName, Normalized: primaryKeyName},
 	}
 }
 
@@ -707,7 +731,7 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 		Kind:      kind,
 		Schema:    b.schemaPart(schema),
 		Name:      b.namePart(name, b.semantics.TableIdentityKey),
-		Signature: normalizeSignature(signature),
+		Signature: signatureParts(signature),
 	}
 }
 
@@ -723,25 +747,6 @@ func (b Builder) schemaPart(schema string) Part {
 		return part
 	}
 	return b.namePart(schema, b.semantics.TableIdentityKey)
-}
-
-// normalizeSignature folds a routine argument list to its comparison form:
-// lower case, one space after each comma, no surrounding parentheses.
-func normalizeSignature(signature string) string {
-	trimmed := strings.TrimSpace(signature)
-	// Only a pair that wraps the whole list is the list's own parentheses: a
-	// trailing one may close a type modifier, as in `n varchar(20)`.
-	if strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
-		trimmed = trimmed[1 : len(trimmed)-1]
-	}
-	if trimmed == "" {
-		return ""
-	}
-	arguments := strings.Split(trimmed, ",")
-	for i, argument := range arguments {
-		arguments[i] = strings.ToLower(strings.Join(strings.Fields(argument), " "))
-	}
-	return strings.Join(arguments, ", ")
 }
 
 // unquote removes one layer of double quotes and reports whether there was one.

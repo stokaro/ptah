@@ -17,9 +17,9 @@ import (
 func RequireRepresentable(coverage schemaext.Coverage, objects schemaext.Objects) error {
 	for _, record := range coverage.KindRecords() {
 		kind := record.Model.Kind
-		if (kind == pgpolicy.PolicyKind || kind == pgpolicy.TableStateKind) && record.Knowledge.State != schemaext.Complete {
+		if (kind == pgpolicy.PolicyKind || kind == pgpolicy.TableStateKind) && record.Knowledge.Unscoped().State != schemaext.Complete {
 			return fmt.Errorf("%w: %s cannot be exported without losing its coverage record: %s %s",
-				ptaherr.ErrUnsupportedFeature, kind, describeState(record.Knowledge.State), record.Knowledge.Reason)
+				ptaherr.ErrUnsupportedFeature, kind, describeState(record.Knowledge.Unscoped().State), record.Knowledge.Unscoped().Reason)
 		}
 	}
 	policyTables := make(map[objectidentity.Key]bool)

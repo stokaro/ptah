@@ -166,29 +166,10 @@ equality, encoding, and fingerprints remain local after provider shutdown.
 
 Persistence stores owner input and its binding, not a claim of prior validation.
 Loading it requires the selected owner to reconstruct the semantic projection.
-Operation and change models remain refused until their native adapters exist.
-This boundary does not yet connect frontend source capture, native object
-comparison, planning, or engine transaction and history services.
-
-## Negotiated YAML ownership
-
-An engine declares each YAML key it owns, the document or table scope, the
-selector its decoder understands, and the desired models that key can declare.
-A YAML-capable model must have an explicit key claim. The host must check claims
-against common frontend keys and the other selected owners before parsing.
-Model kind names and owner JSON definitions do not imply key ownership.
-
-A captured YAML fragment carries its frozen claim. Both SDK boundaries refuse a
-changed claim, a selector mismatch, a model outside the captured document's
-scope, or a missing table binding before invoking owner code. Document keys do
-not carry an implicit table attachment. A returned value must belong to a model
-named by its fragment's key, even when the document enrolls other models.
-Other source formats cannot carry YAML claims. The host includes this grammar in contract and model-definition digests,
-with key and model declaration order normalized as sets.
-
-This metadata does not yet connect native YAML capture to the transport.
-Value conversion and normalized model placement remain
-required application-adapter work before an external owner can read YAML files.
+Operation models remain refused until their native adapters exist. Change
+models enter the shared comparison runtime through the contextual service
+described below. Native planning and engine transaction and history services
+still require application adapters.
 
 ## Cancellation during source interpretation
 
@@ -236,13 +217,148 @@ result on cancellation or failure. The same owner cannot also register local
 per-key decoders or static coverage. In-process owners can keep their local
 callbacks; neither path serializes their values through the SDK.
 
-Negotiated source claims and conversion of captured YAML nodes to SDK source
-values remain application-adapter work. This frontend boundary does not claim
-that an external engine can already interpret native YAML files.
+## Negotiated YAML ownership
+
+An engine declares each YAML key it owns, the document or table scope, the
+selector its decoder understands, and the desired models that key can declare.
+A YAML-capable model must have an explicit key claim. The host must check claims
+against common frontend keys and the other selected owners before parsing.
+Model kind names and owner JSON definitions do not imply key ownership.
+
+A captured YAML fragment carries its frozen claim. Both SDK boundaries refuse a
+changed claim, a selector mismatch, a model outside the captured document's
+scope, or a missing table binding before invoking owner code. Document keys do
+not carry an implicit table attachment. A returned value must belong to a model
+named by its fragment's key, even when the document enrolls other models.
+Other source formats cannot carry YAML claims. The host includes this grammar in contract and model-definition digests,
+with key and model declaration order normalized as sets.
+
+## Native YAML provider adapter
+
+The host registers negotiated document and table keys with the same YAML owner
+set as in-process extensions. Each engine receives its claimed fragments and
+the complete common table binding set in one offline request per document.
+A missing key still enrolls its models, requiring an explicit coverage result.
+The host does not select the first engine or treat a provider ID as an engine.
+YAML has no selected server profile, so the request declares no target features.
+
+Conversion preserves exact finite numbers, explicit nulls, string tags,
+sequence order, alias-use positions, and original encoded byte coordinates.
+Mapping merges retain YAML override precedence and declaration positions for
+inherited entries. Cyclic aliases, expansion limits, non-string mapping keys,
+nonfinite numbers, and unsupported tags cause refusal. The provider cannot
+recover missing data by reading source files.
+
+Validated results enter the shared schema as target-scoped table facets or
+native objects. Their coverage uses the registered host codec identity, and
+their canonical values require no second normalization RPC. Copying, encoding,
+and comparison of resolved values remain local after the process closes.
+Any failure discards the complete desired schema. If another registered engine
+cannot express the same model in YAML, kind-wide coverage stays uninspected;
+explicit subject records retain their engine scope. Target-specific absence
+claims need target-scoped kind coverage in the shared schema before this limit
+can be removed.
+
+The shared placement identity retains database components and ordered namespace
+paths and overload tuples with separate source and normalized forms. Immutable tuple nodes keep
+IDs comparable without exposing writable slices or delimiter-based keys.
+Collections, coverage, dependency capture, and codecs retain these components.
+
+A provider result that changes the path or overload component count during normalization
+is refused: the shared model cannot pair its source and normalized components.
+A common table facet with database, catalog, path, or overload qualification is refused;
+matching it by table name and schema would drop part of its identity.
+
+Facets of columns and indexes also require placement adapters. Conflicting
+values for the same model and subject across engines are refused by the shared
+collections. These gaps, HCL and Go annotation capture, and native planning
+remain part of #4204. The fixture's retention value proves transport and schema
+placement; it does not implement SQLite retention or qualify YDB extraction.
+
+## Observed capture
+
+Inspection returns an explicit engine, target features, and observed coverage,
+even when the database has no common tables or native objects. The SDK checks
+model definitions, source identities, and complete subject coverage before
+exposing a normalization batch. Column facets identify their parent table as a
+separate path component. Filtered inspection binds each requested selector to
+owner-defined namespaces in request order. Bindings interpret the selection;
+they establish no knowledge. Tables and coverage subjects must stay inside them,
+and each coverage region must fit wholly inside one bound namespace. A filtered
+reply cannot claim global completeness. An empty binding means an empty selection.
+
+The host matches the returned target and features to the opened session, then
+normalizes all native objects and common table and column facets in one call.
+Every normalized identity must agree with the corresponding coverage record.
+The captured projection retains the session features and model definition.
+No partial catalog survives a failed or canceled inspection or normalization.
+
+Native objects retain their database, catalog, namespace, and overload tuples.
+Common facets use the shared table and column identity builders. The adapter
+checks the session database and identifier comparison rules before removing
+the implicit database or moving a column's table into the common parent field.
+Unexpected qualifiers and inconsistent normalized names cause refusal.
+
+The SDK carries database, catalog, schema, and path-prefix regions with source
+and normalized components. Each model declares outside knowledge separately.
+Unknown regions override overlapping completeness, and explicit subjects remain
+more specific. Empty qualifiers differ from wildcards. Duplicate normalized
+regions, invalid components, and namespace-wide absence or defaults are refused.
+Full-document source decoding refuses regions because it must account for the
+complete enrolled document scope.
+
+The host accepts native regions only when their database component preserves
+the exact nonempty session database. It adds the selected engine to each region
+and retains all remaining qualifiers and path components. Global completeness
+still becomes uninspected. Native regions select only the model's native subject
+kind. Common table and column regions omit the database and catalog, retain the
+session default schema, and require an exact empty namespace path. A column's
+wire path moves into its parent field. Subject-kind limits prevent either
+coordinate space from claiming knowledge in the other. Unknown parent regions
+survive this mapping. Unbound, foreign, or renamed database scopes and common
+normalization mismatches cause refusal of the whole catalog.
+
+Every inspected table supplies a normalized identity, including tables without
+facets. The host checks it against the negotiated common identifier semantics.
+Filtered dispositions remain refused because they lack a normalized identity.
+The synthetic fixture proves filtered native CLI inspection and bounded common
+and native capture. It does not implement SQLite retention or qualify an engine.
+
+Desired and observed models may supply a static plural display name. The name
+must agree across engines that share that model representation and participates
+in frozen contract and model digests. The local reporting adapter validates
+captured values and supplies omission metadata without payload metrics or an RPC.
+Missing labels remain missing reporting support; the host invents no substitute.
+
+Native JSON inspection uses the common schema format. It warns about omitted
+native objects and facets with owner labels. The shared conversion and codecs
+retain their payloads separately. JSON output does not qualify lossless export.
+
+## Semantic representation conversion
+
+`ConvertValues` is an optional offline owner service. It converts a complete
+batch between negotiated desired and observed models. The host retains the
+normalization metadata privately and clones it with the captured value. The
+persistent wire format still contains source data only; decoding always resolves
+it with the owner.
+
+The conversion request carries a captured target profile. Mixed profiles are
+refused before dispatch. The owner validates payload semantics again; cached
+projections cannot authorize skipping that work. Destination formats and defaults
+may differ. Ordered IDs, kinds, source identities, and normalized identity tuples
+must survive, while every destination requirement stays within the profile.
+Both SDK boundaries refuse malformed or partial results. Cancellation discards
+the batch even when a service returns a result afterward.
+
+The host registers paired model kinds under the selected engine's conversion
+service. The shared schema pipeline retains object and facet placement and
+converts coverage definitions without widening their knowledge. No conversion
+response supplies new coverage. Filtered inspection supplies selector bindings
+before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 11 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -253,3 +369,114 @@ complete. Qualification must cover each engine's objects, facets, source formats
 planning, rendering, history, transaction limits, and failure recovery before
 its dependency graph can be removed from the host. Stable v1 requires all
 extracted engines, not only the fixture, to pass that evidence.
+
+## Namespace knowledge in the shared model
+
+A kind claim carries an immutable domain with an outside claim and explicit
+namespace regions. Regions retain structured database, catalog, schema, and path
+components, plus target names, subject kinds, and parent components. A scope can
+require its path to match exactly instead of accepting descendants. Nil qualifiers are unrestricted; present empty
+qualifiers match only empty identity components. Matching uses normalized parts,
+and capture preserves their source spelling.
+
+Overlapping regions intersect knowledge. Independent sources also intersect,
+retaining separate claims so one source cannot fill another source's unknown
+area. Target projection filters regions before identity lookup. Explicit subject
+and parent claims retain their priority. A comparison reply cannot introduce a
+complete region behind an uninspected global summary. A merged subject claim
+must be supported across every retained target name. Without a target resolver,
+a possible alias cannot justify discarding a negative namespace claim.
+
+Coverage wire format 2 stores these domains without a scalar compatibility
+reader. This changes behavior; pre-v1, so compatibility with older Ptah is not
+owed. Rebinding only explicit subjects could move a table outside an unknown
+region and authorize a drop. Inspection maps owner-bound namespaces at capture.
+Common identity binding then transforms typed relative bounds with their
+subjects. Contextual provider comparison, planning, and faithful source export
+remain work in #4204.
+
+## Binding namespace limits for comparison
+
+`KnowledgeDomain.MapScopes` preserves each source's outside knowledge and every
+region's knowledge while rebinding its scope. A region may split by subject
+kind; it cannot disappear. Each callback input and output is copied. Errors,
+invalid scopes, and size-limit violations return no partial domain. The caller
+owns the identity transformation; the shared model does not infer one.
+
+The common binder uses one subject-kind classification for explicit claims and
+namespace regions. Comparison binds tables, table-owned objects, indexes, and
+routines. Reverse creation binds tables and their children. Connection defaults,
+identifier folding, quoted names, and index namespaces follow the same builders
+on both paths. Verbatim table binding retains whether a schema came from the
+connection, so a later binding can apply a different connection default.
+Independent source claims and overlapping unknown regions remain
+independent after their names collide under the selected rules.
+
+The binder resolves the target before mapping. Bound regions name the selected
+canonical target, so an alias cannot grant the transformed scope to another
+engine. A database-qualified or namespace-qualified native region keeps its
+coordinates. Relative common regions require explicit subject kinds, an exact
+empty database, and an exact namespace path. Common tables, indexes, and routines
+also require an exact empty catalog. Ambiguous native parent bounds remain
+refused. These refusals prevent a wildcard from mixing identities that move
+with identities that stay qualified.
+
+The synthetic provider proves that captured namespace limits can pass this
+binding after its process closes. Public comparison tests retain an unknown
+relative namespace in the source snapshot used for planning. Neither test
+qualifies a provider's contextual comparison or change-planning service.
+
+
+## Contextual comparison transport
+
+An engine assigns native object models or attached facet models to named
+`CompareModels` services. Each declaration includes its change models, facet
+owner kinds, and supported native actions. The host freezes these declarations
+in both provider and model identities. Changing placement or semantic ownership
+invalidates an earlier captured contract.
+
+The request preserves the complete shared comparison context. Identity parts
+carry their source and normalized spelling, quoting, and default markers.
+Parents, namespace paths, and overload signatures have distinct coordinates.
+The capture-phase `Reference` remains an owner's source identity; the bound
+comparison identity represents the later host phase without parsing a joined
+name or exporting a host interface. Capability maps retain established false
+answers separately from missing facts.
+
+Coverage transports independent knowledge sources, each with an outside claim
+and bounded regions. `KnowledgeDomain.Sources` returns independent snapshots;
+the adapter restores each source and intersects them. Flattening their regions
+would let one source grant authority another source lacks. Subject claims,
+explicit empty namespace parts, common parents, exact paths, and target limits
+survive the round trip.
+
+Object batches carry common parent lifecycles, explicit actions, declared
+relations, roles and columns, exclusions, required objects, and the database
+path. Facet batches carry their owner lifecycles and desired and observed
+constraint definitions. Deliberately excluded facets retain their model,
+subject, and target binding even though their value is absent. The response
+must preserve each exclusion and cannot return a change or diagnostic for it.
+
+The owner revalidates payload semantics before comparing desired and observed
+states. It returns the effective desired schema, typed changes, and undecided
+reasons as one atomic reply. The shared engine still validates declaration
+retention, coverage limits, related subjects, parent ownership, and migration
+policy. The transport does not replace those rules. A missing comparison
+service remains a refusal rather than a successful no-op.
+
+A normalized change explicitly states whether it replaces a common owner or
+removes state, and carries impact and access assessments with reasons. The
+local change adapter implements the shared change and effect interfaces using
+these captured facts. Required object identities use the same bound component
+format. Canonical projections include the facts; the persistence format holds
+only complete owner input and its frozen binding. Decoding invokes owner
+normalization to reconstruct the facts. Cloning, encoding, and effect queries
+remain local after the provider process closes.
+
+The independent retention fixture exercises native objects and column facets,
+changed and unchanged values, explicit actions, unknown coverage, exclusions,
+and change capture and decoding. It establishes global and subject knowledge
+only; bounded regions remain undecided in that synthetic owner. It does not
+execute retention changes or qualify any official database engine. Native
+planning, operation rendering, transaction and history services, full source
+support, and official-engine extraction remain part of #4204.

@@ -62,10 +62,12 @@ func (c Coverage) WithLimits(limits coverage.Set, m LimitMapping, subjects []obj
 	}
 	result := Coverage{representation: c.representation, kinds: maps.Clone(c.kinds), subjects: maps.Clone(c.subjects)}
 	if limit, found := limits.Limit(m.Header); found {
-		if record.Knowledge.State != Uninspected && record.Knowledge.State != Unrepresentable {
-			record.Knowledge = Knowledge{State: Uninspected, Reason: limitReason(limit)}
-			result.kinds[m.Model] = record
+		knowledge, err := record.Knowledge.withLimit(limitReason(limit))
+		if err != nil {
+			return Coverage{}, err
 		}
+		record.Knowledge = knowledge
+		result.kinds[m.Model] = record
 		return result, nil
 	}
 	for _, subject := range subjects {

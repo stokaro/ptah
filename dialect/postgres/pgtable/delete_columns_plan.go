@@ -110,7 +110,7 @@ func planDeleteColumns(request featureplan.Request, record schemaext.ChangeRecor
 }
 func captureDeleteColumns(request featureplan.Request, subject objectidentity.ID, change *DeleteColumnsChange) (featureplan.Table, schemamodel.Constraint, error) {
 	for _, table := range request.Tables {
-		if subject.Catalog.Normalized != table.Subject.Catalog.Normalized || subject.Schema.Normalized != table.Subject.Schema.Normalized || subject.Parent.Normalized != table.Subject.Name.Normalized {
+		if !subject.SameNamespace(table.Subject) || subject.Parent.Normalized != table.Subject.Name.Normalized {
 			continue
 		}
 		if !deleteColumnsTableSurvives(table) {
