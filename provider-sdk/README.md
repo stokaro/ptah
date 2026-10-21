@@ -173,13 +173,12 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. Native object/facet adaptation in the host, frontend capture, contextual
-comparison, and migration backend operations remain required
-work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
+comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
 ## Captured extension sources
 
-Experimental revision 6 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 7 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -241,3 +240,27 @@ retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
 adapters, native planning, transactions, and history
 remain part of #4204; this transport is not a claim of YDB source support.
+
+## Observed model coverage
+
+`Inspect` returns its engine, selected target features, and explicit observed
+model coverage even for an empty database. The host matches the engine and
+features to the inspected session. A missing coverage record is not evidence
+that a model has no objects.
+
+`provider.InspectionValues` validates native objects, table facets, and column
+facets against their negotiated model definitions and complete subject records.
+It returns an independent batch for `NormalizeValues`. Native objects use their
+model kind as their identity kind. Table facets name their table, and column
+facets use `provider.ColumnReference` to keep the table and column names as
+separate components.
+
+After normalization, `provider.ValidateNormalizedInspection` requires every
+normalized owner to match its coverage subject. A failure discards the entire
+snapshot. Hosts retain the engine, target features, model contract, and
+normalized subject when capturing the owner-defined canonical projection.
+
+Schema-filtered native coverage is refused because the coverage contract cannot
+yet retain namespace limits. An uninspected or unrepresentable model requires a
+reason; observed coverage cannot request defaults. Namespace-scoped coverage
+and native migration planning remain work in #4204.

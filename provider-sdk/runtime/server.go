@@ -174,11 +174,14 @@ func (s *serverAdapter) Inspect(ctx context.Context, request *protocol.InspectRe
 	if request.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "session ID is required")
 	}
-	result, err := s.server.Inspector.Inspect(ctx, request)
+	result, err := s.server.Inspector.Inspect(ctx, proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateSchema(result); err != nil {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if _, err := provider.InspectionValues(s.server.Description, request, result); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return result, nil

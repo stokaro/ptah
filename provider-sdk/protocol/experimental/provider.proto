@@ -124,6 +124,12 @@ message Schema {
   repeated Table tables = 2;
   repeated Envelope native_objects = 3;
   repeated Disposition dispositions = 4;
+  // Explicit observed knowledge. Empty kinds enroll no models and establish no
+  // native-object absence, even when the common-table snapshot is complete.
+  ModelCoverage coverage = 5;
+  // Binds empty snapshots and owner values to the inspected session's target.
+  string engine = 6;
+  repeated string target_features = 7;
 }
 message Table {
   Reference identity = 1;

@@ -162,10 +162,17 @@ failure.
 
 Native YAML objects retain the provider's database, ordered namespace path,
 and overload components through schema capture and serialization. Identical
-names with different paths or overloads remain distinct. Table facets cannot
+names with different paths or overloads remain distinct. YAML table facets cannot
 use database, catalog, path, or overload qualification. Normalization that
 changes the path or overload component count is refused. Native planning for these objects remains part of
 [issue #4204](https://github.com/stokaro/ptah/issues/4204).
+
+`schema inspect` refuses native object and facet coverage because it requests
+an explicit schema scope that the experimental contract cannot yet retain.
+The Go catalog reader can capture these models when reading a complete session.
+A failed or canceled read returns no partial catalog. Complete inspection of one
+session does not establish global absence across databases or engines; explicit
+subject facts are preserved.
 
 ## Resolve failures
 

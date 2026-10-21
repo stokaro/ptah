@@ -274,9 +274,42 @@ collections. These gaps, HCL and Go annotation capture, and native planning
 remain part of #4204. The fixture's retention value proves transport and schema
 placement; it does not implement SQLite retention or qualify YDB extraction.
 
+## Observed capture
+
+Inspection returns an explicit engine, target features, and observed coverage,
+even when the database has no common tables or native objects. The SDK checks
+model definitions, source identities, and complete subject coverage before
+exposing a normalization batch. Column facets identify their parent table as a
+separate path component. Schema-filtered native coverage is refused until the
+contract can preserve its namespace limits. The native `schema inspect` path
+passes explicit schema names, so it refuses these model-bearing snapshots.
+An end-to-end test pins the empty output and error until scoped capture is
+implemented; catalog-reader support is not CLI inspection qualification.
+
+The host matches the returned target and features to the opened session, then
+normalizes all native objects and common table and column facets in one call.
+Every normalized identity must agree with the corresponding coverage record.
+The captured projection retains the session features and model definition.
+No partial catalog survives a failed or canceled inspection or normalization.
+
+Native objects retain their database, catalog, namespace, and overload tuples.
+Common facets use the shared table and column identity builders. The adapter
+checks the session database and identifier comparison rules before removing
+the implicit database or moving a column's table into the common parent field.
+Unexpected qualifiers and inconsistent normalized names cause refusal.
+
+Shared kind coverage has no database or engine scope. Therefore a complete
+session inspection leaves global kind knowledge uninspected, with an explicit
+reason. Concrete complete and absent subject records retain their target scope.
+This prevents one database's read from asserting absence on another database.
+Scoped kind coverage remains required for native comparison and planning in
+#4204. The synthetic observed-model fixture proves transport, capture, codecs,
+and local encoding after process shutdown; it does not implement SQLite
+retention or qualify an official engine.
+
 ## Consequences
 
-Experimental revision 6 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 7 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
