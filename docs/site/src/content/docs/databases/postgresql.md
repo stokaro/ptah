@@ -617,7 +617,9 @@ expressions and default key modifiers through a temporary table in a rolled-back
 transaction. This accounts for implicit casts without changing the source SQL.
 A probe that the server refuses leaves the comparison undecided.
 
-An existing partition key cannot change in place. Ptah refuses that change by
+An existing partition key cannot change in place. Changing an ordinary table
+to a partitioned table, removing partitioning, or changing its method or key
+requires a reviewed manual partition cutover. Ptah refuses these changes by
 name and refuses to rebuild a partitioned table without a partition-tree strategy.
 An unlogged partitioned table is refused. Complete source coverage distinguishes
 an ordinary table from a partitioned one; unknown coverage establishes neither.

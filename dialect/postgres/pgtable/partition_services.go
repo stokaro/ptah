@@ -132,7 +132,7 @@ func describesPartition(coverage schemaext.Coverage, subject objectidentity.ID) 
 	return slices.Contains([]schemaext.KnowledgeState{schemaext.Complete, schemaext.Absent, schemaext.Defaulted}, coverage.Lookup(PartitionKind, subject).State)
 }
 func partitionChangeError(subject objectidentity.ID) error {
-	return fmt.Errorf("%w: PostgreSQL table %s partition key cannot change in place", ptaherr.ErrUnsupportedFeature, subject.Path())
+	return fmt.Errorf("%w: PostgreSQL table %s partition key cannot change in place; a reviewed manual partition cutover is required", ptaherr.ErrUnsupportedFeature, subject.Path())
 }
 
 // RefuseForeignPartition checks a target's policy for a present declaration.

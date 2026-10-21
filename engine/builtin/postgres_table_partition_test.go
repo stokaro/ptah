@@ -107,9 +107,21 @@ func TestPartitionOwner_SQLAbsenceRefusesPartitionRemoval(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			_, err = schemadiff.CompareWithDialect(t.Context(), &plain, current, target, runtime)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `.*partition key cannot change in place`)
+			c.Assert(err, qt.ErrorMatches, `.*partition key cannot change in place; a reviewed manual partition cutover is required`)
 		})
 	}
+}
+
+func TestPartitionOwner_OrdinaryToPartitioned_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	plain, _, err := sqlschema.ReadWith(t.Context(), []byte(`CREATE TABLE app.words (word varchar(20), "a.b" integer);`), "postgres", nil, sqlschema.Options{Owners: runtime.SQL(), Vocabulary: runtime.CoverageVocabulary(), Relations: runtime})
+	c.Assert(err, qt.IsNil)
+	current, err := goschematodb.ToDBSchema(t.Context(), &plain, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	_, err = schemadiff.CompareWithDialect(t.Context(), partitionDocument(c, "postgres"), current, "postgres", runtime)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*a reviewed manual partition cutover is required`)
 }
 
 func TestPartitionOwner_YugabyteOmitsUnloggedAndKeepsPartitioning(t *testing.T) {

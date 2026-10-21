@@ -260,18 +260,17 @@ func replayOnLockedConnection(
 	if conn == nil {
 		return fmt.Errorf("replay migrations: nil database connection")
 	}
-	provider, err := migrator.NewFSMigrationProvider(
-		fsys,
-		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(atlasTemplateData),
-		migrator.WithAtlasRevisionVersions(revisionVersions),
-		migrator.WithStatementValidator(devclean.NewDevReplayGuard(conn.Info())),
-	)
-	if err != nil {
-		return fmt.Errorf("load migration directory: %w", err)
-	}
-	migrations := provider.Migrations()
 	return conn.WithSession(ctx, func(replayConn *dbschema.DatabaseConnection) (resultErr error) {
+		provider, err := migrator.NewFSMigrationProvider(
+			fsys,
+			migrator.WithMigrationDirFormat(dirFormat),
+			migrator.WithAtlasTemplateData(atlasTemplateData),
+			migrator.WithAtlasRevisionVersions(revisionVersions),
+			migrator.WithStatementValidator(devclean.NewDevReplayGuard(replayConn.Info()).WithSessionScope()),
+		)
+		if err != nil {
+			return fmt.Errorf("load migration directory: %w", err)
+		}
 		restoreSession, err := captureReplaySessionState(ctx, replayConn)
 		if err != nil {
 			return err
@@ -284,7 +283,7 @@ func replayOnLockedConnection(
 		return replayMigrations(
 			ctx,
 			replayConn,
-			migrations,
+			provider.Migrations(),
 			hooks,
 		)
 	})

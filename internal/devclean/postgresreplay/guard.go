@@ -11,7 +11,7 @@ import (
 	"ptah.run/internal/pgsystemschema"
 )
 
-func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {
+func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, sessionTables bool) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -26,7 +26,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 	if definesPostgresRoutine(tokens) {
 		return replay.Refuse(dialect, first+" routine definition")
 	}
-	if namespace := (protection{dialect: dialect}).protectedPostgresMutationNamespace(tokens); namespace != "" {
+	if namespace := (protection{dialect: dialect, sessionTables: sessionTables}).protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return replay.Refuse(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),
@@ -54,13 +54,14 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error
 		return replay.Refuse(dialect, operation)
 	}
 
-	return validatePostgresReplayStatementBase(dialect, tokens)
+	return validatePostgresReplayStatementBase(dialect, tokens, sessionTables)
 }
 
 // protection reads the namespaces a replayed statement must not change on one
 // member of the PostgreSQL family: the ones its server owns.
 type protection struct {
-	dialect string
+	dialect       string
+	sessionTables bool
 }
 
 func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {
@@ -131,7 +132,9 @@ func postgresMutationTargets(tokens []lexer.Token) [][]string {
 
 func (p protection) protectedNamespaceFromMutationTarget(tokens []lexer.Token, target []string) string {
 	if len(target) >= 2 && p.isProtectedPostgresNamespace(target[0]) {
-		return target[0]
+		if !p.sessionTables || target[0] != "pg_temp" {
+			return target[0]
+		}
 	}
 	if len(target) == 0 {
 		return ""
@@ -454,6 +457,9 @@ func (p protection) protectedPostgresQualifiedNamespaceAt(tokens []lexer.Token, 
 		return ""
 	}
 	if index+1 < len(tokens) && tokens[index+1].MatchOperatorValue(".") {
+		if p.sessionTables && replay.IdentifierValue(tokens[index]) == "pg_temp" {
+			return ""
+		}
 		return name
 	}
 	return ""
