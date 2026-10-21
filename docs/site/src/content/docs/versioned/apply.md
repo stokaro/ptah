@@ -447,6 +447,13 @@ parses one stream and reads the other.
   "planned": [1785255952, 1785255999],
   "applied": [1785255952],
   "error": "failed to apply migration 1785255999: ...",
+  "failure": {
+    "version": 1785255999,
+    "version_key": "1785255999",
+    "statement": 2,
+    "statements": 3,
+    "sqlstate": "42P01"
+  },
   "status": { "…": "the history after the run" }
 }
 ```
@@ -473,6 +480,24 @@ prove which statements it may skip. `unknown` is for a person.
 a `--limit`, a target version or a checkpoint narrows; `applied` names the
 selected migrations the history records afterwards, so a migration that was
 already applied before the run is not counted as this run's work.
+
+`error` is the message written for a person, and it quotes what the database
+said. That can include a row of data, such as the key in a duplicate-key error,
+and the statement itself. A caller that must not publish data reads `failure`
+instead, which carries no text:
+
+| Field | Meaning |
+| --- | --- |
+| `version`, `version_key` | The migration that failed, spelled as `planned` and `planned_keys` spell it |
+| `statement`, `statements` | The failed statement's 1-based position in the migration, and how many statements it holds |
+| `sqlstate` | The SQLSTATE the server answered with, on PostgreSQL-protocol and MySQL-protocol servers |
+| `error_number` | The server's error number on MySQL-protocol servers, such as `1146` for a table that does not exist |
+
+`failure` is present only when a statement reached the database and failed. A
+run that stopped before any statement ran has none: a lock timeout, a checksum
+mismatch, or a statement refused before execution because it cannot run inside
+a transaction. `sqlstate` is absent when the server gave no answer, such as after
+a lost connection or a canceled statement.
 
 ## Execution controls
 

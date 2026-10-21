@@ -1,6 +1,12 @@
 package migrator
 
-import "slices"
+import (
+	"errors"
+	"slices"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgconn"
+)
 
 // RunContractVersion is the version of the machine-readable migration run
 // document.
@@ -63,10 +69,41 @@ type RunResult struct {
 	// the message the operator already prints; it is not evidence about the
 	// database.
 	Error string `json:"error,omitempty"`
+	// Failure names the statement the run stopped at and the code the database
+	// answered with. It is present only when a statement of a migration was
+	// sent and failed; a run that stopped before any statement ran has none.
+	Failure *RunFailure `json:"failure,omitempty"`
 	// Status is the history after the run, so one document answers both what
 	// was asked and what the database now holds. It is absent when the status
 	// could not be read, which is itself why the outcome is unknown.
 	Status *MigrationStatus `json:"status,omitempty"`
+}
+
+// RunFailure identifies the statement a failed run stopped at, and the code
+// the database answered with.
+//
+// It carries no text. [RunResult.Error] quotes what the database said, and that
+// can include a row of data or the statement itself; a caller that must not
+// publish data reads this instead.
+type RunFailure struct {
+	// Version is the version of the migration that failed.
+	Version int64 `json:"version"`
+	// VersionKey is that migration's exact revision identity, spelled as
+	// [RunResult.PlannedKeys] spells it. It is always present, because an
+	// empty string is itself an identity a Flyway repeatable migration records.
+	VersionKey string `json:"version_key"`
+	// Statement is the 1-based position of the failed statement in the
+	// migration body, and Statements is how many statements the body holds.
+	Statement  int `json:"statement"`
+	Statements int `json:"statements"`
+	// SQLState is the SQLSTATE the server answered with, read from a
+	// PostgreSQL-protocol or MySQL-protocol driver error. It is empty when the
+	// server gave no answer, such as after a lost connection or a canceled
+	// statement, and on other engines.
+	SQLState string `json:"sqlstate,omitempty"`
+	// ErrorNumber is the server's error number on the MySQL protocol, such as
+	// 1146 for a table that does not exist. It is zero on other engines.
+	ErrorNumber int `json:"error_number,omitempty"`
 }
 
 // RunEvidence is what a caller saw of one run.
@@ -102,6 +139,7 @@ func NewRunResult(evidence RunEvidence) RunResult {
 	}
 	if evidence.Err != nil {
 		result.Error = evidence.Err.Error()
+		result.Failure = runFailure(evidence.Err)
 	}
 	if evidence.Plan != nil {
 		result.Planned = slices.Clone(evidence.Plan.Versions)
@@ -182,4 +220,37 @@ func appliedFromPlan(planned []int64, plannedKeys []string, after *MigrationStat
 		return nil, nil
 	}
 	return versions, keys
+}
+
+// runFailure reads the failed statement out of a run's error.
+//
+// Both halves have to be in the chain: the migration the migrator was running,
+// and a statement it sent. A refusal raised before any statement ran -- the
+// transaction preflight, a statement validator -- names a statement too, but
+// the database never saw it, so it is not a failure the database answered.
+func runFailure(err error) *RunFailure {
+	migration, ok := errors.AsType[*failedMigrationError](err)
+	if !ok {
+		return nil
+	}
+	statement, ok := errors.AsType[*MigrationExecutionError](migration.err)
+	if !ok || !statement.sent {
+		return nil
+	}
+	failure := &RunFailure{
+		Version:    migration.version,
+		VersionKey: migration.versionKey,
+		Statement:  statement.StatementIndex,
+		Statements: statement.Total,
+	}
+	if serverErr, ok := errors.AsType[*pgconn.PgError](statement.Err); ok {
+		failure.SQLState = serverErr.Code
+	}
+	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](statement.Err); ok {
+		failure.ErrorNumber = int(serverErr.Number)
+		if serverErr.SQLState != [5]byte{} {
+			failure.SQLState = string(serverErr.SQLState[:])
+		}
+	}
+	return failure
 }

@@ -878,12 +878,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		}
 		committed, err := commitStatement(ctx, event)
 		if err != nil {
-			return &MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
-				Statement:      stmt,
-				StatementIndex: i + 1,
-				Total:          len(statements),
-			}
+			return sentStatementError(fmt.Errorf("failed to execute SQL statement: %w", err), stmt, i+1, len(statements))
 		}
 		if committed {
 			if err := observeExecutedStatement(ctx, event); err != nil {
@@ -895,12 +890,12 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			return err
 		}
 		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-			return &MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, err)),
-				Statement:      stmt,
-				StatementIndex: i + 1,
-				Total:          len(statements),
-			}
+			return sentStatementError(
+				fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, err)),
+				stmt,
+				i+1,
+				len(statements),
+			)
 		}
 		if err := recordAndObserveExecutedStatement(ctx, event); err != nil {
 			return err
@@ -1032,12 +1027,7 @@ func runMigrationFileStatement(
 
 // migrationFileStatementError reports that event's statement failed.
 func migrationFileStatementError(err error, event StatementEvent) error {
-	return &MigrationExecutionError{
-		Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-		Statement:      event.Statement,
-		StatementIndex: event.Index,
-		Total:          event.Total,
-	}
+	return sentStatementError(fmt.Errorf("failed to execute migration SQL: %w", err), event.Statement, event.Index, event.Total)
 }
 
 // observeMigrationFileStatement reports a statement that ran to observer, when
@@ -1087,6 +1077,21 @@ type MigrationExecutionError struct {
 	Statement      string
 	StatementIndex int
 	Total          int
+	// sent reports that the statement reached the database, or the executor
+	// that runs it there, and failed. A refusal raised before any statement ran
+	// names a statement too, and leaves it false.
+	sent bool
+}
+
+// sentStatementError reports that a statement the migrator sent failed.
+func sentStatementError(err error, statement string, index, total int) *MigrationExecutionError {
+	return &MigrationExecutionError{
+		Err:            err,
+		Statement:      statement,
+		StatementIndex: index,
+		Total:          total,
+		sent:           true,
+	}
 }
 
 // Error renders the wrapped failure with the statement that caused it.

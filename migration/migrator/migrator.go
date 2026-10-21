@@ -3612,6 +3612,19 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	)
 }
 
+// failedMigrationError names the migration a failure belongs to, so the run
+// document can say which one failed without reading the message. It adds
+// nothing to the message.
+type failedMigrationError struct {
+	version    int64
+	versionKey string
+	err        error
+}
+
+func (e *failedMigrationError) Error() string { return e.err.Error() }
+
+func (e *failedMigrationError) Unwrap() error { return e.err }
+
 func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	ctx context.Context,
 	migration *Migration,
@@ -3623,6 +3636,7 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	direction MigrationDirection,
 ) error {
 	revisionErr := m.failMigrationRevisionWithMode(ctx, migration, startedAt, failure, sqlText, txMode, direction)
+	failure = &failedMigrationError{version: migration.Version, versionKey: migration.RevisionVersion(), err: failure}
 	if revisionErr != nil {
 		if prefix == "" {
 			return fmt.Errorf("%w; additionally failed to record dirty migration state: %v", failure, revisionErr)
