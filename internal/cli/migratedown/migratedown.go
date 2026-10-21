@@ -13,15 +13,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migratetimeout"
@@ -284,7 +283,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	opts.featureRuntime, err = builtin.New()
+	opts.featureRuntime, err = engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
 	}
@@ -398,7 +397,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	// Before any migrator call: reading the status initializes the revision
 	// table, and a decision taken after the first write answers nothing.
-	if err := decideConnected(cmd, projectCfg, lockRequest, conn.Info(), settings.timeouts); err != nil {
+	if err := decideConnected(cmd, projectCfg, lockRequest, conn, settings.timeouts); err != nil {
 		return err
 	}
 
@@ -562,12 +561,13 @@ func decideConnected(
 	cmd *cobra.Command,
 	projectCfg projectconfig.Config,
 	lockRequest migratelock.Request,
-	server catalog.ServerInfo,
+	conn *dbschema.DatabaseConnection,
 	timeouts migrationfile.Timeouts,
 ) error {
-	if err := lockRequest.DecideConnected(server.Dialect); err != nil {
+	if err := lockRequest.DecideSession(conn); err != nil {
 		return err
 	}
+	server := conn.Info()
 	return newTimeoutRequest(cmd, projectCfg, lockRequest.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
 }
 

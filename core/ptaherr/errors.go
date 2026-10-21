@@ -1,7 +1,7 @@
 // Package ptaherr defines the typed errors Ptah's public Go APIs return, in
 // two layers a caller can branch on. The sentinel errors answer errors.Is:
 // [ErrUnsupportedDialect], [ErrUnsupportedFeature], [ErrInvalidSchemaDiff],
-// and the annotation family [ErrUnknownAttribute],
+// [ErrOutcomeUnknown], and the annotation family [ErrUnknownAttribute],
 // [ErrMissingRequiredAttribute], [ErrInvalidAttributeValue] and
 // [ErrRetiredAttribute]. The structured types answer errors.As and carry the
 // failure's context in their fields: [ParseError], [PlanError], [RenderError]
@@ -23,6 +23,12 @@ import (
 )
 
 var (
+	// ErrOutcomeUnknown marks an operation that may have taken effect even
+	// though its acknowledgment was lost or could not be validated. Callers
+	// must inspect durable state before deciding how to recover; this error
+	// never authorizes replay. Its absence does not prove non-execution.
+	ErrOutcomeUnknown = errors.New("operation outcome is unknown")
+
 	// ErrUnsupportedDialect marks errors caused by an unknown or unsupported
 	// database dialect.
 	ErrUnsupportedDialect = errors.New("unsupported database dialect")

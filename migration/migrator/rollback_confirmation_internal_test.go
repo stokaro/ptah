@@ -15,6 +15,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/catalog"
+	"ptah.run/core/ptaherr"
 )
 
 func TestMigrationFailureAfterRollback_ConfirmsWhatTheCancellationEnded(t *testing.T) {
@@ -46,7 +49,7 @@ func TestMigrationFailureAfterRollback_ConfirmsWhatTheCancellationEnded(t *testi
 			c := qt.New(t)
 			failure := fmt.Errorf("failed to execute migration SQL: %w", context.Canceled)
 
-			err := migrationFailureAfterRollback(7, failure, tt.rollbackErr)
+			err := migrationFailureAfterRollback(7, failure, tt.rollbackErr, cancellationRollbackEvidence{confirmed: true})
 
 			version, confirmed := migrationTransactionRollbackVersion(err)
 			c.Assert(confirmed, qt.IsTrue)
@@ -62,7 +65,25 @@ func TestMigrationFailureAfterRollback_LeavesAnUnexplainedOutcomeUnconfirmed(t *
 		name        string
 		failure     error
 		rollbackErr error
+		transaction catalog.SchemaTransaction
 	}{
+		{
+			name:        "a canceled RPC does not end a detached transaction",
+			failure:     context.Canceled,
+			rollbackErr: errors.New("rollback refused because the transaction committed"),
+		},
+		{
+			name:        "cancellation does not confirm an uncertain rollback receipt",
+			transaction: cancellationRollbackEvidence{confirmed: true},
+			failure:     context.Canceled,
+			rollbackErr: fmt.Errorf("lost rollback reply: %w", ptaherr.ErrOutcomeUnknown),
+		},
+		{
+			name:        "uncertain execution overrides cancellation inference",
+			transaction: cancellationRollbackEvidence{confirmed: true},
+			failure:     errors.Join(context.Canceled, ptaherr.ErrOutcomeUnknown),
+			rollbackErr: sql.ErrTxDone,
+		},
 		{
 			// Without the cancellation, sql.ErrTxDone says the transaction was
 			// committed OR rolled back, and a commit is the outcome nobody may
@@ -90,10 +111,12 @@ func TestMigrationFailureAfterRollback_LeavesAnUnexplainedOutcomeUnconfirmed(t *
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := migrationFailureAfterRollback(7, tt.failure, tt.rollbackErr)
+			err := migrationFailureAfterRollback(7, tt.failure, tt.rollbackErr, tt.transaction)
 
 			_, confirmed := migrationTransactionRollbackVersion(err)
 			c.Assert(confirmed, qt.IsFalse)
+			c.Assert(err, qt.ErrorIs, tt.failure)
+			c.Assert(err, qt.ErrorIs, tt.rollbackErr)
 			c.Assert(err.Error(), qt.Contains, "additionally failed to roll back migration transaction")
 		})
 	}
@@ -105,9 +128,18 @@ func TestMigrationFailureAfterRollback_LeavesAnUnexplainedOutcomeUnconfirmed(t *
 func TestMigrationFailureAfterRollback_ConfirmsACleanRollback(t *testing.T) {
 	c := qt.New(t)
 
-	err := migrationFailureAfterRollback(7, errors.New("syntax error at or near NOT"), nil)
+	err := migrationFailureAfterRollback(7, errors.New("syntax error at or near NOT"), nil, nil)
 
 	version, confirmed := migrationTransactionRollbackVersion(err)
 	c.Assert(confirmed, qt.IsTrue)
 	c.Assert(version, qt.Equals, int64(7))
 }
+
+// cancellationRollbackEvidence isolates the owner's evidence from the error
+// returned by Rollback, whose value depends on database/sql scheduling.
+type cancellationRollbackEvidence struct {
+	catalog.SchemaTransaction
+	confirmed bool
+}
+
+func (e cancellationRollbackEvidence) RolledBackByCancellation() bool { return e.confirmed }

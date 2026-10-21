@@ -31,6 +31,9 @@ Treat migration files as code. They live in your repository, they are covered
 by an integrity file, and they go through review before they reach a shared
 database.
 
+For an executable database provider, [select a trusted provider](../../extend/executable-providers/#run-versioned-migrations)
+on each supported migration command.
+
 ## Where the files come from
 
 Two ways, and the lifecycle after them is the same. Only the first step differs,

@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -160,6 +161,12 @@ func clonedCollectionRows() []clonedCollectionRow {
 				s.Grants = append(s.Grants, catalog.Grant{
 					Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users",
 				})
+			},
+		},
+		{
+			field: "ReservedNames", present: "service_history", absent: "nosuch_service_history",
+			seed: func(s *catalog.Database) {
+				s.ReservedNames = append(s.ReservedNames, catalog.ReservedName{ProviderID: "fixture", Engine: "postgres", Purpose: "history", Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "service_history")})
 			},
 		},
 		{

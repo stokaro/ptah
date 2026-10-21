@@ -41,5 +41,8 @@ func comparisonTableIdentities(desired *schemamodel.Database, current *catalog.D
 	if err != nil {
 		return comparisonIdentity{}, err
 	}
+	if err := refuseReservedNames(&declared, &observed, opts.Dialect, semantics); err != nil {
+		return comparisonIdentity{}, err
+	}
 	return comparisonIdentity{desired: &declared, current: &observed, semantics: semantics}, nil
 }

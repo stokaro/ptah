@@ -8,6 +8,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgextension"
@@ -688,4 +690,17 @@ func grantTargets(grants []catalog.Grant) []string {
 		names = append(names, grant.QualifiedTarget())
 	}
 	return names
+}
+
+func TestExcludingReservedStorageRetainsItsOccupiedName(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.ReservedNames = []catalog.ReservedName{{ProviderID: "fixture", Engine: "postgres", Purpose: "history",
+		Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TableParts("", "service_history")}}
+	got, report, err := atlasfilter.ExcludeDatabaseReport(ownerSelections(), schema, []string{"service_history"}, "public")
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Unmatched, qt.HasLen, 0)
+	c.Assert(got.ReservedNames, qt.DeepEquals, schema.ReservedNames)
+	got.ReservedNames[0].Purpose = "changed"
+	c.Assert(schema.ReservedNames[0].Purpose, qt.Equals, "history")
 }

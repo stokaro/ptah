@@ -151,7 +151,7 @@ func (m *Migrator) deleteRolledBackRevision(ctx context.Context, migration *Migr
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-	if err := executeSQLOutsideTransaction(recordCtx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
+	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info(

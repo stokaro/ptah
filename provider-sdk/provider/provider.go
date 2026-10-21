@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 15
+const Revision uint32 = 21
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -113,6 +113,15 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 }
 
 func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
+	if slices.Contains(engine.GetFeatures(), MetadataFeature) && !slices.Contains(description.GetFeatures(), MetadataFeature) {
+		return fmt.Errorf("%w: engine metadata requires the metadata service", ErrProtocol)
+	}
+	if slices.Contains(engine.GetFeatures(), LocksFeature) && !slices.Contains(description.GetFeatures(), LocksFeature) {
+		return fmt.Errorf("%w: engine locks require the lock service", ErrProtocol)
+	}
+	if slices.Contains(engine.GetFeatures(), HistoryFeature) && !slices.Contains(description.GetFeatures(), HistoryFeature) {
+		return fmt.Errorf("%w: engine history requires the history service", ErrProtocol)
+	}
 	if slices.Contains(engine.GetFeatures(), TransactionsFeature) && !slices.Contains(description.GetFeatures(), TransactionsFeature) {
 		return fmt.Errorf("%w: engine transactions require the transaction service", ErrProtocol)
 	}
@@ -188,6 +197,9 @@ func validName(name string) bool {
 func ValidateSchema(value *protocol.Schema) error {
 	if value == nil || !value.GetComplete() {
 		return ErrIncomplete
+	}
+	if err := validateReservedObjects(value); err != nil {
+		return err
 	}
 	for _, disposition := range value.GetDispositions() {
 		switch disposition.GetState() {

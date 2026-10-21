@@ -93,6 +93,23 @@ type CompareResult struct {
 	DataDrift *datamigrate.Summary
 }
 
+// Native URL names come from the frozen connection selection. The connector
+// still checks that selection before opening any target.
+func comparisonDialect(ctx context.Context, address string) (string, error) {
+	targets := dbschema.NativeTargets(ctx)
+	if len(targets) == 0 {
+		return atlasurl.DialectFromURL(address)
+	}
+	source, err := atlassource.Classify(address, targets)
+	if err != nil {
+		return "", err
+	}
+	if source.Kind != atlassource.KindDatabase {
+		return "", fmt.Errorf("schema comparison requires a database URL")
+	}
+	return source.Dialect, nil
+}
+
 // Compare resolves the desired schema from Go entities, schema files, and/or an
 // external command, reads the live database schema, applies command filters, and
 // returns a dialect-aware schema diff.
@@ -103,7 +120,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
-	dialect, err := atlasurl.DialectFromURL(opts.DatabaseURL)
+	dialect, err := comparisonDialect(ctx, opts.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}

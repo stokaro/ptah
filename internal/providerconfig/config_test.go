@@ -40,7 +40,7 @@ func TestManifestRejectsAmbiguousOrUntrustedDeclarations(t *testing.T) {
 		{"uppercase name", func(v *providerconfig.Configuration) { v.Providers[0].Engines[0].ID = "Custom" }, "invalid or reserved"},
 		{"official impersonation", func(v *providerconfig.Configuration) { v.Providers[0].Engines[0].ID = "ydb" }, "official owner"},
 		{"official alias remapping", func(v *providerconfig.Configuration) {
-			v.Providers[0].ProviderID = "stokaro/ptah-ydb-plugin"
+			v.Providers[0].ProviderID = "github.com/stokaro/ptah-ydb-plugin"
 			v.Providers[0].Engines[0].Aliases = []string{"ydbs"}
 		}, "must resolve to"},
 		{"unused disabled conflict", func(v *providerconfig.Configuration) {

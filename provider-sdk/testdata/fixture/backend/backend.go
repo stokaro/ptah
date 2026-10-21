@@ -27,13 +27,17 @@ type Provider struct {
 	sessions map[string]*session
 }
 type session struct {
-	mu           sync.Mutex
-	closed       bool
-	transactions map[string]*transaction
-	active       string
-	db           *sql.DB
-	path         string
-	fault        string
+	mu              sync.Mutex
+	closed          bool
+	transactions    map[string]*transaction
+	locks           map[string]*sessionLock
+	metadataReaders map[string]*metadataSnapshot
+	logDB           *sql.DB
+	lockLost        bool
+	active          string
+	db              *sql.DB
+	path            string
+	fault           string
 }
 
 // Description declares the fixture's intentionally narrow service contract.
@@ -320,6 +324,9 @@ func (s *session) executeUnits(ctx context.Context, executor executor, request *
 	}
 	var applied uint32
 	for _, unit := range request.GetUnits() {
+		if err := s.guardLocks(ctx); err != nil {
+			return nil, err
+		}
 		sqlText, ok := unit.GetBody().(*protocol.Unit_Sql)
 		if !ok {
 			return nil, fmt.Errorf("fixture accepts SQL units only")

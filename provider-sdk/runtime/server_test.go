@@ -126,3 +126,45 @@ func (*transactionServices) FinishTransaction(context.Context, *protocol.FinishT
 func (*transactionServices) Execute(context.Context, *protocol.ExecuteRequest) (*protocol.Execution, error) {
 	return nil, nil
 }
+
+func TestServerRequiresAdvertisedHistoryImplementation(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.HistoryFeature}, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.HistoryFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.History = (*historyServices)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.History = &historyServices{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type historyServices struct{}
+
+func (*historyServices) ReadHistory(context.Context, *protocol.ReadHistoryRequest) (*protocol.HistorySnapshot, error) {
+	return nil, nil
+}
+func (*historyServices) PrepareHistory(context.Context, *protocol.PrepareHistoryRequest) (*protocol.HistoryResult, error) {
+	return nil, nil
+}
+func (*historyServices) MutateHistory(context.Context, *protocol.MutateHistoryRequest) (*protocol.HistoryResult, error) {
+	return nil, nil
+}
+
+type metadataOwner struct{ provider.Metadata }
+
+func TestServerRequiresAdvertisedMigrationMetadata(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "metadata-1", Engines: []*protocol.Engine{{Id: "test", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, Metadata: &metadataOwner{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = []string{provider.MetadataFeature}
+	description.Engines[0].Features = []string{provider.MetadataFeature}
+	c.Assert(server.Validate(), qt.IsNil)
+	server.Metadata = (*metadataOwner)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.Metadata = &metadataOwner{}
+	description.Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}

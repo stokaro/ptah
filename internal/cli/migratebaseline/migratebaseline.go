@@ -15,10 +15,10 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/schemaops"
@@ -195,7 +195,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 
 	// Before the migrator is built, so no revision row is written under a lock
 	// the operator asked for and the target never took.
-	if err := lockRequest.DecideConnected(conn.Info().Dialect); err != nil {
+	if err := lockRequest.DecideSession(conn); err != nil {
 		return err
 	}
 
@@ -221,7 +221,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 	defer releaseShadow()
 
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
 	}

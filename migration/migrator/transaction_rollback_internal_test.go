@@ -16,7 +16,7 @@ func TestMigrationFailureAfterRollback_Confirmed(t *testing.T) {
 	const version int64 = 42
 	cause := errors.New("migration execution failed")
 
-	err := migrationFailureAfterRollback(version, cause, nil)
+	err := migrationFailureAfterRollback(version, cause, nil, nil)
 	gotVersion, confirmed := migrationTransactionRollbackVersion(err)
 
 	c.Assert(err, qt.ErrorIs, cause)
@@ -30,7 +30,7 @@ func TestMigrationFailureAfterRollback_Unconfirmed(t *testing.T) {
 	cause := errors.New("migration execution failed")
 	rollbackErr := errors.New("rollback failed")
 
-	err := migrationFailureAfterRollback(42, cause, rollbackErr)
+	err := migrationFailureAfterRollback(42, cause, rollbackErr, nil)
 	gotVersion, confirmed := migrationTransactionRollbackVersion(err)
 
 	c.Assert(err, qt.ErrorIs, cause)

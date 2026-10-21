@@ -75,9 +75,9 @@ and passes evaluated values with source locations, field paths, exact numbers,
 and absent/null distinctions. Owners interpret their registered declarations.
 The host does not serialize its Go AST or ask providers to duplicate HCL execution.
 
-These comparison, source, and planning services remain required work in #4204.
-The normalization service alone does not enable them or relax the current native
-adapter's refusal of unsupported feature values.
+Comparison, source, and planning require separate negotiated services, described
+below. Normalization alone does not enable them or relax the native adapter's
+refusal of unsupported feature values.
 
 ### Keep transactional state in the process that owns the connection
 
@@ -97,7 +97,8 @@ DDL likewise needs ordered execution with a confirmed prefix and explicit
 transaction refusals. Lost replies and cancellation after dispatch leave the
 outcome unknown; they never authorize automatic replay.
 
-These backend operations remain required work in #4204. Each needs tests against
+These backend contracts require official-engine qualification under #4204.
+Each needs tests against
 the engine's actual behavior before its embedded implementation is removed.
 
 ## Alternatives considered
@@ -359,7 +360,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 15 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 21 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -512,7 +513,8 @@ round trips prove that operation assessments are recomputed. This exercises
 operation transport and rendering. The contextual planning adapter described
 below binds receipts, dependencies, and effects for the selected runtime. The
 common migration planner dispatches the service through the shared graph.
-History services and YDB transaction qualification remain required before extraction.
+History services bind storage writes to the execution handle as described below.
+YDB transaction qualification remains required before extraction.
 
 
 ### Contextual planning transport
@@ -609,3 +611,409 @@ failed-prefix rollback, lost commit replies, concurrent begin cleanup, session
 isolation, and native schema apply. This establishes the adapter contract, not
 YDB, DuckDB, or Spanner qualification. History persistence still needs a typed
 service that uses these same session and transaction handles.
+
+## Typed revision storage in the session owner
+
+The experimental history service transports stored revision facts rather than
+SQL queries or migration commands. The host keeps its existing policy for
+ordering, checksums, partial progress, retry, and repair. Native and Atlas
+representation are explicit; an exact empty Atlas identity is preserved.
+
+A history scope names the live session, optional transaction, schema, table,
+and representation. The provider validates storage ownership and layout before
+use. Preparation creates missing storage outside transactions and refuses
+incompatible layouts. No earlier history decoder or upgrade path is added.
+
+Reads produce a consistent complete snapshot within a caller-selected bound.
+Oversized histories fail explicitly. A mutation compares the complete expected
+row and performs one atomic insert, replacement, or deletion. A conflict makes
+no change. This prevents stale record replacement; it does not replace a
+migration lock or serialize whole migration plans.
+
+Execution and history mutations use the same transaction handle where the
+engine supports it. A mutation acknowledgment within that transaction proves
+execution only. Lost acknowledgments stop the workflow and require
+reconciliation; request IDs never authorize replay. YDB data transactions do
+not establish transactional DDL, and Spanner DDL remains unwrapped.
+
+The SDK and independent fixture establish this boundary. Migrator integration,
+provider lock primitives, and qualification of the official engines remain
+required before #4204 is complete.
+
+## Bind host history access to the active executor
+
+`DatabaseConnection.HistoryStore` exposes neutral host records without importing
+SDK transport types into the migrator. A native session supplies its bound store.
+An active transaction must supply its own store; absence cannot fall back to
+unwrapped writes on the parent session. The subprocess adapter serializes history
+with execution and finish, and a dispatched history failure prevents commit.
+
+The common migrator reads provider history through the same ordering, progress,
+identity, and dirty-state rules as SQL-backed history. Dry-run initialization
+reads storage without creating it. Providers validate layout and ownership;
+the host does not send SQL catalog queries or upgrade statements to native
+sessions. Ordinary revision writes use the same typed store. The following
+sections connect logging, lock ownership, and native versioned commands.
+
+## Preserve uncertain outcomes across the host boundary
+
+The host translates an SDK unknown-outcome error to
+`ptaherr.ErrOutcomeUnknown` while retaining its cause. Shared migration recovery
+and embedders can recognize uncertainty without importing the provider SDK.
+This applies to execution, transaction completion, and revision mutations.
+Confirmed refusals and local validation failures do not acquire this marker.
+
+The common statement-outcome classifier checks the explicit marker before
+transport heuristics. A lost acknowledgment must keep an in-flight revision
+marked uncertain; it must not become an ordinary failure that permits replay.
+The marker does not replace durable-state inspection, and an unmarked error is
+not evidence that no write occurred.
+
+Rollback failures retain their error causes. An explicit uncertain execution or
+rollback receipt overrides the SQL cancellation inference; cancellation alone
+must not turn that receipt into proof that the transaction rolled back.
+
+
+## Bind cancellation evidence to the transaction owner
+
+The common migrator accepts cancellation-based rollback evidence only through
+`catalog.CancellationRollback`. SQL-backed writers retain their transaction's
+begin context and record its cancellation when rollback is attempted. A context
+canceled after commit does not provide this evidence. Provider transactions do
+not implement the interface: their lifetime belongs to the remote session,
+and an RPC's cancellation does not end that transaction.
+
+The rollback result remains authoritative when it succeeds. When it fails,
+the absence of owner evidence leaves the outcome unconfirmed, even if the
+execution error contains `context.Canceled`. An explicit unknown-outcome marker
+also prevents cancellation inference. Dialect rules still account for schema
+statements that implicitly committed before rollback.
+
+
+## Record revision transitions through typed storage
+
+The common migrator writes pending, in-flight, checkpoint, failed, and applied
+records through the active history store. Rollback removes the exact revision
+through that store. Each mutation reads complete history, validates identities
+and progress, and compares the entire prior record before replacement. Conflicts
+and uncertain write acknowledgments are not retried.
+
+A pending provider revision starts with an unknown-outcome marker. Successful
+execution and history completion clear it. An unconfirmed transaction outcome
+leaves durable state untouched: commit may already have stored an applied
+revision or deleted a rolled-back revision. Failed commits attempt rollback to
+release a provider transaction that may still be active. This cleanup retains
+the commit error and does not itself establish the transaction outcome.
+Confirmed atomic rollback retains
+only progress committed before this attempt, using the provider's established
+transactional-DDL capability rather than a built-in dialect name.
+
+Independent process checks exercise native revision storage with explicit
+caller options that disable migration logging and locks. These options isolate
+unfinished service integration; they do not change the defaults or qualify a
+complete versioned workflow. The fixture also implements Atlas storage using
+ordinary revision columns. The process tests described below add logging, tags,
+locking, and the native versioned CLI workflow.
+
+## Keep history transactions independent of transactional DDL
+
+YDB needs atomic revision-data writes without a claim that schema changes can
+roll back. `HistoryTransactor` opens the existing session transaction service
+through a restricted `HistoryTransaction` handle. The handle offers revision
+storage and finish operations; its dynamic type has no schema executor. Schema
+transactions still require established transactional DDL. Neither interface
+claims a distributed migration lock. History callers explicitly select default
+or serializable isolation. The SDK carries that level in both begin and reply;
+missing, unknown, or substituted levels are refused. Providers must establish
+the requested guarantee or return an error. Serializable isolation covers range
+reads, including absent revisions. Committed reads and writes must be equivalent
+to a serial execution. Default isolation makes no such promise.
+
+The independent SQLite process test makes two history transactions read the
+same empty range, then insert different identities. After one commits, the
+other cannot commit its write based on that snapshot. A fresh transaction sees
+the committed row and can proceed. The fixture also refuses serializable begins
+when its connection enables uncommitted reads, without leaving a handle active.
+
+Baseline validates stored revisions and writes the selected batch in this data
+transaction. SQL and native stores share the dirty-state, nonempty-store, and
+above-baseline policy. Preparation occurs before beginning. Failure rolls back
+the batch; a failed commit attempts cleanup and retains its uncertain outcome.
+No migration body runs, and no SQL history statements cross the provider boundary.
+
+An independent provider fixture advertises history and transactions without
+transactional DDL. Process tests exercise commit, rollback, baseline, forced
+baseline restrictions, and lost mutation or commit replies. A lost reply on the
+last revision rolls back the earlier revisions too. This proves the host path;
+YDB storage and official-engine qualification remain required under #4204.
+The provider lock service described below establishes the host locking contract.
+
+## Keep repair and checksum policy in the common migrator
+
+Native repair replaces the exact stored record after the common migrator has
+checked direction, committed progress, source hashes, and recovery options.
+Resuming an unknown statement outcome is refused even with force. An operator
+can complete manual recovery without replaying SQL, or resume a confirmed
+prefix and let the common executor record the remaining progress. A completed
+rollback removes its revision. Lost write acknowledgments remain unknown;
+repair does not repeat the write or mark an uncertain result successful.
+
+Checksum reconciliation uses the same projection planner as SQL-backed history.
+The provider path reads and validates a complete snapshot inside a data
+transaction, plans the replacement hashes, and compares each whole prior record.
+A failure rolls back the batch. A commit error retains uncertainty while cleanup
+releases a transaction that may still be active. Migration bodies already
+completed before reconciliation are not undone or replayed by this cleanup.
+
+Independent process checks cover resumed up and down repair, manual recovery,
+force restrictions, lost repair receipts, a late checksum refusal, and lost
+checksum commit requests and replies. They use native storage with Atlas-format
+source directories for running-hash qualification. They do not qualify Atlas
+storage itself. Logs, tags, locks, default CLI integration, and official
+engine qualification remain part of #4204.
+
+A prior applied-time cutoff is evidence for the stored hashes, not a unique
+history identifier. Several cutoffs can prove the same complete stored cohort
+when later revisions retain their application-time hashes. The shared verifier
+accepts any complete proof and still checks every row. Partial reconciliation
+and edited source hashes remain refusals. Deterministic SQL-backed and native
+process tests cover recovery after an atomic reconciliation rollback.
+
+
+## Set revision history through serializable storage
+
+Provider history set reads the complete history inside an explicitly serializable
+transaction. It uses the common identity and retirement planner, then compares
+whole records for every deletion and replacement. A failed write rolls back the
+batch. An uncertain commit returns an error without a success summary or an
+automatic retry. Preparation occurs before the transaction, and no migration
+body runs.
+
+Native storage keeps numeric keys even when its source uses exact Atlas
+identities. A repeated set preserves clean rows and reports no change. Dirty
+native rows become applied with complete progress and the current source hash;
+their description, timestamps, duration, and error diagnostics remain intact.
+Setting zero removes every native revision, including stored zero and negative
+keys. SQL and provider storage use these same decisions.
+
+Process qualification covers native storage, late mutation acknowledgment loss,
+lost commit requests and replies, refusal of weaker isolation, dry runs, and
+fresh-session recovery. Atlas storage has separate process checks against its
+ordinary revision columns, including tables created through the SQL path.
+
+## Derive Atlas revision state from stored facts
+
+Atlas records contain exact identities, progress, hashes, timestamps, type bits,
+diagnostics, and operator identity. They do not store native state or direction.
+The SDK refuses those derived fields on Atlas records. The common migrator uses
+the same derivation as its SQL reader, including the pending rollback marker.
+Providers implement storage without deciding migration state.
+
+The independent SQLite fixture reads and writes ordinary Atlas revision columns.
+It verifies column types, key identity, binary collation, and the absence of
+triggers and foreign keys. A comparison covers the complete canonical record;
+SQL null and empty diagnostics have the same representation. An unwrapped
+comparison and write uses one serializable data transaction. A caller-owned
+transaction retains its commit boundary.
+
+Process tests exchange the same database between SQL and provider connections.
+They cover metadata preservation, empty exact identities, baseline, apply and
+rollback, dirty-row set, external-write conflicts, and lost acknowledgments.
+Schema effects are inspected through the independent SQL connection: the fixture's
+schema reader does not accept the full Atlas table grammar. Official-engine
+qualification remains required under #4204.
+
+Atlas repair tests start with partial up and down histories written by the SQL
+migrator. The provider resumes the uncommitted suffix and refuses a changed
+committed prefix, including when force is selected. A partially completed
+rollback stays dirty until its remaining statements finish and its row is deleted.
+Manual recovery can replace an uncertain record only after the operator resolves
+the database state.
+
+Checksum tests insert an out-of-order migration into an Atlas source directory.
+A late refusal rolls back all checksum replacements while preserving completed
+migration bodies. Lost commit requests and replies retain unknown outcomes;
+a fresh session reads the stored hashes before recovery. The SQL reader verifies
+the final cohort, and changed source bytes remain an error.
+
+A process-death test exits the provider after a committed DDL statement and before
+its acknowledgment. A fresh process sees the pending Atlas record and refuses
+forced statement resumption. After the operator applies the missing statement,
+explicit metadata repair completes without replaying the committed prefix.
+
+
+## Bind lock ownership to the provider session
+
+The optional `sessions.locks` service owns acquisition, ownership checks, and
+release. Each engine declares support. The host supplies a single-use handle and
+exact lock name within a live session, plus a fresh request ID for each call.
+Receipts preserve those identities. A confirmed busy result permits another
+attempt with a new handle under the host wait policy. An uncertain result does
+not permit acquisition retries. Release of an unused handle fences a late
+acquisition, and closing a session releases all its locks.
+
+Both transport boundaries attempt bounded cleanup of the requested handle after
+an uncertain acquisition. Cleanup survives caller cancellation, retains the
+original error, and does not establish that guarded work was safe. Ownership
+checks must establish the engine's current guarantee, including lease freshness.
+Providers check guarding locks before execution, history writes, and commits.
+Lost or uncertain ownership permanently fences further writes in that session;
+rollback, release, and close remain available.
+
+Independent SQLite fixture processes hold named locks through private sidecar
+write transactions. The fixture checks an uncommitted ownership row rather than
+a cached acquired flag. This proves process exclusion for one canonical database
+pathname without hard-link aliases. Tests cover name and session binding, fenced
+late attempts, cleanup after lost acquisition receipts, release on close and
+process death, and write refusal after ownership loss. A process death after a
+committed schema statement releases the lock without undoing that statement.
+A lost lock before commit leaves the transaction available for explicit rollback.
+
+The host exposes the service through `dbschema.SessionLocker` on the same
+execution session. Shared lock acquisition selects it before built-in dialect
+services. Missing native support refuses the operation rather than selecting a
+no-op lock. Only confirmed busy results permit a fresh attempt; the host owns
+waiting, no-wait behavior, timeout, and cancellation. A watcher checks ownership
+and cancels guarded work after loss. Release verifies current ownership again,
+cleans up even after loss, and retains uncertainty from execution or cleanup.
+A session that lost or cannot establish ownership refuses further writes.
+
+Independent process tests run the common migrator with locking enabled across
+its transaction modes. A competing process times out without executing schema
+changes. Loss cancels the guard, commit failure retains an unknown outcome, and
+loss discovered during release does not undo already committed schema or history.
+Lock acquisition on an active transaction is refused. Preview lock acquisition
+also refuses: this SDK revision does not establish a read-only acquisition.
+
+Read-only lock previews and official-engine checks remain required under #4204.
+This fixture does not establish YDB coordination lease behavior.
+
+
+## Keep event and tag policy in the common migrator
+
+The host defines typed log and tag storage contracts in `dbschema`. Log writes
+use the session's durable store so an execution rollback cannot erase the
+attempt. Tags bind to the active execution handle. An unsupported handle
+refuses instead of selecting its parent's store.
+
+The provider owns physical storage, namespace checks, layout validation, and
+atomic mutations. The common migrator owns event pairing, ordering, tag
+normalization, and the distinction between a missing tag and version zero.
+A failed log append remains a warning. Unknown writes are not replayed.
+
+Read handles expose immutable snapshots in bounded pages. The host rejects
+repeated identities and inconsistent or non-progressing pages. It closes each
+handle even after cancellation and discards partial results on failure.
+This avoids requiring a complete event journal in one RPC response.
+
+Unit tests exercise these host contracts with an in-memory native session.
+They do not establish subprocess storage or database durability. Experimental SDK revision 20 defines typed metadata RPCs and validates request
+and receipt identity. Published-module adoption and official-engine
+qualification remain required under #4204.
+
+
+The experimental SDK metadata service uses typed event and tag records. Write
+receipts bind the exact scope and request. Unknown results never authorize
+replay. Reader receipts also bind a caller-selected handle and page number.
+SDK client and server adapters close that same handle after uncertain opening
+or advancement. A detached timeout bounds cleanup without erasing the failure.
+
+The SQLite fixture stores ordinary event and tag columns. A separate pool owned
+by the session handles durable journal writes. Tags use the selected transaction.
+Finishing a transaction invalidates its readers. Materialized fixture snapshots
+are limited to 64 MiB; oversized snapshots are refused without a usable prefix.
+The protocol bounds individual pages instead of imposing that fixture limit.
+Independent process tests cover commit, rollback, immutable snapshots, atomic
+deletions, lost acknowledgments, incompatible layouts, and reader cleanup.
+The host and fixture consume the published SDK revision pinned in their modules.
+Official-engine qualification remains a separate requirement under #4204.
+
+
+The host metadata adapters reuse the history adapter's transaction ordering and
+failure handling. Durable log storage selects the parent session; tag storage
+selects the active execution handle. A dispatched tag failure prevents commit,
+while rollback and snapshot cleanup remain available. Readers reject changed
+existence or repeated identities across pages and discard partial results.
+Close retains its outcome and does not retry an uncertain cleanup.
+
+Common-migrator process tests leave locking and logging enabled. They check
+apply and rollback across transaction modes, unknown journal acknowledgments,
+transaction failure after a lost tag receipt, and reader cleanup after failure,
+transaction finish, and session close. Independent SQL reads verify journal and
+tag columns because the fixture inspector deliberately refuses table definitions
+outside its narrow grammar. This evidence does not establish a complete fixture
+schema inspector or official-engine qualification.
+
+
+## Select the provider across native migration commands
+
+The native migration namespace installs explicit provider selection on execution,
+status, journal, tag, baseline, set, and repair commands. Shared leaf constructors
+keep their existing flags, so compatibility adapters do not acquire native
+provider flags. Provider setup errors preserve structured installation details
+and the native command's JSON output contract.
+
+The selected runtime owns SQL framing and safety facts, rollback planning, and
+baseline comparison. Internal lint defaults disable only registered rule
+families. Explicit user rule selectors remain strict. Status keeps the command
+context during connection and history reads. An explicit migration lock timeout
+is validated against the native session's lock service instead of a built-in
+dialect name; SQL connections retain their dialect checks.
+
+Process tests drive native up, status, log, tags, and down with default logging
+and locking across transaction modes. They also exercise metadata-only commands,
+destructive-statement refusal and its explicit override, absent metadata reads,
+and trust refusal before provider startup. They build the independent fixture
+against the published SDK with workspaces disabled. They do not qualify read-only
+lock previews or the official engines.
+
+## Provider-owned storage remains occupied
+
+Experimental revision 21 adds explicit storage reservations to inspection.
+History, locks, logs, and tags remain outside desired schema management, but
+omitting their tables or native objects must not establish that their names are
+available. The provider verifies native ownership and layout and declares the
+conflicting object kinds. The host does not infer engine namespace sharing.
+
+Reservations carry structured source and normalized identities. Native conflicts
+require explicit unrepresentable subject knowledge. The SDK rejects overlap
+with managed observations and validates request scope. The host binds the
+records to the session database and identifier rules, then preserves them as
+`catalog.Database.ReservedNames`. Filters retain these facts even when they
+remove ordinary objects from the managed description.
+
+Comparison refuses explicit desired collisions and foreign keys into reserved
+storage before table preparation. It also refuses containing-schema removal,
+discovered feature references, and incomplete feature reference discovery when
+reserved storage is present. Catalog JSON snapshots retain the observations;
+common desired-schema export does not declare operational storage. Direct SQL
+is outside this schema-comparison contract.
+
+This changes the experimental contract without aliases or older readers.
+Native YDB ownership classification remains part of #4204. The synthetic
+subprocess fixture establishes transport and comparison
+behavior, not official-engine qualification.
+
+## Common table semantics are required by table workflows
+
+Provider startup does not require `schema.common-table-identity.v1`. A native
+engine can provide SQL analysis, sessions, history, locks, and metadata without
+promising that the host's common table model captures its semantics.
+
+The host registers schema rendering, validation, table preparation, and creation
+projection only for engines that declare this contract. Shared comparison then
+refuses a missing preparation service, including for an empty desired schema.
+The common planner refuses table changes without the contract. AST rendering
+also checks before lowering a common table or column operation. Provider-owned
+operations keep their separate model, planning, and rendering contracts.
+
+An independent process fixture without common table semantics exercises native
+migration execution, rollback, history, logs, and tags. It also verifies startup
+without opening a database and schema-plan refusal without a saved artifact.
+These checks do not establish native table comparison for the official engines.
+
+Official provider IDs use `github.com/stokaro/ptah-<engine>-plugin`. The owner
+must satisfy the same namespaced identity contract as the engine runtime and
+its model codecs. Repository shorthand is not an executable provider identity.
+This changes the experimental manifest contract; pre-v1, no compatibility with
+the earlier owner spelling is owed. The catalog accepts no alias for it.

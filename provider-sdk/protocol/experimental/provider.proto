@@ -22,6 +22,18 @@ service Provider {
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
+  rpc ReadHistory(ReadHistoryRequest) returns (HistorySnapshot);
+  rpc PrepareHistory(PrepareHistoryRequest) returns (HistoryResult);
+  rpc MutateHistory(MutateHistoryRequest) returns (HistoryResult);
+  rpc PrepareMetadata(PrepareMetadataRequest) returns (MetadataResult);
+  rpc MutateMetadata(MutateMetadataRequest) returns (MetadataResult);
+  rpc LookupMetadataTag(LookupMetadataTagRequest) returns (MetadataTagResult);
+  rpc OpenMetadataRead(MetadataReadRequest) returns (MetadataReadResult);
+  rpc ReadMetadataPage(ReadMetadataPageRequest) returns (MetadataPage);
+  rpc CloseMetadataRead(MetadataReadRequest) returns (MetadataReadResult);
+  rpc TryLock(LockRequest) returns (LockResult);
+  rpc CheckLock(LockRequest) returns (LockResult);
+  rpc ReleaseLock(LockRequest) returns (LockResult);
 }
 
 message Empty {}
@@ -142,6 +154,9 @@ message Schema {
   repeated string target_features = 7;
   // Ordered owner interpretations of the exact requested schema selectors.
   repeated InspectionScopeBinding scope_bindings = 8;
+  // Positively identified operational storage, outside desired schema management.
+  // Omission from tables or native_objects never makes these names available.
+  repeated ReservedObject reserved_objects = 9;
 }
 message Table {
   Reference identity = 1;
@@ -226,15 +241,29 @@ message ExecuteRequest {
   string transaction_id = 4;
 }
 
+// Isolation is explicit. Providers refuse levels they cannot establish; they
+// never silently substitute a weaker level. DEFAULT selects the engine default
+// and makes no serializable guarantee. SERIALIZABLE includes range reads; the
+// reads and writes of committed transactions must be equivalent to a serial
+// execution, including observations that a revision is absent.
+enum TransactionIsolation {
+  TRANSACTION_ISOLATION_UNSPECIFIED = 0;
+  DEFAULT = 1;
+  SERIALIZABLE = 2;
+}
+
 // The caller chooses the handle before dispatch, so a lost begin reply does not
 // prevent explicit rollback. A repeated begin never creates another transaction.
 message BeginTransactionRequest {
   string session_id = 1;
   string transaction_id = 2;
+  TransactionIsolation isolation = 3;
 }
 message Transaction {
   string session_id = 1;
   string id = 2;
+  // Must match the requested isolation exactly.
+  TransactionIsolation isolation = 3;
 }
 message FinishTransactionRequest {
   enum Action { ACTION_UNSPECIFIED = 0; COMMIT = 1; ROLLBACK = 2; }
@@ -1173,4 +1202,215 @@ message CapturedFacet {
   string kind = 1;
   repeated string targets = 2;
   NormalizedValue value = 3;
+}
+
+// HistoryScope binds a store to a live session and optionally its transaction.
+// Schema and table are identifier components, never SQL fragments. A provider
+// must validate storage ownership and layout before reading or adopting it.
+message HistoryScope {
+  enum Format { FORMAT_UNSPECIFIED = 0; NATIVE = 1; ATLAS = 2; }
+  string session_id = 1;
+  string transaction_id = 2;
+  string schema = 3;
+  string table = 4;
+  Format format = 5;
+}
+// HistoryRevision carries stored facts. The host owns ordering, checksums,
+// retry decisions, and recovery. Version preserves exact identity, including
+// an empty Atlas identity. Native versions use canonical signed decimal text.
+message HistoryRevision {
+  enum State { STATE_UNSPECIFIED = 0; PENDING = 1; APPLIED = 2; FAILED = 3; }
+  enum Direction { DIRECTION_UNSPECIFIED = 0; UP = 1; DOWN = 2; }
+  string version = 1;
+  string description = 2;
+  // Native storage carries explicit state and direction. Atlas storage must
+  // leave both unspecified; the host derives them from the stored facts.
+  State state = 3;
+  Direction direction = 4;
+  uint64 applied = 5;
+  uint64 total = 6;
+  string error = 7;
+  string error_statement = 8;
+  int64 execution_nanoseconds = 9;
+  string checksum = 10;
+  // Unix time is split so the entire Go time range is not forced into int64
+  // nanoseconds. Nanos is in [0, 999999999].
+  int64 applied_at_seconds = 11;
+  int32 applied_at_nanos = 12;
+  string operator_version = 13;
+  repeated string partial_hashes = 14;
+  uint32 atlas_type = 15;
+}
+// ReadHistory returns a complete consistent snapshot or an error. A provider
+// refuses a store exceeding max_revisions; truncation is never a valid reply.
+message ReadHistoryRequest {
+  HistoryScope scope = 1;
+  uint32 max_revisions = 2;
+}
+message HistorySnapshot {
+  HistoryScope scope = 1;
+  bool exists = 2;
+  bool complete = 3;
+  repeated HistoryRevision revisions = 4;
+}
+// PrepareHistory creates missing storage and verifies existing storage. It
+// does not upgrade an old layout or modify revision rows. Preparation runs
+// outside transactions; engines with nontransactional DDL must support it too.
+message PrepareHistoryRequest {
+  HistoryScope scope = 1;
+  string request_id = 2;
+}
+// MutateHistory is one atomic compare-and-swap. A missing expected row means
+// insert only if absent; a missing replacement means delete the exact expected
+// row. Replacing a row cannot change its version. No receipt permits replay.
+// Under a caller transaction, APPLIED confirms the mutation, not its commit.
+message MutateHistoryRequest {
+  HistoryScope scope = 1;
+  string request_id = 2;
+  HistoryRevision expected = 3;
+  HistoryRevision replacement = 4;
+}
+message HistoryResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; CONFLICT = 2; REFUSED = 3; }
+  HistoryScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+  string diagnostic_code = 4;
+  string message = 5;
+}
+
+// LockScope identifies one acquisition attempt within a live session. The name
+// addresses the database's exclusion namespace; lock_id is never reused.
+message LockScope {
+  string session_id = 1;
+  string lock_id = 2;
+  string name = 3;
+}
+// Each RPC has a fresh request_id. TryLock is one nonblocking attempt, not a
+// transport-managed wait or retry. Only a confirmed BUSY permits a new attempt.
+message LockRequest {
+  LockScope scope = 1;
+  string request_id = 2;
+}
+// ACQUIRED confirms current ownership, never an indefinitely valid lease.
+// NOT_ACQUIRED from ReleaseLock fences a delayed TryLock with the same handle.
+// LOST is terminal: that session must refuse further execution and writes.
+message LockResult {
+  enum Outcome {
+    UNKNOWN = 0;
+    ACQUIRED = 1;
+    BUSY = 2;
+    RELEASED = 3;
+    NOT_ACQUIRED = 4;
+    LOST = 5;
+  }
+  LockScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+}
+
+// MetadataScope identifies an exact store and its execution handle. LOG writes
+// are durable session operations and never carry a transaction ID.
+message MetadataScope {
+  enum Kind { UNSPECIFIED = 0; LOG = 1; TAGS = 2; }
+  string session_id = 1;
+  string transaction_id = 2;
+  string schema = 3;
+  string table = 4;
+  Kind kind = 5;
+}
+message MigrationLogRecord {
+  string run_id = 1;
+  int64 sequence = 2;
+  string operation = 3;
+  int64 version = 4;
+  string state = 5;
+  string actor = 6;
+  string actor_source = 7;
+  string checksum = 8;
+  int64 at_seconds = 9;
+  int32 at_nanos = 10;
+  string error = 11;
+}
+message MigrationTagRecord {
+  string name = 1;
+  int64 version = 2;
+  int64 recorded_at_seconds = 3;
+  int32 recorded_at_nanos = 4;
+}
+message PrepareMetadataRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+}
+message MutateMetadataRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  oneof mutation {
+    MigrationLogRecord append_log = 3;
+    MigrationTagRecord put_tag = 4;
+    string delete_tag = 5;
+  }
+}
+message MetadataResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; REJECTED = 2; }
+  MetadataScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+  // Only DELETE_TAG can set deleted. False confirms atomic absence.
+  bool deleted = 4;
+}
+message LookupMetadataTagRequest {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  string name = 3;
+}
+message MetadataTagResult {
+  MetadataScope scope = 1;
+  string request_id = 2;
+  bool found = 3;
+  MigrationTagRecord record = 4;
+}
+// The caller chooses a fresh reader ID before opening. Close fences that ID
+// even when it reaches the owner before open, and is idempotent for the scope.
+message MetadataReadRequest {
+  MetadataScope scope = 1;
+  string reader_id = 2;
+  string request_id = 3;
+}
+message MetadataReadResult {
+  MetadataScope scope = 1;
+  string reader_id = 2;
+  string request_id = 3;
+}
+// Pages advance exactly once, starting at zero. An unknown read reply must
+// close the snapshot rather than replay a cursor advance.
+message ReadMetadataPageRequest {
+  MetadataReadRequest reader = 1;
+  uint64 page = 2;
+  uint32 max_records = 3;
+}
+message MetadataPage {
+  MetadataReadResult reader = 1;
+  uint64 page = 2;
+  bool exists = 3;
+  bool complete = 4;
+  repeated MigrationLogRecord logs = 5;
+  repeated MigrationTagRecord tags = 6;
+}
+
+// The provider verifies ownership and native layout before reserving storage.
+// Familiar names alone do not prove ownership. Conflict kinds state which
+// object families share this name; the host must not infer engine namespaces.
+message ReservedObject {
+  Reference object = 1;
+  Reference normalized_object = 2;
+  enum Purpose {
+    PURPOSE_UNSPECIFIED = 0;
+    HISTORY = 1;
+    LOCK = 2;
+    LOG = 3;
+    TAG = 4;
+  }
+  Purpose purpose = 3;
+  repeated string conflict_kinds = 4;
 }

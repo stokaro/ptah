@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
 )
@@ -136,8 +137,8 @@ func migrationLockOutcome(operation string, runErr, lostErr, releaseErr error) e
 	if lostErr != nil {
 		lostErr = fmt.Errorf("migration lock for %s: %w; the run stopped there, and the revision table "+
 			"records what it committed", operation, lostErr)
-		if runErr != nil && !dblock.IsLost(runErr) {
-			lostErr = fmt.Errorf("%w (the run reported: %v)", lostErr, runErr)
+		if runErr != nil && (!dblock.IsLost(runErr) || errors.Is(runErr, ptaherr.ErrOutcomeUnknown)) {
+			lostErr = fmt.Errorf("%w (the run reported: %w)", lostErr, runErr)
 		}
 		runErr = lostErr
 	}
@@ -147,7 +148,7 @@ func migrationLockOutcome(operation string, runErr, lostErr, releaseErr error) e
 	case runErr == nil:
 		return fmt.Errorf("failed to release migration lock for %s: %w", operation, releaseErr)
 	default:
-		return fmt.Errorf("%w; additionally failed to release migration lock: %v", runErr, releaseErr)
+		return fmt.Errorf("%w; additionally failed to release migration lock: %w", runErr, releaseErr)
 	}
 }
 

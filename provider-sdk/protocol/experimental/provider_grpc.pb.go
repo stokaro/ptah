@@ -33,6 +33,18 @@ const (
 	Provider_Execute_FullMethodName           = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName  = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName = "/ptah.provider.experimental.Provider/FinishTransaction"
+	Provider_ReadHistory_FullMethodName       = "/ptah.provider.experimental.Provider/ReadHistory"
+	Provider_PrepareHistory_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareHistory"
+	Provider_MutateHistory_FullMethodName     = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_PrepareMetadata_FullMethodName   = "/ptah.provider.experimental.Provider/PrepareMetadata"
+	Provider_MutateMetadata_FullMethodName    = "/ptah.provider.experimental.Provider/MutateMetadata"
+	Provider_LookupMetadataTag_FullMethodName = "/ptah.provider.experimental.Provider/LookupMetadataTag"
+	Provider_OpenMetadataRead_FullMethodName  = "/ptah.provider.experimental.Provider/OpenMetadataRead"
+	Provider_ReadMetadataPage_FullMethodName  = "/ptah.provider.experimental.Provider/ReadMetadataPage"
+	Provider_CloseMetadataRead_FullMethodName = "/ptah.provider.experimental.Provider/CloseMetadataRead"
+	Provider_TryLock_FullMethodName           = "/ptah.provider.experimental.Provider/TryLock"
+	Provider_CheckLock_FullMethodName         = "/ptah.provider.experimental.Provider/CheckLock"
+	Provider_ReleaseLock_FullMethodName       = "/ptah.provider.experimental.Provider/ReleaseLock"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -57,6 +69,18 @@ type ProviderClient interface {
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
+	ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error)
+	PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
+	MutateMetadata(ctx context.Context, in *MutateMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
+	LookupMetadataTag(ctx context.Context, in *LookupMetadataTagRequest, opts ...grpc.CallOption) (*MetadataTagResult, error)
+	OpenMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error)
+	ReadMetadataPage(ctx context.Context, in *ReadMetadataPageRequest, opts ...grpc.CallOption) (*MetadataPage, error)
+	CloseMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error)
+	TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
+	CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
+	ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 }
 
 type providerClient struct {
@@ -207,6 +231,126 @@ func (c *providerClient) FinishTransaction(ctx context.Context, in *FinishTransa
 	return out, nil
 }
 
+func (c *providerClient) ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistorySnapshot)
+	err := c.cc.Invoke(ctx, Provider_ReadHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistoryResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HistoryResult)
+	err := c.cc.Invoke(ctx, Provider_MutateHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateMetadata(ctx context.Context, in *MutateMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataResult)
+	err := c.cc.Invoke(ctx, Provider_MutateMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) LookupMetadataTag(ctx context.Context, in *LookupMetadataTagRequest, opts ...grpc.CallOption) (*MetadataTagResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataTagResult)
+	err := c.cc.Invoke(ctx, Provider_LookupMetadataTag_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) OpenMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataReadResult)
+	err := c.cc.Invoke(ctx, Provider_OpenMetadataRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadMetadataPage(ctx context.Context, in *ReadMetadataPageRequest, opts ...grpc.CallOption) (*MetadataPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataPage)
+	err := c.cc.Invoke(ctx, Provider_ReadMetadataPage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CloseMetadataRead(ctx context.Context, in *MetadataReadRequest, opts ...grpc.CallOption) (*MetadataReadResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MetadataReadResult)
+	err := c.cc.Invoke(ctx, Provider_CloseMetadataRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_TryLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_CheckLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LockResult)
+	err := c.cc.Invoke(ctx, Provider_ReleaseLock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -229,6 +373,18 @@ type ProviderServer interface {
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
+	ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error)
+	PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error)
+	MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error)
+	PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error)
+	MutateMetadata(context.Context, *MutateMetadataRequest) (*MetadataResult, error)
+	LookupMetadataTag(context.Context, *LookupMetadataTagRequest) (*MetadataTagResult, error)
+	OpenMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error)
+	ReadMetadataPage(context.Context, *ReadMetadataPageRequest) (*MetadataPage, error)
+	CloseMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error)
+	TryLock(context.Context, *LockRequest) (*LockResult, error)
+	CheckLock(context.Context, *LockRequest) (*LockResult, error)
+	ReleaseLock(context.Context, *LockRequest) (*LockResult, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -280,6 +436,42 @@ func (UnimplementedProviderServer) BeginTransaction(context.Context, *BeginTrans
 }
 func (UnimplementedProviderServer) FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FinishTransaction not implemented")
+}
+func (UnimplementedProviderServer) ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadHistory not implemented")
+}
+func (UnimplementedProviderServer) PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareHistory not implemented")
+}
+func (UnimplementedProviderServer) MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateHistory not implemented")
+}
+func (UnimplementedProviderServer) PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareMetadata not implemented")
+}
+func (UnimplementedProviderServer) MutateMetadata(context.Context, *MutateMetadataRequest) (*MetadataResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateMetadata not implemented")
+}
+func (UnimplementedProviderServer) LookupMetadataTag(context.Context, *LookupMetadataTagRequest) (*MetadataTagResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LookupMetadataTag not implemented")
+}
+func (UnimplementedProviderServer) OpenMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenMetadataRead not implemented")
+}
+func (UnimplementedProviderServer) ReadMetadataPage(context.Context, *ReadMetadataPageRequest) (*MetadataPage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadMetadataPage not implemented")
+}
+func (UnimplementedProviderServer) CloseMetadataRead(context.Context, *MetadataReadRequest) (*MetadataReadResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseMetadataRead not implemented")
+}
+func (UnimplementedProviderServer) TryLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TryLock not implemented")
+}
+func (UnimplementedProviderServer) CheckLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckLock not implemented")
+}
+func (UnimplementedProviderServer) ReleaseLock(context.Context, *LockRequest) (*LockResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLock not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -554,6 +746,222 @@ func _Provider_FinishTransaction_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ReadHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadHistory(ctx, req.(*ReadHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareHistory(ctx, req.(*PrepareHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateHistory(ctx, req.(*MutateHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareMetadata(ctx, req.(*PrepareMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateMetadata(ctx, req.(*MutateMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_LookupMetadataTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LookupMetadataTagRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).LookupMetadataTag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_LookupMetadataTag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).LookupMetadataTag(ctx, req.(*LookupMetadataTagRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_OpenMetadataRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetadataReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).OpenMetadataRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_OpenMetadataRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).OpenMetadataRead(ctx, req.(*MetadataReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadMetadataPage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadMetadataPageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadMetadataPage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadMetadataPage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadMetadataPage(ctx, req.(*ReadMetadataPageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CloseMetadataRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetadataReadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CloseMetadataRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CloseMetadataRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CloseMetadataRead(ctx, req.(*MetadataReadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_TryLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).TryLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_TryLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).TryLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CheckLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CheckLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CheckLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CheckLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReleaseLock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReleaseLock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReleaseLock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReleaseLock(ctx, req.(*LockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -616,6 +1024,54 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FinishTransaction",
 			Handler:    _Provider_FinishTransaction_Handler,
+		},
+		{
+			MethodName: "ReadHistory",
+			Handler:    _Provider_ReadHistory_Handler,
+		},
+		{
+			MethodName: "PrepareHistory",
+			Handler:    _Provider_PrepareHistory_Handler,
+		},
+		{
+			MethodName: "MutateHistory",
+			Handler:    _Provider_MutateHistory_Handler,
+		},
+		{
+			MethodName: "PrepareMetadata",
+			Handler:    _Provider_PrepareMetadata_Handler,
+		},
+		{
+			MethodName: "MutateMetadata",
+			Handler:    _Provider_MutateMetadata_Handler,
+		},
+		{
+			MethodName: "LookupMetadataTag",
+			Handler:    _Provider_LookupMetadataTag_Handler,
+		},
+		{
+			MethodName: "OpenMetadataRead",
+			Handler:    _Provider_OpenMetadataRead_Handler,
+		},
+		{
+			MethodName: "ReadMetadataPage",
+			Handler:    _Provider_ReadMetadataPage_Handler,
+		},
+		{
+			MethodName: "CloseMetadataRead",
+			Handler:    _Provider_CloseMetadataRead_Handler,
+		},
+		{
+			MethodName: "TryLock",
+			Handler:    _Provider_TryLock_Handler,
+		},
+		{
+			MethodName: "CheckLock",
+			Handler:    _Provider_CheckLock_Handler,
+		},
+		{
+			MethodName: "ReleaseLock",
+			Handler:    _Provider_ReleaseLock_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

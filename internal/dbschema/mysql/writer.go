@@ -90,10 +90,12 @@ func versionIsAmbiguousForPrivileges(version string) bool {
 }
 
 type transactionWriter struct {
-	mu     sync.Mutex
-	tx     *sql.Tx
-	schema string
-	dryRun bool
+	beginContext     context.Context
+	canceledRollback bool
+	mu               sync.Mutex
+	tx               *sql.Tx
+	schema           string
+	dryRun           bool
 }
 
 // NewMySQLWriter creates a new MySQL-family schema writer.
@@ -193,7 +195,7 @@ func (w *Writer) BeginTransaction(ctx context.Context) (catalog.SchemaTransactio
 	if err != nil {
 		return nil, err
 	}
-	return &transactionWriter{tx: tx, schema: w.schema}, nil
+	return &transactionWriter{beginContext: ctx, tx: tx, schema: w.schema}, nil
 }
 
 // ExecuteSQL executes SQL against the transaction.
@@ -245,6 +247,7 @@ func (w *transactionWriter) Rollback() error {
 		return nil
 	}
 	err := w.tx.Rollback()
+	w.canceledRollback = w.beginContext != nil && w.beginContext.Err() != nil
 	w.tx = nil
 	return err
 }
@@ -1361,4 +1364,12 @@ func (w *Writer) SetDryRun(dryRun bool) {
 // IsDryRun returns whether dry run mode is enabled
 func (w *Writer) IsDryRun() bool {
 	return w.dryRun
+}
+
+// RolledBackByCancellation reports cancellation of the database/sql transaction
+// context observed after Rollback. A canceled statement context is insufficient.
+func (w *transactionWriter) RolledBackByCancellation() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.canceledRollback
 }

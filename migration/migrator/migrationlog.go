@@ -309,6 +309,18 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 	if m.migrationLogReady == nil || m.migrationLogReady.Load() {
 		return nil
 	}
+	store, err := m.conn.MigrationLogStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		if err := store.Prepare(ctx, m.providerLogTable()); err != nil {
+			return err
+		}
+		m.migrationLogReady.Store(true)
+		return nil
+	}
+
 	// A name the target would truncate closes the log for this run rather than
 	// stopping the migration. See [Migrator.refuseUnaddressableLogTable].
 	if err := m.refuseUnaddressableLogTable(); err != nil {
@@ -354,6 +366,14 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 }
 
 func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLogEntry) error {
+	store, err := m.conn.MigrationLogStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return m.appendProviderLog(ctx, store, entry)
+	}
+
 	query := sqlutil.Rebind(m.conn.Info().Dialect, fmt.Sprintf(
 		`INSERT INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, m.migrationLogTable()))
@@ -437,6 +457,14 @@ func (m *Migrator) MigrationLog(ctx context.Context, limit int) ([]MigrationLogA
 	if err := m.refuseUnaddressableLogTable(); err != nil {
 		return nil, err
 	}
+	store, err := m.conn.MigrationLogStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		return m.readProviderLog(ctx, store, limit)
+	}
+
 	// No Initialize: reading is a question, and a question that created a
 	// table would change the database it was asked about -- and fail outright
 	// for an account allowed to read and not to create. A target with no log

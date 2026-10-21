@@ -18,8 +18,10 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/providerhost"
 	"ptah.run/migration/migrator"
 )
@@ -98,7 +100,10 @@ func TestProviderTransactionsRefuseCommitAfterFailureAndPreserveUnknownCommit(t 
 		c.Assert(err, qt.IsNil)
 		statement := `CREATE TABLE "partial" ("id" INTEGER);`
 		c.Assert(tx.ExecuteSQL(c.Context(), statement), qt.IsNil)
-		c.Assert(tx.ExecuteSQL(c.Context(), statement), qt.ErrorIs, provider.ErrOutcomeUnknown)
+		err = tx.ExecuteSQL(c.Context(), statement)
+		c.Assert(err, qt.ErrorIs, provider.ErrOutcomeUnknown)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+		c.Assert(execoutcome.Unknown(err), qt.IsTrue)
 		c.Assert(tx.Commit(), qt.ErrorIs, provider.ErrOutcomeUnknown)
 		c.Assert(tx.Rollback(), qt.IsNil)
 		c.Assert(providerTablePresent(c, connection, "partial"), qt.IsFalse)
@@ -109,8 +114,11 @@ func TestProviderTransactionsRefuseCommitAfterFailureAndPreserveUnknownCommit(t 
 		tx, err := connection.SchemaWriter().BeginTransaction(c.Context())
 		c.Assert(err, qt.IsNil)
 		c.Assert(tx.ExecuteSQL(c.Context(), `CREATE TABLE "committed" ("id" INTEGER);`), qt.IsNil)
-		c.Assert(tx.Commit(), qt.ErrorIs, provider.ErrOutcomeUnknown)
-		c.Assert(tx.Commit(), qt.ErrorIs, provider.ErrOutcomeUnknown)
+		err = tx.Commit()
+		c.Assert(err, qt.ErrorIs, provider.ErrOutcomeUnknown)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+		c.Assert(execoutcome.Unknown(err), qt.IsTrue)
+		c.Assert(tx.Commit(), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
 		c.Assert(tx.Rollback(), qt.ErrorIs, provider.ErrExecution)
 		c.Assert(providerTablePresent(c, connection, "committed"), qt.IsTrue)
 	})
@@ -176,4 +184,33 @@ func TestProviderTransactionsThroughNativeCLI(t *testing.T) {
 			c.Assert(fixture.plan(c), qt.Contains, `"outcome": "no-changes"`)
 		})
 	}
+}
+
+func TestProviderExecutionRefusalDoesNotBecomeUnknown(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	connection, _ := transactionConnection(c, host, "reject")
+	err := connection.Writer().ExecuteSQL(c.Context(), `CREATE TABLE "refused" ("id" INTEGER);`)
+	c.Assert(err, qt.ErrorIs, provider.ErrExecution)
+	c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrOutcomeUnknown)
+	c.Assert(execoutcome.Unknown(err), qt.IsFalse)
+	c.Assert(providerTablePresent(c, connection, "refused"), qt.IsFalse)
+}
+
+func TestProviderTransactionOutlivesCanceledBeginRPC(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	connection, _ := transactionConnection(c, host, "")
+	ctx, cancel := context.WithCancel(c.Context())
+	c.Cleanup(cancel)
+	tx, err := connection.SchemaWriter().BeginTransaction(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = tx.Rollback() })
+	cancel()
+	// A fresh RPC still reaches the same live database transaction.
+	c.Assert(tx.ExecuteSQL(c.Context(), `CREATE TABLE "after_cancel" ("id" INTEGER);`), qt.IsNil)
+	_, inferredRollback := tx.(catalog.CancellationRollback)
+	c.Assert(inferredRollback, qt.IsFalse)
+	c.Assert(tx.Rollback(), qt.IsNil)
+	c.Assert(providerTablePresent(c, connection, "after_cancel"), qt.IsFalse)
 }

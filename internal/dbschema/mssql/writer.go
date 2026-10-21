@@ -85,9 +85,11 @@ type realmCleanupPlan struct {
 }
 
 type transactionWriter struct {
-	mu     sync.Mutex
-	tx     *sql.Tx
-	dryRun bool
+	beginContext     context.Context
+	canceledRollback bool
+	mu               sync.Mutex
+	tx               *sql.Tx
+	dryRun           bool
 }
 
 func NewSQLServerWriter(db *sql.DB, schema string) *Writer {
@@ -129,7 +131,7 @@ func (w *Writer) BeginTransaction(ctx context.Context) (catalog.SchemaTransactio
 	if err != nil {
 		return nil, err
 	}
-	return &transactionWriter{tx: tx}, nil
+	return &transactionWriter{beginContext: ctx, tx: tx}, nil
 }
 
 func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
@@ -174,6 +176,7 @@ func (w *transactionWriter) Rollback() error {
 		return nil
 	}
 	err := w.tx.Rollback()
+	w.canceledRollback = w.beginContext != nil && w.beginContext.Err() != nil
 	w.tx = nil
 	return err
 }
@@ -1459,3 +1462,11 @@ func (w *Writer) listForeignKeys(ctx context.Context) ([]foreignKey, error) {
 func (w *Writer) SetDryRun(dryRun bool) { w.dryRun = dryRun }
 
 func (w *Writer) IsDryRun() bool { return w.dryRun }
+
+// RolledBackByCancellation reports cancellation of the database/sql transaction
+// context observed after Rollback. A canceled statement context is insufficient.
+func (w *transactionWriter) RolledBackByCancellation() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.canceledRollback
+}

@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -58,16 +59,16 @@ func TestConfiguredPackagesMatchTheDeclarationsHappyPath(t *testing.T) {
 	c.Assert(len(declaring) > 1, qt.IsTrue,
 		qt.Commentf("found %d packages declaring a Query returning *sql.Rows; the corpus is broken", len(declaring)))
 
-	configured := slices.DeleteFunc(slices.Clone(loaded.Linters.Settings.RowsErrCheck.Packages),
-		func(pkg string) bool { return !strings.HasPrefix(pkg, modulePrefix) })
+	modules := slices.Collect(maps.Values(moduleDirectories(c, repositoryRoot(c))))
+	configured := slices.DeleteFunc(slices.Clone(loaded.Linters.Settings.RowsErrCheck.Packages), func(pkg string) bool {
+		return !slices.ContainsFunc(modules, func(module string) bool {
+			return pkg == module || strings.HasPrefix(pkg, module+"/")
+		})
+	})
 	slices.Sort(configured)
 
 	c.Assert(configured, qt.DeepEquals, declaring)
 }
-
-// modulePrefix scopes the comparison to this repository. `database/sql` is
-// listed and is not ours to find.
-const modulePrefix = "ptah.run"
 
 // declaringPackages returns the sorted import paths of every package in the
 // repository that declares a Query or QueryContext returning (*sql.Rows,
@@ -171,7 +172,9 @@ func importPath(c *qt.C, modules map[string]string, relative string) string {
 // declared module path.
 func moduleDirectories(c *qt.C, root string) map[string]string {
 	modules := make(map[string]string)
-	for _, relative := range trackedFiles(c, root, "go.mod") {
+	// Git's literal go.mod pathspec names only the root manifest. Nested
+	// modules need their own import paths, including independent providers.
+	for _, relative := range trackedFiles(c, root, "go.mod", "*/go.mod") {
 		contents, err := os.ReadFile(filepath.Join(root, relative))
 		c.Assert(err, qt.IsNil)
 		for line := range strings.Lines(string(contents)) {
@@ -194,15 +197,15 @@ func trackedGoFiles(c *qt.C, root string) []string {
 // scripts/check-test-style.sh already documents: a walk descends into linked
 // worktrees parked under this one and reports files belonging to a different
 // checkout.
-func trackedFiles(c *qt.C, root, pattern string) []string {
-	command := exec.Command("git", "-c", "core.quotePath=false",
-		"ls-files", "--cached", "--others", "--exclude-standard", "--", pattern)
+func trackedFiles(c *qt.C, root string, patterns ...string) []string {
+	args := append([]string{"-c", "core.quotePath=false", "ls-files", "--cached", "--others", "--exclude-standard", "--"}, patterns...)
+	command := exec.Command("git", args...)
 	command.Dir = root
 	output, err := command.Output()
 	c.Assert(err, qt.IsNil)
 
 	files := strings.Fields(string(output))
-	c.Assert(len(files) > 0, qt.IsTrue, qt.Commentf("git listed no %s files", pattern))
+	c.Assert(len(files) > 0, qt.IsTrue, qt.Commentf("git listed no %v files", patterns))
 	return files
 }
 

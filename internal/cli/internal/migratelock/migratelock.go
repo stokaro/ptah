@@ -20,6 +20,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdflags"
@@ -159,6 +160,11 @@ func (r Request) Decide(dialect string) error {
 // with a refusal of its own; a URL that resolves to a dialect the server then
 // contradicts is answered by [Request.DecideConnected].
 func (r Request) DecideFromURL() error {
+	// A selected provider owns its aliases and lock capabilities. Check its
+	// opened session instead of inferring support from a built-in URL spelling.
+	if r.Cmd != nil && len(dbschema.NativeTargets(r.Cmd.Context())) != 0 {
+		return nil
+	}
 	dialect, err := atlasurl.DialectFromURL(r.DBURL)
 	if err != nil {
 		return nil
@@ -183,4 +189,25 @@ func (r Request) DecideConnected(connected string) error {
 		return nil
 	}
 	return r.Decide(connected)
+}
+
+// DecideSession validates an explicit timeout against the opened lock service.
+// Native sessions must provide that service; SQL connections retain the dialect
+// check. No lock is acquired during this capability check.
+func (r Request) DecideSession(conn *dbschema.DatabaseConnection) error {
+	if r.Cmd == nil || cmdadapter.Forwarded(r.Cmd) {
+		return nil
+	}
+	spelling, asked := r.Spelling()
+	if !asked {
+		return nil
+	}
+	service, err := conn.SessionLocker()
+	if err != nil {
+		return fmt.Errorf("%s: %w", spelling, err)
+	}
+	if service != nil {
+		return nil
+	}
+	return r.DecideConnected(conn.Info().Dialect)
 }

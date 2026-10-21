@@ -25,18 +25,18 @@ type Entry struct {
 var entries = []Entry{
 	{
 		EngineID: "duckdb", DisplayName: "DuckDB", Aliases: make([]string, 0), URLSchemes: []string{"duckdb"},
-		ProviderID: "stokaro/ptah-duckdb-plugin", RepositoryURL: "https://github.com/stokaro/ptah-duckdb-plugin",
+		ProviderID: "github.com/stokaro/ptah-duckdb-plugin", RepositoryURL: "https://github.com/stokaro/ptah-duckdb-plugin",
 		SetupURL: "https://docs.ptah.run/edge/extend/providers/duckdb/",
 	},
 	{
 		EngineID: "spanner", DisplayName: "Spanner", Aliases: []string{"cloudspanner", "google-spanner", "google_spanner"},
 		URLSchemes: []string{"spanner", "cloudspanner", "google-spanner"},
-		ProviderID: "stokaro/ptah-spanner-plugin", RepositoryURL: "https://github.com/stokaro/ptah-spanner-plugin",
+		ProviderID: "github.com/stokaro/ptah-spanner-plugin", RepositoryURL: "https://github.com/stokaro/ptah-spanner-plugin",
 		SetupURL: "https://docs.ptah.run/edge/extend/providers/spanner/",
 	},
 	{
 		EngineID: "ydb", DisplayName: "YDB", Aliases: []string{"ydbs"}, URLSchemes: []string{"ydb", "ydbs"},
-		ProviderID: "stokaro/ptah-ydb-plugin", RepositoryURL: "https://github.com/stokaro/ptah-ydb-plugin",
+		ProviderID: "github.com/stokaro/ptah-ydb-plugin", RepositoryURL: "https://github.com/stokaro/ptah-ydb-plugin",
 		SetupURL: "https://docs.ptah.run/edge/extend/providers/ydb/", BundledByDefault: true,
 	},
 }

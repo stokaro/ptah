@@ -36,20 +36,20 @@ func TestTransactionResultRequiresConfirmedRequestedEffect(t *testing.T) {
 }
 
 func TestTransactionHandleBindsRequestedSessionAndIdentity(t *testing.T) {
-	request := &protocol.BeginTransactionRequest{SessionId: "session", TransactionId: "transaction"}
+	request := &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session", TransactionId: "transaction"}
 	for _, test := range []struct {
 		name    string
 		request *protocol.BeginTransactionRequest
 		result  *protocol.Transaction
 		want    error
 	}{
-		{"exact", request, &protocol.Transaction{SessionId: "session", Id: "transaction"}, nil},
-		{"wrong session", request, &protocol.Transaction{SessionId: "other", Id: "transaction"}, provider.ErrProtocol},
-		{"wrong handle", request, &protocol.Transaction{SessionId: "session", Id: "other"}, provider.ErrProtocol},
+		{"exact", request, &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session", Id: "transaction"}, nil},
+		{"wrong session", request, &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "other", Id: "transaction"}, provider.ErrProtocol},
+		{"wrong handle", request, &protocol.Transaction{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session", Id: "other"}, provider.ErrProtocol},
 		{"missing result", request, nil, provider.ErrProtocol},
 		{"missing request", nil, nil, provider.ErrProtocol},
-		{"missing session", &protocol.BeginTransactionRequest{TransactionId: "transaction"}, nil, provider.ErrProtocol},
-		{"missing handle", &protocol.BeginTransactionRequest{SessionId: "session"}, nil, provider.ErrProtocol},
+		{"missing session", &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, TransactionId: "transaction"}, nil, provider.ErrProtocol},
+		{"missing handle", &protocol.BeginTransactionRequest{Isolation: protocol.TransactionIsolation_DEFAULT, SessionId: "session"}, nil, provider.ErrProtocol},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -79,4 +79,29 @@ func TestTransactionAdvertisementRequiresExecutionAndEngineBinding(t *testing.T)
 	c.Assert(provider.ValidateDescription(desc, nil), qt.ErrorIs, provider.ErrProtocol)
 	desc.Features = append(desc.Features, provider.ExecuteFeature)
 	c.Assert(provider.ValidateDescription(desc, []string{provider.TransactionsFeature}), qt.IsNil)
+}
+
+func TestTransactionIsolationIsExplicitAndBoundToReply(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		requested protocol.TransactionIsolation
+		returned  protocol.TransactionIsolation
+		want      error
+	}{
+		{"default", protocol.TransactionIsolation_DEFAULT, protocol.TransactionIsolation_DEFAULT, nil},
+		{"serializable", protocol.TransactionIsolation_SERIALIZABLE, protocol.TransactionIsolation_SERIALIZABLE, nil},
+		{"missing request", 0, protocol.TransactionIsolation_DEFAULT, provider.ErrProtocol},
+		{"unknown request", 99, 99, provider.ErrProtocol},
+		{"missing reply", protocol.TransactionIsolation_DEFAULT, 0, provider.ErrProtocol},
+		{"unknown reply", protocol.TransactionIsolation_DEFAULT, 99, provider.ErrProtocol},
+		{"downgrade", protocol.TransactionIsolation_SERIALIZABLE, protocol.TransactionIsolation_DEFAULT, provider.ErrProtocol},
+		{"substitution", protocol.TransactionIsolation_DEFAULT, protocol.TransactionIsolation_SERIALIZABLE, provider.ErrProtocol},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := &protocol.BeginTransactionRequest{SessionId: "session", TransactionId: "transaction", Isolation: test.requested}
+			result := &protocol.Transaction{SessionId: "session", Id: "transaction", Isolation: test.returned}
+			c.Assert(provider.ValidateTransaction(request, result), qt.ErrorIs, test.want)
+		})
+	}
 }

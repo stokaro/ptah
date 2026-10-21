@@ -2,9 +2,9 @@ package migrator
 
 // White-box testing required: how a lost migration lock and a failed release
 // combine with the run's own outcome is decided by unexported functions, and
-// a loss reaches them through MigrateUp only on a live YDB whose lock session
-// stops answering for longer than its session timeout. The live tests under
-// integration/dbschema/ydb drive that path; these pin each combination.
+// live YDB and independent provider process tests exercise reachable paths.
+// These tests pin combinations of execution, ownership, and release failures
+// whose ordering is not controlled through the public migrator API.
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
 )
@@ -125,7 +126,7 @@ func TestExecuteSQLStatements_StopsWhenTheLockIsLost(t *testing.T) {
 	c := qt.New(t)
 	conn := openLockedSQLite(c)
 
-	err := executeSQLStatements(lostLockContext, conn, "CREATE TABLE a (id INTEGER);", migrationExecutionNoTransaction)
+	err := executeSQLStatements(lostLockContext, conn, "CREATE TABLE a (id INTEGER);")
 
 	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
 	c.Assert(sqliteTables(c, conn), qt.Equals, 0)
@@ -142,4 +143,23 @@ func TestResumeStatementsOnSession_StopsWhenTheLockIsLost(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
 	c.Assert(sqliteTables(c, conn), qt.Equals, 0)
+}
+
+func TestMigrationLockOutcomePreservesUncertainty(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		runErr     error
+		releaseErr error
+	}{
+		{"execution unknown", ptaherr.ErrOutcomeUnknown, nil},
+		{"release unknown", nil, ptaherr.ErrOutcomeUnknown},
+		{"execution lost and unknown", errors.Join(lostMigrationLock, ptaherr.ErrOutcomeUnknown), nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := migrationLockOutcome("up", test.runErr, lostMigrationLock, test.releaseErr)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+			c.Assert(dblock.IsLost(err), qt.IsTrue)
+		})
+	}
 }

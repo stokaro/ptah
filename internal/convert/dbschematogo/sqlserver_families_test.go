@@ -110,6 +110,7 @@ var convertedFamilies = map[string]string{
 // unconvertedFamilies are the read families that deliberately do not become
 // declarations, with the reason each one does not.
 var unconvertedFamilies = map[string]string{
+	"ReservedNames":             "operational storage occupies names but must not become a managed declaration",
 	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
 	"RoleMemberships":           "read for the role graph rather than as a declarable object",
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",

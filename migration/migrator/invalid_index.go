@@ -451,7 +451,7 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 	var unsafe []migratorext.IndexState
 	for i, statement := range statements {
 		if noTransactionResumeAction(statement, conn.Info().Dialect) == noTransactionPrefixReplay {
-			if err := executeSQLOutsideTransaction(ctx, conn, statement); err != nil {
+			if err := executeSQLOn(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)
 			}
 			continue

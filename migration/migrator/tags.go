@@ -108,6 +108,14 @@ func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version i
 	if err != nil {
 		return err
 	}
+	store, err := m.conn.MigrationTagsStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return m.recordProviderTag(ctx, store, normalized, version)
+	}
+
 	if err := m.ensureMigrationTagsTable(ctx); err != nil {
 		return err
 	}
@@ -134,6 +142,14 @@ func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, 
 	if err != nil {
 		return 0, err
 	}
+	store, err := m.conn.MigrationTagsStore()
+	if err != nil {
+		return 0, err
+	}
+	if store != nil {
+		return m.resolveProviderTag(ctx, store, normalized)
+	}
+
 	exists, err := m.migrationTagsTableExists(ctx)
 	if err != nil {
 		return 0, err
@@ -159,6 +175,14 @@ func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, 
 // never been tagged has no tags, and reporting that as an error would make
 // `migrations status` fail on every project that does not use them.
 func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error) {
+	store, err := m.conn.MigrationTagsStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		return m.readProviderTags(ctx, store)
+	}
+
 	exists, err := m.migrationTagsTableExists(ctx)
 	if err != nil {
 		return nil, err
@@ -194,6 +218,14 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 	if err != nil {
 		return err
 	}
+	store, err := m.conn.MigrationTagsStore()
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return m.deleteProviderTag(ctx, store, normalized)
+	}
+
 	exists, err := m.migrationTagsTableExists(ctx)
 	if err != nil {
 		return err

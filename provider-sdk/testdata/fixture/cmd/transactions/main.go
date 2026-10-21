@@ -21,11 +21,11 @@ func main() {
 
 	owner := &backend.TransactionalProvider{}
 	description := backend.Description()
-	description.SemanticIdentity = "fixture-transactions-1"
-	description.Features = append(description.Features, provider.TransactionsFeature)
-	description.Engines[0].Features = append(description.Engines[0].Features, provider.TransactionsFeature)
+	description.SemanticIdentity = "fixture-transactions-history-locks-1"
+	description.Features = append(description.Features, provider.TransactionsFeature, provider.HistoryFeature, provider.LocksFeature)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.TransactionsFeature, provider.HistoryFeature, provider.LocksFeature)
 	if err := runtime.Serve(runtime.Server{
-		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Transactions: owner, SQLAnalyzer: owner,
+		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Transactions: owner, History: owner, Locks: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, err)

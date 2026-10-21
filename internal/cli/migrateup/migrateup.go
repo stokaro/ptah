@@ -18,15 +18,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migratetimeout"
@@ -528,13 +527,13 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Before any migrator call: reading the status initializes the revision
 	// table, and a decision taken after the first write answers nothing.
-	if err := decideConnected(cmd, projectCfg, lockRequest, conn.Info(), timeouts); err != nil {
+	if err := decideConnected(cmd, projectCfg, lockRequest, conn, timeouts); err != nil {
 		return err
 	}
 
 	// The gate validates its policy against the rules of the engine owners,
 	// and splits and checks the pending migrations with them.
-	lintRuntime, err := builtin.New()
+	lintRuntime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
@@ -625,7 +624,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 		)
 		emit.Println("✅ Database is already up to date!")
-		return nil
+		return emitUpToDateResult(cmd, opts, status)
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
@@ -699,12 +698,13 @@ func decideConnected(
 	cmd *cobra.Command,
 	projectCfg projectconfig.Config,
 	lockRequest migratelock.Request,
-	server catalog.ServerInfo,
+	conn *dbschema.DatabaseConnection,
 	timeouts migrationfile.Timeouts,
 ) error {
-	if err := lockRequest.DecideConnected(server.Dialect); err != nil {
+	if err := lockRequest.DecideSession(conn); err != nil {
 		return err
 	}
+	server := conn.Info()
 	return newTimeoutRequest(cmd, projectCfg, lockRequest.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
 }
 
@@ -921,6 +921,13 @@ func applyPendingMigrations(
 		outcome.runErr = err
 	}
 	return outcome
+}
+
+func emitUpToDateResult(cmd *cobra.Command, opts *options, status *migrator.MigrationStatus) error {
+	if !opts.jsonOutput {
+		return nil
+	}
+	return emitRunResult(cmd.OutOrStdout(), migrator.RunEvidence{Direction: migrator.MigrationDirectionUp, After: status, DryRun: opts.dryRun})
 }
 
 // humanOutput selects where this command's human-facing output goes.

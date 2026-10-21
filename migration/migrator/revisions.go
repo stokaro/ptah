@@ -801,20 +801,6 @@ func (m *Migrator) forceAppliedAtlasUpdateSQL() string {
 	)
 }
 
-func (m *Migrator) countRevisionsSQL() string {
-	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`, m.qualifiedMigrationsTable(), m.atlasRevisionRowPredicate())
-	}
-	return fmt.Sprintf(`SELECT COUNT(*) FROM %s`, m.qualifiedMigrationsTable())
-}
-
-func (m *Migrator) countRevisionsAboveSQL() string {
-	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s > ?`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
-	}
-	return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE version > ?`, m.qualifiedMigrationsTable())
-}
-
 // deleteRevisionsAboveSQL renders the delete a `set` runs over the NATIVE
 // revision table, whose version column is an integer.
 //
@@ -972,9 +958,8 @@ func atlasVersionNumberIsNull(revisionVersion string) bool {
 // atlasVersionNumberExpression renders the numeric form of the version column.
 //
 // The CASE arm turns dot-prefixed metadata rows into NULL before the cast, and
-// it is the ONLY protection for the three statements that have no
-// [atlasMetadataRowPredicate] filter of their own: getVersionSQL (MAX over
-// every row), countRevisionsAboveSQL, and deleteRevisionsAboveSQL. Without it,
+// it protects statements without their own [atlasMetadataRowPredicate] filter:
+// getVersionSQL (MAX over every row) and deleteAtlasSetRevisionsAbove. Without it,
 // a strict dialect fails those statements outright — PostgreSQL reports
 // `invalid input syntax for type bigint: ".atlas_cloud_identifier"` — so
 // GetCurrentVersion and SetAtlasRevision would error on any database Atlas
@@ -1231,8 +1216,19 @@ func (m *Migrator) forceAppliedConflictClause() string {
 // exactly the recovery run this guard exists to send the operator towards
 // (#966).
 func (m *Migrator) dirtyRevision(ctx context.Context) (*MigrationRevision, error) {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		revisions, err := m.GetRevisions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return firstDirtyRevision(revisions), nil
+	}
 	var revision *MigrationRevision
-	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+	err = m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
 		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getDirtyRevisionSQL())
 		args := []any{migrationStateApplied}
 		if scoped.revisionTableFormat.isAtlas() {
@@ -1257,8 +1253,16 @@ func (m *Migrator) getMigrationRevision(ctx context.Context, migration *Migratio
 }
 
 func (m *Migrator) getRevisionByVersionArg(ctx context.Context, version any) (*MigrationRevision, error) {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		return m.providerRevisionByVersion(ctx, version)
+	}
+
 	var revision *MigrationRevision
-	err := m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
+	err = m.withMigrationMetadataSession(ctx, func(scoped *Migrator) error {
 		query := sqlutil.Rebind(scoped.conn.Info().Dialect, scoped.getRevisionSQL())
 		scanned, err := scoped.scanRevisionRow(
 			scoped.conn.QueryRowContext(ctx, query, version),
@@ -1551,7 +1555,7 @@ func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) 
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-	if err := executeSQLOutsideTransaction(
+	if err := executeSQLOn(
 		recordCtx,
 		m.conn,
 		query,
@@ -1820,6 +1824,9 @@ func (m *Migrator) restartMigrationRevisionOn(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	if handled, err := m.restartProviderRevision(ctx, conn, migration, startedAt, alreadyApplied); handled {
+		return err
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.restartAtlasMigrationRevisionOn(ctx, conn, migration, startedAt, alreadyApplied)
 	}
@@ -1872,6 +1879,9 @@ func (m *Migrator) beginMigrationRevisionOn(
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
+	}
+	if handled, err := m.beginProviderRevision(ctx, conn, migration, startedAt); handled {
+		return err
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
@@ -1932,6 +1942,9 @@ func (m *Migrator) completeMigrationRevisionOn(
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
+	}
+	if handled, err := m.completeProviderRevision(ctx, conn, migration, startedAt); handled {
+		return err
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.completeAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
@@ -1995,6 +2008,9 @@ func (m *Migrator) checkpointMigrationRevisionOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	if handled, err := m.checkpointProviderRevision(ctx, conn, migration, startedAt, event, direction); handled {
+		return err
+	}
 	query, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
 	return executeSQLOn(ctx, conn, query, args...)
 }
@@ -2053,6 +2069,9 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	if handled, err := m.markProviderStatementInFlight(ctx, conn, migration, startedAt, event, direction); handled {
+		return err
+	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	statement := revisiontext.ValidUTF8(event.Statement)
 	if m.revisionTableFormat.isAtlas() {
@@ -2120,11 +2139,14 @@ func (m *Migrator) beginRollbackRevision(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	if handled, err := m.beginProviderRollback(ctx, migration, startedAt); handled {
+		return err
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.beginAtlasRollbackRevision(ctx, migration, startedAt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -2146,7 +2168,7 @@ func (m *Migrator) beginAtlasRollbackRevision(
 	startedAt time.Time,
 ) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -2229,11 +2251,14 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		statement:   stmt,
 		failedIndex: failedIndex,
 	}
+	if handled, err := m.failProviderRevision(recordCtx, failed, applied, txMode); handled {
+		return err
+	}
 	if m.runsQueriesOnTheirOwn() {
 		return m.ydbFailureRecord(failed, applied).run(recordCtx)
 	}
 	query, args := m.failedRevisionStatement(failed, applied)
-	return executeSQLOutsideTransaction(recordCtx, m.conn, query, args...)
+	return executeSQLOn(recordCtx, m.conn, query, args...)
 }
 
 // failedRevision is what a failure record writes, apart from how many of the
@@ -2396,22 +2421,16 @@ func (m *Migrator) baselineLocked(ctx context.Context, opts BaselineOptions) err
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
-	if err := m.failIfDirty(ctx); err != nil {
-		return err
-	}
-	revisionCount, err := m.revisionCount(ctx)
+	store, err := m.conn.HistoryStore()
 	if err != nil {
 		return err
 	}
-	if revisionCount > 0 && !opts.Force {
-		return fmt.Errorf("schema migrations table is not empty; rerun with force to baseline anyway")
+	if store != nil {
+		err = m.baselineProviderMigrations(ctx, store, migrations, opts)
+	} else {
+		err = m.baselineSQLMigrations(ctx, migrations, opts)
 	}
-	if opts.Force {
-		if err := m.failIfRevisionAboveBaseline(ctx, opts.Version); err != nil {
-			return err
-		}
-	}
-	if err := m.baselineMigrations(ctx, migrations); err != nil {
+	if err != nil {
 		return err
 	}
 	m.reportBaselineSkippedChecks(migrations)
@@ -2478,13 +2497,34 @@ func (m *Migrator) migrationsAtOrBelow(version int64) []*Migration {
 	return out
 }
 
-func (m *Migrator) revisionCount(ctx context.Context) (int, error) {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsSQL())
-	var count int
-	if err := m.conn.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		return 0, fmt.Errorf("failed to count migration revisions: %w", err)
+func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migration, opts BaselineOptions) error {
+	revisions, err := m.GetRevisions(ctx)
+	if err != nil {
+		return err
 	}
-	return count, nil
+	if err := validateBaselineRevisions(revisions, opts); err != nil {
+		return err
+	}
+	return m.baselineMigrations(ctx, migrations)
+}
+
+// validateBaselineRevisions is shared by SQL and native stores. The caller
+// holds the migration lock; native stores also read through the data transaction.
+func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions) error {
+	for _, revision := range revisions {
+		if revision.Dirty {
+			return &DirtyMigrationError{Revision: revision}
+		}
+	}
+	if len(revisions) > 0 && !opts.Force {
+		return fmt.Errorf("schema migrations table is not empty; rerun with force to baseline anyway")
+	}
+	for _, revision := range revisions {
+		if revision.Version > opts.Version {
+			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", opts.Version)
+		}
+	}
+	return nil
 }
 
 func (m *Migrator) baselineMigrations(ctx context.Context, migrations []*Migration) error {
@@ -2512,18 +2552,6 @@ func (m *Migrator) baselineMigrationsNoTransaction(ctx context.Context, migratio
 
 func (m *Migrator) writeBaselineMigrations(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
 	return m.writeBaselineMigrationRows(ctx, conn, migrations)
-}
-
-func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int64) error {
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsAboveSQL())
-	var count int
-	if err := m.conn.QueryRowContext(ctx, query, version).Scan(&count); err != nil {
-		return fmt.Errorf("failed to inspect migration revisions above baseline: %w", err)
-	}
-	if count > 0 {
-		return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", version)
-	}
-	return nil
 }
 
 func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
@@ -2638,7 +2666,11 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 	if version > 0 && m.migrationByVersion(version) == nil {
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
 	}
-	if m.revisionsMutate() {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return AtlasRevisionSetResult{}, err
+	}
+	if store == nil && m.revisionsMutate() {
 		if m.revisionTableFormat.isAtlas() {
 			return AtlasRevisionSetResult{}, fmt.Errorf(
 				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
@@ -2655,7 +2687,11 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 		return AtlasRevisionSetResult{CurrentVersion: version}, nil
 	}
 
-	return m.setAtlasRevisionRows(ctx, m.migrationsAtOrBelow(version), version)
+	migrations := m.migrationsAtOrBelow(version)
+	if store != nil {
+		return m.setProviderRevisionRows(ctx, store, migrations, version)
+	}
+	return m.setAtlasRevisionRows(ctx, migrations, version)
 }
 
 func (m *Migrator) setAtlasRevisionRows(
@@ -2707,20 +2743,11 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	if err := m.refuseRespelledRevisions(existing); err != nil {
-		_ = tx.Rollback()
-		return AtlasRevisionSetResult{}, err
-	}
-	retired := m.retiredAtlasRevisionVersions()
-	exactRemoved, err := m.unownedExactAtlasRevisionsAbove(existing, setBoundary(migrations))
+	result, exactRemoved, err := m.planRevisionSet(existing, migrations, version)
 	if err != nil {
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	exactRemoved = append(exactRemoved, m.unnumberedRemovedAtlasRevisions(
-		existing, migrations, version, retired, exactRemoved,
-	)...)
-	result := m.atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
 	if m.revisionTableFormat.isAtlas() {
 		err = m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version, exactRemoved)
 	} else {
@@ -2799,7 +2826,7 @@ func (m *Migrator) atlasRevisionSetChanges(
 		}
 	}
 	for _, migration := range migrations {
-		revision, exists := revisions.find(migration)
+		revision, exists := m.findSetRevision(revisions, migration)
 		if exists && revision.State == migrationStateApplied {
 			continue
 		}
@@ -2865,6 +2892,9 @@ func (m *Migrator) revisionRemovedByAtlasSet(
 	version int64,
 	retired, exactRemoved []string,
 ) bool {
+	if !m.revisionTableFormat.isAtlas() {
+		return version == 0 || revision.Version > version
+	}
 	key := revision.RevisionVersion()
 	if slices.Contains(exactRemoved, key) {
 		return true
@@ -3116,8 +3146,13 @@ func (m *Migrator) writePtahSetRevisionRows(
 	migrations []*Migration,
 	version int64,
 ) error {
-	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteRevisionsAboveSQL())
-	if _, err := tx.ExecContext(ctx, deleteSQL, m.revisionVersionArg(version)); err != nil {
+	deleteSQL := m.deleteRevisionsAboveSQL()
+	deleteArgs := []any{m.revisionVersionArg(version)}
+	if version == 0 {
+		deleteSQL = fmt.Sprintf("DELETE FROM %s", m.qualifiedMigrationsTable())
+		deleteArgs = nil
+	}
+	if _, err := tx.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL), deleteArgs...); err != nil {
 		return fmt.Errorf("failed to remove revisions above %d: %w", version, err)
 	}
 
@@ -3476,7 +3511,7 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
-		if err := executeBoundedStatement(ctx, executionConn, stmt, migrationExecutionNoTransaction); err != nil {
+		if err := executeBoundedStatement(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
@@ -3556,6 +3591,9 @@ func (m *Migration) atlasOperatorVersion() string {
 }
 
 func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migration) error {
+	if handled, err := m.forceAppliedProviderRevision(ctx, migration); handled {
+		return err
+	}
 	if m.revisionsMutate() {
 		revision, err := m.getMigrationRevision(ctx, migration)
 		if err != nil {
@@ -3567,7 +3605,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 	}
 	if !m.forceAppliedReplacesRow() {
 		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-		if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
+		if err := executeSQLOn(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 			return err
 		}
 	}
@@ -3575,7 +3613,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 		return m.forceAppliedAtlasMigration(ctx, migration)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3593,7 +3631,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
 	total := m.migrationStatementCount(migration.UpSQL)
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3662,7 +3700,7 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 		return m.forceAppliedAtlasMigrationClickHouse(ctx, migration)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedPtahUpdateSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3680,7 +3718,7 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 func (m *Migrator) forceAppliedAtlasMigrationClickHouse(ctx context.Context, migration *Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedAtlasUpdateSQL())
 	total := m.migrationStatementCount(migration.UpSQL)
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,

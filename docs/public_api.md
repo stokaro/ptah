@@ -4272,6 +4272,83 @@ connections. Unregistered schemes cannot select bundled drivers, and a failed
 provider connection never falls back to one. `NativeTargets` returns a private
 copy of the scheme-to-engine mapping without opening a session.
 
+`dbschema.DatabaseConnection.HistoryStore` exposes typed revision storage on a
+native session or its active transaction. SQL-backed connections return no
+native store and retain their SQL storage path. A native connection without a
+history service refuses the operation. An executor installed by `WithExecutor`
+must provide its own transaction-bound store; the connection never substitutes
+the parent session's unwrapped store.
+
+`HistoryTable` names the schema, table, and `NativeHistory` or `AtlasHistory`
+representation. `HistoryRecord` preserves exact identity and stored progress,
+source hashes, timestamps, and diagnostics. Native records carry stored state
+and direction. Atlas records leave those fields empty; the common migrator
+derives them from progress, diagnostics, and operator identity. `HistorySnapshot`
+distinguishes a missing store from an empty complete one. `HistoryStore.Read`
+refuses incomplete results. `Prepare` validates or creates storage without
+upgrading an incompatible layout. `CompareAndSwap` atomically compares the
+entire expected record before replacement or deletion; a missing expected
+record means insert only if absent. Lost acknowledgments never permit replay.
+
+The subprocess adapter shares the transaction handle with schema execution.
+A dispatched history failure prevents commit. Uncertain execution, transaction,
+and history results match `ptaherr.ErrOutcomeUnknown` without requiring callers
+to import the provider SDK. The common migrator reads and writes these
+records through its existing execution, status, progress, and identity checks.
+Ordinary apply and rollback use exact record comparisons. A pending revision
+records uncertainty before execution; an unconfirmed commit never overwrites
+a durable applied revision. Logging, tags,
+and default versioned CLI integration remain required work in #4204.
+
+`dbschema.HistoryTransactor` opens a `HistoryTransaction` for revision data
+without requiring transactional DDL. Its handle exposes history operations,
+commit, and rollback, with no schema executor. Nested transactions, dry-run
+writes, and preparation inside a transaction are refused. The caller still
+owns migration locking. `BeginHistoryTransaction` requires an explicit
+`HistoryIsolationDefault` or `HistoryIsolationSerializable`. The provider must
+establish that level or refuse it. Serializable isolation protects the complete
+history read, including absent rows; the default makes no such guarantee.
+Native baseline uses this transaction for its complete
+revision batch and checks dirty state, existing records, and versions above
+the baseline before writing. A lost commit reply remains an unknown outcome;
+cleanup never authorizes replay.
+
+Native repair uses the same direction, committed-prefix, and unknown-outcome
+checks as SQL-backed repair. A forced metadata repair replaces the exact record;
+a resumed rollback deletes it only after completing its down body. Force does
+not authorize resuming a statement with an unknown outcome. Checksum
+reconciliation reads the history and computes the shared projection inside a
+data transaction, then compares each complete prior record before replacing its
+checksum. A failed batch rolls back every checksum change; a lost commit reply
+retains uncertainty and never causes automatic replay.
+
+Native provider `SetRevision` requires serializable history transactions. The
+common planner selects exact removals and replacements, which compare whole
+stored records within that transaction. Clean rows remain unchanged, dirty
+native rows become applied while retaining diagnostics, and missing rows are
+inserted without executing migration SQL. Native storage and its change summary
+use numeric keys even for an Atlas source with exact identities. Setting zero
+removes every native revision, including stored nonpositive keys. Failed or
+uncertain operations return no successful change summary and never replay
+automatically.
+
+Atlas storage preserves exact string identities and metadata rows.
+An existing Atlas row changes only its type during set; its stored diagnostics
+and progress remain intact. Independent SQLite process tests cover shared
+SQL/provider storage, baseline, apply and rollback, external-write conflicts,
+and uncertain set commits. Atlas repair also resumes SQL-written committed
+prefixes and refuses changed prefixes or unknown statement outcomes. Checksum
+reconciliation retains atomic batches and uncertainty across lost commit replies.
+A process-death check verifies recovery after committed DDL without its receipt.
+Official-engine storage qualification remains required under #4204.
+
+`catalog.CancellationRollback` exposes transaction-lifetime evidence after
+`Rollback` is attempted. SQL-backed writers report cancellation of the context
+that began their transaction. A canceled statement or provider RPC does not
+establish rollback. The common migrator requires this evidence before treating
+a failed rollback as confirmed through cancellation. Explicit uncertain results
+still prevent that inference.
+
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.
 Use it when session-local state must remain consistent across cleanup, replay,
@@ -5107,7 +5184,10 @@ can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures
 should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`. Invalid schema
 diffs rejected during planning support
-`errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`.
+`errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`. Native operations whose durable
+outcome is uncertain support `errors.Is(err, ptaherr.ErrOutcomeUnknown)`.
+Inspect durable state before choosing recovery; this error never permits replay,
+and its absence does not prove that an operation was never executed.
 
 ### `ptah.run/docs`
 
@@ -5220,3 +5300,75 @@ that omits `LANGUAGE`. It is valid only with the quoted-body routine grammar.
 An explicit `LANGUAGE` clause takes precedence. An empty default means that
 the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
 Spanner state `plpgsql`.
+
+
+### Provider session locks
+
+`DatabaseConnection.SessionLocker` selects a native session's `SessionLocker`.
+SQL-backed connections return nil and retain their SQL lock path. Native
+connections without `SessionLockProvider`, or with a nil service, refuse.
+Acquire before opening a transaction; a transaction-bound connection cannot
+acquire through its parent session.
+
+`SessionLocker.TryLock` makes one nonblocking attempt with a fresh handle. Only
+`ErrSessionLockBusy` permits another attempt. An uncertain acquisition matches
+`ptaherr.ErrOutcomeUnknown` and must not be retried. A successful `SessionLock`
+offers `CheckOwnership` and `Release`. Checks establish current ownership; loss matches
+`ErrSessionLockLost` and permanently fences further writes. Release is idempotent
+and preserves loss or uncertainty while cleaning up the original handle.
+Session close releases its remaining resources.
+
+The common migrator uses this service with its existing lock name, timeout,
+no-wait, cancellation, and explicit skip policy. It watches ownership and cancels
+guarded work after loss. A fresh check before release prevents stale ownership
+from becoming a success report. Lock loss does not establish database rollback;
+combined migration and release failures retain `ptaherr.ErrOutcomeUnknown`.
+Provider preview locking refuses because the experimental protocol does not
+establish acquisition without writes. Logging, tags, and default CLI integration
+remain required under #4204.
+
+### Provider migration logs and tags
+
+`DatabaseConnection.MigrationLogStore` selects durable event storage on the
+native session, including when the connection has an active execution handle.
+`MigrationTagsStore` selects the active handle's tag storage. An execution
+handle without tag support refuses instead of writing through its parent.
+SQL-backed connections return nil and retain their SQL storage paths.
+
+`MigrationLogRecord` carries stored events. The common migrator retains event
+ordering, attempt pairing, actor provenance, and best-effort logging policy.
+`MigrationTagRecord` carries a movable label and its numeric version. Version
+zero is valid; lookup distinguishes it from absence. Delete reports whether
+its atomic mutation removed a label. Neither store retries an uncertain write.
+
+Both stores read through `MigrationMetadataReader` snapshots. Each
+`MigrationMetadataPage` has a bounded record count, fixed existence, and an
+explicit completion marker. The common reader refuses repeated identities,
+inconsistent pages, and empty nonterminal pages. It closes the snapshot after
+success, cancellation, or failure, and discards partial results on errors.
+Reads do not create storage; preparation validates ownership and layout.
+
+These interfaces and common policies are host contracts. Experimental SDK
+revision 20 defines log and tag RPCs. Host adapters bind them to the negotiated
+session and transaction. A dispatched tag failure prevents commit while leaving
+rollback available. Reader cleanup remains available after execution failure,
+transaction finish, or session close. Cleanup errors are retained and partial
+read results are discarded. Preparation inside a transaction validates existing
+storage and refuses to create it. Published-module adoption and official-engine
+qualification remain required under #4204.
+
+### Provider-owned storage reservations
+
+`catalog.Database.ReservedNames` records positively identified operational
+storage outside desired schema management. Each `catalog.ReservedName` binds
+an engine, provider ID, purpose, and structured identity. A provider declares one
+record for each conflicting object kind. The source and normalized components
+survive catalog JSON snapshots and observation filtering.
+
+Schema comparison refuses desired collisions, foreign keys and discovered
+feature references into reserved storage, and removal of a containing schema.
+Incomplete feature reference discovery refuses comparison when reservations
+exist. Operational storage is not added to the desired schema. These checks do
+not intercept direct SQL execution. Experimental SDK revision 21 transports
+these observations; published-module adoption and official YDB classification
+remain required under #4204.

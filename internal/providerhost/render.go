@@ -72,6 +72,9 @@ func (t *target) change(node ast.Node) (*protocol.Change, error) {
 		}
 		return t.nativeOperation(node.Payload, protocol.NativeOperation_STATEMENT, nil)
 	case *ast.CreateTableNode:
+		if err := t.requireCommonTables(); err != nil {
+			return nil, err
+		}
 		if node == nil {
 			return nil, unsupported("nil table nodes")
 		}
@@ -92,6 +95,9 @@ func (t *target) change(node ast.Node) (*protocol.Change, error) {
 		}
 		return &protocol.Change{Object: ref, Operation: &protocol.Change_CreateTable{CreateTable: table}}, nil
 	case *ast.DropTableNode:
+		if err := t.requireCommonTables(); err != nil {
+			return nil, err
+		}
 		if node == nil {
 			return nil, unsupported("nil table nodes")
 		}
@@ -132,6 +138,9 @@ func (t *target) alter(node *ast.AlterTableNode) (*protocol.Change, error) {
 		}
 		return t.nativeOperation(operation.Payload, protocol.NativeOperation_ALTER_TABLE, ref)
 	case *ast.AddColumnOperation:
+		if err := t.requireCommonTables(); err != nil {
+			return nil, err
+		}
 		if operation == nil {
 			return nil, unsupported("nil alteration")
 		}
@@ -144,6 +153,9 @@ func (t *target) alter(node *ast.AlterTableNode) (*protocol.Change, error) {
 		}
 		change.Operation = &protocol.Change_AddColumn{AddColumn: column}
 	case *ast.DropColumnOperation:
+		if err := t.requireCommonTables(); err != nil {
+			return nil, err
+		}
 		if operation == nil {
 			return nil, unsupported("nil alteration")
 		}
