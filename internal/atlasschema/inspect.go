@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/defaultprivnote"
+	"ptah.run/internal/featurejson"
 	"ptah.run/internal/fileplan"
 	"ptah.run/internal/hashshard"
 	"ptah.run/internal/rolescope"
@@ -57,6 +58,9 @@ type InspectOptions struct {
 	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
+	// NativeJSON preserves the scoped desired model for the named json format.
+	// It uses the selected runtime codecs for objects, facets, and coverage.
+	NativeJSON bool
 	// SuppressRoleCoverageNote omits only Ptah's informational note about
 	// server roles outside the rendered schema scope. Other diagnostics keep
 	// using Diagnostics.
@@ -260,6 +264,13 @@ func renderInspectSchema(
 	dbsch, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, info.Dialect, opts.Runtime)
 	if err != nil {
 		return InspectResult{}, err
+	}
+	if opts.NativeJSON && strings.TrimSpace(opts.Format) == "json" {
+		data, err := featurejson.MarshalIndent(ctx, opts.Runtime.Codecs(), schemaext.Desired, dbsch, "", "  ")
+		if err != nil {
+			return InspectResult{}, err
+		}
+		return InspectResult{Rendered: string(data) + "\n", Schema: dbsch}, nil
 	}
 	report, err := atlasreport.NewSchemaInspectReport(
 		ctx,

@@ -238,10 +238,14 @@ narrower set of schema objects than HCL or SQL. Verify a DBML adoption with
 `ptah schema drift --schema-file schema.dbml` before treating it as the
 desired-schema source.
 
-JSON inspection warns on standard error about object families and properties
-absent from its compact report, such as YDB's object families or a SQLite
-table's `STRICT` and `WITHOUT ROWID` options. See
-[YDB inspection formats](../../databases/ydb/#reading-a-live-database).
+JSON inspection writes Ptah's desired schema model, including provider-owned
+objects, facets, and coverage of the inspected namespaces. Common fields use
+model names such as `Tables`, `Name`, and `Fields`. Feature envelopes identify
+their owner, kind, representation, version, and definition. Providers must
+support conversion to the desired representation; failed conversion or encoding
+returns an error without a partial document. JSON remains diagnostic output,
+not an accepted `--schema-file` input. The Atlas-compatible binary uses its own
+compact JSON report and reports omissions on standard error.
 
 | Output | Can Ptah load it back as a desired schema? | Role |
 | --- | --- | --- |

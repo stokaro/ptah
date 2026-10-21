@@ -48,8 +48,8 @@ func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 		c.Assert(json.Valid([]byte(applied)), qt.IsTrue)
 		c.Assert(applied, qt.Contains, `"outcome": "applied"`)
 		after := f.success(c, "inspect", "--format", "json")
-		c.Assert(after, qt.Contains, `"name":"items"`)
-		c.Assert(after, qt.Contains, `"name":"second"`)
+		c.Assert(after, qt.Contains, `"Name": "items"`)
+		c.Assert(after, qt.Contains, `"Name": "second"`)
 		c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
 	})
 
@@ -111,11 +111,11 @@ func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 		c.Assert(diagnostics, qt.Contains, "UNKNOWN")
 		f.address = strings.Split(f.address, "?")[0]
 		after := f.success(c, "inspect", "--format", "json")
-		c.Assert(after, qt.Contains, `"name":"items"`)
-		c.Assert(after, qt.Not(qt.Contains), `"name":"second"`)
+		c.Assert(after, qt.Contains, `"Name": "items"`)
+		c.Assert(after, qt.Not(qt.Contains), `"Name": "second"`)
 		_, _, code = f.run(c, c.Context(), "apply", "--plan", f.planPath, "--tx-mode", "none", "--auto-approve", "--json")
 		c.Assert(code, qt.Equals, 2)
-		c.Assert(f.success(c, "inspect", "--format", "json"), qt.Not(qt.Contains), `"name":"second"`)
+		c.Assert(f.success(c, "inspect", "--format", "json"), qt.Not(qt.Contains), `"Name": "second"`)
 	})
 	t.Run("cancellation after write preserves uncertainty", func(t *testing.T) {
 		c := qt.New(t)
@@ -141,8 +141,8 @@ func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 		f.assertStopped(c)
 		f.address = strings.Split(f.address, "?")[0]
 		after := f.success(c, "inspect", "--format", "json")
-		c.Assert(after, qt.Contains, `"name":"items"`)
-		c.Assert(after, qt.Not(qt.Contains), `"name":"second"`)
+		c.Assert(after, qt.Contains, `"Name": "items"`)
+		c.Assert(after, qt.Not(qt.Contains), `"Name": "second"`)
 	})
 	t.Run("checksum refusal starts no process", func(t *testing.T) {
 		c := qt.New(t)

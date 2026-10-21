@@ -6,6 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/builtintest"
+	"ptah.run/internal/featurejson"
 )
 
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {
@@ -147,4 +152,19 @@ func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr, qt.Commentf("%s", out))
 		})
 	}
+}
+
+func TestSchemaInspectJSONPreservesSelectedModel(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "live.db")
+	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
+	out, err := runSchema("", "inspect", "--db-url", "sqlite://"+dbPath, "--include", "users", "--format", "json")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	var restored schemamodel.Database
+	c.Assert(featurejson.Unmarshal(c.Context(), builtintest.Runtime().Codecs(), schemaext.Desired, []byte(out), &restored), qt.IsNil)
+	c.Assert(restored.Tables, qt.HasLen, 1)
+	c.Assert(restored.Tables[0].Name, qt.Equals, "users")
+	c.Assert(restored.Fields, qt.HasLen, 2)
+	c.Assert(restored.Fields[0].Name, qt.Equals, "id")
+	c.Assert(restored.Fields[1].Name, qt.Equals, "email")
 }

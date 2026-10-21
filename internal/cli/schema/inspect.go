@@ -194,6 +194,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		Include:             opts.include,
 		Exclude:             opts.exclude,
 		Format:              locals.format,
+		NativeJSON:          true,
 		Diagnostics:         cmd.ErrOrStderr(),
 		ConnectTimeout:      locals.connectTimeout,
 		DevServerDisposable: devServerDisposable,

@@ -332,9 +332,12 @@ in frozen contract and model digests. The local reporting adapter validates
 captured values and supplies omission metadata without payload metrics or an RPC.
 Missing labels remain missing reporting support; the host invents no substitute.
 
-Native JSON inspection uses the common schema format. It warns about omitted
-native objects and facets with owner labels. The shared conversion and codecs
-retain their payloads separately. JSON output does not qualify lossless export.
+Native JSON inspection serializes the scoped desired model through the selected
+codecs, preserving common data, native objects, facets, and bounded coverage.
+This changes the pre-v1 native JSON shape; no compatibility alias is retained.
+Atlas-compatible templates retain the compact report and owner-labeled omission
+diagnostics. JSON is not a schema source and does not qualify source-format
+round trips or planning.
 
 ## Semantic representation conversion
 
