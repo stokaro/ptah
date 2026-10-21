@@ -14,12 +14,12 @@ var ErrSessionLockBusy = errors.New("provider session lock is busy")
 // ErrSessionLockLost means ownership is lost or cannot be established anymore.
 var ErrSessionLockLost = errors.New("provider session lock ownership was lost")
 
-// SessionLock is exclusion owned by the session that acquired it. Check must
+// SessionLock is exclusion owned by the session that acquired it. CheckOwnership must
 // establish current ownership rather than replay an acquisition receipt.
 // Release is idempotent and preserves any earlier loss or uncertain outcome.
 // Session close releases the underlying resources even after a failed release.
 type SessionLock interface {
-	Check(context.Context) error
+	CheckOwnership(context.Context) error
 	Release(context.Context) error
 }
 

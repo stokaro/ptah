@@ -24,7 +24,7 @@ func nativeLock(ctx context.Context, conn Connection, name string, timeout time.
 	if err != nil {
 		return nil, true, err
 	}
-	hold := newSessionHold(held.Check, held.Release, time.Now)
+	hold := newSessionHold(held.CheckOwnership, held.Release, time.Now)
 	return &Lock{name: name, dialect: conn.Info().Dialect, holding: hold, release: func(ctx context.Context) error {
 		err := hold.release(ctx)
 		if errors.Is(err, errSessionEnded) {

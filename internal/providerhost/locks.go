@@ -64,7 +64,7 @@ func (l *sessionLock) request() *protocol.LockRequest {
 	return &protocol.LockRequest{Scope: l.scope, RequestId: rand.Text()}
 }
 
-func (l *sessionLock) Check(ctx context.Context) error {
+func (l *sessionLock) CheckOwnership(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.released {

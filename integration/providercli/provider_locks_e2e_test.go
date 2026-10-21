@@ -60,7 +60,7 @@ func TestProviderMigrationLockExcludesAnotherProcess(t *testing.T) {
 			c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue, qt.Commentf("error: %v", err))
 			c.Assert(providerTablePresent(c, other, "records"), qt.IsFalse)
 			c.Assert(providerTablePresent(c, other, "_revisions"), qt.IsFalse)
-			c.Assert(held.Check(c.Context()), qt.IsNil)
+			c.Assert(held.CheckOwnership(c.Context()), qt.IsNil)
 		})
 	}
 	ctx, cancel := context.WithTimeout(c.Context(), 100*time.Millisecond)

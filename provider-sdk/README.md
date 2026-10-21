@@ -146,8 +146,8 @@ history and live state before another attempt.
 
 The independent SQLite fixture exercises these storage primitives. Native
 migration commands connect history to the same selected runtime as SQL safety
-analysis and execution. Complete published-module acceptance and official-engine
-qualification remain required under #4204.
+analysis and execution. The host and fixture pin a published SDK revision without
+local replacements. Official-engine qualification remains required under #4204.
 
 ## Session-owned locks
 

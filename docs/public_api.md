@@ -5313,7 +5313,7 @@ acquire through its parent session.
 `SessionLocker.TryLock` makes one nonblocking attempt with a fresh handle. Only
 `ErrSessionLockBusy` permits another attempt. An uncertain acquisition matches
 `ptaherr.ErrOutcomeUnknown` and must not be retried. A successful `SessionLock`
-offers `Check` and `Release`. Checks establish current ownership; loss matches
+offers `CheckOwnership` and `Release`. Checks establish current ownership; loss matches
 `ErrSessionLockLost` and permanently fences further writes. Release is idempotent
 and preserves loss or uncertainty while cleaning up the original handle.
 Session close releases its remaining resources.

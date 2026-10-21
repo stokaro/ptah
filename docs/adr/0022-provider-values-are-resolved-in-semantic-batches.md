@@ -925,7 +925,7 @@ are limited to 64 MiB; oversized snapshots are refused without a usable prefix.
 The protocol bounds individual pages instead of imposing that fixture limit.
 Independent process tests cover commit, rollback, immutable snapshots, atomic
 deletions, lost acknowledgments, incompatible layouts, and reader cleanup.
-These tests still require acceptance against a published SDK revision.
+The host and fixture consume the published SDK revision pinned in their modules.
 Official-engine qualification remains a separate requirement under #4204.
 
 
@@ -963,9 +963,9 @@ dialect name; SQL connections retain their dialect checks.
 Process tests drive native up, status, log, tags, and down with default logging
 and locking across transaction modes. They also exercise metadata-only commands,
 destructive-statement refusal and its explicit override, absent metadata reads,
-and trust refusal before provider startup. These are local development checks
-until the host and fixture adopt a published SDK revision. They do not qualify
-read-only lock previews or the official engines.
+and trust refusal before provider startup. They build the independent fixture
+against the published SDK with workspaces disabled. They do not qualify read-only
+lock previews or the official engines.
 
 ## Provider-owned storage remains occupied
 
@@ -990,8 +990,8 @@ common desired-schema export does not declare operational storage. Direct SQL
 is outside this schema-comparison contract.
 
 This changes the experimental contract without aliases or older readers.
-Published-module adoption and native YDB ownership classification remain part
-of #4204. The synthetic subprocess fixture establishes transport and comparison
+Native YDB ownership classification remains part of #4204. The synthetic
+subprocess fixture establishes transport and comparison
 behavior, not official-engine qualification.
 
 ## Common table semantics are required by table workflows

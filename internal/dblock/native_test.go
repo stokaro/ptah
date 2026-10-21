@@ -47,7 +47,7 @@ type nativeLockFixture struct {
 	cleanupBounded  bool
 }
 
-func (*nativeLockFixture) Check(context.Context) error { return nil }
+func (*nativeLockFixture) CheckOwnership(context.Context) error { return nil }
 func (l *nativeLockFixture) Release(ctx context.Context) error {
 	l.releases++
 	l.cleanupCanceled = ctx.Err() != nil
