@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
@@ -1275,8 +1276,8 @@ func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (boo
 		return slices.Contains(columns, name), nil
 	}
 	table := m.metadataTable(m.migrationsTableName())
-	if catalog := m.services().Catalog; catalog != nil {
-		return catalog.ColumnExists(ctx, m.conn, table, name)
+	if metadataCatalog := m.services().Catalog; metadataCatalog != nil {
+		return metadataCatalog.ColumnExists(ctx, m.conn, table, name)
 	}
 	query := sqlutil.Rebind(m.connectionDialect(), migratorext.InformationSchemaColumnsQuery)
 	return migratorext.InformationSchemaColumnExists(ctx, m.conn, query, table.ConfiguredSchema, table, name)
@@ -2564,7 +2565,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		plan := plans[key]
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
 		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[key]); err != nil {
-			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
+			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback(), tx)
 			recorded := m.recordRolledBackBatchFailure(ctx, migration, startedAt[key], err, plan)
 			m.logBatchOutcome(ctx, started, MigrationLogFailed, recorded)
 			return nil, recorded
@@ -2577,7 +2578,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 			return nil, failure
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitMigrationTransaction(tx); err != nil {
 		failure := fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
 		m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
 		return nil, failure
@@ -2896,7 +2897,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 ) error {
 	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
-		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
+		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %w", failure, migration.Version, beginErr)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
@@ -2956,107 +2957,20 @@ func (m *Migrator) applyUpMigrationTransactionalWithPlan(
 	)
 }
 
-func (m *Migrator) applyUpMigrationTransactionalOnSession(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-) error {
-	scoped := *m
+func (m *Migrator) applyUpMigrationTransactionalOnSession(ctx context.Context, migration *Migration, startedAt time.Time) error {
 	timeouts, err := m.effectiveUpTimeouts(migration)
 	if err != nil {
 		return err
 	}
-	// Pre-migration checks already ran in runPreMigrationChecks, before this
-	// migration had any revision row: they read committed state on the pool, so
-	// they cannot execute inside this transaction (the schema executor exposes no
-	// query path) and must not run while the tx holds the only connection of a
-	// single-connection pool.
-	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, m.conn, migration.UpSQL)
-	if err != nil {
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
-		)
-	}
-	txConn := m.conn.WithExecutor(tx)
-
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
-	if err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to apply timeouts for migration %d", migration.Version),
-		)
-	}
-
-	executionCtx := scoped.withTransactionalProgressRecorder(
-		ctx,
-		txConn,
-		migration,
-		startedAt,
-		MigrationDirectionUp,
-	)
-	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
-	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
-		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to apply migration %d", migration.Version),
-		)
-	}
-
-	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
-	}
-	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to verify migration %d", migration.Version),
-		)
-	}
-	if err := m.completeMigrationRevisionOn(ctx, txConn, migration, startedAt); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to record migration %d", migration.Version),
-		)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return m.failMigrationWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.UpSQL,
-			fmt.Sprintf("failed to commit transaction for migration %d", migration.Version),
-		)
-	}
-	m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
-	return nil
+	return m.runTransactionalMigration(ctx, migration, startedAt, transactionMigration{
+		direction: MigrationDirectionUp, timeouts: timeouts, execute: migration.executeUp,
+		verify: (*Migrator).refuseUpCompletionOverUnsafeIndex,
+		record: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+			return m.completeMigrationRevisionOn(ctx, conn, migration, startedAt)
+		},
+		bodyFailure: "failed to apply migration", verifyFailure: "failed to verify migration",
+		recordFailure: "failed to record migration", success: "Applied migration",
+	})
 }
 
 func (m *Migrator) withTransactionalMigrationSession(
@@ -3092,6 +3006,17 @@ func (m *Migrator) withTransactionalMigrationSession(
 	})
 }
 
+// commitMigrationTransaction attempts cleanup after a failed commit. Provider
+// transactions may remain active after a lost RPC. Cleanup preserves the commit
+// error and does not turn a possibly committed transaction into a rolled-back
+// one: some SQL writers return nil when asked to roll back a closed handle.
+func commitMigrationTransaction(tx catalog.SchemaTransaction) error {
+	if err := tx.Commit(); err != nil {
+		return errors.Join(err, tx.Rollback())
+	}
+	return nil
+}
+
 type migrationTransactionRolledBackError struct {
 	version int64
 	cause   error
@@ -3105,8 +3030,8 @@ func (e *migrationTransactionRolledBackError) Unwrap() error {
 	return e.cause
 }
 
-func migrationFailureAfterRollback(version int64, failure, rollbackErr error) error {
-	if rollbackErr != nil && !cancellationEndedTheTransaction(failure, rollbackErr) {
+func migrationFailureAfterRollback(version int64, failure, rollbackErr error, tx catalog.SchemaTransaction) error {
+	if rollbackErr != nil && !cancellationEndedTheTransaction(failure, rollbackErr, tx) {
 		return fmt.Errorf("%w; additionally failed to roll back migration transaction: %w", failure, rollbackErr)
 	}
 	return &migrationTransactionRolledBackError{version: version, cause: failure}
@@ -3115,30 +3040,13 @@ func migrationFailureAfterRollback(version int64, failure, rollbackErr error) er
 // cancellationEndedTheTransaction reports whether a failed rollback still
 // leaves the migration transaction rolled back.
 //
-// Every path that reaches [migrationFailureAfterRollback] is a failure undoing
-// what it started, and none of them issues a COMMIT. So once the failure is the
-// cancellation, the transaction ends rolled back however the rollback answered:
-// database/sql rolls back a transaction whose context is canceled and reports
-// sql.ErrTxDone on the attempt that follows, and where the cancellation tore
-// the connection down first, the server rolls back what that connection held.
-// Both answers come from one interrupted `ptah-compat migrate apply`: `sql:
-// transaction has already been committed or rolled back` on one machine and
-// `conn closed` on another, for the same interrupt at the same statement.
-//
-// Reading either as an unknown outcome records a dirty revision for a migration
-// that changed nothing, and under the Atlas revision format that row survives
-// the discard an ordinary rolled-back failure gets, so the next run refuses to
-// continue past it.
-//
-// An explicit unknown-outcome result from execution or rollback overrides
-// this inference. Provider transactions can outlive a canceled RPC, and an
-// uncertain receipt is not evidence that the transaction ended.
-// A rollback error on an ordinary failure says the transaction was committed OR
-// rolled back, and a commit is the outcome nobody may guess at. What a
-// dialect commits implicitly is answered before this, by the progress the
-// revision recorded: a discard requires that no statement reported any.
-func cancellationEndedTheTransaction(failure, rollbackErr error) bool {
-	return errors.Is(failure, context.Canceled) &&
+// Cancellation is evidence only when the transaction's owner confirms that
+// its begin context ended the transaction. A canceled statement or provider
+// RPC can leave the transaction alive. Explicit uncertainty overrides this
+// evidence, and implicit-commit progress is handled separately by the caller.
+func cancellationEndedTheTransaction(failure, rollbackErr error, tx catalog.SchemaTransaction) bool {
+	evidence, ok := tx.(catalog.CancellationRollback)
+	return ok && evidence.RolledBackByCancellation() &&
 		!errors.Is(failure, ptaherr.ErrOutcomeUnknown) && !errors.Is(rollbackErr, ptaherr.ErrOutcomeUnknown)
 }
 
@@ -3391,105 +3299,20 @@ func (m *Migrator) rollbackMigrationTransactional(
 	return m.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
 }
 
-func (m *Migrator) rollbackMigrationTransactionalOnSession(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	deleteSQL string,
-) error {
-	scoped := *m
+func (m *Migrator) rollbackMigrationTransactionalOnSession(ctx context.Context, migration *Migration, startedAt time.Time, deleteSQL string) error {
 	timeouts, err := m.effectiveDownTimeouts(migration)
 	if err != nil {
 		return err
 	}
-	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, m.conn, migration.DownSQL)
-	if err != nil {
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
-		)
-	}
-	txConn := m.conn.WithExecutor(tx)
-
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
-	if err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to apply timeouts for migration %d", migration.Version),
-		)
-	}
-
-	executionCtx := scoped.withTransactionalProgressRecorder(
-		ctx,
-		txConn,
-		migration,
-		startedAt,
-		MigrationDirectionDown,
-	)
-	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
-	if err := migration.executeDown(executionCtx, txConn, migrationExecutionTransactional); err != nil {
-		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to revert migration %d", migration.Version),
-		)
-	}
-
-	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failRollbackWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
-	}
-	if err := scoped.refuseRollbackCompletionOverUnsafeIndexOn(ctx, txConn, migration); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
-		)
-	}
-
-	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
-		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to record migration reversion %d", migration.Version),
-		)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return m.failRollbackWithDirtyState(
-			ctx,
-			migration,
-			startedAt,
-			err,
-			migration.DownSQL,
-			fmt.Sprintf("failed to commit transaction for migration %d", migration.Version),
-		)
-	}
-
-	m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
-	return nil
+	return m.runTransactionalMigration(ctx, migration, startedAt, transactionMigration{
+		direction: MigrationDirectionDown, timeouts: timeouts, execute: migration.executeDown,
+		verify: (*Migrator).refuseRollbackCompletionOverUnsafeIndexOn,
+		record: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+			return m.deleteMigrationRevisionOn(ctx, conn, migration, deleteSQL)
+		},
+		bodyFailure: "failed to revert migration", verifyFailure: "failed to verify rollback of migration",
+		recordFailure: "failed to record migration reversion", success: "Rolled back migration",
+	})
 }
 
 func (m *Migrator) rollbackMigrationNoTransaction(
@@ -3554,47 +3377,16 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
-	if err := executeSQLOutsideTransaction(recordCtx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
+	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
 	return nil
 }
 
-func (m *Migrator) failMigrationWithDirtyState(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	failure error,
-	sqlText,
-	prefix string,
-) error {
-	return m.failMigrationWithDirtyStateWithMode(
-		ctx,
-		migration,
-		startedAt,
-		failure,
-		sqlText,
-		prefix,
-		MigrationTxModeFile,
-		MigrationDirectionUp,
-	)
-}
-
-// failRollbackWithDirtyState records a failed rollback as dirty state. Ptah
-// keeps the Atlas revision-table schema compatible but does not reproduce the
-// upstream behavior that hides a partially applied rollback behind a clean row.
-func (m *Migrator) failRollbackWithDirtyState(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	failure error,
-	sqlText,
-	prefix string,
-) error {
-	return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
-}
-
+// failRollbackWithDirtyStateWithMode records a failed rollback as dirty state.
+// Ptah keeps the Atlas revision-table schema compatible but does not hide a
+// partially applied rollback behind a clean row.
 func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	ctx context.Context,
 	migration *Migration,
@@ -3643,9 +3435,9 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	failure = &failedMigrationError{version: migration.Version, versionKey: migration.RevisionVersion(), err: failure}
 	if revisionErr != nil {
 		if prefix == "" {
-			return fmt.Errorf("%w; additionally failed to record dirty migration state: %v", failure, revisionErr)
+			return fmt.Errorf("%w; additionally failed to record dirty migration state: %w", failure, revisionErr)
 		}
-		return fmt.Errorf("%s: %w; additionally failed to record dirty migration state: %v", prefix, failure, revisionErr)
+		return fmt.Errorf("%s: %w; additionally failed to record dirty migration state: %w", prefix, failure, revisionErr)
 	}
 	if prefix == "" {
 		return failure

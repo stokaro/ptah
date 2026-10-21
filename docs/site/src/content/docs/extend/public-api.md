@@ -821,6 +821,18 @@ A lost acknowledgment leaves the outcome unknown and never permits replay.
 Uncertain execution, transaction, and history results match
 `ptaherr.ErrOutcomeUnknown`; callers need no provider SDK import to detect them.
 
+Ordinary migration apply and rollback write revisions through this store using
+exact record comparisons. Pending records preserve uncertainty before execution.
+An unconfirmed commit does not overwrite an applied revision. History maintenance,
+logging, provider locks, and default versioned CLI integration remain unfinished.
+
+`catalog.CancellationRollback` exposes transaction-lifetime evidence after
+`Rollback` is attempted. SQL-backed writers report cancellation of the context
+that began their transaction. A canceled statement or provider RPC does not
+establish rollback. The common migrator requires this evidence before treating
+a failed rollback as confirmed through cancellation. Explicit uncertain results
+still prevent that inference.
+
 An executor installed by `WithExecutor` must expose its own transaction-bound
 history store. A missing service is refused, without switching to the parent
 session's unwrapped store. The subprocess adapter prevents commit after a

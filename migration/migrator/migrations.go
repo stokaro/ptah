@@ -828,11 +828,11 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 		downSourcePath:    description,
 	}
 
-	migration.upSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
-		return executeSQLStatements(ctx, conn, upSQL, mode)
+	migration.upSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, _ migrationExecutionMode) error {
+		return executeSQLStatements(ctx, conn, upSQL)
 	}
-	migration.downSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
-		return executeSQLStatements(ctx, conn, downSQL, mode)
+	migration.downSQLFunc = func(ctx context.Context, conn *dbschema.DatabaseConnection, _ migrationExecutionMode) error {
+		return executeSQLStatements(ctx, conn, downSQL)
 	}
 
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
@@ -853,7 +853,7 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 }
 
 // executeSQLStatements splits SQL into individual statements and executes them
-func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, mode migrationExecutionMode) error {
+func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string) error {
 	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
 		return err
 	}
@@ -889,7 +889,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		if err := recordStatementProgressBefore(ctx, event); err != nil {
 			return err
 		}
-		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
+		if err := executeSQLOn(ctx, conn, stmt); err != nil {
 			return sentStatementError(
 				fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, err)),
 				stmt,
@@ -969,7 +969,7 @@ func executeMigrationFileSQL(
 		if migrationStatementAlreadyApplied(ctx, event.Index) {
 			continue
 		}
-		if err := runMigrationFileStatement(ctx, conn, event, hooks, interceptorDirectives, mode); err != nil {
+		if err := runMigrationFileStatement(ctx, conn, event, hooks, interceptorDirectives); err != nil {
 			return err
 		}
 	}
@@ -984,7 +984,6 @@ func runMigrationFileStatement(
 	event StatementEvent,
 	hooks statementExecutionHooks,
 	interceptorDirectives map[string]string,
-	mode migrationExecutionMode,
 ) error {
 	if err := migrationLockLost(ctx); err != nil {
 		return err
@@ -1015,7 +1014,7 @@ func runMigrationFileStatement(
 		}
 	}
 	if !handled {
-		if err := executeBoundedStatement(ctx, conn, event.Statement, mode); err != nil {
+		if err := executeBoundedStatement(ctx, conn, event.Statement); err != nil {
 			return migrationFileStatementError(markedStatementFailure(ctx, err), event)
 		}
 	}
@@ -1137,25 +1136,9 @@ func (e *StatementObservationError) Unwrap() error {
 	return e.Err
 }
 
-func executeMigrationStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, mode migrationExecutionMode) error {
-	if mode == migrationExecutionTransactional {
-		return conn.Writer().ExecuteSQL(ctx, stmt)
-	}
-	return executeSQLOutsideTransaction(ctx, conn, stmt)
-}
-
-func executeSQLOutsideTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, args ...any) error {
-	if conn.Writer().IsDryRun() {
-		return executeSQLOn(ctx, conn, sql, args...)
-	}
-
-	// Deliberate transaction escape hatch. This is used only for migrations
-	// marked no_transaction, where the database rejects transactional execution
-	// (for example PostgreSQL ALTER TYPE ADD VALUE followed by using that value).
-	_, err := conn.ExecContext(ctx, sql, args...)
-	return err
-}
-
+// executeSQLOn uses the selected execution handle. Native providers expose
+// receipts rather than database/sql results; transaction and dry-run executors
+// must remain selected for both SQL-backed and native connections.
 func executeSQLOn(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, args ...any) error {
 	return conn.Writer().ExecuteSQL(ctx, sql, args...)
 }

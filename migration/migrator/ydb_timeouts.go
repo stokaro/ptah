@@ -91,10 +91,9 @@ func executeBoundedStatement(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	stmt string,
-	mode migrationExecutionMode,
 ) error {
 	queryCtx, done, timeout := boundedQueryContext(ctx)
-	err := executeMigrationStatement(queryCtx, conn, stmt, mode)
+	err := executeSQLOn(queryCtx, conn, stmt)
 	if timedOut := done(); err == nil || !timedOut {
 		return err
 	}

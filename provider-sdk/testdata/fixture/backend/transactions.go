@@ -133,6 +133,9 @@ func (p *Provider) FinishTransaction(ctx context.Context, request *protocol.Fini
 	if record.tx == nil {
 		return &protocol.TransactionResult{Outcome: record.outcome}, nil
 	}
+	if s.fault == "lost-before-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
+		return nil, fmt.Errorf("fixture lost commit request before execution")
+	}
 	record.outcome = finishDatabaseTransaction(record.tx, request.GetAction())
 	record.tx, s.active = nil, ""
 	if s.fault == "lost-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {

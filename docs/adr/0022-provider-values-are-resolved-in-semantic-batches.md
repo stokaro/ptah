@@ -650,7 +650,8 @@ The common migrator reads provider history through the same ordering, progress,
 identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
-sessions. Versioned writes and lock ownership remain unfinished under #4204.
+sessions. Ordinary revision writes use the same typed store. History maintenance,
+lock ownership, and default versioned CLI integration remain unfinished under #4204.
 
 ## Preserve uncertain outcomes across the host boundary
 
@@ -669,3 +670,45 @@ not evidence that no write occurred.
 Rollback failures retain their error causes. An explicit uncertain execution or
 rollback receipt overrides the SQL cancellation inference; cancellation alone
 must not turn that receipt into proof that the transaction rolled back.
+
+
+## Bind cancellation evidence to the transaction owner
+
+The common migrator accepts cancellation-based rollback evidence only through
+`catalog.CancellationRollback`. SQL-backed writers retain their transaction's
+begin context and record its cancellation when rollback is attempted. A context
+canceled after commit does not provide this evidence. Provider transactions do
+not implement the interface: their lifetime belongs to the remote session,
+and an RPC's cancellation does not end that transaction.
+
+The rollback result remains authoritative when it succeeds. When it fails,
+the absence of owner evidence leaves the outcome unconfirmed, even if the
+execution error contains `context.Canceled`. An explicit unknown-outcome marker
+also prevents cancellation inference. Dialect rules still account for schema
+statements that implicitly committed before rollback.
+
+
+## Record revision transitions through typed storage
+
+The common migrator writes pending, in-flight, checkpoint, failed, and applied
+records through the active history store. Rollback removes the exact revision
+through that store. Each mutation reads complete history, validates identities
+and progress, and compares the entire prior record before replacement. Conflicts
+and uncertain write acknowledgments are not retried.
+
+A pending provider revision starts with an unknown-outcome marker. Successful
+execution and history completion clear it. An unconfirmed transaction outcome
+leaves durable state untouched: commit may already have stored an applied
+revision or deleted a rolled-back revision. Failed commits attempt rollback to
+release a provider transaction that may still be active. This cleanup retains
+the commit error and does not itself establish the transaction outcome.
+Confirmed atomic rollback retains
+only progress committed before this attempt, using the provider's established
+transactional-DDL capability rather than a built-in dialect name.
+
+Independent process checks exercise native revision storage with explicit
+caller options that disable migration logging and locks. These options isolate
+unfinished service integration; they do not change the defaults or qualify a
+complete versioned workflow. The fixture does not yet implement Atlas storage.
+Baseline, set, repair, logging, tags, data-only transactions, locking, and Atlas
+storage qualification remain required before this history slice can merge.

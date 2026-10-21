@@ -99,10 +99,12 @@ type PostgreSQLWriter struct {
 }
 
 type postgresTransactionWriter struct {
-	mu     sync.Mutex
-	tx     *sql.Tx
-	schema string
-	dryRun bool
+	beginContext     context.Context
+	canceledRollback bool
+	mu               sync.Mutex
+	tx               *sql.Tx
+	schema           string
+	dryRun           bool
 }
 
 // NewPostgreSQLWriter creates a new PostgreSQL schema writer
@@ -220,7 +222,7 @@ func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (catalog.Schema
 	if err != nil {
 		return nil, err
 	}
-	return &postgresTransactionWriter{tx: tx, schema: w.schema}, nil
+	return &postgresTransactionWriter{beginContext: ctx, tx: tx, schema: w.schema}, nil
 }
 
 // ExecuteSQL executes SQL against the transaction.
@@ -325,6 +327,7 @@ func (w *postgresTransactionWriter) Rollback() error {
 		return nil
 	}
 	err := w.tx.Rollback()
+	w.canceledRollback = w.beginContext != nil && w.beginContext.Err() != nil
 	w.tx = nil
 	return err
 }
@@ -3132,4 +3135,12 @@ func (w *PostgreSQLWriter) SetDryRun(dryRun bool) {
 // IsDryRun returns whether dry run mode is enabled
 func (w *PostgreSQLWriter) IsDryRun() bool {
 	return w.dryRun
+}
+
+// RolledBackByCancellation reports cancellation of the database/sql transaction
+// context observed after Rollback. A canceled statement context is insufficient.
+func (w *postgresTransactionWriter) RolledBackByCancellation() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.canceledRollback
 }

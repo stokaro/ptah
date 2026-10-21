@@ -34,10 +34,12 @@ type Writer struct {
 }
 
 type transactionWriter struct {
-	mu     sync.Mutex
-	tx     *sql.Tx
-	schema string
-	dryRun bool
+	beginContext     context.Context
+	canceledRollback bool
+	mu               sync.Mutex
+	tx               *sql.Tx
+	schema           string
+	dryRun           bool
 	// session is the connection-level state this transaction borrowed, or nil
 	// when it borrowed none. It is verified before the commit and given back
 	// after the transaction ends, whichever way it ends.
@@ -118,7 +120,7 @@ func (w *Writer) BeginTransaction(ctx context.Context) (catalog.SchemaTransactio
 	if err != nil {
 		return nil, err
 	}
-	return &transactionWriter{tx: tx, schema: w.schema}, nil
+	return &transactionWriter{beginContext: ctx, tx: tx, schema: w.schema}, nil
 }
 
 // ExecuteSQL executes SQL against the transaction.
@@ -179,6 +181,7 @@ func (w *transactionWriter) Rollback() error {
 		return nil
 	}
 	err := w.tx.Rollback()
+	w.canceledRollback = w.beginContext != nil && w.beginContext.Err() != nil
 	w.tx = nil
 	w.session.restore()
 	return err
@@ -304,7 +307,7 @@ func (w *Writer) dropAllTables(ctx context.Context, includeRevisionTable bool) (
 	if err != nil {
 		return err
 	}
-	txWriter := &transactionWriter{tx: tx, schema: w.schema}
+	txWriter := &transactionWriter{beginContext: ctx, tx: tx, schema: w.schema}
 
 	schema := w.cleanupSchema()
 	for _, object := range objects {
@@ -537,3 +540,11 @@ func (w *Writer) SetDryRun(dryRun bool) { w.dryRun = dryRun }
 
 // IsDryRun reports whether dry-run mode is active.
 func (w *Writer) IsDryRun() bool { return w.dryRun }
+
+// RolledBackByCancellation reports cancellation of the database/sql transaction
+// context observed after Rollback. A canceled statement context is insufficient.
+func (w *transactionWriter) RolledBackByCancellation() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.canceledRollback
+}

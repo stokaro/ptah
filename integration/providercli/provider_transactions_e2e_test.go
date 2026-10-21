@@ -196,3 +196,21 @@ func TestProviderExecutionRefusalDoesNotBecomeUnknown(t *testing.T) {
 	c.Assert(execoutcome.Unknown(err), qt.IsFalse)
 	c.Assert(providerTablePresent(c, connection, "refused"), qt.IsFalse)
 }
+
+func TestProviderTransactionOutlivesCanceledBeginRPC(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	connection, _ := transactionConnection(c, host, "")
+	ctx, cancel := context.WithCancel(c.Context())
+	c.Cleanup(cancel)
+	tx, err := connection.SchemaWriter().BeginTransaction(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = tx.Rollback() })
+	cancel()
+	// A fresh RPC still reaches the same live database transaction.
+	c.Assert(tx.ExecuteSQL(c.Context(), `CREATE TABLE "after_cancel" ("id" INTEGER);`), qt.IsNil)
+	_, inferredRollback := tx.(catalog.CancellationRollback)
+	c.Assert(inferredRollback, qt.IsFalse)
+	c.Assert(tx.Rollback(), qt.IsNil)
+	c.Assert(providerTablePresent(c, connection, "after_cancel"), qt.IsFalse)
+}

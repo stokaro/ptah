@@ -1570,7 +1570,7 @@ func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) 
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-	if err := executeSQLOutsideTransaction(
+	if err := executeSQLOn(
 		recordCtx,
 		m.conn,
 		query,
@@ -1839,6 +1839,9 @@ func (m *Migrator) restartMigrationRevisionOn(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	if handled, err := m.restartProviderRevision(ctx, conn, migration, startedAt, alreadyApplied); handled {
+		return err
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.restartAtlasMigrationRevisionOn(ctx, conn, migration, startedAt, alreadyApplied)
 	}
@@ -1891,6 +1894,9 @@ func (m *Migrator) beginMigrationRevisionOn(
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
+	}
+	if handled, err := m.beginProviderRevision(ctx, conn, migration, startedAt); handled {
+		return err
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
@@ -1951,6 +1957,9 @@ func (m *Migrator) completeMigrationRevisionOn(
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
+	}
+	if handled, err := m.completeProviderRevision(ctx, conn, migration, startedAt); handled {
+		return err
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.completeAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
@@ -2014,6 +2023,9 @@ func (m *Migrator) checkpointMigrationRevisionOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	if handled, err := m.checkpointProviderRevision(ctx, conn, migration, startedAt, event, direction); handled {
+		return err
+	}
 	query, args := m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
 	return executeSQLOn(ctx, conn, query, args...)
 }
@@ -2072,6 +2084,9 @@ func (m *Migrator) markMigrationStatementInFlightOn(
 	event StatementEvent,
 	direction MigrationDirection,
 ) error {
+	if handled, err := m.markProviderStatementInFlight(ctx, conn, migration, startedAt, event, direction); handled {
+		return err
+	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.failMigrationSQL())
 	statement := revisiontext.ValidUTF8(event.Statement)
 	if m.revisionTableFormat.isAtlas() {
@@ -2139,11 +2154,14 @@ func (m *Migrator) beginRollbackRevision(
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
+	if handled, err := m.beginProviderRollback(ctx, migration, startedAt); handled {
+		return err
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.beginAtlasRollbackRevision(ctx, migration, startedAt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -2165,7 +2183,7 @@ func (m *Migrator) beginAtlasRollbackRevision(
 	startedAt time.Time,
 ) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginRollbackSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -2248,11 +2266,14 @@ func (m *Migrator) failMigrationRevisionWithMode(
 		statement:   stmt,
 		failedIndex: failedIndex,
 	}
+	if handled, err := m.failProviderRevision(recordCtx, failed, applied, txMode); handled {
+		return err
+	}
 	if m.runsQueriesOnTheirOwn() {
 		return m.ydbFailureRecord(failed, applied).run(recordCtx)
 	}
 	query, args := m.failedRevisionStatement(failed, applied)
-	return executeSQLOutsideTransaction(recordCtx, m.conn, query, args...)
+	return executeSQLOn(recordCtx, m.conn, query, args...)
 }
 
 // failedRevision is what a failure record writes, apart from how many of the
@@ -3495,7 +3516,7 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
 			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
 		}
-		if err := executeBoundedStatement(ctx, executionConn, stmt, migrationExecutionNoTransaction); err != nil {
+		if err := executeBoundedStatement(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
@@ -3586,7 +3607,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 	}
 	if !m.forceAppliedReplacesRow() {
 		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-		if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
+		if err := executeSQLOn(ctx, m.conn, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
 			return err
 		}
 	}
@@ -3594,7 +3615,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 		return m.forceAppliedAtlasMigration(ctx, migration)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3612,7 +3633,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
 	total := m.migrationStatementCount(migration.UpSQL)
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3681,7 +3702,7 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 		return m.forceAppliedAtlasMigrationClickHouse(ctx, migration)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedPtahUpdateSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,
@@ -3699,7 +3720,7 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 func (m *Migrator) forceAppliedAtlasMigrationClickHouse(ctx context.Context, migration *Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedAtlasUpdateSQL())
 	total := m.migrationStatementCount(migration.UpSQL)
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
 		m.conn,
 		query,

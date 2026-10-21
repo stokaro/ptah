@@ -125,7 +125,7 @@ func TestExecuteSQLStatements_StopsWhenTheLockIsLost(t *testing.T) {
 	c := qt.New(t)
 	conn := openLockedSQLite(c)
 
-	err := executeSQLStatements(lostLockContext, conn, "CREATE TABLE a (id INTEGER);", migrationExecutionNoTransaction)
+	err := executeSQLStatements(lostLockContext, conn, "CREATE TABLE a (id INTEGER);")
 
 	c.Assert(err, qt.ErrorIs, error(lostMigrationLock))
 	c.Assert(sqliteTables(c, conn), qt.Equals, 0)

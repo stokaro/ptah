@@ -4291,10 +4291,19 @@ record means insert only if absent. Lost acknowledgments never permit replay.
 The subprocess adapter shares the transaction handle with schema execution.
 A dispatched history failure prevents commit. Uncertain execution, transaction,
 and history results match `ptaherr.ErrOutcomeUnknown` without requiring callers
-to import the provider SDK. The common migrator reads these
-records through its existing status, progress, and identity checks. Versioned
-execution, session-owned locks, and official-provider qualification remain
-required work in #4204.
+to import the provider SDK. The common migrator reads and writes these
+records through its existing execution, status, progress, and identity checks.
+Ordinary apply and rollback use exact record comparisons. A pending revision
+records uncertainty before execution; an unconfirmed commit never overwrites
+a durable applied revision. History maintenance, logging, session-owned locks,
+and default versioned CLI integration remain required work in #4204.
+
+`catalog.CancellationRollback` exposes transaction-lifetime evidence after
+`Rollback` is attempted. SQL-backed writers report cancellation of the context
+that began their transaction. A canceled statement or provider RPC does not
+establish rollback. The common migrator requires this evidence before treating
+a failed rollback as confirmed through cancellation. Explicit uncertain results
+still prevent that inference.
 
 `dbschema.DatabaseConnection.WithSession` pins one physical database session
 for a callback and rebinds the dialect reader, writer, and SQL runner to it.

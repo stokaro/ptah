@@ -1065,6 +1065,20 @@ type SchemaTransaction interface {
 	Rollback() error
 }
 
+// CancellationRollback reports evidence from the transaction's own lifetime,
+// after Rollback has been attempted. A true result means cancellation of the
+// context that began this transaction ended it without a commit attempt. It
+// does not imply that schema statements with implicit commits were undone.
+//
+// An execution RPC or statement context can be canceled while its transaction
+// stays open. Implementations must not infer this evidence from that context.
+// Transactions without this interface provide no cancellation-based evidence;
+// callers must use the result of Rollback itself.
+type CancellationRollback interface {
+	SchemaTransaction
+	RolledBackByCancellation() bool
+}
+
 // Function represents a custom function read from the database.
 type Function struct {
 	// Facets carries typed settings owned by feature providers.

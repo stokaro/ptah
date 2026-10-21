@@ -109,7 +109,7 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 		case noTransactionPrefixDurable:
 			continue
 		case noTransactionPrefixReplay:
-			if err := executeSQLOutsideTransaction(ctx, executionConn, statement); err != nil {
+			if err := executeSQLOn(ctx, executionConn, statement); err != nil {
 				return fmt.Errorf(
 					"migration %d cannot restore session state from committed statement %d before resume: %w",
 					migration.Version,

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/url"
 	"testing"
 	"time"
 
@@ -238,4 +239,178 @@ func TestProviderHistoryLostTransactionReceiptPreventsCommit(t *testing.T) {
 	c.Assert(tx.Rollback(), qt.IsNil)
 	c.Assert(readProviderHistory(c, store).Records, qt.HasLen, 0)
 	c.Assert(providerTablePresent(c, conn, "uncertain"), qt.IsFalse)
+}
+
+// These tests qualify revision writes before provider locking and migration-log
+// storage are wired. Explicit caller options isolate that unfinished work;
+// default workflows must retain both services.
+func TestProviderHistoryRunsCommonMigratorUpAndDown(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	for _, mode := range []migrator.MigrationTxMode{migrator.MigrationTxModeFile, migrator.MigrationTxModeNone, migrator.MigrationTxModeAll} {
+		t.Run(string(mode), func(t *testing.T) {
+			c := qt.New(t)
+			conn, _ := transactionConnection(c, host, "")
+			migration := migrator.CreateMigrationFromSQL(1, "records", `CREATE TABLE "records" ("id" INTEGER);`, `DROP TABLE "records";`)
+			runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+				WithMigrationsTable("main", "_revisions").
+				WithTransactionMode(mode).WithMigrationLog(false).WithoutMigrationLock()
+			c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(providerTablePresent(c, conn, "records"), qt.IsTrue)
+			rows, err := runner.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(rows, qt.HasLen, 1)
+			c.Assert(rows[0].State, qt.Equals, "applied")
+			c.Assert(rows[0].Applied, qt.Equals, 1)
+			c.Assert(rows[0].StatementOutcomeUnknown(), qt.IsFalse)
+			c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+			c.Assert(runner.MigrateDown(c.Context()), qt.IsNil)
+			c.Assert(providerTablePresent(c, conn, "records"), qt.IsFalse)
+			store, err := conn.HistoryStore()
+			c.Assert(err, qt.IsNil)
+			snapshot, err := store.Read(c.Context(), dbschema.HistoryTable{Schema: "main", Name: "_revisions", Format: dbschema.NativeHistory})
+			c.Assert(err, qt.IsNil)
+			c.Assert(snapshot.Records, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestProviderHistoryUnknownCommitDoesNotOverwriteAppliedRevision(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, _ := transactionConnection(c, host, "lost-commit")
+	migration := migrator.CreateMigrationFromSQL(1, "committed", `CREATE TABLE "committed" ("id" INTEGER);`, `DROP TABLE "committed";`)
+	runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+		WithMigrationsTable("main", "_revisions").WithTransactionMode(migrator.MigrationTxModeFile).
+		WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(providerTablePresent(c, conn, "committed"), qt.IsTrue)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].State, qt.Equals, "applied")
+	c.Assert(rows[0].Error, qt.Equals, "")
+	c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+}
+
+func TestProviderHistoryLostPendingReceiptStopsBeforeSQL(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, _ := transactionConnection(c, host, "lost-history")
+	migration := migrator.CreateMigrationFromSQL(1, "blocked", `CREATE TABLE "blocked" ("id" INTEGER);`, `DROP TABLE "blocked";`)
+	runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+		WithMigrationsTable("main", "_revisions").WithTransactionMode(migrator.MigrationTxModeFile).
+		WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(providerTablePresent(c, conn, "blocked"), qt.IsFalse)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].StatementOutcomeUnknown(), qt.IsTrue)
+	c.Assert(runner.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNotNil)
+	c.Assert(providerTablePresent(c, conn, "blocked"), qt.IsFalse)
+}
+
+func TestProviderHistoryRecordsConfirmedAndUnconfirmedRollback(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	for _, test := range []struct {
+		name    string
+		fault   string
+		body    string
+		state   string
+		unknown bool
+	}{
+		{"confirmed refusal", "reject", `CREATE TABLE "recovery" ("id" INTEGER);`, "failed", false},
+		{"confirmed rollback after partial execution", "", `CREATE TABLE "recovery" ("id" INTEGER); CREATE TABLE "recovery" ("id" INTEGER);`, "failed", false},
+		{"lost rollback receipt", "reject-rollback", `CREATE TABLE "recovery" ("id" INTEGER); DROP TABLE refused;`, "pending", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, _ := transactionConnection(c, host, test.fault)
+			migration := migrator.CreateMigrationFromSQL(1, "recovery", test.body, `DROP TABLE "recovery";`)
+			runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+				WithMigrationsTable("main", "_revisions").WithTransactionMode(migrator.MigrationTxModeFile).
+				WithMigrationLog(false).WithoutMigrationLock()
+			c.Assert(runner.MigrateUp(c.Context()), qt.IsNotNil)
+			c.Assert(providerTablePresent(c, conn, "recovery"), qt.IsFalse)
+			rows, err := runner.GetRevisions(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Assert(rows, qt.HasLen, 1)
+			c.Assert(rows[0].State, qt.Equals, test.state)
+			c.Assert(rows[0].Applied, qt.Equals, 0)
+			c.Assert(rows[0].StatementOutcomeUnknown(), qt.Equals, test.unknown)
+		})
+	}
+}
+
+func TestProviderHistoryRetriesAConfirmedNonTransactionalRefusal(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, address := transactionConnection(c, host, "reject")
+	migration := migrator.CreateMigrationFromSQL(1, "retry", `CREATE TABLE "retry" ("id" INTEGER);`, `DROP TABLE "retry";`)
+	migrations := migrator.NewRegisteredMigrationProvider(migration)
+	runner := migrator.NewMigrator(conn, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeNone).WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.ErrorIs, provider.ErrExecution)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].State, qt.Equals, "failed")
+	c.Assert(rows[0].StatementOutcomeUnknown(), qt.IsFalse)
+	cleanAddress, err := url.Parse(address)
+	c.Assert(err, qt.IsNil)
+	cleanAddress.RawQuery = ""
+	fresh := connectTransactionAddress(c, host, cleanAddress.String())
+	retry := migrator.NewMigrator(fresh, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeNone).WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(retry.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+	c.Assert(providerTablePresent(c, fresh, "retry"), qt.IsTrue)
+	rows, err = retry.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].State, qt.Equals, "applied")
+}
+
+func TestProviderHistoryUnknownRollbackCommitPreservesDeletion(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, address := transactionConnection(c, host, "")
+	migration := migrator.CreateMigrationFromSQL(1, "removed", `CREATE TABLE "removed" ("id" INTEGER);`, `DROP TABLE "removed";`)
+	migrations := migrator.NewRegisteredMigrationProvider(migration)
+	runner := migrator.NewMigrator(conn, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeFile).WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.IsNil)
+	faultAddress, err := url.Parse(address)
+	c.Assert(err, qt.IsNil)
+	faultAddress.RawQuery = url.Values{"fault": {"lost-commit"}}.Encode()
+	faulty := connectTransactionAddress(c, host, faultAddress.String())
+	rollback := migrator.NewMigrator(faulty, migrations).WithMigrationsTable("main", "_revisions").
+		WithTransactionMode(migrator.MigrationTxModeFile).WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(rollback.MigrateDown(c.Context()), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(providerTablePresent(c, conn, "removed"), qt.IsFalse)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 0)
+}
+
+func TestProviderHistoryFailedCommitReleasesTheLiveTransaction(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, _ := transactionConnection(c, host, "lost-before-commit")
+	migration := migrator.CreateMigrationFromSQL(1, "unfinished", `CREATE TABLE "unfinished" ("id" INTEGER);`, `DROP TABLE "unfinished";`)
+	runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).
+		WithMigrationsTable("main", "_revisions").WithTransactionMode(migrator.MigrationTxModeFile).
+		WithMigrationLog(false).WithoutMigrationLock()
+	c.Assert(runner.MigrateUp(c.Context()), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(providerTablePresent(c, conn, "unfinished"), qt.IsFalse)
+	rows, err := runner.GetRevisions(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.HasLen, 1)
+	c.Assert(rows[0].StatementOutcomeUnknown(), qt.IsTrue)
+	// Another transaction on this session proves cleanup released the active
+	// handle. The commit error still requires durable-state recovery.
+	tx, err := conn.SchemaWriter().BeginTransaction(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.Rollback(), qt.IsNil)
 }
