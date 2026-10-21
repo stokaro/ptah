@@ -4698,6 +4698,86 @@ func (x *SourceModelValue) GetSource() *SourceTrace {
 	return nil
 }
 
+// ConvertValues interprets a complete captured batch in the other schema
+// representation without a session. Source normalization is context, not proof
+// that the owner may skip validation. Conversion cannot rename an object or
+// establish inspection knowledge.
+type ConvertValuesRequest struct {
+	state          protoimpl.MessageState    `protogen:"open.v1"`
+	Engine         string                    `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	TargetFeatures []string                  `protobuf:"bytes,2,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	From           ValueInput_Representation `protobuf:"varint,3,opt,name=from,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"from,omitempty"`
+	To             ValueInput_Representation `protobuf:"varint,4,opt,name=to,proto3,enum=ptah.provider.experimental.ValueInput_Representation" json:"to,omitempty"`
+	Values         []*NormalizedValue        `protobuf:"bytes,5,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ConvertValuesRequest) Reset() {
+	*x = ConvertValuesRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConvertValuesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConvertValuesRequest) ProtoMessage() {}
+
+func (x *ConvertValuesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConvertValuesRequest.ProtoReflect.Descriptor instead.
+func (*ConvertValuesRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ConvertValuesRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *ConvertValuesRequest) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *ConvertValuesRequest) GetFrom() ValueInput_Representation {
+	if x != nil {
+		return x.From
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ConvertValuesRequest) GetTo() ValueInput_Representation {
+	if x != nil {
+		return x.To
+	}
+	return ValueInput_REPRESENTATION_UNSPECIFIED
+}
+
+func (x *ConvertValuesRequest) GetValues() []*NormalizedValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -5077,7 +5157,13 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\tPlacement\x12\x19\n" +
 	"\x15PLACEMENT_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rNATIVE_OBJECT\x10\x01\x12\t\n" +
-	"\x05FACET\x10\x022\xf7\x06\n" +
+	"\x05FACET\x10\x02\"\xae\x02\n" +
+	"\x14ConvertValuesRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12'\n" +
+	"\x0ftarget_features\x18\x02 \x03(\tR\x0etargetFeatures\x12I\n" +
+	"\x04from\x18\x03 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x04from\x12E\n" +
+	"\x02to\x18\x04 \x01(\x0e25.ptah.provider.experimental.ValueInput.RepresentationR\x02to\x12C\n" +
+	"\x06values\x18\x05 \x03(\v2+.ptah.provider.experimental.NormalizedValueR\x06values2\xe8\a\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -5087,7 +5173,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\n" +
 	"AnalyzeSQL\x12-.ptah.provider.experimental.AnalyzeSQLRequest\x1a'.ptah.provider.experimental.SQLAnalysis\x12j\n" +
 	"\fDecodeSource\x12/.ptah.provider.experimental.DecodeSourceRequest\x1a).ptah.provider.experimental.DecodedSource\x12s\n" +
-	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12\\\n" +
+	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12o\n" +
+	"\rConvertValues\x120.ptah.provider.experimental.ConvertValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.ExecutionBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
 var (
@@ -5103,7 +5190,7 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(YAMLSourceKey_Scope)(0),            // 0: ptah.provider.experimental.YAMLSourceKey.Scope
 	(IdentifierRules_Comparison)(0),     // 1: ptah.provider.experimental.IdentifierRules.Comparison
@@ -5172,6 +5259,7 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(*DecodedSourceDocument)(nil),       // 64: ptah.provider.experimental.DecodedSourceDocument
 	(*DecodedSourceFragment)(nil),       // 65: ptah.provider.experimental.DecodedSourceFragment
 	(*SourceModelValue)(nil),            // 66: ptah.provider.experimental.SourceModelValue
+	(*ConvertValuesRequest)(nil),        // 67: ptah.provider.experimental.ConvertValuesRequest
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	14,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
@@ -5269,29 +5357,34 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	10,  // 92: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
 	40,  // 93: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
 	53,  // 94: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
-	12,  // 95: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	19,  // 96: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	21,  // 97: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	22,  // 98: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	28,  // 99: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	33,  // 100: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	62,  // 101: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	37,  // 102: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	31,  // 103: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	13,  // 104: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	20,  // 105: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	11,  // 106: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	23,  // 107: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	30,  // 108: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	34,  // 109: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	63,  // 110: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	39,  // 111: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	32,  // 112: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	104, // [104:113] is the sub-list for method output_type
-	95,  // [95:104] is the sub-list for method input_type
-	95,  // [95:95] is the sub-list for extension type_name
-	95,  // [95:95] is the sub-list for extension extendee
-	0,   // [0:95] is the sub-list for field type_name
+	6,   // 95: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
+	6,   // 96: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
+	40,  // 97: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
+	12,  // 98: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	19,  // 99: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	21,  // 100: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	22,  // 101: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	28,  // 102: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	33,  // 103: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	62,  // 104: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	37,  // 105: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	67,  // 106: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	31,  // 107: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	13,  // 108: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	20,  // 109: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	11,  // 110: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	23,  // 111: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	30,  // 112: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	34,  // 113: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	63,  // 114: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	39,  // 115: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	39,  // 116: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	32,  // 117: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	108, // [108:118] is the sub-list for method output_type
+	98,  // [98:108] is the sub-list for method input_type
+	98,  // [98:98] is the sub-list for extension type_name
+	98,  // [98:98] is the sub-list for extension extendee
+	0,   // [0:98] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -5339,7 +5432,7 @@ func file_protocol_experimental_provider_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   56,
+			NumMessages:   57,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

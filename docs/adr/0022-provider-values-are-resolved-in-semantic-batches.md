@@ -320,9 +320,32 @@ fixture proves transport, bounded native capture, codecs, and local coverage
 after process shutdown. It does not implement SQLite retention or qualify an
 official engine.
 
+## Semantic representation conversion
+
+`ConvertValues` is an optional offline owner service. It converts a complete
+batch between negotiated desired and observed models. The host retains the
+normalization metadata privately and clones it with the captured value. The
+persistent wire format still contains source data only; decoding always resolves
+it with the owner.
+
+The conversion request carries a captured target profile. Mixed profiles are
+refused before dispatch. The owner validates payload semantics again; cached
+projections cannot authorize skipping that work. Destination formats and defaults
+may differ. Ordered IDs, kinds, source identities, and normalized identity tuples
+must survive, while every destination requirement stays within the profile.
+Both SDK boundaries refuse malformed or partial results. Cancellation discards
+the batch even when a service returns a result afterward.
+
+The host registers paired model kinds under the selected engine's conversion
+service. The shared schema pipeline retains object and facet placement and
+converts coverage definitions without widening their knowledge. No conversion
+response supplies new coverage. This completes a prerequisite for export;
+request selector binding remains required before native CLI inspection accepts
+model-bearing snapshots.
+
 ## Consequences
 
-Experimental revision 8 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 9 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic

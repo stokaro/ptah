@@ -32,6 +32,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -176,9 +177,32 @@ omission from null and zero, and refuses unknown or duplicate fields. The fixtur
 SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
 comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
+## Desired and observed conversion
+
+The optional `values.convert` service uses a `ValueConverter` alongside
+`values.normalize`. It receives one complete batch, its source and destination
+representations, and the captured target features. No session is needed.
+
+The owner interprets source payloads again. Supplied canonical projections are
+context, not proof of validation. Destination schema versions, encodings,
+definition digests, payloads, and canonical formats follow the destination model.
+The ordered IDs, model kinds, source identities, and normalized identity tuples
+must remain unchanged. Required features may change only within the selected
+profile. An error, cancellation, or incomplete response discards the whole batch.
+
+The host registers conversion only for advertised services and paired desired
+and observed models. A batch mixing captured engine or feature profiles is
+refused. Conversion cannot establish inspection coverage. The shared conversion
+pipeline retains bounded knowledge, object identities, and facet placement;
+unknown namespaces remain unknown. Clone, encoding, and equality remain local.
+
+This service does not resolve schema selectors or implement contextual
+comparison and planning. Native CLI inspection of model-bearing snapshots still
+requires owner scope binding.
+
 ## Captured extension sources
 
-Experimental revision 8 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 9 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

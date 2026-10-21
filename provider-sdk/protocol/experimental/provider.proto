@@ -16,6 +16,7 @@ service Provider {
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc DecodeSource(DecodeSourceRequest) returns (DecodedSource);
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
+  rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -501,4 +502,16 @@ message SourceModelValue {
   // Provenance resolves against the original captured fragment, never output
   // synthesized by the provider. Even an inherited default has a trace.
   SourceTrace source = 3;
+}
+
+// ConvertValues interprets a complete captured batch in the other schema
+// representation without a session. Source normalization is context, not proof
+// that the owner may skip validation. Conversion cannot rename an object or
+// establish inspection knowledge.
+message ConvertValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  ValueInput.Representation from = 3;
+  ValueInput.Representation to = 4;
+  repeated NormalizedValue values = 5;
 }
