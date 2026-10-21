@@ -151,7 +151,19 @@ func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest)
 	if !s.hasEngine(request.GetEngine()) {
 		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
 	}
-	return s.server.Sessions.Open(ctx, request)
+	result, err := s.server.Sessions.Open(ctx, proto.CloneOf(request))
+	if err != nil {
+		return nil, err
+	}
+	if err := provider.ValidateSession(request.GetEngine(), result); err != nil {
+		if result.GetId() != "" {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), CallTimeout)
+			defer cancel()
+			_ = s.server.Sessions.Close(cleanup, &protocol.CloseRequest{SessionId: result.GetId()})
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return proto.CloneOf(result), nil
 }
 
 func (s *serverAdapter) hasEngine(name string) bool {

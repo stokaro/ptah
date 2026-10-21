@@ -358,7 +358,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 13 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 14 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -565,3 +565,16 @@ column replacement uses the exact accepted operand, emits once, and retains its
 transaction requirement. The fixture refuses unsupported operand properties.
 Transaction enforcement through every final executor remains part of #4204
 before this service can support YDB extraction.
+
+### Session capability facts
+
+An opened session carries the capabilities established for that server. Presence
+is preserved: false is a measured answer, and absence remains unknown. The SDK
+validates capability names without importing the host registry. The host checks
+its vocabulary and dependencies before exposing server facts to planning.
+Session capability claims do not establish transaction-session support.
+
+Both transport boundaries validate newly opened sessions. Invalid replies return
+no usable handle and trigger an attempt to close any returned handle. Returned
+maps are independent snapshots, so later owner mutation cannot change captured
+server facts.

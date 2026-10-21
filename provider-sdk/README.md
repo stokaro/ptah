@@ -26,7 +26,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | Operation | Required result |
 | --- | --- |
 | `Describe` | Exact revision, provider identity, semantic identity, engines, identifier comparison rules, and advertised features. |
-| `Open` | A nonempty session handle for the requested canonical engine. Credentials belong in this request, never in process arguments. |
+| `Open` | A session handle for the requested engine, identifier rules, and established server capabilities. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
@@ -37,6 +37,12 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
+
+Session capabilities preserve presence: an explicit `false` is an established
+answer, while an absent key remains unknown. The SDK validates names and the host
+validates its capability vocabulary and dependencies. Invalid session replies
+return no usable handle; both transport boundaries attempt to close a returned
+handle before refusing the reply.
 
 Common records represent tables and columns explicitly. Native records use a
 versioned provider-owned envelope. Structured references keep database, schema,
@@ -238,7 +244,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 13 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 14 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

@@ -114,6 +114,9 @@ message Session {
   string server_version = 5;
   repeated string features = 6;
   IdentifierRules identifiers = 7;
+  // Established server facts. A present false value is distinct from an absent
+  // fact. The host validates its capability vocabulary and dependencies.
+  map<string, bool> capabilities = 8;
 }
 message CloseRequest {
   string session_id = 1;
