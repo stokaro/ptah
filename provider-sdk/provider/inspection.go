@@ -14,8 +14,8 @@ import (
 // models and returns an independent observed-value normalization batch. Its
 // order is native objects, then each table's facets and column facets. An empty
 // batch establishes no native absence; only explicit coverage can do that.
-// Schema-filtered native coverage is refused until the contract can retain its
-// namespace limits. Callers must also match the snapshot target and features
+// Schema-filtered native coverage requires owner binding of request selectors
+// and namespace limits. Callers must also match the snapshot target and features
 // to the session they inspected before exposing any state.
 func InspectionValues(description *protocol.Description, request *protocol.InspectRequest, snapshot *protocol.Schema) (*protocol.NormalizeValuesRequest, error) {
 	if !slices.Contains(description.GetFeatures(), InspectFeature) {
@@ -38,7 +38,7 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 		return nil, err
 	}
 	if len(request.GetSchemas()) != 0 && len(coverage.GetKinds()) != 0 {
-		return nil, fmt.Errorf("%w: schema-filtered native model coverage requires namespace scopes", ErrProtocol)
+		return nil, fmt.Errorf("%w: schema-filtered native model coverage requires owner scope binding", ErrProtocol)
 	}
 	values, err := inspectionValues(snapshot)
 	if err != nil {

@@ -1,6 +1,7 @@
 package provider_test
 
 import (
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -72,7 +73,6 @@ func TestCoverageNamespaceRefusesInvalidOrAmbiguousRegions(t *testing.T) {
 			other.Scope.Database.Source = "PRODUCTION"
 			k.Regions = append(k.Regions, other)
 		}},
-		{"region limit", func(k *protocol.ModelKindCoverage) { k.Regions = make([]*protocol.ModelNamespaceKnowledge, 4097) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -82,4 +82,19 @@ func TestCoverageNamespaceRefusesInvalidOrAmbiguousRegions(t *testing.T) {
 			c.Assert(provider.ValidateModelCoverage(description, "fixture", coverage), qt.ErrorIs, provider.ErrProtocol)
 		})
 	}
+}
+
+func TestCoverageNamespaceRegionLimit(t *testing.T) {
+	c := qt.New(t)
+	description, coverage := scopedModelCoverage()
+	regions := make([]*protocol.ModelNamespaceKnowledge, 4097)
+	for i := range regions {
+		name := strconv.Itoa(i)
+		regions[i] = &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{Schema: &protocol.NamespaceComponent{Source: name, Normalized: name}},
+			Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
+	}
+	coverage.Kinds[0].Regions = regions[:4096]
+	c.Assert(provider.ValidateModelCoverage(description, "fixture", coverage), qt.IsNil)
+	coverage.Kinds[0].Regions = regions
+	c.Assert(provider.ValidateModelCoverage(description, "fixture", coverage), qt.ErrorMatches, ".*too many model namespace regions")
 }
