@@ -34,6 +34,7 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
+| `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
 
@@ -237,7 +238,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 12 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 13 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -376,3 +377,33 @@ foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
 through this contract. It does not establish a feature-planning, transaction, or
 history service; these remain required before official-engine extraction.
+
+## Contextual feature planning
+
+`models.plan` advertises `PlanFeatures`. Each engine assigns a service its change,
+parent, and operation model kinds. Parent assignment is independent of changed
+facets: a table operation must account for attached state even when no setting
+changed.
+
+The request captures declaration and inspection records separately, including
+common children, normalized feature values, exclusions, and independent coverage
+sources. Missing observations do not establish absence. Identifier components,
+capability values, and common graph step identities retain their original
+boundaries. An established false capability is distinct from a missing fact.
+
+A successful reply accounts for every input change and every assigned parent
+model. Each contributed operation must appear in a receipt. Dependencies may
+refer to common steps; explicit rewrites name the common operations they replace.
+The host must validate ownership, rewrite effects, and the complete graph before
+using a contribution. The SDK never orders a partial graph or treats a receipt
+as evidence of execution.
+
+Transaction requirements, operation placement, phases, and conservative impact
+assessments travel as explicit metadata. Unknown values remain unknown. A
+completed refusal contains diagnostics and no operations, rewrites, or successful
+receipts. Cancellation and malformed replies discard the complete batch.
+
+The SDK transport is implemented. The application adapter, complete graph
+integration, independent-process qualification, and execution of transaction
+requirements remain required work in #4204. This contract does not qualify YDB
+extraction or the migration history backend.

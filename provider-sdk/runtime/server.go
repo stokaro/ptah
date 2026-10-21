@@ -51,6 +51,7 @@ type Server struct {
 	SourceDecoder   provider.SourceDecoder
 	ValueConverter  provider.ValueConverter
 	ModelComparer   provider.ModelComparer
+	FeaturePlanner  provider.FeaturePlanner
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -73,6 +74,7 @@ func (s Server) Validate() error {
 		{provider.DecodeSourceFeature, !nilService(s.SourceDecoder)},
 		{provider.ConvertValuesFeature, !nilService(s.ValueConverter)},
 		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
+		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

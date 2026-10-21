@@ -18,6 +18,7 @@ service Provider {
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
   rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
+  rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
   rpc Execute(ExecuteRequest) returns (Execution);
 }
 
@@ -45,6 +46,7 @@ message Engine {
   repeated ValueModel value_models = 6;
   repeated YAMLSourceKey yaml_source_keys = 7;
   repeated ModelComparison comparisons = 8;
+  repeated ModelPlanning planning = 9;
 }
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
 // The host refuses collisions with common keys or other selected owners.
@@ -739,4 +741,344 @@ message OperationSemantics {
   string reason = 2;
   ChangeSemantics.Access access = 3;
   string access_reason = 4;
+}
+
+// ModelPlanning assigns change, parent, and operation vocabularies to one
+// contextual service. Parent assessment runs even without a changed facet.
+message ModelPlanning {
+  string id = 1;
+  repeated string change_kinds = 2;
+  repeated string parent_kinds = 3;
+  repeated string operation_kinds = 4;
+}
+// StepIdentity is structured: neither component is a delimiter-joined key.
+message StepIdentity { string owner = 1; string name = 2; }
+message PlanningEffect {
+  ComparisonIdentity subject = 1;
+  enum Action { ACTION_UNSPECIFIED = 0; READ = 1; CREATE = 2; ALTER = 3; DROP = 4; }
+  Action action = 2;
+}
+message PlanningMetadata {
+  repeated PlanningEffect effects = 1;
+  enum Transaction { UNKNOWN = 0; ALLOWED = 1; REQUIRED = 2; FORBIDDEN = 3; }
+  Transaction transaction = 2;
+  ChangeSemantics.Impact impact = 3;
+  string reason = 4;
+  enum Placement { DEFAULT = 0; EARLY = 1; }
+  Placement placement = 5;
+}
+message PlanningDependency { StepIdentity before = 1; StepIdentity after = 2; }
+message CommonPlanningStep {
+  StepIdentity id = 1;
+  PlanningMetadata metadata = 2;
+  // The actual operand, when this step adds a column. No host AST is sent.
+  DeclaredColumn added_column = 3;
+}
+message PlanningOperation {
+  NativeOperation.Role role = 1;
+  ComparisonIdentity parent = 2;
+  NormalizedValue value = 3;
+  repeated string notes = 4;
+  enum Phase { DEFAULT = 0; DEPENDENT = 1; PREREQUISITE = 2; TYPE = 3; }
+  Phase phase = 5;
+}
+message PlanningStep {
+  StepIdentity id = 1;
+  PlanningMetadata metadata = 2;
+  PlanningOperation operation = 3;
+}
+message PlanningContribution {
+  string owner = 1;
+  repeated PlanningStep steps = 2;
+  repeated PlanningDependency dependencies = 3;
+}
+message PlanningRewrite { repeated StepIdentity sources = 1; StepIdentity replacement = 2; }
+message PlanningChange { ComparisonIdentity subject = 1; NormalizedValue value = 2; }
+message PlanningReceipt {
+  ComparisonIdentity subject = 1;
+  string kind = 2;
+  string strategy = 3;
+  repeated StepIdentity steps = 4;
+}
+message PlanningParentReceipt {
+  PlanningReceipt receipt = 1;
+  PlanningTable.Action action = 2;
+}
+message PlanningDiagnostic {
+  enum Code { CODE_UNSPECIFIED = 0; INVALID_SCHEMA = 1; UNSUPPORTED_FEATURE = 2; OMITTED_DECLARATION = 3; }
+  Code code = 1;
+  string kind = 2;
+  string object = 3;
+  string feature = 4;
+  string message = 5;
+  oneof input { uint32 change = 6; uint32 parent = 7; }
+}
+message PlanningType { ComparisonIdentity identity = 1; repeated string references = 2; }
+message PlanningTable {
+  ComparisonIdentity subject = 1;
+  enum Action { CONTEXT = 0; CREATE = 1; ALTER = 2; DROP = 3; REBUILD = 4; }
+  Action action = 2;
+  // Missing captures are unknown, never proof of absence.
+  DeclaredTable desired = 3;
+  ObservedTable current = 4;
+}
+// PlanFeatures is offline. The host provides the complete captured context and
+// common steps; the owner contributes operations, never a separately scheduled
+// executable prefix. The host must validate and schedule the complete graph.
+message PlanFeaturesRequest {
+  string engine = 1;
+  string planning_id = 2;
+  repeated string target_features = 3;
+  ComparisonIdentifiers identifiers = 4;
+  map<string, bool> capabilities = 5;
+  repeated PlanningChange changes = 6;
+  repeated PlanningTable tables = 7;
+  repeated PlanningType desired_types = 8;
+  repeated PlanningType current_types = 9;
+  repeated CommonPlanningStep common_steps = 10;
+  repeated string parent_kinds = 11;
+  string database_path = 12;
+}
+message PlannedFeatures {
+  bool complete = 1;
+  repeated PlanningContribution contributions = 2;
+  repeated PlanningReceipt changes = 3;
+  repeated PlanningParentReceipt parents = 4;
+  repeated PlanningRewrite rewrites = 5;
+  // A completed refusal carries diagnostics and no successful output.
+  repeated PlanningDiagnostic diagnostics = 6;
+}
+
+// Captured feature collections retain excluded facets and independent coverage
+// sources. They contain normalized values, never executable owner callbacks.
+message CapturedFeatures {
+  ComparisonState objects = 1;
+  ComparisonState facets = 2;
+}
+// Common definitions preserve declaration and inspection representations
+// separately. Owner-specific properties belong to CapturedFeatures.
+message DeclaredTable {
+  string name = 1;
+  string schema = 2;
+  string engine = 3;
+  string collation = 4;
+  string comment = 5;
+  repeated string primary_key = 6;
+  string primary_key_name = 7;
+  repeated DeclaredKeyPart primary_key_parts = 8;
+  repeated string primary_key_include = 9;
+  string primary_key_method = 10;
+  string primary_key_comment = 11;
+  bool primary_key_deferrable = 12;
+  string primary_key_initially = 13;
+  repeated string checks = 14;
+  string custom_sql = 15;
+  repeated string depends_on = 16;
+  repeated DeclaredColumn columns = 17;
+  repeated DeclaredEnum enums = 18;
+  repeated DeclaredConstraint constraints = 19;
+  repeated DeclaredIndex indexes = 20;
+  repeated CapturedTrigger triggers = 21;
+  CapturedFeatures features = 22;
+}
+message DeclaredKeyPart {
+  string column = 1;
+  bool descending = 2;
+  string prefix = 3;
+}
+message DeclaredColumn {
+  string name = 1;
+  string type = 2;
+  bool type_raw_sql = 3;
+  bool type_is_declared_text = 4;
+  bool nullable = 5;
+  bool primary = 6;
+  bool auto_increment = 7;
+  string identity_generation = 8;
+  string identity_start = 9;
+  string identity_increment = 10;
+  string identity_options = 11;
+  bool unique = 12;
+  string unique_expression = 13;
+  string default_value = 14;
+  bool default_set = 15;
+  string default_expression = 16;
+  string foreign_reference = 17;
+  string foreign_key_name = 18;
+  string on_delete = 19;
+  string on_update = 20;
+  bool deferrable = 21;
+  string initially = 22;
+  string foreign_key_match = 23;
+  bool foreign_key_not_enforced = 24;
+  repeated string enum_values = 25;
+  string check = 26;
+  string check_name = 27;
+  bool check_not_enforced = 28;
+  string not_null_constraint_name = 29;
+  string generated_expression = 30;
+  string generated_kind = 31;
+  string collation = 32;
+  string comment = 33;
+}
+message DeclaredEnum { string name = 1; string schema = 2; repeated string values = 3; string comment = 4; }
+message CapturedIndexPart {
+  string column = 1;
+  string expression = 2;
+  bool descending = 3;
+  string nulls = 4;
+  string operator_class = 5;
+  string prefix = 6;
+}
+message DeclaredIndex {
+  string name = 1;
+  repeated string fields = 2;
+  repeated CapturedIndexPart parts = 3;
+  bool unique = 4;
+  string comment = 5;
+  bool invisible = 6;
+  optional bool nulls_distinct = 7;
+  string type = 8;
+  string condition = 9;
+  bool concurrently = 10;
+  string operator = 11;
+  repeated string include_columns = 12;
+  map<string, string> storage_parameters = 13;
+  string table_name = 14;
+  repeated ComparisonIdentity requires = 15;
+}
+message DeclaredConstraint {
+  string name = 1;
+  string type = 2;
+  string table = 3;
+  string using_method = 4;
+  string check_expression = 5;
+  repeated string columns = 6;
+  repeated string include_columns = 7;
+  optional bool nulls_distinct = 8;
+  string foreign_table = 9;
+  string foreign_column = 10;
+  repeated string foreign_columns = 11;
+  string on_delete = 12;
+  string on_update = 13;
+  bool deferrable = 14;
+  string initially = 15;
+  string match = 16;
+  bool not_enforced = 17;
+  bool not_valid = 18;
+  repeated ComparisonIdentity requires = 19;
+  string comment = 20;
+}
+message CapturedTrigger {
+  string name = 1;
+  string schema = 2;
+  string table = 3;
+  string timing = 4;
+  string event = 5;
+  string for_each = 6;
+  string body = 7;
+  string comment = 8;
+  string when = 9;
+  string old_table = 10;
+  string new_table = 11;
+  string execute_function = 12;
+  repeated string targets = 13;
+}
+message ObservedTable {
+  string name = 1;
+  string schema = 2;
+  string type = 3;
+  string comment = 4;
+  string charset = 5;
+  string collation = 6;
+  string row_format = 7;
+  repeated ObservedColumn columns = 8;
+  int64 estimated_rows = 9;
+  bool row_stats_unknown = 10;
+  bool partitioned = 11;
+  bool rls_enabled = 12;
+  bool rls_forced = 13;
+  repeated ObservedIndex indexes = 14;
+  repeated ObservedConstraint constraints = 15;
+  repeated CapturedTrigger triggers = 16;
+  CapturedFeatures features = 17;
+}
+message ObservedColumn {
+  string name = 1;
+  string data_type = 2;
+  string udt_name = 3;
+  string udt_schema = 4;
+  string formatted_type = 5;
+  string column_type = 6;
+  string is_nullable = 7;
+  optional string default_expression = 8;
+  optional int64 character_max_length = 9;
+  string collation = 10;
+  string comment = 11;
+  string not_null_constraint_name = 12;
+  optional int64 numeric_precision = 13;
+  optional int64 numeric_scale = 14;
+  optional int64 datetime_precision = 15;
+  int64 ordinal_position = 16;
+  bool auto_increment = 17;
+  bool primary_key = 18;
+  bool unique = 19;
+  bool type_is_declared_text = 20;
+  string domain_name = 21;
+  string domain_schema = 22;
+  optional string generated_expression = 23;
+  string generated_kind = 24;
+  string identity_generation = 25;
+  string identity_start = 26;
+  string identity_increment = 27;
+  string sequence_restart = 28;
+  string owned_sequence = 29;
+}
+message ObservedIndex {
+  ComparisonIdentity managed_by = 1;
+  string name = 2;
+  string table_name = 3;
+  string schema = 4;
+  repeated string columns = 5;
+  repeated CapturedIndexPart parts = 6;
+  bool unique = 7;
+  bool primary = 8;
+  string definition = 9;
+  bool key_parts_incomplete = 10;
+  string condition = 11;
+  string comment = 12;
+  bool invisible = 13;
+  optional bool nulls_distinct = 14;
+  string method = 15;
+  repeated string include_columns = 16;
+  map<string, string> storage_parameters = 17;
+  repeated ComparisonIdentity requires = 18;
+  bool partition_attached = 19;
+  int64 hash_shard_buckets = 20;
+}
+message ObservedConstraint {
+  string name = 1;
+  string table_name = 2;
+  string schema = 3;
+  string type = 4;
+  string column_name = 5;
+  repeated string column_names = 6;
+  optional string foreign_table = 7;
+  string foreign_schema = 8;
+  optional string foreign_column = 9;
+  repeated string foreign_columns = 10;
+  optional string delete_rule = 11;
+  optional string update_rule = 12;
+  bool deferrable = 13;
+  string initially = 14;
+  string match = 15;
+  bool not_enforced = 16;
+  bool not_valid = 17;
+  optional string check_clause = 18;
+  optional bool nulls_distinct = 19;
+  repeated string include_columns = 20;
+  optional string using_method = 21;
+  repeated ComparisonIdentity requires = 22;
+  string comment = 23;
+  int64 hash_shard_buckets = 24;
 }

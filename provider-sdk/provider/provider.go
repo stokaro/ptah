@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 12
+const Revision uint32 = 13
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -88,13 +88,7 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 		if engine == nil || !validName(engine.GetId()) {
 			return fmt.Errorf("%w: invalid engine ID", ErrProtocol)
 		}
-		if err := validateModelComparisons(value, engine); err != nil {
-			return err
-		}
-		if err := validateValueModels(engine.GetValueModels()); err != nil {
-			return err
-		}
-		if err := validateYAMLSourceKeys(value, engine); err != nil {
+		if err := validateEngineServices(value, engine); err != nil {
 			return err
 		}
 		if err := ValidateIdentifierRules(engine.GetIdentifiers()); err != nil {
@@ -118,7 +112,24 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 	return nil
 }
 
+func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
+	if err := validateValueModels(engine.GetValueModels()); err != nil {
+		return err
+	}
+	if err := validateModelComparisons(description, engine); err != nil {
+		return err
+	}
+	if err := validateModelPlanning(description, engine); err != nil {
+		return err
+	}
+	return validateYAMLSourceKeys(description, engine)
+}
+
 func validateSemanticServices(value *protocol.Description) error {
+	if slices.Contains(value.GetFeatures(), PlanFeaturesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: feature planning requires value normalization", ErrProtocol)
+	}
+
 	if slices.Contains(value.GetFeatures(), CompareModelsFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: model comparison requires value normalization", ErrProtocol)
 	}

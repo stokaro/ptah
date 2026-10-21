@@ -358,7 +358,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 12 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 13 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -508,6 +508,31 @@ whole batch. A successful earlier unit is not exposed as a usable prefix.
 The independent fixture normalizes and executes table creation, renaming, and
 removal through an operation model. Inspection proves the database changes;
 round trips prove that operation assessments are recomputed. This exercises
-operation transport and rendering. Feature planning still needs a contextual
-service that contributes receipts, dependencies, and effects to the host graph.
+operation transport and rendering. The contextual planning transport described below still needs an application
+adapter that joins receipts, dependencies, and effects to the host graph.
 Transaction and history services remain separate work before YDB extraction.
+
+
+### Contextual planning transport
+
+`PlanFeatures` carries captured declarations and observations, normalized native
+changes, common graph steps, and explicit parent assignments. Each service owns
+its declared change and operation models. Parent models are assigned separately
+so an unchanged facet still receives assessment when its table is changed or
+dropped.
+
+A completed reply contains ordered receipts for every input change and parent
+assignment. Every contributed operation has a receipt. Graph identities retain
+owner and name separately; effects retain bound object identities. Explicit
+rewrite claims name common steps with known footprints. The host must check the
+replacement effects and schedule all contributions together.
+
+The SDK validates the complete exchange at both boundaries. It isolates owner
+inputs, refuses successful output alongside diagnostics, and discards a reply
+after cancellation. Transaction requirements are data, not evidence that an
+executor honored them. The application adapter must preserve them through the
+final execution boundary before native planning is qualified.
+
+The transport implementation does not finish application integration. The host
+adapter, full graph acceptance, and a separate-process execution fixture remain
+required before this service can support YDB extraction.

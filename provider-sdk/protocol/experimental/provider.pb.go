@@ -815,6 +815,318 @@ func (ChangeSemantics_Access) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{78, 1}
 }
 
+type PlanningEffect_Action int32
+
+const (
+	PlanningEffect_ACTION_UNSPECIFIED PlanningEffect_Action = 0
+	PlanningEffect_READ               PlanningEffect_Action = 1
+	PlanningEffect_CREATE             PlanningEffect_Action = 2
+	PlanningEffect_ALTER              PlanningEffect_Action = 3
+	PlanningEffect_DROP               PlanningEffect_Action = 4
+)
+
+// Enum value maps for PlanningEffect_Action.
+var (
+	PlanningEffect_Action_name = map[int32]string{
+		0: "ACTION_UNSPECIFIED",
+		1: "READ",
+		2: "CREATE",
+		3: "ALTER",
+		4: "DROP",
+	}
+	PlanningEffect_Action_value = map[string]int32{
+		"ACTION_UNSPECIFIED": 0,
+		"READ":               1,
+		"CREATE":             2,
+		"ALTER":              3,
+		"DROP":               4,
+	}
+)
+
+func (x PlanningEffect_Action) Enum() *PlanningEffect_Action {
+	p := new(PlanningEffect_Action)
+	*p = x
+	return p
+}
+
+func (x PlanningEffect_Action) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningEffect_Action) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[15].Descriptor()
+}
+
+func (PlanningEffect_Action) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[15]
+}
+
+func (x PlanningEffect_Action) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningEffect_Action.Descriptor instead.
+func (PlanningEffect_Action) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{85, 0}
+}
+
+type PlanningMetadata_Transaction int32
+
+const (
+	PlanningMetadata_UNKNOWN   PlanningMetadata_Transaction = 0
+	PlanningMetadata_ALLOWED   PlanningMetadata_Transaction = 1
+	PlanningMetadata_REQUIRED  PlanningMetadata_Transaction = 2
+	PlanningMetadata_FORBIDDEN PlanningMetadata_Transaction = 3
+)
+
+// Enum value maps for PlanningMetadata_Transaction.
+var (
+	PlanningMetadata_Transaction_name = map[int32]string{
+		0: "UNKNOWN",
+		1: "ALLOWED",
+		2: "REQUIRED",
+		3: "FORBIDDEN",
+	}
+	PlanningMetadata_Transaction_value = map[string]int32{
+		"UNKNOWN":   0,
+		"ALLOWED":   1,
+		"REQUIRED":  2,
+		"FORBIDDEN": 3,
+	}
+)
+
+func (x PlanningMetadata_Transaction) Enum() *PlanningMetadata_Transaction {
+	p := new(PlanningMetadata_Transaction)
+	*p = x
+	return p
+}
+
+func (x PlanningMetadata_Transaction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningMetadata_Transaction) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[16].Descriptor()
+}
+
+func (PlanningMetadata_Transaction) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[16]
+}
+
+func (x PlanningMetadata_Transaction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningMetadata_Transaction.Descriptor instead.
+func (PlanningMetadata_Transaction) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{86, 0}
+}
+
+type PlanningMetadata_Placement int32
+
+const (
+	PlanningMetadata_DEFAULT PlanningMetadata_Placement = 0
+	PlanningMetadata_EARLY   PlanningMetadata_Placement = 1
+)
+
+// Enum value maps for PlanningMetadata_Placement.
+var (
+	PlanningMetadata_Placement_name = map[int32]string{
+		0: "DEFAULT",
+		1: "EARLY",
+	}
+	PlanningMetadata_Placement_value = map[string]int32{
+		"DEFAULT": 0,
+		"EARLY":   1,
+	}
+)
+
+func (x PlanningMetadata_Placement) Enum() *PlanningMetadata_Placement {
+	p := new(PlanningMetadata_Placement)
+	*p = x
+	return p
+}
+
+func (x PlanningMetadata_Placement) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningMetadata_Placement) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[17].Descriptor()
+}
+
+func (PlanningMetadata_Placement) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[17]
+}
+
+func (x PlanningMetadata_Placement) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningMetadata_Placement.Descriptor instead.
+func (PlanningMetadata_Placement) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{86, 1}
+}
+
+type PlanningOperation_Phase int32
+
+const (
+	PlanningOperation_DEFAULT      PlanningOperation_Phase = 0
+	PlanningOperation_DEPENDENT    PlanningOperation_Phase = 1
+	PlanningOperation_PREREQUISITE PlanningOperation_Phase = 2
+	PlanningOperation_TYPE         PlanningOperation_Phase = 3
+)
+
+// Enum value maps for PlanningOperation_Phase.
+var (
+	PlanningOperation_Phase_name = map[int32]string{
+		0: "DEFAULT",
+		1: "DEPENDENT",
+		2: "PREREQUISITE",
+		3: "TYPE",
+	}
+	PlanningOperation_Phase_value = map[string]int32{
+		"DEFAULT":      0,
+		"DEPENDENT":    1,
+		"PREREQUISITE": 2,
+		"TYPE":         3,
+	}
+)
+
+func (x PlanningOperation_Phase) Enum() *PlanningOperation_Phase {
+	p := new(PlanningOperation_Phase)
+	*p = x
+	return p
+}
+
+func (x PlanningOperation_Phase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningOperation_Phase) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[18].Descriptor()
+}
+
+func (PlanningOperation_Phase) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[18]
+}
+
+func (x PlanningOperation_Phase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningOperation_Phase.Descriptor instead.
+func (PlanningOperation_Phase) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{89, 0}
+}
+
+type PlanningDiagnostic_Code int32
+
+const (
+	PlanningDiagnostic_CODE_UNSPECIFIED    PlanningDiagnostic_Code = 0
+	PlanningDiagnostic_INVALID_SCHEMA      PlanningDiagnostic_Code = 1
+	PlanningDiagnostic_UNSUPPORTED_FEATURE PlanningDiagnostic_Code = 2
+	PlanningDiagnostic_OMITTED_DECLARATION PlanningDiagnostic_Code = 3
+)
+
+// Enum value maps for PlanningDiagnostic_Code.
+var (
+	PlanningDiagnostic_Code_name = map[int32]string{
+		0: "CODE_UNSPECIFIED",
+		1: "INVALID_SCHEMA",
+		2: "UNSUPPORTED_FEATURE",
+		3: "OMITTED_DECLARATION",
+	}
+	PlanningDiagnostic_Code_value = map[string]int32{
+		"CODE_UNSPECIFIED":    0,
+		"INVALID_SCHEMA":      1,
+		"UNSUPPORTED_FEATURE": 2,
+		"OMITTED_DECLARATION": 3,
+	}
+)
+
+func (x PlanningDiagnostic_Code) Enum() *PlanningDiagnostic_Code {
+	p := new(PlanningDiagnostic_Code)
+	*p = x
+	return p
+}
+
+func (x PlanningDiagnostic_Code) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[19].Descriptor()
+}
+
+func (PlanningDiagnostic_Code) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[19]
+}
+
+func (x PlanningDiagnostic_Code) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningDiagnostic_Code.Descriptor instead.
+func (PlanningDiagnostic_Code) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{96, 0}
+}
+
+type PlanningTable_Action int32
+
+const (
+	PlanningTable_CONTEXT PlanningTable_Action = 0
+	PlanningTable_CREATE  PlanningTable_Action = 1
+	PlanningTable_ALTER   PlanningTable_Action = 2
+	PlanningTable_DROP    PlanningTable_Action = 3
+	PlanningTable_REBUILD PlanningTable_Action = 4
+)
+
+// Enum value maps for PlanningTable_Action.
+var (
+	PlanningTable_Action_name = map[int32]string{
+		0: "CONTEXT",
+		1: "CREATE",
+		2: "ALTER",
+		3: "DROP",
+		4: "REBUILD",
+	}
+	PlanningTable_Action_value = map[string]int32{
+		"CONTEXT": 0,
+		"CREATE":  1,
+		"ALTER":   2,
+		"DROP":    3,
+		"REBUILD": 4,
+	}
+)
+
+func (x PlanningTable_Action) Enum() *PlanningTable_Action {
+	p := new(PlanningTable_Action)
+	*p = x
+	return p
+}
+
+func (x PlanningTable_Action) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PlanningTable_Action) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[20].Descriptor()
+}
+
+func (PlanningTable_Action) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[20]
+}
+
+func (x PlanningTable_Action) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PlanningTable_Action.Descriptor instead.
+func (PlanningTable_Action) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{98, 0}
+}
+
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -999,6 +1311,7 @@ type Engine struct {
 	ValueModels    []*ValueModel          `protobuf:"bytes,6,rep,name=value_models,json=valueModels,proto3" json:"value_models,omitempty"`
 	YamlSourceKeys []*YAMLSourceKey       `protobuf:"bytes,7,rep,name=yaml_source_keys,json=yamlSourceKeys,proto3" json:"yaml_source_keys,omitempty"`
 	Comparisons    []*ModelComparison     `protobuf:"bytes,8,rep,name=comparisons,proto3" json:"comparisons,omitempty"`
+	Planning       []*ModelPlanning       `protobuf:"bytes,9,rep,name=planning,proto3" json:"planning,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1085,6 +1398,13 @@ func (x *Engine) GetYamlSourceKeys() []*YAMLSourceKey {
 func (x *Engine) GetComparisons() []*ModelComparison {
 	if x != nil {
 		return x.Comparisons
+	}
+	return nil
+}
+
+func (x *Engine) GetPlanning() []*ModelPlanning {
+	if x != nil {
+		return x.Planning
 	}
 	return nil
 }
@@ -6875,6 +7195,3389 @@ func (x *OperationSemantics) GetAccessReason() string {
 	return ""
 }
 
+// ModelPlanning assigns change, parent, and operation vocabularies to one
+// contextual service. Parent assessment runs even without a changed facet.
+type ModelPlanning struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ChangeKinds    []string               `protobuf:"bytes,2,rep,name=change_kinds,json=changeKinds,proto3" json:"change_kinds,omitempty"`
+	ParentKinds    []string               `protobuf:"bytes,3,rep,name=parent_kinds,json=parentKinds,proto3" json:"parent_kinds,omitempty"`
+	OperationKinds []string               `protobuf:"bytes,4,rep,name=operation_kinds,json=operationKinds,proto3" json:"operation_kinds,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ModelPlanning) Reset() {
+	*x = ModelPlanning{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelPlanning) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelPlanning) ProtoMessage() {}
+
+func (x *ModelPlanning) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelPlanning.ProtoReflect.Descriptor instead.
+func (*ModelPlanning) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{83}
+}
+
+func (x *ModelPlanning) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ModelPlanning) GetChangeKinds() []string {
+	if x != nil {
+		return x.ChangeKinds
+	}
+	return nil
+}
+
+func (x *ModelPlanning) GetParentKinds() []string {
+	if x != nil {
+		return x.ParentKinds
+	}
+	return nil
+}
+
+func (x *ModelPlanning) GetOperationKinds() []string {
+	if x != nil {
+		return x.OperationKinds
+	}
+	return nil
+}
+
+// StepIdentity is structured: neither component is a delimiter-joined key.
+type StepIdentity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Owner         string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StepIdentity) Reset() {
+	*x = StepIdentity{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StepIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StepIdentity) ProtoMessage() {}
+
+func (x *StepIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StepIdentity.ProtoReflect.Descriptor instead.
+func (*StepIdentity) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *StepIdentity) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *StepIdentity) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type PlanningEffect struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subject       *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Action        PlanningEffect_Action  `protobuf:"varint,2,opt,name=action,proto3,enum=ptah.provider.experimental.PlanningEffect_Action" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningEffect) Reset() {
+	*x = PlanningEffect{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningEffect) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningEffect) ProtoMessage() {}
+
+func (x *PlanningEffect) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningEffect.ProtoReflect.Descriptor instead.
+func (*PlanningEffect) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *PlanningEffect) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *PlanningEffect) GetAction() PlanningEffect_Action {
+	if x != nil {
+		return x.Action
+	}
+	return PlanningEffect_ACTION_UNSPECIFIED
+}
+
+type PlanningMetadata struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Effects       []*PlanningEffect            `protobuf:"bytes,1,rep,name=effects,proto3" json:"effects,omitempty"`
+	Transaction   PlanningMetadata_Transaction `protobuf:"varint,2,opt,name=transaction,proto3,enum=ptah.provider.experimental.PlanningMetadata_Transaction" json:"transaction,omitempty"`
+	Impact        ChangeSemantics_Impact       `protobuf:"varint,3,opt,name=impact,proto3,enum=ptah.provider.experimental.ChangeSemantics_Impact" json:"impact,omitempty"`
+	Reason        string                       `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	Placement     PlanningMetadata_Placement   `protobuf:"varint,5,opt,name=placement,proto3,enum=ptah.provider.experimental.PlanningMetadata_Placement" json:"placement,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningMetadata) Reset() {
+	*x = PlanningMetadata{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningMetadata) ProtoMessage() {}
+
+func (x *PlanningMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningMetadata.ProtoReflect.Descriptor instead.
+func (*PlanningMetadata) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *PlanningMetadata) GetEffects() []*PlanningEffect {
+	if x != nil {
+		return x.Effects
+	}
+	return nil
+}
+
+func (x *PlanningMetadata) GetTransaction() PlanningMetadata_Transaction {
+	if x != nil {
+		return x.Transaction
+	}
+	return PlanningMetadata_UNKNOWN
+}
+
+func (x *PlanningMetadata) GetImpact() ChangeSemantics_Impact {
+	if x != nil {
+		return x.Impact
+	}
+	return ChangeSemantics_IMPACT_UNSPECIFIED
+}
+
+func (x *PlanningMetadata) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *PlanningMetadata) GetPlacement() PlanningMetadata_Placement {
+	if x != nil {
+		return x.Placement
+	}
+	return PlanningMetadata_DEFAULT
+}
+
+type PlanningDependency struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Before        *StepIdentity          `protobuf:"bytes,1,opt,name=before,proto3" json:"before,omitempty"`
+	After         *StepIdentity          `protobuf:"bytes,2,opt,name=after,proto3" json:"after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningDependency) Reset() {
+	*x = PlanningDependency{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningDependency) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningDependency) ProtoMessage() {}
+
+func (x *PlanningDependency) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningDependency.ProtoReflect.Descriptor instead.
+func (*PlanningDependency) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *PlanningDependency) GetBefore() *StepIdentity {
+	if x != nil {
+		return x.Before
+	}
+	return nil
+}
+
+func (x *PlanningDependency) GetAfter() *StepIdentity {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+type CommonPlanningStep struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       *StepIdentity          `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata *PlanningMetadata      `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// The actual operand, when this step adds a column. No host AST is sent.
+	AddedColumn   *DeclaredColumn `protobuf:"bytes,3,opt,name=added_column,json=addedColumn,proto3" json:"added_column,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommonPlanningStep) Reset() {
+	*x = CommonPlanningStep{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommonPlanningStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommonPlanningStep) ProtoMessage() {}
+
+func (x *CommonPlanningStep) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommonPlanningStep.ProtoReflect.Descriptor instead.
+func (*CommonPlanningStep) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *CommonPlanningStep) GetId() *StepIdentity {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *CommonPlanningStep) GetMetadata() *PlanningMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *CommonPlanningStep) GetAddedColumn() *DeclaredColumn {
+	if x != nil {
+		return x.AddedColumn
+	}
+	return nil
+}
+
+type PlanningOperation struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Role          NativeOperation_Role    `protobuf:"varint,1,opt,name=role,proto3,enum=ptah.provider.experimental.NativeOperation_Role" json:"role,omitempty"`
+	Parent        *ComparisonIdentity     `protobuf:"bytes,2,opt,name=parent,proto3" json:"parent,omitempty"`
+	Value         *NormalizedValue        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	Notes         []string                `protobuf:"bytes,4,rep,name=notes,proto3" json:"notes,omitempty"`
+	Phase         PlanningOperation_Phase `protobuf:"varint,5,opt,name=phase,proto3,enum=ptah.provider.experimental.PlanningOperation_Phase" json:"phase,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningOperation) Reset() {
+	*x = PlanningOperation{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningOperation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningOperation) ProtoMessage() {}
+
+func (x *PlanningOperation) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningOperation.ProtoReflect.Descriptor instead.
+func (*PlanningOperation) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{89}
+}
+
+func (x *PlanningOperation) GetRole() NativeOperation_Role {
+	if x != nil {
+		return x.Role
+	}
+	return NativeOperation_ROLE_UNSPECIFIED
+}
+
+func (x *PlanningOperation) GetParent() *ComparisonIdentity {
+	if x != nil {
+		return x.Parent
+	}
+	return nil
+}
+
+func (x *PlanningOperation) GetValue() *NormalizedValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *PlanningOperation) GetNotes() []string {
+	if x != nil {
+		return x.Notes
+	}
+	return nil
+}
+
+func (x *PlanningOperation) GetPhase() PlanningOperation_Phase {
+	if x != nil {
+		return x.Phase
+	}
+	return PlanningOperation_DEFAULT
+}
+
+type PlanningStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            *StepIdentity          `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata      *PlanningMetadata      `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Operation     *PlanningOperation     `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningStep) Reset() {
+	*x = PlanningStep{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningStep) ProtoMessage() {}
+
+func (x *PlanningStep) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningStep.ProtoReflect.Descriptor instead.
+func (*PlanningStep) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{90}
+}
+
+func (x *PlanningStep) GetId() *StepIdentity {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *PlanningStep) GetMetadata() *PlanningMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *PlanningStep) GetOperation() *PlanningOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+type PlanningContribution struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Owner         string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	Steps         []*PlanningStep        `protobuf:"bytes,2,rep,name=steps,proto3" json:"steps,omitempty"`
+	Dependencies  []*PlanningDependency  `protobuf:"bytes,3,rep,name=dependencies,proto3" json:"dependencies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningContribution) Reset() {
+	*x = PlanningContribution{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningContribution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningContribution) ProtoMessage() {}
+
+func (x *PlanningContribution) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningContribution.ProtoReflect.Descriptor instead.
+func (*PlanningContribution) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91}
+}
+
+func (x *PlanningContribution) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *PlanningContribution) GetSteps() []*PlanningStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *PlanningContribution) GetDependencies() []*PlanningDependency {
+	if x != nil {
+		return x.Dependencies
+	}
+	return nil
+}
+
+type PlanningRewrite struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sources       []*StepIdentity        `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
+	Replacement   *StepIdentity          `protobuf:"bytes,2,opt,name=replacement,proto3" json:"replacement,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningRewrite) Reset() {
+	*x = PlanningRewrite{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningRewrite) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningRewrite) ProtoMessage() {}
+
+func (x *PlanningRewrite) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningRewrite.ProtoReflect.Descriptor instead.
+func (*PlanningRewrite) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{92}
+}
+
+func (x *PlanningRewrite) GetSources() []*StepIdentity {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *PlanningRewrite) GetReplacement() *StepIdentity {
+	if x != nil {
+		return x.Replacement
+	}
+	return nil
+}
+
+type PlanningChange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subject       *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Value         *NormalizedValue       `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningChange) Reset() {
+	*x = PlanningChange{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningChange) ProtoMessage() {}
+
+func (x *PlanningChange) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningChange.ProtoReflect.Descriptor instead.
+func (*PlanningChange) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{93}
+}
+
+func (x *PlanningChange) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *PlanningChange) GetValue() *NormalizedValue {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type PlanningReceipt struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subject       *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Strategy      string                 `protobuf:"bytes,3,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	Steps         []*StepIdentity        `protobuf:"bytes,4,rep,name=steps,proto3" json:"steps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningReceipt) Reset() {
+	*x = PlanningReceipt{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningReceipt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningReceipt) ProtoMessage() {}
+
+func (x *PlanningReceipt) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningReceipt.ProtoReflect.Descriptor instead.
+func (*PlanningReceipt) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{94}
+}
+
+func (x *PlanningReceipt) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *PlanningReceipt) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *PlanningReceipt) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *PlanningReceipt) GetSteps() []*StepIdentity {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+type PlanningParentReceipt struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Receipt       *PlanningReceipt       `protobuf:"bytes,1,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	Action        PlanningTable_Action   `protobuf:"varint,2,opt,name=action,proto3,enum=ptah.provider.experimental.PlanningTable_Action" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningParentReceipt) Reset() {
+	*x = PlanningParentReceipt{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningParentReceipt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningParentReceipt) ProtoMessage() {}
+
+func (x *PlanningParentReceipt) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningParentReceipt.ProtoReflect.Descriptor instead.
+func (*PlanningParentReceipt) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *PlanningParentReceipt) GetReceipt() *PlanningReceipt {
+	if x != nil {
+		return x.Receipt
+	}
+	return nil
+}
+
+func (x *PlanningParentReceipt) GetAction() PlanningTable_Action {
+	if x != nil {
+		return x.Action
+	}
+	return PlanningTable_CONTEXT
+}
+
+type PlanningDiagnostic struct {
+	state   protoimpl.MessageState  `protogen:"open.v1"`
+	Code    PlanningDiagnostic_Code `protobuf:"varint,1,opt,name=code,proto3,enum=ptah.provider.experimental.PlanningDiagnostic_Code" json:"code,omitempty"`
+	Kind    string                  `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Object  string                  `protobuf:"bytes,3,opt,name=object,proto3" json:"object,omitempty"`
+	Feature string                  `protobuf:"bytes,4,opt,name=feature,proto3" json:"feature,omitempty"`
+	Message string                  `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	// Types that are valid to be assigned to Input:
+	//
+	//	*PlanningDiagnostic_Change
+	//	*PlanningDiagnostic_Parent
+	Input         isPlanningDiagnostic_Input `protobuf_oneof:"input"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningDiagnostic) Reset() {
+	*x = PlanningDiagnostic{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningDiagnostic) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningDiagnostic) ProtoMessage() {}
+
+func (x *PlanningDiagnostic) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningDiagnostic.ProtoReflect.Descriptor instead.
+func (*PlanningDiagnostic) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *PlanningDiagnostic) GetCode() PlanningDiagnostic_Code {
+	if x != nil {
+		return x.Code
+	}
+	return PlanningDiagnostic_CODE_UNSPECIFIED
+}
+
+func (x *PlanningDiagnostic) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *PlanningDiagnostic) GetObject() string {
+	if x != nil {
+		return x.Object
+	}
+	return ""
+}
+
+func (x *PlanningDiagnostic) GetFeature() string {
+	if x != nil {
+		return x.Feature
+	}
+	return ""
+}
+
+func (x *PlanningDiagnostic) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *PlanningDiagnostic) GetInput() isPlanningDiagnostic_Input {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+func (x *PlanningDiagnostic) GetChange() uint32 {
+	if x != nil {
+		if x, ok := x.Input.(*PlanningDiagnostic_Change); ok {
+			return x.Change
+		}
+	}
+	return 0
+}
+
+func (x *PlanningDiagnostic) GetParent() uint32 {
+	if x != nil {
+		if x, ok := x.Input.(*PlanningDiagnostic_Parent); ok {
+			return x.Parent
+		}
+	}
+	return 0
+}
+
+type isPlanningDiagnostic_Input interface {
+	isPlanningDiagnostic_Input()
+}
+
+type PlanningDiagnostic_Change struct {
+	Change uint32 `protobuf:"varint,6,opt,name=change,proto3,oneof"`
+}
+
+type PlanningDiagnostic_Parent struct {
+	Parent uint32 `protobuf:"varint,7,opt,name=parent,proto3,oneof"`
+}
+
+func (*PlanningDiagnostic_Change) isPlanningDiagnostic_Input() {}
+
+func (*PlanningDiagnostic_Parent) isPlanningDiagnostic_Input() {}
+
+type PlanningType struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Identity      *ComparisonIdentity    `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	References    []string               `protobuf:"bytes,2,rep,name=references,proto3" json:"references,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningType) Reset() {
+	*x = PlanningType{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningType) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningType) ProtoMessage() {}
+
+func (x *PlanningType) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningType.ProtoReflect.Descriptor instead.
+func (*PlanningType) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *PlanningType) GetIdentity() *ComparisonIdentity {
+	if x != nil {
+		return x.Identity
+	}
+	return nil
+}
+
+func (x *PlanningType) GetReferences() []string {
+	if x != nil {
+		return x.References
+	}
+	return nil
+}
+
+type PlanningTable struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Subject *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Action  PlanningTable_Action   `protobuf:"varint,2,opt,name=action,proto3,enum=ptah.provider.experimental.PlanningTable_Action" json:"action,omitempty"`
+	// Missing captures are unknown, never proof of absence.
+	Desired       *DeclaredTable `protobuf:"bytes,3,opt,name=desired,proto3" json:"desired,omitempty"`
+	Current       *ObservedTable `protobuf:"bytes,4,opt,name=current,proto3" json:"current,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanningTable) Reset() {
+	*x = PlanningTable{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanningTable) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanningTable) ProtoMessage() {}
+
+func (x *PlanningTable) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanningTable.ProtoReflect.Descriptor instead.
+func (*PlanningTable) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *PlanningTable) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *PlanningTable) GetAction() PlanningTable_Action {
+	if x != nil {
+		return x.Action
+	}
+	return PlanningTable_CONTEXT
+}
+
+func (x *PlanningTable) GetDesired() *DeclaredTable {
+	if x != nil {
+		return x.Desired
+	}
+	return nil
+}
+
+func (x *PlanningTable) GetCurrent() *ObservedTable {
+	if x != nil {
+		return x.Current
+	}
+	return nil
+}
+
+// PlanFeatures is offline. The host provides the complete captured context and
+// common steps; the owner contributes operations, never a separately scheduled
+// executable prefix. The host must validate and schedule the complete graph.
+type PlanFeaturesRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Engine         string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	PlanningId     string                 `protobuf:"bytes,2,opt,name=planning_id,json=planningId,proto3" json:"planning_id,omitempty"`
+	TargetFeatures []string               `protobuf:"bytes,3,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	Identifiers    *ComparisonIdentifiers `protobuf:"bytes,4,opt,name=identifiers,proto3" json:"identifiers,omitempty"`
+	Capabilities   map[string]bool        `protobuf:"bytes,5,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Changes        []*PlanningChange      `protobuf:"bytes,6,rep,name=changes,proto3" json:"changes,omitempty"`
+	Tables         []*PlanningTable       `protobuf:"bytes,7,rep,name=tables,proto3" json:"tables,omitempty"`
+	DesiredTypes   []*PlanningType        `protobuf:"bytes,8,rep,name=desired_types,json=desiredTypes,proto3" json:"desired_types,omitempty"`
+	CurrentTypes   []*PlanningType        `protobuf:"bytes,9,rep,name=current_types,json=currentTypes,proto3" json:"current_types,omitempty"`
+	CommonSteps    []*CommonPlanningStep  `protobuf:"bytes,10,rep,name=common_steps,json=commonSteps,proto3" json:"common_steps,omitempty"`
+	ParentKinds    []string               `protobuf:"bytes,11,rep,name=parent_kinds,json=parentKinds,proto3" json:"parent_kinds,omitempty"`
+	DatabasePath   string                 `protobuf:"bytes,12,opt,name=database_path,json=databasePath,proto3" json:"database_path,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PlanFeaturesRequest) Reset() {
+	*x = PlanFeaturesRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanFeaturesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanFeaturesRequest) ProtoMessage() {}
+
+func (x *PlanFeaturesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanFeaturesRequest.ProtoReflect.Descriptor instead.
+func (*PlanFeaturesRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *PlanFeaturesRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *PlanFeaturesRequest) GetPlanningId() string {
+	if x != nil {
+		return x.PlanningId
+	}
+	return ""
+}
+
+func (x *PlanFeaturesRequest) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetIdentifiers() *ComparisonIdentifiers {
+	if x != nil {
+		return x.Identifiers
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetCapabilities() map[string]bool {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetChanges() []*PlanningChange {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetTables() []*PlanningTable {
+	if x != nil {
+		return x.Tables
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetDesiredTypes() []*PlanningType {
+	if x != nil {
+		return x.DesiredTypes
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetCurrentTypes() []*PlanningType {
+	if x != nil {
+		return x.CurrentTypes
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetCommonSteps() []*CommonPlanningStep {
+	if x != nil {
+		return x.CommonSteps
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetParentKinds() []string {
+	if x != nil {
+		return x.ParentKinds
+	}
+	return nil
+}
+
+func (x *PlanFeaturesRequest) GetDatabasePath() string {
+	if x != nil {
+		return x.DatabasePath
+	}
+	return ""
+}
+
+type PlannedFeatures struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Complete      bool                     `protobuf:"varint,1,opt,name=complete,proto3" json:"complete,omitempty"`
+	Contributions []*PlanningContribution  `protobuf:"bytes,2,rep,name=contributions,proto3" json:"contributions,omitempty"`
+	Changes       []*PlanningReceipt       `protobuf:"bytes,3,rep,name=changes,proto3" json:"changes,omitempty"`
+	Parents       []*PlanningParentReceipt `protobuf:"bytes,4,rep,name=parents,proto3" json:"parents,omitempty"`
+	Rewrites      []*PlanningRewrite       `protobuf:"bytes,5,rep,name=rewrites,proto3" json:"rewrites,omitempty"`
+	// A completed refusal carries diagnostics and no successful output.
+	Diagnostics   []*PlanningDiagnostic `protobuf:"bytes,6,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlannedFeatures) Reset() {
+	*x = PlannedFeatures{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlannedFeatures) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlannedFeatures) ProtoMessage() {}
+
+func (x *PlannedFeatures) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlannedFeatures.ProtoReflect.Descriptor instead.
+func (*PlannedFeatures) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *PlannedFeatures) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *PlannedFeatures) GetContributions() []*PlanningContribution {
+	if x != nil {
+		return x.Contributions
+	}
+	return nil
+}
+
+func (x *PlannedFeatures) GetChanges() []*PlanningReceipt {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *PlannedFeatures) GetParents() []*PlanningParentReceipt {
+	if x != nil {
+		return x.Parents
+	}
+	return nil
+}
+
+func (x *PlannedFeatures) GetRewrites() []*PlanningRewrite {
+	if x != nil {
+		return x.Rewrites
+	}
+	return nil
+}
+
+func (x *PlannedFeatures) GetDiagnostics() []*PlanningDiagnostic {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
+// Captured feature collections retain excluded facets and independent coverage
+// sources. They contain normalized values, never executable owner callbacks.
+type CapturedFeatures struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Objects       *ComparisonState       `protobuf:"bytes,1,opt,name=objects,proto3" json:"objects,omitempty"`
+	Facets        *ComparisonState       `protobuf:"bytes,2,opt,name=facets,proto3" json:"facets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapturedFeatures) Reset() {
+	*x = CapturedFeatures{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapturedFeatures) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapturedFeatures) ProtoMessage() {}
+
+func (x *CapturedFeatures) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapturedFeatures.ProtoReflect.Descriptor instead.
+func (*CapturedFeatures) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *CapturedFeatures) GetObjects() *ComparisonState {
+	if x != nil {
+		return x.Objects
+	}
+	return nil
+}
+
+func (x *CapturedFeatures) GetFacets() *ComparisonState {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
+}
+
+// Common definitions preserve declaration and inspection representations
+// separately. Owner-specific properties belong to CapturedFeatures.
+type DeclaredTable struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Name                 string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Schema               string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Engine               string                 `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	Collation            string                 `protobuf:"bytes,4,opt,name=collation,proto3" json:"collation,omitempty"`
+	Comment              string                 `protobuf:"bytes,5,opt,name=comment,proto3" json:"comment,omitempty"`
+	PrimaryKey           []string               `protobuf:"bytes,6,rep,name=primary_key,json=primaryKey,proto3" json:"primary_key,omitempty"`
+	PrimaryKeyName       string                 `protobuf:"bytes,7,opt,name=primary_key_name,json=primaryKeyName,proto3" json:"primary_key_name,omitempty"`
+	PrimaryKeyParts      []*DeclaredKeyPart     `protobuf:"bytes,8,rep,name=primary_key_parts,json=primaryKeyParts,proto3" json:"primary_key_parts,omitempty"`
+	PrimaryKeyInclude    []string               `protobuf:"bytes,9,rep,name=primary_key_include,json=primaryKeyInclude,proto3" json:"primary_key_include,omitempty"`
+	PrimaryKeyMethod     string                 `protobuf:"bytes,10,opt,name=primary_key_method,json=primaryKeyMethod,proto3" json:"primary_key_method,omitempty"`
+	PrimaryKeyComment    string                 `protobuf:"bytes,11,opt,name=primary_key_comment,json=primaryKeyComment,proto3" json:"primary_key_comment,omitempty"`
+	PrimaryKeyDeferrable bool                   `protobuf:"varint,12,opt,name=primary_key_deferrable,json=primaryKeyDeferrable,proto3" json:"primary_key_deferrable,omitempty"`
+	PrimaryKeyInitially  string                 `protobuf:"bytes,13,opt,name=primary_key_initially,json=primaryKeyInitially,proto3" json:"primary_key_initially,omitempty"`
+	Checks               []string               `protobuf:"bytes,14,rep,name=checks,proto3" json:"checks,omitempty"`
+	CustomSql            string                 `protobuf:"bytes,15,opt,name=custom_sql,json=customSql,proto3" json:"custom_sql,omitempty"`
+	DependsOn            []string               `protobuf:"bytes,16,rep,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
+	Columns              []*DeclaredColumn      `protobuf:"bytes,17,rep,name=columns,proto3" json:"columns,omitempty"`
+	Enums                []*DeclaredEnum        `protobuf:"bytes,18,rep,name=enums,proto3" json:"enums,omitempty"`
+	Constraints          []*DeclaredConstraint  `protobuf:"bytes,19,rep,name=constraints,proto3" json:"constraints,omitempty"`
+	Indexes              []*DeclaredIndex       `protobuf:"bytes,20,rep,name=indexes,proto3" json:"indexes,omitempty"`
+	Triggers             []*CapturedTrigger     `protobuf:"bytes,21,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	Features             *CapturedFeatures      `protobuf:"bytes,22,opt,name=features,proto3" json:"features,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *DeclaredTable) Reset() {
+	*x = DeclaredTable{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredTable) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredTable) ProtoMessage() {}
+
+func (x *DeclaredTable) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredTable.ProtoReflect.Descriptor instead.
+func (*DeclaredTable) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *DeclaredTable) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetCollation() string {
+	if x != nil {
+		return x.Collation
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetPrimaryKey() []string {
+	if x != nil {
+		return x.PrimaryKey
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetPrimaryKeyName() string {
+	if x != nil {
+		return x.PrimaryKeyName
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetPrimaryKeyParts() []*DeclaredKeyPart {
+	if x != nil {
+		return x.PrimaryKeyParts
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetPrimaryKeyInclude() []string {
+	if x != nil {
+		return x.PrimaryKeyInclude
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetPrimaryKeyMethod() string {
+	if x != nil {
+		return x.PrimaryKeyMethod
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetPrimaryKeyComment() string {
+	if x != nil {
+		return x.PrimaryKeyComment
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetPrimaryKeyDeferrable() bool {
+	if x != nil {
+		return x.PrimaryKeyDeferrable
+	}
+	return false
+}
+
+func (x *DeclaredTable) GetPrimaryKeyInitially() string {
+	if x != nil {
+		return x.PrimaryKeyInitially
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetChecks() []string {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetCustomSql() string {
+	if x != nil {
+		return x.CustomSql
+	}
+	return ""
+}
+
+func (x *DeclaredTable) GetDependsOn() []string {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetColumns() []*DeclaredColumn {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetEnums() []*DeclaredEnum {
+	if x != nil {
+		return x.Enums
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetConstraints() []*DeclaredConstraint {
+	if x != nil {
+		return x.Constraints
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetIndexes() []*DeclaredIndex {
+	if x != nil {
+		return x.Indexes
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetTriggers() []*CapturedTrigger {
+	if x != nil {
+		return x.Triggers
+	}
+	return nil
+}
+
+func (x *DeclaredTable) GetFeatures() *CapturedFeatures {
+	if x != nil {
+		return x.Features
+	}
+	return nil
+}
+
+type DeclaredKeyPart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Column        string                 `protobuf:"bytes,1,opt,name=column,proto3" json:"column,omitempty"`
+	Descending    bool                   `protobuf:"varint,2,opt,name=descending,proto3" json:"descending,omitempty"`
+	Prefix        string                 `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeclaredKeyPart) Reset() {
+	*x = DeclaredKeyPart{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredKeyPart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredKeyPart) ProtoMessage() {}
+
+func (x *DeclaredKeyPart) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredKeyPart.ProtoReflect.Descriptor instead.
+func (*DeclaredKeyPart) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *DeclaredKeyPart) GetColumn() string {
+	if x != nil {
+		return x.Column
+	}
+	return ""
+}
+
+func (x *DeclaredKeyPart) GetDescending() bool {
+	if x != nil {
+		return x.Descending
+	}
+	return false
+}
+
+func (x *DeclaredKeyPart) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+type DeclaredColumn struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Name                  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type                  string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	TypeRawSql            bool                   `protobuf:"varint,3,opt,name=type_raw_sql,json=typeRawSql,proto3" json:"type_raw_sql,omitempty"`
+	TypeIsDeclaredText    bool                   `protobuf:"varint,4,opt,name=type_is_declared_text,json=typeIsDeclaredText,proto3" json:"type_is_declared_text,omitempty"`
+	Nullable              bool                   `protobuf:"varint,5,opt,name=nullable,proto3" json:"nullable,omitempty"`
+	Primary               bool                   `protobuf:"varint,6,opt,name=primary,proto3" json:"primary,omitempty"`
+	AutoIncrement         bool                   `protobuf:"varint,7,opt,name=auto_increment,json=autoIncrement,proto3" json:"auto_increment,omitempty"`
+	IdentityGeneration    string                 `protobuf:"bytes,8,opt,name=identity_generation,json=identityGeneration,proto3" json:"identity_generation,omitempty"`
+	IdentityStart         string                 `protobuf:"bytes,9,opt,name=identity_start,json=identityStart,proto3" json:"identity_start,omitempty"`
+	IdentityIncrement     string                 `protobuf:"bytes,10,opt,name=identity_increment,json=identityIncrement,proto3" json:"identity_increment,omitempty"`
+	IdentityOptions       string                 `protobuf:"bytes,11,opt,name=identity_options,json=identityOptions,proto3" json:"identity_options,omitempty"`
+	Unique                bool                   `protobuf:"varint,12,opt,name=unique,proto3" json:"unique,omitempty"`
+	UniqueExpression      string                 `protobuf:"bytes,13,opt,name=unique_expression,json=uniqueExpression,proto3" json:"unique_expression,omitempty"`
+	DefaultValue          string                 `protobuf:"bytes,14,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
+	DefaultSet            bool                   `protobuf:"varint,15,opt,name=default_set,json=defaultSet,proto3" json:"default_set,omitempty"`
+	DefaultExpression     string                 `protobuf:"bytes,16,opt,name=default_expression,json=defaultExpression,proto3" json:"default_expression,omitempty"`
+	ForeignReference      string                 `protobuf:"bytes,17,opt,name=foreign_reference,json=foreignReference,proto3" json:"foreign_reference,omitempty"`
+	ForeignKeyName        string                 `protobuf:"bytes,18,opt,name=foreign_key_name,json=foreignKeyName,proto3" json:"foreign_key_name,omitempty"`
+	OnDelete              string                 `protobuf:"bytes,19,opt,name=on_delete,json=onDelete,proto3" json:"on_delete,omitempty"`
+	OnUpdate              string                 `protobuf:"bytes,20,opt,name=on_update,json=onUpdate,proto3" json:"on_update,omitempty"`
+	Deferrable            bool                   `protobuf:"varint,21,opt,name=deferrable,proto3" json:"deferrable,omitempty"`
+	Initially             string                 `protobuf:"bytes,22,opt,name=initially,proto3" json:"initially,omitempty"`
+	ForeignKeyMatch       string                 `protobuf:"bytes,23,opt,name=foreign_key_match,json=foreignKeyMatch,proto3" json:"foreign_key_match,omitempty"`
+	ForeignKeyNotEnforced bool                   `protobuf:"varint,24,opt,name=foreign_key_not_enforced,json=foreignKeyNotEnforced,proto3" json:"foreign_key_not_enforced,omitempty"`
+	EnumValues            []string               `protobuf:"bytes,25,rep,name=enum_values,json=enumValues,proto3" json:"enum_values,omitempty"`
+	Check                 string                 `protobuf:"bytes,26,opt,name=check,proto3" json:"check,omitempty"`
+	CheckName             string                 `protobuf:"bytes,27,opt,name=check_name,json=checkName,proto3" json:"check_name,omitempty"`
+	CheckNotEnforced      bool                   `protobuf:"varint,28,opt,name=check_not_enforced,json=checkNotEnforced,proto3" json:"check_not_enforced,omitempty"`
+	NotNullConstraintName string                 `protobuf:"bytes,29,opt,name=not_null_constraint_name,json=notNullConstraintName,proto3" json:"not_null_constraint_name,omitempty"`
+	GeneratedExpression   string                 `protobuf:"bytes,30,opt,name=generated_expression,json=generatedExpression,proto3" json:"generated_expression,omitempty"`
+	GeneratedKind         string                 `protobuf:"bytes,31,opt,name=generated_kind,json=generatedKind,proto3" json:"generated_kind,omitempty"`
+	Collation             string                 `protobuf:"bytes,32,opt,name=collation,proto3" json:"collation,omitempty"`
+	Comment               string                 `protobuf:"bytes,33,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *DeclaredColumn) Reset() {
+	*x = DeclaredColumn{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredColumn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredColumn) ProtoMessage() {}
+
+func (x *DeclaredColumn) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredColumn.ProtoReflect.Descriptor instead.
+func (*DeclaredColumn) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *DeclaredColumn) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetTypeRawSql() bool {
+	if x != nil {
+		return x.TypeRawSql
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetTypeIsDeclaredText() bool {
+	if x != nil {
+		return x.TypeIsDeclaredText
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetNullable() bool {
+	if x != nil {
+		return x.Nullable
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetPrimary() bool {
+	if x != nil {
+		return x.Primary
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetAutoIncrement() bool {
+	if x != nil {
+		return x.AutoIncrement
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetIdentityGeneration() string {
+	if x != nil {
+		return x.IdentityGeneration
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetIdentityStart() string {
+	if x != nil {
+		return x.IdentityStart
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetIdentityIncrement() string {
+	if x != nil {
+		return x.IdentityIncrement
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetIdentityOptions() string {
+	if x != nil {
+		return x.IdentityOptions
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetUnique() bool {
+	if x != nil {
+		return x.Unique
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetUniqueExpression() string {
+	if x != nil {
+		return x.UniqueExpression
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetDefaultValue() string {
+	if x != nil {
+		return x.DefaultValue
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetDefaultSet() bool {
+	if x != nil {
+		return x.DefaultSet
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetDefaultExpression() string {
+	if x != nil {
+		return x.DefaultExpression
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetForeignReference() string {
+	if x != nil {
+		return x.ForeignReference
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetForeignKeyName() string {
+	if x != nil {
+		return x.ForeignKeyName
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetOnDelete() string {
+	if x != nil {
+		return x.OnDelete
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetOnUpdate() string {
+	if x != nil {
+		return x.OnUpdate
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetDeferrable() bool {
+	if x != nil {
+		return x.Deferrable
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetInitially() string {
+	if x != nil {
+		return x.Initially
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetForeignKeyMatch() string {
+	if x != nil {
+		return x.ForeignKeyMatch
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetForeignKeyNotEnforced() bool {
+	if x != nil {
+		return x.ForeignKeyNotEnforced
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetEnumValues() []string {
+	if x != nil {
+		return x.EnumValues
+	}
+	return nil
+}
+
+func (x *DeclaredColumn) GetCheck() string {
+	if x != nil {
+		return x.Check
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetCheckName() string {
+	if x != nil {
+		return x.CheckName
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetCheckNotEnforced() bool {
+	if x != nil {
+		return x.CheckNotEnforced
+	}
+	return false
+}
+
+func (x *DeclaredColumn) GetNotNullConstraintName() string {
+	if x != nil {
+		return x.NotNullConstraintName
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetGeneratedExpression() string {
+	if x != nil {
+		return x.GeneratedExpression
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetGeneratedKind() string {
+	if x != nil {
+		return x.GeneratedKind
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetCollation() string {
+	if x != nil {
+		return x.Collation
+	}
+	return ""
+}
+
+func (x *DeclaredColumn) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+type DeclaredEnum struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Schema        string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Values        []string               `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"`
+	Comment       string                 `protobuf:"bytes,4,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeclaredEnum) Reset() {
+	*x = DeclaredEnum{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredEnum) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredEnum) ProtoMessage() {}
+
+func (x *DeclaredEnum) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredEnum.ProtoReflect.Descriptor instead.
+func (*DeclaredEnum) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *DeclaredEnum) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeclaredEnum) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *DeclaredEnum) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+func (x *DeclaredEnum) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+type CapturedIndexPart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Column        string                 `protobuf:"bytes,1,opt,name=column,proto3" json:"column,omitempty"`
+	Expression    string                 `protobuf:"bytes,2,opt,name=expression,proto3" json:"expression,omitempty"`
+	Descending    bool                   `protobuf:"varint,3,opt,name=descending,proto3" json:"descending,omitempty"`
+	Nulls         string                 `protobuf:"bytes,4,opt,name=nulls,proto3" json:"nulls,omitempty"`
+	OperatorClass string                 `protobuf:"bytes,5,opt,name=operator_class,json=operatorClass,proto3" json:"operator_class,omitempty"`
+	Prefix        string                 `protobuf:"bytes,6,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CapturedIndexPart) Reset() {
+	*x = CapturedIndexPart{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapturedIndexPart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapturedIndexPart) ProtoMessage() {}
+
+func (x *CapturedIndexPart) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapturedIndexPart.ProtoReflect.Descriptor instead.
+func (*CapturedIndexPart) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *CapturedIndexPart) GetColumn() string {
+	if x != nil {
+		return x.Column
+	}
+	return ""
+}
+
+func (x *CapturedIndexPart) GetExpression() string {
+	if x != nil {
+		return x.Expression
+	}
+	return ""
+}
+
+func (x *CapturedIndexPart) GetDescending() bool {
+	if x != nil {
+		return x.Descending
+	}
+	return false
+}
+
+func (x *CapturedIndexPart) GetNulls() string {
+	if x != nil {
+		return x.Nulls
+	}
+	return ""
+}
+
+func (x *CapturedIndexPart) GetOperatorClass() string {
+	if x != nil {
+		return x.OperatorClass
+	}
+	return ""
+}
+
+func (x *CapturedIndexPart) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+type DeclaredIndex struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Name              string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Fields            []string               `protobuf:"bytes,2,rep,name=fields,proto3" json:"fields,omitempty"`
+	Parts             []*CapturedIndexPart   `protobuf:"bytes,3,rep,name=parts,proto3" json:"parts,omitempty"`
+	Unique            bool                   `protobuf:"varint,4,opt,name=unique,proto3" json:"unique,omitempty"`
+	Comment           string                 `protobuf:"bytes,5,opt,name=comment,proto3" json:"comment,omitempty"`
+	Invisible         bool                   `protobuf:"varint,6,opt,name=invisible,proto3" json:"invisible,omitempty"`
+	NullsDistinct     *bool                  `protobuf:"varint,7,opt,name=nulls_distinct,json=nullsDistinct,proto3,oneof" json:"nulls_distinct,omitempty"`
+	Type              string                 `protobuf:"bytes,8,opt,name=type,proto3" json:"type,omitempty"`
+	Condition         string                 `protobuf:"bytes,9,opt,name=condition,proto3" json:"condition,omitempty"`
+	Concurrently      bool                   `protobuf:"varint,10,opt,name=concurrently,proto3" json:"concurrently,omitempty"`
+	Operator          string                 `protobuf:"bytes,11,opt,name=operator,proto3" json:"operator,omitempty"`
+	IncludeColumns    []string               `protobuf:"bytes,12,rep,name=include_columns,json=includeColumns,proto3" json:"include_columns,omitempty"`
+	StorageParameters map[string]string      `protobuf:"bytes,13,rep,name=storage_parameters,json=storageParameters,proto3" json:"storage_parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	TableName         string                 `protobuf:"bytes,14,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	Requires          []*ComparisonIdentity  `protobuf:"bytes,15,rep,name=requires,proto3" json:"requires,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *DeclaredIndex) Reset() {
+	*x = DeclaredIndex{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredIndex) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredIndex) ProtoMessage() {}
+
+func (x *DeclaredIndex) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredIndex.ProtoReflect.Descriptor instead.
+func (*DeclaredIndex) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{107}
+}
+
+func (x *DeclaredIndex) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetFields() []string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *DeclaredIndex) GetParts() []*CapturedIndexPart {
+	if x != nil {
+		return x.Parts
+	}
+	return nil
+}
+
+func (x *DeclaredIndex) GetUnique() bool {
+	if x != nil {
+		return x.Unique
+	}
+	return false
+}
+
+func (x *DeclaredIndex) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetInvisible() bool {
+	if x != nil {
+		return x.Invisible
+	}
+	return false
+}
+
+func (x *DeclaredIndex) GetNullsDistinct() bool {
+	if x != nil && x.NullsDistinct != nil {
+		return *x.NullsDistinct
+	}
+	return false
+}
+
+func (x *DeclaredIndex) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetCondition() string {
+	if x != nil {
+		return x.Condition
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetConcurrently() bool {
+	if x != nil {
+		return x.Concurrently
+	}
+	return false
+}
+
+func (x *DeclaredIndex) GetOperator() string {
+	if x != nil {
+		return x.Operator
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetIncludeColumns() []string {
+	if x != nil {
+		return x.IncludeColumns
+	}
+	return nil
+}
+
+func (x *DeclaredIndex) GetStorageParameters() map[string]string {
+	if x != nil {
+		return x.StorageParameters
+	}
+	return nil
+}
+
+func (x *DeclaredIndex) GetTableName() string {
+	if x != nil {
+		return x.TableName
+	}
+	return ""
+}
+
+func (x *DeclaredIndex) GetRequires() []*ComparisonIdentity {
+	if x != nil {
+		return x.Requires
+	}
+	return nil
+}
+
+type DeclaredConstraint struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type            string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Table           string                 `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	UsingMethod     string                 `protobuf:"bytes,4,opt,name=using_method,json=usingMethod,proto3" json:"using_method,omitempty"`
+	CheckExpression string                 `protobuf:"bytes,5,opt,name=check_expression,json=checkExpression,proto3" json:"check_expression,omitempty"`
+	Columns         []string               `protobuf:"bytes,6,rep,name=columns,proto3" json:"columns,omitempty"`
+	IncludeColumns  []string               `protobuf:"bytes,7,rep,name=include_columns,json=includeColumns,proto3" json:"include_columns,omitempty"`
+	NullsDistinct   *bool                  `protobuf:"varint,8,opt,name=nulls_distinct,json=nullsDistinct,proto3,oneof" json:"nulls_distinct,omitempty"`
+	ForeignTable    string                 `protobuf:"bytes,9,opt,name=foreign_table,json=foreignTable,proto3" json:"foreign_table,omitempty"`
+	ForeignColumn   string                 `protobuf:"bytes,10,opt,name=foreign_column,json=foreignColumn,proto3" json:"foreign_column,omitempty"`
+	ForeignColumns  []string               `protobuf:"bytes,11,rep,name=foreign_columns,json=foreignColumns,proto3" json:"foreign_columns,omitempty"`
+	OnDelete        string                 `protobuf:"bytes,12,opt,name=on_delete,json=onDelete,proto3" json:"on_delete,omitempty"`
+	OnUpdate        string                 `protobuf:"bytes,13,opt,name=on_update,json=onUpdate,proto3" json:"on_update,omitempty"`
+	Deferrable      bool                   `protobuf:"varint,14,opt,name=deferrable,proto3" json:"deferrable,omitempty"`
+	Initially       string                 `protobuf:"bytes,15,opt,name=initially,proto3" json:"initially,omitempty"`
+	Match           string                 `protobuf:"bytes,16,opt,name=match,proto3" json:"match,omitempty"`
+	NotEnforced     bool                   `protobuf:"varint,17,opt,name=not_enforced,json=notEnforced,proto3" json:"not_enforced,omitempty"`
+	NotValid        bool                   `protobuf:"varint,18,opt,name=not_valid,json=notValid,proto3" json:"not_valid,omitempty"`
+	Requires        []*ComparisonIdentity  `protobuf:"bytes,19,rep,name=requires,proto3" json:"requires,omitempty"`
+	Comment         string                 `protobuf:"bytes,20,opt,name=comment,proto3" json:"comment,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeclaredConstraint) Reset() {
+	*x = DeclaredConstraint{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclaredConstraint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclaredConstraint) ProtoMessage() {}
+
+func (x *DeclaredConstraint) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclaredConstraint.ProtoReflect.Descriptor instead.
+func (*DeclaredConstraint) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{108}
+}
+
+func (x *DeclaredConstraint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetUsingMethod() string {
+	if x != nil {
+		return x.UsingMethod
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetCheckExpression() string {
+	if x != nil {
+		return x.CheckExpression
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetColumns() []string {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *DeclaredConstraint) GetIncludeColumns() []string {
+	if x != nil {
+		return x.IncludeColumns
+	}
+	return nil
+}
+
+func (x *DeclaredConstraint) GetNullsDistinct() bool {
+	if x != nil && x.NullsDistinct != nil {
+		return *x.NullsDistinct
+	}
+	return false
+}
+
+func (x *DeclaredConstraint) GetForeignTable() string {
+	if x != nil {
+		return x.ForeignTable
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetForeignColumn() string {
+	if x != nil {
+		return x.ForeignColumn
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetForeignColumns() []string {
+	if x != nil {
+		return x.ForeignColumns
+	}
+	return nil
+}
+
+func (x *DeclaredConstraint) GetOnDelete() string {
+	if x != nil {
+		return x.OnDelete
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetOnUpdate() string {
+	if x != nil {
+		return x.OnUpdate
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetDeferrable() bool {
+	if x != nil {
+		return x.Deferrable
+	}
+	return false
+}
+
+func (x *DeclaredConstraint) GetInitially() string {
+	if x != nil {
+		return x.Initially
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetMatch() string {
+	if x != nil {
+		return x.Match
+	}
+	return ""
+}
+
+func (x *DeclaredConstraint) GetNotEnforced() bool {
+	if x != nil {
+		return x.NotEnforced
+	}
+	return false
+}
+
+func (x *DeclaredConstraint) GetNotValid() bool {
+	if x != nil {
+		return x.NotValid
+	}
+	return false
+}
+
+func (x *DeclaredConstraint) GetRequires() []*ComparisonIdentity {
+	if x != nil {
+		return x.Requires
+	}
+	return nil
+}
+
+func (x *DeclaredConstraint) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+type CapturedTrigger struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Schema          string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Table           string                 `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	Timing          string                 `protobuf:"bytes,4,opt,name=timing,proto3" json:"timing,omitempty"`
+	Event           string                 `protobuf:"bytes,5,opt,name=event,proto3" json:"event,omitempty"`
+	ForEach         string                 `protobuf:"bytes,6,opt,name=for_each,json=forEach,proto3" json:"for_each,omitempty"`
+	Body            string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
+	Comment         string                 `protobuf:"bytes,8,opt,name=comment,proto3" json:"comment,omitempty"`
+	When            string                 `protobuf:"bytes,9,opt,name=when,proto3" json:"when,omitempty"`
+	OldTable        string                 `protobuf:"bytes,10,opt,name=old_table,json=oldTable,proto3" json:"old_table,omitempty"`
+	NewTable        string                 `protobuf:"bytes,11,opt,name=new_table,json=newTable,proto3" json:"new_table,omitempty"`
+	ExecuteFunction string                 `protobuf:"bytes,12,opt,name=execute_function,json=executeFunction,proto3" json:"execute_function,omitempty"`
+	Targets         []string               `protobuf:"bytes,13,rep,name=targets,proto3" json:"targets,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CapturedTrigger) Reset() {
+	*x = CapturedTrigger{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CapturedTrigger) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CapturedTrigger) ProtoMessage() {}
+
+func (x *CapturedTrigger) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CapturedTrigger.ProtoReflect.Descriptor instead.
+func (*CapturedTrigger) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{109}
+}
+
+func (x *CapturedTrigger) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetTiming() string {
+	if x != nil {
+		return x.Timing
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetForEach() string {
+	if x != nil {
+		return x.ForEach
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetWhen() string {
+	if x != nil {
+		return x.When
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetOldTable() string {
+	if x != nil {
+		return x.OldTable
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetNewTable() string {
+	if x != nil {
+		return x.NewTable
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetExecuteFunction() string {
+	if x != nil {
+		return x.ExecuteFunction
+	}
+	return ""
+}
+
+func (x *CapturedTrigger) GetTargets() []string {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+type ObservedTable struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Schema          string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Type            string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Comment         string                 `protobuf:"bytes,4,opt,name=comment,proto3" json:"comment,omitempty"`
+	Charset         string                 `protobuf:"bytes,5,opt,name=charset,proto3" json:"charset,omitempty"`
+	Collation       string                 `protobuf:"bytes,6,opt,name=collation,proto3" json:"collation,omitempty"`
+	RowFormat       string                 `protobuf:"bytes,7,opt,name=row_format,json=rowFormat,proto3" json:"row_format,omitempty"`
+	Columns         []*ObservedColumn      `protobuf:"bytes,8,rep,name=columns,proto3" json:"columns,omitempty"`
+	EstimatedRows   int64                  `protobuf:"varint,9,opt,name=estimated_rows,json=estimatedRows,proto3" json:"estimated_rows,omitempty"`
+	RowStatsUnknown bool                   `protobuf:"varint,10,opt,name=row_stats_unknown,json=rowStatsUnknown,proto3" json:"row_stats_unknown,omitempty"`
+	Partitioned     bool                   `protobuf:"varint,11,opt,name=partitioned,proto3" json:"partitioned,omitempty"`
+	RlsEnabled      bool                   `protobuf:"varint,12,opt,name=rls_enabled,json=rlsEnabled,proto3" json:"rls_enabled,omitempty"`
+	RlsForced       bool                   `protobuf:"varint,13,opt,name=rls_forced,json=rlsForced,proto3" json:"rls_forced,omitempty"`
+	Indexes         []*ObservedIndex       `protobuf:"bytes,14,rep,name=indexes,proto3" json:"indexes,omitempty"`
+	Constraints     []*ObservedConstraint  `protobuf:"bytes,15,rep,name=constraints,proto3" json:"constraints,omitempty"`
+	Triggers        []*CapturedTrigger     `protobuf:"bytes,16,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	Features        *CapturedFeatures      `protobuf:"bytes,17,opt,name=features,proto3" json:"features,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ObservedTable) Reset() {
+	*x = ObservedTable{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObservedTable) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObservedTable) ProtoMessage() {}
+
+func (x *ObservedTable) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObservedTable.ProtoReflect.Descriptor instead.
+func (*ObservedTable) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{110}
+}
+
+func (x *ObservedTable) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetCharset() string {
+	if x != nil {
+		return x.Charset
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetCollation() string {
+	if x != nil {
+		return x.Collation
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetRowFormat() string {
+	if x != nil {
+		return x.RowFormat
+	}
+	return ""
+}
+
+func (x *ObservedTable) GetColumns() []*ObservedColumn {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *ObservedTable) GetEstimatedRows() int64 {
+	if x != nil {
+		return x.EstimatedRows
+	}
+	return 0
+}
+
+func (x *ObservedTable) GetRowStatsUnknown() bool {
+	if x != nil {
+		return x.RowStatsUnknown
+	}
+	return false
+}
+
+func (x *ObservedTable) GetPartitioned() bool {
+	if x != nil {
+		return x.Partitioned
+	}
+	return false
+}
+
+func (x *ObservedTable) GetRlsEnabled() bool {
+	if x != nil {
+		return x.RlsEnabled
+	}
+	return false
+}
+
+func (x *ObservedTable) GetRlsForced() bool {
+	if x != nil {
+		return x.RlsForced
+	}
+	return false
+}
+
+func (x *ObservedTable) GetIndexes() []*ObservedIndex {
+	if x != nil {
+		return x.Indexes
+	}
+	return nil
+}
+
+func (x *ObservedTable) GetConstraints() []*ObservedConstraint {
+	if x != nil {
+		return x.Constraints
+	}
+	return nil
+}
+
+func (x *ObservedTable) GetTriggers() []*CapturedTrigger {
+	if x != nil {
+		return x.Triggers
+	}
+	return nil
+}
+
+func (x *ObservedTable) GetFeatures() *CapturedFeatures {
+	if x != nil {
+		return x.Features
+	}
+	return nil
+}
+
+type ObservedColumn struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Name                  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	DataType              string                 `protobuf:"bytes,2,opt,name=data_type,json=dataType,proto3" json:"data_type,omitempty"`
+	UdtName               string                 `protobuf:"bytes,3,opt,name=udt_name,json=udtName,proto3" json:"udt_name,omitempty"`
+	UdtSchema             string                 `protobuf:"bytes,4,opt,name=udt_schema,json=udtSchema,proto3" json:"udt_schema,omitempty"`
+	FormattedType         string                 `protobuf:"bytes,5,opt,name=formatted_type,json=formattedType,proto3" json:"formatted_type,omitempty"`
+	ColumnType            string                 `protobuf:"bytes,6,opt,name=column_type,json=columnType,proto3" json:"column_type,omitempty"`
+	IsNullable            string                 `protobuf:"bytes,7,opt,name=is_nullable,json=isNullable,proto3" json:"is_nullable,omitempty"`
+	DefaultExpression     *string                `protobuf:"bytes,8,opt,name=default_expression,json=defaultExpression,proto3,oneof" json:"default_expression,omitempty"`
+	CharacterMaxLength    *int64                 `protobuf:"varint,9,opt,name=character_max_length,json=characterMaxLength,proto3,oneof" json:"character_max_length,omitempty"`
+	Collation             string                 `protobuf:"bytes,10,opt,name=collation,proto3" json:"collation,omitempty"`
+	Comment               string                 `protobuf:"bytes,11,opt,name=comment,proto3" json:"comment,omitempty"`
+	NotNullConstraintName string                 `protobuf:"bytes,12,opt,name=not_null_constraint_name,json=notNullConstraintName,proto3" json:"not_null_constraint_name,omitempty"`
+	NumericPrecision      *int64                 `protobuf:"varint,13,opt,name=numeric_precision,json=numericPrecision,proto3,oneof" json:"numeric_precision,omitempty"`
+	NumericScale          *int64                 `protobuf:"varint,14,opt,name=numeric_scale,json=numericScale,proto3,oneof" json:"numeric_scale,omitempty"`
+	DatetimePrecision     *int64                 `protobuf:"varint,15,opt,name=datetime_precision,json=datetimePrecision,proto3,oneof" json:"datetime_precision,omitempty"`
+	OrdinalPosition       int64                  `protobuf:"varint,16,opt,name=ordinal_position,json=ordinalPosition,proto3" json:"ordinal_position,omitempty"`
+	AutoIncrement         bool                   `protobuf:"varint,17,opt,name=auto_increment,json=autoIncrement,proto3" json:"auto_increment,omitempty"`
+	PrimaryKey            bool                   `protobuf:"varint,18,opt,name=primary_key,json=primaryKey,proto3" json:"primary_key,omitempty"`
+	Unique                bool                   `protobuf:"varint,19,opt,name=unique,proto3" json:"unique,omitempty"`
+	TypeIsDeclaredText    bool                   `protobuf:"varint,20,opt,name=type_is_declared_text,json=typeIsDeclaredText,proto3" json:"type_is_declared_text,omitempty"`
+	DomainName            string                 `protobuf:"bytes,21,opt,name=domain_name,json=domainName,proto3" json:"domain_name,omitempty"`
+	DomainSchema          string                 `protobuf:"bytes,22,opt,name=domain_schema,json=domainSchema,proto3" json:"domain_schema,omitempty"`
+	GeneratedExpression   *string                `protobuf:"bytes,23,opt,name=generated_expression,json=generatedExpression,proto3,oneof" json:"generated_expression,omitempty"`
+	GeneratedKind         string                 `protobuf:"bytes,24,opt,name=generated_kind,json=generatedKind,proto3" json:"generated_kind,omitempty"`
+	IdentityGeneration    string                 `protobuf:"bytes,25,opt,name=identity_generation,json=identityGeneration,proto3" json:"identity_generation,omitempty"`
+	IdentityStart         string                 `protobuf:"bytes,26,opt,name=identity_start,json=identityStart,proto3" json:"identity_start,omitempty"`
+	IdentityIncrement     string                 `protobuf:"bytes,27,opt,name=identity_increment,json=identityIncrement,proto3" json:"identity_increment,omitempty"`
+	SequenceRestart       string                 `protobuf:"bytes,28,opt,name=sequence_restart,json=sequenceRestart,proto3" json:"sequence_restart,omitempty"`
+	OwnedSequence         string                 `protobuf:"bytes,29,opt,name=owned_sequence,json=ownedSequence,proto3" json:"owned_sequence,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ObservedColumn) Reset() {
+	*x = ObservedColumn{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObservedColumn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObservedColumn) ProtoMessage() {}
+
+func (x *ObservedColumn) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObservedColumn.ProtoReflect.Descriptor instead.
+func (*ObservedColumn) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{111}
+}
+
+func (x *ObservedColumn) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetDataType() string {
+	if x != nil {
+		return x.DataType
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetUdtName() string {
+	if x != nil {
+		return x.UdtName
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetUdtSchema() string {
+	if x != nil {
+		return x.UdtSchema
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetFormattedType() string {
+	if x != nil {
+		return x.FormattedType
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetColumnType() string {
+	if x != nil {
+		return x.ColumnType
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetIsNullable() string {
+	if x != nil {
+		return x.IsNullable
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetDefaultExpression() string {
+	if x != nil && x.DefaultExpression != nil {
+		return *x.DefaultExpression
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetCharacterMaxLength() int64 {
+	if x != nil && x.CharacterMaxLength != nil {
+		return *x.CharacterMaxLength
+	}
+	return 0
+}
+
+func (x *ObservedColumn) GetCollation() string {
+	if x != nil {
+		return x.Collation
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetNotNullConstraintName() string {
+	if x != nil {
+		return x.NotNullConstraintName
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetNumericPrecision() int64 {
+	if x != nil && x.NumericPrecision != nil {
+		return *x.NumericPrecision
+	}
+	return 0
+}
+
+func (x *ObservedColumn) GetNumericScale() int64 {
+	if x != nil && x.NumericScale != nil {
+		return *x.NumericScale
+	}
+	return 0
+}
+
+func (x *ObservedColumn) GetDatetimePrecision() int64 {
+	if x != nil && x.DatetimePrecision != nil {
+		return *x.DatetimePrecision
+	}
+	return 0
+}
+
+func (x *ObservedColumn) GetOrdinalPosition() int64 {
+	if x != nil {
+		return x.OrdinalPosition
+	}
+	return 0
+}
+
+func (x *ObservedColumn) GetAutoIncrement() bool {
+	if x != nil {
+		return x.AutoIncrement
+	}
+	return false
+}
+
+func (x *ObservedColumn) GetPrimaryKey() bool {
+	if x != nil {
+		return x.PrimaryKey
+	}
+	return false
+}
+
+func (x *ObservedColumn) GetUnique() bool {
+	if x != nil {
+		return x.Unique
+	}
+	return false
+}
+
+func (x *ObservedColumn) GetTypeIsDeclaredText() bool {
+	if x != nil {
+		return x.TypeIsDeclaredText
+	}
+	return false
+}
+
+func (x *ObservedColumn) GetDomainName() string {
+	if x != nil {
+		return x.DomainName
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetDomainSchema() string {
+	if x != nil {
+		return x.DomainSchema
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetGeneratedExpression() string {
+	if x != nil && x.GeneratedExpression != nil {
+		return *x.GeneratedExpression
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetGeneratedKind() string {
+	if x != nil {
+		return x.GeneratedKind
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetIdentityGeneration() string {
+	if x != nil {
+		return x.IdentityGeneration
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetIdentityStart() string {
+	if x != nil {
+		return x.IdentityStart
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetIdentityIncrement() string {
+	if x != nil {
+		return x.IdentityIncrement
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetSequenceRestart() string {
+	if x != nil {
+		return x.SequenceRestart
+	}
+	return ""
+}
+
+func (x *ObservedColumn) GetOwnedSequence() string {
+	if x != nil {
+		return x.OwnedSequence
+	}
+	return ""
+}
+
+type ObservedIndex struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ManagedBy          *ComparisonIdentity    `protobuf:"bytes,1,opt,name=managed_by,json=managedBy,proto3" json:"managed_by,omitempty"`
+	Name               string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	TableName          string                 `protobuf:"bytes,3,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	Schema             string                 `protobuf:"bytes,4,opt,name=schema,proto3" json:"schema,omitempty"`
+	Columns            []string               `protobuf:"bytes,5,rep,name=columns,proto3" json:"columns,omitempty"`
+	Parts              []*CapturedIndexPart   `protobuf:"bytes,6,rep,name=parts,proto3" json:"parts,omitempty"`
+	Unique             bool                   `protobuf:"varint,7,opt,name=unique,proto3" json:"unique,omitempty"`
+	Primary            bool                   `protobuf:"varint,8,opt,name=primary,proto3" json:"primary,omitempty"`
+	Definition         string                 `protobuf:"bytes,9,opt,name=definition,proto3" json:"definition,omitempty"`
+	KeyPartsIncomplete bool                   `protobuf:"varint,10,opt,name=key_parts_incomplete,json=keyPartsIncomplete,proto3" json:"key_parts_incomplete,omitempty"`
+	Condition          string                 `protobuf:"bytes,11,opt,name=condition,proto3" json:"condition,omitempty"`
+	Comment            string                 `protobuf:"bytes,12,opt,name=comment,proto3" json:"comment,omitempty"`
+	Invisible          bool                   `protobuf:"varint,13,opt,name=invisible,proto3" json:"invisible,omitempty"`
+	NullsDistinct      *bool                  `protobuf:"varint,14,opt,name=nulls_distinct,json=nullsDistinct,proto3,oneof" json:"nulls_distinct,omitempty"`
+	Method             string                 `protobuf:"bytes,15,opt,name=method,proto3" json:"method,omitempty"`
+	IncludeColumns     []string               `protobuf:"bytes,16,rep,name=include_columns,json=includeColumns,proto3" json:"include_columns,omitempty"`
+	StorageParameters  map[string]string      `protobuf:"bytes,17,rep,name=storage_parameters,json=storageParameters,proto3" json:"storage_parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Requires           []*ComparisonIdentity  `protobuf:"bytes,18,rep,name=requires,proto3" json:"requires,omitempty"`
+	PartitionAttached  bool                   `protobuf:"varint,19,opt,name=partition_attached,json=partitionAttached,proto3" json:"partition_attached,omitempty"`
+	HashShardBuckets   int64                  `protobuf:"varint,20,opt,name=hash_shard_buckets,json=hashShardBuckets,proto3" json:"hash_shard_buckets,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ObservedIndex) Reset() {
+	*x = ObservedIndex{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObservedIndex) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObservedIndex) ProtoMessage() {}
+
+func (x *ObservedIndex) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObservedIndex.ProtoReflect.Descriptor instead.
+func (*ObservedIndex) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{112}
+}
+
+func (x *ObservedIndex) GetManagedBy() *ComparisonIdentity {
+	if x != nil {
+		return x.ManagedBy
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetTableName() string {
+	if x != nil {
+		return x.TableName
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetColumns() []string {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetParts() []*CapturedIndexPart {
+	if x != nil {
+		return x.Parts
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetUnique() bool {
+	if x != nil {
+		return x.Unique
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetPrimary() bool {
+	if x != nil {
+		return x.Primary
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetDefinition() string {
+	if x != nil {
+		return x.Definition
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetKeyPartsIncomplete() bool {
+	if x != nil {
+		return x.KeyPartsIncomplete
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetCondition() string {
+	if x != nil {
+		return x.Condition
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetInvisible() bool {
+	if x != nil {
+		return x.Invisible
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetNullsDistinct() bool {
+	if x != nil && x.NullsDistinct != nil {
+		return *x.NullsDistinct
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *ObservedIndex) GetIncludeColumns() []string {
+	if x != nil {
+		return x.IncludeColumns
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetStorageParameters() map[string]string {
+	if x != nil {
+		return x.StorageParameters
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetRequires() []*ComparisonIdentity {
+	if x != nil {
+		return x.Requires
+	}
+	return nil
+}
+
+func (x *ObservedIndex) GetPartitionAttached() bool {
+	if x != nil {
+		return x.PartitionAttached
+	}
+	return false
+}
+
+func (x *ObservedIndex) GetHashShardBuckets() int64 {
+	if x != nil {
+		return x.HashShardBuckets
+	}
+	return 0
+}
+
+type ObservedConstraint struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TableName        string                 `protobuf:"bytes,2,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	Schema           string                 `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`
+	Type             string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	ColumnName       string                 `protobuf:"bytes,5,opt,name=column_name,json=columnName,proto3" json:"column_name,omitempty"`
+	ColumnNames      []string               `protobuf:"bytes,6,rep,name=column_names,json=columnNames,proto3" json:"column_names,omitempty"`
+	ForeignTable     *string                `protobuf:"bytes,7,opt,name=foreign_table,json=foreignTable,proto3,oneof" json:"foreign_table,omitempty"`
+	ForeignSchema    string                 `protobuf:"bytes,8,opt,name=foreign_schema,json=foreignSchema,proto3" json:"foreign_schema,omitempty"`
+	ForeignColumn    *string                `protobuf:"bytes,9,opt,name=foreign_column,json=foreignColumn,proto3,oneof" json:"foreign_column,omitempty"`
+	ForeignColumns   []string               `protobuf:"bytes,10,rep,name=foreign_columns,json=foreignColumns,proto3" json:"foreign_columns,omitempty"`
+	DeleteRule       *string                `protobuf:"bytes,11,opt,name=delete_rule,json=deleteRule,proto3,oneof" json:"delete_rule,omitempty"`
+	UpdateRule       *string                `protobuf:"bytes,12,opt,name=update_rule,json=updateRule,proto3,oneof" json:"update_rule,omitempty"`
+	Deferrable       bool                   `protobuf:"varint,13,opt,name=deferrable,proto3" json:"deferrable,omitempty"`
+	Initially        string                 `protobuf:"bytes,14,opt,name=initially,proto3" json:"initially,omitempty"`
+	Match            string                 `protobuf:"bytes,15,opt,name=match,proto3" json:"match,omitempty"`
+	NotEnforced      bool                   `protobuf:"varint,16,opt,name=not_enforced,json=notEnforced,proto3" json:"not_enforced,omitempty"`
+	NotValid         bool                   `protobuf:"varint,17,opt,name=not_valid,json=notValid,proto3" json:"not_valid,omitempty"`
+	CheckClause      *string                `protobuf:"bytes,18,opt,name=check_clause,json=checkClause,proto3,oneof" json:"check_clause,omitempty"`
+	NullsDistinct    *bool                  `protobuf:"varint,19,opt,name=nulls_distinct,json=nullsDistinct,proto3,oneof" json:"nulls_distinct,omitempty"`
+	IncludeColumns   []string               `protobuf:"bytes,20,rep,name=include_columns,json=includeColumns,proto3" json:"include_columns,omitempty"`
+	UsingMethod      *string                `protobuf:"bytes,21,opt,name=using_method,json=usingMethod,proto3,oneof" json:"using_method,omitempty"`
+	Requires         []*ComparisonIdentity  `protobuf:"bytes,22,rep,name=requires,proto3" json:"requires,omitempty"`
+	Comment          string                 `protobuf:"bytes,23,opt,name=comment,proto3" json:"comment,omitempty"`
+	HashShardBuckets int64                  `protobuf:"varint,24,opt,name=hash_shard_buckets,json=hashShardBuckets,proto3" json:"hash_shard_buckets,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ObservedConstraint) Reset() {
+	*x = ObservedConstraint{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObservedConstraint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObservedConstraint) ProtoMessage() {}
+
+func (x *ObservedConstraint) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObservedConstraint.ProtoReflect.Descriptor instead.
+func (*ObservedConstraint) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{113}
+}
+
+func (x *ObservedConstraint) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetTableName() string {
+	if x != nil {
+		return x.TableName
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetColumnName() string {
+	if x != nil {
+		return x.ColumnName
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetColumnNames() []string {
+	if x != nil {
+		return x.ColumnNames
+	}
+	return nil
+}
+
+func (x *ObservedConstraint) GetForeignTable() string {
+	if x != nil && x.ForeignTable != nil {
+		return *x.ForeignTable
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetForeignSchema() string {
+	if x != nil {
+		return x.ForeignSchema
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetForeignColumn() string {
+	if x != nil && x.ForeignColumn != nil {
+		return *x.ForeignColumn
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetForeignColumns() []string {
+	if x != nil {
+		return x.ForeignColumns
+	}
+	return nil
+}
+
+func (x *ObservedConstraint) GetDeleteRule() string {
+	if x != nil && x.DeleteRule != nil {
+		return *x.DeleteRule
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetUpdateRule() string {
+	if x != nil && x.UpdateRule != nil {
+		return *x.UpdateRule
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetDeferrable() bool {
+	if x != nil {
+		return x.Deferrable
+	}
+	return false
+}
+
+func (x *ObservedConstraint) GetInitially() string {
+	if x != nil {
+		return x.Initially
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetMatch() string {
+	if x != nil {
+		return x.Match
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetNotEnforced() bool {
+	if x != nil {
+		return x.NotEnforced
+	}
+	return false
+}
+
+func (x *ObservedConstraint) GetNotValid() bool {
+	if x != nil {
+		return x.NotValid
+	}
+	return false
+}
+
+func (x *ObservedConstraint) GetCheckClause() string {
+	if x != nil && x.CheckClause != nil {
+		return *x.CheckClause
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetNullsDistinct() bool {
+	if x != nil && x.NullsDistinct != nil {
+		return *x.NullsDistinct
+	}
+	return false
+}
+
+func (x *ObservedConstraint) GetIncludeColumns() []string {
+	if x != nil {
+		return x.IncludeColumns
+	}
+	return nil
+}
+
+func (x *ObservedConstraint) GetUsingMethod() string {
+	if x != nil && x.UsingMethod != nil {
+		return *x.UsingMethod
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetRequires() []*ComparisonIdentity {
+	if x != nil {
+		return x.Requires
+	}
+	return nil
+}
+
+func (x *ObservedConstraint) GetComment() string {
+	if x != nil {
+		return x.Comment
+	}
+	return ""
+}
+
+func (x *ObservedConstraint) GetHashShardBuckets() int64 {
+	if x != nil {
+		return x.HashShardBuckets
+	}
+	return 0
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -6891,7 +10594,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12+\n" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
-	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\xb3\x03\n" +
+	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\xfa\x03\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
@@ -6900,7 +10603,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\videntifiers\x18\x05 \x01(\v2+.ptah.provider.experimental.IdentifierRulesR\videntifiers\x12I\n" +
 	"\fvalue_models\x18\x06 \x03(\v2&.ptah.provider.experimental.ValueModelR\vvalueModels\x12S\n" +
 	"\x10yaml_source_keys\x18\a \x03(\v2).ptah.provider.experimental.YAMLSourceKeyR\x0eyamlSourceKeys\x12M\n" +
-	"\vcomparisons\x18\b \x03(\v2+.ptah.provider.experimental.ModelComparisonR\vcomparisons\"\xd5\x01\n" +
+	"\vcomparisons\x18\b \x03(\v2+.ptah.provider.experimental.ModelComparisonR\vcomparisons\x12E\n" +
+	"\bplanning\x18\t \x03(\v2).ptah.provider.experimental.ModelPlanningR\bplanning\"\xd5\x01\n" +
 	"\rYAMLSourceKey\x12E\n" +
 	"\x05scope\x18\x01 \x01(\x0e2/.ptah.provider.experimental.YAMLSourceKey.ScopeR\x05scope\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1a\n" +
@@ -7443,7 +11147,424 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x06impact\x18\x01 \x01(\x0e22.ptah.provider.experimental.ChangeSemantics.ImpactR\x06impact\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12J\n" +
 	"\x06access\x18\x03 \x01(\x0e22.ptah.provider.experimental.ChangeSemantics.AccessR\x06access\x12#\n" +
-	"\raccess_reason\x18\x04 \x01(\tR\faccessReason2\xd7\b\n" +
+	"\raccess_reason\x18\x04 \x01(\tR\faccessReason\"\x8e\x01\n" +
+	"\rModelPlanning\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fchange_kinds\x18\x02 \x03(\tR\vchangeKinds\x12!\n" +
+	"\fparent_kinds\x18\x03 \x03(\tR\vparentKinds\x12'\n" +
+	"\x0foperation_kinds\x18\x04 \x03(\tR\x0eoperationKinds\"8\n" +
+	"\fStepIdentity\x12\x14\n" +
+	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xf2\x01\n" +
+	"\x0ePlanningEffect\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12I\n" +
+	"\x06action\x18\x02 \x01(\x0e21.ptah.provider.experimental.PlanningEffect.ActionR\x06action\"K\n" +
+	"\x06Action\x12\x16\n" +
+	"\x12ACTION_UNSPECIFIED\x10\x00\x12\b\n" +
+	"\x04READ\x10\x01\x12\n" +
+	"\n" +
+	"\x06CREATE\x10\x02\x12\t\n" +
+	"\x05ALTER\x10\x03\x12\b\n" +
+	"\x04DROP\x10\x04\"\xd9\x03\n" +
+	"\x10PlanningMetadata\x12D\n" +
+	"\aeffects\x18\x01 \x03(\v2*.ptah.provider.experimental.PlanningEffectR\aeffects\x12Z\n" +
+	"\vtransaction\x18\x02 \x01(\x0e28.ptah.provider.experimental.PlanningMetadata.TransactionR\vtransaction\x12J\n" +
+	"\x06impact\x18\x03 \x01(\x0e22.ptah.provider.experimental.ChangeSemantics.ImpactR\x06impact\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12T\n" +
+	"\tplacement\x18\x05 \x01(\x0e26.ptah.provider.experimental.PlanningMetadata.PlacementR\tplacement\"D\n" +
+	"\vTransaction\x12\v\n" +
+	"\aUNKNOWN\x10\x00\x12\v\n" +
+	"\aALLOWED\x10\x01\x12\f\n" +
+	"\bREQUIRED\x10\x02\x12\r\n" +
+	"\tFORBIDDEN\x10\x03\"#\n" +
+	"\tPlacement\x12\v\n" +
+	"\aDEFAULT\x10\x00\x12\t\n" +
+	"\x05EARLY\x10\x01\"\x96\x01\n" +
+	"\x12PlanningDependency\x12@\n" +
+	"\x06before\x18\x01 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x06before\x12>\n" +
+	"\x05after\x18\x02 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x05after\"\xe7\x01\n" +
+	"\x12CommonPlanningStep\x128\n" +
+	"\x02id\x18\x01 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x02id\x12H\n" +
+	"\bmetadata\x18\x02 \x01(\v2,.ptah.provider.experimental.PlanningMetadataR\bmetadata\x12M\n" +
+	"\fadded_column\x18\x03 \x01(\v2*.ptah.provider.experimental.DeclaredColumnR\vaddedColumn\"\x86\x03\n" +
+	"\x11PlanningOperation\x12D\n" +
+	"\x04role\x18\x01 \x01(\x0e20.ptah.provider.experimental.NativeOperation.RoleR\x04role\x12F\n" +
+	"\x06parent\x18\x02 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\x06parent\x12A\n" +
+	"\x05value\x18\x03 \x01(\v2+.ptah.provider.experimental.NormalizedValueR\x05value\x12\x14\n" +
+	"\x05notes\x18\x04 \x03(\tR\x05notes\x12I\n" +
+	"\x05phase\x18\x05 \x01(\x0e23.ptah.provider.experimental.PlanningOperation.PhaseR\x05phase\"?\n" +
+	"\x05Phase\x12\v\n" +
+	"\aDEFAULT\x10\x00\x12\r\n" +
+	"\tDEPENDENT\x10\x01\x12\x10\n" +
+	"\fPREREQUISITE\x10\x02\x12\b\n" +
+	"\x04TYPE\x10\x03\"\xdf\x01\n" +
+	"\fPlanningStep\x128\n" +
+	"\x02id\x18\x01 \x01(\v2(.ptah.provider.experimental.StepIdentityR\x02id\x12H\n" +
+	"\bmetadata\x18\x02 \x01(\v2,.ptah.provider.experimental.PlanningMetadataR\bmetadata\x12K\n" +
+	"\toperation\x18\x03 \x01(\v2-.ptah.provider.experimental.PlanningOperationR\toperation\"\xc0\x01\n" +
+	"\x14PlanningContribution\x12\x14\n" +
+	"\x05owner\x18\x01 \x01(\tR\x05owner\x12>\n" +
+	"\x05steps\x18\x02 \x03(\v2(.ptah.provider.experimental.PlanningStepR\x05steps\x12R\n" +
+	"\fdependencies\x18\x03 \x03(\v2..ptah.provider.experimental.PlanningDependencyR\fdependencies\"\xa1\x01\n" +
+	"\x0fPlanningRewrite\x12B\n" +
+	"\asources\x18\x01 \x03(\v2(.ptah.provider.experimental.StepIdentityR\asources\x12J\n" +
+	"\vreplacement\x18\x02 \x01(\v2(.ptah.provider.experimental.StepIdentityR\vreplacement\"\x9d\x01\n" +
+	"\x0ePlanningChange\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12A\n" +
+	"\x05value\x18\x02 \x01(\v2+.ptah.provider.experimental.NormalizedValueR\x05value\"\xcb\x01\n" +
+	"\x0fPlanningReceipt\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1a\n" +
+	"\bstrategy\x18\x03 \x01(\tR\bstrategy\x12>\n" +
+	"\x05steps\x18\x04 \x03(\v2(.ptah.provider.experimental.StepIdentityR\x05steps\"\xa8\x01\n" +
+	"\x15PlanningParentReceipt\x12E\n" +
+	"\areceipt\x18\x01 \x01(\v2+.ptah.provider.experimental.PlanningReceiptR\areceipt\x12H\n" +
+	"\x06action\x18\x02 \x01(\x0e20.ptah.provider.experimental.PlanningTable.ActionR\x06action\"\xde\x02\n" +
+	"\x12PlanningDiagnostic\x12G\n" +
+	"\x04code\x18\x01 \x01(\x0e23.ptah.provider.experimental.PlanningDiagnostic.CodeR\x04code\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06object\x18\x03 \x01(\tR\x06object\x12\x18\n" +
+	"\afeature\x18\x04 \x01(\tR\afeature\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\x12\x18\n" +
+	"\x06change\x18\x06 \x01(\rH\x00R\x06change\x12\x18\n" +
+	"\x06parent\x18\a \x01(\rH\x00R\x06parent\"b\n" +
+	"\x04Code\x12\x14\n" +
+	"\x10CODE_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eINVALID_SCHEMA\x10\x01\x12\x17\n" +
+	"\x13UNSUPPORTED_FEATURE\x10\x02\x12\x17\n" +
+	"\x13OMITTED_DECLARATION\x10\x03B\a\n" +
+	"\x05input\"z\n" +
+	"\fPlanningType\x12J\n" +
+	"\bidentity\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\bidentity\x12\x1e\n" +
+	"\n" +
+	"references\x18\x02 \x03(\tR\n" +
+	"references\"\xf2\x02\n" +
+	"\rPlanningTable\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12H\n" +
+	"\x06action\x18\x02 \x01(\x0e20.ptah.provider.experimental.PlanningTable.ActionR\x06action\x12C\n" +
+	"\adesired\x18\x03 \x01(\v2).ptah.provider.experimental.DeclaredTableR\adesired\x12C\n" +
+	"\acurrent\x18\x04 \x01(\v2).ptah.provider.experimental.ObservedTableR\acurrent\"C\n" +
+	"\x06Action\x12\v\n" +
+	"\aCONTEXT\x10\x00\x12\n" +
+	"\n" +
+	"\x06CREATE\x10\x01\x12\t\n" +
+	"\x05ALTER\x10\x02\x12\b\n" +
+	"\x04DROP\x10\x03\x12\v\n" +
+	"\aREBUILD\x10\x04\"\xb6\x06\n" +
+	"\x13PlanFeaturesRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x1f\n" +
+	"\vplanning_id\x18\x02 \x01(\tR\n" +
+	"planningId\x12'\n" +
+	"\x0ftarget_features\x18\x03 \x03(\tR\x0etargetFeatures\x12S\n" +
+	"\videntifiers\x18\x04 \x01(\v21.ptah.provider.experimental.ComparisonIdentifiersR\videntifiers\x12e\n" +
+	"\fcapabilities\x18\x05 \x03(\v2A.ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntryR\fcapabilities\x12D\n" +
+	"\achanges\x18\x06 \x03(\v2*.ptah.provider.experimental.PlanningChangeR\achanges\x12A\n" +
+	"\x06tables\x18\a \x03(\v2).ptah.provider.experimental.PlanningTableR\x06tables\x12M\n" +
+	"\rdesired_types\x18\b \x03(\v2(.ptah.provider.experimental.PlanningTypeR\fdesiredTypes\x12M\n" +
+	"\rcurrent_types\x18\t \x03(\v2(.ptah.provider.experimental.PlanningTypeR\fcurrentTypes\x12Q\n" +
+	"\fcommon_steps\x18\n" +
+	" \x03(\v2..ptah.provider.experimental.CommonPlanningStepR\vcommonSteps\x12!\n" +
+	"\fparent_kinds\x18\v \x03(\tR\vparentKinds\x12#\n" +
+	"\rdatabase_path\x18\f \x01(\tR\fdatabasePath\x1a?\n" +
+	"\x11CapabilitiesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xb4\x03\n" +
+	"\x0fPlannedFeatures\x12\x1a\n" +
+	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12V\n" +
+	"\rcontributions\x18\x02 \x03(\v20.ptah.provider.experimental.PlanningContributionR\rcontributions\x12E\n" +
+	"\achanges\x18\x03 \x03(\v2+.ptah.provider.experimental.PlanningReceiptR\achanges\x12K\n" +
+	"\aparents\x18\x04 \x03(\v21.ptah.provider.experimental.PlanningParentReceiptR\aparents\x12G\n" +
+	"\brewrites\x18\x05 \x03(\v2+.ptah.provider.experimental.PlanningRewriteR\brewrites\x12P\n" +
+	"\vdiagnostics\x18\x06 \x03(\v2..ptah.provider.experimental.PlanningDiagnosticR\vdiagnostics\"\x9e\x01\n" +
+	"\x10CapturedFeatures\x12E\n" +
+	"\aobjects\x18\x01 \x01(\v2+.ptah.provider.experimental.ComparisonStateR\aobjects\x12C\n" +
+	"\x06facets\x18\x02 \x01(\v2+.ptah.provider.experimental.ComparisonStateR\x06facets\"\xad\b\n" +
+	"\rDeclaredTable\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x16\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine\x12\x1c\n" +
+	"\tcollation\x18\x04 \x01(\tR\tcollation\x12\x18\n" +
+	"\acomment\x18\x05 \x01(\tR\acomment\x12\x1f\n" +
+	"\vprimary_key\x18\x06 \x03(\tR\n" +
+	"primaryKey\x12(\n" +
+	"\x10primary_key_name\x18\a \x01(\tR\x0eprimaryKeyName\x12W\n" +
+	"\x11primary_key_parts\x18\b \x03(\v2+.ptah.provider.experimental.DeclaredKeyPartR\x0fprimaryKeyParts\x12.\n" +
+	"\x13primary_key_include\x18\t \x03(\tR\x11primaryKeyInclude\x12,\n" +
+	"\x12primary_key_method\x18\n" +
+	" \x01(\tR\x10primaryKeyMethod\x12.\n" +
+	"\x13primary_key_comment\x18\v \x01(\tR\x11primaryKeyComment\x124\n" +
+	"\x16primary_key_deferrable\x18\f \x01(\bR\x14primaryKeyDeferrable\x122\n" +
+	"\x15primary_key_initially\x18\r \x01(\tR\x13primaryKeyInitially\x12\x16\n" +
+	"\x06checks\x18\x0e \x03(\tR\x06checks\x12\x1d\n" +
+	"\n" +
+	"custom_sql\x18\x0f \x01(\tR\tcustomSql\x12\x1d\n" +
+	"\n" +
+	"depends_on\x18\x10 \x03(\tR\tdependsOn\x12D\n" +
+	"\acolumns\x18\x11 \x03(\v2*.ptah.provider.experimental.DeclaredColumnR\acolumns\x12>\n" +
+	"\x05enums\x18\x12 \x03(\v2(.ptah.provider.experimental.DeclaredEnumR\x05enums\x12P\n" +
+	"\vconstraints\x18\x13 \x03(\v2..ptah.provider.experimental.DeclaredConstraintR\vconstraints\x12C\n" +
+	"\aindexes\x18\x14 \x03(\v2).ptah.provider.experimental.DeclaredIndexR\aindexes\x12G\n" +
+	"\btriggers\x18\x15 \x03(\v2+.ptah.provider.experimental.CapturedTriggerR\btriggers\x12H\n" +
+	"\bfeatures\x18\x16 \x01(\v2,.ptah.provider.experimental.CapturedFeaturesR\bfeatures\"a\n" +
+	"\x0fDeclaredKeyPart\x12\x16\n" +
+	"\x06column\x18\x01 \x01(\tR\x06column\x12\x1e\n" +
+	"\n" +
+	"descending\x18\x02 \x01(\bR\n" +
+	"descending\x12\x16\n" +
+	"\x06prefix\x18\x03 \x01(\tR\x06prefix\"\xd9\t\n" +
+	"\x0eDeclaredColumn\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12 \n" +
+	"\ftype_raw_sql\x18\x03 \x01(\bR\n" +
+	"typeRawSql\x121\n" +
+	"\x15type_is_declared_text\x18\x04 \x01(\bR\x12typeIsDeclaredText\x12\x1a\n" +
+	"\bnullable\x18\x05 \x01(\bR\bnullable\x12\x18\n" +
+	"\aprimary\x18\x06 \x01(\bR\aprimary\x12%\n" +
+	"\x0eauto_increment\x18\a \x01(\bR\rautoIncrement\x12/\n" +
+	"\x13identity_generation\x18\b \x01(\tR\x12identityGeneration\x12%\n" +
+	"\x0eidentity_start\x18\t \x01(\tR\ridentityStart\x12-\n" +
+	"\x12identity_increment\x18\n" +
+	" \x01(\tR\x11identityIncrement\x12)\n" +
+	"\x10identity_options\x18\v \x01(\tR\x0fidentityOptions\x12\x16\n" +
+	"\x06unique\x18\f \x01(\bR\x06unique\x12+\n" +
+	"\x11unique_expression\x18\r \x01(\tR\x10uniqueExpression\x12#\n" +
+	"\rdefault_value\x18\x0e \x01(\tR\fdefaultValue\x12\x1f\n" +
+	"\vdefault_set\x18\x0f \x01(\bR\n" +
+	"defaultSet\x12-\n" +
+	"\x12default_expression\x18\x10 \x01(\tR\x11defaultExpression\x12+\n" +
+	"\x11foreign_reference\x18\x11 \x01(\tR\x10foreignReference\x12(\n" +
+	"\x10foreign_key_name\x18\x12 \x01(\tR\x0eforeignKeyName\x12\x1b\n" +
+	"\ton_delete\x18\x13 \x01(\tR\bonDelete\x12\x1b\n" +
+	"\ton_update\x18\x14 \x01(\tR\bonUpdate\x12\x1e\n" +
+	"\n" +
+	"deferrable\x18\x15 \x01(\bR\n" +
+	"deferrable\x12\x1c\n" +
+	"\tinitially\x18\x16 \x01(\tR\tinitially\x12*\n" +
+	"\x11foreign_key_match\x18\x17 \x01(\tR\x0fforeignKeyMatch\x127\n" +
+	"\x18foreign_key_not_enforced\x18\x18 \x01(\bR\x15foreignKeyNotEnforced\x12\x1f\n" +
+	"\venum_values\x18\x19 \x03(\tR\n" +
+	"enumValues\x12\x14\n" +
+	"\x05check\x18\x1a \x01(\tR\x05check\x12\x1d\n" +
+	"\n" +
+	"check_name\x18\x1b \x01(\tR\tcheckName\x12,\n" +
+	"\x12check_not_enforced\x18\x1c \x01(\bR\x10checkNotEnforced\x127\n" +
+	"\x18not_null_constraint_name\x18\x1d \x01(\tR\x15notNullConstraintName\x121\n" +
+	"\x14generated_expression\x18\x1e \x01(\tR\x13generatedExpression\x12%\n" +
+	"\x0egenerated_kind\x18\x1f \x01(\tR\rgeneratedKind\x12\x1c\n" +
+	"\tcollation\x18  \x01(\tR\tcollation\x12\x18\n" +
+	"\acomment\x18! \x01(\tR\acomment\"l\n" +
+	"\fDeclaredEnum\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x16\n" +
+	"\x06values\x18\x03 \x03(\tR\x06values\x12\x18\n" +
+	"\acomment\x18\x04 \x01(\tR\acomment\"\xc0\x01\n" +
+	"\x11CapturedIndexPart\x12\x16\n" +
+	"\x06column\x18\x01 \x01(\tR\x06column\x12\x1e\n" +
+	"\n" +
+	"expression\x18\x02 \x01(\tR\n" +
+	"expression\x12\x1e\n" +
+	"\n" +
+	"descending\x18\x03 \x01(\bR\n" +
+	"descending\x12\x14\n" +
+	"\x05nulls\x18\x04 \x01(\tR\x05nulls\x12%\n" +
+	"\x0eoperator_class\x18\x05 \x01(\tR\roperatorClass\x12\x16\n" +
+	"\x06prefix\x18\x06 \x01(\tR\x06prefix\"\xcc\x05\n" +
+	"\rDeclaredIndex\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06fields\x18\x02 \x03(\tR\x06fields\x12C\n" +
+	"\x05parts\x18\x03 \x03(\v2-.ptah.provider.experimental.CapturedIndexPartR\x05parts\x12\x16\n" +
+	"\x06unique\x18\x04 \x01(\bR\x06unique\x12\x18\n" +
+	"\acomment\x18\x05 \x01(\tR\acomment\x12\x1c\n" +
+	"\tinvisible\x18\x06 \x01(\bR\tinvisible\x12*\n" +
+	"\x0enulls_distinct\x18\a \x01(\bH\x00R\rnullsDistinct\x88\x01\x01\x12\x12\n" +
+	"\x04type\x18\b \x01(\tR\x04type\x12\x1c\n" +
+	"\tcondition\x18\t \x01(\tR\tcondition\x12\"\n" +
+	"\fconcurrently\x18\n" +
+	" \x01(\bR\fconcurrently\x12\x1a\n" +
+	"\boperator\x18\v \x01(\tR\boperator\x12'\n" +
+	"\x0finclude_columns\x18\f \x03(\tR\x0eincludeColumns\x12o\n" +
+	"\x12storage_parameters\x18\r \x03(\v2@.ptah.provider.experimental.DeclaredIndex.StorageParametersEntryR\x11storageParameters\x12\x1d\n" +
+	"\n" +
+	"table_name\x18\x0e \x01(\tR\ttableName\x12J\n" +
+	"\brequires\x18\x0f \x03(\v2..ptah.provider.experimental.ComparisonIdentityR\brequires\x1aD\n" +
+	"\x16StorageParametersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x11\n" +
+	"\x0f_nulls_distinct\"\xcb\x05\n" +
+	"\x12DeclaredConstraint\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12!\n" +
+	"\fusing_method\x18\x04 \x01(\tR\vusingMethod\x12)\n" +
+	"\x10check_expression\x18\x05 \x01(\tR\x0fcheckExpression\x12\x18\n" +
+	"\acolumns\x18\x06 \x03(\tR\acolumns\x12'\n" +
+	"\x0finclude_columns\x18\a \x03(\tR\x0eincludeColumns\x12*\n" +
+	"\x0enulls_distinct\x18\b \x01(\bH\x00R\rnullsDistinct\x88\x01\x01\x12#\n" +
+	"\rforeign_table\x18\t \x01(\tR\fforeignTable\x12%\n" +
+	"\x0eforeign_column\x18\n" +
+	" \x01(\tR\rforeignColumn\x12'\n" +
+	"\x0fforeign_columns\x18\v \x03(\tR\x0eforeignColumns\x12\x1b\n" +
+	"\ton_delete\x18\f \x01(\tR\bonDelete\x12\x1b\n" +
+	"\ton_update\x18\r \x01(\tR\bonUpdate\x12\x1e\n" +
+	"\n" +
+	"deferrable\x18\x0e \x01(\bR\n" +
+	"deferrable\x12\x1c\n" +
+	"\tinitially\x18\x0f \x01(\tR\tinitially\x12\x14\n" +
+	"\x05match\x18\x10 \x01(\tR\x05match\x12!\n" +
+	"\fnot_enforced\x18\x11 \x01(\bR\vnotEnforced\x12\x1b\n" +
+	"\tnot_valid\x18\x12 \x01(\bR\bnotValid\x12J\n" +
+	"\brequires\x18\x13 \x03(\v2..ptah.provider.experimental.ComparisonIdentityR\brequires\x12\x18\n" +
+	"\acomment\x18\x14 \x01(\tR\acommentB\x11\n" +
+	"\x0f_nulls_distinct\"\xdd\x02\n" +
+	"\x0fCapturedTrigger\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12\x16\n" +
+	"\x06timing\x18\x04 \x01(\tR\x06timing\x12\x14\n" +
+	"\x05event\x18\x05 \x01(\tR\x05event\x12\x19\n" +
+	"\bfor_each\x18\x06 \x01(\tR\aforEach\x12\x12\n" +
+	"\x04body\x18\a \x01(\tR\x04body\x12\x18\n" +
+	"\acomment\x18\b \x01(\tR\acomment\x12\x12\n" +
+	"\x04when\x18\t \x01(\tR\x04when\x12\x1b\n" +
+	"\told_table\x18\n" +
+	" \x01(\tR\boldTable\x12\x1b\n" +
+	"\tnew_table\x18\v \x01(\tR\bnewTable\x12)\n" +
+	"\x10execute_function\x18\f \x01(\tR\x0fexecuteFunction\x12\x18\n" +
+	"\atargets\x18\r \x03(\tR\atargets\"\xe5\x05\n" +
+	"\rObservedTable\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x12\x18\n" +
+	"\acomment\x18\x04 \x01(\tR\acomment\x12\x18\n" +
+	"\acharset\x18\x05 \x01(\tR\acharset\x12\x1c\n" +
+	"\tcollation\x18\x06 \x01(\tR\tcollation\x12\x1d\n" +
+	"\n" +
+	"row_format\x18\a \x01(\tR\trowFormat\x12D\n" +
+	"\acolumns\x18\b \x03(\v2*.ptah.provider.experimental.ObservedColumnR\acolumns\x12%\n" +
+	"\x0eestimated_rows\x18\t \x01(\x03R\restimatedRows\x12*\n" +
+	"\x11row_stats_unknown\x18\n" +
+	" \x01(\bR\x0frowStatsUnknown\x12 \n" +
+	"\vpartitioned\x18\v \x01(\bR\vpartitioned\x12\x1f\n" +
+	"\vrls_enabled\x18\f \x01(\bR\n" +
+	"rlsEnabled\x12\x1d\n" +
+	"\n" +
+	"rls_forced\x18\r \x01(\bR\trlsForced\x12C\n" +
+	"\aindexes\x18\x0e \x03(\v2).ptah.provider.experimental.ObservedIndexR\aindexes\x12P\n" +
+	"\vconstraints\x18\x0f \x03(\v2..ptah.provider.experimental.ObservedConstraintR\vconstraints\x12G\n" +
+	"\btriggers\x18\x10 \x03(\v2+.ptah.provider.experimental.CapturedTriggerR\btriggers\x12H\n" +
+	"\bfeatures\x18\x11 \x01(\v2,.ptah.provider.experimental.CapturedFeaturesR\bfeatures\"\x94\n" +
+	"\n" +
+	"\x0eObservedColumn\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\tdata_type\x18\x02 \x01(\tR\bdataType\x12\x19\n" +
+	"\budt_name\x18\x03 \x01(\tR\audtName\x12\x1d\n" +
+	"\n" +
+	"udt_schema\x18\x04 \x01(\tR\tudtSchema\x12%\n" +
+	"\x0eformatted_type\x18\x05 \x01(\tR\rformattedType\x12\x1f\n" +
+	"\vcolumn_type\x18\x06 \x01(\tR\n" +
+	"columnType\x12\x1f\n" +
+	"\vis_nullable\x18\a \x01(\tR\n" +
+	"isNullable\x122\n" +
+	"\x12default_expression\x18\b \x01(\tH\x00R\x11defaultExpression\x88\x01\x01\x125\n" +
+	"\x14character_max_length\x18\t \x01(\x03H\x01R\x12characterMaxLength\x88\x01\x01\x12\x1c\n" +
+	"\tcollation\x18\n" +
+	" \x01(\tR\tcollation\x12\x18\n" +
+	"\acomment\x18\v \x01(\tR\acomment\x127\n" +
+	"\x18not_null_constraint_name\x18\f \x01(\tR\x15notNullConstraintName\x120\n" +
+	"\x11numeric_precision\x18\r \x01(\x03H\x02R\x10numericPrecision\x88\x01\x01\x12(\n" +
+	"\rnumeric_scale\x18\x0e \x01(\x03H\x03R\fnumericScale\x88\x01\x01\x122\n" +
+	"\x12datetime_precision\x18\x0f \x01(\x03H\x04R\x11datetimePrecision\x88\x01\x01\x12)\n" +
+	"\x10ordinal_position\x18\x10 \x01(\x03R\x0fordinalPosition\x12%\n" +
+	"\x0eauto_increment\x18\x11 \x01(\bR\rautoIncrement\x12\x1f\n" +
+	"\vprimary_key\x18\x12 \x01(\bR\n" +
+	"primaryKey\x12\x16\n" +
+	"\x06unique\x18\x13 \x01(\bR\x06unique\x121\n" +
+	"\x15type_is_declared_text\x18\x14 \x01(\bR\x12typeIsDeclaredText\x12\x1f\n" +
+	"\vdomain_name\x18\x15 \x01(\tR\n" +
+	"domainName\x12#\n" +
+	"\rdomain_schema\x18\x16 \x01(\tR\fdomainSchema\x126\n" +
+	"\x14generated_expression\x18\x17 \x01(\tH\x05R\x13generatedExpression\x88\x01\x01\x12%\n" +
+	"\x0egenerated_kind\x18\x18 \x01(\tR\rgeneratedKind\x12/\n" +
+	"\x13identity_generation\x18\x19 \x01(\tR\x12identityGeneration\x12%\n" +
+	"\x0eidentity_start\x18\x1a \x01(\tR\ridentityStart\x12-\n" +
+	"\x12identity_increment\x18\x1b \x01(\tR\x11identityIncrement\x12)\n" +
+	"\x10sequence_restart\x18\x1c \x01(\tR\x0fsequenceRestart\x12%\n" +
+	"\x0eowned_sequence\x18\x1d \x01(\tR\rownedSequenceB\x15\n" +
+	"\x13_default_expressionB\x17\n" +
+	"\x15_character_max_lengthB\x14\n" +
+	"\x12_numeric_precisionB\x10\n" +
+	"\x0e_numeric_scaleB\x15\n" +
+	"\x13_datetime_precisionB\x17\n" +
+	"\x15_generated_expression\"\xc2\a\n" +
+	"\rObservedIndex\x12M\n" +
+	"\n" +
+	"managed_by\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\tmanagedBy\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"table_name\x18\x03 \x01(\tR\ttableName\x12\x16\n" +
+	"\x06schema\x18\x04 \x01(\tR\x06schema\x12\x18\n" +
+	"\acolumns\x18\x05 \x03(\tR\acolumns\x12C\n" +
+	"\x05parts\x18\x06 \x03(\v2-.ptah.provider.experimental.CapturedIndexPartR\x05parts\x12\x16\n" +
+	"\x06unique\x18\a \x01(\bR\x06unique\x12\x18\n" +
+	"\aprimary\x18\b \x01(\bR\aprimary\x12\x1e\n" +
+	"\n" +
+	"definition\x18\t \x01(\tR\n" +
+	"definition\x120\n" +
+	"\x14key_parts_incomplete\x18\n" +
+	" \x01(\bR\x12keyPartsIncomplete\x12\x1c\n" +
+	"\tcondition\x18\v \x01(\tR\tcondition\x12\x18\n" +
+	"\acomment\x18\f \x01(\tR\acomment\x12\x1c\n" +
+	"\tinvisible\x18\r \x01(\bR\tinvisible\x12*\n" +
+	"\x0enulls_distinct\x18\x0e \x01(\bH\x00R\rnullsDistinct\x88\x01\x01\x12\x16\n" +
+	"\x06method\x18\x0f \x01(\tR\x06method\x12'\n" +
+	"\x0finclude_columns\x18\x10 \x03(\tR\x0eincludeColumns\x12o\n" +
+	"\x12storage_parameters\x18\x11 \x03(\v2@.ptah.provider.experimental.ObservedIndex.StorageParametersEntryR\x11storageParameters\x12J\n" +
+	"\brequires\x18\x12 \x03(\v2..ptah.provider.experimental.ComparisonIdentityR\brequires\x12-\n" +
+	"\x12partition_attached\x18\x13 \x01(\bR\x11partitionAttached\x12,\n" +
+	"\x12hash_shard_buckets\x18\x14 \x01(\x03R\x10hashShardBuckets\x1aD\n" +
+	"\x16StorageParametersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x11\n" +
+	"\x0f_nulls_distinct\"\xf0\a\n" +
+	"\x12ObservedConstraint\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"table_name\x18\x02 \x01(\tR\ttableName\x12\x16\n" +
+	"\x06schema\x18\x03 \x01(\tR\x06schema\x12\x12\n" +
+	"\x04type\x18\x04 \x01(\tR\x04type\x12\x1f\n" +
+	"\vcolumn_name\x18\x05 \x01(\tR\n" +
+	"columnName\x12!\n" +
+	"\fcolumn_names\x18\x06 \x03(\tR\vcolumnNames\x12(\n" +
+	"\rforeign_table\x18\a \x01(\tH\x00R\fforeignTable\x88\x01\x01\x12%\n" +
+	"\x0eforeign_schema\x18\b \x01(\tR\rforeignSchema\x12*\n" +
+	"\x0eforeign_column\x18\t \x01(\tH\x01R\rforeignColumn\x88\x01\x01\x12'\n" +
+	"\x0fforeign_columns\x18\n" +
+	" \x03(\tR\x0eforeignColumns\x12$\n" +
+	"\vdelete_rule\x18\v \x01(\tH\x02R\n" +
+	"deleteRule\x88\x01\x01\x12$\n" +
+	"\vupdate_rule\x18\f \x01(\tH\x03R\n" +
+	"updateRule\x88\x01\x01\x12\x1e\n" +
+	"\n" +
+	"deferrable\x18\r \x01(\bR\n" +
+	"deferrable\x12\x1c\n" +
+	"\tinitially\x18\x0e \x01(\tR\tinitially\x12\x14\n" +
+	"\x05match\x18\x0f \x01(\tR\x05match\x12!\n" +
+	"\fnot_enforced\x18\x10 \x01(\bR\vnotEnforced\x12\x1b\n" +
+	"\tnot_valid\x18\x11 \x01(\bR\bnotValid\x12&\n" +
+	"\fcheck_clause\x18\x12 \x01(\tH\x04R\vcheckClause\x88\x01\x01\x12*\n" +
+	"\x0enulls_distinct\x18\x13 \x01(\bH\x05R\rnullsDistinct\x88\x01\x01\x12'\n" +
+	"\x0finclude_columns\x18\x14 \x03(\tR\x0eincludeColumns\x12&\n" +
+	"\fusing_method\x18\x15 \x01(\tH\x06R\vusingMethod\x88\x01\x01\x12J\n" +
+	"\brequires\x18\x16 \x03(\v2..ptah.provider.experimental.ComparisonIdentityR\brequires\x12\x18\n" +
+	"\acomment\x18\x17 \x01(\tR\acomment\x12,\n" +
+	"\x12hash_shard_buckets\x18\x18 \x01(\x03R\x10hashShardBucketsB\x10\n" +
+	"\x0e_foreign_tableB\x11\n" +
+	"\x0f_foreign_columnB\x0e\n" +
+	"\f_delete_ruleB\x0e\n" +
+	"\f_update_ruleB\x0f\n" +
+	"\r_check_clauseB\x11\n" +
+	"\x0f_nulls_distinctB\x0f\n" +
+	"\r_using_method2\xc5\t\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -7455,7 +11576,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\fDecodeSource\x12/.ptah.provider.experimental.DecodeSourceRequest\x1a).ptah.provider.experimental.DecodedSource\x12s\n" +
 	"\x0fNormalizeValues\x122.ptah.provider.experimental.NormalizeValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12o\n" +
 	"\rConvertValues\x120.ptah.provider.experimental.ConvertValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12m\n" +
-	"\rCompareModels\x120.ptah.provider.experimental.CompareModelsRequest\x1a*.ptah.provider.experimental.ComparedModels\x12\\\n" +
+	"\rCompareModels\x120.ptah.provider.experimental.CompareModelsRequest\x1a*.ptah.provider.experimental.ComparedModels\x12l\n" +
+	"\fPlanFeatures\x12/.ptah.provider.experimental.PlanFeaturesRequest\x1a+.ptah.provider.experimental.PlannedFeatures\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.ExecutionBEZCgithub.com/stokaro/ptah/provider-sdk/protocol/experimental;protocolb\x06proto3"
 
 var (
@@ -7470,8 +11592,8 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 	return file_protocol_experimental_provider_proto_rawDescData
 }
 
-var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 15)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 85)
+var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 21)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 119)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(YAMLSourceKey_Scope)(0),            // 0: ptah.provider.experimental.YAMLSourceKey.Scope
 	(IdentifierRules_Comparison)(0),     // 1: ptah.provider.experimental.IdentifierRules.Comparison
@@ -7488,286 +11610,398 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(ModelComparison_Placement)(0),      // 12: ptah.provider.experimental.ModelComparison.Placement
 	(ChangeSemantics_Impact)(0),         // 13: ptah.provider.experimental.ChangeSemantics.Impact
 	(ChangeSemantics_Access)(0),         // 14: ptah.provider.experimental.ChangeSemantics.Access
-	(*Empty)(nil),                       // 15: ptah.provider.experimental.Empty
-	(*DescribeRequest)(nil),             // 16: ptah.provider.experimental.DescribeRequest
-	(*Description)(nil),                 // 17: ptah.provider.experimental.Description
-	(*Engine)(nil),                      // 18: ptah.provider.experimental.Engine
-	(*YAMLSourceKey)(nil),               // 19: ptah.provider.experimental.YAMLSourceKey
-	(*IdentifierRules)(nil),             // 20: ptah.provider.experimental.IdentifierRules
-	(*Reference)(nil),                   // 21: ptah.provider.experimental.Reference
-	(*Envelope)(nil),                    // 22: ptah.provider.experimental.Envelope
-	(*OpenRequest)(nil),                 // 23: ptah.provider.experimental.OpenRequest
-	(*Session)(nil),                     // 24: ptah.provider.experimental.Session
-	(*CloseRequest)(nil),                // 25: ptah.provider.experimental.CloseRequest
-	(*InspectRequest)(nil),              // 26: ptah.provider.experimental.InspectRequest
-	(*Schema)(nil),                      // 27: ptah.provider.experimental.Schema
-	(*Table)(nil),                       // 28: ptah.provider.experimental.Table
-	(*Column)(nil),                      // 29: ptah.provider.experimental.Column
-	(*Disposition)(nil),                 // 30: ptah.provider.experimental.Disposition
-	(*Change)(nil),                      // 31: ptah.provider.experimental.Change
-	(*NativeOperation)(nil),             // 32: ptah.provider.experimental.NativeOperation
-	(*RenderRequest)(nil),               // 33: ptah.provider.experimental.RenderRequest
-	(*Unit)(nil),                        // 34: ptah.provider.experimental.Unit
-	(*RenderResult)(nil),                // 35: ptah.provider.experimental.RenderResult
-	(*ExecuteRequest)(nil),              // 36: ptah.provider.experimental.ExecuteRequest
-	(*Execution)(nil),                   // 37: ptah.provider.experimental.Execution
-	(*AnalyzeSQLRequest)(nil),           // 38: ptah.provider.experimental.AnalyzeSQLRequest
-	(*SQLAnalysis)(nil),                 // 39: ptah.provider.experimental.SQLAnalysis
-	(*SQLFile)(nil),                     // 40: ptah.provider.experimental.SQLFile
-	(*SQLStatement)(nil),                // 41: ptah.provider.experimental.SQLStatement
-	(*NormalizeValuesRequest)(nil),      // 42: ptah.provider.experimental.NormalizeValuesRequest
-	(*ValueInput)(nil),                  // 43: ptah.provider.experimental.ValueInput
-	(*NormalizedValues)(nil),            // 44: ptah.provider.experimental.NormalizedValues
-	(*NormalizedValue)(nil),             // 45: ptah.provider.experimental.NormalizedValue
-	(*SourcePosition)(nil),              // 46: ptah.provider.experimental.SourcePosition
-	(*SourceSpan)(nil),                  // 47: ptah.provider.experimental.SourceSpan
-	(*SourceValue)(nil),                 // 48: ptah.provider.experimental.SourceValue
-	(*SourceSequence)(nil),              // 49: ptah.provider.experimental.SourceSequence
-	(*SourceMapping)(nil),               // 50: ptah.provider.experimental.SourceMapping
-	(*SourceEntry)(nil),                 // 51: ptah.provider.experimental.SourceEntry
-	(*SourceBlock)(nil),                 // 52: ptah.provider.experimental.SourceBlock
-	(*SourceLabel)(nil),                 // 53: ptah.provider.experimental.SourceLabel
-	(*SourceBinding)(nil),               // 54: ptah.provider.experimental.SourceBinding
-	(*SourceFragment)(nil),              // 55: ptah.provider.experimental.SourceFragment
-	(*SourceDocument)(nil),              // 56: ptah.provider.experimental.SourceDocument
-	(*SourcePathStep)(nil),              // 57: ptah.provider.experimental.SourcePathStep
-	(*SourceTrace)(nil),                 // 58: ptah.provider.experimental.SourceTrace
-	(*ValueModel)(nil),                  // 59: ptah.provider.experimental.ValueModel
-	(*ModelKnowledge)(nil),              // 60: ptah.provider.experimental.ModelKnowledge
-	(*NamespaceComponent)(nil),          // 61: ptah.provider.experimental.NamespaceComponent
-	(*ModelNamespace)(nil),              // 62: ptah.provider.experimental.ModelNamespace
-	(*ModelNamespaceKnowledge)(nil),     // 63: ptah.provider.experimental.ModelNamespaceKnowledge
-	(*ModelKindCoverage)(nil),           // 64: ptah.provider.experimental.ModelKindCoverage
-	(*ModelSubjectCoverage)(nil),        // 65: ptah.provider.experimental.ModelSubjectCoverage
-	(*ModelCoverage)(nil),               // 66: ptah.provider.experimental.ModelCoverage
-	(*DecodeSourceRequest)(nil),         // 67: ptah.provider.experimental.DecodeSourceRequest
-	(*DecodedSource)(nil),               // 68: ptah.provider.experimental.DecodedSource
-	(*DecodedSourceDocument)(nil),       // 69: ptah.provider.experimental.DecodedSourceDocument
-	(*DecodedSourceFragment)(nil),       // 70: ptah.provider.experimental.DecodedSourceFragment
-	(*SourceModelValue)(nil),            // 71: ptah.provider.experimental.SourceModelValue
-	(*ConvertValuesRequest)(nil),        // 72: ptah.provider.experimental.ConvertValuesRequest
-	(*InspectionScopeBinding)(nil),      // 73: ptah.provider.experimental.InspectionScopeBinding
-	(*ModelComparison)(nil),             // 74: ptah.provider.experimental.ModelComparison
-	(*ComparisonPart)(nil),              // 75: ptah.provider.experimental.ComparisonPart
-	(*ComparisonIdentity)(nil),          // 76: ptah.provider.experimental.ComparisonIdentity
-	(*ComparisonNamespace)(nil),         // 77: ptah.provider.experimental.ComparisonNamespace
-	(*ComparisonRegion)(nil),            // 78: ptah.provider.experimental.ComparisonRegion
-	(*ComparisonKnowledgeSource)(nil),   // 79: ptah.provider.experimental.ComparisonKnowledgeSource
-	(*ComparisonKindCoverage)(nil),      // 80: ptah.provider.experimental.ComparisonKindCoverage
-	(*ComparisonSubjectCoverage)(nil),   // 81: ptah.provider.experimental.ComparisonSubjectCoverage
-	(*ComparisonCoverage)(nil),          // 82: ptah.provider.experimental.ComparisonCoverage
-	(*ComparisonRecord)(nil),            // 83: ptah.provider.experimental.ComparisonRecord
-	(*ComparisonState)(nil),             // 84: ptah.provider.experimental.ComparisonState
-	(*ComparisonParent)(nil),            // 85: ptah.provider.experimental.ComparisonParent
-	(*RequestedChange)(nil),             // 86: ptah.provider.experimental.RequestedChange
-	(*ComparisonExclusion)(nil),         // 87: ptah.provider.experimental.ComparisonExclusion
-	(*ComparisonColumn)(nil),            // 88: ptah.provider.experimental.ComparisonColumn
-	(*ComparisonConstraint)(nil),        // 89: ptah.provider.experimental.ComparisonConstraint
-	(*ResolvedIdentifier)(nil),          // 90: ptah.provider.experimental.ResolvedIdentifier
-	(*ComparisonIdentifiers)(nil),       // 91: ptah.provider.experimental.ComparisonIdentifiers
-	(*CompareModelsRequest)(nil),        // 92: ptah.provider.experimental.CompareModelsRequest
-	(*ChangeSemantics)(nil),             // 93: ptah.provider.experimental.ChangeSemantics
-	(*ComparedChange)(nil),              // 94: ptah.provider.experimental.ComparedChange
-	(*ComparisonUndecided)(nil),         // 95: ptah.provider.experimental.ComparisonUndecided
-	(*ComparedModels)(nil),              // 96: ptah.provider.experimental.ComparedModels
-	(*OperationSemantics)(nil),          // 97: ptah.provider.experimental.OperationSemantics
-	nil,                                 // 98: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	nil,                                 // 99: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	(PlanningEffect_Action)(0),          // 15: ptah.provider.experimental.PlanningEffect.Action
+	(PlanningMetadata_Transaction)(0),   // 16: ptah.provider.experimental.PlanningMetadata.Transaction
+	(PlanningMetadata_Placement)(0),     // 17: ptah.provider.experimental.PlanningMetadata.Placement
+	(PlanningOperation_Phase)(0),        // 18: ptah.provider.experimental.PlanningOperation.Phase
+	(PlanningDiagnostic_Code)(0),        // 19: ptah.provider.experimental.PlanningDiagnostic.Code
+	(PlanningTable_Action)(0),           // 20: ptah.provider.experimental.PlanningTable.Action
+	(*Empty)(nil),                       // 21: ptah.provider.experimental.Empty
+	(*DescribeRequest)(nil),             // 22: ptah.provider.experimental.DescribeRequest
+	(*Description)(nil),                 // 23: ptah.provider.experimental.Description
+	(*Engine)(nil),                      // 24: ptah.provider.experimental.Engine
+	(*YAMLSourceKey)(nil),               // 25: ptah.provider.experimental.YAMLSourceKey
+	(*IdentifierRules)(nil),             // 26: ptah.provider.experimental.IdentifierRules
+	(*Reference)(nil),                   // 27: ptah.provider.experimental.Reference
+	(*Envelope)(nil),                    // 28: ptah.provider.experimental.Envelope
+	(*OpenRequest)(nil),                 // 29: ptah.provider.experimental.OpenRequest
+	(*Session)(nil),                     // 30: ptah.provider.experimental.Session
+	(*CloseRequest)(nil),                // 31: ptah.provider.experimental.CloseRequest
+	(*InspectRequest)(nil),              // 32: ptah.provider.experimental.InspectRequest
+	(*Schema)(nil),                      // 33: ptah.provider.experimental.Schema
+	(*Table)(nil),                       // 34: ptah.provider.experimental.Table
+	(*Column)(nil),                      // 35: ptah.provider.experimental.Column
+	(*Disposition)(nil),                 // 36: ptah.provider.experimental.Disposition
+	(*Change)(nil),                      // 37: ptah.provider.experimental.Change
+	(*NativeOperation)(nil),             // 38: ptah.provider.experimental.NativeOperation
+	(*RenderRequest)(nil),               // 39: ptah.provider.experimental.RenderRequest
+	(*Unit)(nil),                        // 40: ptah.provider.experimental.Unit
+	(*RenderResult)(nil),                // 41: ptah.provider.experimental.RenderResult
+	(*ExecuteRequest)(nil),              // 42: ptah.provider.experimental.ExecuteRequest
+	(*Execution)(nil),                   // 43: ptah.provider.experimental.Execution
+	(*AnalyzeSQLRequest)(nil),           // 44: ptah.provider.experimental.AnalyzeSQLRequest
+	(*SQLAnalysis)(nil),                 // 45: ptah.provider.experimental.SQLAnalysis
+	(*SQLFile)(nil),                     // 46: ptah.provider.experimental.SQLFile
+	(*SQLStatement)(nil),                // 47: ptah.provider.experimental.SQLStatement
+	(*NormalizeValuesRequest)(nil),      // 48: ptah.provider.experimental.NormalizeValuesRequest
+	(*ValueInput)(nil),                  // 49: ptah.provider.experimental.ValueInput
+	(*NormalizedValues)(nil),            // 50: ptah.provider.experimental.NormalizedValues
+	(*NormalizedValue)(nil),             // 51: ptah.provider.experimental.NormalizedValue
+	(*SourcePosition)(nil),              // 52: ptah.provider.experimental.SourcePosition
+	(*SourceSpan)(nil),                  // 53: ptah.provider.experimental.SourceSpan
+	(*SourceValue)(nil),                 // 54: ptah.provider.experimental.SourceValue
+	(*SourceSequence)(nil),              // 55: ptah.provider.experimental.SourceSequence
+	(*SourceMapping)(nil),               // 56: ptah.provider.experimental.SourceMapping
+	(*SourceEntry)(nil),                 // 57: ptah.provider.experimental.SourceEntry
+	(*SourceBlock)(nil),                 // 58: ptah.provider.experimental.SourceBlock
+	(*SourceLabel)(nil),                 // 59: ptah.provider.experimental.SourceLabel
+	(*SourceBinding)(nil),               // 60: ptah.provider.experimental.SourceBinding
+	(*SourceFragment)(nil),              // 61: ptah.provider.experimental.SourceFragment
+	(*SourceDocument)(nil),              // 62: ptah.provider.experimental.SourceDocument
+	(*SourcePathStep)(nil),              // 63: ptah.provider.experimental.SourcePathStep
+	(*SourceTrace)(nil),                 // 64: ptah.provider.experimental.SourceTrace
+	(*ValueModel)(nil),                  // 65: ptah.provider.experimental.ValueModel
+	(*ModelKnowledge)(nil),              // 66: ptah.provider.experimental.ModelKnowledge
+	(*NamespaceComponent)(nil),          // 67: ptah.provider.experimental.NamespaceComponent
+	(*ModelNamespace)(nil),              // 68: ptah.provider.experimental.ModelNamespace
+	(*ModelNamespaceKnowledge)(nil),     // 69: ptah.provider.experimental.ModelNamespaceKnowledge
+	(*ModelKindCoverage)(nil),           // 70: ptah.provider.experimental.ModelKindCoverage
+	(*ModelSubjectCoverage)(nil),        // 71: ptah.provider.experimental.ModelSubjectCoverage
+	(*ModelCoverage)(nil),               // 72: ptah.provider.experimental.ModelCoverage
+	(*DecodeSourceRequest)(nil),         // 73: ptah.provider.experimental.DecodeSourceRequest
+	(*DecodedSource)(nil),               // 74: ptah.provider.experimental.DecodedSource
+	(*DecodedSourceDocument)(nil),       // 75: ptah.provider.experimental.DecodedSourceDocument
+	(*DecodedSourceFragment)(nil),       // 76: ptah.provider.experimental.DecodedSourceFragment
+	(*SourceModelValue)(nil),            // 77: ptah.provider.experimental.SourceModelValue
+	(*ConvertValuesRequest)(nil),        // 78: ptah.provider.experimental.ConvertValuesRequest
+	(*InspectionScopeBinding)(nil),      // 79: ptah.provider.experimental.InspectionScopeBinding
+	(*ModelComparison)(nil),             // 80: ptah.provider.experimental.ModelComparison
+	(*ComparisonPart)(nil),              // 81: ptah.provider.experimental.ComparisonPart
+	(*ComparisonIdentity)(nil),          // 82: ptah.provider.experimental.ComparisonIdentity
+	(*ComparisonNamespace)(nil),         // 83: ptah.provider.experimental.ComparisonNamespace
+	(*ComparisonRegion)(nil),            // 84: ptah.provider.experimental.ComparisonRegion
+	(*ComparisonKnowledgeSource)(nil),   // 85: ptah.provider.experimental.ComparisonKnowledgeSource
+	(*ComparisonKindCoverage)(nil),      // 86: ptah.provider.experimental.ComparisonKindCoverage
+	(*ComparisonSubjectCoverage)(nil),   // 87: ptah.provider.experimental.ComparisonSubjectCoverage
+	(*ComparisonCoverage)(nil),          // 88: ptah.provider.experimental.ComparisonCoverage
+	(*ComparisonRecord)(nil),            // 89: ptah.provider.experimental.ComparisonRecord
+	(*ComparisonState)(nil),             // 90: ptah.provider.experimental.ComparisonState
+	(*ComparisonParent)(nil),            // 91: ptah.provider.experimental.ComparisonParent
+	(*RequestedChange)(nil),             // 92: ptah.provider.experimental.RequestedChange
+	(*ComparisonExclusion)(nil),         // 93: ptah.provider.experimental.ComparisonExclusion
+	(*ComparisonColumn)(nil),            // 94: ptah.provider.experimental.ComparisonColumn
+	(*ComparisonConstraint)(nil),        // 95: ptah.provider.experimental.ComparisonConstraint
+	(*ResolvedIdentifier)(nil),          // 96: ptah.provider.experimental.ResolvedIdentifier
+	(*ComparisonIdentifiers)(nil),       // 97: ptah.provider.experimental.ComparisonIdentifiers
+	(*CompareModelsRequest)(nil),        // 98: ptah.provider.experimental.CompareModelsRequest
+	(*ChangeSemantics)(nil),             // 99: ptah.provider.experimental.ChangeSemantics
+	(*ComparedChange)(nil),              // 100: ptah.provider.experimental.ComparedChange
+	(*ComparisonUndecided)(nil),         // 101: ptah.provider.experimental.ComparisonUndecided
+	(*ComparedModels)(nil),              // 102: ptah.provider.experimental.ComparedModels
+	(*OperationSemantics)(nil),          // 103: ptah.provider.experimental.OperationSemantics
+	(*ModelPlanning)(nil),               // 104: ptah.provider.experimental.ModelPlanning
+	(*StepIdentity)(nil),                // 105: ptah.provider.experimental.StepIdentity
+	(*PlanningEffect)(nil),              // 106: ptah.provider.experimental.PlanningEffect
+	(*PlanningMetadata)(nil),            // 107: ptah.provider.experimental.PlanningMetadata
+	(*PlanningDependency)(nil),          // 108: ptah.provider.experimental.PlanningDependency
+	(*CommonPlanningStep)(nil),          // 109: ptah.provider.experimental.CommonPlanningStep
+	(*PlanningOperation)(nil),           // 110: ptah.provider.experimental.PlanningOperation
+	(*PlanningStep)(nil),                // 111: ptah.provider.experimental.PlanningStep
+	(*PlanningContribution)(nil),        // 112: ptah.provider.experimental.PlanningContribution
+	(*PlanningRewrite)(nil),             // 113: ptah.provider.experimental.PlanningRewrite
+	(*PlanningChange)(nil),              // 114: ptah.provider.experimental.PlanningChange
+	(*PlanningReceipt)(nil),             // 115: ptah.provider.experimental.PlanningReceipt
+	(*PlanningParentReceipt)(nil),       // 116: ptah.provider.experimental.PlanningParentReceipt
+	(*PlanningDiagnostic)(nil),          // 117: ptah.provider.experimental.PlanningDiagnostic
+	(*PlanningType)(nil),                // 118: ptah.provider.experimental.PlanningType
+	(*PlanningTable)(nil),               // 119: ptah.provider.experimental.PlanningTable
+	(*PlanFeaturesRequest)(nil),         // 120: ptah.provider.experimental.PlanFeaturesRequest
+	(*PlannedFeatures)(nil),             // 121: ptah.provider.experimental.PlannedFeatures
+	(*CapturedFeatures)(nil),            // 122: ptah.provider.experimental.CapturedFeatures
+	(*DeclaredTable)(nil),               // 123: ptah.provider.experimental.DeclaredTable
+	(*DeclaredKeyPart)(nil),             // 124: ptah.provider.experimental.DeclaredKeyPart
+	(*DeclaredColumn)(nil),              // 125: ptah.provider.experimental.DeclaredColumn
+	(*DeclaredEnum)(nil),                // 126: ptah.provider.experimental.DeclaredEnum
+	(*CapturedIndexPart)(nil),           // 127: ptah.provider.experimental.CapturedIndexPart
+	(*DeclaredIndex)(nil),               // 128: ptah.provider.experimental.DeclaredIndex
+	(*DeclaredConstraint)(nil),          // 129: ptah.provider.experimental.DeclaredConstraint
+	(*CapturedTrigger)(nil),             // 130: ptah.provider.experimental.CapturedTrigger
+	(*ObservedTable)(nil),               // 131: ptah.provider.experimental.ObservedTable
+	(*ObservedColumn)(nil),              // 132: ptah.provider.experimental.ObservedColumn
+	(*ObservedIndex)(nil),               // 133: ptah.provider.experimental.ObservedIndex
+	(*ObservedConstraint)(nil),          // 134: ptah.provider.experimental.ObservedConstraint
+	nil,                                 // 135: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	nil,                                 // 136: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	nil,                                 // 137: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	nil,                                 // 138: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	nil,                                 // 139: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	18,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	20,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	59,  // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
-	19,  // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
-	74,  // 4: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
-	0,   // 5: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
-	1,   // 6: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	1,   // 7: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	1,   // 8: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	2,   // 9: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	21,  // 10: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	20,  // 11: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	28,  // 12: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	22,  // 13: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	30,  // 14: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	66,  // 15: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	73,  // 16: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
-	21,  // 17: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	29,  // 18: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	22,  // 19: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	21,  // 20: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
-	22,  // 21: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	21,  // 22: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
-	3,   // 23: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	21,  // 24: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	28,  // 25: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	15,  // 26: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	29,  // 27: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	32,  // 28: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
-	45,  // 29: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	4,   // 30: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	21,  // 31: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
-	31,  // 32: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	98,  // 33: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	22,  // 34: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	34,  // 35: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	34,  // 36: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
-	5,   // 37: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	40,  // 38: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
-	41,  // 39: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
-	6,   // 40: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
-	43,  // 41: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	7,   // 42: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	22,  // 43: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
-	45,  // 44: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
-	22,  // 45: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
-	21,  // 46: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
-	76,  // 47: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	93,  // 48: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
-	97,  // 49: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
-	46,  // 50: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
-	46,  // 51: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
-	47,  // 52: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
-	15,  // 53: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
-	21,  // 54: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
-	49,  // 55: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
-	50,  // 56: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
-	48,  // 57: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
-	51,  // 58: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
-	47,  // 59: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
-	48,  // 60: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
-	53,  // 61: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
-	50,  // 62: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
-	52,  // 63: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
-	47,  // 64: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
-	47,  // 65: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
-	21,  // 66: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
-	19,  // 67: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
-	21,  // 68: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
-	50,  // 69: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
-	47,  // 70: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
-	48,  // 71: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
-	52,  // 72: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
-	8,   // 73: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
-	54,  // 74: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
-	55,  // 75: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
-	59,  // 76: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
-	57,  // 77: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
-	9,   // 78: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
-	7,   // 79: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	8,   // 80: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
-	10,  // 81: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
-	61,  // 82: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
-	61,  // 83: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
-	61,  // 84: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
-	61,  // 85: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
-	62,  // 86: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
-	60,  // 87: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	59,  // 88: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	60,  // 89: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	63,  // 90: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
-	21,  // 91: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
-	21,  // 92: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
-	60,  // 93: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	7,   // 94: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	64,  // 95: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
-	65,  // 96: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
-	56,  // 97: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
-	69,  // 98: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
-	66,  // 99: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	70,  // 100: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
-	71,  // 101: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
-	11,  // 102: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
-	45,  // 103: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
-	58,  // 104: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
-	7,   // 105: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
-	7,   // 106: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
-	45,  // 107: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
-	62,  // 108: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
-	12,  // 109: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
-	75,  // 110: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 111: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 112: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 113: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 114: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 115: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 116: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 117: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 118: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 119: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 120: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	75,  // 121: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
-	77,  // 122: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
-	60,  // 123: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	60,  // 124: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
-	78,  // 125: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
-	59,  // 126: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	79,  // 127: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
-	76,  // 128: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	60,  // 129: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	80,  // 130: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
-	81,  // 131: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
-	76,  // 132: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	45,  // 133: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
-	7,   // 134: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	83,  // 135: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
-	82,  // 136: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
-	76,  // 137: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	76,  // 138: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	76,  // 139: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
-	76,  // 140: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	20,  // 141: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
-	90,  // 142: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
-	91,  // 143: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	99,  // 144: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	84,  // 145: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
-	84,  // 146: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
-	85,  // 147: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
-	86,  // 148: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
-	76,  // 149: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
-	76,  // 150: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
-	87,  // 151: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
-	88,  // 152: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
-	76,  // 153: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
-	89,  // 154: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	89,  // 155: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	13,  // 156: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	14,  // 157: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	76,  // 158: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	45,  // 159: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	76,  // 160: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	84,  // 161: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
-	94,  // 162: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
-	95,  // 163: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
-	13,  // 164: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	14,  // 165: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	16,  // 166: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	23,  // 167: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	25,  // 168: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	26,  // 169: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	33,  // 170: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	38,  // 171: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	67,  // 172: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	42,  // 173: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	72,  // 174: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
-	92,  // 175: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
-	36,  // 176: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	17,  // 177: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	24,  // 178: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	15,  // 179: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	27,  // 180: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	35,  // 181: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	39,  // 182: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	68,  // 183: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	44,  // 184: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	44,  // 185: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
-	96,  // 186: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
-	37,  // 187: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	177, // [177:188] is the sub-list for method output_type
-	166, // [166:177] is the sub-list for method input_type
-	166, // [166:166] is the sub-list for extension type_name
-	166, // [166:166] is the sub-list for extension extendee
-	0,   // [0:166] is the sub-list for field type_name
+	24,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	26,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	65,  // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
+	25,  // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
+	80,  // 4: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
+	104, // 5: ptah.provider.experimental.Engine.planning:type_name -> ptah.provider.experimental.ModelPlanning
+	0,   // 6: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
+	1,   // 7: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	1,   // 8: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	1,   // 9: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	2,   // 10: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
+	27,  // 11: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	26,  // 12: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	34,  // 13: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	28,  // 14: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	36,  // 15: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	72,  // 16: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	79,  // 17: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
+	27,  // 18: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	35,  // 19: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	28,  // 20: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	27,  // 21: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
+	28,  // 22: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	27,  // 23: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	3,   // 24: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
+	27,  // 25: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	34,  // 26: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	21,  // 27: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	35,  // 28: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	38,  // 29: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
+	51,  // 30: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	4,   // 31: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	27,  // 32: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
+	37,  // 33: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	135, // 34: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	28,  // 35: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	40,  // 36: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	40,  // 37: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	5,   // 38: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
+	46,  // 39: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	47,  // 40: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	6,   // 41: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	49,  // 42: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	7,   // 43: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	28,  // 44: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
+	51,  // 45: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
+	28,  // 46: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
+	27,  // 47: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
+	82,  // 48: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	99,  // 49: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
+	103, // 50: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
+	52,  // 51: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
+	52,  // 52: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
+	53,  // 53: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
+	21,  // 54: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
+	27,  // 55: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
+	55,  // 56: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
+	56,  // 57: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
+	54,  // 58: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
+	57,  // 59: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
+	53,  // 60: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
+	54,  // 61: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
+	59,  // 62: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
+	56,  // 63: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
+	58,  // 64: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
+	53,  // 65: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
+	53,  // 66: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
+	27,  // 67: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
+	25,  // 68: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
+	27,  // 69: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
+	56,  // 70: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
+	53,  // 71: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
+	54,  // 72: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
+	58,  // 73: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
+	8,   // 74: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	60,  // 75: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	61,  // 76: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
+	65,  // 77: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
+	63,  // 78: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
+	9,   // 79: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
+	7,   // 80: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	8,   // 81: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
+	10,  // 82: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
+	67,  // 83: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
+	67,  // 84: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
+	67,  // 85: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
+	67,  // 86: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
+	68,  // 87: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
+	66,  // 88: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	65,  // 89: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	66,  // 90: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	69,  // 91: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
+	27,  // 92: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
+	27,  // 93: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
+	66,  // 94: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	7,   // 95: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	70,  // 96: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
+	71,  // 97: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
+	62,  // 98: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
+	75,  // 99: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
+	72,  // 100: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	76,  // 101: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
+	77,  // 102: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
+	11,  // 103: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	51,  // 104: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	64,  // 105: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
+	7,   // 106: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
+	7,   // 107: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
+	51,  // 108: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
+	68,  // 109: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
+	12,  // 110: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
+	81,  // 111: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 112: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 113: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 114: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 115: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 116: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 117: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 118: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 119: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 120: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 121: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	81,  // 122: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
+	83,  // 123: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
+	66,  // 124: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	66,  // 125: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
+	84,  // 126: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
+	65,  // 127: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	85,  // 128: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
+	82,  // 129: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	66,  // 130: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	86,  // 131: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
+	87,  // 132: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
+	82,  // 133: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 134: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
+	7,   // 135: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	89,  // 136: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
+	88,  // 137: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
+	82,  // 138: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 139: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 140: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 141: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	26,  // 142: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
+	96,  // 143: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
+	97,  // 144: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	136, // 145: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	90,  // 146: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
+	90,  // 147: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
+	91,  // 148: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
+	92,  // 149: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
+	82,  // 150: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 151: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
+	93,  // 152: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
+	94,  // 153: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
+	82,  // 154: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
+	95,  // 155: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	95,  // 156: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	13,  // 157: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	14,  // 158: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	82,  // 159: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 160: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	82,  // 161: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	90,  // 162: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
+	100, // 163: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
+	101, // 164: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
+	13,  // 165: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	14,  // 166: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	82,  // 167: ptah.provider.experimental.PlanningEffect.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	15,  // 168: ptah.provider.experimental.PlanningEffect.action:type_name -> ptah.provider.experimental.PlanningEffect.Action
+	106, // 169: ptah.provider.experimental.PlanningMetadata.effects:type_name -> ptah.provider.experimental.PlanningEffect
+	16,  // 170: ptah.provider.experimental.PlanningMetadata.transaction:type_name -> ptah.provider.experimental.PlanningMetadata.Transaction
+	13,  // 171: ptah.provider.experimental.PlanningMetadata.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	17,  // 172: ptah.provider.experimental.PlanningMetadata.placement:type_name -> ptah.provider.experimental.PlanningMetadata.Placement
+	105, // 173: ptah.provider.experimental.PlanningDependency.before:type_name -> ptah.provider.experimental.StepIdentity
+	105, // 174: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
+	105, // 175: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	107, // 176: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	125, // 177: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.DeclaredColumn
+	4,   // 178: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	82,  // 179: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 180: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	18,  // 181: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
+	105, // 182: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	107, // 183: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	110, // 184: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
+	111, // 185: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
+	108, // 186: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
+	105, // 187: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
+	105, // 188: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
+	82,  // 189: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	51,  // 190: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	82,  // 191: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	105, // 192: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
+	115, // 193: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
+	20,  // 194: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	19,  // 195: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
+	82,  // 196: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 197: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	20,  // 198: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	123, // 199: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	131, // 200: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
+	97,  // 201: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	137, // 202: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	114, // 203: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
+	119, // 204: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
+	118, // 205: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
+	118, // 206: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
+	109, // 207: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
+	112, // 208: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
+	115, // 209: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
+	116, // 210: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
+	113, // 211: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
+	117, // 212: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
+	90,  // 213: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
+	90,  // 214: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
+	124, // 215: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
+	125, // 216: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
+	126, // 217: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	129, // 218: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
+	128, // 219: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
+	130, // 220: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	122, // 221: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	127, // 222: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	138, // 223: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	82,  // 224: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 225: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	132, // 226: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
+	133, // 227: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
+	134, // 228: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
+	130, // 229: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	122, // 230: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	82,  // 231: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
+	127, // 232: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	139, // 233: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	82,  // 234: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	82,  // 235: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	22,  // 236: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	29,  // 237: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	31,  // 238: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	32,  // 239: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	39,  // 240: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	44,  // 241: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	73,  // 242: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	48,  // 243: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	78,  // 244: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	98,  // 245: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
+	120, // 246: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
+	42,  // 247: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	23,  // 248: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	30,  // 249: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	21,  // 250: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	33,  // 251: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	41,  // 252: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	45,  // 253: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	74,  // 254: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	50,  // 255: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	50,  // 256: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	102, // 257: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
+	121, // 258: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
+	43,  // 259: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	248, // [248:260] is the sub-list for method output_type
+	236, // [236:248] is the sub-list for method input_type
+	236, // [236:236] is the sub-list for extension type_name
+	236, // [236:236] is the sub-list for extension extendee
+	0,   // [0:236] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -7810,13 +12044,22 @@ func file_protocol_experimental_provider_proto_init() {
 		(*SourcePathStep_Label)(nil),
 	}
 	file_protocol_experimental_provider_proto_msgTypes[78].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[96].OneofWrappers = []any{
+		(*PlanningDiagnostic_Change)(nil),
+		(*PlanningDiagnostic_Parent)(nil),
+	}
+	file_protocol_experimental_provider_proto_msgTypes[107].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[108].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[111].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[112].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[113].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
-			NumEnums:      15,
-			NumMessages:   85,
+			NumEnums:      21,
+			NumMessages:   119,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
