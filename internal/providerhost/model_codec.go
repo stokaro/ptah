@@ -39,8 +39,9 @@ type resolvedModel struct {
 	normalized *protocol.NormalizedValue
 }
 
-func (v *resolvedModel) Kind() schemaext.Kind { return v.kind }
-func (v *resolvedModel) Clone() schemaext.Value {
+func (v *resolvedModel) Kind() schemaext.Kind   { return v.kind }
+func (v *resolvedModel) Clone() schemaext.Value { return v.cloneModel() }
+func (v *resolvedModel) cloneModel() *resolvedModel {
 	return &resolvedModel{kind: v.kind, signature: v.signature, wire: v.wire.clone(), canonical: bytes.Clone(v.canonical), normalized: proto.CloneOf(v.normalized)}
 }
 func (v *resolvedModel) Equal(other schemaext.Value) bool {
@@ -99,13 +100,13 @@ func (h *Host) initializeModels() error {
 }
 
 func (m *modelContract) codec() schemaext.Codec {
-	return schemaext.Codec{Prototype: &resolvedModel{kind: m.key.kind, signature: m.signature}, Representation: m.key.representation, Version: 1, Definition: bytes.Clone(m.definition),
+	return schemaext.Codec{Prototype: m.payload(&resolvedModel{kind: m.key.kind, signature: m.signature}), Representation: m.key.representation, Version: 1, Definition: bytes.Clone(m.definition),
 		Clone: func(payload schemaext.Payload) (schemaext.Payload, error) {
 			value, err := m.value(payload)
 			if err != nil {
 				return nil, err
 			}
-			return value.Clone(), nil
+			return m.payload(value.cloneModel()), nil
 		},
 		Encode: func(payload schemaext.Payload) (json.RawMessage, error) {
 			value, err := m.value(payload)
@@ -126,6 +127,13 @@ func (m *modelContract) codec() schemaext.Codec {
 
 func (m *modelContract) value(payload schemaext.Payload) (*resolvedModel, error) {
 	value, ok := payload.(*resolvedModel)
+	if m.key.representation == schemaext.Change {
+		change, found := payload.(*resolvedChange)
+		ok = found && change != nil
+		if ok {
+			value = change.model
+		}
+	}
 	if !ok || value == nil || value.kind != m.key.kind || value.signature != m.signature || value.wire.Format != 1 || len(value.canonical) == 0 {
 		return nil, fmt.Errorf("%w: model value is unresolved or belongs to another contract", schemaext.ErrInvalidValue)
 	}
@@ -139,14 +147,24 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 	subject := referenceFromProtocol(normalized.GetNormalizedOwner())
 	subject.DisplayName = ""
 	projection := struct {
-		Contract         string          `json:"contract"`
-		Engine           string          `json:"engine"`
-		Features         []string        `json:"features"`
-		RequiredFeatures []string        `json:"required_features"`
-		Subject          *modelReference `json:"subject"`
-		Format           string          `json:"format"`
-		Projection       []byte          `json:"projection"`
-	}{m.signature, wire.Engine, featureSet(wire.Features), featureSet(wire.RequiredFeatures), subject, normalized.GetCanonicalFormat(), normalized.GetCanonicalProjection()}
+		Contract         string               `json:"contract"`
+		Engine           string               `json:"engine"`
+		Features         []string             `json:"features"`
+		RequiredFeatures []string             `json:"required_features"`
+		Subject          *modelReference      `json:"subject"`
+		Format           string               `json:"format"`
+		Projection       []byte               `json:"projection"`
+		Required         []dependencyIdentity `json:"required"`
+		Change           *changeFacts         `json:"change"`
+	}{m.signature,
+		wire.Engine,
+		featureSet(wire.Features),
+		featureSet(wire.RequiredFeatures),
+		subject,
+		normalized.GetCanonicalFormat(),
+		normalized.GetCanonicalProjection(),
+		(&resolvedModel{normalized: normalized}).dependencyIdentities(),
+		normalizedChangeFacts(normalized.GetChangeSemantics())}
 	data, err := json.Marshal(projection)
 	if err != nil {
 		return nil, err

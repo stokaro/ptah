@@ -175,8 +175,9 @@ replace contextual desired/observed comparison or authorize a migration.
 The independent fixture normalizes a synthetic retention value offline. It
 preserves integers beyond the exact range of floating-point numbers, distinguishes
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
-SQL service does not support retention. The host captures YAML declarations and observed objects and facets. Contextual
-comparison and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+SQL service does not support retention. The host captures YAML declarations and
+observed objects and facets, and dispatches contextual comparison to their owner.
+Native planning and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
 ## Contextual model comparison
 
@@ -354,5 +355,5 @@ Native `schema inspect --format json` returns common schema data and warns about
 omitted objects and facets using these labels. It is not a lossless model export.
 Shared conversion and codecs retain the captured payloads and bounded coverage.
 Full-document source decoding still requires unrestricted complete model
-knowledge and refuses regions. Contextual comparison, native migration planning,
-and faithful source export remain work in #4204.
+knowledge and refuses regions. Native migration planning and faithful source
+export remain work in #4204.

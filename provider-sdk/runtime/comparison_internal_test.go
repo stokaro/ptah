@@ -1,6 +1,6 @@
 package runtime
 
-// White-box tests bypass the SDK server to exercise malformed peer replies.
+// White-box testing required: bypass the SDK server to exercise malformed peer replies.
 // A mutating owner also must not rewrite the server's original exclusions.
 
 import (

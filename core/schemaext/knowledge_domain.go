@@ -15,10 +15,12 @@ import (
 // establish completeness; a partial source cannot borrow another's authority.
 // Its zero value describes no namespace and is not an enrolled model claim.
 type KnowledgeDomain struct {
-	sources []knowledgeSource
+	sources []KnowledgeSource
 }
 
-type knowledgeSource struct {
+// KnowledgeSource is one independent capture of namespace knowledge.
+// Domain constructors snapshot it; Sources returns independent copies.
+type KnowledgeSource struct {
 	Outside Knowledge            `json:"outside"`
 	Regions []NamespaceKnowledge `json:"regions,omitempty"`
 }
@@ -30,7 +32,7 @@ const maxKnowledgeRegions = 4096
 // the claim when enrolling a model, including refusals of namespace-wide absence
 // and defaults. This constructor captures values and retains no writable input.
 func GlobalKnowledge(knowledge Knowledge) KnowledgeDomain {
-	return KnowledgeDomain{sources: []knowledgeSource{{Outside: knowledge}}}
+	return KnowledgeDomain{sources: []KnowledgeSource{{Outside: knowledge}}}
 }
 
 // NewScopedKnowledge captures an outside claim and bounded namespace claims.
@@ -38,7 +40,7 @@ func GlobalKnowledge(knowledge Knowledge) KnowledgeDomain {
 // takes priority over a complete overlapping region. An explicit subject claim
 // in Coverage remains more specific than any namespace claim.
 func NewScopedKnowledge(outside Knowledge, regions ...NamespaceKnowledge) (KnowledgeDomain, error) {
-	return normalizeKnowledgeDomain([]knowledgeSource{{Outside: outside, Regions: regions}})
+	return normalizeKnowledgeDomain([]KnowledgeSource{{Outside: outside, Regions: regions}})
 }
 
 // Lookup reports namespace knowledge for subject. Project target-qualified
@@ -127,7 +129,7 @@ func (d KnowledgeDomain) ForTarget(target TargetSelection) (KnowledgeDomain, err
 	if err := target.Validate(); err != nil {
 		return KnowledgeDomain{}, err
 	}
-	sources := make([]knowledgeSource, len(d.sources))
+	sources := make([]KnowledgeSource, len(d.sources))
 	for i, source := range d.sources {
 		sources[i].Outside = source.Outside
 		for _, region := range source.Regions {
@@ -182,7 +184,7 @@ func (d *KnowledgeDomain) UnmarshalJSON(data []byte) error {
 	if err := validateCoverageHeaderAliases(shape); err != nil {
 		return err
 	}
-	sources, err := DecodeJSON[[]knowledgeSource](data)
+	sources, err := DecodeJSON[[]KnowledgeSource](data)
 	if err != nil {
 		return err
 	}
@@ -194,11 +196,11 @@ func (d *KnowledgeDomain) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func normalizeKnowledgeDomain(input []knowledgeSource) (KnowledgeDomain, error) {
+func normalizeKnowledgeDomain(input []KnowledgeSource) (KnowledgeDomain, error) {
 	if len(input) == 0 || len(input) > 2*maxKnowledgeSources {
 		return KnowledgeDomain{}, fmt.Errorf("%w: namespace knowledge source count is outside the supported bounds", ErrInvalidValue)
 	}
-	sources := make([]knowledgeSource, len(input))
+	sources := make([]KnowledgeSource, len(input))
 	for i, source := range input {
 		if err := validateNamespaceKnowledge(source.Outside); err != nil {
 			return KnowledgeDomain{}, err
@@ -220,8 +222,8 @@ func normalizeKnowledgeDomain(input []knowledgeSource) (KnowledgeDomain, error) 
 		slices.SortFunc(sources[i].Regions, compareKnowledgeJSON[NamespaceKnowledge])
 		sources[i].Regions = slices.CompactFunc(sources[i].Regions, equalKnowledgeJSON[NamespaceKnowledge])
 	}
-	slices.SortFunc(sources, compareKnowledgeJSON[knowledgeSource])
-	sources = slices.CompactFunc(sources, equalKnowledgeJSON[knowledgeSource])
+	slices.SortFunc(sources, compareKnowledgeJSON[KnowledgeSource])
+	sources = slices.CompactFunc(sources, equalKnowledgeJSON[KnowledgeSource])
 	if len(sources) > maxKnowledgeSources {
 		return KnowledgeDomain{}, fmt.Errorf("%w: too many namespace knowledge sources", ErrInvalidValue)
 	}
@@ -265,7 +267,7 @@ func equalKnowledgeJSON[T any](a, b T) bool { return compareKnowledgeJSON(a, b) 
 // withLimit preserves more specific unknown reasons while limiting every
 // complete region, including regions beneath an already unknown outside.
 func (d KnowledgeDomain) withLimit(reason string) (KnowledgeDomain, error) {
-	sources := make([]knowledgeSource, len(d.sources))
+	sources := make([]KnowledgeSource, len(d.sources))
 	limit := func(k Knowledge) Knowledge {
 		if k.State == Complete {
 			return Knowledge{State: Uninspected, Reason: reason}
