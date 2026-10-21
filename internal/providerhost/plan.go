@@ -17,6 +17,7 @@ type commonPlanner struct {
 	options       planext.Options
 	target        string
 	assessParents bool
+	transactions  bool
 }
 
 func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {

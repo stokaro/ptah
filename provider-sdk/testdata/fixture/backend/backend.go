@@ -27,9 +27,13 @@ type Provider struct {
 	sessions map[string]*session
 }
 type session struct {
-	db    *sql.DB
-	path  string
-	fault string
+	mu           sync.Mutex
+	closed       bool
+	transactions map[string]*transaction
+	active       string
+	db           *sql.DB
+	path         string
+	fault        string
 }
 
 // Description declares the fixture's intentionally narrow service contract.
@@ -100,7 +104,7 @@ func (p *Provider) Close(_ context.Context, request *protocol.CloseRequest) erro
 	if found == nil {
 		return nil
 	}
-	return found.db.Close()
+	return found.close()
 }
 
 // Inspect reads table and column metadata from the actual database file.
@@ -108,6 +112,11 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 	s, err := p.lookup(request.GetSessionId())
 	if err != nil {
 		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.active != "" {
+		return nil, fmt.Errorf("fixture session is closed or has an active transaction")
 	}
 	if s.fault == "incomplete" {
 		return &protocol.Schema{}, nil
@@ -293,6 +302,19 @@ func (p *Provider) Execute(ctx context.Context, request *protocol.ExecuteRequest
 	if err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, fmt.Errorf("fixture session is closed")
+	}
+	executor, err := s.executor(request.GetTransactionId())
+	if err != nil {
+		return &protocol.Execution{Outcome: protocol.Execution_NOT_STARTED}, nil
+	}
+	return s.executeUnits(ctx, executor, request)
+}
+
+func (s *session) executeUnits(ctx context.Context, executor executor, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
 	if s.fault == "reject" {
 		return &protocol.Execution{Outcome: protocol.Execution_NOT_STARTED, DiagnosticCode: "fixture.refused"}, nil
 	}
@@ -302,7 +324,10 @@ func (p *Provider) Execute(ctx context.Context, request *protocol.ExecuteRequest
 		if !ok {
 			return nil, fmt.Errorf("fixture accepts SQL units only")
 		}
-		if _, err := s.db.ExecContext(ctx, sqlText.Sql); err != nil {
+		if s.fault == "reject-rollback" && sqlText.Sql == "DROP TABLE refused;" {
+			return &protocol.Execution{Outcome: protocol.Execution_NOT_STARTED}, nil
+		}
+		if _, err := executor.ExecContext(ctx, sqlText.Sql); err != nil {
 			return &protocol.Execution{Outcome: protocol.Execution_UNKNOWN, AppliedCount: applied}, nil
 		}
 		if s.fault == "crash-after" {

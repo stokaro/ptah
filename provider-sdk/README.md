@@ -331,7 +331,7 @@ fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host HCL and Go annotation adapters, official-engine
-adapters, complete native planning, transactions, and history
+adapters, complete native planning, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 
 ## Observed model coverage
@@ -409,7 +409,7 @@ Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
 through this contract. Contextual feature planning uses the service below.
-Transaction and history services remain required before official-engine extraction.
+History services and official-engine transaction qualification remain required before extraction.
 
 ## Contextual feature planning
 
@@ -460,8 +460,8 @@ test caller executes without a transaction.
 
 Owner transaction requirements survive AST lowering. A forbidden transaction
 reaches migration classification. A mixed plan that the generator cannot split
-safely is refused. The external planner refuses a required transaction because
-provider transaction sessions are not implemented.
+safely is refused. The external planner accepts a required transaction only when
+the selected engine advertises the service and transactional DDL is established.
 
 Prepared schema apply, saved JSON plans, and dev rehearsal check owner
 requirements before executing any statement. The JSON plan preserves each
@@ -469,6 +469,14 @@ statement's requirements. Editing assessed SQL needs a fresh owner assessment;
 Atlas HCL output refuses metadata it cannot preserve. Session capability facts
 retain the difference between an established false value and an unknown value.
 
-Provider transaction sessions, raw SQL assessment, history services, and official
-provider extraction remain part of #4204.
+Raw SQL assessment, history services, and official provider extraction remain
+part of #4204.
 These tests do not qualify YDB extraction or the migration history backend.
+
+The host schema writer binds each execution to its negotiated transaction and
+refuses commit after a failed or uncertain statement. Commit and rollback keep
+confirmed terminal results. A lost commit reply remains unknown until an explicit
+cleanup request or inspection establishes state. Rollback can run after caller
+cancellation. The independent transaction fixture checks real commit, rollback,
+session cleanup, handle isolation, late-begin fencing, and native schema apply
+with `file` and `all` transaction modes.
