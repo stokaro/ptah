@@ -11,10 +11,11 @@ import (
 	"ptah.run/internal/pgsystemschema"
 )
 
-func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, sessionTables bool) error {
+func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
+	policy := protection{dialect: dialect, sessionTables: scope.Session && dialect == platform.Postgres}
 
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "DO" {
@@ -26,7 +27,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, sessi
 	if definesPostgresRoutine(tokens) {
 		return replay.Refuse(dialect, first+" routine definition")
 	}
-	if namespace := (protection{dialect: dialect, sessionTables: sessionTables}).protectedPostgresMutationNamespace(tokens); namespace != "" {
+	if namespace := policy.protectedPostgresMutationNamespace(tokens); namespace != "" {
 		return replay.Refuse(
 			dialect,
 			fmt.Sprintf("protected namespace %q mutation", namespace),
@@ -54,7 +55,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, sessi
 		return replay.Refuse(dialect, operation)
 	}
 
-	return validatePostgresReplayStatementBase(dialect, tokens, sessionTables)
+	return policy.validateBase(tokens)
 }
 
 // protection reads the namespaces a replayed statement must not change on one

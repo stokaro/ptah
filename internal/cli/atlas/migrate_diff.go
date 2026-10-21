@@ -46,6 +46,7 @@ type atlasMigrateDiffOptions struct {
 	dirFormat   string
 	format      string
 	schemas     []string
+	exclude     []string
 	lockTimeout time.Duration
 	dryRun      bool
 	qualifier   string
@@ -104,7 +105,8 @@ removes it afterwards, from the engine's own image, or from the image a
 docker+<driver>:// URL names; it needs a reachable container runtime, and it
 is refused for any other engine.
 When --env is set, the selected atlas.hcl env
-can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
+can provide schema.src, dev, migration.dir, exclude, schema.mode,
+format.migrate.diff, and supported
 diff policy values.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -191,6 +193,7 @@ func runAtlasMigrateDiff(
 			projectCfg.StringValue(projectconfig.StringMigrationDir),
 		)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
+		opts.exclude = effectiveAtlasExclude(cmd, nil, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
 		formatConfigured = formatConfigured || formatValue.Present
@@ -381,6 +384,7 @@ func runAtlasMigrateDiff(
 		// capability an unpublished reverse would require.
 		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat, runtime),
 		Schemas:                   opts.schemas,
+		Exclude:                   opts.exclude,
 		LockTimeout:               lockTimeout,
 		Policy:                    policy,
 		Qualifier:                 qualifier,

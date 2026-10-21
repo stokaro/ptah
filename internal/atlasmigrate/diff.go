@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
@@ -98,6 +99,9 @@ type DiffOptions struct {
 	// migration files do not carry one.
 	PlanBidirectional func(context.Context, BidirectionalPlanInput) (BidirectionalPlan, error)
 	Schemas           []string
+	// Exclude subtracts objects from both comparison sides. The complete
+	// migration history still replays before its resulting catalog is scoped.
+	Exclude []string
 	// LockTimeout bounds the wait for the migration directory lock and the
 	// dev database lock. Zero waits indefinitely; a negative value does not
 	// wait, and a lock another run holds is refused at once.
@@ -318,7 +322,10 @@ func generateDiff(
 	if desiredDefaultSchema == "" {
 		desiredDefaultSchema = devDefaultSchema
 	}
-	desired, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, opts.Runtime.Selections(), desiredState.Schema, schemas, desiredDefaultSchema)
+	desired, err := filterDiffDesired(ctx, desiredState.Schema, atlasfilter.Scope{
+		Selections: opts.Runtime.Selections(), Schemas: schemas,
+		Exclude: opts.Exclude, DefaultSchema: desiredDefaultSchema,
+	})
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -346,7 +353,7 @@ func generateDiff(
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			current, diff, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devDefaultSchema, desired, baseline,
-				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
+				opts.Exclude, opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
 			)
 			if err != nil {
 				return err
@@ -728,6 +735,7 @@ func compareReplayedState(
 	defaultSchema string,
 	desired *schemamodel.Database,
 	baseline devclean.Baseline,
+	exclude []string,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
@@ -746,6 +754,10 @@ func compareReplayedState(
 		return nil, nil, err
 	}
 	replayed, err = schemascope.FilterDatabaseWithDefaultSchema(ctx, selected.Selections(), replayed, readNames, defaultSchema)
+	if err != nil {
+		return nil, nil, err
+	}
+	replayed, err = atlasfilter.ExcludeDatabaseWithDefaultSchema(selected.Selections(), replayed, exclude, defaultSchema)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -787,6 +799,14 @@ func compareReplayedState(
 		return nil, nil, err
 	}
 	return replayed, diff, nil
+}
+
+func filterDiffDesired(ctx context.Context, desired *schemamodel.Database, scope atlasfilter.Scope) (*schemamodel.Database, error) {
+	filtered, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, scope.Selections, desired, scope.Schemas, scope.DefaultSchema)
+	if err != nil {
+		return nil, err
+	}
+	return atlasfilter.ExcludeGeneratedWithDefaultSchema(scope.Selections, filtered, scope.Exclude, scope.DefaultSchema)
 }
 
 // readReplayedSchema reads the state the migration directory replayed, which
