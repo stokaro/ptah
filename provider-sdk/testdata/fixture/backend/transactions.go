@@ -67,6 +67,9 @@ func (p *Provider) BeginTransaction(ctx context.Context, request *protocol.Begin
 	if s.closed {
 		return nil, fmt.Errorf("fixture session is closed")
 	}
+	if err := s.guardLocks(ctx); err != nil {
+		return nil, err
+	}
 	if s.transactions == nil {
 		s.transactions = make(map[string]*transaction)
 	}
@@ -157,6 +160,14 @@ func (p *Provider) FinishTransaction(ctx context.Context, request *protocol.Fini
 	if record.tx == nil {
 		return &protocol.TransactionResult{Outcome: record.outcome}, nil
 	}
+	if request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
+		if s.fault == "lose-lock-before-commit" {
+			s.interruptLocks()
+		}
+		if err := s.guardLocks(ctx); err != nil {
+			return nil, err
+		}
+	}
 	if s.fault == "lost-before-commit" && request.GetAction() == protocol.FinishTransactionRequest_COMMIT {
 		return nil, fmt.Errorf("fixture lost commit request before execution")
 	}
@@ -194,6 +205,9 @@ func (s *session) close() error {
 			failures = append(failures, record.tx.Rollback())
 			record.tx = nil
 		}
+	}
+	for _, record := range s.locks {
+		failures = append(failures, record.release())
 	}
 	failures = append(failures, s.db.Close())
 	return errors.Join(failures...)

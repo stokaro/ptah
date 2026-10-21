@@ -102,6 +102,9 @@ func (p *Provider) PrepareHistory(ctx context.Context, request *protocol.Prepare
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.guardLocks(ctx); err != nil {
+		return nil, err
+	}
 	runner, err := s.historyRunner("")
 	if err != nil {
 		return nil, err
@@ -185,6 +188,9 @@ func (p *Provider) MutateHistory(ctx context.Context, request *protocol.MutateHi
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.guardLocks(ctx); err != nil {
+		return nil, err
+	}
 	if s.rejectsChecksumReconciliation(request) {
 		return historyResult(request.GetScope(), request.GetRequestId(), protocol.HistoryResult_REFUSED), nil
 	}

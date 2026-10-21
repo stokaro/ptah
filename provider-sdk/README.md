@@ -175,9 +175,17 @@ cleanup remains an error. The transport never retries acquisition or release.
 
 SDK tests cover exact scope binding, operation-specific outcomes, cancellation,
 malformed receipts, cleanup failure, and independent request and response storage.
-Host lock guards, independent process exclusion, and official-engine ownership
-checks remain required under #4204. These transport tests do not establish a
-working migration lock.
+Independent SQLite processes also verify exclusion by database and lock name,
+release on session close and process death, single-use handles, and cleanup after
+a lost acquisition reply. The fixture holds a private sidecar write transaction;
+it requires a canonical database pathname without hard-link aliases. Ownership
+checks read a row that exists only in the uncommitted transaction. A lost lock
+fences schema execution, history writes, and commits, while rollback remains
+available. Process-death checks retain the schema write committed before death.
+
+Host lock guards and official-engine ownership checks remain required under
+#4204. The fixture does not qualify YDB coordination leases or the default
+versioned migration workflow.
 
 ## Trust and process lifetime
 

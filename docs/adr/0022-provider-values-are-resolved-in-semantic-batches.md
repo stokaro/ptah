@@ -359,7 +359,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 18 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 19 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -838,3 +838,34 @@ A process-death test exits the provider after a committed DDL statement and befo
 its acknowledgment. A fresh process sees the pending Atlas record and refuses
 forced statement resumption. After the operator applies the missing statement,
 explicit metadata repair completes without replaying the committed prefix.
+
+
+## Bind lock ownership to the provider session
+
+The optional `sessions.locks` service owns acquisition, ownership checks, and
+release. Each engine declares support. The host supplies a single-use handle and
+exact lock name within a live session, plus a fresh request ID for each call.
+Receipts preserve those identities. A confirmed busy result permits another
+attempt with a new handle under the host wait policy. An uncertain result does
+not permit acquisition retries. Release of an unused handle fences a late
+acquisition, and closing a session releases all its locks.
+
+Both transport boundaries attempt bounded cleanup of the requested handle after
+an uncertain acquisition. Cleanup survives caller cancellation, retains the
+original error, and does not establish that guarded work was safe. Ownership
+checks must establish the engine's current guarantee, including lease freshness.
+Providers check guarding locks before execution, history writes, and commits.
+Lost or uncertain ownership permanently fences further writes in that session;
+rollback, release, and close remain available.
+
+Independent SQLite fixture processes hold named locks through private sidecar
+write transactions. The fixture checks an uncommitted ownership row rather than
+a cached acquired flag. This proves process exclusion for one canonical database
+pathname without hard-link aliases. Tests cover name and session binding, fenced
+late attempts, cleanup after lost acquisition receipts, release on close and
+process death, and write refusal after ownership loss. A process death after a
+committed schema statement releases the lock without undoing that statement.
+A lost lock before commit leaves the transaction available for explicit rollback.
+
+Host lock guards, default CLI use, and official-engine checks remain required
+under #4204. This fixture does not establish YDB coordination lease behavior.
