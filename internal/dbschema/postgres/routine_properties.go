@@ -6,7 +6,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/postgres/pgroutine"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 )
 
 // functionPropertiesCoverage records complete observations only for functions
@@ -15,7 +15,7 @@ func (r *Reader) functionPropertiesCoverage(database *catalog.Database) error {
 	builder := objectidentity.NewBuilder(identifier.ForDialect(r.dialect))
 	var subjects []schemaext.SubjectCoverage
 	for _, function := range database.Functions {
-		subject := routineargs.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters)
+		subject := routineidentity.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters)
 		if !pgroutine.HoldsProperties(subject) {
 			continue
 		}

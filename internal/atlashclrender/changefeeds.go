@@ -91,5 +91,5 @@ func featurePath(ref objectidentity.ID) string {
 	if !ref.Database.Empty() || !ref.Namespace.IsZero() {
 		return fmt.Sprintf("features[%q]", ref.String())
 	}
-	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.Signature)
+	return fmt.Sprintf("features[%q][%q][%q][%q][%q][%q]", ref.Kind, ref.Catalog.Source, ref.Schema.Source, ref.Parent.Source, ref.Name.Source, ref.SignatureText())
 }

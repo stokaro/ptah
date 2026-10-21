@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routineidentity"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tableref"
 )
@@ -71,7 +71,7 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 	// renderer writes them on.
 	for i := range database.Functions {
 		function := &database.Functions[i]
-		owners[&function.Facets] = routineargs.Subject(builder, function.Kind, function.Name, function.Parameters)
+		owners[&function.Facets] = routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters)
 	}
 	// A column's settings are lowered with the column definition that holds
 	// them, so a field is an owner where it belongs to a declared table.

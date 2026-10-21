@@ -77,7 +77,7 @@ func TestOwned(t *testing.T) {
 			ref:  objectidentity.ID{Kind: "ptah.run/ydb/changefeed", Parent: part("app.events"), Name: part(`say "hi"`)},
 			want: sqlext.Declaration{Kind: "changefeed", Name: `"app.events"."say ""hi"""`}},
 		{name: "an object with a signature",
-			ref:  objectidentity.ID{Kind: "example.org/owner/routine", Name: part("f"), Signature: "integer"},
+			ref:  objectidentity.ID{Kind: "example.org/owner/routine", Name: part("f"), Signature: objectidentity.NewParts(objectidentity.Part{Source: "integer", Normalized: "integer"})},
 			want: sqlext.Declaration{Kind: "routine", Name: "f(integer)"}},
 	}
 	for _, test := range tests {

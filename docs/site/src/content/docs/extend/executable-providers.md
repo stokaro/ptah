@@ -160,11 +160,11 @@ Inspection reports `items`. The second command reports `"outcome": "no-changes"`
 The CLI closes sessions and terminates its provider processes on success and
 failure.
 
-Native YAML objects retain the provider's database and ordered namespace path
-through schema capture and serialization. Identical names in different paths
-remain distinct. Table facets cannot use database, catalog, or path qualification.
-Overload tuples and normalization that changes the path component count are
-refused. Native planning for these objects remains part of
+Native YAML objects retain the provider's database, ordered namespace path,
+and overload components through schema capture and serialization. Identical
+names with different paths or overloads remain distinct. Table facets cannot
+use database, catalog, path, or overload qualification. Normalization that
+changes the path or overload component count is refused. Native planning for these objects remains part of
 [issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
 ## Resolve failures

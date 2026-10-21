@@ -213,7 +213,7 @@ func CompareRefs(a, b objectidentity.ID) int {
 		a.Namespace.Compare(b.Namespace),
 		cmp.Compare(a.Parent.Normalized, b.Parent.Normalized),
 		cmp.Compare(a.Name.Normalized, b.Name.Normalized),
-		cmp.Compare(a.Signature, b.Signature),
+		a.Signature.Compare(b.Signature),
 	)
 }
 

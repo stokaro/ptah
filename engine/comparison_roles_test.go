@@ -81,7 +81,7 @@ func TestObjectComparison_RefusesInvalidDeclaredRolesBeforeDispatch(t *testing.T
 		{name: "catalog", role: objectidentity.ID{Kind: objectidentity.KindRole, Name: name, Catalog: name}},
 		{name: "schema", role: objectidentity.ID{Kind: objectidentity.KindRole, Name: name, Schema: name}},
 		{name: "parent", role: objectidentity.ID{Kind: objectidentity.KindRole, Name: name, Parent: name}},
-		{name: "signature", role: objectidentity.ID{Kind: objectidentity.KindRole, Name: name, Signature: "integer"}},
+		{name: "signature", role: objectidentity.ID{Kind: objectidentity.KindRole, Name: name, Signature: objectidentity.NewParts(objectidentity.Part{Source: "integer", Normalized: "integer"})}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

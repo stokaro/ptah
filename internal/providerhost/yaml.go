@@ -105,8 +105,8 @@ func (h *Host) sourceContribution(engine string, tables yamlext.Tables, source *
 	case protocol.SourceModelValue_NATIVE_OBJECT:
 		result.Object = &schemaext.Object{Ref: subject, Value: resolved, Targets: []string{engine}}
 	case protocol.SourceModelValue_FACET:
-		if !subject.Database.Empty() || !subject.Catalog.Empty() || !subject.Namespace.IsZero() {
-			return yamlext.Contribution{}, unsupported("native YAML table facet with database, catalog, or path qualification")
+		if !subject.Database.Empty() || !subject.Catalog.Empty() || !subject.Namespace.IsZero() || !subject.Signature.IsZero() {
+			return yamlext.Contribution{}, unsupported("native YAML table facet with database, catalog, path, or overload qualification")
 		}
 		index, err := sourceTable(tables, value.GetValue().GetOwner())
 		if err != nil {

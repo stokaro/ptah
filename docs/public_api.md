@@ -272,18 +272,23 @@ declaration describes pairs with the one a catalog reports under any name.
 `Builder.Function` and `Builder.Procedure` build a routine's identity from its
 qualified name and its input argument types, under `KindFunction` and
 `KindProcedure`, so overloads and a function and a procedure of one name are
-distinct routines.
+distinct routines. `ID.Signature` is an immutable `Parts` tuple. Each component
+keeps its source spelling and normalized comparison value; commas inside a
+component do not split it. `ID.SignatureText` formats these components for
+diagnostics and must not be used as SQL or a comparison key.
 
 `ID.String` writes an identity for a person, its kind first; `ID.Path` writes
 the same without the kind, for a report that names the kind in words. A
 component holding a dot or a double quote is quoted in both, so two
 identities never read alike.
 
-An `ID` encodes as JSON with snake_case keys (`kind`, `catalog`, `schema`,
-`parent`, `name`, `signature`, and `source`, `normalized`, `quoted`,
+An `ID` encodes as JSON with snake_case keys (`kind`, `database`, `catalog`, `schema`,
+`namespace`, `parent`, `name`, `signature`, and `source`, `normalized`, `quoted`,
 `defaulted` in a part), and an empty component, part field or signature is
 left out. Every report that names a subject uses this form, and so does the
-schema fingerprint a saved plan records.
+schema fingerprint a saved plan records. Namespace and signature tuples encode
+as arrays of parts. A scalar `signature` from an older Ptah is refused;
+pre-v1 compatibility is not owed.
 
 `core/manageddata.LoadRowValues` reads a managed-data YAML file while retaining
 scalar spelling and tags in `schemamodel.ManagedRow`. `LoadRows` reads resolved Go

@@ -171,10 +171,10 @@ type ID struct {
 	Parent Part `json:"parent,omitzero"`
 	// Name is the object's own name.
 	Name Part `json:"name,omitzero"`
-	// Signature is a routine's overload identity -- the normalized argument
-	// type list. Two functions with the same name and different signatures are
-	// different objects, and a model without this cannot say so.
-	Signature string `json:"signature,omitzero"`
+	// Signature holds the ordered components that distinguish overloads of one
+	// named object. Routine arguments, grant privileges, and extended-property
+	// addresses retain their component boundaries and source spellings.
+	Signature Parts `json:"signature,omitzero"`
 }
 
 // Key is the value equality is decided on, and the type a map keys on.
@@ -197,7 +197,7 @@ type Key struct {
 	schema    string
 	parent    string
 	name      string
-	signature string
+	signature unique.Handle[normalizedPartNode]
 }
 
 // Kind returns the object family the key belongs to, which a diagnostic needs
@@ -217,7 +217,7 @@ func (id ID) Key() Key {
 		schema:    id.Schema.Normalized,
 		parent:    id.Parent.Normalized,
 		name:      id.Name.Normalized,
-		signature: id.Signature,
+		signature: id.Signature.key,
 	}
 }
 
@@ -265,8 +265,8 @@ func (id ID) Path() string {
 		}
 		rendered = "[database=" + strconv.Quote(id.Database.Source) + "; namespace=[" + strings.Join(path, ", ") + "]] " + rendered
 	}
-	if id.Signature != "" {
-		rendered += "(" + id.Signature + ")"
+	if !id.Signature.IsZero() {
+		rendered += "(" + id.SignatureText() + ")"
 	}
 	return rendered
 }
@@ -508,7 +508,7 @@ func (b Builder) GrantParts(schema, object, role, privilege string) ID {
 		Schema:    owner.Schema,
 		Parent:    owner.Name,
 		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
-		Signature: strings.ToUpper(strings.TrimSpace(privilege)),
+		Signature: NewParts(Part{Source: strings.TrimSpace(privilege), Normalized: strings.ToUpper(strings.TrimSpace(privilege))}),
 	}
 }
 
@@ -731,7 +731,7 @@ func (b Builder) routine(kind Kind, qualified, signature string) ID {
 		Kind:      kind,
 		Schema:    b.schemaPart(schema),
 		Name:      b.namePart(name, b.semantics.TableIdentityKey),
-		Signature: normalizeSignature(signature),
+		Signature: signatureParts(signature),
 	}
 }
 
@@ -747,25 +747,6 @@ func (b Builder) schemaPart(schema string) Part {
 		return part
 	}
 	return b.namePart(schema, b.semantics.TableIdentityKey)
-}
-
-// normalizeSignature folds a routine argument list to its comparison form:
-// lower case, one space after each comma, no surrounding parentheses.
-func normalizeSignature(signature string) string {
-	trimmed := strings.TrimSpace(signature)
-	// Only a pair that wraps the whole list is the list's own parentheses: a
-	// trailing one may close a type modifier, as in `n varchar(20)`.
-	if strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
-		trimmed = trimmed[1 : len(trimmed)-1]
-	}
-	if trimmed == "" {
-		return ""
-	}
-	arguments := strings.Split(trimmed, ",")
-	for i, argument := range arguments {
-		arguments[i] = strings.ToLower(strings.Join(strings.Fields(argument), " "))
-	}
-	return strings.Join(arguments, ", ")
 }
 
 // unquote removes one layer of double quotes and reports whether there was one.

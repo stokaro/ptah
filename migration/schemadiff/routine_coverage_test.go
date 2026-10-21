@@ -46,7 +46,7 @@ func TestRoutineCoverageUsesConnectionIdentifiers(t *testing.T) {
 			c.Assert(diff.FunctionsModified[0].FeatureChanges, qt.HasLen, 1)
 			change := diff.FunctionsModified[0].FeatureChanges[0]
 			c.Assert(change.Subject.Schema.Normalized, qt.Equals, test.wantSchema)
-			c.Assert(change.Subject.Signature, qt.Equals, "integer")
+			c.Assert(change.Subject.Signature, qt.Equals, objectidentity.NewParts(objectidentity.Part{Source: "integer", Normalized: "integer"}))
 			c.Assert(current.FeatureCoverage.SubjectRecords()[0].Subject, qt.Equals, builder.Function(observed.QualifiedName(), "integer"))
 		})
 	}

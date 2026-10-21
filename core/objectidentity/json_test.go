@@ -29,10 +29,10 @@ func TestID_JSON(t *testing.T) {
 				Name: objectidentity.Part{Source: `"Events"`, Normalized: `"Events"`, Quoted: true}}},
 		{name: "a parent, a catalog and a signature",
 			want: `{"kind":"function","catalog":{"source":"db","normalized":"db"},"parent":{"source":"t","normalized":"t"},` +
-				`"name":{"source":"f","normalized":"f"},"signature":"integer"}`,
+				`"name":{"source":"f","normalized":"f"},"signature":[{"source":"integer","normalized":"integer"}]}`,
 			id: objectidentity.ID{Kind: objectidentity.KindFunction, Catalog: objectidentity.Part{Source: "db", Normalized: "db"},
 				Parent: objectidentity.Part{Source: "t", Normalized: "t"}, Name: objectidentity.Part{Source: "f", Normalized: "f"},
-				Signature: "integer"}},
+				Signature: objectidentity.NewParts(objectidentity.Part{Source: "integer", Normalized: "integer"})}},
 		{name: "the zero identity", want: `{}`},
 	}
 	for _, test := range tests {

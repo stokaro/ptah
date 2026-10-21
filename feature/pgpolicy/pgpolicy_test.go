@@ -329,7 +329,7 @@ func TestPolicyRef_FailurePath(t *testing.T) {
 		{name: "an empty name", ref: pgpolicy.PolicyRef("app", "t", "")},
 		{name: "a signature", ref: func() objectidentity.ID {
 			ref := pgpolicy.PolicyRef("", "t", "p")
-			ref.Signature = "(int)"
+			ref.Signature = objectidentity.NewParts(objectidentity.Part{Source: "(int)", Normalized: "(int)"})
 			return ref
 		}()},
 	}

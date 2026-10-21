@@ -34,6 +34,16 @@ leaves it empty; it never reuses a component to mean something else.
 
 Two objects that differ in any of those facts are two objects.
 
+`Signature` holds ordered components with source and normalized forms. Routine
+builders split arguments outside nested type modifiers and quoted names, then
+fold unquoted type text. Quoted type names retain their case and whitespace.
+Provider overloads enter as separate components without SQL parsing. Grants
+use one privilege component; SQL Server extended properties use table and
+column components. `SignatureText` formats diagnostics only.
+
+The JSON `signature` field is an array of parts. The earlier scalar form is
+refused. This changes behavior; pre-v1, so no compatibility is owed.
+
 ### 2. The source spelling and the comparison identity are distinct values
 
 Every component is a `Part` holding both what the author or catalog wrote
@@ -62,7 +72,7 @@ A struct key cannot have a component boundary forged by a component's content,
 and a component the source did not supply is the zero value of its own field
 rather than an absent substring.
 
-A namespace path is an immutable `Parts` tuple. Each node holds one `Part` and
+Namespace paths and overload signatures are immutable `Parts` tuples. Each node holds one `Part` and
 the next node; `unique.Handle` gives equal nodes equal comparable handles.
 The comparison chain retains only normalized components. It preserves sequence
 length and boundaries, including an empty component, without a joined string.

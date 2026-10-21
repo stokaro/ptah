@@ -158,7 +158,7 @@ func (r *Runtime) snapshotComparison(ctx context.Context, request schemaext.Obje
 	seen := make(map[objectidentity.Key]bool)
 	for _, parent := range request.Parents {
 		ref := parent.Subject
-		if ref.Kind != objectidentity.KindTable || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" || (!parent.Desired && !parent.Current) || seen[ref.Key()] {
+		if ref.Kind != objectidentity.KindTable || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Signature.IsZero() || (!parent.Desired && !parent.Current) || seen[ref.Key()] {
 			return schemaext.ObjectComparisonRequest{}, fmt.Errorf("%w: invalid or duplicate comparison parent %s", schemaext.ErrInvalidValue, ref)
 		}
 		seen[ref.Key()] = true
@@ -206,7 +206,7 @@ func snapshotRequired(refs []objectidentity.ID) ([]objectidentity.ID, error) {
 func snapshotDeclaredRelations(refs []objectidentity.ID) ([]objectidentity.ID, error) {
 	refs = slices.Clone(refs)
 	for _, ref := range refs {
-		if (ref.Kind != objectidentity.KindView && ref.Kind != objectidentity.KindMatView) || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || ref.Signature != "" {
+		if (ref.Kind != objectidentity.KindView && ref.Kind != objectidentity.KindMatView) || ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Signature.IsZero() {
 			return nil, fmt.Errorf("%w: invalid declared relation %s", schemaext.ErrInvalidValue, ref)
 		}
 	}
@@ -220,7 +220,7 @@ func snapshotDeclaredRoles(refs []objectidentity.ID) ([]objectidentity.ID, error
 	refs = slices.Clone(refs)
 	for _, ref := range refs {
 		if ref.Kind != objectidentity.KindRole || ref.Name.Source == "" || ref.Name.Normalized == "" ||
-			!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Schema.Empty() || !ref.Parent.Empty() || ref.Signature != "" {
+			!ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || !ref.Schema.Empty() || !ref.Parent.Empty() || !ref.Signature.IsZero() {
 			return nil, fmt.Errorf("%w: invalid declared role %s", schemaext.ErrInvalidValue, ref)
 		}
 	}

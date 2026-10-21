@@ -87,7 +87,7 @@ func ValidateRef(ref objectidentity.ID) error {
 		return fmt.Errorf("%w: %q is not a PostgreSQL user type kind", schemaext.ErrInvalidValue, ref.Kind)
 	}
 	if ref.Name.Source == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() ||
-		ref.Signature != "" {
+		!ref.Signature.IsZero() {
 		return fmt.Errorf("%w: a %s requires a schema-scoped identity with a name", schemaext.ErrInvalidValue, label)
 	}
 	return schemaext.ValidText(label+" name", ref.Name.Source)

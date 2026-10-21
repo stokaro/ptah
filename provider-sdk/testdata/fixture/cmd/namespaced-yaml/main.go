@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -42,7 +43,16 @@ func (p *namespacedProvider) DecodeSource(ctx context.Context, request *protocol
 				database string
 				path     []string
 			}{{"tenant", []string{"a/b", "c"}}, {"tenant", []string{"a", "b/c"}}, {"other", []string{"a/b", "c"}}} {
+				if i > 0 && original.Value.Value.Owner.GetName() == "overload-facet" {
+					break
+				}
 				value := namespaceValue(original, scope.database, scope.path)
+				if value.Value.Value.Owner.GetName() == "overload" {
+					value.Value.Value.Owner.Database = "tenant"
+					value.Value.Value.Owner.Path = []string{"same"}
+					value.Value.Value.Owner.Overload = [][]string{nil, {"INTEGER, TEXT"}, {"INTEGER", "TEXT"}}[i]
+					normalizeOwner(value.Value)
+				}
 				value.Value.Id += "-" + strconv.Itoa(i)
 				fragment.Values = append(fragment.Values, value)
 				document.Coverage.Subjects = append(document.Coverage.Subjects, &protocol.ModelSubjectCoverage{
@@ -59,16 +69,41 @@ func namespaceValue(original *protocol.SourceModelValue, database string, path [
 	value := proto.CloneOf(original)
 	ref := value.Value.Value.Owner
 	ref.Database, ref.Path = database, path
-	if ref.GetName() != "facet" {
+	if ref.GetName() != "facet" && ref.GetName() != "overload-facet" {
 		value.Placement = protocol.SourceModelValue_NATIVE_OBJECT
 		ref.Kind = value.Value.Value.Kind
 	}
-	if ref.GetName() == "overload" {
+	if strings.HasPrefix(ref.GetName(), "overload-") {
 		ref.Overload = []string{"integer"}
 	}
-	value.Value.NormalizedOwner = proto.CloneOf(ref)
+	if ref.GetName() == "overload-facet" {
+		ref.Database, ref.Path = "", nil
+	}
+	normalizeOwner(value.Value)
 	if ref.GetName() == "reshape" {
 		value.Value.NormalizedOwner.Path = append(value.Value.NormalizedOwner.Path, "extra")
 	}
+	if ref.GetName() == "overload-reshape" {
+		value.Value.NormalizedOwner.Overload = append(value.Value.NormalizedOwner.Overload, "extra")
+	}
 	return value
+}
+
+func (p *namespacedProvider) NormalizeValues(ctx context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
+	result, err := p.Provider.NormalizeValues(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range result.GetValues() {
+		normalizeOwner(value)
+	}
+	return result, nil
+}
+
+// Source decoding and later codec resolution must use the same identity rule.
+func normalizeOwner(value *protocol.NormalizedValue) {
+	value.NormalizedOwner = proto.CloneOf(value.Value.Owner)
+	for i, part := range value.NormalizedOwner.GetOverload() {
+		value.NormalizedOwner.Overload[i] = strings.ToLower(part)
+	}
 }

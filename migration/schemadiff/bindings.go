@@ -118,7 +118,7 @@ func droppedReferences(diff *difftypes.SchemaDiff, semantics identifier.Semantic
 // referenceKey is a reference's identity without a routine signature, which
 // relation discovery does not report and a removal may carry.
 func referenceKey(ref objectidentity.ID) objectidentity.Key {
-	ref.Signature = ""
+	ref.Signature = objectidentity.Parts{}
 	return ref.Key()
 }
 
