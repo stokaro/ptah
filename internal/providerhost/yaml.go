@@ -88,13 +88,9 @@ func (h *Host) sourceContribution(engine string, tables yamlext.Tables, source *
 	if contract == nil {
 		return yamlext.Contribution{}, fmt.Errorf("decoded YAML model is not registered")
 	}
-	payload, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
+	resolved, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
 	if err != nil {
 		return yamlext.Contribution{}, err
-	}
-	resolved, ok := payload.(schemaext.Value)
-	if !ok {
-		return yamlext.Contribution{}, fmt.Errorf("decoded YAML model has no desired value")
 	}
 	subject, err := sourceIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
 	if err != nil {

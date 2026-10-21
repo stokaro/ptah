@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/stokaro/ptah/provider-sdk/provider"
+
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -27,6 +29,11 @@ func (h *Host) Provider() engine.Provider {
 	for _, declared := range h.description.GetEngines() {
 		selected := h.targets[declared.GetId()]
 		result.Targets = append(result.Targets, selected.registration())
+		if slices.Contains(h.description.GetFeatures(), provider.ConvertValuesFeature) {
+			if kinds := h.conversionKinds(declared.GetId()); len(kinds) > 0 {
+				result.Conversions = append(result.Conversions, engine.Conversion{Target: declared.GetId(), Kinds: kinds, Service: selected})
+			}
+		}
 	}
 	return result
 }

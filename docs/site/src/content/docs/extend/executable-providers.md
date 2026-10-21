@@ -174,6 +174,11 @@ A failed or canceled read returns no partial catalog. Complete inspection of one
 session does not establish global absence across databases or engines; explicit
 subject facts are preserved.
 
+Providers may advertise offline conversion between desired and observed models.
+The shared conversion pipeline preserves native identities, facets, and bounded
+inspection knowledge. Conversion alone does not resolve the schema scope needed
+by `schema inspect`, and does not qualify native object planning.
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,

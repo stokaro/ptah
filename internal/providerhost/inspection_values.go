@@ -39,13 +39,9 @@ func (r reader) observedValues(ctx context.Context, request *protocol.InspectReq
 		if contract == nil {
 			return nil, fmt.Errorf("inspected model is not registered")
 		}
-		payload, err := contract.resolved(modelWire{Format: 1, Engine: batch.GetEngine(), Features: batch.GetTargetFeatures()}, value)
+		resolved, err := contract.resolved(modelWire{Format: 1, Engine: batch.GetEngine(), Features: batch.GetTargetFeatures()}, value)
 		if err != nil {
 			return nil, err
-		}
-		resolved, ok := payload.(schemaext.Value)
-		if !ok {
-			return nil, fmt.Errorf("inspected model has no observed value")
 		}
 		subject, err := r.observedIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
 		if err != nil {

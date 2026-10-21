@@ -11,6 +11,7 @@ import (
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/schemaext"
 )
@@ -30,15 +31,16 @@ type modelContract struct {
 // resolvedModel contains only values validated by an explicit owner batch. It
 // retains no process client; copying or comparing it cannot perform an RPC.
 type resolvedModel struct {
-	kind      schemaext.Kind
-	signature string
-	wire      modelWire
-	canonical json.RawMessage
+	kind       schemaext.Kind
+	signature  string
+	wire       modelWire
+	canonical  json.RawMessage
+	normalized *protocol.NormalizedValue
 }
 
 func (v *resolvedModel) Kind() schemaext.Kind { return v.kind }
 func (v *resolvedModel) Clone() schemaext.Value {
-	return &resolvedModel{kind: v.kind, signature: v.signature, wire: v.wire.clone(), canonical: bytes.Clone(v.canonical)}
+	return &resolvedModel{kind: v.kind, signature: v.signature, wire: v.wire.clone(), canonical: bytes.Clone(v.canonical), normalized: proto.CloneOf(v.normalized)}
 }
 func (v *resolvedModel) Equal(other schemaext.Value) bool {
 	right, ok := other.(*resolvedModel)
@@ -126,7 +128,7 @@ func (m *modelContract) value(payload schemaext.Payload) (*resolvedModel, error)
 	return value, nil
 }
 
-func (m *modelContract) resolved(wire modelWire, normalized *protocol.NormalizedValue) (schemaext.Payload, error) {
+func (m *modelContract) resolved(wire modelWire, normalized *protocol.NormalizedValue) (*resolvedModel, error) {
 	wire.Subject = referenceFromProtocol(normalized.GetValue().GetOwner())
 	wire.Payload = bytes.Clone(normalized.GetValue().GetPayload())
 	wire.RequiredFeatures = slices.Clone(normalized.GetValue().GetRequiredFeatures())
@@ -149,5 +151,5 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 	if err != nil {
 		return nil, err
 	}
-	return &resolvedModel{kind: m.key.kind, signature: m.signature, wire: wire.clone(), canonical: canonical}, nil
+	return &resolvedModel{kind: m.key.kind, signature: m.signature, wire: wire.clone(), canonical: canonical, normalized: proto.CloneOf(normalized)}, nil
 }
