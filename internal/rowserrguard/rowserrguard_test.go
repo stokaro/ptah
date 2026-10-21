@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -58,14 +59,11 @@ func TestConfiguredPackagesMatchTheDeclarationsHappyPath(t *testing.T) {
 	c.Assert(len(declaring) > 1, qt.IsTrue,
 		qt.Commentf("found %d packages declaring a Query returning *sql.Rows; the corpus is broken", len(declaring)))
 
-	modules := moduleDirectories(c, repositoryRoot(c))
+	modules := slices.Collect(maps.Values(moduleDirectories(c, repositoryRoot(c))))
 	configured := slices.DeleteFunc(slices.Clone(loaded.Linters.Settings.RowsErrCheck.Packages), func(pkg string) bool {
-		for _, module := range modules {
-			if pkg == module || strings.HasPrefix(pkg, module+"/") {
-				return false
-			}
-		}
-		return true
+		return !slices.ContainsFunc(modules, func(module string) bool {
+			return pkg == module || strings.HasPrefix(pkg, module+"/")
+		})
 	})
 	slices.Sort(configured)
 

@@ -37,7 +37,7 @@ func (s *session) BeginTransaction(ctx context.Context) (catalog.SchemaTransacti
 	}
 	handle, err := s.target.host.client.BeginTransaction(ctx, &protocol.BeginTransactionRequest{SessionId: s.remote.GetId(), TransactionId: rand.Text()})
 	if err != nil {
-		return nil, err
+		return nil, nativeOutcomeError(err)
 	}
 	return &transaction{session: s, id: handle.GetId(), ctx: ctx}, nil
 }
@@ -86,11 +86,11 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.result != nil && t.result.GetOutcome() != protocol.TransactionResult_UNKNOWN {
-		return provider.CheckTransactionResult(action, t.result)
+		return nativeOutcomeError(provider.CheckTransactionResult(action, t.result))
 	}
 	if action == protocol.FinishTransactionRequest_COMMIT {
 		if t.commitTried || t.rollbackTried {
-			return errors.Join(t.finishErr, &provider.TransactionError{})
+			return nativeOutcomeError(errors.Join(t.finishErr, &provider.TransactionError{}))
 		}
 		if t.executionErr != nil {
 			return fmt.Errorf("provider transaction cannot commit after failed execution: %w", t.executionErr)
@@ -103,7 +103,7 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 		t.rollbackTried = true
 	}
 	if t.session.closed.Load() {
-		t.finishErr = errors.Join(fmt.Errorf("provider session is closed"), &provider.TransactionError{})
+		t.finishErr = nativeOutcomeError(errors.Join(fmt.Errorf("provider session is closed"), &provider.TransactionError{}))
 		return t.finishErr
 	}
 	ctx := t.ctx
@@ -113,5 +113,6 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 	t.result, t.finishErr = t.session.target.host.client.FinishTransaction(ctx, &protocol.FinishTransactionRequest{
 		SessionId: t.session.remote.GetId(), TransactionId: t.id, Action: action,
 	})
+	t.finishErr = nativeOutcomeError(t.finishErr)
 	return t.finishErr
 }

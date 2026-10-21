@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/migratorext"
@@ -3105,8 +3106,8 @@ func (e *migrationTransactionRolledBackError) Unwrap() error {
 }
 
 func migrationFailureAfterRollback(version int64, failure, rollbackErr error) error {
-	if rollbackErr != nil && !cancellationEndedTheTransaction(failure) {
-		return fmt.Errorf("%w; additionally failed to roll back migration transaction: %v", failure, rollbackErr)
+	if rollbackErr != nil && !cancellationEndedTheTransaction(failure, rollbackErr) {
+		return fmt.Errorf("%w; additionally failed to roll back migration transaction: %w", failure, rollbackErr)
 	}
 	return &migrationTransactionRolledBackError{version: version, cause: failure}
 }
@@ -3129,13 +3130,16 @@ func migrationFailureAfterRollback(version int64, failure, rollbackErr error) er
 // the discard an ordinary rolled-back failure gets, so the next run refuses to
 // continue past it.
 //
-// The cancellation is what makes this safe, and it is the whole condition. A
-// rollback error on an ordinary failure says the transaction was committed OR
+// An explicit unknown-outcome result from execution or rollback overrides
+// this inference. Provider transactions can outlive a canceled RPC, and an
+// uncertain receipt is not evidence that the transaction ended.
+// A rollback error on an ordinary failure says the transaction was committed OR
 // rolled back, and a commit is the outcome nobody may guess at. What a
 // dialect commits implicitly is answered before this, by the progress the
 // revision recorded: a discard requires that no statement reported any.
-func cancellationEndedTheTransaction(failure error) bool {
-	return errors.Is(failure, context.Canceled)
+func cancellationEndedTheTransaction(failure, rollbackErr error) bool {
+	return errors.Is(failure, context.Canceled) &&
+		!errors.Is(failure, ptaherr.ErrOutcomeUnknown) && !errors.Is(rollbackErr, ptaherr.ErrOutcomeUnknown)
 }
 
 func migrationTransactionRollbackVersion(err error) (int64, bool) {

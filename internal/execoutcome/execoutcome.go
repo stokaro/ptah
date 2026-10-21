@@ -20,16 +20,20 @@ import (
 	"github.com/go-sql-driver/mysql"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/retry"
+
+	"ptah.run/core/ptaherr"
 )
 
 // Unknown reports whether a statement that failed with err may have been
-// applied: the failure is the connection's, so the server's answer, if it sent
-// one, never reached the client. It answers false for a server's answer, for
-// an error that says the statement was never sent, and for any error it does
-// not recognize as a broken connection.
+// applied: a native adapter reported uncertainty, or the connection failed
+// before the server's answer reached the client. It answers false for a server's
+// answer, an error that says the statement was never sent, and an error it does
+// not recognize as uncertainty.
 //
 // What it recognizes:
 //
+//   - an explicit [ptaherr.ErrOutcomeUnknown] from a native execution
+//     adapter, including an uncertain result wrapping a transport error;
 //   - a YDB error, as ydb-go-sdk classifies it: a transport error the SDK
 //     would retry only for an idempotent operation (Unavailable, Internal,
 //     Canceled, DeadlineExceeded), an operation status of the same kind
@@ -47,6 +51,9 @@ import (
 func Unknown(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, ptaherr.ErrOutcomeUnknown) {
+		return true
 	}
 	if unknown, ok := ydbUnknown(err); ok {
 		return unknown

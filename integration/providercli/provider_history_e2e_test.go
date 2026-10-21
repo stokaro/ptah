@@ -12,8 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
+	"ptah.run/internal/execoutcome"
 	"ptah.run/migration/migrator"
 )
 
@@ -36,8 +38,10 @@ func TestProviderHistoryUsesTheActiveTransaction(t *testing.T) {
 		name   string
 		commit bool
 		rows   int
+		finish func(catalog.SchemaTransaction) error
 	}{
-		{"commit", true, 1}, {"rollback", false, 0},
+		{"commit", true, 1, catalog.SchemaTransaction.Commit},
+		{"rollback", false, 0, catalog.SchemaTransaction.Rollback},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -56,11 +60,7 @@ func TestProviderHistoryUsesTheActiveTransaction(t *testing.T) {
 			c.Assert(transactional.CompareAndSwap(c.Context(), providerHistoryTable(), nil, &row), qt.IsNil)
 			snapshot := readProviderHistory(c, transactional)
 			c.Assert(snapshot.Records, qt.DeepEquals, []dbschema.HistoryRecord{row})
-			finish := tx.Rollback
-			if test.commit {
-				finish = tx.Commit
-			}
-			c.Assert(finish(), qt.IsNil)
+			c.Assert(test.finish(tx), qt.IsNil)
 			c.Assert(readProviderHistory(c, store).Records, qt.HasLen, test.rows)
 			c.Assert(providerTablePresent(c, conn, "records"), qt.Equals, test.commit)
 			_, err = transactional.Read(c.Context(), providerHistoryTable())
@@ -83,7 +83,10 @@ func TestProviderHistoryConflictPreventsSchemaCommit(t *testing.T) {
 	transactional, err := conn.WithExecutor(tx).HistoryStore()
 	c.Assert(err, qt.IsNil)
 	c.Assert(tx.ExecuteSQL(c.Context(), `CREATE TABLE "unrecorded" ("id" INTEGER);`), qt.IsNil)
-	c.Assert(transactional.CompareAndSwap(c.Context(), providerHistoryTable(), nil, &row), qt.ErrorIs, provider.ErrExecution)
+	err = transactional.CompareAndSwap(c.Context(), providerHistoryTable(), nil, &row)
+	c.Assert(err, qt.ErrorIs, provider.ErrExecution)
+	c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrOutcomeUnknown)
+	c.Assert(execoutcome.Unknown(err), qt.IsFalse)
 	c.Assert(tx.Commit(), qt.ErrorIs, provider.ErrExecution)
 	c.Assert(tx.Rollback(), qt.IsNil)
 	c.Assert(providerTablePresent(c, conn, "unrecorded"), qt.IsFalse)
@@ -198,4 +201,41 @@ func TestProviderHistoryInvalidRequestDoesNotPoisonTransaction(t *testing.T) {
 	c.Assert(tx.Commit(), qt.IsNil)
 	c.Assert(readProviderHistory(c, store).Records, qt.DeepEquals, []dbschema.HistoryRecord{after})
 	c.Assert(providerTablePresent(c, conn, "valid_after_refusal"), qt.IsTrue)
+}
+
+func TestProviderHistoryLostReceiptKeepsTheHostOutcomeUnknown(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, _ := transactionConnection(c, host, "lost-history")
+	store, err := conn.HistoryStore()
+	c.Assert(err, qt.IsNil)
+	c.Assert(store.Prepare(c.Context(), providerHistoryTable()), qt.IsNil)
+	row := providerHistoryRecord("1")
+	err = store.CompareAndSwap(c.Context(), providerHistoryTable(), nil, &row)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(execoutcome.Unknown(err), qt.IsTrue)
+	c.Assert(readProviderHistory(c, store).Records, qt.DeepEquals, []dbschema.HistoryRecord{row})
+}
+
+func TestProviderHistoryLostTransactionReceiptPreventsCommit(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "transactions")
+	conn, _ := transactionConnection(c, host, "lost-history")
+	store, err := conn.HistoryStore()
+	c.Assert(err, qt.IsNil)
+	c.Assert(store.Prepare(c.Context(), providerHistoryTable()), qt.IsNil)
+	tx, err := conn.SchemaWriter().BeginTransaction(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = tx.Rollback() })
+	transactional, err := conn.WithExecutor(tx).HistoryStore()
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.ExecuteSQL(c.Context(), `CREATE TABLE "uncertain" ("id" INTEGER);`), qt.IsNil)
+	row := providerHistoryRecord("1")
+	err = transactional.CompareAndSwap(c.Context(), providerHistoryTable(), nil, &row)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(execoutcome.Unknown(err), qt.IsTrue)
+	c.Assert(tx.Commit(), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(tx.Rollback(), qt.IsNil)
+	c.Assert(readProviderHistory(c, store).Records, qt.HasLen, 0)
+	c.Assert(providerTablePresent(c, conn, "uncertain"), qt.IsFalse)
 }

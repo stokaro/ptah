@@ -818,6 +818,8 @@ a complete `HistorySnapshot` or an error, including for an oversized history.
 replacement or deletion. A missing expected record inserts only if absent.
 Within a transaction, success confirms execution; commit establishes durability.
 A lost acknowledgment leaves the outcome unknown and never permits replay.
+Uncertain execution, transaction, and history results match
+`ptaherr.ErrOutcomeUnknown`; callers need no provider SDK import to detect them.
 
 An executor installed by `WithExecutor` must expose its own transaction-bound
 history store. A missing service is refused, without switching to the parent
@@ -1023,6 +1025,9 @@ the error:
   `*ptaherr.ParseError`;
 - unsupported dialect failures should support `errors.Is` with
   `ptaherr.ErrUnsupportedDialect`;
+- native operations with an uncertain durable outcome support `errors.Is` with
+  `ptaherr.ErrOutcomeUnknown`; inspect durable state before recovery, and do not
+  treat the absence of this error as proof of non-execution;
 - invalid schema diffs rejected during planning should support `errors.Is` with
   `ptaherr.ErrInvalidSchemaDiff`;
 - a plan a planner built in breach of the planning contract, such as an owner

@@ -4289,7 +4289,9 @@ entire expected record before replacement or deletion; a missing expected
 record means insert only if absent. Lost acknowledgments never permit replay.
 
 The subprocess adapter shares the transaction handle with schema execution.
-A dispatched history failure prevents commit. The common migrator reads these
+A dispatched history failure prevents commit. Uncertain execution, transaction,
+and history results match `ptaherr.ErrOutcomeUnknown` without requiring callers
+to import the provider SDK. The common migrator reads these
 records through its existing status, progress, and identity checks. Versioned
 execution, session-owned locks, and official-provider qualification remain
 required work in #4204.
@@ -5129,7 +5131,10 @@ can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures
 should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`. Invalid schema
 diffs rejected during planning support
-`errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`.
+`errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`. Native operations whose durable
+outcome is uncertain support `errors.Is(err, ptaherr.ErrOutcomeUnknown)`.
+Inspect durable state before choosing recovery; this error never permits replay,
+and its absence does not prove that an operation was never executed.
 
 ### `ptah.run/docs`
 

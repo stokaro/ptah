@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/core/ptaherr"
 )
 
 func TestMigrationFailureAfterRollback_ConfirmsWhatTheCancellationEnded(t *testing.T) {
@@ -64,6 +66,16 @@ func TestMigrationFailureAfterRollback_LeavesAnUnexplainedOutcomeUnconfirmed(t *
 		rollbackErr error
 	}{
 		{
+			name:        "cancellation does not confirm an uncertain rollback receipt",
+			failure:     context.Canceled,
+			rollbackErr: fmt.Errorf("lost rollback reply: %w", ptaherr.ErrOutcomeUnknown),
+		},
+		{
+			name:        "uncertain execution overrides cancellation inference",
+			failure:     errors.Join(context.Canceled, ptaherr.ErrOutcomeUnknown),
+			rollbackErr: sql.ErrTxDone,
+		},
+		{
 			// Without the cancellation, sql.ErrTxDone says the transaction was
 			// committed OR rolled back, and a commit is the outcome nobody may
 			// guess at.
@@ -94,6 +106,8 @@ func TestMigrationFailureAfterRollback_LeavesAnUnexplainedOutcomeUnconfirmed(t *
 
 			_, confirmed := migrationTransactionRollbackVersion(err)
 			c.Assert(confirmed, qt.IsFalse)
+			c.Assert(err, qt.ErrorIs, tt.failure)
+			c.Assert(err, qt.ErrorIs, tt.rollbackErr)
 			c.Assert(err.Error(), qt.Contains, "additionally failed to roll back migration transaction")
 		})
 	}

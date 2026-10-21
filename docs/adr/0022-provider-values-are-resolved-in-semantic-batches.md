@@ -651,3 +651,21 @@ identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
 sessions. Versioned writes and lock ownership remain unfinished under #4204.
+
+## Preserve uncertain outcomes across the host boundary
+
+The host translates an SDK unknown-outcome error to
+`ptaherr.ErrOutcomeUnknown` while retaining its cause. Shared migration recovery
+and embedders can recognize uncertainty without importing the provider SDK.
+This applies to execution, transaction completion, and revision mutations.
+Confirmed refusals and local validation failures do not acquire this marker.
+
+The common statement-outcome classifier checks the explicit marker before
+transport heuristics. A lost acknowledgment must keep an in-flight revision
+marked uncertain; it must not become an ordinary failure that permits replay.
+The marker does not replace durable-state inspection, and an unmarked error is
+not evidence that no write occurred.
+
+Rollback failures retain their error causes. An explicit uncertain execution or
+rollback receipt overrides the SQL cancellation inference; cancellation alone
+must not turn that receipt into proof that the transaction rolled back.

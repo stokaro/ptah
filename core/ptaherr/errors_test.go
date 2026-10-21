@@ -149,6 +149,7 @@ func TestSentinelErrorsMatchThemselves(t *testing.T) {
 		name string
 		err  error
 	}{
+		{name: "outcome unknown", err: ptaherr.ErrOutcomeUnknown},
 		{name: "unsupported dialect", err: ptaherr.ErrUnsupportedDialect},
 		{name: "unknown attribute", err: ptaherr.ErrUnknownAttribute},
 		{name: "missing required attribute", err: ptaherr.ErrMissingRequiredAttribute},

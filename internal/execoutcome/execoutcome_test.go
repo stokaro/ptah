@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/internal/execoutcome"
 )
 
@@ -26,6 +27,9 @@ func TestUnknown_ConnectionBroke(t *testing.T) {
 		name string
 		err  error
 	}{
+		{name: "a native operation lost its receipt", err: fmt.Errorf("execution: %w", ptaherr.ErrOutcomeUnknown)},
+		{name: "native uncertainty overrides a bad-connection hint", err: errors.Join(driver.ErrBadConn, ptaherr.ErrOutcomeUnknown)},
+		{name: "native uncertainty survives cancellation", err: errors.Join(context.Canceled, ptaherr.ErrOutcomeUnknown)},
 		{name: "the stream ended", err: fmt.Errorf("failed to receive message: %w", io.ErrUnexpectedEOF)},
 		{name: "the server closed the connection", err: fmt.Errorf("read: %w", io.EOF)},
 		{name: "a reset", err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}},

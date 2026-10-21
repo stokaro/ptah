@@ -116,7 +116,7 @@ func (s *session) execute(ctx context.Context, transactionID, sql string) error 
 		Units: []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: sql}}},
 	})
 	if err != nil {
-		return fmt.Errorf("provider execution failed; inspect the database before retrying: %w", err)
+		return fmt.Errorf("provider execution failed; inspect the database before retrying: %w", nativeOutcomeError(err))
 	}
 	return nil
 }
