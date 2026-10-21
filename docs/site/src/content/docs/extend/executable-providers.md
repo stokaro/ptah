@@ -1,6 +1,6 @@
 ---
 title: Test an executable provider
-description: Select a trusted experimental provider for native schema inspection, planning, and application.
+description: Select a trusted experimental provider for native schema changes and versioned migrations.
 type: how-to
 sourceMode: source-neutral
 audience:
@@ -12,6 +12,7 @@ sourceOfTruth:
   - "internal/providerhost"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
+  - "integration/providercli/provider_migrations_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -20,10 +21,18 @@ overlaps: []
 disposition: keep
 ---
 
-Use an explicitly trusted provider executable with `ptah schema inspect`,
-`ptah schema plan`, and `ptah schema apply`. You need a provider built against the
-experimental SDK, its expected identity and SHA-256 checksum, and a disposable
-database address accepted by that provider.
+Use an explicitly trusted provider executable for native schema changes and
+versioned migrations. You need a provider built against the experimental SDK,
+its expected identity and SHA-256 checksum, and a disposable database address
+accepted by that provider.
+
+Provider selection is available on these native commands:
+
+- Schema changes: `schema inspect`, `schema plan`, and `schema apply`.
+- Migration execution and inspection: `migrations up`, `migrations down`,
+  `migrations status`, and `migrations log`.
+- Migration metadata: `migrations tag`, `migrations baseline`, `migrations set`,
+  and `migrations repair`.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -172,8 +181,8 @@ Native YAML objects retain the provider's database, ordered namespace path,
 and overload components through schema capture and serialization. Identical
 names with different paths or overloads remain distinct. YAML table facets cannot
 use database, catalog, path, or overload qualification. Normalization that
-changes the path or overload component count is refused. Native planning for these objects remains part of
-[issue #4204](https://github.com/stokaro/ptah/issues/4204).
+changes the path or overload component count is refused. Planning also requires
+the corresponding provider comparison, planning, and operation services.
 
 `schema inspect` accepts objects and facets when the provider binds every requested
 schema selector to explicit namespaces. Returned tables, subjects, and coverage
@@ -191,11 +200,50 @@ not preserve those payloads; use the shared model codecs to retain captured data
 Providers without omission labels cannot produce this report. Conversion and
 inspection do not qualify native object planning or faithful source export.
 
+## Run versioned migrations
+
+Use a provider that implements revision history, session locks, and migration
+metadata. The default transaction mode also requires transactional DDL. A
+provider without that capability can use `--tx-mode none`; a missing required
+service is refused.
+
+Given a reviewed SQL migration directory, apply it and read its recorded state:
+
+```bash
+ptah migrations up --provider-config providers.json \
+  --db-url "$DATABASE_URL" --migrations-dir "$MIGRATIONS_DIR" --json
+ptah migrations status --provider-config providers.json \
+  --db-url "$DATABASE_URL" --migrations-dir "$MIGRATIONS_DIR" --json
+ptah migrations log --provider-config providers.json \
+  --db-url "$DATABASE_URL" --json
+```
+
+`up` returns a run result, including when the database is already up to date.
+`status` reports applied and pending revisions. `log` reports recorded attempts.
+`status`, `log`, and tag listing create no missing revision, journal, or tag
+tables.
+
+The data-safety gate analyzes SQL through the selected provider. Destructive
+statements still require review and `--allow-destructive`. An explicit migration
+lock timeout is checked against the opened provider session's lock service.
+
+Record a tag after a successful apply:
+
+```bash
+ptah migrations tag release --provider-config providers.json \
+  --db-url "$DATABASE_URL"
+```
+
+Use the same provider manifest when [rolling back migrations](../../versioned/rollback/)
+or [maintaining revision metadata](../../versioned/maintain-history/).
+Provider lock acquisition during a read-only preview is refused because the
+experimental protocol does not establish acquisition without writes.
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,
-and setup URL in the error. JSON plan and apply reports preserve these fields
-in `provider_diagnostic`. Installation checks use `diagnostic`.
+and setup URL in the error. JSON schema reports and migration setup failures
+preserve these fields in `provider_diagnostic`. Installation checks use `diagnostic`.
 
 | Code | Action |
 | --- | --- |
@@ -222,12 +270,13 @@ rollback. A stale plan refuses application after the target changes.
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete
 interpretation and coverage from the owner. Unknown keys and unsupported values
-are refused. This source-loading support does not make native objects or
-engine-specific facets available to planning and execution yet.
+are refused. Source-loading support alone does not establish planning or execution support
+for those objects and facets. Those operations require their own provider
+services and declarations.
 
 The execution adapter does not support managed data, database cleanup, or
 isolated execution of untrusted SQL. It does not add
-provider selection to `ptah-compat` or other native command groups. Project-file
+provider selection to `ptah-compat` or native commands outside the list above. Project-file
 URLs and saved plans do not select a provider: pass `--provider-engine` with
 `--provider-config` for those workflows. The selected connection scope refuses
 every unregistered URL scheme, including schemes with embedded drivers.

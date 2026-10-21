@@ -272,7 +272,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
@@ -307,7 +307,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		WithObserver(runtime.Observer())
 
 	// Get migration status
-	status, err := mig.GetMigrationStatus(context.Background())
+	status, err := mig.GetMigrationStatus(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}

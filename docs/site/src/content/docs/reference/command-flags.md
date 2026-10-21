@@ -634,6 +634,8 @@ Read the columns as follows.
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--root-dir` | `string` | `./` | `PTAH_ROOT_DIR` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
@@ -730,6 +732,8 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--plan` | `bool` | `false` | `PTAH_PLAN` | — |
 | `--pre-down-hook` | `string` | — | `PTAH_PRE_DOWN_HOOK` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
@@ -873,6 +877,8 @@ Read the columns as follows.
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
@@ -986,6 +992,8 @@ Read the columns as follows.
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1028,6 +1036,8 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1073,6 +1083,8 @@ Read the columns as follows.
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
@@ -1094,6 +1106,8 @@ Read the columns as follows.
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
@@ -1151,6 +1165,8 @@ Read the columns as follows.
 | `--pg-dump-to` | `string` | — | `PTAH_PG_DUMP_TO` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--pre-up-hook` | `string` | — | `PTAH_PRE_UP_HOOK` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |

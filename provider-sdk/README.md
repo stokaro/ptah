@@ -144,10 +144,10 @@ malformed acknowledgment leaves the outcome unknown. Neither the transport
 nor a request ID permits automatic replay. The host must stop and reconcile
 history and live state before another attempt.
 
-The independent SQLite fixture exercises these storage primitives. Connecting
-all migrator operations, lock ownership, and official-engine qualification
-remains required work in #4204; this service alone does not enable versioned
-migrations through subprocess providers.
+The independent SQLite fixture exercises these storage primitives. Native
+migration commands connect history to the same selected runtime as SQL safety
+analysis and execution. Complete published-module acceptance and official-engine
+qualification remain required under #4204.
 
 ## Session-owned locks
 
@@ -189,9 +189,10 @@ retains uncertainty through release. The common migrator process checks keep
 locking enabled across its transaction modes. Provider lock previews are refused
 because this protocol does not establish acquisition without writes.
 
-Official-engine ownership checks remain required under #4204. The fixture does
-not qualify YDB coordination leases or the default versioned migration workflow;
-logging, tags, and read-only lock previews still need provider support.
+Native migration commands use this service for default locking and explicit
+migration lock timeouts. The fixture does not qualify YDB coordination leases.
+Published-module acceptance, read-only lock previews, and official-engine checks
+remain required under #4204.
 
 ## Trust and process lifetime
 
@@ -312,7 +313,8 @@ preserves integers beyond the exact range of floating-point numbers, distinguish
 omission from null and zero, and refuses unknown or duplicate fields. The fixture
 SQL service does not support retention. The host captures YAML declarations and
 observed objects and facets, and dispatches contextual comparison to their owner.
-Native planning and migration backend operations remain required work in #4204; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
+Native planning and migration backend operations require the separate services
+described below; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
 ## Contextual model comparison
 
@@ -510,7 +512,8 @@ Rendering validates the whole batch at both transport boundaries. Cancellation,
 foreign models, incomplete replies, and changed provenance discard all output.
 The independent operation fixture executes table creation, renaming, and removal
 through this contract. Contextual feature planning uses the service below.
-Host history integration and official-engine transaction qualification remain required before extraction.
+The host binds history writes to execution handles. Official-engine transaction
+qualification remains required under #4204.
 
 ## Contextual feature planning
 

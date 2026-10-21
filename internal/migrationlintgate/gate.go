@@ -109,11 +109,9 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	families := cfg.GateFamilies()
 	// A family the policy gates on must run, so it leaves the gate's own
 	// disabled list; the policy's disabled-rules still apply to it.
-	var disabled []string
-	for _, family := range DisabledFamilies() {
-		if !slices.Contains(families, family) {
-			disabled = append(disabled, family)
-		}
+	disabled, err := disabledRegisteredFamilies(runtime, families)
+	if err != nil {
+		return Policy{}, err
 	}
 	// The apply path is where the version a policy declares finally has a
 	// dialect to be resolved against: the configuration may leave the dialect
@@ -146,6 +144,23 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 		return Policy{}, err
 	}
 	return policy, nil
+}
+
+// Internal defaults may name an owner absent from this runtime. Omit those
+// defaults, but keep user selectors intact so an unsupported policy is refused.
+func disabledRegisteredFamilies(runtime lintext.Runtime, enabled []string) ([]string, error) {
+	rules, err := lint.Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
+	var disabled []string
+	for _, family := range DisabledFamilies() {
+		registered := slices.ContainsFunc(rules, func(rule lint.Rule) bool { return strings.HasPrefix(rule.Code, family) })
+		if registered && !slices.Contains(enabled, family) {
+			disabled = append(disabled, family)
+		}
+	}
+	return disabled, nil
 }
 
 // Analyze loads policy and returns blocking data-safety findings for the

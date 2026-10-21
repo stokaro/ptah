@@ -75,9 +75,9 @@ and passes evaluated values with source locations, field paths, exact numbers,
 and absent/null distinctions. Owners interpret their registered declarations.
 The host does not serialize its Go AST or ask providers to duplicate HCL execution.
 
-These comparison, source, and planning services remain required work in #4204.
-The normalization service alone does not enable them or relax the current native
-adapter's refusal of unsupported feature values.
+Comparison, source, and planning require separate negotiated services, described
+below. Normalization alone does not enable them or relax the native adapter's
+refusal of unsupported feature values.
 
 ### Keep transactional state in the process that owns the connection
 
@@ -97,7 +97,8 @@ DDL likewise needs ordered execution with a confirmed prefix and explicit
 transaction refusals. Lost replies and cancellation after dispatch leave the
 outcome unknown; they never authorize automatic replay.
 
-These backend operations remain required work in #4204. Each needs tests against
+These backend contracts require official-engine qualification under #4204.
+Each needs tests against
 the engine's actual behavior before its embedded implementation is removed.
 
 ## Alternatives considered
@@ -512,7 +513,8 @@ round trips prove that operation assessments are recomputed. This exercises
 operation transport and rendering. The contextual planning adapter described
 below binds receipts, dependencies, and effects for the selected runtime. The
 common migration planner dispatches the service through the shared graph.
-History services and YDB transaction qualification remain required before extraction.
+History services bind storage writes to the execution handle as described below.
+YDB transaction qualification remains required before extraction.
 
 
 ### Contextual planning transport
@@ -650,8 +652,8 @@ The common migrator reads provider history through the same ordering, progress,
 identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
-sessions. Ordinary revision writes use the same typed store. Logging,
-lock ownership, and default versioned CLI integration remain unfinished under #4204.
+sessions. Ordinary revision writes use the same typed store. The following
+sections connect logging, lock ownership, and native versioned commands.
 
 ## Preserve uncertain outcomes across the host boundary
 
@@ -710,8 +712,8 @@ Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
 complete versioned workflow. The fixture also implements Atlas storage using
-ordinary revision columns. Logging, tags, locking, and the default versioned CLI
-workflow remain required before this history slice can merge.
+ordinary revision columns. The process tests described below add logging, tags,
+locking, and the native versioned CLI workflow.
 
 ## Keep history transactions independent of transactional DDL
 
@@ -743,8 +745,8 @@ An independent provider fixture advertises history and transactions without
 transactional DDL. Process tests exercise commit, rollback, baseline, forced
 baseline restrictions, and lost mutation or commit replies. A lost reply on the
 last revision rolls back the earlier revisions too. This proves the host path;
-YDB storage, lock ownership, and official-engine qualification remain required
-under #4204.
+YDB storage and official-engine qualification remain required under #4204.
+The provider lock service described below establishes the host locking contract.
 
 ## Keep repair and checksum policy in the common migrator
 
@@ -883,8 +885,8 @@ loss discovered during release does not undo already committed schema or history
 Lock acquisition on an active transaction is refused. Preview lock acquisition
 also refuses: this SDK revision does not establish a read-only acquisition.
 
-Default versioned CLI use, logging, tags, read-only lock previews, and
-official-engine checks remain required under #4204. This fixture does not establish YDB coordination lease behavior.
+Read-only lock previews and official-engine checks remain required under #4204.
+This fixture does not establish YDB coordination lease behavior.
 
 
 ## Keep event and tag policy in the common migrator
@@ -941,3 +943,26 @@ transaction finish, and session close. Independent SQL reads verify journal and
 tag columns because the fixture inspector deliberately refuses table definitions
 outside its narrow grammar. This evidence does not establish a complete fixture
 schema inspector or official-engine qualification.
+
+
+## Select the provider across native migration commands
+
+The native migration namespace installs explicit provider selection on execution,
+status, journal, tag, baseline, set, and repair commands. Shared leaf constructors
+keep their existing flags, so compatibility adapters do not acquire native
+provider flags. Provider setup errors preserve structured installation details
+and the native command's JSON output contract.
+
+The selected runtime owns SQL framing and safety facts, rollback planning, and
+baseline comparison. Internal lint defaults disable only registered rule
+families. Explicit user rule selectors remain strict. Status keeps the command
+context during connection and history reads. An explicit migration lock timeout
+is validated against the native session's lock service instead of a built-in
+dialect name; SQL connections retain their dialect checks.
+
+Process tests drive native up, status, log, tags, and down with default logging
+and locking across transaction modes. They also exercise metadata-only commands,
+destructive-statement refusal and its explicit override, absent metadata reads,
+and trust refusal before provider startup. These are local development checks
+until the host and fixture adopt a published SDK revision. They do not qualify
+read-only lock previews or the official engines.
