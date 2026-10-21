@@ -12,12 +12,12 @@ import (
 
 // withProviderHistoryTransaction keeps maintenance batches atomic without
 // granting schema execution or retrying an uncertain mutation or commit.
-func withProviderHistoryTransaction(ctx context.Context, store dbschema.HistoryStore, operation string, use func(dbschema.HistoryStore) error) error {
+func withProviderHistoryTransaction(ctx context.Context, store dbschema.HistoryStore, operation string, isolation dbschema.HistoryIsolation, use func(dbschema.HistoryStore) error) error {
 	owner, ok := store.(dbschema.HistoryTransactor)
 	if !ok {
 		return fmt.Errorf("%w: %s requires provider history transactions", ptaherr.ErrUnsupportedFeature, operation)
 	}
-	tx, err := owner.BeginHistoryTransaction(ctx, dbschema.HistoryIsolationDefault)
+	tx, err := owner.BeginHistoryTransaction(ctx, isolation)
 	if err != nil {
 		return fmt.Errorf("failed to begin %s transaction: %w", operation, err)
 	}
@@ -51,7 +51,7 @@ func (m *Migrator) forceAppliedProviderRevision(ctx context.Context, migration *
 }
 
 func (m *Migrator) reconcileProviderChecksums(ctx context.Context, store dbschema.HistoryStore, migrations []*Migration) error {
-	return withProviderHistoryTransaction(ctx, store, "checksum reconciliation", func(tx dbschema.HistoryStore) error {
+	return withProviderHistoryTransaction(ctx, store, "checksum reconciliation", dbschema.HistoryIsolationDefault, func(tx dbschema.HistoryStore) error {
 		snapshot, err := tx.Read(ctx, m.providerHistoryTable())
 		if err != nil {
 			return fmt.Errorf("failed to read revisions for checksum reconciliation: %w", err)

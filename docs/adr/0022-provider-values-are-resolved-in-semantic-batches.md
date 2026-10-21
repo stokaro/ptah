@@ -650,7 +650,7 @@ The common migrator reads provider history through the same ordering, progress,
 identity, and dirty-state rules as SQL-backed history. Dry-run initialization
 reads storage without creating it. Providers validate layout and ownership;
 the host does not send SQL catalog queries or upgrade statements to native
-sessions. Ordinary revision writes use the same typed store. Set, logging,
+sessions. Ordinary revision writes use the same typed store. Logging,
 lock ownership, and default versioned CLI integration remain unfinished under #4204.
 
 ## Preserve uncertain outcomes across the host boundary
@@ -710,7 +710,7 @@ Independent process checks exercise native revision storage with explicit
 caller options that disable migration logging and locks. These options isolate
 unfinished service integration; they do not change the defaults or qualify a
 complete versioned workflow. The fixture does not yet implement Atlas storage.
-Set, logging, tags, locking, and Atlas
+Logging, tags, locking, and Atlas
 storage qualification remain required before this history slice can merge.
 
 ## Keep history transactions independent of transactional DDL
@@ -767,7 +767,7 @@ Independent process checks cover resumed up and down repair, manual recovery,
 force restrictions, lost repair receipts, a late checksum refusal, and lost
 checksum commit requests and replies. They use native storage with Atlas-format
 source directories for running-hash qualification. They do not qualify Atlas
-storage itself. Set, logs, tags, locks, default CLI integration, and official
+storage itself. Logs, tags, locks, default CLI integration, and official
 engine qualification remain part of #4204.
 
 A prior applied-time cutoff is evidence for the stored hashes, not a unique
@@ -776,3 +776,25 @@ when later revisions retain their application-time hashes. The shared verifier
 accepts any complete proof and still checks every row. Partial reconciliation
 and edited source hashes remain refusals. Deterministic SQL-backed and native
 process tests cover recovery after an atomic reconciliation rollback.
+
+
+## Set revision history through serializable storage
+
+Provider history set reads the complete history inside an explicitly serializable
+transaction. It uses the common identity and retirement planner, then compares
+whole records for every deletion and replacement. A failed write rolls back the
+batch. An uncertain commit returns an error without a success summary or an
+automatic retry. Preparation occurs before the transaction, and no migration
+body runs.
+
+Native storage keeps numeric keys even when its source uses exact Atlas
+identities. A repeated set preserves clean rows and reports no change. Dirty
+native rows become applied with complete progress and the current source hash;
+their description, timestamps, duration, and error diagnostics remain intact.
+Setting zero removes every native revision, including stored zero and negative
+keys. SQL and provider storage use these same decisions.
+
+Process qualification covers native storage, late mutation acknowledgment loss,
+lost commit requests and replies, refusal of weaker isolation, dry runs, and
+fresh-session recovery. Atlas record projection is present, but qualification
+of actual Atlas storage remains required under #4204.

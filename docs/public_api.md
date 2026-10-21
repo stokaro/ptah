@@ -4295,7 +4295,7 @@ to import the provider SDK. The common migrator reads and writes these
 records through its existing execution, status, progress, and identity checks.
 Ordinary apply and rollback use exact record comparisons. A pending revision
 records uncertainty before execution; an unconfirmed commit never overwrites
-a durable applied revision. Set, logging, session-owned locks,
+a durable applied revision. Logging, session-owned locks,
 and default versioned CLI integration remain required work in #4204.
 
 `dbschema.HistoryTransactor` opens a `HistoryTransaction` for revision data
@@ -4319,6 +4319,16 @@ reconciliation reads the history and computes the shared projection inside a
 data transaction, then compares each complete prior record before replacing its
 checksum. A failed batch rolls back every checksum change; a lost commit reply
 retains uncertainty and never causes automatic replay.
+
+Native provider `SetRevision` requires serializable history transactions. The
+common planner selects exact removals and replacements, which compare whole
+stored records within that transaction. Clean rows remain unchanged, dirty
+native rows become applied while retaining diagnostics, and missing rows are
+inserted without executing migration SQL. Native storage and its change summary
+use numeric keys even for an Atlas source with exact identities. Setting zero
+removes every native revision, including stored nonpositive keys. Failed or
+uncertain operations return no successful change summary and never replay
+automatically. Actual Atlas storage qualification remains required under #4204.
 
 `catalog.CancellationRollback` exposes transaction-lifetime evidence after
 `Rollback` is attempted. SQL-backed writers report cancellation of the context

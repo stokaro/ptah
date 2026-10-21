@@ -119,7 +119,7 @@ func TestSetRevision_FailurePath(t *testing.T) {
 func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
 	t.Run("version 0 removes a migration row that orders to zero", func(t *testing.T) {
 		c := qt.New(t)
-		plain := &Migrator{}
+		plain := &Migrator{revisionTableFormat: RevisionTableFormatAtlas}
 		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
 
 		removed := plain.revisionRemovedByAtlasSet(revision, nil, 0, nil, nil)
@@ -129,7 +129,7 @@ func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
 
 	t.Run("version 0 keeps an Atlas metadata row", func(t *testing.T) {
 		c := qt.New(t)
-		plain := &Migrator{}
+		plain := &Migrator{revisionTableFormat: RevisionTableFormatAtlas}
 		revision := MigrationRevision{
 			Version:         0,
 			AtlasVersion:    ".atlas_cloud_identifier",
@@ -148,7 +148,7 @@ func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
 	t.Run("an exact identity map keeps only the cloud row as metadata", func(t *testing.T) {
 		c := qt.New(t)
 		exact := exactIdentityMigrator(c)
-		plain := &Migrator{}
+		plain := &Migrator{revisionTableFormat: RevisionTableFormatAtlas}
 		mapped := MigrationRevision{Version: 3, AtlasVersion: ".foo", hasAtlasVersion: true}
 		cloud := MigrationRevision{
 			Version:         0,
@@ -164,7 +164,7 @@ func TestRevisionRemovedByAtlasSet_HappyPath(t *testing.T) {
 
 	t.Run("a version above zero is an ordering question again", func(t *testing.T) {
 		c := qt.New(t)
-		plain := &Migrator{}
+		plain := &Migrator{revisionTableFormat: RevisionTableFormatAtlas}
 		revision := MigrationRevision{Version: 0, AtlasVersion: "R", hasAtlasVersion: true}
 
 		removed := plain.revisionRemovedByAtlasSet(revision, nil, 1, nil, nil)

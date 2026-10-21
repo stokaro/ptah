@@ -2666,7 +2666,11 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 	if version > 0 && m.migrationByVersion(version) == nil {
 		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
 	}
-	if m.revisionsMutate() {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return AtlasRevisionSetResult{}, err
+	}
+	if store == nil && m.revisionsMutate() {
 		if m.revisionTableFormat.isAtlas() {
 			return AtlasRevisionSetResult{}, fmt.Errorf(
 				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
@@ -2683,7 +2687,11 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 		return AtlasRevisionSetResult{CurrentVersion: version}, nil
 	}
 
-	return m.setAtlasRevisionRows(ctx, m.migrationsAtOrBelow(version), version)
+	migrations := m.migrationsAtOrBelow(version)
+	if store != nil {
+		return m.setProviderRevisionRows(ctx, store, migrations, version)
+	}
+	return m.setAtlasRevisionRows(ctx, migrations, version)
 }
 
 func (m *Migrator) setAtlasRevisionRows(
@@ -2735,20 +2743,11 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	if err := m.refuseRespelledRevisions(existing); err != nil {
-		_ = tx.Rollback()
-		return AtlasRevisionSetResult{}, err
-	}
-	retired := m.retiredAtlasRevisionVersions()
-	exactRemoved, err := m.unownedExactAtlasRevisionsAbove(existing, setBoundary(migrations))
+	result, exactRemoved, err := m.planRevisionSet(existing, migrations, version)
 	if err != nil {
 		_ = tx.Rollback()
 		return AtlasRevisionSetResult{}, err
 	}
-	exactRemoved = append(exactRemoved, m.unnumberedRemovedAtlasRevisions(
-		existing, migrations, version, retired, exactRemoved,
-	)...)
-	result := m.atlasRevisionSetChanges(existing, migrations, version, retired, exactRemoved)
 	if m.revisionTableFormat.isAtlas() {
 		err = m.writeAtlasSetRevisionRows(ctx, tx, existing, migrations, version, exactRemoved)
 	} else {
@@ -2827,7 +2826,7 @@ func (m *Migrator) atlasRevisionSetChanges(
 		}
 	}
 	for _, migration := range migrations {
-		revision, exists := revisions.find(migration)
+		revision, exists := m.findSetRevision(revisions, migration)
 		if exists && revision.State == migrationStateApplied {
 			continue
 		}
@@ -2893,6 +2892,9 @@ func (m *Migrator) revisionRemovedByAtlasSet(
 	version int64,
 	retired, exactRemoved []string,
 ) bool {
+	if !m.revisionTableFormat.isAtlas() {
+		return version == 0 || revision.Version > version
+	}
 	key := revision.RevisionVersion()
 	if slices.Contains(exactRemoved, key) {
 		return true
@@ -3144,8 +3146,13 @@ func (m *Migrator) writePtahSetRevisionRows(
 	migrations []*Migration,
 	version int64,
 ) error {
-	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteRevisionsAboveSQL())
-	if _, err := tx.ExecContext(ctx, deleteSQL, m.revisionVersionArg(version)); err != nil {
+	deleteSQL := m.deleteRevisionsAboveSQL()
+	deleteArgs := []any{m.revisionVersionArg(version)}
+	if version == 0 {
+		deleteSQL = fmt.Sprintf("DELETE FROM %s", m.qualifiedMigrationsTable())
+		deleteArgs = nil
+	}
+	if _, err := tx.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL), deleteArgs...); err != nil {
 		return fmt.Errorf("failed to remove revisions above %d: %w", version, err)
 	}
 

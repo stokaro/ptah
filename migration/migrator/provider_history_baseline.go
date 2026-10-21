@@ -10,7 +10,7 @@ import (
 )
 
 func (m *Migrator) baselineProviderMigrations(ctx context.Context, store dbschema.HistoryStore, migrations []*Migration, opts BaselineOptions) error {
-	return withProviderHistoryTransaction(ctx, store, "baseline", func(tx dbschema.HistoryStore) error {
+	return withProviderHistoryTransaction(ctx, store, "baseline", dbschema.HistoryIsolationDefault, func(tx dbschema.HistoryStore) error {
 		return m.writeProviderBaseline(ctx, tx, migrations, opts)
 	})
 }
