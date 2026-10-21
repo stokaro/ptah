@@ -298,12 +298,12 @@ checks the session database and identifier comparison rules before removing
 the implicit database or moving a column's table into the common parent field.
 Unexpected qualifiers and inconsistent normalized names cause refusal.
 
-Shared kind coverage has no database or engine scope. Therefore a complete
-session inspection leaves global kind knowledge uninspected, with an explicit
-reason. Concrete complete and absent subject records retain their target scope.
+The SDK coverage transport has no database or engine namespace boundaries.
+Therefore a complete session inspection leaves global kind knowledge
+uninspected, with an explicit reason. Concrete complete and absent subject records retain their target scope.
 This prevents one database's read from asserting absence on another database.
-Scoped kind coverage remains required for native comparison and planning in
-#4204. The synthetic observed-model fixture proves transport, capture, codecs,
+Connecting scoped kind coverage to the SDK and owner identity binding remains
+required for native comparison and planning in #4204. The synthetic observed-model fixture proves transport, capture, codecs,
 and local encoding after process shutdown; it does not implement SQLite
 retention or qualify an official engine.
 
@@ -320,3 +320,26 @@ complete. Qualification must cover each engine's objects, facets, source formats
 planning, rendering, history, transaction limits, and failure recovery before
 its dependency graph can be removed from the host. Stable v1 requires all
 extracted engines, not only the fixture, to pass that evidence.
+
+## Namespace knowledge in the shared model
+
+A kind claim carries an immutable domain with an outside claim and explicit
+namespace regions. Regions retain structured database, catalog, schema, and path
+components, plus target names. Nil qualifiers are unrestricted; present empty
+qualifiers match only empty identity components. Matching uses normalized parts,
+and capture preserves their source spelling.
+
+Overlapping regions intersect knowledge. Independent sources also intersect,
+retaining separate claims so one source cannot fill another source's unknown
+area. Target projection filters regions before identity lookup. Explicit subject
+and parent claims retain their priority. A comparison reply cannot introduce a
+complete region behind an uninspected global summary. A merged subject claim
+must be supported across every retained target name. Without a target resolver,
+a possible alias cannot justify discarding a negative namespace claim.
+
+Coverage wire format 2 stores these domains without a scalar compatibility
+reader. This changes behavior; pre-v1, so compatibility with older Ptah is not
+owed. Common table binding refuses bounded domains until owner binding can
+transform their namespace limits with the subjects. Rebinding only explicit
+subjects could move a table outside an unknown region and authorize a drop.
+The SDK scope adapter and native CLI export remain required work in #4204.

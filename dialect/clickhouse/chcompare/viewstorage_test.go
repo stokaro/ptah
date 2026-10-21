@@ -39,7 +39,7 @@ func viewStorageCoverage(representation schemaext.Representation, knowledge *sch
 	if knowledge != nil {
 		subjects = []schemaext.SubjectCoverage{{Kind: chschema.ViewStorageKind, Subject: storedView(), Knowledge: *knowledge}}
 	}
-	return must.Must(schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, subjects))
+	return must.Must(schemaext.NewCoverage(representation, []schemaext.KindCoverage{{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, subjects))
 }
 
 func viewStorageRequest(desired, current *schemaext.Knowledge, owner schemaext.ParentState) schemaext.FacetComparisonRequest {

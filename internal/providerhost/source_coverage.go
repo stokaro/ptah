@@ -19,7 +19,7 @@ func (h *Host) sourceCoverage(engine string, source *protocol.ModelCoverage) (sc
 			return schemaext.Coverage{}, fmt.Errorf("decoded YAML coverage model is not registered")
 		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
-			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: yamlModelKnowledge(contract)})
+			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(yamlModelKnowledge(contract))})
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {

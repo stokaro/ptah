@@ -214,7 +214,7 @@ func comparisonCoverage(c *qt.C, registry schemaext.Registry, state schemaext.Kn
 	var definitions []schemaext.KindCoverage
 	for _, model := range registry.Definitions() {
 		if model.Kind == conversionFirst && model.Representation == schemaext.Desired {
-			definitions = append(definitions, schemaext.KindCoverage{Model: model, Knowledge: schemaext.Knowledge{State: state, Reason: "source claim"}})
+			definitions = append(definitions, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "source claim"})})
 		}
 	}
 	result, err := schemaext.NewCoverage(schemaext.Desired, definitions, subjects)
@@ -324,11 +324,35 @@ func namespaceState(c *qt.C, registry schemaext.Registry, representation schemae
 	var definitions []schemaext.KindCoverage
 	for _, definition := range registry.Definitions() {
 		if definition.Kind == conversionFirst && definition.Representation == representation {
-			definitions = append(definitions, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.Knowledge{State: state, Reason: "source claim"}})
+			definitions = append(definitions, schemaext.KindCoverage{Model: definition, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: state, Reason: "source claim"})})
 		}
 	}
 	c.Assert(definitions, qt.HasLen, 1)
 	coverage, err := schemaext.NewCoverage(representation, definitions, nil)
 	c.Assert(err, qt.IsNil)
 	return schemaext.ObjectState{Coverage: coverage}
+}
+
+func TestObjectComparisonRejectsInventedScopedAuthority(t *testing.T) {
+	c := qt.New(t)
+	reply := schemaext.ObjectComparisonResult{Complete: true}
+	runtime := mustRuntime(c, comparisonProvider(comparisonFunc(func(context.Context, schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+		return reply, nil
+	})))
+	request := comparisonRequest(c)
+	reply.Desired = request.Desired
+	records := comparisonCoverage(c, runtime.Codecs(), schemaext.Uninspected).KindRecords()
+	scoped, err := schemaext.NewScopedKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "outside"}, schemaext.NamespaceKnowledge{
+		Scope:     schemaext.NamespaceScope{Schema: &objectidentity.Part{Source: "private", Normalized: "private"}},
+		Knowledge: schemaext.Knowledge{State: schemaext.Complete},
+	})
+	c.Assert(err, qt.IsNil)
+	records[0].Knowledge = scoped
+	reply.Desired.Coverage, err = schemaext.NewCoverage(schemaext.Desired, records, nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(scoped.Unscoped().State, qt.Equals, schemaext.Uninspected)
+	result, err := runtime.CompareObjects(t.Context(), request)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*comparison invented source-wide authority.*`)
+	c.Assert(result.Desired.Coverage.IsZero(), qt.IsTrue)
 }

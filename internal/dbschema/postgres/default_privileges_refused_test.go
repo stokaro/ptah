@@ -73,7 +73,7 @@ func TestReadSchemaContext_RecordsARefusedDefaultACLHappyPath(t *testing.T) {
 	c.Assert(capturedDefaultPrivileges(c, schema), qt.HasLen, 0)
 	known := schema.FeatureCoverage.SelectKinds([]schemaext.Kind{pgdefaultprivilege.DefaultPrivilegeKind})
 	c.Assert(known.KindRecords(), qt.HasLen, 1)
-	c.Assert(known.KindRecords()[0].Knowledge, qt.DeepEquals, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server refused to read pg_default_acl"})
+	c.Assert(known.KindRecords()[0].Knowledge.Unscoped(), qt.DeepEquals, schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the server refused to read pg_default_acl"})
 	c.Assert(known.SubjectRecords(), qt.HasLen, 0)
 	c.Assert(defaultACLStatements(asked), qt.DeepEquals, []string{"SELECT 1 FROM pg_default_acl"})
 }

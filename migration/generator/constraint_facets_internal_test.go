@@ -53,7 +53,7 @@ func TestTableReversalProjectsOnlyTheNamedConstraint(t *testing.T) {
 		{Name: "second", TableName: "items", Schema: "tenant", Type: "CHECK", Facets: markerFacets(2)},
 	}}
 	current.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Observed,
-		[]schemaext.KindCoverage{{Model: markerCodecs().Definitions()[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}, nil))
+		[]schemaext.KindCoverage{{Model: markerCodecs().Definitions()[0], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}}, nil))
 	recovery := []schemaext.Reversal{{Change: schemaext.ChangeRecord{Subject: builder.ConstraintParts("tenant", "items", "first")},
 		ForwardState: []schemaext.ProjectedValue{{Placement: schemaext.FacetPlacement, Kind: constraintMarkerKind, Value: &constraintMarker{Number: 3}}}}}
 	projected, err := projectTableFeatures(t.Context(), current, recovery, semantics, markerCodecs())

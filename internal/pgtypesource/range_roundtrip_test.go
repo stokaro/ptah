@@ -84,7 +84,7 @@ func TestRangeLimitsPreserveUnmanagedTypes(t *testing.T) {
 			for _, read := range []*schemamodel.Database{&fromGo, fromHCL} {
 				known := read.FeatureCoverage.SelectKinds([]schemaext.Kind{pgtype.RangeKind})
 				c.Assert(known.KindRecords(), qt.HasLen, 1)
-				c.Assert(known.KindRecords()[0].Knowledge.State, qt.Equals, test.state)
+				c.Assert(known.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, test.state)
 				c.Assert(known.Lookup(pgtype.RangeKind, ref).State, qt.Equals, schemaext.Uninspected)
 				c.Assert(known.SubjectRecords(), qt.HasLen, test.subjects)
 			}

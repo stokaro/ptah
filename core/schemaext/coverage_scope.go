@@ -80,8 +80,13 @@ func (c Coverage) ForParent(parent objectidentity.ID) Coverage {
 	return result
 }
 
-// HasTargetScopes reports whether any subject claim is scoped to targets.
+// HasTargetScopes reports whether any namespace or subject claim is scoped to targets.
 func (c Coverage) HasTargetScopes() bool {
+	for _, record := range c.kinds {
+		if record.Knowledge.HasTargetScopes() {
+			return true
+		}
+	}
 	for _, record := range c.subjects {
 		if len(record.Targets) != 0 {
 			return true
@@ -98,7 +103,15 @@ func (c Coverage) ForTarget(target TargetSelection) (Coverage, error) {
 	if err := target.Validate(); err != nil {
 		return Coverage{}, err
 	}
-	result := Coverage{representation: c.representation, kinds: c.kinds, subjects: make(map[subjectKey]SubjectCoverage, len(c.subjects))}
+	result := Coverage{representation: c.representation, kinds: make(map[Kind]KindCoverage, len(c.kinds)), subjects: make(map[subjectKey]SubjectCoverage, len(c.subjects))}
+	for kind, record := range c.kinds {
+		knowledge, err := record.Knowledge.ForTarget(target)
+		if err != nil {
+			return Coverage{}, err
+		}
+		record.Knowledge = knowledge
+		result.kinds[kind] = record
+	}
 	for key, record := range c.subjects {
 		if target.Includes(record.Targets) {
 			result.subjects[key] = record

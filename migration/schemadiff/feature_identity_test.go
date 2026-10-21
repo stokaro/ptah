@@ -61,7 +61,7 @@ func desiredTableCoverage(c *qt.C, subjects []schemaext.SubjectCoverage) schemae
 		return v.Kind == chschema.TableKind && v.Representation == schemaext.Desired
 	})]
 	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: model,
-		Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only named tables were captured"}}}, subjects)
+		Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only named tables were captured"})}}, subjects)
 	c.Assert(err, qt.IsNil)
 	return coverage
 }

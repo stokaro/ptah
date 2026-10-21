@@ -145,7 +145,7 @@ func restoreTableCoverage(source schemaext.Coverage, removals difftypes.TableRem
 				}
 				continue
 			}
-			record.Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this model was captured only for removed tables"}
+			record.Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "this model was captured only for removed tables"})
 			kinds[kind] = record
 		}
 	}

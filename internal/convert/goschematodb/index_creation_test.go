@@ -124,7 +124,7 @@ func TestDocumentProjectionPreservesIndexKnowledgeLimits(t *testing.T) {
 			subject := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).IndexParts("tenant.archive", "events.2026", "by.id")
 			limit := schemaext.Knowledge{State: state, Reason: "source did not describe all index settings"}
 			source.FeatureCoverage = must.Must(schemaext.NewCoverage(schemaext.Desired,
-				[]schemaext.KindCoverage{{Model: models[position], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}},
+				[]schemaext.KindCoverage{{Model: models[position], Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})}},
 				[]schemaext.SubjectCoverage{{Kind: chschema.IndexKind, Subject: subject, Knowledge: limit}},
 			))
 			projected, err := goschematodb.ToDBSchema(t.Context(), source, "clickhouse", runtime)

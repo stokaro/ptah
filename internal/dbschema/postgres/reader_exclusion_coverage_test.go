@@ -40,7 +40,7 @@ func TestReadSchemaContext_ExclusionCoverageWithoutCatalogFunctions(t *testing.T
 			c.Assert(err, qt.IsNil)
 			records := database.FeatureCoverage.SelectKinds([]schemaext.Kind{pgtable.ExclusionKind}).KindRecords()
 			c.Assert(records, qt.HasLen, 1)
-			c.Assert(records[0].Knowledge.State, qt.Equals, test.want)
+			c.Assert(records[0].Knowledge.Unscoped().State, qt.Equals, test.want)
 		})
 	}
 }

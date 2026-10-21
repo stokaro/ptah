@@ -72,8 +72,8 @@ func exclusionRequirementNames(refs []objectidentity.ID) ([]string, error) {
 
 func exclusionExportCoverage(coverage schemaext.Coverage) error {
 	for _, record := range coverage.KindRecords() {
-		if record.Model.Kind == pgtable.ExclusionKind && record.Knowledge.State != schemaext.Complete {
-			return fmt.Errorf("%w: EXCLUDE source cannot preserve namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Reason)
+		if record.Model.Kind == pgtable.ExclusionKind && record.Knowledge.Unscoped().State != schemaext.Complete {
+			return fmt.Errorf("%w: EXCLUDE source cannot preserve namespace coverage: %s", ptaherr.ErrUnsupportedFeature, record.Knowledge.Unscoped().Reason)
 		}
 	}
 	for _, record := range coverage.SubjectRecords() {

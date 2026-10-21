@@ -21,7 +21,7 @@ func widgetCoverage(c *qt.C, knowledge schemaext.Knowledge, subjects ...schemaex
 	registry, err := schemaext.NewRegistry(owned(widgetCodec(widgetKind, schemaext.Desired)))
 	c.Assert(err, qt.IsNil)
 	enrolled, err := schemaext.NewCoverage(schemaext.Desired,
-		[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: knowledge}}, subjects)
+		[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(knowledge)}}, subjects)
 	c.Assert(err, qt.IsNil)
 	return enrolled
 }
@@ -103,7 +103,7 @@ func TestCoverageWithLimits_HappyPath(t *testing.T) {
 		registry, err := schemaext.NewRegistry(owned(widgetCodec(otherKind, schemaext.Desired)))
 		c.Assert(err, qt.IsNil)
 		source, err := schemaext.NewCoverage(schemaext.Desired,
-			[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: complete}}, nil)
+			[]schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(complete)}}, nil)
 		c.Assert(err, qt.IsNil)
 
 		got, err := source.WithLimits(coverage.Set{}.WithKind(coverage.Policy), widgetLimit, []objectidentity.ID{first})

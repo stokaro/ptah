@@ -41,7 +41,7 @@ func TestObjectNamespaceSurvivesCollectionsCodecsAndCoverage(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(restored.Refs(), qt.DeepEquals, objects.Refs())
 	unknown := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only one namespace was read"}
-	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: unknown}},
+	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{Model: registry.Definitions()[0], Knowledge: schemaext.GlobalKnowledge(unknown)}},
 		[]schemaext.SubjectCoverage{{Kind: widgetKind, Subject: parent, Knowledge: schemaext.Knowledge{State: schemaext.Complete}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(coverage.Lookup(widgetKind, first).State, qt.Equals, schemaext.Complete)

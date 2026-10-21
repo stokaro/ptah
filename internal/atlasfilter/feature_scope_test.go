@@ -65,7 +65,7 @@ func TestScopeGeneratedPreservesSelectedFeatureChildren(t *testing.T) {
 func TestScopeDatabasePreservesUninspectedFeatureNamespace(t *testing.T) {
 	c := qt.New(t)
 	definition := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil)).KindRecords()
-	definition[0].Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source did not inspect streams"}
+	definition[0].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Uninspected, Reason: "source did not inspect streams"})
 	source := &catalog.Database{
 		Tables:          []catalog.Table{{Schema: "app", Name: "kept"}},
 		FeatureCoverage: must.Must(schemaext.NewCoverage(schemaext.Observed, definition, nil)),

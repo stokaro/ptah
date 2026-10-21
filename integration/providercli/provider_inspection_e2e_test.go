@@ -56,7 +56,7 @@ func TestProviderInspectionCapturesObjectsAndFacets(t *testing.T) {
 	for _, ref := range []objectidentity.ID{builder.TableParts("", "a.b"), builder.ColumnParts("", "a.b", "Id")} {
 		c.Assert(db.FeatureCoverage.Lookup(kind, ref).State, qt.Equals, schemaext.Complete)
 	}
-	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
 	absent := db.FeatureObjects.Refs()[0]
 	absent.Name = objectidentity.Part{Source: "Absent", Normalized: "absent"}
 	c.Assert(db.FeatureCoverage.Lookup(kind, absent).State, qt.Equals, schemaext.Absent)
