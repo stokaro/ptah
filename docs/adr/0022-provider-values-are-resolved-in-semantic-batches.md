@@ -281,7 +281,7 @@ even when the database has no common tables or native objects. The SDK checks
 model definitions, source identities, and complete subject coverage before
 exposing a normalization batch. Column facets identify their parent table as a
 separate path component. Schema-filtered native coverage is refused until the
-contract can preserve its namespace limits. The native `schema inspect` path
+owner binds request selectors to namespace limits. The native `schema inspect` path
 passes explicit schema names, so it refuses these model-bearing snapshots.
 An end-to-end test pins the empty output and error until scoped capture is
 implemented; catalog-reader support is not CLI inspection qualification.
@@ -298,18 +298,31 @@ checks the session database and identifier comparison rules before removing
 the implicit database or moving a column's table into the common parent field.
 Unexpected qualifiers and inconsistent normalized names cause refusal.
 
-The SDK coverage transport has no database or engine namespace boundaries.
-Therefore a complete session inspection leaves global kind knowledge
-uninspected, with an explicit reason. Concrete complete and absent subject records retain their target scope.
-This prevents one database's read from asserting absence on another database.
-Connecting scoped kind coverage to the SDK and owner identity binding remains
-required for native comparison and planning in #4204. The synthetic observed-model fixture proves transport, capture, codecs,
-and local encoding after process shutdown; it does not implement SQLite
-retention or qualify an official engine.
+The SDK carries database, catalog, schema, and path-prefix regions with source
+and normalized components. Each model declares outside knowledge separately.
+Unknown regions override overlapping completeness, and explicit subjects remain
+more specific. Empty qualifiers differ from wildcards. Duplicate normalized
+regions, invalid components, and namespace-wide absence or defaults are refused.
+Full-document source decoding refuses regions because it must account for the
+complete enrolled document scope.
+
+The host accepts native regions only when their database component preserves
+the exact nonempty session database. It adds the selected engine to each region
+and retains all remaining qualifiers and path components. Global completeness
+still becomes uninspected. Common table and column identities omit the database,
+so they cannot acquire completeness from these native regions; explicit subject
+records retain their facts. Unbound, foreign, or renamed database scopes cause
+refusal of the whole catalog.
+
+Binding request selectors and common identities remains required for native CLI
+inspection, comparison, and planning in #4204. The synthetic observed-model
+fixture proves transport, bounded native capture, codecs, and local coverage
+after process shutdown. It does not implement SQLite retention or qualify an
+official engine.
 
 ## Consequences
 
-Experimental revision 7 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 8 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -342,4 +355,5 @@ reader. This changes behavior; pre-v1, so compatibility with older Ptah is not
 owed. Common table binding refuses bounded domains until owner binding can
 transform their namespace limits with the subjects. Rebinding only explicit
 subjects could move a table outside an unknown region and authorize a drop.
-The SDK scope adapter and native CLI export remain required work in #4204.
+Owner binding of request selectors and common identities, plus native CLI
+export, remain required work in #4204.

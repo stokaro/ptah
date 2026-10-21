@@ -92,7 +92,7 @@ func TestProviderInspectionCapturesObjectsAndFacets(t *testing.T) {
 func TestProviderInspectionRefusalDiscardsWholeCatalog(t *testing.T) {
 	c := qt.New(t)
 	host, _ := yamlProviderCommand(c, "observed-models")
-	for _, name := range []string{"coverage-mismatch", "bad-feature", "missing-coverage", "bad-payload", "bad-database", "bad-parent"} {
+	for _, name := range []string{"coverage-mismatch", "bad-feature", "missing-coverage", "bad-payload", "bad-database", "bad-parent", "scoped-foreign-database", "scoped-unbound-database", "scoped-normalized-database"} {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
 			connection := observedConnection(c, host, name)
@@ -142,4 +142,59 @@ func TestNativeCLIInspectRefusesUnrepresentableProviderScope(t *testing.T) {
 	c.Assert(code, qt.Equals, 2)
 	c.Assert(output, qt.Equals, "")
 	c.Assert(diagnostics, qt.Contains, "provider inspect failed")
+}
+
+func TestProviderInspectionRetainsNativeNamespaceAuthority(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "observed-models")
+	connection := observedConnection(c, host, "scoped-native")
+	db, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	kind := schemaext.Kind("example.org/fixture/retention")
+	missing := db.FeatureObjects.Refs()[0]
+	missing.Name = objectidentity.Part{Source: "Missing", Normalized: "missing"}
+	c.Assert(db.FeatureCoverage.Lookup(kind, missing).State, qt.Equals, schemaext.Complete)
+	c.Assert(db.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
+	for _, test := range []struct {
+		name   string
+		mutate func(*objectidentity.ID)
+	}{
+		{"another database", func(ref *objectidentity.ID) { ref.Database = objectidentity.Part{Source: "other", Normalized: "other"} }},
+		{"another catalog", func(ref *objectidentity.ID) { ref.Catalog = objectidentity.Part{} }},
+		{"another schema", func(ref *objectidentity.ID) { ref.Schema = objectidentity.Part{Source: "public", Normalized: "public"} }},
+		{"different path components", func(ref *objectidentity.ID) {
+			ref.Namespace = objectidentity.NewParts(objectidentity.Part{Source: "a", Normalized: "a"}, objectidentity.Part{Source: "b/c", Normalized: "b/c"})
+		}},
+		{"uninspected nested path", func(ref *objectidentity.ID) {
+			ref.Namespace = objectidentity.NewParts(append(ref.Namespace.Values(), objectidentity.Part{Source: "hidden", Normalized: "hidden"})...)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ref := missing
+			test.mutate(&ref)
+			c.Assert(db.FeatureCoverage.Lookup(kind, ref).State, qt.Equals, schemaext.Uninspected)
+		})
+	}
+	builder := objectidentity.NewBuilder(connection.Info().IdentifierSemantics)
+	c.Assert(db.FeatureCoverage.Lookup(kind, builder.TableParts("private", "missing")).State, qt.Equals, schemaext.Uninspected)
+	c.Assert(db.FeatureCoverage.Lookup(kind, builder.ColumnParts("private", "missing", "column")).State, qt.Equals, schemaext.Uninspected)
+	target, err := schemaext.NewTargetSelection("another")
+	c.Assert(err, qt.IsNil)
+	foreign, err := db.FeatureCoverage.ForTarget(target)
+	c.Assert(err, qt.IsNil)
+	c.Assert(foreign.Lookup(kind, missing).State, qt.Equals, schemaext.Uninspected)
+	document, err := runtime.Codecs().EncodeCoverage(c.Context(), schemaext.Observed, db.FeatureCoverage)
+	c.Assert(err, qt.IsNil)
+	wire, err := json.Marshal(document)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(wire), qt.Contains, `"source":"Private"`)
+	var decoded schemaext.CoverageDocument
+	c.Assert(json.Unmarshal(wire, &decoded), qt.IsNil)
+	restored, err := runtime.Codecs().DecodeCoverage(c.Context(), decoded)
+	c.Assert(err, qt.IsNil)
+	c.Assert(restored.Lookup(kind, missing).State, qt.Equals, schemaext.Complete)
+	c.Assert(connection.Close(), qt.IsNil)
+	host.Close()
+	c.Assert(restored.Lookup(kind, missing).State, qt.Equals, schemaext.Complete)
 }
