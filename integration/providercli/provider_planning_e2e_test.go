@@ -26,7 +26,9 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/planner/featurehost"
+	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 )
 
@@ -316,4 +318,65 @@ func TestProviderCommonPlannerRefusesUnsupportedRewriteOperand(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported added column properties.*`)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(nodes, qt.IsNil)
+}
+
+func desiredProviderColumn() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "planned", StructName: "Planned"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Planned", Name: "Id", Type: "INTEGER", Primary: true},
+			{StructName: "Planned", Name: "added", Type: "REAL", Nullable: true},
+		},
+	}
+}
+
+func TestProviderPreparedApplyPreservesLiveFactsAndTransactionRequirements(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "operation-models")
+	connection := observedConnection(c, host, "planned")
+	caps := connection.Info().Capabilities
+	c.Assert(caps.Established(capability.TransactionalDDL), qt.IsTrue)
+	c.Assert(caps.Has(capability.TransactionalDDL), qt.IsFalse)
+	c.Assert(caps.Established(capability.ForeignKeys), qt.IsFalse)
+	plan, err := atlasschema.PrepareApply(c.Context(), connection, atlasschema.ApplyRuntimeOptions{
+		Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.PreflightExecution(plan.SQL()), qt.ErrorMatches, ".*requires execution outside a transaction.*")
+	c.Assert(plan.Execute(c.Context()), qt.ErrorMatches, ".*requires execution outside a transaction.*")
+	observed, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.Tables[0].Columns, qt.HasLen, 1)
+	plan, err = atlasschema.PrepareApply(c.Context(), connection, atlasschema.ApplyRuntimeOptions{
+		Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeNone,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Execute(c.Context()), qt.IsNil)
+	observed, err = connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.Tables[0].Columns, qt.HasLen, 2)
+	c.Assert(observed.Tables[0].Columns[1].Name, qt.Equals, "added")
+}
+
+func TestProviderSavedApplyPreservesTransactionRequirements(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "operation-models")
+	connection := observedConnection(c, host, "planned")
+	plan, err := atlasschema.PreparePlanFile(c.Context(), connection, atlasschema.PlanFileOptions{Runtime: runtime, Desired: desiredProviderColumn()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Statements, qt.HasLen, 1)
+	c.Assert(plan.Statements[0].Transactions, qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
+	encoded, err := atlasschema.MarshalPlanFile(plan)
+	c.Assert(err, qt.IsNil)
+	decoded, _, err := atlasschema.DecodePlanFile(encoded, "provider.plan.json")
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), connection, decoded, runtime), qt.IsNil)
+	c.Assert(decoded.Execute(c.Context(), connection, migrator.MigrationTxModeFile), qt.ErrorMatches, ".*requires execution outside a transaction.*")
+	observed, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.Tables[0].Columns, qt.HasLen, 1)
+	c.Assert(decoded.Execute(c.Context(), connection, migrator.MigrationTxModeNone), qt.IsNil)
+	observed, err = connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(observed.Tables[0].Columns, qt.HasLen, 2)
 }

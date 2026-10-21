@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -74,6 +75,9 @@ type PlanRehearsalOptions struct {
 	Exclude []string
 	// TxMode is the transaction mode the target apply will use.
 	TxMode migrator.MigrationTxMode
+	// OwnerTransactions contains requirements in statement order. Nil means no
+	// owner assessments are available; a non-nil slice must match statements.
+	OwnerTransactions [][]plangraph.Transaction
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see [SimulateOptions.DevServerDisposable].
 	DevServerDisposable bool
@@ -94,6 +98,12 @@ func RehearsePlanStatements(
 	opts PlanRehearsalOptions,
 ) error {
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
+		return err
+	}
+	if opts.OwnerTransactions != nil && len(opts.OwnerTransactions) != len(statements) {
+		return errors.New("plan rehearsal transaction requirements do not match the statements")
+	}
+	if err := checkOwnerTransactions(opts.OwnerTransactions, opts.TxMode); err != nil {
 		return err
 	}
 	if conn == nil {

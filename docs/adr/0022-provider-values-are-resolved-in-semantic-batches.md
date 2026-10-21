@@ -555,7 +555,11 @@ Owner transaction requirements survive lowering to AST envelopes. Migration
 classification recognizes a forbidden transaction without a built-in dialect
 profile. An unsafe split of common and native work remains a refusal. The
 external planner refuses required transactions while provider sessions have no
-transaction service; retaining the metadata is not evidence of enforcement.
+transaction service. Prepared schema apply, saved JSON plans, and dev rehearsal
+retain requirements in statement order and refuse a conflicting mode before
+executing any statement. An edit to assessed SQL needs a fresh owner assessment.
+Atlas HCL output refuses requirements it cannot preserve. Provider transaction
+sessions and raw SQL assessment remain unfinished.
 
 An independent SDK-only fixture exercises this production planner, shared graph,
 rendering, explicit unwrapped execution, and inspection. It checks unchanged

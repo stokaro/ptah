@@ -13,6 +13,7 @@ import (
 	providerruntime "github.com/stokaro/ptah/provider-sdk/runtime"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 )
@@ -47,11 +48,19 @@ func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, erro
 	if err != nil {
 		return catalog.ServerInfo{}, err
 	}
+	flags := make(map[capability.Capability]bool, len(remote.GetCapabilities()))
+	for name, value := range remote.GetCapabilities() {
+		flags[capability.Capability(name)] = value
+	}
+	caps := capability.Of(flags)
+	if err := caps.Validate(); err != nil {
+		return catalog.ServerInfo{}, fmt.Errorf("provider session capabilities: %w", err)
+	}
 	identity, err := t.identity(remote)
 	if err != nil {
 		return catalog.ServerInfo{}, err
 	}
-	return catalog.ServerInfo{Dialect: remote.GetEngine(), Schema: remote.GetDefaultSchema(), Version: remote.GetServerVersion(), IdentifierSemantics: rules, Provider: identity}, nil
+	return catalog.ServerInfo{Dialect: remote.GetEngine(), Schema: remote.GetDefaultSchema(), Version: remote.GetServerVersion(), IdentifierSemantics: rules, Provider: identity, Capabilities: caps}, nil
 }
 
 func (s *session) Info() catalog.ServerInfo { return s.info }

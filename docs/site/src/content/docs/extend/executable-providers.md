@@ -130,7 +130,8 @@ ptah schema plan --provider-config providers.json \
 ```
 
 The plan contains the table creation and binds it to the selected executable,
-protocol, negotiated semantics, and target metadata. Replacing the provider or
+protocol, negotiated semantics, and target metadata, including established
+server capabilities. Replacing the provider or
 changing those facts requires a new plan. Addresses and credentials are excluded
 from this binding.
 
@@ -144,7 +145,11 @@ ptah schema apply --provider-config providers.json \
 
 The experimental adapter does not provide transactions. `--tx-mode none` permits
 committed prefixes; a later failure does not undo earlier operations. Other
-transaction modes are refused before execution.
+transaction modes are refused before execution. Prepared apply and saved JSON
+plans preserve owner transaction requirements and refuse a conflicting mode
+before sending any statement. Dev rehearsal checks the same requirements.
+Editing SQL with owner transaction requirements needs a fresh owner assessment;
+Atlas HCL output refuses those requirements because it cannot preserve them.
 
 ## Verify convergence
 

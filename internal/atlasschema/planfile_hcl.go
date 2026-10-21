@@ -191,6 +191,13 @@ func decodePlanHCL(ctx context.Context, runtime safety.Runtime, contents []byte,
 // instance — and [MarshalPlanFileHCL] calls it too, so the writer stays the
 // authority and the two cannot drift.
 func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
+	if format == PlanFormatHCL {
+		for _, statement := range plan.Statements {
+			if len(statement.Transactions) > 0 {
+				return errors.New("the Atlas .plan.hcl format cannot preserve owner transaction requirements; write the native JSON plan format")
+			}
+		}
+	}
 	if format == PlanFormatHCL && plan.Provider != nil {
 		return errors.New("the Atlas .plan.hcl format cannot preserve provider identity; write the native JSON plan format")
 	}

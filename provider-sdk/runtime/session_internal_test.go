@@ -1,7 +1,8 @@
 package runtime
 
-// These tests inject malformed peer replies before transport serialization and
-// inspect handle cleanup. The public process API cannot expose that boundary.
+// White-box testing required: these tests inject malformed peer replies before
+// transport serialization and inspect handle cleanup. The public process API
+// cannot expose that boundary.
 
 import (
 	"context"

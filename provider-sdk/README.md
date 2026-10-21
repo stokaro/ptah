@@ -436,6 +436,12 @@ reaches migration classification. A mixed plan that the generator cannot split
 safely is refused. The external planner refuses a required transaction because
 provider transaction sessions are not implemented.
 
-Transaction enforcement through every execution path remains part of #4204,
-alongside history services and official provider extraction.
+Prepared schema apply, saved JSON plans, and dev rehearsal check owner
+requirements before executing any statement. The JSON plan preserves each
+statement's requirements. Editing assessed SQL needs a fresh owner assessment;
+Atlas HCL output refuses metadata it cannot preserve. Session capability facts
+retain the difference between an established false value and an unknown value.
+
+Provider transaction sessions, raw SQL assessment, history services, and official
+provider extraction remain part of #4204.
 These tests do not qualify YDB extraction or the migration history backend.

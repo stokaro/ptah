@@ -227,6 +227,11 @@ Schema apply completed successfully.
 edited SQL is what gets applied. It is refused together with `--json`, whose
 standard output belongs to a program rather than to an editor.
 
+Prepared plans and saved JSON plans also retain owner transaction requirements.
+Apply checks them before rehearsal, approval, or execution. A required transaction
+refuses `--tx-mode none`; a forbidden transaction refuses `file` and `all`.
+Editing SQL with these requirements needs a fresh owner assessment.
+
 ### Statements that cannot run inside a transaction
 
 The default `--tx-mode file`, and `--tx-mode all`, run the whole plan inside one
@@ -497,7 +502,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `stale-plan` | `apply --plan` | `changed` is `schema` or `rows`; `plan_fingerprint` and `database_fingerprint` are the two values compared |
 | `protected-table` | `plan`, and `apply` without `--plan` | `tables` lists the fenced tables the plan would change |
 | `lock-timeout` | `apply` | Another session held the schema apply lock longer than `--lock-timeout` |
-| `transaction-preflight` | `apply` | A statement cannot run inside the transaction `--tx-mode` opens |
+| `transaction-preflight` | `apply` | A statement conflicts with the selected `--tx-mode` |
 | `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
 
 A consumer that does not know a code still knows what `refused` means, and

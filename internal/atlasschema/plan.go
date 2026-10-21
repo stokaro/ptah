@@ -14,6 +14,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/internal/schemafingerprint"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlsafety"
+	"ptah.run/internal/txrequire"
 	"ptah.run/migration/risk"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -56,12 +58,15 @@ const (
 // back from SQL alone, as the Atlas plan format stores it, has only the text
 // verdict, no owner mark and no access assessment.
 type PlanStatement struct {
-	SQL          string           `json:"sql"`
-	Severity     risk.Severity    `json:"severity"`
-	Reason       string           `json:"reason"`
-	Owned        bool             `json:"owned,omitempty"`
-	Access       schemaext.Access `json:"access,omitempty"`
-	AccessReason string           `json:"access_reason,omitempty"`
+	// Transactions preserves the requirements of every owner operation that
+	// rendered this statement. Empty means no owner assessment is recorded.
+	Transactions []plangraph.Transaction `json:"transactions,omitempty"`
+	SQL          string                  `json:"sql"`
+	Severity     risk.Severity           `json:"severity"`
+	Reason       string                  `json:"reason"`
+	Owned        bool                    `json:"owned,omitempty"`
+	Access       schemaext.Access        `json:"access,omitempty"`
+	AccessReason string                  `json:"access_reason,omitempty"`
 }
 
 // PlanFile is the local pre-approved declarative migration plan document.
@@ -279,6 +284,9 @@ func PreparePlanFileReportingUndecided(
 	statements, destructive, err := classifyPlanStatements(ctx, opts.Runtime, computation.statements, conn.Info().Dialect, computation.owned)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("assess plan safety: %w", err)
+	}
+	for i := range statements {
+		statements[i].Transactions = slices.Clone(computation.transactions[i])
 	}
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
@@ -528,6 +536,9 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 		p.Statements, p.Destructive = statements, destructive
 		return p, nil
 	}
+	if slices.ContainsFunc(p.Statements, func(statement PlanStatement) bool { return len(statement.Transactions) > 0 }) {
+		return PlanFile{}, fmt.Errorf("edited SQL with owner transaction requirements needs a new owner assessment")
+	}
 	recorded := make(map[string]PlanStatement, len(p.Statements))
 	carriesOwner := false
 	for _, statement := range p.Statements {
@@ -574,6 +585,11 @@ func raisePlanStatement(target *PlanStatement, source PlanStatement) {
 	target.Severity, target.Reason = verdict.Severity, verdict.Reason
 	target.Access, target.AccessReason = verdict.Access, verdict.AccessReason
 	target.Owned = target.Owned || source.Owned
+	for _, requirement := range source.Transactions {
+		if !slices.Contains(target.Transactions, requirement) {
+			target.Transactions = append(target.Transactions, requirement)
+		}
+	}
 }
 
 // editedOwnerReason is the verdict of an owned or introduced statement once an
@@ -865,6 +881,9 @@ func validatePlanFile(plan PlanFile) error {
 	for i, statement := range plan.Statements {
 		if strings.TrimSpace(statement.SQL) == "" {
 			return fmt.Errorf("plan statement %d has empty sql", i+1)
+		}
+		if err := txrequire.ValidateRequirements(statement.Transactions); err != nil {
+			return fmt.Errorf("plan statement %d: %w", i+1, err)
 		}
 		if err := validatePlanStatementAccess(statement); err != nil {
 			return fmt.Errorf("plan statement %d: %w", i+1, err)
