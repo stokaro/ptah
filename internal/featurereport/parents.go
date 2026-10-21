@@ -43,7 +43,7 @@ func (o TableOwners) Resolve(ref objectidentity.ID) (int, error) {
 	if ref.Schema.Defaulted {
 		schema = ""
 	}
-	if ref.Catalog.Empty() && ref.Parent.Source != "" {
+	if ref.Database.Empty() && ref.Namespace.IsZero() && ref.Catalog.Empty() && ref.Parent.Source != "" {
 		matches = o.source[tableSource{schema, ref.Parent.Source}]
 	}
 	if len(matches) != 1 {

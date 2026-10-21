@@ -73,8 +73,7 @@ func (c Coverage) ForParent(parent objectidentity.ID) Coverage {
 	result := Coverage{representation: c.representation, kinds: c.kinds, subjects: make(map[subjectKey]SubjectCoverage)}
 	for key, record := range c.subjects {
 		ref := record.Subject
-		if ref.Key() == parent.Key() || (ref.Catalog.Normalized == parent.Catalog.Normalized &&
-			ref.Schema.Normalized == parent.Schema.Normalized && ref.Parent.Normalized == parent.Name.Normalized && ref.Parent.Normalized != "") {
+		if ref.Key() == parent.Key() || (ref.SameNamespace(parent) && ref.Parent.Normalized == parent.Name.Normalized && ref.Parent.Normalized != "") {
 			result.subjects[key] = record
 		}
 	}

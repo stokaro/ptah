@@ -46,7 +46,7 @@ func ClassRef(class Class, semantics identifier.Semantics) (objectidentity.ID, e
 // ClassOf validates a class coverage reference and restores its captured names.
 // A caller with target semantics also rebuilds ClassRef to check normalization.
 func ClassOf(ref objectidentity.ID) (Class, error) {
-	if ref.Kind != ClassSubjectKind || ref.Catalog != (objectidentity.Part{}) || ref.Parent != (objectidentity.Part{}) ||
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != ClassSubjectKind || ref.Catalog != (objectidentity.Part{}) || ref.Parent != (objectidentity.Part{}) ||
 		ref.Signature != "" || ref.Name.Quoted || ref.Name.Defaulted || ref.Schema.Quoted || ref.Schema.Defaulted {
 		return Class{}, fmt.Errorf("%w: invalid default privilege class reference", schemaext.ErrInvalidValue)
 	}

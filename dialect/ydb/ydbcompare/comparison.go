@@ -122,7 +122,7 @@ func objectLimited(coverage schemaext.Coverage, ref objectidentity.ID) bool {
 }
 
 func parentRef(ref objectidentity.ID) objectidentity.ID {
-	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }
 
 // Replication controls its stream. Absence from the authored stream namespace

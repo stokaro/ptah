@@ -160,6 +160,13 @@ Inspection reports `items`. The second command reports `"outcome": "no-changes"`
 The CLI closes sessions and terminates its provider processes on success and
 failure.
 
+Native YAML objects retain the provider's database and ordered namespace path
+through schema capture and serialization. Identical names in different paths
+remain distinct. Table facets cannot use database, catalog, or path qualification.
+Overload tuples and normalization that changes the path component count are
+refused. Native planning for these objects remains part of
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,

@@ -26,7 +26,7 @@ func ValidateFeatureParents(database *schemamodel.Database, dialect string) erro
 		if ref.Parent.Empty() {
 			continue
 		}
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 		if !parents[parent.Key()] {
 			return fmt.Errorf("%w: feature object %s has no declared parent table", ptaherr.ErrInvalidSchemaDiff, ref)
 		}

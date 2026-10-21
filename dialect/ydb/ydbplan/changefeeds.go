@@ -81,7 +81,7 @@ func (p *streamPlan) step(index int, subject objectidentity.ID, action plangraph
 	if note != "" {
 		notes = append(notes, note)
 	}
-	parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
+	parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: subject.Database, Namespace: subject.Namespace, Catalog: subject.Catalog, Schema: subject.Schema, Name: subject.Parent}
 	p.contribution.Steps = append(p.contribution.Steps, plangraph.Step[featureplan.Operation]{
 		ID: id, Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: parent, Payload: payload, Notes: notes}, Transaction: plangraph.TransactionForbidden,
 		Impact:  payload.Effect(),

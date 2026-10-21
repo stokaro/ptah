@@ -222,14 +222,14 @@ func ExclusionComparisonKey(p Exclusion) string {
 // ExclusionTable returns the table identity carried by an exclusion reference.
 // It retains resolved catalog and schema components, including default markers.
 func ExclusionTable(ref objectidentity.ID) objectidentity.ID {
-	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }
 
 // ValidateExclusionRef requires this model's kind, a named table and constraint,
 // and no signature. Each present identity component needs its source spelling
 // and normalized name. Errors wrap schemaext.ErrInvalidValue.
 func ValidateExclusionRef(ref objectidentity.ID) error {
-	if ref.Kind != objectidentity.Kind(ExclusionKind) || ref.Parent.Source == "" || ref.Parent.Normalized == "" || ref.Name.Source == "" || ref.Name.Normalized == "" || ref.Signature != "" {
+	if !ref.Database.Empty() || !ref.Namespace.IsZero() || ref.Kind != objectidentity.Kind(ExclusionKind) || ref.Parent.Source == "" || ref.Parent.Normalized == "" || ref.Name.Source == "" || ref.Name.Normalized == "" || ref.Signature != "" {
 		return exclusionModelError(schemaext.Desired, "EXCLUDE requires a table-scoped constraint identity")
 	}
 	for _, part := range []objectidentity.Part{ref.Catalog, ref.Schema} {

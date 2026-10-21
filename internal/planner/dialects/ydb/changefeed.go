@@ -66,5 +66,5 @@ func featureParent(ref objectidentity.ID) objectidentity.ID {
 	if ref.Kind == objectidentity.KindTable {
 		return ref
 	}
-	return objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+	return objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 }

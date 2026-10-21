@@ -112,7 +112,7 @@ func groupChanges(request featureplan.Request) ([]tableChanges, error) {
 		byParent[table.Subject.Key()] = tableChanges{Table: table, TableName: table.Desired.Table.QualifiedName()}
 	}
 	for _, change := range request.Changes {
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: change.Subject.Database, Namespace: change.Subject.Namespace, Catalog: change.Subject.Catalog, Schema: change.Subject.Schema, Name: change.Subject.Parent}
 		table, found := byParent[parent.Key()]
 		if !found {
 			return nil, refuseFact(change.Subject.String(), "feature changes require a captured parent table")

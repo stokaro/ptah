@@ -186,7 +186,7 @@ func SecurityPolicyRefWith(semantics identifier.Semantics, schema, name string) 
 // type it.
 func ValidateSecurityPolicyRef(ref objectidentity.ID) error {
 	if ref.Kind != objectidentity.Kind(SecurityPolicyKind) || ref.Name.Normalized == "" || ref.Schema.Normalized == "" ||
-		!ref.Parent.Empty() || !ref.Catalog.Empty() || ref.Signature != "" {
+		!ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() || ref.Signature != "" {
 		return fmt.Errorf("%w: a security policy requires a schema and a name, and no table parent", schemaext.ErrInvalidValue)
 	}
 	return validName("policy", ObjectName{Schema: ref.Schema.Source, Name: ref.Name.Source})

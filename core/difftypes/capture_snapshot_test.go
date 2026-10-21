@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
@@ -60,6 +61,9 @@ func immutableSnapshot(typ reflect.Type) bool {
 }
 
 func populatedSnapshot(typ reflect.Type) reflect.Value {
+	if typ == reflect.TypeFor[objectidentity.Parts]() {
+		return reflect.ValueOf(objectidentity.NewParts(objectidentity.Part{Source: "original", Normalized: "original"}))
+	}
 	value := reflect.New(typ).Elem()
 	if immutableSnapshot(typ) {
 		return value
@@ -93,6 +97,10 @@ func populatedSnapshot(typ reflect.Type) reflect.Value {
 }
 
 func mutateSnapshot(value reflect.Value) {
+	if value.Type() == reflect.TypeFor[objectidentity.Parts]() {
+		value.Set(reflect.ValueOf(objectidentity.NewParts(objectidentity.Part{Source: "mutated", Normalized: "mutated"})))
+		return
+	}
 	if immutableSnapshot(value.Type()) {
 		return
 	}

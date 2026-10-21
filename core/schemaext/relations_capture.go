@@ -141,7 +141,7 @@ func relationTargets(value ValueRelations) []objectidentity.ID {
 func relationReferenceKeys(ref objectidentity.ID) []objectidentity.Key {
 	keys := []objectidentity.Key{ref.Key()}
 	if !ref.Parent.Empty() {
-		parent := objectidentity.ID{Kind: objectidentity.KindTable, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
+		parent := objectidentity.ID{Kind: objectidentity.KindTable, Database: ref.Database, Namespace: ref.Namespace, Catalog: ref.Catalog, Schema: ref.Schema, Name: ref.Parent}
 		keys = append(keys, parent.Key())
 	}
 	return keys
@@ -150,7 +150,7 @@ func relationReferenceKeys(ref objectidentity.ID) []objectidentity.Key {
 func relationScopeKeys(ref objectidentity.ID) []objectidentity.Key {
 	keys := relationReferenceKeys(ref)
 	if !ref.Schema.Empty() {
-		schema := objectidentity.ID{Kind: objectidentity.KindSchema, Catalog: ref.Catalog, Name: ref.Schema}
+		schema := objectidentity.ID{Kind: objectidentity.KindSchema, Database: ref.Database, Catalog: ref.Catalog, Name: ref.Schema}
 		keys = append(keys, schema.Key())
 	}
 	return keys

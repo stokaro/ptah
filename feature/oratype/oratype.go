@@ -79,7 +79,7 @@ func ValidateRef(ref objectidentity.ID) error {
 	if !owned {
 		return fmt.Errorf("%w: %q is not an Oracle user type kind", schemaext.ErrInvalidValue, ref.Kind)
 	}
-	if strings.TrimSpace(ref.Name.Source) == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Catalog.Empty() ||
+	if strings.TrimSpace(ref.Name.Source) == "" || ref.Name.Normalized == "" || !ref.Parent.Empty() || !ref.Database.Empty() || !ref.Namespace.IsZero() || !ref.Catalog.Empty() ||
 		ref.Signature != "" {
 		return fmt.Errorf("%w: the %s identity is schema-scoped and has a name", schemaext.ErrInvalidValue, label)
 	}
