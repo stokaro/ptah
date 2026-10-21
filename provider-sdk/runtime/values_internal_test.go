@@ -168,3 +168,22 @@ func (p *scopeErasingInspector) Inspect(_ context.Context, request *protocol.Ins
 	request.Schemas = nil
 	return p.snapshot, nil
 }
+
+func TestInspectClientValidatesOwnerSelectorBindings(t *testing.T) {
+	c := qt.New(t)
+	description, request, snapshot := inspectionExchange()
+	request.Schemas = []string{"selected"}
+	ref := snapshot.Coverage.Subjects[0].NormalizedSubject
+	scope := &protocol.ModelNamespace{Schema: &protocol.NamespaceComponent{Source: ref.Schema, Normalized: ref.Schema}}
+	snapshot.ScopeBindings = []*protocol.InspectionScopeBinding{{Selector: "selected", Namespaces: []*protocol.ModelNamespace{scope}}}
+	snapshot.Coverage.Kinds[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "outside selection"}
+	snapshot.Coverage.Kinds[0].Regions = []*protocol.ModelNamespaceKnowledge{{Scope: proto.CloneOf(scope), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}
+	client := &Client{description: description, rpc: &inspectionPeer{result: snapshot}}
+	result, err := client.Inspect(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, snapshot), qt.IsTrue)
+	snapshot.ScopeBindings[0].Selector = "other"
+	result, err = client.Inspect(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+}

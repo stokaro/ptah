@@ -37,8 +37,8 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := ValidateModelCoverage(description, snapshot.GetEngine(), coverage); err != nil {
 		return nil, err
 	}
-	if len(request.GetSchemas()) != 0 && len(coverage.GetKinds()) != 0 {
-		return nil, fmt.Errorf("%w: schema-filtered native model coverage requires owner scope binding", ErrProtocol)
+	if err := validateInspectionScope(request, snapshot); err != nil {
+		return nil, err
 	}
 	values, err := inspectionValues(snapshot)
 	if err != nil {
@@ -67,8 +67,8 @@ func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {
 		}
 	}
 	for _, table := range snapshot.GetTables() {
-		if table.GetIdentity().GetEngine() != snapshot.GetEngine() {
-			return nil, fmt.Errorf("%w: inspected table belongs to another engine", ErrProtocol)
+		if err := validateInspectedTableIdentity(table, snapshot.GetEngine()); err != nil {
+			return nil, err
 		}
 		for _, value := range table.GetFacets() {
 			if value == nil || compareReferences(value.GetOwner(), table.GetIdentity()) != 0 {
@@ -146,6 +146,16 @@ func ValidateNormalizedInspection(description *protocol.Description, request *pr
 		if !matched {
 			return fmt.Errorf("%w: normalized inspection subject differs from coverage", ErrProtocol)
 		}
+	}
+	return nil
+}
+
+func validateInspectedTableIdentity(table *protocol.Table, engine string) error {
+	if !validValueReference(table.GetNormalizedIdentity(), engine) || table.GetNormalizedIdentity().GetKind() != "table" {
+		return fmt.Errorf("%w: normalized table identity is missing", ErrProtocol)
+	}
+	if table.GetIdentity().GetEngine() != engine {
+		return fmt.Errorf("%w: inspected table belongs to another engine", ErrProtocol)
 	}
 	return nil
 }

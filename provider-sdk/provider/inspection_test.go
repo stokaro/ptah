@@ -117,6 +117,7 @@ func TestInspectionBindsTableAndColumnFacets(t *testing.T) {
 	column.Owner = provider.ColumnReference(table.Identity, "c")
 	table.Facets = []*protocol.Envelope{facet}
 	table.Columns[0].Facets = []*protocol.Envelope{column}
+	table.NormalizedIdentity = proto.CloneOf(table.Identity)
 	snapshot.Tables = []*protocol.Table{table}
 	snapshot.Coverage.Subjects = append(snapshot.Coverage.Subjects, observedSubject(facet), observedSubject(column))
 	values, err := provider.InspectionValues(description, request, snapshot)
@@ -165,6 +166,6 @@ func TestInspectionRegionsCannotReplaceRequestScopeBinding(t *testing.T) {
 	request.Schemas = []string{"Private"}
 	batch, err = provider.InspectionValues(description, request, snapshot)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
-	c.Assert(err, qt.ErrorMatches, ".*requires owner scope binding")
+	c.Assert(err, qt.ErrorMatches, ".*inspection selectors lack ordered scope bindings")
 	c.Assert(batch, qt.IsNil)
 }

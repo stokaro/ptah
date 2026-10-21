@@ -16,6 +16,7 @@ import (
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 	// The fixture owns its database driver; the SDK and host transport do not.
 	_ "modernc.org/sqlite"
 )
@@ -33,7 +34,7 @@ type session struct {
 
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-9",
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-10",
 		Engines: []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature},
 			Identifiers: identifierRules(), ValueModels: valueModels(), YamlSourceKeys: yamlSourceKeys()}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature, provider.DecodeSourceFeature, provider.ConvertValuesFeature}}
@@ -153,6 +154,16 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 			return nil, fmt.Errorf("fixture cannot inspect this table definition completely")
 		}
 		result.Tables = append(result.Tables, table)
+	}
+
+	for _, table := range result.Tables {
+		table.NormalizedIdentity = proto.CloneOf(table.Identity)
+		table.NormalizedIdentity.Name = NormalizeCommonIdentifier(table.Identity.Name)
+	}
+	for _, selector := range request.GetSchemas() {
+		result.ScopeBindings = append(result.ScopeBindings, &protocol.InspectionScopeBinding{Selector: selector, Namespaces: []*protocol.ModelNamespace{{
+			Database: &protocol.NamespaceComponent{Source: s.path, Normalized: s.path}, Catalog: &protocol.NamespaceComponent{}, Schema: &protocol.NamespaceComponent{},
+		}}})
 	}
 	return result, nil
 }
