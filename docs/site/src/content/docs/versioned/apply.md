@@ -183,8 +183,10 @@ Expected output on standard output:
 
 A session advisory lock keeps two runners from advancing one migration history
 at the same time, and `--migration-lock-timeout` bounds how long a run waits for
-it. Not every engine gives Ptah such a lock, and a run against one that does not
-proceeds unlocked.
+it. The revision table is created under the lock too, so runners that start
+together against an empty database wait for each other, and a run with nothing
+to apply leaves an empty database empty. Not every engine gives Ptah such a
+lock, and a run against one that does not proceeds unlocked.
 
 A lock timeout aimed at a target that cannot lock is refused. The message itself
 names the engines that do lock, so no copy of that list lives here:

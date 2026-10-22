@@ -24,9 +24,9 @@ import (
 
 func TestApplyPendingMigrationsAppliesUnderALiveCommandContext(t *testing.T) {
 	c := qt.New(t)
-	mig := newInterruptContextMigrator(c)
+	conn, mig := newInterruptContextMigrator(c)
 
-	outcome := applyPendingMigrations(interruptContextCommand(context.Background()), mig, &options{}, 0, nil, nil)
+	outcome := applyPendingMigrations(interruptContextCommand(context.Background()), conn, mig, &options{}, 0, nil, nil)
 
 	c.Assert(outcome.runErr, qt.IsNil)
 	c.Assert(outcome.statusErr, qt.IsNil)
@@ -40,11 +40,11 @@ func TestApplyPendingMigrationsAppliesUnderALiveCommandContext(t *testing.T) {
 // to know what the database holds.
 func TestApplyPendingMigrationsStopsWhenTheCommandIsCanceled(t *testing.T) {
 	c := qt.New(t)
-	mig := newInterruptContextMigrator(c)
+	conn, mig := newInterruptContextMigrator(c)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	outcome := applyPendingMigrations(interruptContextCommand(ctx), mig, &options{}, 0, nil, nil)
+	outcome := applyPendingMigrations(interruptContextCommand(ctx), conn, mig, &options{}, 0, nil, nil)
 
 	c.Assert(outcome.runErr, qt.ErrorIs, context.Canceled)
 	c.Assert(outcome.statusErr, qt.IsNil)
@@ -60,7 +60,7 @@ func interruptContextCommand(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-func newInterruptContextMigrator(c *qt.C) *migrator.Migrator {
+func newInterruptContextMigrator(c *qt.C) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	c.Helper()
 
 	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "ptah.db"))
@@ -73,5 +73,5 @@ func newInterruptContextMigrator(c *qt.C) *migrator.Migrator {
 		"0000000001_create_widgets.down.sql": {Data: []byte("DROP TABLE widgets;\n")},
 	})
 	c.Assert(err, qt.IsNil)
-	return mig
+	return conn, mig
 }

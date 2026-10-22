@@ -525,8 +525,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// Before any migrator call: reading the status initializes the revision
-	// table, and a decision taken after the first write answers nothing.
+	// Before any migrator call: a decision taken after the first write answers
+	// nothing.
 	if err := decideConnected(cmd, projectCfg, lockRequest, conn, timeouts); err != nil {
 		return err
 	}
@@ -574,8 +574,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	// Get migration status before running
-	status, err := mig.GetMigrationStatus(cmd.Context())
+	status, err := readStatusWithoutInitializing(cmd.Context(), conn, mig)
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
@@ -611,7 +610,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		// reading of the same revision rows. The read is unlocked because the
 		// decision it guards is: the status above is unlocked too, so a lock
 		// here would claim more than the shortcut can.
-		if _, err := mig.VerifyAppliedChecksums(cmd.Context()); err != nil &&
+		if err := verifyChecksumsWithoutInitializing(cmd.Context(), conn, mig); err != nil &&
 			!mig.AppliesOverMissingMigration(err) {
 			return err
 		}
@@ -659,7 +658,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, mig, opts, toVersion, preflightHook, expected)
+	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, expected)
 	// A pre-migration hook is work a run does before applying something, so a
 	// selection that came out empty passes none of them, the report above
 	// included. That report is what says why nothing was applied, and a bounded
@@ -862,6 +861,7 @@ func (o migrateUpOutcome) err() error {
 // is returned.
 func applyPendingMigrations(
 	cmd *cobra.Command,
+	conn *dbschema.DatabaseConnection,
 	mig *migrator.Migrator,
 	opts *options,
 	toVersion int64,
@@ -902,7 +902,7 @@ func applyPendingMigrations(
 
 	// The status read does not inherit the cancelation: after an interrupt it
 	// is the only account of which migrations committed before the signal.
-	status, statusErr := mig.GetMigrationStatus(context.WithoutCancel(cmd.Context()))
+	status, statusErr := readStatusWithoutInitializing(context.WithoutCancel(cmd.Context()), conn, mig)
 	if statusErr != nil {
 		outcome.statusErr = statusErr
 		status = nil
@@ -1232,4 +1232,31 @@ func formatDestructiveFindings(findings []lint.Finding) string {
 		fmt.Fprintf(&b, "- %s %s %s: %s\n", finding.File, finding.Rule, finding.Severity, finding.Message)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// readStatusWithoutInitializing reads the status without creating the revision
+// table. Both reads run outside the migration lock, where a CREATE races every
+// other first run; MigrateUp creates the table under the lock.
+func readStatusWithoutInitializing(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	mig *migrator.Migrator,
+) (*migrator.MigrationStatus, error) {
+	restore := dbcli.SuppressSchemaWrites(conn)
+	defer restore()
+	return mig.GetMigrationStatus(ctx)
+}
+
+// verifyChecksumsWithoutInitializing is the checksum read of the "nothing
+// pending" shortcut, made for the same reason and in the same mode as
+// [readStatusWithoutInitializing].
+func verifyChecksumsWithoutInitializing(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	mig *migrator.Migrator,
+) error {
+	restore := dbcli.SuppressSchemaWrites(conn)
+	defer restore()
+	_, err := mig.VerifyAppliedChecksums(ctx)
+	return err
 }
