@@ -42,13 +42,25 @@ render_and_inspect() {
 		echo "check-source-equivalence: $name produced no normalized schema" >&2
 		exit 1
 	fi
-	for marker in '"name":"authors"' '"name":"books"' '"name":"tags"' \
-		'"name":"book_tags"' '"name":"idx_authors_name"' '"name":"idx_book_tags_pair"'; do
-		if ! grep -Fq "$marker" "$normalized"; then
-			echo "check-source-equivalence: $name omitted $marker" >&2
-			exit 1
-		fi
-	done
+	node --input-type=module - "$normalized" "$name" <<'JS'
+import fs from 'node:fs';
+
+const [file, source] = process.argv.slice(2);
+const schema = JSON.parse(fs.readFileSync(file, 'utf8'));
+for (const [collection, names] of [
+  ['Tables', ['authors', 'books', 'tags', 'book_tags']],
+  ['Indexes', ['idx_authors_name', 'idx_book_tags_pair']],
+]) {
+  if (!Array.isArray(schema[collection])) {
+    throw new Error(`check-source-equivalence: ${source} omitted ${collection}`);
+  }
+  for (const name of names) {
+    if (!schema[collection].some((entry) => entry.Name === name)) {
+      throw new Error(`check-source-equivalence: ${source} omitted ${collection}.${name}`);
+    }
+  }
+}
+JS
 
 	if [ ! -f "$work_dir/baseline.json" ]; then
 		cp "$normalized" "$work_dir/baseline.json"
