@@ -106,6 +106,11 @@ func TestLintSplit_FailurePath(t *testing.T) {
 			r.Judged = []protocol.LintFact{protocol.LintFact_LINT_FACT_SAFETY_EFFECT}
 			r.Files[0].Statements[0].Effects = []*protocol.LintEffect{{Fact: protocol.LintFact_LINT_FACT_SAFETY_EFFECT, Impact: protocol.LintImpact_LINT_IMPACT_DESTRUCTIVE}}
 		}},
+		{"two safety effects", func(_ *protocol.SplitLintRequest, r *protocol.SplitLint) {
+			r.Judged = []protocol.LintFact{protocol.LintFact_LINT_FACT_SAFETY_EFFECT}
+			effect := &protocol.LintEffect{Fact: protocol.LintFact_LINT_FACT_SAFETY_EFFECT, Impact: protocol.LintImpact_LINT_IMPACT_BEHAVIORAL, Reason: "x"}
+			r.Files[0].Statements[0].Effects = []*protocol.LintEffect{effect, proto.CloneOf(effect)}
+		}},
 		{"nameless source", func(q *protocol.SplitLintRequest, _ *protocol.SplitLint) { q.Sources[0].Name = "" }},
 		{"foreign engine", func(q *protocol.SplitLintRequest, _ *protocol.SplitLint) { q.Engine = "other" }},
 	}
