@@ -16,6 +16,9 @@ func (t *target) SplitStatements(ctx context.Context, request lintext.SplitReque
 	if request.Target != t.engine.GetId() {
 		return lintext.SplitResult{}, fmt.Errorf("provider SQL analysis target changed")
 	}
+	if t.supportsLint() {
+		return t.splitLint(ctx, request)
+	}
 	sources := make([]string, 0, len(request.Sources))
 	for _, source := range request.Sources {
 		sources = append(sources, source.SQL)
