@@ -270,7 +270,7 @@ supports exact and ASCII-insensitive comparison; it makes no claim about other
 collation semantics. Hosts must not infer these rules from a built-in target.
 
 The experimental application adapter requires `schema.common-table-identity.v1`
-for common table rendering, preparation, comparison, and planning. This promises
+for common table rendering, identity preparation, CREATE projection, and planning. This promises
 common table and column comparison semantics without implicit schema objects,
 undeclared facets, additional creation
 defaults, or type coercions. A provider must refuse declarations outside that
@@ -278,8 +278,20 @@ contract. A missing feature does not select a built-in implementation. Providers
 without this feature can start, inspect, analyze SQL, and run reviewed SQL
 migrations through their declared session, history, lock, and metadata services.
 Provider-owned planning operations retain their separately negotiated contracts.
-Engines with additional table semantics need corresponding protocol operations
-before the adapter can compare or plan their tables.
+
+Engines can instead advertise `schema.prepare-tables` and implement `TablePreparer`
+for offline preparation. The host sends complete declared and observed tables,
+explicit existence knowledge, identifier rules, capabilities, and selected
+features. Results may resolve declared table, index, primary-key, or constraint
+facets and column key membership. They cannot add kinds, change owners or target
+bindings, restore excluded properties, or alter captured observations. The host
+retains authored values separately. Complete batch receipts and cancellation
+checks prevent partial preparation.
+
+An engine cannot advertise both preparation policies. Owned preparation does not
+select identity CREATE projection or common SQL planning. Engines with additional
+creation and lifecycle semantics still need corresponding protocol operations
+before the adapter can plan their tables.
 
 The application runtime requires namespaced provider IDs and model kinds, such
 as `github.com/stokaro/ptah-ydb-plugin` and
@@ -383,7 +395,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 21 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 22 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

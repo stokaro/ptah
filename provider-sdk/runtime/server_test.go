@@ -168,3 +168,29 @@ func TestServerRequiresAdvertisedMigrationMetadata(t *testing.T) {
 	description.Features = nil
 	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
 }
+
+func TestServerRequiresAdvertisedTablePreparer(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.PrepareTablesFeature}, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.NormalizeValuesFeature, provider.PrepareTablesFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, ValueNormalizer: &normalizer{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.TablePreparer = (*tablePreparer)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.TablePreparer = &tablePreparer{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.CommonTableIdentityFeature)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Engines[0].Features = []string{provider.PrepareTablesFeature}
+	description.Features = []string{provider.NormalizeValuesFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Engines[0].Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = []string{provider.PrepareTablesFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type tablePreparer struct{}
+
+func (*tablePreparer) PrepareTables(context.Context, *protocol.PrepareTablesRequest) (*protocol.PreparedTables, error) {
+	return &protocol.PreparedTables{Complete: true}, nil
+}

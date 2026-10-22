@@ -19,6 +19,7 @@ service Provider {
   rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
+  rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -1413,4 +1414,33 @@ message ReservedObject {
   }
   Purpose purpose = 3;
   repeated string conflict_kinds = 4;
+}
+
+// PrepareTables resolves comparison inputs from captured declarations and
+// observations. It performs no I/O and does not infer existence from omission.
+message PrepareTablesRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated TablePreparationInput tables = 5;
+}
+message TablePreparationInput {
+  ComparisonIdentity subject = 1;
+  DeclaredTable desired = 2;
+  ObservedTable current = 3;
+  ModelKnowledge current_knowledge = 4;
+}
+// PreparedTable contains only permitted adjustments. Authored declarations and
+// observations are retained by the caller. Facets may resolve existing declared
+// values, but cannot add kinds, restore exclusions, or alter target bindings.
+message PreparedTable {
+  ComparisonIdentity subject = 1;
+  bool column_primary_keys_prepared = 2;
+  repeated string column_primary_keys = 3;
+  repeated ComparisonRecord resolved_facets = 4;
+}
+message PreparedTables {
+  bool complete = 1;
+  repeated PreparedTable tables = 2;
 }
