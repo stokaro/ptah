@@ -40,7 +40,8 @@ func main() {
 }
 
 // provisioner hands out numbered leases and remembers which are live. The
-// spec "docker://none" is refused as unsupported.
+// spec "docker://none" is refused as unsupported and "docker://offline" as
+// unavailable.
 type provisioner struct {
 	*backend.Provider
 	mu     sync.Mutex
@@ -53,6 +54,12 @@ func (p *provisioner) ProvisionDevDatabase(_ context.Context, request *protocol.
 		return &protocol.DevDatabase{Refusal: &protocol.DevDatabaseRefusal{
 			Kind:   protocol.DevDatabaseRefusal_UNSUPPORTED,
 			Reason: "the fixture provisions no database for " + request.Spec,
+		}}, nil
+	}
+	if strings.HasSuffix(request.Spec, "offline") {
+		return &protocol.DevDatabase{Refusal: &protocol.DevDatabaseRefusal{
+			Kind:   protocol.DevDatabaseRefusal_UNAVAILABLE,
+			Reason: "the fixture runtime is not running",
 		}}, nil
 	}
 	p.mu.Lock()

@@ -508,6 +508,9 @@ func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), 
 		recordRunOwned(declared)
 		return rawURL, sync.OnceFunc(func() { forgetRunOwned(declared) }), nil
 	}
+	if owner := externalFor(ctx, rawURL); owner != nil {
+		return resolveExternal(ctx, owner, rawURL)
+	}
 	instance, err := Provision(ctx, rawURL, opts)
 	if err != nil {
 		return "", func() {}, err
