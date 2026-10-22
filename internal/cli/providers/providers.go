@@ -109,11 +109,12 @@ func newListCommand() *cobra.Command {
 }
 
 type checkReport struct {
-	ContractVersion int                   `json:"contract_version"`
-	Status          string                `json:"status"`
-	Executable      string                `json:"executable"`
-	EngineID        string                `json:"engine_id"`
-	Provider        providerhost.Metadata `json:"provider"`
+	ContractVersion int                        `json:"contract_version"`
+	Status          string                     `json:"status"`
+	Executable      string                     `json:"executable"`
+	EngineID        string                     `json:"engine_id"`
+	Provider        providerhost.Metadata      `json:"provider"`
+	ReleaseLines    []providerhost.ReleaseLine `json:"release_lines,omitempty"`
 }
 
 func newCheckCommand() *cobra.Command {
@@ -136,7 +137,7 @@ func newCheckCommand() *cobra.Command {
 			return opts.fail(cmd, err)
 		}
 		defer host.Close()
-		report := checkReport{ContractVersion: 1, Status: "compatible", Executable: installation.Executable, EngineID: target, Provider: host.Metadata()}
+		report := checkReport{ContractVersion: 1, Status: "compatible", Executable: installation.Executable, EngineID: target, Provider: host.Metadata(), ReleaseLines: host.ReleaseLines(target)}
 		if opts.json {
 			return writeJSON(cmd, report)
 		}

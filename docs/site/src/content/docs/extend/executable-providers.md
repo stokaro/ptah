@@ -69,6 +69,7 @@ An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
 the provider keeps without running it is best effort and carries the reason. The
 host refuses a description that claims testing nothing runs.
+`ptah providers check` prints the lines a provider declares.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
