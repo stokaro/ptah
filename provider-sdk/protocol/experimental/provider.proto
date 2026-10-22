@@ -70,6 +70,26 @@ message Engine {
   repeated ModelComparison comparisons = 8;
   repeated ModelPlanning planning = 9;
   repeated LintRule lint_rules = 10;
+  repeated ReleaseLine release_lines = 11;
+}
+// ReleaseLine is one release line of an engine and how much testing stands
+// behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
+// against the line, so it names an image; a line the provider keeps and no
+// longer exercises is BEST_EFFORT and says why in unprobed.
+message ReleaseLine {
+  enum Support {
+    SUPPORT_UNSPECIFIED = 0;
+    CERTIFIED = 1;
+    LEGACY_TESTED = 2;
+    BEST_EFFORT = 3;
+    KNOWN_INCOMPATIBLE = 4;
+  }
+  string line = 1;
+  string label = 2;
+  Support support = 3;
+  string image = 4;
+  string unprobed = 5;
+  string note = 6;
 }
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
 // The host refuses collisions with common keys or other selected owners.
