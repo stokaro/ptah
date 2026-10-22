@@ -63,7 +63,7 @@ func TestEnsureSchemaExecutesTheCompleteSelectedBatch(t *testing.T) {
 		c.Assert(ok, qt.IsTrue)
 		c.Assert(index.Name, qt.Equals, embedstore.RunTable+"_generation_idx")
 		c.Assert(index.IfNotExists, qt.IsTrue)
-		return renderer.Result{Complete: true, Fragments: storeFragments(request)}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments(storeFragments(request))}, nil
 	})
 	c.Assert(embedpg.NewStore(db).EnsureSchema(t.Context(), service, caps), qt.IsNil)
 	c.Assert(calls, qt.Equals, 1)
@@ -81,14 +81,14 @@ type storeRenderCase struct {
 
 func (tc storeRenderCase) service(cancel context.CancelFunc) renderer.Service {
 	return storeRenderFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
-		result := renderer.Result{Complete: true, Fragments: storeFragments(request)}
+		result := renderer.Result{Complete: true, Fragments: renderer.SQLFragments(storeFragments(request))}
 		switch tc.name {
 		case "missing completion":
 			result.Complete = false
 		case "missing fragment":
 			result.Fragments = result.Fragments[:len(result.Fragments)-1]
 		case "empty fragment":
-			result.Fragments[len(result.Fragments)-1] = " \n"
+			result.Fragments[len(result.Fragments)-1] = renderer.Fragment{SQL: " \n"}
 		case "omission":
 			result.Omissions = []renderer.Omission{{Dialect: embedpg.Dialect, Kind: "table", Reason: "unsupported", Property: "primary key"}}
 		case "refusal":

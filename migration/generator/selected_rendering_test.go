@@ -35,7 +35,7 @@ func (s *recordedRenderer) Render(ctx context.Context, request renderer.Request)
 		return result, err
 	}
 	for i := range result.Fragments {
-		result.Fragments[i] = fmt.Sprintf("-- selected batch %d\n", len(s.requests)) + result.Fragments[i]
+		result.Fragments[i].SQL = fmt.Sprintf("-- selected batch %d\n", len(s.requests)) + result.Fragments[i].SQL
 	}
 	if len(s.requests) == s.failAt {
 		if s.cancel != nil {

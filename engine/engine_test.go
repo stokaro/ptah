@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
@@ -24,7 +25,7 @@ func TestRuntime_ExplicitOwnership(t *testing.T) {
 	var received renderer.Request
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
 		received = request
-		return renderer.Result{Complete: true, Fragments: []string{"selected"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"selected"})}, nil
 	})
 	providers := []engine.Provider{{ID: "example.org/custom", Targets: []engine.Target{
 		{Name: "custom", Aliases: []string{"alternate"}, Rendering: service},
@@ -37,7 +38,7 @@ func TestRuntime_ExplicitOwnership(t *testing.T) {
 	providers[0].Targets[0].Rendering = nil
 	result, err := runtime.Render(context.Background(), renderer.Request{Target: " ALTERNATE ", Nodes: []ast.Node{&ast.StatementList{}}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.SQL(), qt.Equals, "selected")
+	c.Assert(must.Must(result.SQL()), qt.Equals, "selected")
 	c.Assert(received.Target, qt.Equals, "custom")
 	c.Assert(runtime.Targets(), qt.DeepEquals, []string{"custom", "offline-only"})
 	names := runtime.Targets()
@@ -103,7 +104,7 @@ func TestRuntime_ServiceFailureHasNoPartialSQL(t *testing.T) {
 	c := qt.New(t)
 	failure := errors.New("provider connection lost")
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"partial"}}, failure
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"partial"})}, failure
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	result, err := runtime.Render(context.Background(), renderer.Request{Target: "custom"})
@@ -116,7 +117,7 @@ func TestRuntime_CancellationBeforeDispatch(t *testing.T) {
 	calls := 0
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
 		calls++
-		return renderer.Result{Complete: true, Fragments: []string{"unexpected"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"unexpected"})}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -133,7 +134,7 @@ func TestRuntime_CancellationDuringDispatch(t *testing.T) {
 	defer cancel()
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
 		cancel()
-		return renderer.Result{Complete: true, Fragments: []string{"discarded"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"discarded"})}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	result, err := runtime.Render(ctx, renderer.Request{Target: "custom"})
@@ -147,7 +148,7 @@ func TestRuntime_RequestSliceIsolation(t *testing.T) {
 	nodes := []ast.Node{node}
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
 		request.Nodes[0] = nil
-		return renderer.Result{Complete: true, Fragments: []string{""}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{""})}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	_, err := runtime.Render(context.Background(), renderer.Request{Target: "custom", Nodes: nodes})
@@ -184,7 +185,7 @@ func TestRuntime_ContextPropagation(t *testing.T) {
 func TestRuntimeRejectsIncompleteRenderingReplies(t *testing.T) {
 	c := qt.New(t)
 	service := renderingFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"prefix"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, nil
 	})
 	runtime := mustRuntime(c, renderingProvider(service))
 	result, err := runtime.Render(t.Context(), renderer.Request{

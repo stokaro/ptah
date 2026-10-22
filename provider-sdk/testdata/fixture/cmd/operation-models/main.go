@@ -21,11 +21,19 @@ const changeKind = "example.org/fixture/table-change"
 type owner struct {
 	*backend.Provider
 	operationEnvelope *protocol.Envelope
+	nativeUnits       bool
 }
 
 func main() {
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
+	mode := os.Getenv("FIXTURE_RENDER_MODE")
+	if mode != "" && mode != "native" {
+		panic("unknown fixture render mode")
+	}
+	if mode == "native" {
+		d.SemanticIdentity += "-native-units"
+	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
 		"properties": {
@@ -58,7 +66,7 @@ func main() {
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
-	p := &owner{Provider: &backend.Provider{}, operationEnvelope: &protocol.Envelope{
+	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode == "native", operationEnvelope: &protocol.Envelope{
 		ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:]),
 	}}
 	if err := runtime.Serve(runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}); err != nil {

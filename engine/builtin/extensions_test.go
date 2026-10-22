@@ -848,7 +848,7 @@ func TestStreamingExtensionRendersAfterSelectedCodecRoundTrip(t *testing.T) {
 	c.Assert(rendered, qt.Equals, fixture.wantSQL)
 	result, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: []ast.Node{node}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Fragments, qt.DeepEquals, []string{fixture.wantSQL})
+	c.Assert(must.Must(result.SQLFragments()), qt.DeepEquals, []string{fixture.wantSQL})
 }
 
 func poolFixture() extensionFixture {
@@ -876,7 +876,7 @@ func TestRowSecurityPayloadsRenderAfterTheRuntimeRoundTrip(t *testing.T) {
 			result, err := runtime.Render(c.Context(), renderer.Request{Target: "postgres", Capabilities: capability.Postgres17(), Nodes: []ast.Node{node}})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(result.SQL(), qt.Equals, fixture.wantSQL)
+			c.Assert(must.Must(result.SQL()), qt.Equals, fixture.wantSQL)
 		})
 	}
 	t.Run("changes", func(t *testing.T) {

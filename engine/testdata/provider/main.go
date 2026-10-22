@@ -72,7 +72,7 @@ func (s service) Render(ctx context.Context, request renderer.Request) (renderer
 		for _, text := range sql {
 			fragment += text + "\n"
 		}
-		result.Fragments = append(result.Fragments, fragment)
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: fragment})
 	}
 	return result, nil
 }
@@ -168,8 +168,12 @@ func verify() error {
 	if err != nil {
 		return err
 	}
-	if result.SQL() != "CREATE WIDGET sample\n" {
-		return fmt.Errorf("wrong custom render: %q", result.SQL())
+	sql, err := result.SQL()
+	if err != nil {
+		return err
+	}
+	if sql != "CREATE WIDGET sample\n" {
+		return fmt.Errorf("wrong custom render: %q", sql)
 	}
 	if err := verifyBatchRefusal(runtime); err != nil {
 		return err
@@ -478,9 +482,9 @@ func (s importService) Render(ctx context.Context, request renderer.Request) (re
 		}
 		switch node := node.(type) {
 		case *ast.CreateTableNode:
-			result.Fragments = append(result.Fragments, "CREATE WIDGET TABLE "+node.Name+";")
+			result.Fragments = append(result.Fragments, renderer.Fragment{SQL: "CREATE WIDGET TABLE " + node.Name + ";"})
 		case *ast.DropTableNode:
-			result.Fragments = append(result.Fragments, "DROP WIDGET TABLE "+node.Name+";")
+			result.Fragments = append(result.Fragments, renderer.Fragment{SQL: "DROP WIDGET TABLE " + node.Name + ";"})
 		default:
 			return renderer.Result{}, fmt.Errorf("unsupported import node %T", node)
 		}

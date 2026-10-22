@@ -86,7 +86,11 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	return renderer.SchemaResult{Complete: true, Statements: rendered.Fragments}, nil
+	fragments, err := rendered.SQLFragments()
+	if err != nil {
+		return renderer.SchemaResult{}, err
+	}
+	return renderer.SchemaResult{Complete: true, Statements: fragments}, nil
 }
 
 func (t *target) ValidateSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {

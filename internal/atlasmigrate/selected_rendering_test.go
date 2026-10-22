@@ -29,7 +29,7 @@ func TestBuildMigrationFileContentsUsesOneSelectedBatch(t *testing.T) {
 		c.Assert(request.Target, qt.Equals, "postgres")
 		c.Assert(request.Nodes, qt.DeepEquals, nodes)
 		c.Assert(request.Capabilities, qt.DeepEquals, caps)
-		return renderer.Result{Complete: true, Fragments: []string{"SELECT 3;\n", "SELECT 4;\n"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"SELECT 3;\n", "SELECT 4;\n"})}, nil
 	})
 	contents, err := atlasmigrate.BuildMigrationFileContents(t.Context(), service, "pgx", caps, defaultMigrateDiffFormat(), nodes)
 	c.Assert(err, qt.IsNil)
@@ -42,7 +42,7 @@ func TestBuildMigrationFileContentsUsesOneSelectedBatch(t *testing.T) {
 func TestBuildMigrationFileContentsRefusesIncompleteRendering(t *testing.T) {
 	c := qt.New(t)
 	service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"SELECT 1;"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"SELECT 1;"})}, nil
 	})
 	nodes := []ast.Node{ast.NewRawSQL("SELECT 1;"), ast.NewRawSQL("SELECT 2;")}
 	contents, err := atlasmigrate.BuildMigrationFileContents(t.Context(), service, "postgres", capability.Capabilities{}, defaultMigrateDiffFormat(), nodes)

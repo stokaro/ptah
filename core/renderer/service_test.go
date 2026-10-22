@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -35,14 +36,14 @@ func TestRenderPreservesBatchContextAndIsolatesContainers(t *testing.T) {
 		c.Assert(request.Capabilities, qt.DeepEquals, caps)
 		request.Nodes[0] = nil
 		request.Capabilities = request.Capabilities.With(capability.TransactionalDDL, false)
-		return renderer.Result{Complete: true, Fragments: fragments, Omissions: omissions}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments(fragments), Omissions: omissions}, nil
 	})
 	result, err := renderer.Render(t.Context(), service, renderer.Request{Target: "custom", Capabilities: caps, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
 	fragments[0] = "changed"
 	omissions[0].Name = "changed"
-	c.Assert(result.SQL(), qt.Equals, "SELECT 1;\n")
-	c.Assert(result.Fragments, qt.DeepEquals, []string{"SELECT 1;\n", ""})
+	c.Assert(must.Must(result.SQL()), qt.Equals, "SELECT 1;\n")
+	c.Assert(must.Must(result.SQLFragments()), qt.DeepEquals, []string{"SELECT 1;\n", ""})
 	c.Assert(result.Omissions, qt.DeepEquals, []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "items", Reason: "unsupported", Property: "storage", Detail: "tier", Remedy: "choose another tier"}})
 	c.Assert(nodes[0], qt.Equals, node)
 	c.Assert(caps.Has(capability.TransactionalDDL), qt.IsTrue)
@@ -53,7 +54,7 @@ func TestRenderRejectsIncompleteReplies(t *testing.T) {
 	for _, fragments := range [][]string{nil, {"prefix"}, {"one", "two", "extra"}} {
 		c := qt.New(t)
 		service := renderFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
-			return renderer.Result{Complete: true, Fragments: fragments}, nil
+			return renderer.Result{Complete: true, Fragments: renderer.SQLFragments(fragments)}, nil
 		})
 		result, err := renderer.Render(t.Context(), service, renderer.Request{Nodes: []ast.Node{ast.NewRawSQL("first"), ast.NewRawSQL("second")}})
 		c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
@@ -77,7 +78,7 @@ func TestRenderDiscardsFailedAndCanceledReplies(t *testing.T) {
 			defer cancel()
 			service := renderFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
 				cancel()
-				return renderer.Result{Complete: true, Fragments: []string{"unusable prefix"}, Omissions: []renderer.Omission{{Dialect: "custom", Kind: "table", Reason: "unsupported"}}}, test.err
+				return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"unusable prefix"}), Omissions: []renderer.Omission{{Dialect: "custom", Kind: "table", Reason: "unsupported"}}}, test.err
 			})
 			result, err := renderer.Render(ctx, service, renderer.Request{})
 			c.Assert(err, qt.ErrorIs, test.want)
@@ -94,7 +95,7 @@ func TestRenderRejectsMalformedOmissions(t *testing.T) {
 	} {
 		c := qt.New(t)
 		service := renderFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
-			return renderer.Result{Complete: true, Fragments: []string{"prefix"}, Omissions: []renderer.Omission{omission}}, nil
+			return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"}), Omissions: []renderer.Omission{omission}}, nil
 		})
 		result, err := renderer.Render(t.Context(), service, renderer.Request{Nodes: []ast.Node{ast.NewRawSQL("SELECT 1;")}})
 		c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)

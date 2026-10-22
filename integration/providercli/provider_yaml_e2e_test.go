@@ -48,12 +48,16 @@ func yamlProvider(c *qt.C) (*providerhost.Host, *engine.Runtime) {
 }
 
 func yamlProviderCommand(c *qt.C, name string) (*providerhost.Host, *engine.Runtime) {
+	return yamlProviderEnvironment(c, name, nil)
+}
+
+func yamlProviderEnvironment(c *qt.C, name string, environment []string) (*providerhost.Host, *engine.Runtime) {
 	c.Helper()
 	executable := independentCLIProviderCommand(c, name)
 	data, err := os.ReadFile(executable)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)
-	host, err := providerhost.Start(c.Context(), providerhost.Spec{Executable: executable, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture"})
+	host, err := providerhost.Start(c.Context(), providerhost.Spec{Executable: executable, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture", Environment: environment})
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(host.Close)
 	runtime, err := engine.New(host.Provider())

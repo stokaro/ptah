@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -81,10 +82,10 @@ func TestProviderPlanningTransportJoinsGraphAndExecutes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
+	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
 	// This explicit test caller runs each statement without a transaction. It
 	// does not qualify the migration executor's transaction requirement handling.
-	for _, sql := range rendered.Fragments {
+	for _, sql := range must.Must(rendered.SQLFragments()) {
 		c.Assert(connection.Writer().ExecuteSQL(c.Context(), sql), qt.IsNil)
 	}
 	observed, err := connection.Reader().ReadSchema()
@@ -134,8 +135,8 @@ func TestProviderPlanningAlterUsesCapturedParent(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`ALTER TABLE "planned" RENAME TO "renamed";`})
-	c.Assert(connection.Writer().ExecuteSQL(c.Context(), rendered.SQL()), qt.IsNil)
+	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`ALTER TABLE "planned" RENAME TO "renamed";`})
+	c.Assert(connection.Writer().ExecuteSQL(c.Context(), must.Must(rendered.SQL())), qt.IsNil)
 	observed, err := connection.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 	c.Assert(slices.ContainsFunc(observed.Tables, func(table catalog.Table) bool { return table.Name == "renamed" }), qt.IsTrue)
@@ -182,10 +183,10 @@ func TestProviderCommonPlannerDispatchesAndExecutesCompleteGraph(t *testing.T) {
 	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.IsTrue)
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
+	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
 	// Execution is explicit here. This checks the production planner and its
 	// transaction classification, without claiming migration history support.
-	for _, sql := range rendered.Fragments {
+	for _, sql := range must.Must(rendered.SQLFragments()) {
 		c.Assert(connection.Writer().ExecuteSQL(c.Context(), sql), qt.IsNil)
 	}
 	observed, err := connection.Reader().ReadSchema()
@@ -210,7 +211,7 @@ func TestProviderCommonPlannerCapturesUnchangedParents(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`ALTER TABLE "planned" RENAME TO "renamed";`})
+	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`ALTER TABLE "planned" RENAME TO "renamed";`})
 	diff.TablePreparation = nil
 	nodes, err = planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
 	c.Assert(err, qt.IsNotNil)
@@ -297,8 +298,8 @@ func TestProviderCommonPlannerRewritesExactColumnOperand(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	// The common operand differs from the final declaration. The replacement
 	// must preserve that operand and emit it exactly once.
-	c.Assert(rendered.Fragments, qt.DeepEquals, []string{`ALTER TABLE "planned" ADD COLUMN "added" REAL;`})
-	c.Assert(connection.Writer().ExecuteSQL(c.Context(), rendered.SQL()), qt.IsNil)
+	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`ALTER TABLE "planned" ADD COLUMN "added" REAL;`})
+	c.Assert(connection.Writer().ExecuteSQL(c.Context(), must.Must(rendered.SQL())), qt.IsNil)
 	observed, err := connection.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 	c.Assert(observed.Tables, qt.HasLen, 1)

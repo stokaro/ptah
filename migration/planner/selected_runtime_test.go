@@ -34,7 +34,7 @@ func TestPlanningUsesSelectedRendererWithCallerContext(t *testing.T) {
 		c.Assert(ctx, qt.Equals, t.Context())
 		c.Assert(request.Target, qt.Equals, "postgres")
 		c.Assert(request.Nodes, qt.HasLen, 1)
-		return renderer.Result{Complete: true, Fragments: []string{"selected output"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"selected output"})}, nil
 	}}
 	diff := &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "items"}}}
 	sql, err := planner.GenerateSchemaDiffSQL(t.Context(), selected, diff, "pgx")
@@ -49,7 +49,7 @@ func TestPlanningDiscardsFailedRendering(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	failure := errors.New("selected renderer stopped")
 	selected := selectedRenderer{Runtime: runtime, render: func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"unusable prefix"}}, failure
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"unusable prefix"})}, failure
 	}}
 	sql, err := planner.GenerateSchemaDiffSQL(t.Context(), selected, &difftypes.SchemaDiff{}, "postgres")
 	c.Assert(err, qt.ErrorIs, failure)
@@ -64,7 +64,7 @@ func TestPlanningDiscardsCanceledRendering(t *testing.T) {
 	defer cancel()
 	selected := selectedRenderer{Runtime: runtime, render: func(context.Context, renderer.Request) (renderer.Result, error) {
 		cancel()
-		return renderer.Result{Complete: true, Fragments: []string{"unusable prefix"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"unusable prefix"})}, nil
 	}}
 	sql, err := planner.GenerateSchemaDiffSQL(ctx, selected, &difftypes.SchemaDiff{}, "postgres")
 	c.Assert(err, qt.ErrorIs, context.Canceled)

@@ -400,7 +400,7 @@ type judgingRenderer struct {
 func (judgingRenderer) Render(_ context.Context, request renderer.Request) (renderer.Result, error) {
 	result := renderer.Result{Complete: true}
 	for _, node := range request.Nodes {
-		result.Fragments = append(result.Fragments, node.(*ast.RawSQLNode).SQL)
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: node.(*ast.RawSQLNode).SQL})
 	}
 	return result, nil
 }

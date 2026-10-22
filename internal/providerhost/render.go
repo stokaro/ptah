@@ -3,13 +3,16 @@ package providerhost
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
 )
 
@@ -43,17 +46,40 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	if err != nil {
 		return renderer.Result{}, err
 	}
-	fragments := make([]string, 0, len(result.GetUnits()))
-	for _, unit := range result.GetUnits() {
-		if _, sql := unit.GetBody().(*protocol.Unit_Sql); !sql {
-			return renderer.Result{}, unsupported("native execution units")
+	fragments := make([]renderer.Fragment, 0, len(result.GetUnits()))
+	for i, unit := range result.GetUnits() {
+		fragment, err := t.renderedFragment(changes[i], unit)
+		if err != nil {
+			return renderer.Result{}, err
 		}
-		if !strings.HasSuffix(strings.TrimSpace(unit.GetSql()), ";") {
-			return renderer.Result{}, unsupported("unterminated SQL execution units")
-		}
-		fragments = append(fragments, unit.GetSql())
+		fragments = append(fragments, fragment)
 	}
 	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil
+}
+
+// Native execution retains the captured operation, including its semantic
+// receipt. A different envelope needs a new owner assessment before it can
+// inherit that operation's risk, dependencies, or transaction requirements.
+func (t *target) renderedFragment(change *protocol.Change, unit *protocol.Unit) (renderer.Fragment, error) {
+	if _, sql := unit.GetBody().(*protocol.Unit_Sql); sql {
+		if !strings.HasSuffix(strings.TrimSpace(unit.GetSql()), ";") {
+			return renderer.Fragment{}, unsupported("unterminated SQL execution units")
+		}
+		return renderer.Fragment{SQL: unit.GetSql()}, nil
+	}
+	captured := change.GetNative().GetValue()
+	if captured == nil || unit.GetNative() == nil || !proto.Equal(captured.GetValue(), unit.GetNative()) {
+		return renderer.Fragment{}, unsupported("native execution without the captured operation envelope")
+	}
+	contract := t.host.models[modelKey{kind: schemaext.Kind(unit.GetNative().GetKind()), representation: schemaext.Operation}]
+	if contract == nil || contract.engines[t.engine.GetId()] == nil {
+		return renderer.Fragment{}, unsupported("native execution without the selected operation model")
+	}
+	model, err := contract.resolved(modelWire{Format: 1, Engine: t.engine.GetId(), Features: slices.Clone(t.engine.GetFeatures())}, captured)
+	if err != nil {
+		return renderer.Fragment{}, err
+	}
+	return renderer.Fragment{Native: &resolvedOperation{model: model}}, nil
 }
 
 func (t *target) reference(name string) (*protocol.Reference, error) {

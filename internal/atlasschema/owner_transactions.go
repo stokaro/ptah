@@ -111,14 +111,16 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 
 // captureRenderedStatements keeps SQL, provenance, and owner facts aligned.
 func (c *applyComputation) captureRenderedStatements(plan planner.RenderedPlan, opts ApplyOptions) error {
-	planned := plan.PlannedStatements()
+	planned, err := plan.PlannedStatements()
+	if err != nil {
+		return err
+	}
 	c.statements = make([]string, 0, len(planned))
 	statementNodes := make([]int, 0, len(planned))
 	for _, statement := range planned {
 		c.statements = append(c.statements, statement.SQL)
 		statementNodes = append(statementNodes, statement.Node)
 	}
-	var err error
 	c.transactions, err = txrequire.OwnerRequirements(plan.Request.Nodes, statementNodes)
 	if err != nil {
 		return fmt.Errorf("assess owner transaction requirements: %w", err)

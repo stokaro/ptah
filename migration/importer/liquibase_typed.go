@@ -865,7 +865,11 @@ func (c *liquibaseConverter) render(node ast.Node) (string, error) {
 		}
 		return "", fmt.Errorf("%s cannot carry the whole change: %s", c.dialect, strings.Join(lost, "; "))
 	}
-	return strings.TrimSpace(result.SQL()), nil
+	sql, err := result.SQL()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(sql), nil
 }
 
 // ------------------------------------------------------------------ helpers

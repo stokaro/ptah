@@ -14,7 +14,7 @@ import (
 // service without importing the built-in composition or any database driver.
 func ExampleNew() {
 	service := renderingFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"rendered for " + request.Target}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"rendered for " + request.Target})}, nil
 	})
 	runtime, err := engine.New(engine.Provider{
 		ID:      "example.org/my-provider",
@@ -29,7 +29,11 @@ func ExampleNew() {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(result.SQL())
+	sql, err := result.SQL()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(sql)
 	fmt.Println(runtime.Targets())
 	// Output:
 	// rendered for custom

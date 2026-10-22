@@ -319,7 +319,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintf(out, "-- Target: %s\n", dburldisplay.Format(dbURL))
 	fmt.Fprintln(out)
 
-	migrationSQL := rendered.SQL()
+	migrationSQL, err := rendered.SQL()
+	if err != nil {
+		return err
+	}
 	fmt.Fprint(out, migrationSQL)
 	if !strings.HasSuffix(migrationSQL, "\n") {
 		fmt.Fprintln(out)

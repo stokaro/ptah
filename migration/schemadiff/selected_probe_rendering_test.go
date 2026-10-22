@@ -84,7 +84,7 @@ func TestDatabaseComparisonSelectsContextualProbeBatches(t *testing.T) {
 		batches = append(batches, request.Nodes)
 		result := renderer.Result{Complete: true}
 		for index := range request.Nodes {
-			result.Fragments = append(result.Fragments, fmt.Sprintf("SELECT %d;", index))
+			result.Fragments = append(result.Fragments, renderer.Fragment{SQL: fmt.Sprintf("SELECT %d;", index)})
 		}
 		return result, nil
 	})
@@ -142,9 +142,9 @@ func (tc probeFailureCase) schemas() (*schemamodel.Database, *catalog.Database) 
 func TestDatabaseComparisonDoesNotHideProbeServiceFailure(t *testing.T) {
 	failure := errors.New("renderer disconnected")
 	for _, test := range []probeFailureCase{
-		{name: "provider", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, err: failure, want: failure},
+		{name: "provider", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, err: failure, want: failure},
 		{name: "incomplete", want: renderer.ErrInvalidResult},
-		{name: "missing fragments", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, want: renderer.ErrInvalidResult},
+		{name: "missing fragments", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, want: renderer.ErrInvalidResult},
 		{name: "unavailable capability", err: ptaherr.ErrUnsupportedFeature, want: ptaherr.ErrUnsupportedFeature},
 		{name: "canceled", cancel: true, want: context.Canceled},
 		{name: "routine provider", routineOnly: true, err: failure, want: failure},
@@ -177,12 +177,12 @@ func (tc unresolvedProbeCase) render(_ context.Context, request renderer.Request
 		return result, nil
 	}
 	for range request.Nodes {
-		result.Fragments = append(result.Fragments, "SELECT 1;")
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: "SELECT 1;"})
 	}
 	if tc == "omitted" {
 		result.Omissions = []renderer.Omission{{Dialect: request.Target, Kind: "probe", Reason: "unsupported", Property: "normalization"}}
 	} else {
-		result.Fragments[len(result.Fragments)-1] = " \n"
+		result.Fragments[len(result.Fragments)-1] = renderer.Fragment{SQL: " \n"}
 	}
 	return result, nil
 }

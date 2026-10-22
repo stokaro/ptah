@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
@@ -55,8 +56,8 @@ func TestProviderOperationRenderExecuteAndInspect(t *testing.T) {
 	result, err := runtime.Render(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.ExecutableUnits, qt.IsTrue)
-	c.Assert(result.Fragments, qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "records" ("id" INTEGER NOT NULL PRIMARY KEY);`, `ALTER TABLE "records" RENAME TO "next";`})
-	for _, sql := range result.Fragments {
+	c.Assert(must.Must(result.SQLFragments()), qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "records" ("id" INTEGER NOT NULL PRIMARY KEY);`, `ALTER TABLE "records" RENAME TO "next";`})
+	for _, sql := range must.Must(result.SQLFragments()) {
 		c.Assert(connection.Writer().ExecuteSQL(c.Context(), sql), qt.IsNil)
 	}
 	observed, err := connection.Reader().ReadSchema()
@@ -67,7 +68,7 @@ func TestProviderOperationRenderExecuteAndInspect(t *testing.T) {
 	c.Assert(drop.(schemaext.EffectSource).Effect().Impact, qt.Equals, schemaext.Destructive)
 	result, err = runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: unwrappedOperationTarget(), Nodes: []ast.Node{&ast.ExtensionStatement{Payload: drop}}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(connection.Writer().ExecuteSQL(c.Context(), result.SQL()), qt.IsNil)
+	c.Assert(connection.Writer().ExecuteSQL(c.Context(), must.Must(result.SQL())), qt.IsNil)
 	observed, err = connection.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 	c.Assert(slices.ContainsFunc(observed.Tables, func(table catalog.Table) bool { return table.Name == "next" }), qt.IsFalse)

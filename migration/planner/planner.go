@@ -289,7 +289,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	if err != nil {
 		return nil, err
 	}
-	return plan.Statements(), nil
+	return plan.Statements()
 }
 
 // RenderedPlan is a schema diff planned and rendered once. Request is the
@@ -308,7 +308,7 @@ type RenderedPlan struct {
 }
 
 // SQL returns the rendered plan as one script.
-func (p RenderedPlan) SQL() string { return p.Result.SQL() }
+func (p RenderedPlan) SQL() (string, error) { return p.Result.SQL() }
 
 // PlannedStatement is one statement of a rendered plan and the index of the
 // planned node, in Request.Nodes, whose fragment rendered it. Node is -1 for a
@@ -326,10 +326,18 @@ type PlannedStatement struct {
 // fragment's: a fragment that leaves its last statement unterminated, or ends
 // a SQL Server routine whose body would otherwise reach the end of the batch,
 // still ends where its node ends.
-func (p RenderedPlan) PlannedStatements() []PlannedStatement {
+func (p RenderedPlan) PlannedStatements() ([]PlannedStatement, error) {
+	fragments, err := p.Result.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
+	return p.sqlStatements(fragments), nil
+}
+
+func (p RenderedPlan) sqlStatements(fragments []string) []PlannedStatement {
 	if p.Result.ExecutableUnits {
-		units := make([]PlannedStatement, 0, len(p.Result.Fragments))
-		for node, sql := range p.Result.Fragments {
+		units := make([]PlannedStatement, 0, len(fragments))
+		for node, sql := range fragments {
 			if sql != "" {
 				units = append(units, PlannedStatement{SQL: sql, Node: node})
 			}
@@ -338,7 +346,7 @@ func (p RenderedPlan) PlannedStatements() []PlannedStatement {
 	}
 	var statements []PlannedStatement
 	carry := ""
-	for node, fragment := range p.Result.Fragments {
+	for node, fragment := range fragments {
 		// The dialect decides where one statement ends. The blind splitter
 		// treats every semicolon outside a BEGIN block as a boundary, which is
 		// right for most targets and wrong for the one whose routine body is
@@ -386,13 +394,16 @@ func trailingPieces(text string, pieces []string, from int) string {
 }
 
 // Statements returns the SQL of [RenderedPlan.PlannedStatements].
-func (p RenderedPlan) Statements() []string {
-	planned := p.PlannedStatements()
+func (p RenderedPlan) Statements() ([]string, error) {
+	planned, err := p.PlannedStatements()
+	if err != nil {
+		return nil, err
+	}
 	statements := make([]string, 0, len(planned))
 	for _, statement := range planned {
 		statements = append(statements, statement.SQL)
 	}
-	return statements
+	return statements, nil
 }
 
 // GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes
@@ -530,7 +541,7 @@ func GenerateSchemaDiffSQLWithOptions(
 	if err != nil {
 		return "", err
 	}
-	return plan.SQL(), nil
+	return plan.SQL()
 }
 
 func wrapPlanError(dialect string, err error) error {

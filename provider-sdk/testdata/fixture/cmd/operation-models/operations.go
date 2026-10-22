@@ -152,7 +152,11 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 		if err != nil {
 			return nil, err
 		}
-		result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: sql}})
+		if p.nativeUnits {
+			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Native{Native: proto.CloneOf(change.GetNative().GetValue().GetValue())}})
+		} else {
+			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: sql}})
+		}
 	}
 	return result, nil
 }

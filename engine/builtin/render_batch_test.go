@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -64,8 +65,8 @@ func TestRenderBatchPreservesEmptyAndNestedNodeBoundaries(t *testing.T) {
 		ast.NewRawSQL("SELECT 4;"),
 	}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Fragments, qt.DeepEquals, []string{"SELECT 1;\n", "", "SELECT 2;\nSELECT 3;\n", "SELECT 4;\n"})
-	c.Assert(result.SQL(), qt.Equals, "SELECT 1;\nSELECT 2;\nSELECT 3;\nSELECT 4;\n")
+	c.Assert(must.Must(result.SQLFragments()), qt.DeepEquals, []string{"SELECT 1;\n", "", "SELECT 2;\nSELECT 3;\n", "SELECT 4;\n"})
+	c.Assert(must.Must(result.SQL()), qt.Equals, "SELECT 1;\nSELECT 2;\nSELECT 3;\nSELECT 4;\n")
 }
 
 func TestRenderBatchReportsOmissionsWithoutLeakingBetweenCalls(t *testing.T) {
@@ -87,16 +88,16 @@ func TestRenderBatchReportsOmissionsWithoutLeakingBetweenCalls(t *testing.T) {
 	c.Assert(result.Omissions[0].Name, qt.Equals, "accounts.email")
 	c.Assert(result.Omissions[0].Property, qt.Equals, "type modifier")
 	c.Assert(result.Omissions[0].Detail, qt.Equals, "VARCHAR(255): length 255")
-	c.Assert(result.SQL(), qt.Contains, "`email` Utf8")
+	c.Assert(must.Must(result.SQL()), qt.Contains, "`email` Utf8")
 
 	sql, omissions, err := builtin.RenderSQLReportingOmissions(request.Target, request.Capabilities, table)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Equals, result.SQL())
+	c.Assert(sql, qt.Equals, must.Must(result.SQL()))
 	c.Assert(omissions, qt.DeepEquals, result.Omissions)
 
 	request.Nodes = []ast.Node{ast.NewRawSQL("SELECT 1;")}
 	again, err := runtime.Render(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Omissions, qt.HasLen, 0)
-	c.Assert(again.SQL(), qt.Equals, "SELECT 1;\n")
+	c.Assert(must.Must(again.SQL()), qt.Equals, "SELECT 1;\n")
 }
