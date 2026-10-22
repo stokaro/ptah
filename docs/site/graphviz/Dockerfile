@@ -17,7 +17,7 @@
 # inside a stable branch, so `alpine:3.22` is a moving target and its `graphviz`
 # package moves with it -- which would change the committed bytes without
 # changing this file. Renovate tracks the digest.
-FROM alpine:3.24@sha256:c6b073f8e9e58d881f6ffba6ebf3b9ebd60b9e7d6e8337018c0e68bb5c356873
+FROM alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35
 
 # font-dejavu is not decoration. Graphviz measures every label to lay the graph
 # out, so the fonts present decide the coordinates in the output, and a renderer
