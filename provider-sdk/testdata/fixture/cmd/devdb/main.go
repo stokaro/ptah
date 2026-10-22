@@ -20,6 +20,10 @@ func main() {
 	description.Features = append(description.Features, provider.DevDatabaseFeature)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, provider.DevDatabaseFeature)
+	engine.ReleaseLines = []*protocol.ReleaseLine{
+		{Line: "2.0", Label: "Fixture 2", Support: protocol.ReleaseLine_CERTIFIED, Image: "example.org/fixture:2.0"},
+		{Line: "1.0", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "the vendor ended support", Image: "example.org/fixture:1.0"},
+	}
 	owner := &provisioner{Provider: &backend.Provider{}, leases: make(map[string]bool)}
 	err := runtime.Serve(runtime.Server{
 		Description:     description,

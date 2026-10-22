@@ -431,6 +431,8 @@ github.com/stokaro/ptah/provider-sdk v0.0.0-20261022105933-432d75048fb6 h1:PuUrm
 github.com/stokaro/ptah/provider-sdk v0.0.0-20261022105933-432d75048fb6/go.mod h1:6XSvBJNaFnszJnxVWzshI6AzajLivF6rQWprNOQHLeA=
 github.com/stokaro/ptah/provider-sdk v0.0.0-20261022141808-0d6a6df32a6e h1:Mp2X+E2LgWGDlY6LwaNBNPgX8OY0Caxc17Hf2+jNGB8=
 github.com/stokaro/ptah/provider-sdk v0.0.0-20261022141808-0d6a6df32a6e/go.mod h1:6XSvBJNaFnszJnxVWzshI6AzajLivF6rQWprNOQHLeA=
+github.com/stokaro/ptah/provider-sdk v0.0.0-20261022161306-a90f77d46b19 h1:tQREu95d11LYyYqYeB1Dc7cTjKtPdumhb3bt+3K6PDs=
+github.com/stokaro/ptah/provider-sdk v0.0.0-20261022161306-a90f77d46b19/go.mod h1:6XSvBJNaFnszJnxVWzshI6AzajLivF6rQWprNOQHLeA=
 github.com/stokaro/teststyle v0.2.0 h1:jCyBstcPX+doEkmw5jRoiwPj/9I3srYyI27avIB+7kY=
 github.com/stokaro/teststyle v0.2.0/go.mod h1:/eSKEwaWErHF/URpcA0yaXLbNOD5951tH4y89wX2zio=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
