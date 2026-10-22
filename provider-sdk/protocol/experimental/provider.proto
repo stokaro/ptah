@@ -25,6 +25,8 @@ service Provider {
   rpc SplitLintStatements(SplitLintRequest) returns (SplitLint);
   rpc AnnotateLintStatements(AnnotateLintRequest) returns (AnnotatedLint);
   rpc CheckLintMigrations(CheckLintRequest) returns (CheckedLint);
+  rpc ProvisionDevDatabase(ProvisionDevRequest) returns (DevDatabase);
+  rpc ReleaseDevDatabase(ReleaseDevRequest) returns (Empty);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -1691,4 +1693,35 @@ message CheckedLint {
   // complete is set by an owner that judged every enabled rule over every file.
   bool complete = 1;
   repeated LintFinding findings = 2;
+}
+// ProvisionDevRequest asks the owner for a throwaway database. spec is the
+// operator's request as typed (for example "docker://ydb/24.3"), or empty for
+// the owner's default. The host never names an image.
+message ProvisionDevRequest {
+  string engine = 1;
+  string spec = 2;
+}
+// DevDatabaseRefusal is a typed answer from an owner that will not provision.
+message DevDatabaseRefusal {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // UNSUPPORTED means the owner does not provision this spec.
+    UNSUPPORTED = 1;
+    // UNAVAILABLE means the owner could provision it but its runtime is missing
+    // or failed, for example no container engine.
+    UNAVAILABLE = 2;
+  }
+  Kind kind = 1;
+  string reason = 2;
+}
+// DevDatabase carries either a lease and the address to open, or a refusal.
+// The lease names what the owner created and must be released.
+message DevDatabase {
+  string lease = 1;
+  string url = 2;
+  DevDatabaseRefusal refusal = 3;
+}
+message ReleaseDevRequest {
+  string engine = 1;
+  string lease = 2;
 }

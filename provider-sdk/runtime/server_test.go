@@ -267,3 +267,26 @@ func (*linter) AnnotateLintStatements(context.Context, *protocol.AnnotateLintReq
 func (*linter) CheckLintMigrations(context.Context, *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
 	return &protocol.CheckedLint{Complete: true}, nil
 }
+
+func TestServerRequiresAdvertisedDevProvisioner(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "dev-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.DevDatabaseFeature}, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.DevDatabaseFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.DevProvisioner = (*devProvisioner)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.DevProvisioner = &devProvisioner{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type devProvisioner struct{}
+
+func (*devProvisioner) ProvisionDevDatabase(context.Context, *protocol.ProvisionDevRequest) (*protocol.DevDatabase, error) {
+	return &protocol.DevDatabase{}, nil
+}
+
+func (*devProvisioner) ReleaseDevDatabase(context.Context, *protocol.ReleaseDevRequest) (*protocol.Empty, error) {
+	return &protocol.Empty{}, nil
+}

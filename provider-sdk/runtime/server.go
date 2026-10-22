@@ -26,7 +26,10 @@ const (
 	// MaxMessageBytes bounds each request and response in both directions.
 	MaxMessageBytes = 4 << 20
 	// CallTimeout bounds calls whose caller supplied no earlier deadline.
-	CallTimeout       = 30 * time.Second
+	CallTimeout = 30 * time.Second
+	// ProvisionTimeout bounds a dev database call that has no earlier deadline;
+	// starting a container may pull an image.
+	ProvisionTimeout  = 10 * time.Minute
 	transportName     = "ptah-provider"
 	parentEnvironment = "PTAH_PROVIDER_PARENT_PID"
 )
@@ -59,6 +62,7 @@ type Server struct {
 	TablePreparer   provider.TablePreparer
 	TableCreations  provider.TableCreationProjector
 	Linter          provider.Linter
+	DevProvisioner  provider.DevProvisioner
 	SchemaValidator provider.SchemaValidator
 }
 
@@ -91,6 +95,7 @@ func (s Server) Validate() error {
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
 		{provider.LintFeature, !nilService(s.Linter)},
+		{provider.DevDatabaseFeature, !nilService(s.DevProvisioner)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

@@ -42,6 +42,8 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `SplitLintStatements` | Complete statement boundaries for migration sources under the engine's own lexing, with the facts the split judges. |
 | `AnnotateLintStatements` | One annotation per statement a dialect-blind scanner split. The owner declines a statement its lexing would split differently. |
 | `CheckLintMigrations` | A complete set of findings for the enabled rule codes over every file of a run, or an error and no finding. |
+| `ProvisionDevDatabase` | A lease and an address for a throwaway database, or a typed refusal (unsupported spec, unavailable runtime). The owner removes what it created. |
+| `ReleaseDevDatabase` | Removal of what a lease names. A lease that is already gone succeeds. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
 | `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
