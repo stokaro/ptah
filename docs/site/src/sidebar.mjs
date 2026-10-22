@@ -248,6 +248,7 @@ export const sidebar = [
       { slug: 'operate/verify-a-release' },
       { slug: 'operate/trace-migrations' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
+      { slug: 'operate/git-sources', label: 'Pull from Git' },
       { slug: 'operate/kubernetes-operator' },
       { slug: 'versioned/reference-data' },
       { slug: 'operate/seed-data' },

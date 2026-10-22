@@ -97,6 +97,7 @@
   "/operate/ai-assist/",
   "/operate/conformance/",
   "/operate/deliver/",
+  "/operate/git-sources/",
   "/operate/inference-migrations/",
   "/operate/kubernetes-operator/",
   "/operate/license-boundary/",

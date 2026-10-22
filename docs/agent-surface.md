@@ -131,7 +131,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations log` | reads | none | `--db-url` | reads the target's record of past migration operations and prints it, changing nothing |
 | `migrations ls` | none | none | — | lists the migration files in a directory, reading nothing but the directory |
 | `migrations plan` | reads | none | `--db-url` | reads the target and prints the migration SQL the difference implies, writing nothing |
-| `migrations pull` | none | none | — | downloads a migration directory from an OCI registry and writes it to disk |
+| `migrations pull` | none | none | — | downloads a migration directory from an OCI registry or a Git repository and writes it to disk |
 | `migrations push` | none | none | — | uploads a migration directory from disk to an OCI registry |
 | `migrations rebase` | reads | none | `--db-url` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations repair` | **writes** | none | `--db-url` | rewrites revision metadata in the target's tracking table |
@@ -170,7 +170,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `schema inspect` | reads | **rewrites** | `--db-url`, `--dev-url` | reads a schema source and prints it; the dev database it names "is reset destructively" |
 | `schema lineage` | reads | none | `--db-url` | traces which columns each view and routine reads and writes; `--db-url` reads the target |
 | `schema plan` | reads | **rewrites** | `--db-url`, `--dev-url` | saves a fingerprinted apply plan; the dev database is where the plan is rehearsed |
-| `schema pull` | none | none | — | downloads a desired-schema document from an OCI registry and writes it to disk |
+| `schema pull` | none | none | — | downloads a desired-schema document from an OCI registry or a Git repository and writes it to disk |
 | `schema push` | none | none | — | uploads a desired-schema document from disk to an OCI registry |
 | `schema render` | none | none | — | renders the desired schema as SQL with no connection at all; the dialect comes from a flag |
 | `schema security` | reads | none | `--db-url` | reads the target's roles, grants and policies and reports security findings |
@@ -227,7 +227,7 @@ permission.
 | `migrations log` | reads the target's record of past migration operations and prints it, changing nothing |
 | `migrations ls` | lists the migration files in a directory, reading nothing but the directory |
 | `migrations plan` | reads the target and prints the migration SQL the difference implies, writing nothing |
-| `migrations pull` | downloads a migration directory from an OCI registry and writes it to disk |
+| `migrations pull` | downloads a migration directory from an OCI registry or a Git repository and writes it to disk |
 | `migrations push` | uploads a migration directory from disk to an OCI registry |
 | `migrations rebase` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations rm` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
@@ -256,7 +256,7 @@ permission.
 | `schema export` | converts one desired-schema source format into another on disk; no database is opened |
 | `schema fmt` | rewrites HCL schema files in the repository into canonical form; no database is opened |
 | `schema lineage` | traces which columns each view and routine reads and writes; `--db-url` reads the target |
-| `schema pull` | downloads a desired-schema document from an OCI registry and writes it to disk |
+| `schema pull` | downloads a desired-schema document from an OCI registry or a Git repository and writes it to disk |
 | `schema push` | uploads a desired-schema document from disk to an OCI registry |
 | `schema render` | renders the desired schema as SQL with no connection at all; the dialect comes from a flag |
 | `schema security` | reads the target's roles, grants and policies and reports security findings |

@@ -1,0 +1,327 @@
+{
+  "description": "Content digest cases. Each accepted case gives the files, the manifest and the digest; each refused case names the rule the files break. generate expands to count files, path pathFormat % i for i from 0, every one holding data. The expected values were computed by an implementation independent of the Go package.",
+  "accepted": [
+    {
+      "name": "one schema file",
+      "files": [
+        {
+          "path": "schema.hcl",
+          "base64": "dGFibGUgInJlZ2lvbnMiIHsKICBzY2hlbWEgPSBzY2hlbWEucHVibGljCn0K"
+        }
+      ],
+      "manifest": "9917f75d9f47d6bc154d1ae4cd41e86b7e384de9982ff50a141c0db96c2f833f 45 schema.hcl\n",
+      "digest": "sha256:dd0b1a4e19392bbccb0433353757660fd748c3149b2d6f0aef55a0dd786b9ac1"
+    },
+    {
+      "name": "an empty file",
+      "files": [
+        {
+          "path": "schema.sql",
+          "base64": ""
+        }
+      ],
+      "manifest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 0 schema.sql\n",
+      "digest": "sha256:c5a05039f943305127d8561e326bb265ee30ea67c410504ad8e3f98bf2129a77"
+    },
+    {
+      "name": "no trailing newline",
+      "files": [
+        {
+          "path": "schema.sql",
+          "base64": "Q1JFQVRFIFRBQkxFIHQgKGlkIGludCk7"
+        }
+      ],
+      "manifest": "32a1db02f656154be7fa359e4878a6f2770ee9269d598f0557c940690d614a23 24 schema.sql\n",
+      "digest": "sha256:d71a51f5c43bb386f91a585ebf0085ff0eaacf11384023a8007b5f4ddcb7715d"
+    },
+    {
+      "name": "CRLF kept as delivered",
+      "files": [
+        {
+          "path": "schema.sql",
+          "base64": "Q1JFQVRFIFRBQkxFIHQgKGlkIGludCk7DQo="
+        }
+      ],
+      "manifest": "30cea62cdaee464f711b5a9f1f7b7a63a5d676cb81e1ffb9c1be5f0ba944da6d 26 schema.sql\n",
+      "digest": "sha256:c53bec48996be4dc2cc965440799da5e854a63d8f49d03b769b348da87c2b208"
+    },
+    {
+      "name": "bytes that are not UTF-8",
+      "files": [
+        {
+          "path": "seed.sql",
+          "base64": "SU5TRVJUIElOVE8gdCBWQUxVRVMgKCdjYWbpJyk7Cg=="
+        }
+      ],
+      "manifest": "b7c98038f9bd03910433d64f7a31c102bccf0eda1d1da702cec1ca486a29319b 31 seed.sql\n",
+      "digest": "sha256:cc97df8702b18c778be6e3bc657438358353b09fcbd7c87f2cceb91303fe76a3"
+    },
+    {
+      "name": "a migration directory",
+      "files": [
+        {
+          "path": "0002_add_email.up.sql",
+          "base64": "QUxURVIgVEFCTEUgdXNlcnMgQUREIENPTFVNTiBlbWFpbCB0ZXh0Owo="
+        },
+        {
+          "path": "0001_init.up.sql",
+          "base64": "Q1JFQVRFIFRBQkxFIHVzZXJzIChpZCBiaWdpbnQgUFJJTUFSWSBLRVkpOwo="
+        },
+        {
+          "path": "0001_init.down.sql",
+          "base64": "RFJPUCBUQUJMRSB1c2VyczsK"
+        },
+        {
+          "path": "0002_add_email.down.sql",
+          "base64": "QUxURVIgVEFCTEUgdXNlcnMgRFJPUCBDT0xVTU4gZW1haWw7Cg=="
+        }
+      ],
+      "manifest": "de1015707e41d6682186c3440c58b222518e75eae7becfba74346468eefdfc5d 18 0001_init.down.sql\n3456c330330e5584db1ea42d855fe843569a61c7c200bd34b52f8f9c03b28f0d 44 0001_init.up.sql\n3894a2e157f40fa13c2ee60b9cb09e02ba73cadb64e3ff3d6a0b73983d325903 37 0002_add_email.down.sql\n315473a27c3413dbff149b4a3c0b90484b02dceb4ce8ba601f55ebeb0a39f6c4 41 0002_add_email.up.sql\n",
+      "digest": "sha256:5b6ce8efef497d644ee695d0da113f5d239e05850a58c87bc01dd2da3ae9401c"
+    },
+    {
+      "name": "nested paths sort by bytes, not by element",
+      "files": [
+        {
+          "path": "a/b.sql",
+          "base64": "LS0gc2Vjb25kIGJ5IGVsZW1lbnQsIGxhc3QgYnkgYnl0ZXMK"
+        },
+        {
+          "path": "a-b/x.sql",
+          "base64": "LS0gZmlyc3QgYnkgYnl0ZXMK"
+        },
+        {
+          "path": "a.sql",
+          "base64": "LS0gYmV0d2VlbiB0aGVtCg=="
+        }
+      ],
+      "manifest": "13f06b7f2700060469772afe052a8cd68dd16ea84e227e6ed8cb492dcfaee5e7 18 a-b/x.sql\n9ec63991c9309358421153ad00d0aeb0a1702537986dd545261935b2f7392db5 16 a.sql\nf1f28abbd5cdf39d8359331f7143ce57c0adc944b8111b8a9967d92a84eedc77 36 a/b.sql\n",
+      "digest": "sha256:938aec26302bacdd6e16c07a2a4a01b7bed8b013956303efd8bae542382a69c0"
+    },
+    {
+      "name": "code point order, not UTF-16 order",
+      "files": [
+        {
+          "path": "😀.sql",
+          "base64": "LS0gVSsxRjYwMCBzb3J0cyBhZnRlciBVK0ZGNUUgYnkgY29kZSBwb2ludCBhbmQgYmVmb3JlIGl0IGluIFVURi0xNgo="
+        },
+        {
+          "path": "～.sql",
+          "base64": "LS0gVStGRjVFCg=="
+        },
+        {
+          "path": "Z.sql",
+          "base64": "LS0gY2FwaXRhbCBsZXR0ZXJzIHNvcnQgZmlyc3QK"
+        },
+        {
+          "path": "z.sql",
+          "base64": "LS0gdGhlbiBzbWFsbCBvbmVzCg=="
+        }
+      ],
+      "manifest": "892dce3d3942b7a0290835ed9b981c60aea09707aff9a0a86d256233209b7cd9 30 Z.sql\nc39abaaa352817b405a7bee65fe1a002c229c9e419418b21c0237855b8d81090 19 z.sql\n97c5286de17cbe9364bc1b2aa8c619f1f84ad8eedf14fc0c26e0d9ce76ece562 10 ～.sql\n9db7190483fe056b68e0168aed455a569d73300a3e5c6b63d603a39df19fde21 68 😀.sql\n",
+      "digest": "sha256:a2b5b353a03052aeb0603f4973e5057e308684567fa395c89b79be045be689d1"
+    },
+    {
+      "name": "spaces in a path",
+      "files": [
+        {
+          "path": "seed data/regions.sql",
+          "base64": "SU5TRVJUIElOVE8gcmVnaW9ucyBWQUxVRVMgKDEpOwo="
+        }
+      ],
+      "manifest": "25d4f2ae9724f5c7e0da1d779761cbf9910efc3f44cb2a1f27a1293bb33ebb4a 32 seed data/regions.sql\n",
+      "digest": "sha256:28713086404b18a549adc61b34ae8230abdb2db7885c104db3a59e863239f96f"
+    },
+    {
+      "name": "a path element of 255 bytes",
+      "files": [
+        {
+          "path": "d/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.sql",
+          "base64": "U0VMRUNUIDE7Cg=="
+        }
+      ],
+      "manifest": "b4e0497804e46e0a0b0b8c31975b062152d551bac49c3c2e80932567b4085dcd 10 d/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.sql\n",
+      "digest": "sha256:82786c6734dcb2d8b056ee4b8e0a2db8413dc8e15de42d88b707d97f6cbaec0e"
+    },
+    {
+      "name": "the same bytes under another name",
+      "files": [
+        {
+          "path": "schema.hcl.bak",
+          "base64": "dGFibGUgInJlZ2lvbnMiIHsKICBzY2hlbWEgPSBzY2hlbWEucHVibGljCn0K"
+        }
+      ],
+      "manifest": "9917f75d9f47d6bc154d1ae4cd41e86b7e384de9982ff50a141c0db96c2f833f 45 schema.hcl.bak\n",
+      "digest": "sha256:2795ed75546f5a8b2b6ba2ff191fd3207db1870c3d170e0c7b90b4749715f51d"
+    }
+  ],
+  "generated": [
+    {
+      "name": "1,000 files",
+      "generate": {
+        "count": 1000,
+        "pathFormat": "m/%04d.sql",
+        "data": ""
+      },
+      "digest": "sha256:d11f8c7025411bd5c30ac31d95331a0a01aa1825ec939781c5969d301e71584c"
+    }
+  ],
+  "refused": [
+    {
+      "name": "no file",
+      "refusal": "empty",
+      "files": []
+    },
+    {
+      "name": "an absolute path",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "/schema.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a trailing slash",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "schema/",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "an empty element",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "a//b.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a dot element",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "./schema.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a parent element",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "a/../schema.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a backslash",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "a\\b.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a newline",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "a\nb.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a tab",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "a\tb.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a delete character",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "ab.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a path that is not UTF-8",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "pathBase64": "Y2Fm6S5zcWw=",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "a path element of 256 bytes",
+      "refusal": "invalid-path",
+      "files": [
+        {
+          "path": "d/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.sql",
+          "base64": "eA=="
+        }
+      ]
+    },
+    {
+      "name": "the same path twice",
+      "refusal": "duplicate",
+      "files": [
+        {
+          "path": "schema.sql",
+          "base64": "YQ=="
+        },
+        {
+          "path": "schema.sql",
+          "base64": "Yg=="
+        }
+      ]
+    },
+    {
+      "name": "a file and a directory of one name",
+      "refusal": "path-conflict",
+      "files": [
+        {
+          "path": "migrations",
+          "base64": "eA=="
+        },
+        {
+          "path": "migrations-old/1.sql",
+          "base64": "eQ=="
+        },
+        {
+          "path": "migrations/1.sql",
+          "base64": "eg=="
+        }
+      ]
+    },
+    {
+      "name": "1,001 files",
+      "refusal": "too-many-files",
+      "generate": {
+        "count": 1001,
+        "pathFormat": "m/%04d.sql",
+        "data": ""
+      }
+    }
+  ]
+}
