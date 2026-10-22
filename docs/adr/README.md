@@ -32,6 +32,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0020](0020-row-access-policies-keep-their-engine-semantics.md) | Row-access policies keep their engine semantics | Proposed |
 | [0021](0021-provider-recognition-does-not-authorize-execution.md) | Provider recognition does not authorize execution | Proposed |
 | [0022](0022-provider-values-are-resolved-in-semantic-batches.md) | Provider values are resolved in semantic batches | Proposed |
+| [0023](0023-engine-knowledge-moves-with-the-provider.md) | Engine knowledge moves with the provider | Proposed |
 
 ## Writing one
 
