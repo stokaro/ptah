@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
@@ -21,11 +22,11 @@ func TestVisitorRenderSQL_FailedRenderClearsPreviousOutput(t *testing.T) {
 
 	sql, err := renderNodes(t.Context(), r, valid)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql.SQL(), qt.Contains, "CREATE TABLE")
+	c.Assert(must.Must(sql.SQL()), qt.Contains, "CREATE TABLE")
 
 	sql, err = renderNodes(t.Context(), r, nil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(sql.SQL(), qt.Equals, "")
+	c.Assert(sql.Fragments, qt.HasLen, 0)
 	c.Assert(r.Output(), qt.Equals, "")
 }
 
@@ -41,6 +42,6 @@ func TestVisitorRenderSQL_RendererErrorClearsPartialOutput(t *testing.T) {
 	sql, err := renderNodes(t.Context(), r, valid, invalid)
 
 	c.Assert(err, qt.ErrorMatches, "postgresql NULLS DISTINCT is only valid for unique indexes")
-	c.Assert(sql.SQL(), qt.Equals, "")
+	c.Assert(sql.Fragments, qt.HasLen, 0)
 	c.Assert(r.Output(), qt.Equals, "")
 }

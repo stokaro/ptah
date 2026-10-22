@@ -46,7 +46,7 @@ func TestAssessRenderedUsesOneSelectedBatchAndPreservesNodeRisk(t *testing.T) {
 		c.Assert(request.Target, qt.Equals, "postgres")
 		c.Assert(request.Capabilities, qt.DeepEquals, caps)
 		c.Assert(request.Nodes, qt.DeepEquals, nodes)
-		return renderer.Result{Complete: true, Fragments: []string{"", "CREATE WIDGET first; CREATE WIDGET second;", "DROP TABLE items;"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"", "CREATE WIDGET first; CREATE WIDGET second;", "DROP TABLE items;"})}, nil
 	})
 	assessments, err := safety.AssessRenderedWithCapabilities(t.Context(), service, nodes, "pgx", caps)
 	c.Assert(err, qt.IsNil)
@@ -80,7 +80,7 @@ func TestAssessRenderedDiscardsFailedOrIncompleteReplies(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
-				return renderer.Result{Complete: true, Fragments: test.fragments}, test.err
+				return renderer.Result{Complete: true, Fragments: renderer.SQLFragments(test.fragments)}, test.err
 			})
 			assessments, err := safety.AssessRendered(t.Context(), service, []ast.Node{ast.NewRawSQL("SELECT 1;")}, "postgres")
 			c.Assert(err, qt.ErrorIs, test.want)
@@ -95,7 +95,7 @@ func TestAssessRenderedDiscardsCanceledReply(t *testing.T) {
 	defer cancel()
 	service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
 		cancel()
-		return renderer.Result{Complete: true, Fragments: []string{"SELECT 1;"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"SELECT 1;"})}, nil
 	})
 	assessments, err := safety.AssessRendered(ctx, service, []ast.Node{ast.NewRawSQL("SELECT 1;")}, "postgres")
 	c.Assert(err, qt.ErrorIs, context.Canceled)
@@ -118,7 +118,7 @@ func TestAssessRenderedKeepsExtensionRiskThroughContainers(t *testing.T) {
 	} {
 		c := qt.New(t)
 		service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
-			return renderer.Result{Complete: true, Fragments: []string{"CREATE WIDGET first; CREATE WIDGET second;"}}, nil
+			return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"CREATE WIDGET first; CREATE WIDGET second;"})}, nil
 		})
 		assessments, err := safety.AssessRendered(t.Context(), service, []ast.Node{node}, "custom")
 		c.Assert(err, qt.IsNil)
@@ -134,7 +134,7 @@ func TestAssessRenderedPreservesOwnerExecutionUnitBoundaries(t *testing.T) {
 	c := qt.New(t)
 	text := "CREATE WIDGET first; DROP WIDGET second;\n"
 	service := selectedRendering(func(context.Context, renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, ExecutableUnits: true, Fragments: []string{text}}, nil
+		return renderer.Result{Complete: true, ExecutableUnits: true, Fragments: renderer.SQLFragments([]string{text})}, nil
 	})
 	assessments, err := safety.AssessRendered(t.Context(), service, []ast.Node{&ast.ExtensionStatement{Payload: &unknownPayload{}}}, "external")
 	c.Assert(err, qt.IsNil)

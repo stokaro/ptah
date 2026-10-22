@@ -504,6 +504,25 @@ whole executable unit. The host never constructs SQL from a native payload.
 Captured operations must match the selected engine and target feature profile.
 Rendering capabilities remain explicit, including established false values.
 
+The host renderer carries typed SQL or native fragments. Native replies must
+retain the captured operation envelope exactly, including its owner and model
+binding. A changed envelope needs a new assessment before it can inherit the
+planned operation's risk, dependencies, and transaction requirements. The
+adapter keeps the normalized receipt and clones its payload without another
+RPC.
+
+`RenderedPlan.Units` retains the input-node index and the native payload.
+SQL-only consumers request a checked projection and refuse the whole batch when
+it contains a native operation. Native data never enters a SQL splitter or a
+comment used as an execution instruction. Default JSON encoding refuses native
+fragments; saved operations need the selected codec.
+
+This establishes typed rendering and planned-unit transport. Schema apply,
+saved plan files, migration files, and their risk assessment still consume SQL
+and refuse native execution units. They require coordinated changes before the
+host can execute these units through its commands. The independent provider's
+SDK execution tests do not establish that command path.
+
 Both transport boundaries validate ownership, model definitions, captured
 facts, and input provenance. The server gives owner code a copy, so mutating an
 input cannot change the identity against which its reply is checked. A late

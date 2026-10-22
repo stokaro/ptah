@@ -60,10 +60,14 @@ func SchemaSQL(ctx context.Context, service renderer.Service, caps capability.Ca
 	if len(result.Omissions) != 0 {
 		return nil, fmt.Errorf("%w: inference store rendering omitted declarations", ptaherr.ErrUnsupportedFeature)
 	}
-	for index, fragment := range result.Fragments {
+	fragments, err := result.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
+	for index, fragment := range fragments {
 		if strings.TrimSpace(fragment) == "" {
 			return nil, fmt.Errorf("%w: inference store node %d produced no YQL", renderer.ErrInvalidResult, index)
 		}
 	}
-	return result.Fragments, nil
+	return fragments, nil
 }

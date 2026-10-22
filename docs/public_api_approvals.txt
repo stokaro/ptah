@@ -857,3 +857,10 @@ v0.13.0 ptah.run/engine/builtin
 # or the routine builder; legacy scalar JSON is refused. Pre-v1, so no
 # compatibility is owed.
 v0.13.0 ptah.run/core/objectidentity
+
+# #4204 carries typed native operations in renderer.Result.Fragments. SQL-only
+# projections on Result and RenderedPlan return errors rather than discard an
+# operation or return a usable SQL prefix. Callers update their result handling
+# directly. Pre-v1, so compatibility with older Ptah is not owed.
+v0.14.0 ptah.run/core/renderer
+v0.14.0 ptah.run/migration/planner

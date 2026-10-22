@@ -36,7 +36,7 @@ func TestImportUsesSelectedRendererAndCallerContext(t *testing.T) {
 		c.Assert(request.Capabilities.Has(capability.TransactionalDDL), qt.IsTrue)
 		request.Capabilities = request.Capabilities.With(capability.TransactionalDDL, false)
 		captured = append(captured, request.Nodes...)
-		return renderer.Result{Complete: true, Fragments: []string{fmt.Sprintf("SELECT %d;", len(captured))}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{fmt.Sprintf("SELECT %d;", len(captured))})}, nil
 	})
 	selected, err := importer.WithRendering(parser, "custom", caps, service)
 	c.Assert(err, qt.IsNil)
@@ -68,7 +68,7 @@ func (tc importRenderCase) renderer(cancel context.CancelFunc, calls *int) impor
 	return func(context.Context, renderer.Request) (renderer.Result, error) {
 		*calls++
 		if *calls <= tc.failAfter {
-			return renderer.Result{Complete: true, Fragments: []string{"SELECT 1;"}}, nil
+			return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"SELECT 1;"})}, nil
 		}
 		if tc.cancel {
 			cancel()
@@ -80,12 +80,12 @@ func (tc importRenderCase) renderer(cancel context.CancelFunc, calls *int) impor
 func TestImportRefusesFailedOrLossyRenderingBeforeWriting(t *testing.T) {
 	failure := errors.New("provider unavailable")
 	for _, test := range []importRenderCase{
-		{name: "failure", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, failure: failure, want: failure, message: "provider unavailable"},
-		{name: "rollback failure", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, failure: failure, want: failure, failAfter: 1, message: "provider unavailable"},
+		{name: "failure", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, failure: failure, want: failure, message: "provider unavailable"},
+		{name: "rollback failure", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, failure: failure, want: failure, failAfter: 1, message: "provider unavailable"},
 		{name: "incomplete", result: renderer.Result{Complete: true}, want: renderer.ErrInvalidResult, message: "expected 1 node fragments, received 0"},
-		{name: "canceled", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, cancel: true, want: context.Canceled, message: "context canceled"},
-		{name: "malformed omission", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}, Omissions: []renderer.Omission{{Kind: "table"}}}, want: renderer.ErrInvalidResult, message: "omission requires target, kind, and reason"},
-		{name: "lossy", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}, Omissions: []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "t", Reason: "unsupported", Property: "storage", Remedy: "choose supported storage"}}}, message: "custom cannot carry the whole change: table t: storage would be skipped (choose supported storage)"},
+		{name: "canceled", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, cancel: true, want: context.Canceled, message: "context canceled"},
+		{name: "malformed omission", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"}), Omissions: []renderer.Omission{{Kind: "table"}}}, want: renderer.ErrInvalidResult, message: "omission requires target, kind, and reason"},
+		{name: "lossy", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"}), Omissions: []renderer.Omission{{Dialect: "custom", Kind: "table", Name: "t", Reason: "unsupported", Property: "storage", Remedy: "choose supported storage"}}}, message: "custom cannot carry the whole change: table t: storage would be skipped (choose supported storage)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

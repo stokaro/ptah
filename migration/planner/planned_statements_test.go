@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/renderer"
 	"ptah.run/migration/planner"
@@ -76,14 +77,14 @@ func TestRenderedPlanPlannedStatements(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			plan := planner.RenderedPlan{Result: renderer.Result{Complete: true, Fragments: tc.fragments}, Dialect: tc.dialect}
+			plan := planner.RenderedPlan{Result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments(tc.fragments)}, Dialect: tc.dialect}
 
-			c.Assert(plan.PlannedStatements(), qt.DeepEquals, tc.want)
+			c.Assert(must.Must(plan.PlannedStatements()), qt.DeepEquals, tc.want)
 			want := make([]string, 0, len(tc.want))
 			for _, statement := range tc.want {
 				want = append(want, statement.SQL)
 			}
-			c.Assert(plan.Statements(), qt.DeepEquals, want)
+			c.Assert(must.Must(plan.Statements()), qt.DeepEquals, want)
 		})
 	}
 }
@@ -92,8 +93,8 @@ func TestRenderedPlanPreservesOwnerExecutionUnits(t *testing.T) {
 	c := qt.New(t)
 	first := "OWNER BEGIN; step one; step two; END;\n"
 	last := "DROP TABLE other;\n"
-	plan := planner.RenderedPlan{Result: renderer.Result{Complete: true, ExecutableUnits: true, Fragments: []string{first, "", last}}, Dialect: "external"}
-	c.Assert(plan.PlannedStatements(), qt.DeepEquals, []planner.PlannedStatement{{SQL: first, Node: 0}, {SQL: last, Node: 2}})
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{first, last})
-	c.Assert(plan.SQL(), qt.Equals, first+last)
+	plan := planner.RenderedPlan{Result: renderer.Result{Complete: true, ExecutableUnits: true, Fragments: renderer.SQLFragments([]string{first, "", last})}, Dialect: "external"}
+	c.Assert(must.Must(plan.PlannedStatements()), qt.DeepEquals, []planner.PlannedStatement{{SQL: first, Node: 0}, {SQL: last, Node: 2}})
+	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{first, last})
+	c.Assert(must.Must(plan.SQL()), qt.Equals, first+last)
 }

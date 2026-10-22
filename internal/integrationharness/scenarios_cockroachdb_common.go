@@ -114,7 +114,10 @@ func testPostgresDistributedCommonSubset(
 		if len(result.Omissions) != 0 {
 			return fmt.Errorf("render %s SQL omitted common-subset declarations", label)
 		}
-		sqlText = result.SQL()
+		sqlText, err = result.SQL()
+		if err != nil {
+			return err
+		}
 		if strings.Contains(sqlText, "CONCURRENTLY") {
 			return fmt.Errorf("%s common-subset SQL must not contain CONCURRENTLY:\n%s", label, sqlText)
 		}

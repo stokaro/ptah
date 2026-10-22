@@ -45,7 +45,7 @@ func (r censusPlanningFault) PlanFeatures(context.Context, featureplan.Request) 
 type censusRenderingFault struct{ censusFault }
 
 func (r censusRenderingFault) Render(context.Context, renderer.Request) (renderer.Result, error) {
-	return renderer.Result{Complete: true, Fragments: []string{"unusable partial output"}}, r.fail()
+	return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"unusable partial output"})}, r.fail()
 }
 
 func TestPlanCensusDiscardsFailedAndCanceledMeasurements(t *testing.T) {

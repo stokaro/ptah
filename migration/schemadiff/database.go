@@ -415,7 +415,7 @@ func routineArgumentsProbe(
 	if err != nil || !usable {
 		return dbexprprobe.RoutineArgumentsProbe{}, false, err
 	}
-	probe.Statement, probe.Drop = result.Fragments[0], result.Fragments[1]
+	probe.Statement, probe.Drop = result.Fragments[0].SQL, result.Fragments[1].SQL
 	return probe, true, nil
 }
 
@@ -568,9 +568,9 @@ func columnSpellingProbe(
 	if err != nil || !usable {
 		return dbexprprobe.ColumnSpellingProbe{}, false, err
 	}
-	probe.Statement = result.Fragments[0]
+	probe.Statement = result.Fragments[0].SQL
 	for position := range probe.Columns {
-		probe.Columns[position].Statement = result.Fragments[position+1]
+		probe.Columns[position].Statement = result.Fragments[position+1].SQL
 	}
 	return probe, true, nil
 }

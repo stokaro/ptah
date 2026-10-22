@@ -2,6 +2,7 @@ package builtin_test
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"testing"
@@ -139,13 +140,14 @@ func routingAnswers(c *qt.C, runtime *engine.Runtime, payload ast.ExtensionPaylo
 			result, err := runtime.Render(c.Context(), renderer.Request{
 				Target: target, Capabilities: everyCapability(target), Nodes: []ast.Node{extensionNode(role, payload)},
 			})
+			sql, projectionErr := result.SQL()
 			switch {
-			case err == nil && result.SQL() != "":
+			case err == nil && projectionErr == nil && sql != "":
 				answers.rendered = append(answers.rendered, key)
 			case commonRefusal(err, target, payload.Kind(), role) && len(result.Fragments) == 0:
 				answers.refused = append(answers.refused, key)
 			default:
-				answers.unexpected[key] = "SQL " + result.SQL() + ", error " + errors.Join(err).Error()
+				answers.unexpected[key] = fmt.Sprintf("SQL %q, error %v", sql, errors.Join(err, projectionErr))
 			}
 		}
 	}

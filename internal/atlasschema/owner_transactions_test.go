@@ -48,7 +48,7 @@ func (r transactionRuntime) Render(ctx context.Context, request renderer.Request
 	result := renderer.Result{Complete: true}
 	for _, node := range request.Nodes {
 		if _, owned := node.(*ast.ExtensionStatement); owned {
-			result.Fragments = append(result.Fragments, `CREATE TABLE planned (id INTEGER);`)
+			result.Fragments = append(result.Fragments, renderer.Fragment{SQL: `CREATE TABLE planned (id INTEGER);`})
 			continue
 		}
 		one := request

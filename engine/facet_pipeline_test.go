@@ -90,7 +90,7 @@ func TestTableFacetsReachSelectedASTRenderer(t *testing.T) {
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(table.Facets, qt.DeepEquals, desired.Tables[0].Facets)
 			c.Assert(table.Facets.Len(), qt.Equals, 2)
-			return renderer.Result{Complete: true, Fragments: []string{"owned table settings;"}}, nil
+			return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"owned table settings;"})}, nil
 		}),
 	}}})
 	list, err := atlascompat.SchemaToAST(t.Context(), runtime, *desired, "custom", capability.Capabilities{})
@@ -98,7 +98,7 @@ func TestTableFacetsReachSelectedASTRenderer(t *testing.T) {
 	c.Assert(list.Statements, qt.HasLen, 1)
 	result, err := runtime.Render(t.Context(), renderer.Request{Target: "alternate", Nodes: list.Statements})
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.SQL(), qt.Equals, "owned table settings;")
+	c.Assert(must.Must(result.SQL()), qt.Equals, "owned table settings;")
 	c.Assert(calls, qt.Equals, 1)
 }
 

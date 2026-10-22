@@ -299,7 +299,10 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 	result, err := runtime.Render(context.Background(), renderer.Request{
 		Target: renderTarget(dialect), Capabilities: caps, Nodes: nodes,
 	})
-	return result.SQL(), err
+	if err != nil {
+		return "", err
+	}
+	return result.SQL()
 }
 
 // renderNodes preserves each input node's output boundary in a single batch.
@@ -344,14 +347,14 @@ func renderNodes(ctx context.Context, r renderer.RenderVisitor, nodes ...ast.Nod
 		return renderer.Result{}, err
 	}
 	output := r.Output()
-	result := renderer.Result{Complete: true, Fragments: make([]string, 0, len(nodes))}
+	result := renderer.Result{Complete: true, Fragments: renderer.SQLFragments(make([]string, 0, len(nodes)))}
 	start := 0
 	for _, end := range ends {
 		if end < start || end > len(output) {
 			r.Reset()
 			return renderer.Result{}, fmt.Errorf("%w: renderer replaced accumulated output", renderer.ErrInvalidResult)
 		}
-		result.Fragments = append(result.Fragments, output[start:end])
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: output[start:end]})
 		start = end
 	}
 	return result, nil

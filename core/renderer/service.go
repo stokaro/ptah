@@ -36,11 +36,11 @@ type Request struct {
 type Result struct {
 	// Complete confirms that the owner finished deciding the whole batch.
 	Complete bool
-	// Fragments has exactly one entry per input node, in input order. An empty
-	// fragment explicitly accounts for a node that produces no SQL. A fragment
-	// can contain several statements. Separators belong to the fragments, so
-	// concatenating them without additional text produces the complete script.
-	Fragments []string
+	// Fragments has exactly one entry per input node, in input order. Empty SQL
+	// accounts for a node that emits no work. SQL can contain several statements;
+	// native operations occupy a whole execution unit. SQL separators belong to
+	// the fragments, so a SQL-only batch joins into a complete script.
+	Fragments []Fragment
 	// ExecutableUnits means each nonempty fragment is already one exact
 	// execution unit. Consumers must preserve its bytes and boundary rather
 	// than split it with a host SQL grammar. Script concatenation must still
@@ -55,9 +55,34 @@ type Result struct {
 }
 
 // SQL joins the ordered fragments without adding separators or changing bytes.
-// The zero result produces an empty string. This method does not validate a
-// reply; consumers obtain validated results through Render or call Validate.
-func (r Result) SQL() string { return strings.Join(r.Fragments, "") }
+// An invalid result or any native operation returns no SQL. Native consumers
+// use Fragments and preserve their operation payloads.
+func (r Result) SQL() (string, error) {
+	fragments, err := r.SQLFragments()
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(fragments, ""), nil
+}
+
+// SQLFragments returns the complete SQL projection, preserving node boundaries.
+// A native operation refuses the whole projection; no SQL prefix is returned.
+func (r Result) SQLFragments() ([]string, error) {
+	if err := r.Validate(len(r.Fragments)); err != nil {
+		return nil, err
+	}
+	if len(r.Diagnostics) != 0 {
+		return nil, fmt.Errorf("%w: refused batch has no SQL projection", ErrInvalidResult)
+	}
+	fragments := make([]string, len(r.Fragments))
+	for i, fragment := range r.Fragments {
+		if fragment.Native != nil {
+			return nil, fmt.Errorf("%w: input %d", ErrNativeSQL, i)
+		}
+		fragments[i] = fragment.SQL
+	}
+	return fragments, nil
+}
 
 // Validate checks that the reply accounts for every requested input node and
 // that omission records are well formed. Invalid replies satisfy
@@ -86,6 +111,14 @@ func (r Result) Validate(nodes int) error {
 	}
 	if len(r.Fragments) != nodes {
 		return fmt.Errorf("%w: expected %d node fragments, received %d", ErrInvalidResult, nodes, len(r.Fragments))
+	}
+	for i, fragment := range r.Fragments {
+		if err := fragment.Validate(); err != nil {
+			return fmt.Errorf("%w: input %d: %w", ErrInvalidResult, i, err)
+		}
+		if fragment.Native != nil && !r.ExecutableUnits {
+			return fmt.Errorf("%w: native input %d is not an execution unit", ErrInvalidResult, i)
+		}
 	}
 	return validateOmissions(r.Omissions)
 }
@@ -129,6 +162,15 @@ func Render(ctx context.Context, service Service, request Request) (Result, erro
 		return Result{}, newBatchRefusal(request.Target, inputs, result.Diagnostics)
 	}
 	result.Fragments = slices.Clone(result.Fragments)
+	for i := range result.Fragments {
+		result.Fragments[i], err = result.Fragments[i].Clone()
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	result.Omissions = slices.Clone(result.Omissions)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }

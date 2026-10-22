@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/atlascompat"
 	"ptah.run/core/platform/capability"
@@ -48,7 +49,7 @@ func assertOwnedSchemaEntryPoints(c *qt.C, database *schemamodel.Database, caps 
 	c.Assert(err, qt.IsNil)
 	direct, err := runtime.Render(c.Context(), renderer.Request{Target: "ydb", Capabilities: caps, Nodes: list.Statements})
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.TrimSpace(direct.SQL()), qt.Equals, strings.TrimSpace(strings.Join(rendered.Statements, "")))
+	c.Assert(strings.TrimSpace(must.Must(direct.SQL())), qt.Equals, strings.TrimSpace(strings.Join(rendered.Statements, "")))
 	c.Assert(database.FeatureObjects.Len(), qt.Equals, 1)
 	c.Assert(database.Tables, qt.HasLen, 1)
 }

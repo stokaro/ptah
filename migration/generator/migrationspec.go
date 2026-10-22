@@ -289,7 +289,11 @@ func renderGeneratedDownMigrationSQL(
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(output.SQL(), plan.Dialect)
+	sql, err := output.SQL()
+	if err != nil {
+		return "", err
+	}
+	statements := sqlutil.SplitSQLStatementsForDialect(sql, plan.Dialect)
 	if len(statements) == 0 {
 		return fmt.Sprintf(
 			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
@@ -321,7 +325,11 @@ func renderGeneratedMigrationSQL(
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(rawSQL.SQL(), dialect)
+	sql, err := rawSQL.SQL()
+	if err != nil {
+		return "", err
+	}
+	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		return "", nil
 	}

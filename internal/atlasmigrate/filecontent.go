@@ -352,7 +352,11 @@ func renderMigrationStatements(ctx context.Context, service renderer.Service, di
 	if err != nil {
 		return nil, err
 	}
-	return sqlutil.SplitSQLStatements(output.SQL()), nil
+	sql, err := output.SQL()
+	if err != nil {
+		return nil, err
+	}
+	return sqlutil.SplitSQLStatements(sql), nil
 }
 
 // splitNoTransactionPlanNodes partitions the planned nodes into statements

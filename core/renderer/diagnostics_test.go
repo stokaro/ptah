@@ -78,8 +78,8 @@ func TestRenderRejectsMalformedRefusalReplies(t *testing.T) {
 		result renderer.Result
 	}{
 		{name: "no completion", result: renderer.Result{Diagnostics: refusal}},
-		{name: "SQL prefix", result: renderer.Result{Complete: true, Diagnostics: refusal, Fragments: []string{"prefix"}}},
-		{name: "empty fragment", result: renderer.Result{Complete: true, Diagnostics: refusal, Fragments: []string{""}}},
+		{name: "SQL prefix", result: renderer.Result{Complete: true, Diagnostics: refusal, Fragments: renderer.SQLFragments([]string{"prefix"})}},
+		{name: "empty fragment", result: renderer.Result{Complete: true, Diagnostics: refusal, Fragments: renderer.SQLFragments([]string{""})}},
 		{name: "omissions", result: renderer.Result{Complete: true, Diagnostics: refusal, Omissions: []renderer.Omission{{Dialect: "custom", Kind: "table", Reason: "unsupported"}}}},
 		{name: "negative input", result: renderer.Result{Complete: true, Diagnostics: []renderer.Diagnostic{{Problem: problem, Input: new(-1)}}}},
 		{name: "absent input", result: renderer.Result{Complete: true, Diagnostics: []renderer.Diagnostic{{Problem: problem, Input: new(1)}}}},

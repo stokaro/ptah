@@ -28,7 +28,11 @@ func renderProbe(ctx context.Context, service renderer.Service, info catalog.Ser
 	if len(result.Omissions) != 0 {
 		return renderer.Result{}, false, nil
 	}
-	for _, fragment := range result.Fragments {
+	fragments, err := result.SQLFragments()
+	if err != nil {
+		return renderer.Result{}, false, err
+	}
+	for _, fragment := range fragments {
 		if strings.TrimSpace(fragment) == "" {
 			return renderer.Result{}, false, nil
 		}

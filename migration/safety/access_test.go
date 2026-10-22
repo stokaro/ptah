@@ -203,7 +203,7 @@ func TestAssessRendered_FoldsTheAccessEffectIntoEveryStatementItRendered(t *test
 	access := schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "a permissive policy admits more rows"}
 	nodes := []ast.Node{&ast.ExtensionStatement{Payload: &accessPayload{effect: addsObject, access: access}}}
 	service := selectedRendering(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
-		return renderer.Result{Complete: true, Fragments: []string{"CREATE POLICY p ON t; COMMENT ON POLICY p ON t IS 'x';"}}, nil
+		return renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"CREATE POLICY p ON t; COMMENT ON POLICY p ON t IS 'x';"})}, nil
 	})
 	assessments, err := safety.AssessRenderedWithCapabilities(t.Context(), service, nodes, "postgres", capability.ForDialect("postgres"))
 	c.Assert(err, qt.IsNil)
@@ -235,7 +235,7 @@ func (r *policyRenderer) Render(_ context.Context, request renderer.Request) (re
 	r.batches = append(r.batches, request.Nodes)
 	result := renderer.Result{Complete: true}
 	for _, node := range request.Nodes {
-		result.Fragments = append(result.Fragments, r.fragment(node))
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: r.fragment(node)})
 	}
 	return result, nil
 }

@@ -32,7 +32,7 @@ func plannedVerdicts(c *qt.C, service renderer.Service, dialect string, nodes []
 	plan := planner.RenderedPlan{Request: request, Result: result, Dialect: dialect}
 	var statements []string
 	var statementNodes []int
-	for _, statement := range plan.PlannedStatements() {
+	for _, statement := range must.Must(plan.PlannedStatements()) {
 		statements = append(statements, statement.SQL)
 		statementNodes = append(statementNodes, statement.Node)
 	}

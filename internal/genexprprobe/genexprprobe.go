@@ -83,7 +83,11 @@ func For(ctx context.Context, service renderer.Service, dialect string, caps cap
 	if len(result.Omissions) != 0 {
 		return nil, fmt.Errorf("%w: generated-expression probe rendering omitted declarations", ptaherr.ErrUnsupportedFeature)
 	}
-	for index, fragment := range result.Fragments {
+	fragments, err := result.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
+	for index, fragment := range fragments {
 		// Oracle's driver refuses a terminator on a single statement.
 		statement := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(fragment), ";"))
 		if statement == "" {

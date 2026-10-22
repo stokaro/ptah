@@ -79,7 +79,11 @@ func RenderSQLReportingOmissions(
 	if err != nil {
 		return "", nil, err
 	}
-	return output.SQL(), output.Omissions, nil
+	sql, err := output.SQL()
+	if err != nil {
+		return "", nil, err
+	}
+	return sql, output.Omissions, nil
 }
 
 // publicOmissions stamps the target onto each record and converts it.
@@ -150,7 +154,10 @@ func renderNodeReporting(
 		reporter.ReportOmissionsTo(sink)
 	}
 	result, err := renderNodes(ctx, r, node)
-	return result.SQL(), err
+	if err != nil {
+		return "", err
+	}
+	return result.SQL()
 }
 
 // recordOwnedOmissions asks the selected owners what preparation removes.

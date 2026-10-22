@@ -893,9 +893,18 @@ capabilities. `engine.New` freezes the caller's provider selection and rejects
 conflicting target names or aliases. An empty runtime has no built-ins.
 `Runtime.Render` propagates service failures and cancellation without partial
 SQL. An accepted result sets `Complete` and contains one `Fragments` entry per
-input node, including
-empty entries for nodes that emit nothing. A fragment can contain several
-statements. `Result.SQL()` joins them without adding separators. Use
+input node. A `renderer.Fragment` holds SQL text or a typed native operation,
+never both. Empty SQL accounts for a node that emits nothing. SQL fragments
+can contain several statements. `ExecutableUnits` preserves exact operation
+boundaries and is required for native fragments. The boundary clones native
+payloads and refuses invalid clones.
+
+`Result.SQL()` joins SQL without adding separators and returns an error if any
+fragment is native or the result is invalid. `Result.SQLFragments()` preserves
+node boundaries and has the same refusal. Both return no prefix on failure.
+`renderer.SQLFragments` wraps existing SQL text without parsing it. Persisting
+native fragments requires the selected operation codec; default JSON encoding
+refuses them. Use
 `renderer.Render` to invoke a selected service and reject incomplete replies;
 `Runtime.Render` applies the same check. Providers may work in process without
 serialization. `engine/builtin.New` selects the bundled implementations.
@@ -2794,14 +2803,20 @@ codec, so only a diff assembled by hand carries one.
 
 `migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
 once and returns a `RenderedPlan`: the rendering request, which holds the
-planned nodes, and one fragment per node. `PlannedStatements` splits it one
+planned nodes, and one fragment per node. `Units()` returns SQL or native
+operations with their input-node indexes. It clones native payloads and retains
+exact execution boundaries. SQL scripts use the target's statement splitter.
+
+`PlannedStatements` requires a complete SQL projection. It splits it one
 fragment at a time and gives each statement the index of the node that
 rendered it, or -1 for a comment no statement follows. A comment-only piece of
 a fragment joins the next statement and takes its node, and no fragment's
 statements run into the next fragment's. `Statements` is the SQL of
 `PlannedStatements`, and `SQL` the joined script; they are what
 `GenerateSchemaDiffSQLStatementsWithOptions` and
-`GenerateSchemaDiffSQLWithOptions` return for the same input.
+`GenerateSchemaDiffSQLWithOptions` return for the same input. These SQL
+projections now return errors and refuse native operations without returning a
+partial plan. This changes the Go API; pre-v1, so no compatibility is owed.
 
 `safety.OwnerVerdicts` takes the planned nodes and that provenance and returns,
 position for position, the verdict of the owner operation that rendered each

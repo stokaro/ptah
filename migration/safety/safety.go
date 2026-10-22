@@ -282,6 +282,10 @@ func AssessRenderedWithCapabilities(
 	if err != nil {
 		return nil, err
 	}
+	_, err = result.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
 	rendered := make([][]string, len(units))
 	var all []string
 	for i := range units {
@@ -357,9 +361,13 @@ func assessmentUnits(
 	if err != nil {
 		return nil, err
 	}
+	fragments, err := rendered.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
 	filled := make(map[ast.Node]bool, len(candidates))
 	for i, node := range candidates {
-		filled[node] = slices.ContainsFunc(sqlutil.SplitSQLStatementsForDialect(rendered.Fragments[i], target), func(statement string) bool {
+		filled[node] = slices.ContainsFunc(sqlutil.SplitSQLStatementsForDialect(fragments[i], target), func(statement string) bool {
 			return hasWordPrefix(rawWords(sqlutil.StripCommentsForDialect(statement, target)), "UPDATE")
 		})
 	}
@@ -1249,7 +1257,7 @@ func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int
 }
 
 func renderedFragmentStatements(result renderer.Result, index int, dialect string) []string {
-	fragment := result.Fragments[index]
+	fragment := result.Fragments[index].SQL
 	if result.ExecutableUnits {
 		if fragment == "" {
 			return nil

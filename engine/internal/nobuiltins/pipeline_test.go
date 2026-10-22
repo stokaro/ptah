@@ -183,7 +183,7 @@ func (w widget) Render(ctx context.Context, request renderer.Request) (renderer.
 				Code: schemavalidation.UnsupportedFeature, Kind: "node", Feature: fmt.Sprintf("%T", node), Message: fmt.Sprintf("the widget target does not render %T", node),
 			}}}}, nil
 		}
-		result.Fragments = append(result.Fragments, fragment+"\n")
+		result.Fragments = append(result.Fragments, renderer.Fragment{SQL: fragment + "\n"})
 	}
 	return result, nil
 }

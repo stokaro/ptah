@@ -54,7 +54,7 @@ func TestGeneratedExpressionProbesUseOneSelectedBatch(t *testing.T) {
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(table.Name, qt.Equals, dbexprprobe.GeneratedExpressionProbeTable(index))
 			c.Assert(table.Columns, qt.HasLen, 2)
-			result.Fragments = append(result.Fragments, fmt.Sprintf("  selected probe %d; \n", index))
+			result.Fragments = append(result.Fragments, renderer.Fragment{SQL: fmt.Sprintf("  selected probe %d; \n", index)})
 		}
 		return result, nil
 	})
@@ -92,16 +92,16 @@ func (tc renderFailure) service(cancel context.CancelFunc) renderer.Service {
 func TestGeneratedExpressionProbesRefuseIncompleteOrLossyRendering(t *testing.T) {
 	failure := errors.New("provider disconnected")
 	for _, test := range []renderFailure{
-		{name: "service failure", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, err: failure, want: failure},
-		{name: "missing completion", result: renderer.Result{Fragments: []string{"prefix", "second"}}, want: renderer.ErrInvalidResult},
-		{name: "missing fragment", result: renderer.Result{Complete: true, Fragments: []string{"prefix"}}, want: renderer.ErrInvalidResult},
-		{name: "empty fragment", result: renderer.Result{Complete: true, Fragments: []string{"prefix", " ; \n"}}, want: renderer.ErrInvalidResult},
-		{name: "omission", result: renderer.Result{Complete: true, Fragments: []string{"prefix", "second"},
+		{name: "service failure", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, err: failure, want: failure},
+		{name: "missing completion", result: renderer.Result{Fragments: renderer.SQLFragments([]string{"prefix", "second"})}, want: renderer.ErrInvalidResult},
+		{name: "missing fragment", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix"})}, want: renderer.ErrInvalidResult},
+		{name: "empty fragment", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix", " ; \n"})}, want: renderer.ErrInvalidResult},
+		{name: "omission", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix", "second"}),
 			Omissions: []renderer.Omission{{Dialect: "oracle", Kind: "column", Reason: "unsupported", Property: "expression"}}}, want: ptaherr.ErrUnsupportedFeature},
 		{name: "refusal", result: renderer.Result{Complete: true, Diagnostics: []renderer.Diagnostic{{Problem: schemavalidation.Diagnostic{
 			Code: schemavalidation.InvalidSchema, Kind: "column", Message: "invalid expression",
 		}, Input: new(1)}}}, want: ptaherr.ErrInvalidSchemaDiff},
-		{name: "cancellation", result: renderer.Result{Complete: true, Fragments: []string{"prefix", "second"}}, cancel: true, want: context.Canceled},
+		{name: "cancellation", result: renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"prefix", "second"})}, cancel: true, want: context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
