@@ -58,6 +58,7 @@ type Server struct {
 	FeaturePlanner  provider.FeaturePlanner
 	TablePreparer   provider.TablePreparer
 	TableCreations  provider.TableCreationProjector
+	SchemaValidator provider.SchemaValidator
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -87,6 +88,7 @@ func (s Server) Validate() error {
 		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
 		{provider.PrepareTablesFeature, !nilService(s.TablePreparer)},
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
+		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

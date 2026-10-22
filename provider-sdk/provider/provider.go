@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 23
+const Revision uint32 = 24
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -113,21 +113,8 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 }
 
 func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
-	if slices.Contains(engine.GetFeatures(), ProjectTableCreationsFeature) {
-		if !slices.Contains(description.GetFeatures(), ProjectTableCreationsFeature) {
-			return fmt.Errorf("%w: engine creation projection requires its service", ErrProtocol)
-		}
-		if slices.Contains(engine.GetFeatures(), CommonTableIdentityFeature) {
-			return fmt.Errorf("%w: engine cannot select both identity and owned creation projection", ErrProtocol)
-		}
-	}
-	if slices.Contains(engine.GetFeatures(), PrepareTablesFeature) {
-		if !slices.Contains(description.GetFeatures(), PrepareTablesFeature) {
-			return fmt.Errorf("%w: engine preparation requires the table preparation service", ErrProtocol)
-		}
-		if slices.Contains(engine.GetFeatures(), CommonTableIdentityFeature) {
-			return fmt.Errorf("%w: engine cannot select both identity and owned table preparation", ErrProtocol)
-		}
+	if err := validateOwnedSchemaServices(description, engine); err != nil {
+		return err
 	}
 	if slices.Contains(engine.GetFeatures(), MetadataFeature) && !slices.Contains(description.GetFeatures(), MetadataFeature) {
 		return fmt.Errorf("%w: engine metadata requires the metadata service", ErrProtocol)
@@ -154,6 +141,9 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 }
 
 func validateSemanticServices(value *protocol.Description) error {
+	if slices.Contains(value.GetFeatures(), ValidateSchemaFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: schema validation requires value normalization", ErrProtocol)
+	}
 	if slices.Contains(value.GetFeatures(), ProjectTableCreationsFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: creation projection requires value normalization", ErrProtocol)
 	}
@@ -349,4 +339,21 @@ func CheckExecution(units int, result *protocol.Execution) error {
 		return unknown
 	}
 	return &ExecutionError{Outcome: result.GetOutcome(), Applied: count}
+}
+
+// The common identity policy supplies these services as a single contract.
+// An owned implementation must be advertised separately and cannot overlap it.
+func validateOwnedSchemaServices(description *protocol.Description, engine *protocol.Engine) error {
+	for _, feature := range []string{PrepareTablesFeature, ProjectTableCreationsFeature, ValidateSchemaFeature} {
+		if !slices.Contains(engine.GetFeatures(), feature) {
+			continue
+		}
+		if !slices.Contains(description.GetFeatures(), feature) {
+			return fmt.Errorf("%w: engine %s requires its service", ErrProtocol, feature)
+		}
+		if slices.Contains(engine.GetFeatures(), CommonTableIdentityFeature) {
+			return fmt.Errorf("%w: engine cannot select both identity and owned %s", ErrProtocol, feature)
+		}
+	}
+	return nil
 }

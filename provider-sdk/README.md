@@ -36,6 +36,9 @@ compare schemas, order migration dependencies, or maintain migration history.
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
+| `PrepareTables` | Complete prepared key membership and declared facet adjustments from captured table state. |
+| `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
+| `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
 | `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
@@ -409,7 +412,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 23 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 24 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
@@ -679,3 +682,23 @@ migration error contract. Failed transaction-bound tag operations prevent commit
 rollback and reader cleanup remain available. The common migrator retains its
 best-effort journal policy. Published-module adoption and official-engine
 qualification remain required under #4204.
+
+## Offline schema validation
+
+`schema.validate` selects `ValidateSchema` independently of rendering, table
+preparation, and CREATE prediction. Each supporting engine declares the service.
+It requires value normalization and cannot be combined with the common table
+identity policy.
+
+The request retains captured table declarations and identities, namespace settings,
+enums, native objects and facets, coverage limits, dependencies, identifier rules,
+capabilities, and `no_skipped`. Providers validate those facts without inspecting a
+server or reopening source files. The host refuses populated declarations its
+adapter cannot represent before dispatch; it also refuses orphaned or ambiguously
+attached fields, indexes, constraints, and triggers.
+
+The result distinguishes completed semantic refusals from failure to perform the
+check. Diagnostics use `INVALID_SCHEMA`, `UNSUPPORTED_FEATURE`, or
+`OMITTED_DECLARATION`, with a kind and message. Malformed replies, cancellation,
+and RPC errors discard all diagnostics. Empty schemas still require a completed
+reply. Validation does not authorize execution or establish object existence.

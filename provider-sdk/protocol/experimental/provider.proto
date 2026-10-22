@@ -21,6 +21,7 @@ service Provider {
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
   rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
   rpc ProjectTableCreations(ProjectTableCreationsRequest) returns (ProjectedTableCreations);
+  rpc ValidateSchema(ValidateSchemaRequest) returns (SchemaValidation);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -1475,3 +1476,58 @@ message ProjectedTableCreations {
   bool complete = 1;
   repeated ProjectedTableCreation tables = 2;
 }
+
+// ValidateSchema checks a complete captured declaration offline. Validation
+// neither renders a plan nor establishes that any object exists on a server.
+message ValidateSchemaRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated ValidationTable tables = 5;
+  repeated DeclaredNamespace namespaces = 6;
+  repeated DeclaredEnum enums = 7;
+  CapturedFeatures features = 8;
+  bool no_skipped = 9;
+  repeated SchemaCoverageLimit not_described = 10;
+  map<string, SchemaDependencies> dependencies = 11;
+}
+message ValidationTable {
+  ComparisonIdentity subject = 1;
+  DeclaredTable declaration = 2;
+}
+message DeclaredNamespace {
+  ComparisonIdentity subject = 1;
+  string name = 2;
+  string comment = 3;
+  string charset = 4;
+  string collation = 5;
+}
+// Diagnostics describe a completed semantic check. Transport or owner failures
+// are RPC errors and never successful replies containing a partial diagnostic set.
+message SchemaValidation {
+  bool complete = 1;
+  repeated SchemaDiagnostic diagnostics = 2;
+}
+message SchemaDiagnostic {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    INVALID_SCHEMA = 1;
+    UNSUPPORTED_FEATURE = 2;
+    OMITTED_DECLARATION = 3;
+  }
+  Code code = 1;
+  string kind = 2;
+  string object = 3;
+  string feature = 4;
+  string message = 5;
+}
+
+// Common coverage limits remain evidence limits, never successful validation.
+message SchemaCoverageLimit {
+ string kind = 1;
+ string name = 2;
+ string reason = 3;
+ string provenance = 4;
+}
+message SchemaDependencies { repeated string tables = 1; }

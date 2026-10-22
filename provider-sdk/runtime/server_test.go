@@ -220,3 +220,22 @@ type tableProjector struct{}
 func (*tableProjector) ProjectTableCreations(context.Context, *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {
 	return &protocol.ProjectedTableCreations{Complete: true}, nil
 }
+
+func TestServerRequiresAdvertisedSchemaValidator(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "validation-1", Features: []string{provider.NormalizeValuesFeature}, Engines: []*protocol.Engine{{Id: "test", Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, ValueNormalizer: &normalizer{}, SchemaValidator: &schemaValidator{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = append(description.Features, provider.ValidateSchemaFeature)
+	c.Assert(server.Validate(), qt.IsNil)
+	server.SchemaValidator = (*schemaValidator)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.SchemaValidator = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type schemaValidator struct{}
+
+func (*schemaValidator) ValidateSchema(context.Context, *protocol.ValidateSchemaRequest) (*protocol.SchemaValidation, error) {
+	return &protocol.SchemaValidation{Complete: true}, nil
+}
