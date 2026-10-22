@@ -3,7 +3,6 @@
 package providercli_test
 
 import (
-	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -42,11 +41,24 @@ func TestProviderRefusalReachesTheOperator(t *testing.T) {
 
 	resolved, release, err := devdocker.Resolve(ctx, "docker://fixture/none", devdocker.Options{})
 	var refused *providerhost.DevDatabaseRefusedError
-	c.Assert(errors.As(err, &refused), qt.IsTrue)
+	c.Assert(err, qt.ErrorAs, &refused)
 	c.Assert(refused.Engine, qt.Equals, "fixture")
 	c.Assert(refused.Unavailable, qt.IsFalse)
 	c.Assert(refused.Reason, qt.Contains, "the fixture provisions no database")
 	c.Assert(resolved, qt.Equals, "")
+	release()
+}
+
+func TestProviderUnavailableRuntimeIsReportedAsUnavailable(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "devdb")
+	ctx := devdocker.WithExternal(c.Context(), host.DevDatabases())
+
+	_, release, err := devdocker.Resolve(ctx, "docker://fixture/offline", devdocker.Options{})
+	var refused *providerhost.DevDatabaseRefusedError
+	c.Assert(err, qt.ErrorAs, &refused)
+	c.Assert(refused.Unavailable, qt.IsTrue)
+	c.Assert(err, qt.ErrorMatches, `provider engine fixture cannot provision a dev database now: the fixture runtime is not running`)
 	release()
 }
 

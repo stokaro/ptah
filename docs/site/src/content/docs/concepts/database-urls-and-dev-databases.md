@@ -319,6 +319,14 @@ every connection without a credential, so `docker://ydb` is refused when the
 container runtime is on another machine, where its port would be published on
 every interface of that host.
 
+A `docker://<engine>` URL whose engine belongs to a selected
+[executable provider](../../extend/executable-providers/) goes to that provider
+instead. The provider picks the image, starts the server and removes it when the
+command ends. Ptah records the address it gets back as a server the run owns, as
+for a server it starts itself. A provider that will not provision answers with
+a refusal that says whether it does not serve the request or its runtime is
+unavailable, and the command stops with that reason.
+
 The decision reads what Ptah recorded when it started the server, not the
 URL's spelling. A named server keeps the whole list, since it may hold
 databases and roles that are not the run's. Its refusal names the two ways to

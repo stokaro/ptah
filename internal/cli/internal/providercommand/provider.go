@@ -115,8 +115,8 @@ func targetSelector(cmd *cobra.Command) string {
 		if entry, known := providercatalog.Lookup(value); known {
 			return entry.EngineID
 		}
-		if engine, found := dockerEngine(name, value); found {
-			return engine
+		if named, found := dockerEngine(name, value); found {
+			return named
 		}
 		if scheme, _, found := strings.Cut(value, ":"); found {
 			return strings.ToLower(scheme)
@@ -136,9 +136,9 @@ func dockerEngine(flag, value string) (string, bool) {
 	if !found || flag != "dev-url" {
 		return "", false
 	}
-	engine, _, _ := strings.Cut(rest, "/")
-	engine, _, _ = strings.Cut(engine, "?")
-	return strings.ToLower(engine), engine != ""
+	name, _, _ := strings.Cut(rest, "/")
+	name, _, _ = strings.Cut(name, "?")
+	return strings.ToLower(name), name != ""
 }
 
 func configuredFor(config providerconfig.Configuration, selector string) bool {
@@ -195,8 +195,8 @@ func validateTargets(cmd *cobra.Command, installation providerconfig.Installatio
 			continue
 		}
 		selector := value
-		if engine, found := dockerEngine(name, value); found {
-			selector = engine
+		if named, found := dockerEngine(name, value); found {
+			selector = named
 		} else if entry, found := providercatalog.Lookup(value); found {
 			selector = entry.EngineID
 		} else if scheme, _, found := strings.Cut(value, ":"); found {
