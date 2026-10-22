@@ -261,8 +261,8 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 				ToURLs:  []string{"file://" + path},
 				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil)
-			c.Assert(noop.Statements(), qt.HasLen, 0,
-				qt.Commentf("document:\n%s\nplan:\n%s", document, noop.SQL()))
+			c.Assert(must.Must(noop.Statements()), qt.HasLen, 0,
+				qt.Commentf("document:\n%s\nplan:\n%s", document, must.Must(noop.SQL())))
 
 			target := newInspectLiveConnection(c, ctx, "", nil)
 			plan, err := atlasschema.PlanApply(ctx, target, atlasschema.ApplyOptions{
@@ -270,9 +270,9 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 				Runtime: must.Must(builtin.New())})
 			c.Assert(err, qt.IsNil, qt.Commentf("document:\n%s", document))
 			c.Assert(
-				atlasschema.ApplyStatements(ctx, target, migrator.MigrationTxModeNone, plan.Statements()),
+				atlasschema.ApplyStatements(ctx, target, migrator.MigrationTxModeNone, must.Must(plan.Statements())),
 				qt.IsNil,
-				qt.Commentf("document:\n%s\nplan:\n%s", document, plan.SQL()),
+				qt.Commentf("document:\n%s\nplan:\n%s", document, must.Must(plan.SQL())),
 			)
 
 			c.Assert(readObjectSchemas(c, ctx, target, test.probe), qt.DeepEquals, test.want,

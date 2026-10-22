@@ -78,5 +78,5 @@ func TestPostgreSQLIndexAttributes_ItsOwnSQLDescriptionChangesNothing(t *testing
 		DryRun:  true,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(indexStatements(boundaryStripComments(plan.Statements())), qt.DeepEquals, []string(nil))
+	c.Assert(indexStatements(boundaryStripComments(must.Must(plan.Statements()))), qt.DeepEquals, []string(nil))
 }

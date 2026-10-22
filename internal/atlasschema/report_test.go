@@ -85,14 +85,14 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			name: "applied",
 			evidence: atlasschema.ApplyEvidence{
 				PlanName: "add_orders", PlanDigest: "sha256:" + fmt.Sprintf("%064x", 9),
-				Statements: statements, Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied,
+				Units: atlasschema.SQLApplyUnitReports(statements), Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied,
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeApplied,
 				PlanName:        "add_orders",
 				PlanDigest:      "sha256:" + fmt.Sprintf("%064x", 9),
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 			},
 		},
 		{
@@ -119,32 +119,32 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 		{
 			name: "applied, a declared role withheld",
 			evidence: atlasschema.ApplyEvidence{
-				Statements: statements, Undecided: withheldRoles("reporter"),
+				Units: atlasschema.SQLApplyUnitReports(statements), Undecided: withheldRoles("reporter"),
 				Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied,
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeApplied,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Undecided:       withheldRoles("reporter"),
 			},
 		},
 		{
 			name:     "dry run",
-			evidence: atlasschema.ApplyEvidence{Statements: statements, Completed: atlasschema.ApplyOutcomeDryRun},
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Completed: atlasschema.ApplyOutcomeDryRun},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeDryRun,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 			},
 		},
 		{
 			name:     "confirmation declined",
-			evidence: atlasschema.ApplyEvidence{Statements: statements, Completed: atlasschema.ApplyOutcomeCanceled},
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Completed: atlasschema.ApplyOutcomeCanceled},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeCanceled,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 			},
 		},
 		{
@@ -202,22 +202,22 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 		},
 		{
 			name:     "transaction preflight",
-			evidence: atlasschema.ApplyEvidence{Statements: statements, Err: errs.preflight},
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.preflight},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalTransactionPreflight},
 				Error:           errs.preflight.Error(),
 			},
 		},
 		{
 			name:     "dev database rehearsal",
-			evidence: atlasschema.ApplyEvidence{Statements: statements, Err: errs.simulation},
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.simulation},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalSimulationFailed},
 				Error:           errs.simulation.Error(),
 			},
@@ -233,23 +233,23 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 		},
 		{
 			name:     "an error after dispatch",
-			evidence: atlasschema.ApplyEvidence{Statements: statements, Dispatched: true, Err: errs.plain},
+			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Dispatched: true, Err: errs.plain},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeUnknown,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Error:           errs.plain.Error(),
 			},
 		},
 		{
 			name: "a refusal's type after dispatch",
 			evidence: atlasschema.ApplyEvidence{
-				Statements: statements, Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied, Err: errs.lockTimeout,
+				Units: atlasschema.SQLApplyUnitReports(statements), Dispatched: true, Completed: atlasschema.ApplyOutcomeApplied, Err: errs.lockTimeout,
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
 				Outcome:         atlasschema.ApplyOutcomeUnknown,
-				Statements:      statements,
+				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Error:           errs.lockTimeout.Error(),
 			},
 		},
@@ -422,18 +422,18 @@ func TestReports_WireNames(t *testing.T) {
 		`"plan_fingerprint":"sha256:a","database_fingerprint":"sha256:b"},"error":"e"}`)
 
 	applyReport, err := json.Marshal(atlasschema.ApplyReport{
-		ContractVersion: 2,
+		ContractVersion: 3,
 		Outcome:         atlasschema.ApplyOutcomeUnknown,
 		PlanName:        "p",
 		PlanDigest:      "sha256:d",
-		Statements:      []string{"S"},
+		Units:           atlasschema.SQLApplyUnitReports([]string{"S"}),
 		Undecided:       withheldRoles("r"),
 		Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalLockTimeout},
 		Error:           "e",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(applyReport), qt.Equals, `{"contract_version":2,"outcome":"unknown",`+
-		`"plan_name":"p","plan_digest":"sha256:d","statements":["S"],`+
+	c.Assert(string(applyReport), qt.Equals, `{"contract_version":3,"outcome":"unknown",`+
+		`"plan_name":"p","plan_digest":"sha256:d","units":[{"sql":"S"}],`+
 		`"undecided":{"common":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}]},`+
 		`"refusal":{"code":"lock-timeout"},"error":"e"}`)
 }
@@ -484,7 +484,7 @@ func TestReports_OutcomeAndRefusalValues(t *testing.T) {
 		"stale-plan", "protected-table", "lock-timeout", "transaction-preflight", "simulation-failed",
 	})
 	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 2)
-	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 2)
+	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 3)
 }
 
 // TestDecodePlanFile_HappyPath holds the digest and the plan to the bytes the

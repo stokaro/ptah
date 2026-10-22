@@ -35,8 +35,8 @@ CREATE TABLE users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
-	c.Assert(plan.SQL(), qt.Contains, "CREATE TABLE")
-	c.Assert(plan.SQL(), qt.Contains, "users")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "CREATE TABLE")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "users")
 }
 
 func TestPlanApply_ExcludeFilter(t *testing.T) {
@@ -62,8 +62,8 @@ CREATE TABLE apply_skip (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
-	c.Assert(plan.SQL(), qt.Contains, "apply_keep")
-	c.Assert(plan.SQL(), qt.Not(qt.Contains), "apply_skip")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "apply_keep")
+	c.Assert(must.Must(plan.SQL()), qt.Not(qt.Contains), "apply_skip")
 }
 
 func TestPlanApply_ExcludeFilterIgnoresCurrentObjects(t *testing.T) {
@@ -91,8 +91,8 @@ CREATE TABLE apply_skip (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
-	c.Assert(plan.SQL(), qt.Contains, "apply_keep")
-	c.Assert(plan.SQL(), qt.Not(qt.Contains), "apply_skip")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "apply_keep")
+	c.Assert(must.Must(plan.SQL()), qt.Not(qt.Contains), "apply_skip")
 }
 
 func TestPlanApply_Synced(t *testing.T) {
@@ -116,7 +116,7 @@ CREATE TABLE users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
-	c.Assert(plan.SQL(), qt.Equals, "")
+	c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 }
 
 func TestPlanApply_FailurePath(t *testing.T) {
@@ -127,7 +127,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires database connection")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
-		c.Assert(plan.SQL(), qt.Equals, "")
+		c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 	})
 
 	t.Run("empty desired schema URLs", func(t *testing.T) {
@@ -138,7 +138,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 		plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires desired schema URLs")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
-		c.Assert(plan.SQL(), qt.Equals, "")
+		c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 	})
 }
 
@@ -162,7 +162,7 @@ CREATE TABLE runtime_users (
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
-	c.Assert(plan.SQL(), qt.Contains, "runtime_users")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "runtime_users")
 
 	err = plan.Execute(context.Background())
 	dbschema.CloseAndWarn(conn)
@@ -220,7 +220,7 @@ CREATE TABLE runtime_synced (
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsFalse)
-	c.Assert(plan.SQL(), qt.Equals, "")
+	c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 
 	err = plan.Execute(context.Background())
 	dbschema.CloseAndWarn(conn)
@@ -238,7 +238,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, "schema apply requires database connection")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
-		c.Assert(plan.SQL(), qt.Equals, "")
+		c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 	})
 
 	t.Run("dev URL dialect mismatch", func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 			Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 		c.Assert(plan.HasChanges(), qt.IsFalse)
-		c.Assert(plan.SQL(), qt.Equals, "")
+		c.Assert(must.Must(plan.SQL()), qt.Equals, "")
 	})
 }
 

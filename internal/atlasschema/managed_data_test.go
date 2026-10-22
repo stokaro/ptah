@@ -303,7 +303,7 @@ func applyPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schemamodel.
 	c.Helper()
 	plan, err := atlasschema.PlanApply(context.Background(), conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	for _, statement := range plan.Statements() {
+	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(context.Background(), statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}

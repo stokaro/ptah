@@ -122,7 +122,7 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			// nothing, which is the cheapest way to make a drop order look
 			// correct.
 			c.Assert(plan.HasChanges(), qt.IsTrue)
-			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", must.Must(plan.SQL())))
 
 			// Exit status alone is not convergence: a plan could run and leave
 			// the types on their old shape.
@@ -135,7 +135,7 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			// against the same target, so the plan above was not a churn that
 			// happens to be executable.
 			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
-			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
+			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", must.Must(settled.SQL())))
 		})
 	}
 }
@@ -190,7 +190,7 @@ func TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames(t *testin
 
 			plan := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(plan.HasChanges(), qt.IsTrue)
-			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", must.Must(plan.SQL())))
 
 			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
@@ -198,7 +198,7 @@ func TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames(t *testin
 			c.Assert(findLiveDomain(c, applied.FeatureObjects, test.wantDependent).BaseType, qt.Equals, test.wantDependentType)
 
 			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
-			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
+			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", must.Must(settled.SQL())))
 		})
 	}
 }
@@ -248,7 +248,7 @@ func TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames(t *
 
 			plan := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(plan.HasChanges(), qt.IsTrue)
-			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", must.Must(plan.SQL())))
 
 			applied, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 			c.Assert(err, qt.IsNil)
@@ -256,7 +256,7 @@ func TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames(t *
 			c.Assert(liveCompositeFieldTypes(c, applied.FeatureObjects, test.wantDependent), qt.DeepEquals, test.wantDependentFieldSQL)
 
 			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
-			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
+			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", must.Must(settled.SQL())))
 		})
 	}
 }

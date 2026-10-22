@@ -219,7 +219,7 @@ func TestSchemaApplyRequireApprovalExecutesTheBytesItVerified(t *testing.T) {
 		Outcome:         atlasschema.ApplyOutcomeApplied,
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(approved).String(),
-		Statements:      plan.StatementSQL(),
+		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 	})
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "users"})
 }

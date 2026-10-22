@@ -122,11 +122,11 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
 		"ALTER TABLE asn UPDATE n = '7' WHERE n IS NULL SETTINGS mutations_sync = 2",
 		"ALTER TABLE asn MODIFY COLUMN n Int32 DEFAULT '7'",
 	})
-	for _, statement := range plan.Statements() {
+	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}
@@ -134,7 +134,7 @@ func TestSetNotNullWithADefault_HappyPath(t *testing.T) {
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=7", "2=5"})
 	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(again.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(again.Statements()), qt.HasLen, 0)
 }
 
 // Without a declared default the plan is refused before anything runs, and the
@@ -154,7 +154,7 @@ func TestSetNotNullWithoutADefault_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `(?s).*column asn\.n cannot be made NOT NULL without a default: .*`)
-	c.Assert(plan.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(plan.Statements()), qt.HasLen, 0)
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Nullable(Int32)", "1=NULL", "2=5"})
 }
 
@@ -179,11 +179,11 @@ func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
 		"ALTER TABLE asn DROP COLUMN n",
 		"ALTER TABLE asn ADD COLUMN n Int32 MATERIALIZED id + 1",
 	})
-	for _, statement := range plan.Statements() {
+	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}
@@ -191,5 +191,5 @@ func TestMaterializedColumnMadeNotNull_HappyPath(t *testing.T) {
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=2", "2=3"})
 	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(again.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(again.Statements()), qt.HasLen, 0)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"ptah.run/catalog"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
@@ -16,7 +17,7 @@ import (
 )
 
 func (c applyComputation) executionTransactions() [][]plangraph.Transaction {
-	result := make([][]plangraph.Transaction, len(c.statements))
+	result := make([][]plangraph.Transaction, len(c.units))
 	for i, requirements := range c.transactions {
 		result[i] = slices.Clone(requirements)
 	}
@@ -52,7 +53,11 @@ func checkOwnerTransactionsOpening(requirements [][]plangraph.Transaction, mode 
 // or confirmation. Changed SQL needs a fresh owner assessment when the original
 // plan carries owner requirements; retaining its old facts would judge other SQL.
 func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
-	if sqlText != p.SQL() && hasOwnerTransactions(p.plan.transactions) {
+	original, err := p.SQL()
+	if err != nil {
+		return err
+	}
+	if sqlText != original && hasOwnerTransactions(p.plan.transactions) {
 		return fmt.Errorf("%w: edited SQL with owner transaction requirements needs a new owner assessment", ptaherr.ErrUnsupportedFeature)
 	}
 	return checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn)
@@ -72,8 +77,12 @@ func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error 
 		return fmt.Errorf("schema apply execution requires database connection")
 	}
 	p.conn.SchemaWriter().SetDryRun(false)
-	if sqlText == p.SQL() {
-		return ApplyStatements(ctx, p.conn, p.txMode, p.Statements())
+	original, err := p.SQL()
+	if err != nil {
+		return err
+	}
+	if sqlText == original {
+		return p.Execute(ctx)
 	}
 	return ApplySQL(ctx, p.conn, p.txMode, sqlText)
 }
@@ -109,27 +118,20 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 	return ApplyStatements(ctx, conn, mode, p.StatementSQL())
 }
 
-// captureRenderedStatements keeps SQL, provenance, and owner facts aligned.
-func (c *applyComputation) captureRenderedStatements(plan planner.RenderedPlan, opts ApplyOptions) error {
-	planned, err := plan.PlannedStatements()
+// captureRenderedUnits snapshots the same operation contract used by execution.
+func (c *applyComputation) captureRenderedUnits(info catalog.ServerInfo, plan planner.RenderedPlan) error {
+	captured, err := CaptureApplyPlan(info, plan)
 	if err != nil {
 		return err
 	}
-	c.statements = make([]string, 0, len(planned))
-	statementNodes := make([]int, 0, len(planned))
-	for _, statement := range planned {
-		c.statements = append(c.statements, statement.SQL)
-		statementNodes = append(statementNodes, statement.Node)
-	}
-	c.transactions, err = txrequire.OwnerRequirements(plan.Request.Nodes, statementNodes)
-	if err != nil {
-		return fmt.Errorf("assess owner transaction requirements: %w", err)
-	}
-	if opts.assessOwnedOperations {
-		c.owned, err = safety.OwnerVerdicts(plan.Request.Nodes, statementNodes)
-		if err != nil {
-			return fmt.Errorf("assess owned operations: %w", err)
-		}
-	}
+	c.ApplyPlan = captured
 	return nil
+}
+
+func (c applyComputation) executionAssessments() []safety.StatementAssessment {
+	data := make([]safety.StatementAssessment, len(c.dataStatements))
+	for i, statement := range c.dataStatements {
+		data[i] = safety.StatementAssessment{NodeType: "managed-data", Severity: statement.severity, Reason: statement.reason}
+	}
+	return slices.Insert(slices.Clone(c.owned), c.dataIndex(), data...)
 }

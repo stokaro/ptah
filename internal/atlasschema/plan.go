@@ -248,9 +248,8 @@ func PreparePlanFileReportingUndecided(
 		LocalFilesOnly: true,
 		// A saved plan records each statement's risk, and the risk of an owned
 		// operation is the owner's verdict rather than what its SQL text says.
-		assessOwnedOperations: true,
-		Desired:               opts.Desired,
-		ProjectRoot:           opts.ProjectRoot,
+		Desired:     opts.Desired,
+		ProjectRoot: opts.ProjectRoot,
 
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,
@@ -281,7 +280,11 @@ func PreparePlanFileReportingUndecided(
 		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
-	statements, destructive, err := classifyPlanStatements(ctx, opts.Runtime, computation.statements, conn.Info().Dialect, computation.owned)
+	sqlStatements, err := (ApplyPlan{units: computation.units}).Statements()
+	if err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, err
+	}
+	statements, destructive, err := classifyPlanStatements(ctx, opts.Runtime, sqlStatements, conn.Info().Dialect, computation.owned)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("assess plan safety: %w", err)
 	}

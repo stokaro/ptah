@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/core/plangraph"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -17,7 +18,7 @@ import (
 	"ptah.run/migration/migrator"
 )
 
-// PlanDesiredStateError reports that the plan's SQL does not converge the
+// PlanDesiredStateError reports that the plan does not converge the
 // database to the --to desired state. Phase "rehearsal" means the mismatch
 // was caught on the dev database before the target was touched; phase
 // "post-apply" means the plan executed on the target but the resulting schema
@@ -25,13 +26,13 @@ import (
 type PlanDesiredStateError struct {
 	// Phase is "rehearsal" or "post-apply".
 	Phase string
-	// Drift is Ptah's own DDL describing the remaining differences between
+	// Drift contains the typed operations for the remaining differences between
 	// the reached state and the desired state.
-	Drift []string
+	Drift []renderer.Fragment
 }
 
 func (e *PlanDesiredStateError) Error() string {
-	drift := strings.TrimSpace(FormatMigrationSQL(e.Drift))
+	drift := describeDrift(e.Drift)
 	if e.Phase == "rehearsal" {
 		// The claim is deliberately narrow: the plan was not applied to the
 		// target by this command. Statements that could reach outside the dev
@@ -50,6 +51,20 @@ func (e *PlanDesiredStateError) Error() string {
 		"schema apply --plan end-state verification failed: after applying the plan, the database does not match "+
 			"the --to desired state; the remaining schema drift is:\n%s",
 		drift)
+}
+
+// describeDrift is diagnostic output, never executable SQL. Native operations
+// are named by owner kind instead of being encoded in comments or dropped.
+func describeDrift(units []renderer.Fragment) string {
+	var lines []string
+	for _, unit := range units {
+		if unit.Native != nil {
+			lines = append(lines, "Native operation: "+string(unit.Native.Kind()))
+		} else {
+			lines = append(lines, strings.TrimSpace(unit.SQL))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // IsPlanDesiredStateFailure reports whether err wraps a desired-state
@@ -166,7 +181,7 @@ func RehearsePlanStatements(
 	// Convergence includes the declared rows. A rehearsal whose schema matches
 	// and whose reference table does not is not a rehearsal of the desired
 	// state.
-	if drift := computation.executionStatements(); len(drift) > 0 {
+	if drift := computation.executionUnits(); len(drift) > 0 {
 		return &PlanDesiredStateError{Phase: "rehearsal", Drift: drift}
 	}
 	return nil
@@ -207,7 +222,7 @@ func VerifyAppliedPlanState(
 	if err := computation.undecided.Err(); err != nil {
 		return fmt.Errorf("the plan was applied successfully, but the end-state verification has incomplete evidence: %w", err)
 	}
-	if drift := computation.executionStatements(); len(drift) > 0 {
+	if drift := computation.executionUnits(); len(drift) > 0 {
 		return &PlanDesiredStateError{Phase: "post-apply", Drift: drift}
 	}
 	return nil

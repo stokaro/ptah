@@ -391,8 +391,12 @@ func verifyCommonRewrite(runtime *engine.Runtime) error {
 	if err != nil {
 		return err
 	}
-	if rendered.SQL() != "CREATE WIDGET extra\n" {
-		return fmt.Errorf("rewritten operation lost the accepted common operand: %q", rendered.SQL())
+	sql, err := rendered.SQL()
+	if err != nil {
+		return err
+	}
+	if sql != "CREATE WIDGET extra\n" {
+		return fmt.Errorf("rewritten operation lost the accepted common operand: %q", sql)
 	}
 	return nil
 }

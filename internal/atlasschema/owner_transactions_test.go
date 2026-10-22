@@ -86,7 +86,7 @@ func TestPreparedPlanRefusesOwnerTransactionMismatchBeforeAnyWrite(t *testing.T)
 		t.Run(string(test.requirement)+"/"+string(test.mode), func(t *testing.T) {
 			c := qt.New(t)
 			plan, conn := prepareTransactionPlan(c, test.requirement, test.mode)
-			preflight := plan.PreflightExecution(plan.SQL())
+			preflight := plan.PreflightExecution(must.Must(plan.SQL()))
 			c.Assert(preflight, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			report := atlasschema.NewApplyReport(atlasschema.ApplyEvidence{Err: preflight})
 			c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
@@ -121,7 +121,7 @@ func TestPreparedPlanExecutesCompatibleOwnerRequirements(t *testing.T) {
 func TestEditedOwnerPlanNeedsNewTransactionAssessment(t *testing.T) {
 	c := qt.New(t)
 	plan, conn := prepareTransactionPlan(c, plangraph.TransactionForbidden, migrator.MigrationTxModeNone)
-	edited := plan.SQL() + "CREATE TABLE extra (id INTEGER);"
+	edited := must.Must(plan.SQL()) + "CREATE TABLE extra (id INTEGER);"
 	c.Assert(plan.PreflightExecution(edited), qt.ErrorMatches, ".*new owner assessment.*")
 	c.Assert(plan.ExecuteSQL(c.Context(), edited), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	observed, err := conn.Reader().ReadSchema()
@@ -169,7 +169,7 @@ func TestRehearsalRefusesOwnerRequirementsBeforeOpeningDev(t *testing.T) {
 	c := qt.New(t)
 	plan, conn := prepareTransactionPlan(c, plangraph.TransactionRequired, migrator.MigrationTxModeNone)
 	c.Assert(plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{DevURL: "invalid://must-not-open"}), qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	err := atlasschema.RehearsePlanStatements(c.Context(), conn, plan.Statements(), &schemamodel.Database{}, atlasschema.PlanRehearsalOptions{
+	err := atlasschema.RehearsePlanStatements(c.Context(), conn, must.Must(plan.Statements()), &schemamodel.Database{}, atlasschema.PlanRehearsalOptions{
 		Runtime: must.Must(builtin.New()), DevURL: "invalid://must-not-open", TxMode: migrator.MigrationTxModeNone,
 		OwnerTransactions: [][]plangraph.Transaction{nil, {plangraph.TransactionRequired}},
 	})

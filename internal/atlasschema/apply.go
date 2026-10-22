@@ -13,6 +13,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -89,11 +90,6 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
-	// assessOwnedOperations also attributes the owned feature operations'
-	// verdicts to the statements they rendered, so a saved plan can record
-	// them. It reads the one planning pass: each statement keeps the node whose
-	// fragment rendered it, and nothing is rendered twice.
-	assessOwnedOperations bool
 	// ToSources carries the same desired-state sources as ToURLs, each with the
 	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
 	// is read only on the LocalFilesOnly path, which does not classify and so
@@ -144,8 +140,12 @@ type ApplyOptions struct {
 }
 
 type ApplyPlan struct {
-	statements   []string
+	target       string
+	capabilities capability.Capabilities
+	provider     *PlanProviderBinding
+	units        []renderer.Fragment
 	transactions [][]plangraph.Transaction
+	owned        []safety.StatementAssessment
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -225,15 +225,29 @@ type ApplyRuntimePlan struct {
 }
 
 func (p ApplyPlan) HasChanges() bool {
-	return len(p.statements) > 0
+	return len(p.units) > 0
 }
 
-func (p ApplyPlan) SQL() string {
-	return FormatMigrationSQL(p.statements)
+// SQL projects the complete plan to SQL. Native operations refuse the whole
+// projection; no executable prefix is returned.
+func (p ApplyPlan) SQL() (string, error) {
+	statements, err := p.Statements()
+	if err != nil {
+		return "", err
+	}
+	return FormatMigrationSQL(statements), nil
 }
 
-func (p ApplyPlan) Statements() []string {
-	return slices.Clone(p.statements)
+// Statements returns an independent SQL projection with execution boundaries.
+// A plan containing a native operation returns renderer.ErrNativeSQL.
+func (p ApplyPlan) Statements() ([]string, error) {
+	return (renderer.Result{Complete: true, ExecutableUnits: true, Fragments: p.units}).SQLFragments()
+}
+
+// Units returns independent captured operations in execution order.
+func (p ApplyPlan) Units() ([]renderer.Fragment, error) {
+	units, _, err := cloneApplyUnits(p.units)
+	return units, err
 }
 
 func PlanApply(
@@ -248,18 +262,18 @@ func PlanApply(
 	if err := computation.undecided.Err(); err != nil {
 		return ApplyPlan{}, err
 	}
-	return ApplyPlan{statements: computation.executionStatements(), transactions: computation.executionTransactions()}, nil
+	return computation.executionPlan(), nil
 }
 
-// executionStatements is the DDL followed by the data. A row belongs in a
+// executionUnits is the DDL followed by the data. A row belongs in a
 // table the same plan may be creating or altering, so the schema moves first;
 // within the data, datadiff already orders inserts, updates and deletes.
-func (c applyComputation) executionStatements() []string {
-	data := make([]string, 0, len(c.dataStatements))
+func (c applyComputation) executionUnits() []renderer.Fragment {
+	data := make([]renderer.Fragment, 0, len(c.dataStatements))
 	for _, declared := range c.dataStatements {
-		data = append(data, declared.sql)
+		data = append(data, renderer.Fragment{SQL: declared.sql})
 	}
-	return slices.Insert(slices.Clone(c.statements), c.dataIndex(), data...)
+	return slices.Insert(slices.Clone(c.units), c.dataIndex(), data...)
 }
 
 // dataIndex is where the data goes among the DDL statements: after all of
@@ -273,7 +287,14 @@ func (c applyComputation) executionStatements() []string {
 // suspended too, and the foreign-key check the apply runs before it commits
 // still refuses a row whose reference does not resolve.
 func (c applyComputation) dataIndex() int {
-	return sqliteforeignkeys.AppendIndex(c.statements)
+	statements := make([]string, 0, len(c.units))
+	for _, unit := range c.units {
+		if unit.Native != nil {
+			return len(c.units)
+		}
+		statements = append(statements, unit.SQL)
+	}
+	return sqliteforeignkeys.AppendIndex(statements)
 }
 
 // applyComputation carries a computed schema apply plan together with the
@@ -281,13 +302,7 @@ func (c applyComputation) dataIndex() int {
 // packaging (fingerprints) reuses the exact planning inputs instead of
 // re-reading the database.
 type applyComputation struct {
-	statements   []string
-	transactions [][]plangraph.Transaction
-	// owned holds, position for position with statements, the verdict of
-	// the owned feature operation that rendered each statement, when
-	// [ApplyOptions.assessOwnedOperations] asked; a zero entry is a statement
-	// no owned operation rendered.
-	owned []safety.StatementAssessment
+	ApplyPlan
 	// undecided are the declared objects the comparison withheld because the
 	// read did not describe their kind; see [ApplyRuntimePlan.Undecided].
 	undecided schemadiff.Diagnostics
@@ -423,7 +438,12 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 
+	basePlan, err := captureApplyTarget(conn.Info())
+	if err != nil {
+		return applyComputation{}, err
+	}
 	computation := applyComputation{
+		ApplyPlan:        basePlan,
 		current:          current,
 		desired:          desired,
 		readScope:        read.readScope,
@@ -475,9 +495,9 @@ func computeApplyPlan(
 			diff, info.Dialect, planOptions,
 		)
 		if err != nil {
-			return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
+			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
-		if err := computation.captureRenderedStatements(plan, opts); err != nil {
+		if err := computation.captureRenderedUnits(info, plan); err != nil {
 			return applyComputation{}, err
 		}
 	}
@@ -966,7 +986,7 @@ func PrepareApply(
 	}
 	return ApplyRuntimePlan{
 		runtime:   opts.Runtime,
-		plan:      ApplyPlan{statements: computation.executionStatements(), transactions: computation.executionTransactions()},
+		plan:      computation.executionPlan(),
 		dryRun:    opts.DryRun,
 		conn:      conn,
 		txMode:    opts.TxMode,
@@ -1023,11 +1043,11 @@ func (p ApplyRuntimePlan) HasChanges() bool {
 	return p.plan.HasChanges()
 }
 
-func (p ApplyRuntimePlan) SQL() string {
+func (p ApplyRuntimePlan) SQL() (string, error) {
 	return p.plan.SQL()
 }
 
-func (p ApplyRuntimePlan) Statements() []string {
+func (p ApplyRuntimePlan) Statements() ([]string, error) {
 	return p.plan.Statements()
 }
 
@@ -1040,17 +1060,40 @@ func (p ApplyRuntimePlan) Undecided() schemadiff.Diagnostics {
 	return p.undecided.Clone()
 }
 
-// Execute applies the prepared schema diff. Dry-run and no-op plans return
-// without modifying schema state.
+// Units returns the complete prepared batch with independent native payloads.
+func (p ApplyRuntimePlan) Units() ([]renderer.Fragment, error) { return p.plan.Units() }
+
+// Assessments judges the captured execution units without another rendering
+// pass. Owner facts remain aligned with managed-data operations and SQL.
+func (p ApplyRuntimePlan) Assessments(ctx context.Context, runtime safety.Runtime) ([]safety.StatementAssessment, error) {
+	if p.conn == nil {
+		return nil, errors.New("schema apply assessment requires database connection")
+	}
+	return safety.AssessUnits(ctx, runtime, p.conn.Info().Dialect, p.plan.units, p.plan.owned)
+}
+
+// HasNativeUnits reports whether SQL projection would discard an operation.
+func (p ApplyRuntimePlan) HasNativeUnits() bool {
+	return slices.ContainsFunc(p.plan.units, func(unit renderer.Fragment) bool { return unit.Native != nil })
+}
+
+// Preflight checks the complete captured batch and its transaction requirements
+// without opening a transaction or writing to the database.
+func (p ApplyRuntimePlan) Preflight(ctx context.Context) error {
+	return p.plan.Preflight(ctx, p.conn, p.txMode)
+}
+
+// Execute applies the prepared operations under the captured transaction mode.
+// Dry runs validate the whole batch without changing the database.
 func (p ApplyRuntimePlan) Execute(ctx context.Context) error {
+	if err := p.Preflight(ctx); err != nil {
+		return err
+	}
 	if !p.HasChanges() || p.dryRun {
 		return nil
 	}
-	if p.conn == nil {
-		return errors.New("schema apply execution requires database connection")
-	}
-
-	return p.ExecuteSQL(ctx, p.SQL())
+	p.conn.SchemaWriter().SetDryRun(false)
+	return p.plan.Execute(ctx, p.conn, p.txMode)
 }
 
 func ApplySQL(
@@ -1160,4 +1203,10 @@ func reportSkipped(diagnostics io.Writer, skipped []schemaext.SkippedObject) {
 	for _, object := range skipped {
 		_, _ = fmt.Fprintln(diagnostics, strings.ToUpper(object.Target)+": "+object.Note())
 	}
+}
+
+func (c applyComputation) executionPlan() ApplyPlan {
+	plan := c.ApplyPlan
+	plan.units, plan.transactions, plan.owned = c.executionUnits(), c.executionTransactions(), c.executionAssessments()
+	return plan
 }

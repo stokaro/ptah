@@ -186,7 +186,7 @@ func oracleDeclaredRowsPlan(
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	name := strings.ToUpper(table)
-	return slices.DeleteFunc(plan.Statements(), func(statement string) bool {
+	return slices.DeleteFunc(must.Must(plan.Statements()), func(statement string) bool {
 		return !strings.Contains(strings.ToUpper(statement), name)
 	})
 }

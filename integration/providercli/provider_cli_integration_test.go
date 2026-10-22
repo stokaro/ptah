@@ -166,7 +166,7 @@ func newProviderCLI(c *qt.C, spec providerhost.Spec) providerCLI {
 	dir := c.TempDir()
 	f := providerCLI{manifestPath: filepath.Join(dir, "providers.json"), pidPath: filepath.Join(dir, "provider.pid"), databasePath: filepath.Join(dir, "database.db"), schemaPath: filepath.Join(dir, "schema.yaml"), planPath: filepath.Join(dir, "change.plan.json")}
 	f.address = (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(f.databasePath), "/")}).String()
-	spec.Environment = []string{"PTAH_FIXTURE_PID_FILE=" + f.pidPath}
+	spec.Environment = append(spec.Environment, "PTAH_FIXTURE_PID_FILE="+f.pidPath)
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion, Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: "fixture"}}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifestPath, manifest, 0o600), qt.IsNil)

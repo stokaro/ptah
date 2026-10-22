@@ -374,7 +374,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.HasChanges(), qt.IsTrue)
-	c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+	c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", must.Must(plan.SQL())))
 
 	replayed, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), target, nil)
 	c.Assert(err, qt.IsNil)

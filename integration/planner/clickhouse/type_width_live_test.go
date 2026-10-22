@@ -8,6 +8,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/dbschema"
 )
@@ -94,14 +95,14 @@ func TestTypeWidthChange_HappyPath(t *testing.T) {
 
 			plan, err := planFromFile(c, ctx, conn, "schema.sql", source)
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Statements(), qt.DeepEquals, []string{test.want})
-			applyPlan(c, ctx, conn, plan.Statements())
+			c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{test.want})
+			applyPlan(c, ctx, conn, must.Must(plan.Statements()))
 
 			c.Assert(widColumnType(c, ctx, conn), qt.Equals, test.wantType)
 			c.Assert(widValues(c, ctx, conn), qt.DeepEquals, test.wantValues)
 			again, err := planFromFile(c, ctx, conn, "schema.sql", source)
 			c.Assert(err, qt.IsNil)
-			c.Assert(again.Statements(), qt.HasLen, 0)
+			c.Assert(must.Must(again.Statements()), qt.HasLen, 0)
 		})
 	}
 }
@@ -145,13 +146,13 @@ func TestTypeSpelledAnotherWay_PlansNothing(t *testing.T) {
 			source := "CREATE TABLE wid (id Int32, d " + test.declared + ") ENGINE = MergeTree ORDER BY id;\n"
 			created, err := planFromFile(c, ctx, conn, "schema.sql", source)
 			c.Assert(err, qt.IsNil)
-			applyPlan(c, ctx, conn, created.Statements())
+			applyPlan(c, ctx, conn, must.Must(created.Statements()))
 			c.Assert(widColumnType(c, ctx, conn), qt.Equals, test.wantType)
 
 			plan, err := planFromFile(c, ctx, conn, "schema.sql", source)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Statements(), qt.HasLen, 0)
+			c.Assert(must.Must(plan.Statements()), qt.HasLen, 0)
 		})
 	}
 }

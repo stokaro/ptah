@@ -573,7 +573,7 @@ func boundaryApplyBack(c *qt.C, conn *dbschema.DatabaseConnection, document stri
 		IgnoreUnknownHCLNames: compatibility,
 		Runtime:               must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	return boundaryStripComments(plan.Statements())
+	return boundaryStripComments(must.Must(plan.Statements()))
 }
 
 func boundaryDocumentFile(c *qt.C, document string) string {

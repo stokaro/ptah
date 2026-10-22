@@ -343,7 +343,7 @@ func TestProviderPreparedApplyPreservesLiveFactsAndTransactionRequirements(t *te
 		Runtime: runtime, Desired: desiredProviderColumn(), TxMode: migrator.MigrationTxModeFile,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.PreflightExecution(plan.SQL()), qt.ErrorMatches, ".*requires execution outside a transaction.*")
+	c.Assert(plan.PreflightExecution(must.Must(plan.SQL())), qt.ErrorMatches, ".*requires execution outside a transaction.*")
 	c.Assert(plan.Execute(c.Context()), qt.ErrorMatches, ".*requires execution outside a transaction.*")
 	observed, err := connection.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)

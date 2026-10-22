@@ -299,7 +299,7 @@ func TestSchemaApplyJSONReportsAnAppliedPlan(t *testing.T) {
 		Outcome:         atlasschema.ApplyOutcomeApplied,
 		PlanName:        plan.Name,
 		PlanDigest:      fileDigest(c, planPath),
-		Statements:      plan.StatementSQL(),
+		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 	})
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"orders", "users"})
 	c.Assert(stderr, qt.Contains, "Schema apply completed successfully.")
@@ -324,7 +324,7 @@ func TestSchemaApplyJSONDryRunVerifiesThePlanAndChangesNothing(t *testing.T) {
 		Outcome:         atlasschema.ApplyOutcomeDryRun,
 		PlanName:        plan.Name,
 		PlanDigest:      fileDigest(c, planPath),
-		Statements:      plan.StatementSQL(),
+		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 	})
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }
@@ -351,7 +351,7 @@ func TestSchemaApplyJSONReportsAStalePlan(t *testing.T) {
 	c.Assert(report.Refusal.DatabaseFingerprint, qt.Matches, `sha256:[0-9a-f]{64}`)
 	c.Assert(report.Refusal.DatabaseFingerprint, qt.Not(qt.Equals), plan.FromFingerprint)
 	c.Assert(report.PlanDigest, qt.Equals, fileDigest(c, planPath))
-	c.Assert(report.Statements, qt.IsNil)
+	c.Assert(report.Units, qt.IsNil)
 	c.Assert(report.Error, qt.Equals, err.Error())
 	c.Assert(stderr, qt.Contains, "error: pre-planned migration is stale")
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"drifted", "users"})
@@ -427,8 +427,8 @@ func TestSchemaApplyJSONReportsADeclinedConfirmation(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeCanceled)
-	c.Assert(report.Statements, qt.HasLen, 1)
-	c.Assert(report.Statements[0], qt.Contains, `CREATE TABLE "orders"`)
+	c.Assert(report.Units, qt.HasLen, 1)
+	c.Assert(report.Units[0].SQL, qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(stderr, qt.Contains, "Apply these schema changes? Type 'YES' to confirm: Schema apply canceled.")
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }
@@ -456,7 +456,7 @@ func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
 		Outcome:         atlasschema.ApplyOutcomeUnknown,
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(document).String(),
-		Statements:      plan.StatementSQL(),
+		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
 		Error:           err.Error(),
 	})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
@@ -517,8 +517,7 @@ func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
 	c.Assert(report.Error, qt.Equals, err.Error())
-	c.Assert(report.Statements, qt.Contains,
-		`INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`)
+	c.Assert(report.Units, qt.Contains, atlasschema.ApplyUnitReport{SQL: `INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
 }
 
@@ -630,7 +629,7 @@ func TestSchemaApplyJSONReportsASimulationFailure(t *testing.T) {
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
 	c.Assert(report.Refusal, qt.DeepEquals, &atlasschema.Refusal{Code: atlasschema.RefusalSimulationFailed})
 	c.Assert(report.Error, qt.Equals, err.Error())
-	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr, qt.Not(qt.Contains), "Auto-approval enabled")
 
 	control, controlStderr, err := runSchemaStreams(args...)

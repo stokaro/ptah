@@ -641,7 +641,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 		if !plan.HasChanges() {
 			if formatOutput {
-				return "", writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, plan.Statements())
+				return "", writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, nil)
 			}
 			// No trailing period, and only on this verb. The pinned community binary
 			// v1.3.0 writes `Schema is synced, no changes to be made\n` here -- 40
@@ -654,15 +654,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "Schema is synced, no changes to be made", nil
 		}
 
-		sqlText := plan.SQL()
-		statements := plan.Statements()
-		if opts.edit {
-			edited, err := editAtlasSchemaApplySQL(cmd.Context(), sqlText)
-			if err != nil {
-				return "", err
-			}
-			sqlText = edited
-			statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
+		sqlText, statements, err := atlasApplySQL(cmd.Context(), plan, opts, conn.Info().Dialect)
+		if err != nil {
+			return "", err
 		}
 		if err := plan.PreflightExecution(sqlText); err != nil {
 			return "", err
@@ -1662,4 +1656,24 @@ func promptAtlasSchemaApplyConfirmation(prompt io.Writer, input io.Reader) (bool
 	}
 	fmt.Fprintln(prompt)
 	return true, nil
+}
+
+// atlasApplySQL refuses native operations before exposing a SQL editing buffer.
+func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts atlasSchemaApplyOptions, dialect string) (string, []string, error) {
+	sqlText, err := plan.SQL()
+	if err != nil {
+		return "", nil, err
+	}
+	statements, err := plan.Statements()
+	if err != nil {
+		return "", nil, err
+	}
+	if opts.edit {
+		sqlText, err = editAtlasSchemaApplySQL(ctx, sqlText)
+		if err != nil {
+			return "", nil, err
+		}
+		statements = atlasschema.SplitApplyStatements(sqlText, dialect)
+	}
+	return sqlText, statements, nil
 }

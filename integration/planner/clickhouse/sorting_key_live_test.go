@@ -96,7 +96,7 @@ func TestSortingKeyIdenticalToTheDeclaration_HappyPath(t *testing.T) {
 			plan, err := planFromFile(c, ctx, conn, test.file, test.source)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(plan.Statements(), qt.HasLen, 0)
+			c.Assert(must.Must(plan.Statements()), qt.HasLen, 0)
 		})
 	}
 }
@@ -124,7 +124,7 @@ func TestSortingKeyChange_FailurePath(t *testing.T) {
 			plan, err := planFromFile(c, ctx, conn, "schema.sql", test.source)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(plan.Statements(), qt.HasLen, 0)
+			c.Assert(must.Must(plan.Statements()), qt.HasLen, 0)
 			var sortingKey, primaryKey string
 			c.Assert(conn.QueryRowContext(ctx,
 				"SELECT sorting_key, primary_key FROM system.tables WHERE database = currentDatabase() AND name = 'asn'",
