@@ -4,12 +4,14 @@ package providercli_test
 
 import (
 	"context"
+	"testing"
+
 	qt "github.com/frankban/quicktest"
+
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
-	"testing"
 )
 
 func validationRequest() schemavalidation.Request {
