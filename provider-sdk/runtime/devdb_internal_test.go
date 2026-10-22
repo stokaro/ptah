@@ -32,7 +32,7 @@ func TestDevClientDiscardsUntrustedReply(t *testing.T) {
 	result, err := client.ProvisionDevDatabase(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(proto.Equal(result, valid), qt.IsTrue)
-	peer.result = &protocol.DevDatabase{Lease: "lease-1", Url: "test://user:secret@localhost/dev"}
+	peer.result = &protocol.DevDatabase{Lease: "lease-1", Url: "test://user:secret@localhost/dev"} // #nosec G101 -- fixture address, not a credential
 	result, err = client.ProvisionDevDatabase(c.Context(), request)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(result, qt.IsNil)
@@ -73,7 +73,7 @@ func TestDevServerReleasesALeaseTheHostNeverReceives(t *testing.T) {
 	c.Assert(owner.released, qt.DeepEquals, []string{"lease-1"})
 
 	owner.afterProvision = func() {}
-	owner.result = &protocol.DevDatabase{Lease: "lease-2", Url: "test://user:secret@localhost/dev"}
+	owner.result = &protocol.DevDatabase{Lease: "lease-2", Url: "test://user:secret@localhost/dev"} // #nosec G101 -- fixture address, not a credential
 	result, err = server.ProvisionDevDatabase(c.Context(), request)
 	c.Assert(status.Code(err), qt.Equals, codes.Internal)
 	c.Assert(result, qt.IsNil)

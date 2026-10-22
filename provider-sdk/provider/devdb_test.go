@@ -114,7 +114,7 @@ func TestDevDatabase_FailurePath(t *testing.T) {
 		{"no address", &protocol.DevDatabase{Lease: "lease-1"}},
 		{"no lease", &protocol.DevDatabase{Url: "grpc://localhost:2136/local"}},
 		{"no scheme", &protocol.DevDatabase{Lease: "lease-1", Url: "//localhost:2136/local"}},
-		{"credentials in the address", &protocol.DevDatabase{Lease: "lease-1", Url: "grpc://user:secret@localhost:2136/local"}},
+		{"credentials in the address", &protocol.DevDatabase{Lease: "lease-1", Url: "grpc://user:secret@localhost:2136/local"}}, // #nosec G101 -- fixture address, not a credential
 		{"refusal with a lease", &protocol.DevDatabase{Lease: "lease-1", Refusal: devRefusal(protocol.DevDatabaseRefusal_UNSUPPORTED, "no").Refusal}},
 		{"refusal with an address", &protocol.DevDatabase{Url: "grpc://localhost", Refusal: devRefusal(protocol.DevDatabaseRefusal_UNSUPPORTED, "no").Refusal}},
 		{"refusal without a kind", devRefusal(protocol.DevDatabaseRefusal_KIND_UNSPECIFIED, "no")},
