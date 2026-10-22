@@ -22,17 +22,22 @@ type owner struct {
 	*backend.Provider
 	operationEnvelope *protocol.Envelope
 	nativeUnits       bool
+	transactionalDDL  bool
 }
 
 func main() {
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
-	if mode != "" && mode != "native" {
+	if mode != "" && mode != "native" && mode != "native-transactional" {
 		panic("unknown fixture render mode")
 	}
-	if mode == "native" {
-		d.SemanticIdentity += "-native-units"
+	if mode != "" {
+		d.SemanticIdentity += "-" + mode
+	}
+	if mode == "native-transactional" {
+		d.Features = append(d.Features, provider.TransactionsFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
 	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
@@ -66,10 +71,14 @@ func main() {
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
-	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode == "native", operationEnvelope: &protocol.Envelope{
+	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "", transactionalDDL: mode == "native-transactional", operationEnvelope: &protocol.Envelope{
 		ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:]),
 	}}
-	if err := runtime.Serve(runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}); err != nil {
+	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
+	if p.transactionalDDL {
+		server.Transactions = p
+	}
+	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

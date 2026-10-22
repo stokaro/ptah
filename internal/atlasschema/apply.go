@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
@@ -33,7 +34,6 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqliteforeignkeys"
-	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
@@ -1092,25 +1092,7 @@ func applyStatements(
 	txMode migrator.MigrationTxMode,
 	statements []string,
 ) error {
-	statements = executableStatements(statements, conn.Info().Dialect)
-	switch txMode {
-	case migrator.MigrationTxModeNone:
-		return executeApplyStatements(ctx, conn.Writer(), statements)
-	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
-		tx, err := sqliterebuild.BeginTransaction(ctx, conn, statements)
-		if err != nil {
-			return fmt.Errorf("begin schema apply transaction: %w", err)
-		}
-		if err := executeApplyStatements(ctx, tx, statements); err != nil {
-			return errors.Join(err, tx.Rollback())
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit schema apply transaction: %w", errors.Join(err, tx.Rollback()))
-		}
-		return nil
-	default:
-		return fmt.Errorf("invalid tx-mode %q", txMode)
-	}
+	return applyUnits(ctx, conn, txMode, renderer.SQLFragments(executableStatements(statements, conn.Info().Dialect)))
 }
 
 func executableStatements(statements []string, dialect string) []string {

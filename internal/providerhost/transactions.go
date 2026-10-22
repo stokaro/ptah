@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 )
 
 func (t *target) supportsTransactions() bool {
@@ -27,7 +28,7 @@ func (s *session) BeginTransaction(ctx context.Context) (catalog.SchemaTransacti
 		return nil, fmt.Errorf("provider session is closed")
 	}
 	if s.IsDryRun() {
-		return dryTransaction{}, nil
+		return dryTransaction{session: s}, nil
 	}
 	if !s.target.supportsTransactions() {
 		return nil, unsupported("transactions for the selected engine")
@@ -82,6 +83,16 @@ func (*transaction) IsDryRun() bool { return false }
 func (t *transaction) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := t.executionReady(ctx); err != nil {
+		return err
+	}
+	if len(args) != 0 {
+		return unsupported("bound SQL parameters")
+	}
+	t.executionErr = t.session.execute(ctx, t.id, sql)
+	return t.executionErr
+}
+func (t *transaction) executionReady(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -94,12 +105,36 @@ func (t *transaction) ExecuteSQL(ctx context.Context, sql string, args ...any) e
 	if t.executionErr != nil {
 		return t.executionErr
 	}
-	if len(args) != 0 {
-		return unsupported("bound SQL parameters")
+	return nil
+}
+
+func (t *transaction) ValidateUnits(ctx context.Context, units []renderer.Fragment) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if err := t.executionReady(ctx); err != nil {
+		return err
 	}
-	t.executionErr = t.session.execute(ctx, t.id, sql)
+	_, err := t.session.prepareUnits(ctx, units)
+	return err
+}
+
+func (t *transaction) ExecuteUnits(ctx context.Context, units []renderer.Fragment) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if err := t.executionReady(ctx); err != nil {
+		return err
+	}
+	prepared, err := t.session.prepareUnits(ctx, units)
+	if err != nil {
+		return err
+	}
+	if len(prepared) == 0 {
+		return nil
+	}
+	t.executionErr = t.session.dispatchUnits(ctx, t.id, prepared)
 	return t.executionErr
 }
+
 func (t *transaction) Commit() error   { return t.finish(protocol.FinishTransactionRequest_COMMIT) }
 func (t *transaction) Rollback() error { return t.finish(protocol.FinishTransactionRequest_ROLLBACK) }
 

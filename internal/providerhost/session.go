@@ -2,7 +2,6 @@ package providerhost
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"slices"
@@ -15,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 )
 
@@ -112,20 +112,14 @@ func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error
 }
 
 func (s *session) execute(ctx context.Context, transactionID, sql string) error {
-	if err := s.lockError(); err != nil {
+	units, err := s.prepareUnits(ctx, []renderer.Fragment{{SQL: sql}})
+	if err != nil {
 		return err
 	}
-	_, err := s.target.host.client.Execute(ctx, &protocol.ExecuteRequest{
-		SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID,
-		Units: []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: sql}}},
-	})
-	if err != nil {
-		return fmt.Errorf("provider execution failed; inspect the database before retrying: %w", nativeOutcomeError(err))
-	}
-	return nil
+	return s.dispatchUnits(ctx, transactionID, units)
 }
 
-type dryTransaction struct{}
+type dryTransaction struct{ session *session }
 
 func (dryTransaction) ExecuteSQL(context.Context, string, ...any) error { return nil }
 func (dryTransaction) IsDryRun() bool                                   { return true }

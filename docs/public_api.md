@@ -5387,3 +5387,24 @@ exist. Operational storage is not added to the desired schema. These checks do
 not intercept direct SQL execution. Experimental SDK revision 21 transports
 these observations; published-module adoption and official YDB classification
 remain required under #4204.
+
+### Provider execution units
+
+`dbschema.UnitExecutor` accepts ordered `renderer.Fragment` batches on a
+selected session or transaction. `ValidateUnits` checks the complete batch
+without writes or transaction creation. `ExecuteUnits` repeats validation
+before dispatch; a local refusal sends no prefix. Native values must retain
+the selected provider's captured executable identity and model binding.
+Dry runs validate but do not dispatch.
+
+Callers own target verification, approval, lock acquisition, and transaction
+policy. The interface does not infer approval or transaction requirements from
+payloads. SQL-only executors must refuse a native batch before executing any
+SQL prefix. A transaction that dispatched a failed execution cannot commit;
+rollback remains available.
+
+`dbschema.UnitExecutionError` records `Applied` and `Total` for a dispatched
+batch. The prefix is acknowledged inside the selected transaction and does not
+prove commit. `Unwrap` retains cancellation and `ptaherr.ErrOutcomeUnknown`.
+Unconfirmed operations may have taken effect. Neither this error nor a
+confirmed prefix authorizes replay.

@@ -21,7 +21,7 @@ import (
 
 const operationModel = schemaext.Kind("example.org/fixture/table-operation")
 
-func operationEnvelope(c *qt.C, runtime *engine.Runtime, name, payload string) schemaext.Envelope {
+func operationEnvelope(c *qt.C, runtime *engine.Runtime, name, payload string, features ...string) schemaext.Envelope {
 	c.Helper()
 	identity, found := runtime.Codecs().Identity(operationModel, schemaext.Operation)
 	c.Assert(found, qt.IsTrue)
@@ -29,15 +29,15 @@ func operationEnvelope(c *qt.C, runtime *engine.Runtime, name, payload string) s
 	var wire map[string]any
 	c.Assert(json.Unmarshal(envelope.Payload, &wire), qt.IsNil)
 	wire["subject"] = map[string]any{"engine": "fixture", "kind": "table", "name": name}
-	wire["features"] = []string{"tables", "columns", "schema.common-table-identity.v1"}
+	wire["features"] = append([]string{"tables", "columns", "schema.common-table-identity.v1"}, features...)
 	data, err := json.Marshal(wire)
 	c.Assert(err, qt.IsNil)
 	envelope.Payload = data
 	return envelope
 }
-func capturedOperation(c *qt.C, runtime *engine.Runtime, name, payload string) ast.ExtensionPayload {
+func capturedOperation(c *qt.C, runtime *engine.Runtime, name, payload string, features ...string) ast.ExtensionPayload {
 	c.Helper()
-	values, err := runtime.Codecs().Decode(c.Context(), []schemaext.Envelope{operationEnvelope(c, runtime, name, payload)})
+	values, err := runtime.Codecs().Decode(c.Context(), []schemaext.Envelope{operationEnvelope(c, runtime, name, payload, features...)})
 	c.Assert(err, qt.IsNil)
 	return values[0].(ast.ExtensionPayload)
 }

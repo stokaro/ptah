@@ -517,11 +517,25 @@ it contains a native operation. Native data never enters a SQL splitter or a
 comment used as an execution instruction. Default JSON encoding refuses native
 fragments; saved operations need the selected codec.
 
-This establishes typed rendering and planned-unit transport. Schema apply,
-saved plan files, migration files, and their risk assessment still consume SQL
-and refuse native execution units. They require coordinated changes before the
-host can execute these units through its commands. The independent provider's
-SDK execution tests do not establish that command path.
+Provider sessions and transactions implement `dbschema.UnitExecutor`. They
+validate the whole batch locally, including captured executable identity and
+model bindings, before sending one execution RPC. Validation failure sends no
+prefix. A dispatched failure retains the acknowledged prefix and any uncertain
+outcome. No mutation is retried. A transaction with failed execution cannot
+commit; rollback remains available.
+
+The shared `atlasschema.ApplyRenderedPlan` path checks the captured target
+capabilities and owner transaction requirements before opening a transaction.
+It preserves exact execution units and refuses a native batch when the selected
+executor cannot accept it. SQL statement application uses the same execution
+path and retains built-in SQLite rebuild handling. Independent process tests
+exercise mixed SQL/native batches, preflight refusal, dry runs, partial
+execution, commit, and rollback.
+
+Command planning, saved plan files, migration files, and their risk assessment
+still consume SQL and refuse native execution units. They require coordinated
+changes before the host can execute these units through its commands. The
+shared apply path does not establish that command path or live YDB support.
 
 Both transport boundaries validate ownership, model definitions, captured
 facts, and input provenance. The server gives owner code a copy, so mutating an
