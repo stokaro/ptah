@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -44,7 +45,12 @@ func split(text string) []*protocol.LintStatement {
 		}
 		end += start + 1
 		first := start + len(text[start:]) - len(strings.TrimLeft(text[start:], " \n"))
-		statements = append(statements, &protocol.LintStatement{Start: uint32(first), End: uint32(end), Line: uint32(1 + strings.Count(text[:first], "\n")), Sql: text[first:end]})
+		statements = append(statements, &protocol.LintStatement{
+			Start: unsigned(first),
+			End:   unsigned(end),
+			Line:  unsigned(1 + strings.Count(text[:first], "\n")),
+			Sql:   text[first:end],
+		})
 		start = end
 	}
 	return statements
@@ -103,4 +109,9 @@ func (*linter) CheckLintMigrations(ctx context.Context, request *protocol.CheckL
 		}
 	}
 	return result, nil
+}
+
+// unsigned converts an offset or count that is never negative and never above the size of the request.
+func unsigned(n int) uint32 {
+	return uint32(min(max(int64(n), 0), math.MaxUint32)) // #nosec G115 -- clamped into range on this line
 }
