@@ -36,6 +36,8 @@ const (
 	Provider_SplitLintStatements_FullMethodName    = "/ptah.provider.experimental.Provider/SplitLintStatements"
 	Provider_AnnotateLintStatements_FullMethodName = "/ptah.provider.experimental.Provider/AnnotateLintStatements"
 	Provider_CheckLintMigrations_FullMethodName    = "/ptah.provider.experimental.Provider/CheckLintMigrations"
+	Provider_ProvisionDevDatabase_FullMethodName   = "/ptah.provider.experimental.Provider/ProvisionDevDatabase"
+	Provider_ReleaseDevDatabase_FullMethodName     = "/ptah.provider.experimental.Provider/ReleaseDevDatabase"
 	Provider_Execute_FullMethodName                = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName       = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName      = "/ptah.provider.experimental.Provider/FinishTransaction"
@@ -78,6 +80,8 @@ type ProviderClient interface {
 	SplitLintStatements(ctx context.Context, in *SplitLintRequest, opts ...grpc.CallOption) (*SplitLint, error)
 	AnnotateLintStatements(ctx context.Context, in *AnnotateLintRequest, opts ...grpc.CallOption) (*AnnotatedLint, error)
 	CheckLintMigrations(ctx context.Context, in *CheckLintRequest, opts ...grpc.CallOption) (*CheckedLint, error)
+	ProvisionDevDatabase(ctx context.Context, in *ProvisionDevRequest, opts ...grpc.CallOption) (*DevDatabase, error)
+	ReleaseDevDatabase(ctx context.Context, in *ReleaseDevRequest, opts ...grpc.CallOption) (*Empty, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
@@ -273,6 +277,26 @@ func (c *providerClient) CheckLintMigrations(ctx context.Context, in *CheckLintR
 	return out, nil
 }
 
+func (c *providerClient) ProvisionDevDatabase(ctx context.Context, in *ProvisionDevRequest, opts ...grpc.CallOption) (*DevDatabase, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DevDatabase)
+	err := c.cc.Invoke(ctx, Provider_ProvisionDevDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReleaseDevDatabase(ctx context.Context, in *ReleaseDevRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Provider_ReleaseDevDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Execution)
@@ -448,6 +472,8 @@ type ProviderServer interface {
 	SplitLintStatements(context.Context, *SplitLintRequest) (*SplitLint, error)
 	AnnotateLintStatements(context.Context, *AnnotateLintRequest) (*AnnotatedLint, error)
 	CheckLintMigrations(context.Context, *CheckLintRequest) (*CheckedLint, error)
+	ProvisionDevDatabase(context.Context, *ProvisionDevRequest) (*DevDatabase, error)
+	ReleaseDevDatabase(context.Context, *ReleaseDevRequest) (*Empty, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
@@ -523,6 +549,12 @@ func (UnimplementedProviderServer) AnnotateLintStatements(context.Context, *Anno
 }
 func (UnimplementedProviderServer) CheckLintMigrations(context.Context, *CheckLintRequest) (*CheckedLint, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckLintMigrations not implemented")
+}
+func (UnimplementedProviderServer) ProvisionDevDatabase(context.Context, *ProvisionDevRequest) (*DevDatabase, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ProvisionDevDatabase not implemented")
+}
+func (UnimplementedProviderServer) ReleaseDevDatabase(context.Context, *ReleaseDevRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReleaseDevDatabase not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -896,6 +928,42 @@ func _Provider_CheckLintMigrations_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ProvisionDevDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProvisionDevRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ProvisionDevDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ProvisionDevDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ProvisionDevDatabase(ctx, req.(*ProvisionDevRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReleaseDevDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseDevRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReleaseDevDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReleaseDevDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReleaseDevDatabase(ctx, req.(*ReleaseDevRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExecuteRequest)
 	if err := dec(in); err != nil {
@@ -1240,6 +1308,14 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckLintMigrations",
 			Handler:    _Provider_CheckLintMigrations_Handler,
+		},
+		{
+			MethodName: "ProvisionDevDatabase",
+			Handler:    _Provider_ProvisionDevDatabase_Handler,
+		},
+		{
+			MethodName: "ReleaseDevDatabase",
+			Handler:    _Provider_ReleaseDevDatabase_Handler,
 		},
 		{
 			MethodName: "Execute",

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"time"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/grpc"
@@ -43,6 +44,15 @@ func callOffline[Q proto.Message, R proto.Message](
 	validateInput func(*protocol.Description, Q) error, validateOutput func(*protocol.Description, Q, R) error,
 	invoke func(context.Context, Q, ...grpc.CallOption) (R, error),
 ) (R, error) {
+	return callWithin(ctx, CallTimeout, description, request, operation, validateInput, validateOutput, invoke)
+}
+
+// callWithin is callOffline with the bound a slow operation needs.
+func callWithin[Q proto.Message, R proto.Message](
+	ctx context.Context, timeout time.Duration, description *protocol.Description, request Q, operation string,
+	validateInput func(*protocol.Description, Q) error, validateOutput func(*protocol.Description, Q, R) error,
+	invoke func(context.Context, Q, ...grpc.CallOption) (R, error),
+) (R, error) {
 	var zero R
 	if err := ctx.Err(); err != nil {
 		return zero, err
@@ -50,7 +60,7 @@ func callOffline[Q proto.Message, R proto.Message](
 	if err := validateInput(description, request); err != nil {
 		return zero, err
 	}
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	result, err := invoke(call, request)
 	if err != nil {

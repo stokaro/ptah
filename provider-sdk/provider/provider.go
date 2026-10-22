@@ -140,6 +140,9 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if err := validateLintRules(description, engine); err != nil {
 		return err
 	}
+	if slices.Contains(engine.GetFeatures(), DevDatabaseFeature) && !slices.Contains(description.GetFeatures(), DevDatabaseFeature) {
+		return fmt.Errorf("%w: engine dev database provisioning requires the service", ErrProtocol)
+	}
 	return validateYAMLSourceKeys(description, engine)
 }
 

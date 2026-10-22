@@ -51,11 +51,19 @@ grant common SQL rendering or native ALTER and DROP support.
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
 declaration does not establish that its migration can be planned or applied.
+
 `lint.migrations` lets a provider own the lint rules of its engine. The provider
 declares the rule catalog in its description, splits migration files with its own
 lexing, and returns findings for the rule codes the host enables. A result that
 is not complete is an error, never a clean run. The host keeps output formats,
 severity thresholds, and suppression.
+
+`database.dev` lets a provider create throwaway databases for its engine. The host
+sends the operator's request as typed and never names an image. The provider
+answers with a lease and an address, or with a typed refusal that says whether the
+request is unsupported or its runtime is unavailable. The host releases the lease
+when it is done, and the provider removes the leases it still holds when its
+process ends.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
