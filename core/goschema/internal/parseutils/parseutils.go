@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/descriptortable"
 )
 
 var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)
@@ -150,6 +151,20 @@ func (p KeyValueParser) isAutoPromotedBoolean(attr string, skip map[string]bool)
 		strings.HasPrefix(attr, "has_")
 }
 
+// propertyShortcutDialects names the dialects whose descriptor reads the
+// `engine` and `comment` shortcuts. A schema's every table and field directive
+// asks, so the names are derived once per registry rather than from a copy of
+// every descriptor on each call.
+var propertyShortcutDialects = descriptortable.NewIndex(func(dialects []descriptor.Dialect) []string {
+	var names []string
+	for _, described := range dialects {
+		if described.Conversion.PropertyShortcuts {
+			names = append(names, described.Name)
+		}
+	}
+	return names
+})
+
 // ParsePlatformSpecific returns a table or field directive's platform
 // overrides: the `engine` and `comment` shortcuts, for every dialect whose
 // descriptor reads them (descriptor.Conversion.PropertyShortcuts: MySQL and
@@ -157,11 +172,7 @@ func (p KeyValueParser) isAutoPromotedBoolean(attr string, skip map[string]bool)
 // precedence.
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
-	for _, described := range platform.Dialects().Dialects() {
-		if !described.Conversion.PropertyShortcuts {
-			continue
-		}
-		dialect := described.Name
+	for _, dialect := range propertyShortcutDialects.Get() {
 		if engine := kv["engine"]; engine != "" {
 			out[dialect] = map[string]string{"engine": engine}
 		}
