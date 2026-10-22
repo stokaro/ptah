@@ -39,6 +39,9 @@ func (h *Host) Provider() engine.Provider {
 		result.Targets = append(result.Targets, selected.registration())
 		selected.registerComparisons(&result)
 		selected.registerPlanning(&result)
+		if selected.supportsLint() {
+			result.Lint = append(result.Lint, selected.lint())
+		}
 		if slices.Contains(h.description.GetFeatures(), provider.ConvertValuesFeature) {
 			if kinds := h.conversionKinds(declared.GetId()); len(kinds) > 0 {
 				result.Conversions = append(result.Conversions, engine.Conversion{Target: declared.GetId(), Kinds: kinds, Service: selected})
@@ -68,6 +71,9 @@ func (t *target) registration() engine.Target {
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ProjectTableCreationsFeature) {
 		result.Creations = t
+	}
+	if t.supportsLint() {
+		result.Annotator = t
 	}
 	return result
 }
