@@ -60,6 +60,9 @@ func (t *target) registration() engine.Target {
 		result.SchemaRendering, result.Validation = t, t
 		result.Preparation, result.Creations = t, t
 	}
+	if slices.Contains(t.engine.GetFeatures(), provider.PrepareTablesFeature) {
+		result.Preparation = t
+	}
 	return result
 }
 
@@ -102,6 +105,9 @@ func (t *target) ValidateSchema(ctx context.Context, request schemavalidation.Re
 }
 
 func (t *target) PrepareTables(ctx context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
+	if slices.Contains(t.engine.GetFeatures(), provider.PrepareTablesFeature) {
+		return t.prepareOwnedTables(ctx, request)
+	}
 	if err := ctx.Err(); err != nil {
 		return schemapreparation.Result{}, err
 	}

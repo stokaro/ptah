@@ -363,7 +363,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 21 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 22 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -1049,8 +1049,8 @@ Provider startup does not require `schema.common-table-identity.v1`. A native
 engine can provide SQL analysis, sessions, history, locks, and metadata without
 promising that the host's common table model captures its semantics.
 
-The host registers schema rendering, validation, table preparation, and creation
-projection only for engines that declare this contract. Shared comparison then
+The host registers schema rendering, validation, identity table preparation, and
+identity creation projection only for engines that declare this contract. Shared comparison then
 refuses a missing preparation service, including for an empty desired schema.
 The common planner refuses table changes without the contract. AST rendering
 also checks before lowering a common table or column operation. Provider-owned
@@ -1066,3 +1066,31 @@ must satisfy the same namespaced identity contract as the engine runtime and
 its model codecs. Repository shorthand is not an executable provider identity.
 This changes the experimental manifest contract; pre-v1, no compatibility with
 the earlier owner spelling is owed. The catalog accepts no alias for it.
+
+
+## Offline table preparation belongs to the selected engine
+
+Experimental revision 22 adds `PrepareTables` behind `schema.prepare-tables`.
+An engine selects this service or the identity contract, never both. The request
+retains full declarations, captured observations, existence knowledge, negotiated
+models, identifier rules, capabilities, and target features. It has no session or
+connection address. Preparation must not inspect a server.
+
+The reply contains ordered table identities, optional authoritative column key
+membership, and resolved values for existing declared facet kinds. It cannot
+change a facet owner, add a kind, restore an excluded kind, change a target
+binding, or replace source and observed state. An empty authoritative key list
+requires a completion receipt. Unknown existence is explicit and requires a
+reason; a missing observation does not establish absence.
+
+SDK request and response validation runs at both process boundaries. The server
+clones the request before invoking owner code so a provider cannot rewrite the
+capture used to accept its reply. Cancellation and any invalid suffix discard
+the complete result. The host applies the returned adjustments to independent
+captures, retaining authored values and knowledge for subsequent comparison.
+
+This service does not grant common SQL rendering or identity CREATE projection.
+The independent fixture verifies transport, retained source bindings and rich
+column data, composite key membership, and whole-batch refusal. Native YDB table
+creation still needs owner-defined CREATE projection and a complete captured
+table handoff to planning. Those remain part of #4204.
