@@ -101,6 +101,9 @@ type IndexGuard interface {
 	ResolveDropped(ctx context.Context, q RowsQueryer, ref IndexRef) (IndexName, bool, error)
 	// Usable reports whether state is an acceptable index on its target.
 	Usable(state IndexState) bool
+	// SameDefinition reports whether the usable index state names has the
+	// definition the CREATE INDEX statement declares.
+	SameDefinition(ctx context.Context, q RowsQueryer, statement string, state IndexState) (bool, error)
 	// ApplyError refuses to apply migration version over unsafe.
 	ApplyError(version int64, unsafe []IndexState) error
 	// RepairError refuses to record migration version over unsafe.

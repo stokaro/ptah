@@ -511,8 +511,17 @@ func (m *Migrator) postgresUnsafeCreateStates(
 		if _, cleaned := dropped[name]; cleaned {
 			continue
 		}
-		if !state.RelationExists || guard.Usable(state) {
+		if !state.RelationExists {
 			continue
+		}
+		if guard.Usable(state) {
+			same, err := guard.SameDefinition(ctx, indexQueryer(conn), statement, state)
+			if err != nil {
+				return nil, err
+			}
+			if same {
+				continue
+			}
 		}
 		if _, duplicate := seen[name]; duplicate {
 			continue
