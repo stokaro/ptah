@@ -20,7 +20,7 @@ func TestNewSchemaPullCommand_Help(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(output.String(), qt.Contains, "pull <oci-reference>")
+	c.Assert(output.String(), qt.Contains, "pull <oci-reference | git-reference>")
 	c.Assert(output.String(), qt.Contains, "--out")
 	c.Assert(output.String(), qt.Contains, "--plain-http")
 }

@@ -111,7 +111,7 @@ rather than a person.
 | `ptah migrations log` | Reads the target's record of past migration operations and prints it, changing nothing | — |
 | `ptah migrations ls` | Lists the migration files in a directory, reading nothing but the directory | — |
 | `ptah migrations plan` | Reads the target and prints the migration SQL the difference implies, writing nothing | — |
-| `ptah migrations pull` | Downloads a migration directory from an OCI registry and writes it to disk | — |
+| `ptah migrations pull` | Downloads a migration directory from an OCI registry or a Git repository and writes it to disk | — |
 | `ptah migrations push` | Uploads a migration directory from disk to an OCI registry | — |
 | `ptah migrations rebase` | Re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied | — |
 | `ptah migrations repair` | Rewrites revision metadata in the target's tracking table | — |
@@ -154,7 +154,7 @@ rather than a person.
 | `ptah schema inspect` | Reads a schema source and prints it; the dev database it names "is reset destructively" | — |
 | `ptah schema lineage` | Traces which columns each view and routine reads and writes; `--db-url` reads the target | — |
 | `ptah schema plan` | Saves a fingerprinted apply plan; the dev database is where the plan is rehearsed | — |
-| `ptah schema pull` | Downloads a desired-schema document from an OCI registry and writes it to disk | — |
+| `ptah schema pull` | Downloads a desired-schema document from an OCI registry or a Git repository and writes it to disk | — |
 | `ptah schema push` | Uploads a desired-schema document from disk to an OCI registry | — |
 | `ptah schema render` | Renders the desired schema as SQL with no connection at all; the dialect comes from a flag | — |
 | `ptah schema security` | Reads the target's roles, grants and policies and reports security findings | — |

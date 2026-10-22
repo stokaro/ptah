@@ -935,8 +935,16 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--branch` | `string` | — | `PTAH_BRANCH` | — |
+| `--ca-file` | `string` | — | `PTAH_CA_FILE` | — |
+| `--commit` | `string` | — | `PTAH_COMMIT` | — |
+| `--expect-digest` | `string` | — | `PTAH_EXPECT_DIGEST` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--known-hosts-file` | `string` | — | `PTAH_KNOWN_HOSTS_FILE` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
+| `--path` | `string` | — | `PTAH_PATH` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--tag` | `string` | — | `PTAH_TAG` | — |
 
 </div>
 
@@ -1630,8 +1638,16 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--branch` | `string` | — | `PTAH_BRANCH` | — |
+| `--ca-file` | `string` | — | `PTAH_CA_FILE` | — |
+| `--commit` | `string` | — | `PTAH_COMMIT` | — |
+| `--expect-digest` | `string` | — | `PTAH_EXPECT_DIGEST` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--known-hosts-file` | `string` | — | `PTAH_KNOWN_HOSTS_FILE` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
+| `--path` | `string` | — | `PTAH_PATH` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--tag` | `string` | — | `PTAH_TAG` | — |
 
 </div>
 
