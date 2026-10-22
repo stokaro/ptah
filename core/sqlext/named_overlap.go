@@ -15,10 +15,15 @@ import (
 // without changing either pattern's match.
 func shiftedNamesOverlap(a, b Pattern) bool {
 	limit := len(a.Words) + len(a.AfterName) + len(b.Words) + len(b.AfterName) + 1
+	// Each shape of b is compared with every shape of a, so it is built once.
+	right := make([][]nameSymbol, limit)
+	for parts := 1; parts <= limit; parts++ {
+		right[parts-1] = nameShape(b, parts)
+	}
 	for leftParts := 1; leftParts <= limit; leftParts++ {
 		left := nameShape(a, leftParts)
-		for rightParts := 1; rightParts <= limit; rightParts++ {
-			if shapesOverlap(left, nameShape(b, rightParts)) {
+		for _, shape := range right {
+			if shapesOverlap(left, shape) {
 				return true
 			}
 		}

@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -31,10 +30,8 @@ func (r *Runtime) registerConversion(owner string, declaration Conversion) error
 	index := len(r.conversionServices)
 	for _, kind := range declaration.Kinds {
 		for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
-			found := slices.ContainsFunc(r.codecs.Definitions(), func(model schemaext.CodecIdentity) bool {
-				return model.Kind == kind && model.Representation == representation && model.Owner == owner
-			})
-			if !found {
+			model, found := r.codecs.Identity(kind, representation)
+			if !found || model.Owner != owner {
 				return fmt.Errorf("%w: %q does not own %q/%s", ErrInvalidRegistration, owner, kind, representation)
 			}
 		}

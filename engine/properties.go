@@ -96,9 +96,8 @@ func (c *propertyClaims) coversAny(prefix string) bool {
 }
 
 func (r *Runtime) validatePropertyDefinition(owner string, definition schemaext.PropertyDefinition, claimed propertyClaims) error {
-	owned := slices.ContainsFunc(r.codecs.Definitions(), func(model schemaext.CodecIdentity) bool {
-		return model.Kind == definition.Kind && model.Representation == schemaext.Desired && model.Owner == owner
-	})
+	model, found := r.codecs.Identity(definition.Kind, schemaext.Desired)
+	owned := found && model.Owner == owner
 	if !owned || len(definition.Keys) == 0 {
 		return fmt.Errorf("%w: missing owned desired codec or property keys for %q", ErrInvalidRegistration, definition.Kind)
 	}

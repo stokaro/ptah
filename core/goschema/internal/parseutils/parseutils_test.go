@@ -69,3 +69,19 @@ func TestParsePlatformSpecific_ExplicitOverridesTakePrecedence(t *testing.T) {
 		},
 	})
 }
+
+// Every table and field directive of a schema is read through
+// ParsePlatformSpecific, so it must not copy the dialect descriptors to learn
+// which of them read the shortcuts. Copying them all cost a drift of a
+// two-table schema about a megabyte.
+func TestParsePlatformSpecific_CopiesNoDialectDescriptor(t *testing.T) {
+	c := qt.New(t)
+	kv := map[string]string{"engine": "InnoDB"}
+	parseutils.ParsePlatformSpecific(kv) // derives the shortcut dialects once
+
+	allocs := testing.AllocsPerRun(100, func() { parseutils.ParsePlatformSpecific(kv) })
+
+	// The result holds a map for MySQL and one for MariaDB, which takes a few
+	// allocations; copying every descriptor took over 400.
+	c.Assert(allocs < 10, qt.IsTrue, qt.Commentf("allocations per call: %v", allocs))
+}
