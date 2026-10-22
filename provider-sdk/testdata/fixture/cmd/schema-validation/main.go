@@ -21,7 +21,18 @@ func main() {
 	engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
 	engine.Features = append(engine.Features, provider.ValidateSchemaFeature)
 	owner := &validator{Provider: &backend.Provider{}}
-	if err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, SchemaValidator: owner}); err != nil {
+	if err := runtime.Serve(runtime.Server{
+		Description:     description,
+		Sessions:        owner,
+		Inspector:       owner,
+		Renderer:        owner,
+		Executor:        owner,
+		SQLAnalyzer:     owner,
+		ValueNormalizer: owner,
+		SourceDecoder:   owner,
+		ValueConverter:  owner,
+		SchemaValidator: owner,
+	}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -38,7 +49,10 @@ func (*validator) ValidateSchema(ctx context.Context, request *protocol.Validate
 		table := input.Declaration
 		switch table.Name {
 		case "records":
-			if len(table.Columns) != 1 || table.Columns[0].Comment != "retained" || len(request.Namespaces) != 1 || request.Namespaces[0].Comment != "namespace comment" || len(request.NotDescribed) != 1 || request.NotDescribed[0].Kind != "role" || !slices.Equal(request.Dependencies["records"].GetTables(), []string{"parent"}) {
+			if len(table.Columns) != 1 || table.Columns[0].Comment != "retained" ||
+				len(request.Namespaces) != 1 || request.Namespaces[0].Comment != "namespace comment" ||
+				len(request.NotDescribed) != 1 || request.NotDescribed[0].Kind != "role" ||
+				!slices.Equal(request.Dependencies["records"].GetTables(), []string{"parent"}) {
 				return nil, fmt.Errorf("incomplete schema capture")
 			}
 			if request.NoSkipped {
