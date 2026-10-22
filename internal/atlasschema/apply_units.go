@@ -4,51 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
-	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
-	"ptah.run/migration/planner"
 )
-
-// ApplyRenderedPlan executes an approved plan on its selected target. It checks
-// target capabilities and all owner transaction requirements before any write.
-// Callers must verify target identity, approve omissions, and acquire any lock
-// their workflow requires. Native units keep their captured provider identity.
-func ApplyRenderedPlan(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, plan planner.RenderedPlan) error {
-	if conn == nil {
-		return errors.New("schema apply execution requires database connection")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	info := conn.Info()
-	if plan.Request.Target != info.Dialect || !maps.Equal(plan.Request.Capabilities.Map(), info.Capabilities.Map()) {
-		return fmt.Errorf("%w: rendered plan target capabilities differ from the connection", renderer.ErrInvalidResult)
-	}
-	planned, err := plan.Units()
-	if err != nil {
-		return err
-	}
-	indexes := make([]int, len(planned))
-	units := make([]renderer.Fragment, len(planned))
-	for i, unit := range planned {
-		indexes[i], units[i] = unit.Node, unit.Fragment
-	}
-	requirements, err := txrequire.OwnerRequirements(plan.Request.Nodes, indexes)
-	if err != nil {
-		return err
-	}
-	if err := checkOwnerTransactions(requirements, mode, conn); err != nil {
-		return err
-	}
-	return applyUnits(ctx, conn, mode, units)
-}
 
 // applyUnits preflights the complete batch before opening a transaction. The
 // transaction repeats validation so switching executors cannot bypass it.

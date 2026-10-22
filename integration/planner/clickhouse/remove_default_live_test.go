@@ -71,11 +71,11 @@ func TestRemoveDefault_HappyPath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
 		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
 		"ALTER TABLE asn MODIFY COLUMN n Int32",
 	})
-	applyPlan(c, ctx, conn, plan.Statements())
+	applyPlan(c, ctx, conn, must.Must(plan.Statements()))
 
 	c.Assert(asnDefault(c, ctx, conn), qt.Equals, " ")
 	_, err = conn.ExecContext(ctx, "INSERT INTO asn (id) VALUES (3)")
@@ -83,7 +83,7 @@ func TestRemoveDefault_HappyPath(t *testing.T) {
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int32", "1=1", "2=5", "3=0"})
 	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(again.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(again.Statements()), qt.HasLen, 0)
 }
 
 // The default goes before the type changes, in a statement of its own. In one
@@ -99,15 +99,15 @@ func TestRemoveDefaultWithATypeChange_HappyPath(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.DeepEquals, []string{
+	c.Assert(must.Must(plan.Statements()), qt.DeepEquals, []string{
 		"ALTER TABLE asn MODIFY COLUMN n REMOVE DEFAULT",
 		"ALTER TABLE asn MODIFY COLUMN n Int64",
 	})
-	applyPlan(c, ctx, conn, plan.Statements())
+	applyPlan(c, ctx, conn, must.Must(plan.Statements()))
 
 	c.Assert(asnDefault(c, ctx, conn), qt.Equals, " ")
 	c.Assert(asnState(c, ctx, conn), qt.DeepEquals, []string{"n Int64", "1=1", "2=5"})
 	again, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(again.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(again.Statements()), qt.HasLen, 0)
 }

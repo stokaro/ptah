@@ -23,7 +23,7 @@ import (
 // the fields it recognizes out of a shape that means something else.
 const (
 	PlanReportContractVersion  = 2
-	ApplyReportContractVersion = 2
+	ApplyReportContractVersion = 3
 )
 
 // PlanOutcome is how one `schema plan` run ended.
@@ -224,10 +224,10 @@ type ApplyReport struct {
 	// before it decoded the file.
 	PlanName   string `json:"plan_name,omitempty"`
 	PlanDigest string `json:"plan_digest,omitempty"`
-	// Statements are the statements the run listed as its planned changes, in
+	// Units are the operations the run listed as its planned changes, in
 	// order, and absent when it stopped before it had any. The outcome says
 	// what became of them: under applied they are what ran.
-	Statements []string `json:"statements,omitempty"`
+	Units []ApplyUnitReport `json:"units,omitempty"`
 	// Undecided is [PlanReport.Undecided] for this run: next to applied it
 	// names what the run did not create, and next to no-changes it means the
 	// database is not shown to match. It is absent when nothing was withheld,
@@ -251,8 +251,8 @@ type ApplyEvidence struct {
 	// empty for a plan computed from a desired schema.
 	PlanName   string
 	PlanDigest string
-	// Statements are the statements the run listed as its planned changes.
-	Statements []string
+	// Units are the operations the run listed as its planned changes.
+	Units []ApplyUnitReport
 	// Undecided are the declared objects the comparison withheld, from
 	// [ApplyRuntimePlan.Undecided].
 	Undecided schemadiff.Diagnostics
@@ -279,7 +279,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		ContractVersion: ApplyReportContractVersion,
 		PlanName:        evidence.PlanName,
 		PlanDigest:      evidence.PlanDigest,
-		Statements:      evidence.Statements,
+		Units:           evidence.Units,
 		Undecided:       evidence.Undecided.Clone(),
 		Outcome:         evidence.Completed,
 	}

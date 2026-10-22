@@ -93,7 +93,7 @@ func TestDeclaredRowsConvergeOnClickHouseLive(t *testing.T) {
 
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Statements(), qt.HasLen, 0)
+	c.Assert(must.Must(plan.Statements()), qt.HasLen, 0)
 }
 
 func openClickHouseDeclaredRowsTarget(c *qt.C, ctx context.Context) *dbschema.DatabaseConnection {
@@ -124,7 +124,7 @@ func applyClickHouseDeclaredRows(
 	c.Helper()
 	plan, err := atlasschema.PlanApply(ctx, conn, atlasschema.ApplyOptions{Desired: desired, Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	for _, statement := range plan.Statements() {
+	for _, statement := range must.Must(plan.Statements()) {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}

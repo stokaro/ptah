@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 
 	"example.com/ptah-fixture-provider/backend"
 	"github.com/stokaro/ptah/provider-sdk/modeljson"
@@ -26,10 +27,17 @@ type owner struct {
 }
 
 func main() {
+	if path := os.Getenv("PTAH_FIXTURE_PID_FILE"); path != "" {
+		if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil { // #nosec G703 -- the host selects this fixture PID file in its private test directory
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
-	if mode != "" && mode != "native" && mode != "native-transactional" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -38,6 +46,10 @@ func main() {
 	if mode == "native-transactional" {
 		d.Features = append(d.Features, provider.TransactionsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
+	}
+	if mode == "native-cli" {
+		d.Features = append(d.Features, provider.LocksFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.LocksFeature)
 	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
@@ -77,6 +89,9 @@ func main() {
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if p.transactionalDDL {
 		server.Transactions = p
+	}
+	if mode == "native-cli" {
+		server.Locks = p
 	}
 	if err := runtime.Serve(server); err != nil {
 		fmt.Fprintln(os.Stderr, err)

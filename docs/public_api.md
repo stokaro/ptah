@@ -5408,3 +5408,17 @@ batch. The prefix is acknowledged inside the selected transaction and does not
 prove commit. `Unwrap` retains cancellation and `ptaherr.ErrOutcomeUnknown`.
 Unconfirmed operations may have taken effect. Neither this error nor a
 confirmed prefix authorizes replay.
+
+### Captured operation assessments
+
+`migration/safety.AssessUnits` classifies an ordered batch of
+`renderer.Fragment` values without rendering it again. SQL units use the
+selected owner's SQL assessment; native units use their captured lifecycle and
+access effects. The caller supplies aligned planned-node verdicts, which can
+only raise severity. Invalid batches, missing provenance, and cancellation
+return no assessments.
+
+`StatementAssessment.NativeKind` identifies a native unit, whose `Statement`
+field is empty. `Subject`, `Severity`, `Reason`, `Access`, and `AccessReason`
+retain the captured assessment. An unassessed native effect is destructive;
+an absent access assessment never becomes an unchanged-access claim.

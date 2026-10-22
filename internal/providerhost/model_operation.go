@@ -8,12 +8,15 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
 // resolvedOperation contains captured safety facts and typed owner input. Its
 // local interfaces never render SQL or reach the provider process.
 type resolvedOperation struct{ model *resolvedModel }
+
+func (v *resolvedOperation) Subject() objectidentity.ID { return v.model.subject }
 
 func (v *resolvedOperation) Kind() schemaext.Kind { return v.model.Kind() }
 func (v *resolvedOperation) CloneExtension() ast.ExtensionPayload {

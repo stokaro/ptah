@@ -35,7 +35,7 @@ func TestPlanApply_DeclaredRowsStayInsideASQLiteRebuildBracket(t *testing.T) {
 		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
-	statements := plan.Statements()
+	statements := must.Must(plan.Statements())
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `DROP TABLE "regions"`)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, `INSERT INTO "countries"`)
 	c.Assert(sqliteforeignkeys.Brackets(statements), qt.IsTrue, qt.Commentf("statements: %q", statements))
@@ -74,7 +74,7 @@ func TestPlanApply_DeclaredRowsWithoutARebuildFollowTheSchema(t *testing.T) {
 		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
-	statements := plan.Statements()
+	statements := must.Must(plan.Statements())
 	c.Assert(sqliteforeignkeys.Brackets(statements), qt.IsFalse)
 	c.Assert(statements[len(statements)-1], qt.Contains, `INSERT INTO "countries"`)
 }

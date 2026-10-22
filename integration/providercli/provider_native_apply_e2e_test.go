@@ -53,7 +53,7 @@ func TestProviderNativeApplyExecutesMixedPlan(t *testing.T) {
 			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=" + test.profile})
 			conn, _ := transactionConnection(c, host, "")
 			plan := nativeExecutionPlan(c, runtime, conn, test.transaction, "records")
-			c.Assert(atlasschema.ApplyRenderedPlan(c.Context(), conn, test.mode, plan), qt.IsNil)
+			c.Assert(applyCapturedPlan(c.Context(), conn, test.mode, plan), qt.IsNil)
 			c.Assert(providerTablePresent(c, conn, "common"), qt.IsTrue)
 			c.Assert(providerTablePresent(c, conn, "records"), qt.IsTrue)
 		})
@@ -86,7 +86,7 @@ func TestProviderNativeApplyRefusesBeforeSQLPrefix(t *testing.T) {
 			conn, _ := transactionConnection(c, host, "")
 			plan := nativeExecutionPlan(c, runtime, conn, test.requirement, "records")
 			test.change(&plan)
-			c.Assert(atlasschema.ApplyRenderedPlan(test.ctx, conn, test.mode, plan), qt.ErrorIs, test.want)
+			c.Assert(applyCapturedPlan(test.ctx, conn, test.mode, plan), qt.ErrorIs, test.want)
 			c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 			c.Assert(providerTablePresent(c, conn, "records"), qt.IsFalse)
 		})
@@ -100,7 +100,7 @@ func TestProviderNativeApplyBindsFrozenSelection(t *testing.T) {
 	conn, _ := transactionConnection(c, host, "")
 	plan := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "records")
 	plan.Result.Fragments[1].Native = capturedOperation(c, foreign, "records", `{"action":"create"}`)
-	c.Assert(atlasschema.ApplyRenderedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNotNil)
+	c.Assert(applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNotNil)
 	c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 }
 
@@ -119,7 +119,7 @@ func TestProviderNativeApplyReportsPrefixWithoutRetry(t *testing.T) {
 			c := qt.New(t)
 			conn, _ := transactionConnection(c, host, test.fault)
 			plan := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, test.names...)
-			err := atlasschema.ApplyRenderedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan)
+			err := applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan)
 			failure, ok := errors.AsType[*dbschema.UnitExecutionError](err)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(failure.Applied, qt.Equals, test.applied)
@@ -136,7 +136,7 @@ func TestProviderNativeApplyRollsBackFailedBatch(t *testing.T) {
 	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native-transactional"})
 	conn, _ := transactionConnection(c, host, "")
 	plan := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionRequired, "records", "records")
-	c.Assert(atlasschema.ApplyRenderedPlan(c.Context(), conn, migrator.MigrationTxModeAll, plan), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
+	c.Assert(applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeAll, plan), qt.ErrorIs, ptaherr.ErrOutcomeUnknown)
 	c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 	c.Assert(providerTablePresent(c, conn, "records"), qt.IsFalse)
 }
@@ -147,9 +147,9 @@ func TestProviderNativeApplyDryRunValidatesWithoutWriting(t *testing.T) {
 	conn, _ := transactionConnection(c, host, "")
 	plan := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "records")
 	conn.SchemaWriter().SetDryRun(true)
-	c.Assert(atlasschema.ApplyRenderedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNil)
+	c.Assert(applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNil)
 	plan.Result.Fragments[1].SQL = "SELECT 1;"
-	c.Assert(atlasschema.ApplyRenderedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNotNil)
+	c.Assert(applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeNone, plan), qt.IsNotNil)
 	conn.SchemaWriter().SetDryRun(false)
 	c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 	c.Assert(providerTablePresent(c, conn, "records"), qt.IsFalse)
@@ -210,4 +210,12 @@ func TestProviderNativeTransactionFailurePreventsCommit(t *testing.T) {
 	c.Assert(tx.Rollback(), qt.IsNil)
 	c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 	c.Assert(providerTablePresent(c, conn, "records"), qt.IsFalse)
+}
+
+func applyCapturedPlan(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, rendered planner.RenderedPlan) error {
+	plan, err := atlasschema.CaptureApplyPlan(conn.Info(), rendered)
+	if err != nil {
+		return err
+	}
+	return plan.Execute(ctx, conn, mode)
 }

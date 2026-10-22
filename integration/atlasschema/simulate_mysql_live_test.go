@@ -80,7 +80,7 @@ table "sim_added" {
 	c.Assert(plan.HasChanges(), qt.IsTrue)
 	// The premise of the defect: the plan carries the TARGET's schema name.
 	// Without this the rest of the test would pass for the wrong reason.
-	c.Assert(strings.Join(plan.Statements(), "\n"), qt.Contains,
+	c.Assert(strings.Join(must.Must(plan.Statements()), "\n"), qt.Contains,
 		"`"+liveMySQLDatabaseName(c, targetURL)+"`.`sim_added`")
 
 	before := mySQLSchemaSnapshot(c, targetConn, liveMySQLDatabaseName(c, targetURL))
@@ -89,7 +89,7 @@ table "sim_added" {
 	// rehearsal recreates on the dev database. The first statement is the one
 	// that would land in the target; the last one guarantees the rehearsal
 	// fails after it ran.
-	statements := append(plan.Statements(),
+	statements := append(must.Must(plan.Statements()),
 		"CREATE TABLE `"+liveMySQLDatabaseName(c, targetURL)+"`.`sim_keep` (`id` int NOT NULL)")
 
 	err = plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
@@ -136,7 +136,7 @@ table "sim_added" {
 		TxMode:  migrator.MigrationTxModeNone,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(plan.Statements(), "\n"), qt.Contains, "`"+targetName+"`.`sim_added`")
+	c.Assert(strings.Join(must.Must(plan.Statements()), "\n"), qt.Contains, "`"+targetName+"`.`sim_added`")
 
 	c.Assert(plan.SimulateOnDev(c.Context(), atlasschema.SimulateOptions{
 		DevURL:    devURL,

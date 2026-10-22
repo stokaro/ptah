@@ -261,7 +261,7 @@ func testSchemaApplyJSONSessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
 	c.Assert(report.Error, qt.Contains, sessionFailure.Error())
-	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
 }
@@ -321,7 +321,7 @@ func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossS
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
 	c.Assert(report.Error, qt.Equals, "internal error: lock session lost its connection")
-	c.Assert(report.Statements, qt.HasLen, 1)
+	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
 }

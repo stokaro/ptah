@@ -524,18 +524,31 @@ prefix. A dispatched failure retains the acknowledged prefix and any uncertain
 outcome. No mutation is retried. A transaction with failed execution cannot
 commit; rollback remains available.
 
-The shared `atlasschema.ApplyRenderedPlan` path checks the captured target
-capabilities and owner transaction requirements before opening a transaction.
-It preserves exact execution units and refuses a native batch when the selected
-executor cannot accept it. SQL statement application uses the same execution
-path and retains built-in SQLite rebuild handling. Independent process tests
-exercise mixed SQL/native batches, preflight refusal, dry runs, partial
-execution, commit, and rollback.
+`atlasschema.CaptureApplyPlan` snapshots typed operations, node provenance,
+owner effects, and transaction requirements. It records the target's base
+capabilities separately from the effective rendering capabilities: a change
+can provide a capability, such as an extension that later operations need.
+Execution verifies the captured base facts and provider binding against the
+selected connection. It validates the whole batch before opening a transaction.
+SQL statement application retains built-in SQLite rebuild handling.
 
-Command planning, saved plan files, migration files, and their risk assessment
-still consume SQL and refuse native execution units. They require coordinated
-changes before the host can execute these units through its commands. The
-shared apply path does not establish that command path or live YDB support.
+Prepared schema application stores one ordered operation list. Its SQL and
+statement methods return an error for a native operation instead of returning
+an executable prefix. `migration/safety.AssessUnits` judges SQL in one owner
+batch and native operations from their captured effects. Owner verdicts can
+only raise severity. Unknown native effects remain destructive.
+
+The native `schema apply` command consumes this prepared plan directly. Its
+confirmation output names native operations, subjects, and effects. Apply report
+version 3 uses ordered `units`, each containing SQL or a native effect summary.
+These summaries contain no opaque payload and cannot be executed as a plan.
+Independent process tests cover command execution and convergence, refusal
+before writes, confirmation cancellation, and mixed-unit risk attribution.
+
+Saved plan files and migration files still consume SQL. SQL editing and dev
+rehearsal refuse a native plan. The executable-provider lock contract also
+continues to refuse read-only lock acquisition. Native CLI execution does not
+establish live YDB qualification or default bundling.
 
 Both transport boundaries validate ownership, model definitions, captured
 facts, and input provenance. The server gives owner code a copy, so mutating an

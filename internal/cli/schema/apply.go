@@ -556,8 +556,18 @@ func runSchemaApplyOnLockedSession(
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 
-	sqlText := plan.SQL()
-	statements := plan.Statements()
+	if plan.HasNativeUnits() {
+		return applyNativeSchemaPlan(ctx, cmd, opts, plan, run)
+	}
+
+	sqlText, err := plan.SQL()
+	if err != nil {
+		return "", err
+	}
+	statements, err := plan.Statements()
+	if err != nil {
+		return "", err
+	}
 	if opts.edit {
 		edited, err := editSchemaApplySQL(ctx, sqlText)
 		if err != nil {
@@ -567,7 +577,7 @@ func runSchemaApplyOnLockedSession(
 		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
 	}
 	printSchemaApplyPlan(run.human, sqlText)
-	run.evidence.Statements = statements
+	run.evidence.Units = atlasschema.SQLApplyUnitReports(statements)
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
@@ -713,7 +723,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 	}
 
 	printSchemaApplyPlan(run.human, plan.SQL())
-	run.evidence.Statements = plan.StatementSQL()
+	run.evidence.Units = atlasschema.SQLApplyUnitReports(plan.StatementSQL())
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}

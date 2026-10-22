@@ -274,8 +274,8 @@ func TestPlanApply_LocalDirectoryOfSQLFiles(t *testing.T) {
 		Runtime: must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.SQL(), qt.Contains, "plan_dir_users")
-	c.Assert(plan.SQL(), qt.Contains, "plan_dir_posts")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "plan_dir_users")
+	c.Assert(must.Must(plan.SQL()), qt.Contains, "plan_dir_posts")
 }
 
 // TestPreparePlanFile_MigrationDirStaysLocalOnly pins that `schema plan`

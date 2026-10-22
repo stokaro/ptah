@@ -98,14 +98,18 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}
+	original, err := p.Statements()
+	if err != nil {
+		return err
+	}
 	statements := opts.Statements
 	if len(statements) == 0 {
-		statements = p.plan.statements
+		statements = original
 	}
 	if len(statements) == 0 {
 		return nil
 	}
-	if !slices.Equal(statements, p.Statements()) && hasOwnerTransactions(p.plan.transactions) {
+	if !slices.Equal(statements, original) && hasOwnerTransactions(p.plan.transactions) {
 		return errors.New("edited SQL with owner transaction requirements needs a new owner assessment")
 	}
 	if err := checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn); err != nil {

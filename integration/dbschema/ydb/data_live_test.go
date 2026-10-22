@@ -426,7 +426,7 @@ func declaredRowsPlan(c *qt.C, conn *dbschema.DatabaseConnection, desired *schem
 		Desired: desired, Schemas: []string{dataDeclaredSchema},
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	return plan.Statements()
+	return must.Must(plan.Statements())
 }
 
 // TestYDBDeclaredRows_ConvergeThroughSchemaApply applies the plan `ptah schema

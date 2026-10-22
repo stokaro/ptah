@@ -68,6 +68,8 @@ type Finding struct {
 // several owned operations reports the strongest assessment, in the order
 // unchanged, narrows, unknown, widens.
 type StatementAssessment struct {
+	// NativeKind identifies an assessed native operation. Statement is empty for it.
+	NativeKind   schemaext.Kind   `json:"native_kind,omitempty"`
 	Index        int              `json:"index"`
 	NodeType     string           `json:"node_type"`
 	Subject      string           `json:"subject,omitempty"`

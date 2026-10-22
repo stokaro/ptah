@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
@@ -79,4 +80,23 @@ func (e *TransactionPreflightError) Error() string {
 		"the planned changes cannot run inside a transaction: statement %d of %d: %s; "+
 			"rerun with --tx-mode none, which commits each statement as it runs\nSQL: %s",
 		e.Finding.Statement.Index+1, e.Total, e.Finding.Message, e.Finding.Statement.SQL)
+}
+
+// preflightUnitTransaction retains unit indexes while judging only SQL text.
+// Owner requirements judge native units separately against the same mode.
+func preflightUnitTransaction(dialect string, caps capability.Capabilities, mode migrator.MigrationTxMode, units []renderer.Fragment) error {
+	if mode == migrator.MigrationTxModeNone {
+		return nil
+	}
+	var statements []txrequire.Statement
+	for i, unit := range units {
+		if unit.Native == nil && strings.TrimSpace(sqlutil.StripCommentsForDialect(unit.SQL, dialect)) != "" {
+			statements = append(statements, txrequire.Statement{Index: i, SQL: unit.SQL})
+		}
+	}
+	result := txrequire.Analyze(dialect, caps, statements)
+	if !result.RequiresAutocommit() {
+		return nil
+	}
+	return &TransactionPreflightError{Finding: result.Findings[0], Total: len(units)}
 }

@@ -244,6 +244,25 @@ or [maintaining revision metadata](../../versioned/maintain-history/).
 Provider lock acquisition during a read-only preview is refused because the
 experimental protocol does not establish acquisition without writes.
 
+## Apply native operations
+
+A provider can return native operations alongside SQL when its declared models
+and planning service support the requested change. `ptah schema apply` keeps
+these operations intact from planning through confirmation and execution.
+The confirmation output shows the operation's kind, subject, and captured
+impact and access assessments. A conflicting transaction requirement refuses
+the whole plan before any operation runs.
+
+Apply JSON reports use contract version `3` and an ordered `units` list.
+Each entry contains `sql` or a `native` summary. Native summaries omit opaque
+provider payloads and are reports, not saved execution plans.
+
+Saved schema plans and migration files still require a SQL projection.
+`--edit` and dev-database rehearsal refuse native plans. Provider lock
+acquisition during `--dry-run` remains subject to the read-only preview refusal
+above. Native execution support alone does not qualify an official provider's
+schema models or live database behavior.
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,

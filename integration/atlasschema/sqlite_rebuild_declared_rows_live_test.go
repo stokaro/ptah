@@ -320,7 +320,7 @@ func rebuildRowsApplyStatements(
 	c.Helper()
 	plan := rebuildRowsPrepare(c, ctx, conn, desired)
 	conn.SchemaWriter().SetDryRun(false)
-	return atlasschema.ApplyStatements(ctx, conn, migrator.MigrationTxModeFile, plan.Statements())
+	return atlasschema.ApplyStatements(ctx, conn, migrator.MigrationTxModeFile, must.Must(plan.Statements()))
 }
 
 // rebuildRowsApplySavedPlan runs the statements a saved plan records.
@@ -353,7 +353,7 @@ func rebuildRowsPrepare(
 		TxMode:  migrator.MigrationTxModeFile,
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
-	c.Logf("plan:\n%s", plan.SQL())
+	c.Logf("plan:\n%s", must.Must(plan.SQL()))
 	return plan
 }
 

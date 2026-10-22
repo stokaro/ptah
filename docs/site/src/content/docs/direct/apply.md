@@ -358,11 +358,11 @@ confirmation with
 
 `--json` on `ptah schema plan` and `ptah schema apply` prints one JSON document
 on standard output for every run that starts, on success and on failure. The
-text a person reads goes to standard error instead: the planned statements, the
+text a person reads goes to standard error instead: the planned operations, the
 confirmation prompt, and the `error:` line. The exit codes stay the same. A
 caller parses standard output and does not match any sentence on either stream.
 An internal error writes a document too, `failed` if nothing was sent and
-`unknown` once statements were, before the command exits `2` with `error:
+`unknown` once operations were, before the command exits `2` with `error:
 internal error: ...`.
 
 A command line refused before the run starts prints no document, because no
@@ -445,30 +445,35 @@ pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
 
 ### The apply document
 
+Apply reports use contract version `3`. Native summaries describe captured
+operations without exposing provider payloads; they cannot be passed back as an
+executable plan. SQL and native entries share one ordered `units` list.
+Schema plan reports retain contract version `2` and their saved SQL plan format.
+
 | Field | Meaning |
 | --- | --- |
 | `outcome` | How the run ended; see the next table |
 | `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read. The file is read once, so with `--require-approval` these are also the bytes the signature was checked against |
-| `statements` | The statements the run listed as its planned changes, in order |
+| `units` | The planned operations in order. Each entry has `sql` or a `native` summary with its kind, subject, severity, reason, and access assessment |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
 
 | Outcome | Meaning |
 | --- | --- |
-| `applied` | Every statement ran |
-| `no-changes` | No statement was planned. The database matches the desired schema unless `undecided` is present |
+| `applied` | Every operation ran |
+| `no-changes` | No operation was planned. The database matches the desired schema unless `undecided` is present |
 | `dry-run` | Nothing ran. With `--plan`, the fingerprint was verified first |
 | `canceled` | The confirmation prompt was declined |
 | `refused` | Nothing reached the database, for the reason `refusal` names |
 | `failed` | Nothing reached the database, for a reason with no refusal code |
-| `unknown` | The statements were sent and the run returned an error |
+| `unknown` | The operations were dispatched and the run returned an error |
 
-`unknown` is the outcome a caller must not retry from. The statements were
+`unknown` is the outcome a caller must not retry from. The operations were
 sent, and the document cannot say how far they got: a transaction may have
 rolled them all back, a run without one may have left some, and a lost
 connection hides even that. Read the database before deciding. A lock session
-that fails after every statement committed is reported this way too, rather
+that fails after every operation committed is reported this way too, rather
 than as `applied`.
 
 ### Undecided objects

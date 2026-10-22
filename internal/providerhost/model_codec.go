@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 )
 
@@ -33,6 +34,7 @@ type modelContract struct {
 // retains no process client; copying or comparing it cannot perform an RPC.
 type resolvedModel struct {
 	kind       schemaext.Kind
+	subject    objectidentity.ID
 	signature  string
 	wire       modelWire
 	canonical  json.RawMessage
@@ -42,7 +44,7 @@ type resolvedModel struct {
 func (v *resolvedModel) Kind() schemaext.Kind   { return v.kind }
 func (v *resolvedModel) Clone() schemaext.Value { return v.cloneModel() }
 func (v *resolvedModel) cloneModel() *resolvedModel {
-	return &resolvedModel{kind: v.kind, signature: v.signature, wire: v.wire.clone(), canonical: bytes.Clone(v.canonical), normalized: proto.CloneOf(v.normalized)}
+	return &resolvedModel{kind: v.kind, subject: v.subject, signature: v.signature, wire: v.wire.clone(), canonical: bytes.Clone(v.canonical), normalized: proto.CloneOf(v.normalized)}
 }
 func (v *resolvedModel) Equal(other schemaext.Value) bool {
 	right, ok := other.(*resolvedModel)
@@ -181,5 +183,12 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 	if err != nil {
 		return nil, err
 	}
-	return &resolvedModel{kind: m.key.kind, signature: m.signature, wire: wire.clone(), canonical: canonical, normalized: proto.CloneOf(normalized)}, nil
+	var identity objectidentity.ID
+	if m.key.representation == schemaext.Operation {
+		identity, err = sourceIdentity(normalized.GetValue().GetOwner(), normalized.GetNormalizedOwner())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &resolvedModel{kind: m.key.kind, subject: identity, signature: m.signature, wire: wire.clone(), canonical: canonical, normalized: proto.CloneOf(normalized)}, nil
 }
