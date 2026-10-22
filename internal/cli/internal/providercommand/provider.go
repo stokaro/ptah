@@ -14,6 +14,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/engineruntime"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerconfig"
 )
@@ -114,6 +115,9 @@ func targetSelector(cmd *cobra.Command) string {
 		if entry, known := providercatalog.Lookup(value); known {
 			return entry.EngineID
 		}
+		if engine, found := dockerEngine(name, value); found {
+			return engine
+		}
 		if scheme, _, found := strings.Cut(value, ":"); found {
 			return strings.ToLower(scheme)
 		}
@@ -122,6 +126,19 @@ func targetSelector(cmd *cobra.Command) string {
 		}
 	}
 	return ""
+}
+
+// dockerEngine reads the engine a `docker://<engine>/...` dev URL names. Only
+// --dev-url carries one: the URL asks its owner for a database, so the owner is
+// the provider of that engine.
+func dockerEngine(flag, value string) (string, bool) {
+	rest, found := strings.CutPrefix(value, "docker://")
+	if !found || flag != "dev-url" {
+		return "", false
+	}
+	engine, _, _ := strings.Cut(rest, "/")
+	engine, _, _ = strings.Cut(engine, "?")
+	return strings.ToLower(engine), engine != ""
 }
 
 func configuredFor(config providerconfig.Configuration, selector string) bool {
@@ -159,6 +176,9 @@ func selectProvider(ctx context.Context, installation providerconfig.Installatio
 		host.Close()
 		return nil, nil, err
 	}
+	if owner := host.DevDatabases(); owner != nil {
+		selected = devdocker.WithExternal(selected, owner)
+	}
 	return selected, host.Close, nil
 }
 
@@ -175,7 +195,9 @@ func validateTargets(cmd *cobra.Command, installation providerconfig.Installatio
 			continue
 		}
 		selector := value
-		if entry, found := providercatalog.Lookup(value); found {
+		if engine, found := dockerEngine(name, value); found {
+			selector = engine
+		} else if entry, found := providercatalog.Lookup(value); found {
 			selector = entry.EngineID
 		} else if scheme, _, found := strings.Cut(value, ":"); found {
 			selector = strings.ToLower(scheme)
