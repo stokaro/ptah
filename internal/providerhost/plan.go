@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
-	"ptah.run/core/schemacapture"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/tableref"
 )
@@ -30,7 +29,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if diff == nil {
 		return nil, fmt.Errorf("provider planner requires a diff")
 	}
-	if !p.commonTables && (len(diff.TablesAdded) > 0 || len(diff.TablesRemoved) > 0 || len(diff.TablesModified) > 0) {
+	if !p.commonTables && ((len(diff.TablesAdded) > 0 && !p.assessParents) || len(diff.TablesRemoved) > 0 || len(diff.TablesModified) > 0) {
 		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
@@ -48,10 +47,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		return nil, fmt.Errorf("provider planner received incomplete or duplicate table creations")
 	}
 	for _, creation := range ordered {
-		if err := onlyFields(creation, "Name", "Table", "Fields", "OwnedObjects", "FeatureCoverage", "DependsOn"); err != nil {
-			return nil, err
-		}
-		node, err := commonTable(schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields})
+		node, err := p.creationNode(creation)
 		if err != nil {
 			return nil, err
 		}

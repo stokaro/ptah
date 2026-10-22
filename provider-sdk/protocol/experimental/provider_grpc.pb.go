@@ -19,33 +19,34 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Provider_Describe_FullMethodName          = "/ptah.provider.experimental.Provider/Describe"
-	Provider_Open_FullMethodName              = "/ptah.provider.experimental.Provider/Open"
-	Provider_Close_FullMethodName             = "/ptah.provider.experimental.Provider/Close"
-	Provider_Inspect_FullMethodName           = "/ptah.provider.experimental.Provider/Inspect"
-	Provider_Render_FullMethodName            = "/ptah.provider.experimental.Provider/Render"
-	Provider_AnalyzeSQL_FullMethodName        = "/ptah.provider.experimental.Provider/AnalyzeSQL"
-	Provider_DecodeSource_FullMethodName      = "/ptah.provider.experimental.Provider/DecodeSource"
-	Provider_NormalizeValues_FullMethodName   = "/ptah.provider.experimental.Provider/NormalizeValues"
-	Provider_ConvertValues_FullMethodName     = "/ptah.provider.experimental.Provider/ConvertValues"
-	Provider_CompareModels_FullMethodName     = "/ptah.provider.experimental.Provider/CompareModels"
-	Provider_PlanFeatures_FullMethodName      = "/ptah.provider.experimental.Provider/PlanFeatures"
-	Provider_PrepareTables_FullMethodName     = "/ptah.provider.experimental.Provider/PrepareTables"
-	Provider_Execute_FullMethodName           = "/ptah.provider.experimental.Provider/Execute"
-	Provider_BeginTransaction_FullMethodName  = "/ptah.provider.experimental.Provider/BeginTransaction"
-	Provider_FinishTransaction_FullMethodName = "/ptah.provider.experimental.Provider/FinishTransaction"
-	Provider_ReadHistory_FullMethodName       = "/ptah.provider.experimental.Provider/ReadHistory"
-	Provider_PrepareHistory_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareHistory"
-	Provider_MutateHistory_FullMethodName     = "/ptah.provider.experimental.Provider/MutateHistory"
-	Provider_PrepareMetadata_FullMethodName   = "/ptah.provider.experimental.Provider/PrepareMetadata"
-	Provider_MutateMetadata_FullMethodName    = "/ptah.provider.experimental.Provider/MutateMetadata"
-	Provider_LookupMetadataTag_FullMethodName = "/ptah.provider.experimental.Provider/LookupMetadataTag"
-	Provider_OpenMetadataRead_FullMethodName  = "/ptah.provider.experimental.Provider/OpenMetadataRead"
-	Provider_ReadMetadataPage_FullMethodName  = "/ptah.provider.experimental.Provider/ReadMetadataPage"
-	Provider_CloseMetadataRead_FullMethodName = "/ptah.provider.experimental.Provider/CloseMetadataRead"
-	Provider_TryLock_FullMethodName           = "/ptah.provider.experimental.Provider/TryLock"
-	Provider_CheckLock_FullMethodName         = "/ptah.provider.experimental.Provider/CheckLock"
-	Provider_ReleaseLock_FullMethodName       = "/ptah.provider.experimental.Provider/ReleaseLock"
+	Provider_Describe_FullMethodName              = "/ptah.provider.experimental.Provider/Describe"
+	Provider_Open_FullMethodName                  = "/ptah.provider.experimental.Provider/Open"
+	Provider_Close_FullMethodName                 = "/ptah.provider.experimental.Provider/Close"
+	Provider_Inspect_FullMethodName               = "/ptah.provider.experimental.Provider/Inspect"
+	Provider_Render_FullMethodName                = "/ptah.provider.experimental.Provider/Render"
+	Provider_AnalyzeSQL_FullMethodName            = "/ptah.provider.experimental.Provider/AnalyzeSQL"
+	Provider_DecodeSource_FullMethodName          = "/ptah.provider.experimental.Provider/DecodeSource"
+	Provider_NormalizeValues_FullMethodName       = "/ptah.provider.experimental.Provider/NormalizeValues"
+	Provider_ConvertValues_FullMethodName         = "/ptah.provider.experimental.Provider/ConvertValues"
+	Provider_CompareModels_FullMethodName         = "/ptah.provider.experimental.Provider/CompareModels"
+	Provider_PlanFeatures_FullMethodName          = "/ptah.provider.experimental.Provider/PlanFeatures"
+	Provider_PrepareTables_FullMethodName         = "/ptah.provider.experimental.Provider/PrepareTables"
+	Provider_ProjectTableCreations_FullMethodName = "/ptah.provider.experimental.Provider/ProjectTableCreations"
+	Provider_Execute_FullMethodName               = "/ptah.provider.experimental.Provider/Execute"
+	Provider_BeginTransaction_FullMethodName      = "/ptah.provider.experimental.Provider/BeginTransaction"
+	Provider_FinishTransaction_FullMethodName     = "/ptah.provider.experimental.Provider/FinishTransaction"
+	Provider_ReadHistory_FullMethodName           = "/ptah.provider.experimental.Provider/ReadHistory"
+	Provider_PrepareHistory_FullMethodName        = "/ptah.provider.experimental.Provider/PrepareHistory"
+	Provider_MutateHistory_FullMethodName         = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_PrepareMetadata_FullMethodName       = "/ptah.provider.experimental.Provider/PrepareMetadata"
+	Provider_MutateMetadata_FullMethodName        = "/ptah.provider.experimental.Provider/MutateMetadata"
+	Provider_LookupMetadataTag_FullMethodName     = "/ptah.provider.experimental.Provider/LookupMetadataTag"
+	Provider_OpenMetadataRead_FullMethodName      = "/ptah.provider.experimental.Provider/OpenMetadataRead"
+	Provider_ReadMetadataPage_FullMethodName      = "/ptah.provider.experimental.Provider/ReadMetadataPage"
+	Provider_CloseMetadataRead_FullMethodName     = "/ptah.provider.experimental.Provider/CloseMetadataRead"
+	Provider_TryLock_FullMethodName               = "/ptah.provider.experimental.Provider/TryLock"
+	Provider_CheckLock_FullMethodName             = "/ptah.provider.experimental.Provider/CheckLock"
+	Provider_ReleaseLock_FullMethodName           = "/ptah.provider.experimental.Provider/ReleaseLock"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -68,6 +69,7 @@ type ProviderClient interface {
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
 	PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error)
+	ProjectTableCreations(ctx context.Context, in *ProjectTableCreationsRequest, opts ...grpc.CallOption) (*ProjectedTableCreations, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
@@ -207,6 +209,16 @@ func (c *providerClient) PrepareTables(ctx context.Context, in *PrepareTablesReq
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PreparedTables)
 	err := c.cc.Invoke(ctx, Provider_PrepareTables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ProjectTableCreations(ctx context.Context, in *ProjectTableCreationsRequest, opts ...grpc.CallOption) (*ProjectedTableCreations, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectedTableCreations)
+	err := c.cc.Invoke(ctx, Provider_ProjectTableCreations_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -383,6 +395,7 @@ type ProviderServer interface {
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
 	PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error)
+	ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
@@ -443,6 +456,9 @@ func (UnimplementedProviderServer) PlanFeatures(context.Context, *PlanFeaturesRe
 }
 func (UnimplementedProviderServer) PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PrepareTables not implemented")
+}
+func (UnimplementedProviderServer) ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ProjectTableCreations not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -722,6 +738,24 @@ func _Provider_PrepareTables_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).PrepareTables(ctx, req.(*PrepareTablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ProjectTableCreations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectTableCreationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ProjectTableCreations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ProjectTableCreations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ProjectTableCreations(ctx, req.(*ProjectTableCreationsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1050,6 +1084,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PrepareTables",
 			Handler:    _Provider_PrepareTables_Handler,
+		},
+		{
+			MethodName: "ProjectTableCreations",
+			Handler:    _Provider_ProjectTableCreations_Handler,
 		},
 		{
 			MethodName: "Execute",

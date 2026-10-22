@@ -363,7 +363,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 22 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 23 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -1052,7 +1052,8 @@ promising that the host's common table model captures its semantics.
 The host registers schema rendering, validation, identity table preparation, and
 identity creation projection only for engines that declare this contract. Shared comparison then
 refuses a missing preparation service, including for an empty desired schema.
-The common planner refuses table changes without the contract. AST rendering
+The common planner refuses shared SQL table changes without the contract. Native
+CREATE can instead be claimed through an explicit owner rewrite. AST rendering
 also checks before lowering a common table or column operation. Provider-owned
 operations keep their separate model, planning, and rendering contracts.
 
@@ -1092,5 +1093,38 @@ captures, retaining authored values and knowledge for subsequent comparison.
 This service does not grant common SQL rendering or identity CREATE projection.
 The independent fixture verifies transport, retained source bindings and rich
 column data, composite key membership, and whole-batch refusal. Native YDB table
-creation still needs owner-defined CREATE projection and a complete captured
-table handoff to planning. Those remain part of #4204.
+creation uses a separate owner-defined projection and captured planning handoff.
+Preparation alone does not select either service.
+
+
+## CREATE prediction preserves the host owner inventory
+
+Experimental revision 23 defines `ProjectTableCreations` behind
+`schema.project-table-creations`. It receives full declared tables, target facts,
+and an explicit inventory of eligible facet owners. The host reads this inventory
+through `TableCreationInput.FacetOwners`, which uses the same declarations as
+core result acceptance. Empty facet slots remain eligible. The SDK does not
+reimplement the host's index and constraint identity rules.
+
+An ordered complete reply may resolve column key membership and return computed
+desired facets or observed overrides. New kinds are allowed on captured owners.
+An observed override requires a desired counterpart and a negotiated conversion.
+Changed owner identities, target bindings, restored exclusions, malformed models,
+and incomplete batches are refused. The server validates against its original
+capture even if owner code mutates the request it receives. Predictions supply
+no catalog coverage or execution receipt.
+
+For native CREATE planning, the host places a nonrenderable step in the common
+graph and sends the complete declaration to assigned parent planners. The owner
+must replace that step with operations accounting for its footprint. Scheduling
+retains dependencies through the rewrite. A reply leaving a placeholder behind
+fails before any plan is published. This permits composite keys and owned
+properties without interpreting them as common SQL. Native ALTER, DROP, schema
+validation, and directory lifecycle still require their corresponding contracts.
+
+The independent fixture checks computed desired and observed values, owner
+slots without declared facets, exclusions, full captures, and batch refusal.
+The YDB provider derives its ordered key from its native CREATE compiler and
+preserves authored settings. It leaves unspecified server defaults unspecified;
+its prediction does not fabricate an observation. Live CREATE and inspection
+qualify the implemented declaration contract separately from offline prediction.

@@ -270,7 +270,7 @@ supports exact and ASCII-insensitive comparison; it makes no claim about other
 collation semantics. Hosts must not infer these rules from a built-in target.
 
 The experimental application adapter requires `schema.common-table-identity.v1`
-for common table rendering, identity preparation, CREATE projection, and planning. This promises
+for common table rendering, identity preparation, identity CREATE projection, and common SQL planning. This promises
 common table and column comparison semantics without implicit schema objects,
 undeclared facets, additional creation
 defaults, or type coercions. A provider must refuse declarations outside that
@@ -289,9 +289,23 @@ retains authored values separately. Complete batch receipts and cancellation
 checks prevent partial preparation.
 
 An engine cannot advertise both preparation policies. Owned preparation does not
-select identity CREATE projection or common SQL planning. Engines with additional
-creation and lifecycle semantics still need corresponding protocol operations
-before the adapter can plan their tables.
+select identity CREATE projection or common SQL planning.
+
+`schema.project-table-creations` selects `TableCreationProjector` for offline
+CREATE prediction. Each input carries a complete declared table and the host's
+explicit inventory of eligible facet owners, including empty table, primary-key,
+index, and named-constraint slots. The reply supplies computed desired facets,
+optional observed overrides, and authoritative column key membership. Computed
+kinds may be new; owners and bindings cannot change, and exclusions cannot be
+restored. Observed overrides require a declared conversion for the same kind.
+Complete batches, immutable captures, and cancellation checks apply at both
+process boundaries. Predictions do not establish execution or inspection.
+
+The host obtains eligible owners from the same inventory used by core acceptance.
+Native CREATE planning gives the owner a captured declaration and an explicit
+graph step to replace. The common scheduler transfers dependencies to the accepted
+replacement and refuses any unclaimed CREATE. Preparation and prediction do not
+grant common SQL rendering, validation, or native ALTER and DROP planning.
 
 The application runtime requires namespaced provider IDs and model kinds, such
 as `github.com/stokaro/ptah-ydb-plugin` and
@@ -395,7 +409,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 22 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 23 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

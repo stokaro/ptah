@@ -40,8 +40,12 @@ additional protocol support. Providers without this feature can still start,
 inspect, and run reviewed SQL migrations through their declared services.
 Providers can declare `schema.prepare-tables` to prepare captured tables offline
 with their own rules. This preserves authored values and inspection knowledge.
-It does not enable identity CREATE prediction or common table planning; those
-require their own supported contracts.
+
+Providers can declare `schema.project-table-creations` for their own offline
+CREATE prediction. Computed values stay within captured owner identities and
+preserve exclusions. Native CREATE planning must replace the host graph step
+with provider operations that retain its dependencies. These services do not
+grant common SQL rendering, schema validation, or native ALTER and DROP support.
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 

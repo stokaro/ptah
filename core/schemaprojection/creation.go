@@ -21,6 +21,23 @@ type TableCreationInput struct {
 	Declaration schemacapture.TableDeclaration
 }
 
+// FacetOwners returns the sorted common objects eligible for CREATE effects,
+// including empty facet slots. It shares the inventory used by acceptance so
+// transports cannot grant providers authority over a different owner set.
+// Invalid or duplicate declarations wrap ErrInvalid and return no identities.
+func (t TableCreationInput) FacetOwners(semantics identifier.Semantics) ([]objectidentity.ID, error) {
+	declared, err := capturefacets.Declared(t.Declaration, t.Subject, semantics)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	result := make([]objectidentity.ID, 0, len(declared))
+	for _, record := range declared {
+		result = append(result, record.Subject)
+	}
+	slices.SortFunc(result, schemaext.CompareRefs)
+	return result, nil
+}
+
 // TableCreationRequest predicts a batch of newly created tables in input order.
 // Source properties must already be decoded by their selected owners. Services
 // must not read files, inspect a server, or mutate captured declarations.

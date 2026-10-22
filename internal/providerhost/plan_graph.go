@@ -48,7 +48,14 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 			}
 		}
 	}
-	return graph.Schedule(ctx, features)
+	scheduled, err := graph.Schedule(ctx, features)
+	if err != nil {
+		return nil, err
+	}
+	if err := rejectUnclaimedCreations(scheduled); err != nil {
+		return nil, err
+	}
+	return scheduled, nil
 }
 
 // Metadata is read from the accepted common operands, never reconstructed from
@@ -66,6 +73,8 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 		switch typed := node.(type) {
 		case *ast.CreateTableNode:
 			name, action = typed.Name, plangraph.Create
+		case *pendingTableCreation:
+			name, action = typed.name, plangraph.Create
 		case *ast.DropTableNode:
 			name, action = typed.Name, plangraph.Drop
 		case *ast.AlterTableNode:

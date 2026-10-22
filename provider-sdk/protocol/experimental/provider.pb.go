@@ -13895,6 +13895,276 @@ func (x *PreparedTables) GetTables() []*PreparedTable {
 	return nil
 }
 
+// ProjectTableCreations predicts CREATE effects from captured declarations.
+// It performs no I/O and establishes neither execution nor catalog inspection.
+type ProjectTableCreationsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Engine         string                 `protobuf:"bytes,1,opt,name=engine,proto3" json:"engine,omitempty"`
+	Identifiers    *ComparisonIdentifiers `protobuf:"bytes,2,opt,name=identifiers,proto3" json:"identifiers,omitempty"`
+	Capabilities   map[string]bool        `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	TargetFeatures []string               `protobuf:"bytes,4,rep,name=target_features,json=targetFeatures,proto3" json:"target_features,omitempty"`
+	Tables         []*TableCreationInput  `protobuf:"bytes,5,rep,name=tables,proto3" json:"tables,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProjectTableCreationsRequest) Reset() {
+	*x = ProjectTableCreationsRequest{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectTableCreationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectTableCreationsRequest) ProtoMessage() {}
+
+func (x *ProjectTableCreationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectTableCreationsRequest.ProtoReflect.Descriptor instead.
+func (*ProjectTableCreationsRequest) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{149}
+}
+
+func (x *ProjectTableCreationsRequest) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *ProjectTableCreationsRequest) GetIdentifiers() *ComparisonIdentifiers {
+	if x != nil {
+		return x.Identifiers
+	}
+	return nil
+}
+
+func (x *ProjectTableCreationsRequest) GetCapabilities() map[string]bool {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *ProjectTableCreationsRequest) GetTargetFeatures() []string {
+	if x != nil {
+		return x.TargetFeatures
+	}
+	return nil
+}
+
+func (x *ProjectTableCreationsRequest) GetTables() []*TableCreationInput {
+	if x != nil {
+		return x.Tables
+	}
+	return nil
+}
+
+type TableCreationInput struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Subject     *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	Declaration *DeclaredTable         `protobuf:"bytes,2,opt,name=declaration,proto3" json:"declaration,omitempty"`
+	// The caller's allowed facet owners, including owners with no declared values.
+	// The host derives these identities from its shared creation acceptance rules.
+	FacetOwners   []*ComparisonIdentity `protobuf:"bytes,3,rep,name=facet_owners,json=facetOwners,proto3" json:"facet_owners,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TableCreationInput) Reset() {
+	*x = TableCreationInput{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TableCreationInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TableCreationInput) ProtoMessage() {}
+
+func (x *TableCreationInput) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TableCreationInput.ProtoReflect.Descriptor instead.
+func (*TableCreationInput) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{150}
+}
+
+func (x *TableCreationInput) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *TableCreationInput) GetDeclaration() *DeclaredTable {
+	if x != nil {
+		return x.Declaration
+	}
+	return nil
+}
+
+func (x *TableCreationInput) GetFacetOwners() []*ComparisonIdentity {
+	if x != nil {
+		return x.FacetOwners
+	}
+	return nil
+}
+
+type ProjectedTableCreation struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Subject                   *ComparisonIdentity    `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	ColumnPrimaryKeysPrepared bool                   `protobuf:"varint,2,opt,name=column_primary_keys_prepared,json=columnPrimaryKeysPrepared,proto3" json:"column_primary_keys_prepared,omitempty"`
+	ColumnPrimaryKeys         []string               `protobuf:"bytes,3,rep,name=column_primary_keys,json=columnPrimaryKeys,proto3" json:"column_primary_keys,omitempty"`
+	// Computed desired values are converted by their selected model owner.
+	DesiredFacets []*ComparisonRecord `protobuf:"bytes,4,rep,name=desired_facets,json=desiredFacets,proto3" json:"desired_facets,omitempty"`
+	// Observed overrides apply after conversion. They are predictions, not reads.
+	ObservedFacets []*ComparisonRecord `protobuf:"bytes,5,rep,name=observed_facets,json=observedFacets,proto3" json:"observed_facets,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProjectedTableCreation) Reset() {
+	*x = ProjectedTableCreation{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectedTableCreation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectedTableCreation) ProtoMessage() {}
+
+func (x *ProjectedTableCreation) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectedTableCreation.ProtoReflect.Descriptor instead.
+func (*ProjectedTableCreation) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{151}
+}
+
+func (x *ProjectedTableCreation) GetSubject() *ComparisonIdentity {
+	if x != nil {
+		return x.Subject
+	}
+	return nil
+}
+
+func (x *ProjectedTableCreation) GetColumnPrimaryKeysPrepared() bool {
+	if x != nil {
+		return x.ColumnPrimaryKeysPrepared
+	}
+	return false
+}
+
+func (x *ProjectedTableCreation) GetColumnPrimaryKeys() []string {
+	if x != nil {
+		return x.ColumnPrimaryKeys
+	}
+	return nil
+}
+
+func (x *ProjectedTableCreation) GetDesiredFacets() []*ComparisonRecord {
+	if x != nil {
+		return x.DesiredFacets
+	}
+	return nil
+}
+
+func (x *ProjectedTableCreation) GetObservedFacets() []*ComparisonRecord {
+	if x != nil {
+		return x.ObservedFacets
+	}
+	return nil
+}
+
+type ProjectedTableCreations struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Complete      bool                      `protobuf:"varint,1,opt,name=complete,proto3" json:"complete,omitempty"`
+	Tables        []*ProjectedTableCreation `protobuf:"bytes,2,rep,name=tables,proto3" json:"tables,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectedTableCreations) Reset() {
+	*x = ProjectedTableCreations{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectedTableCreations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectedTableCreations) ProtoMessage() {}
+
+func (x *ProjectedTableCreations) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectedTableCreations.ProtoReflect.Descriptor instead.
+func (*ProjectedTableCreations) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{152}
+}
+
+func (x *ProjectedTableCreations) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *ProjectedTableCreations) GetTables() []*ProjectedTableCreation {
+	if x != nil {
+		return x.Tables
+	}
+	return nil
+}
+
 var File_protocol_experimental_provider_proto protoreflect.FileDescriptor
 
 const file_protocol_experimental_provider_proto_rawDesc = "" +
@@ -15184,11 +15454,33 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x0fresolved_facets\x18\x04 \x03(\v2,.ptah.provider.experimental.ComparisonRecordR\x0eresolvedFacets\"o\n" +
 	"\x0ePreparedTables\x12\x1a\n" +
 	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12A\n" +
-	"\x06tables\x18\x02 \x03(\v2).ptah.provider.experimental.PreparedTableR\x06tables*\\\n" +
+	"\x06tables\x18\x02 \x03(\v2).ptah.provider.experimental.PreparedTableR\x06tables\"\xad\x03\n" +
+	"\x1cProjectTableCreationsRequest\x12\x16\n" +
+	"\x06engine\x18\x01 \x01(\tR\x06engine\x12S\n" +
+	"\videntifiers\x18\x02 \x01(\v21.ptah.provider.experimental.ComparisonIdentifiersR\videntifiers\x12n\n" +
+	"\fcapabilities\x18\x03 \x03(\v2J.ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntryR\fcapabilities\x12'\n" +
+	"\x0ftarget_features\x18\x04 \x03(\tR\x0etargetFeatures\x12F\n" +
+	"\x06tables\x18\x05 \x03(\v2..ptah.provider.experimental.TableCreationInputR\x06tables\x1a?\n" +
+	"\x11CapabilitiesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xfe\x01\n" +
+	"\x12TableCreationInput\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12K\n" +
+	"\vdeclaration\x18\x02 \x01(\v2).ptah.provider.experimental.DeclaredTableR\vdeclaration\x12Q\n" +
+	"\ffacet_owners\x18\x03 \x03(\v2..ptah.provider.experimental.ComparisonIdentityR\vfacetOwners\"\xff\x02\n" +
+	"\x16ProjectedTableCreation\x12H\n" +
+	"\asubject\x18\x01 \x01(\v2..ptah.provider.experimental.ComparisonIdentityR\asubject\x12?\n" +
+	"\x1ccolumn_primary_keys_prepared\x18\x02 \x01(\bR\x19columnPrimaryKeysPrepared\x12.\n" +
+	"\x13column_primary_keys\x18\x03 \x03(\tR\x11columnPrimaryKeys\x12S\n" +
+	"\x0edesired_facets\x18\x04 \x03(\v2,.ptah.provider.experimental.ComparisonRecordR\rdesiredFacets\x12U\n" +
+	"\x0fobserved_facets\x18\x05 \x03(\v2,.ptah.provider.experimental.ComparisonRecordR\x0eobservedFacets\"\x81\x01\n" +
+	"\x17ProjectedTableCreations\x12\x1a\n" +
+	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12J\n" +
+	"\x06tables\x18\x02 \x03(\v22.ptah.provider.experimental.ProjectedTableCreationR\x06tables*\\\n" +
 	"\x14TransactionIsolation\x12%\n" +
 	"!TRANSACTION_ISOLATION_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aDEFAULT\x10\x01\x12\x10\n" +
-	"\fSERIALIZABLE\x10\x022\xc0\x16\n" +
+	"\fSERIALIZABLE\x10\x022\xc9\x17\n" +
 	"\bProvider\x12`\n" +
 	"\bDescribe\x12+.ptah.provider.experimental.DescribeRequest\x1a'.ptah.provider.experimental.Description\x12T\n" +
 	"\x04Open\x12'.ptah.provider.experimental.OpenRequest\x1a#.ptah.provider.experimental.Session\x12T\n" +
@@ -15202,7 +15494,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\rConvertValues\x120.ptah.provider.experimental.ConvertValuesRequest\x1a,.ptah.provider.experimental.NormalizedValues\x12m\n" +
 	"\rCompareModels\x120.ptah.provider.experimental.CompareModelsRequest\x1a*.ptah.provider.experimental.ComparedModels\x12l\n" +
 	"\fPlanFeatures\x12/.ptah.provider.experimental.PlanFeaturesRequest\x1a+.ptah.provider.experimental.PlannedFeatures\x12m\n" +
-	"\rPrepareTables\x120.ptah.provider.experimental.PrepareTablesRequest\x1a*.ptah.provider.experimental.PreparedTables\x12\\\n" +
+	"\rPrepareTables\x120.ptah.provider.experimental.PrepareTablesRequest\x1a*.ptah.provider.experimental.PreparedTables\x12\x86\x01\n" +
+	"\x15ProjectTableCreations\x128.ptah.provider.experimental.ProjectTableCreationsRequest\x1a3.ptah.provider.experimental.ProjectedTableCreations\x12\\\n" +
 	"\aExecute\x12*.ptah.provider.experimental.ExecuteRequest\x1a%.ptah.provider.experimental.Execution\x12p\n" +
 	"\x10BeginTransaction\x123.ptah.provider.experimental.BeginTransactionRequest\x1a'.ptah.provider.experimental.Transaction\x12x\n" +
 	"\x11FinishTransaction\x124.ptah.provider.experimental.FinishTransactionRequest\x1a-.ptah.provider.experimental.TransactionResult\x12j\n" +
@@ -15232,7 +15525,7 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 32)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 156)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 161)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(TransactionIsolation)(0),            // 0: ptah.provider.experimental.TransactionIsolation
 	(YAMLSourceKey_Scope)(0),             // 1: ptah.provider.experimental.YAMLSourceKey.Scope
@@ -15415,13 +15708,18 @@ var file_protocol_experimental_provider_proto_goTypes = []any{
 	(*TablePreparationInput)(nil),        // 178: ptah.provider.experimental.TablePreparationInput
 	(*PreparedTable)(nil),                // 179: ptah.provider.experimental.PreparedTable
 	(*PreparedTables)(nil),               // 180: ptah.provider.experimental.PreparedTables
-	nil,                                  // 181: ptah.provider.experimental.Session.CapabilitiesEntry
-	nil,                                  // 182: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	nil,                                  // 183: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	nil,                                  // 184: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	nil,                                  // 185: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	nil,                                  // 186: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	nil,                                  // 187: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	(*ProjectTableCreationsRequest)(nil), // 181: ptah.provider.experimental.ProjectTableCreationsRequest
+	(*TableCreationInput)(nil),           // 182: ptah.provider.experimental.TableCreationInput
+	(*ProjectedTableCreation)(nil),       // 183: ptah.provider.experimental.ProjectedTableCreation
+	(*ProjectedTableCreations)(nil),      // 184: ptah.provider.experimental.ProjectedTableCreations
+	nil,                                  // 185: ptah.provider.experimental.Session.CapabilitiesEntry
+	nil,                                  // 186: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	nil,                                  // 187: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	nil,                                  // 188: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	nil,                                  // 189: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	nil,                                  // 190: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	nil,                                  // 191: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	nil,                                  // 192: ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	35,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
@@ -15437,7 +15735,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	3,   // 10: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
 	38,  // 11: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
 	37,  // 12: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	181, // 13: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
+	185, // 13: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
 	45,  // 14: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
 	39,  // 15: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
 	47,  // 16: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
@@ -15460,7 +15758,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	5,   // 33: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
 	38,  // 34: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
 	48,  // 35: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	182, // 36: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	186, // 36: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
 	39,  // 37: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
 	51,  // 38: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
 	51,  // 39: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
@@ -15575,7 +15873,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	37,  // 148: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
 	111, // 149: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
 	112, // 150: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	183, // 151: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	187, // 151: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
 	105, // 152: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
 	105, // 153: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
 	106, // 154: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
@@ -15633,7 +15931,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	138, // 206: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
 	146, // 207: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
 	112, // 208: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	184, // 209: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	188, // 209: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
 	129, // 210: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
 	134, // 211: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
 	133, // 212: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
@@ -15654,7 +15952,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	145, // 227: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
 	137, // 228: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
 	142, // 229: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	185, // 230: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	189, // 230: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
 	97,  // 231: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
 	97,  // 232: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
 	147, // 233: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
@@ -15664,7 +15962,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	137, // 237: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
 	97,  // 238: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
 	142, // 239: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	186, // 240: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	190, // 240: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
 	97,  // 241: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
 	97,  // 242: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
 	151, // 243: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
@@ -15707,7 +16005,7 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	38,  // 280: ptah.provider.experimental.ReservedObject.normalized_object:type_name -> ptah.provider.experimental.Reference
 	31,  // 281: ptah.provider.experimental.ReservedObject.purpose:type_name -> ptah.provider.experimental.ReservedObject.Purpose
 	112, // 282: ptah.provider.experimental.PrepareTablesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	187, // 283: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	191, // 283: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
 	178, // 284: ptah.provider.experimental.PrepareTablesRequest.tables:type_name -> ptah.provider.experimental.TablePreparationInput
 	97,  // 285: ptah.provider.experimental.TablePreparationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
 	138, // 286: ptah.provider.experimental.TablePreparationInput.desired:type_name -> ptah.provider.experimental.DeclaredTable
@@ -15716,65 +16014,77 @@ var file_protocol_experimental_provider_proto_depIdxs = []int32{
 	97,  // 289: ptah.provider.experimental.PreparedTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
 	104, // 290: ptah.provider.experimental.PreparedTable.resolved_facets:type_name -> ptah.provider.experimental.ComparisonRecord
 	179, // 291: ptah.provider.experimental.PreparedTables.tables:type_name -> ptah.provider.experimental.PreparedTable
-	33,  // 292: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	40,  // 293: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	42,  // 294: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	43,  // 295: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	50,  // 296: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	59,  // 297: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	88,  // 298: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	63,  // 299: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	93,  // 300: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
-	113, // 301: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
-	135, // 302: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
-	177, // 303: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
-	53,  // 304: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	54,  // 305: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
-	56,  // 306: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
-	156, // 307: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
-	158, // 308: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
-	159, // 309: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
-	167, // 310: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
-	168, // 311: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
-	170, // 312: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
-	172, // 313: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	174, // 314: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
-	172, // 315: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	162, // 316: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
-	162, // 317: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
-	162, // 318: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
-	34,  // 319: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	41,  // 320: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	32,  // 321: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	44,  // 322: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	52,  // 323: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	60,  // 324: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	89,  // 325: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	65,  // 326: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	65,  // 327: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
-	117, // 328: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
-	136, // 329: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
-	180, // 330: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
-	58,  // 331: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	55,  // 332: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
-	57,  // 333: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
-	157, // 334: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
-	160, // 335: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
-	160, // 336: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
-	169, // 337: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	169, // 338: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	171, // 339: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
-	173, // 340: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	175, // 341: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
-	173, // 342: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	163, // 343: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
-	163, // 344: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
-	163, // 345: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
-	319, // [319:346] is the sub-list for method output_type
-	292, // [292:319] is the sub-list for method input_type
-	292, // [292:292] is the sub-list for extension type_name
-	292, // [292:292] is the sub-list for extension extendee
-	0,   // [0:292] is the sub-list for field type_name
+	112, // 292: ptah.provider.experimental.ProjectTableCreationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	192, // 293: ptah.provider.experimental.ProjectTableCreationsRequest.capabilities:type_name -> ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
+	182, // 294: ptah.provider.experimental.ProjectTableCreationsRequest.tables:type_name -> ptah.provider.experimental.TableCreationInput
+	97,  // 295: ptah.provider.experimental.TableCreationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	138, // 296: ptah.provider.experimental.TableCreationInput.declaration:type_name -> ptah.provider.experimental.DeclaredTable
+	97,  // 297: ptah.provider.experimental.TableCreationInput.facet_owners:type_name -> ptah.provider.experimental.ComparisonIdentity
+	97,  // 298: ptah.provider.experimental.ProjectedTableCreation.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	104, // 299: ptah.provider.experimental.ProjectedTableCreation.desired_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	104, // 300: ptah.provider.experimental.ProjectedTableCreation.observed_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	183, // 301: ptah.provider.experimental.ProjectedTableCreations.tables:type_name -> ptah.provider.experimental.ProjectedTableCreation
+	33,  // 302: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	40,  // 303: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	42,  // 304: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	43,  // 305: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	50,  // 306: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	59,  // 307: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	88,  // 308: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	63,  // 309: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	93,  // 310: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	113, // 311: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
+	135, // 312: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
+	177, // 313: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
+	181, // 314: ptah.provider.experimental.Provider.ProjectTableCreations:input_type -> ptah.provider.experimental.ProjectTableCreationsRequest
+	53,  // 315: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	54,  // 316: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
+	56,  // 317: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
+	156, // 318: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
+	158, // 319: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
+	159, // 320: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
+	167, // 321: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
+	168, // 322: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
+	170, // 323: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
+	172, // 324: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	174, // 325: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
+	172, // 326: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	162, // 327: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
+	162, // 328: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
+	162, // 329: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
+	34,  // 330: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	41,  // 331: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	32,  // 332: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	44,  // 333: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	52,  // 334: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	60,  // 335: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	89,  // 336: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	65,  // 337: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	65,  // 338: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	117, // 339: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
+	136, // 340: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
+	180, // 341: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
+	184, // 342: ptah.provider.experimental.Provider.ProjectTableCreations:output_type -> ptah.provider.experimental.ProjectedTableCreations
+	58,  // 343: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	55,  // 344: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
+	57,  // 345: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
+	157, // 346: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
+	160, // 347: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
+	160, // 348: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
+	169, // 349: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	169, // 350: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	171, // 351: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
+	173, // 352: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	175, // 353: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
+	173, // 354: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	163, // 355: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
+	163, // 356: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
+	163, // 357: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
+	330, // [330:358] is the sub-list for method output_type
+	302, // [302:330] is the sub-list for method input_type
+	302, // [302:302] is the sub-list for extension type_name
+	302, // [302:302] is the sub-list for extension extendee
+	0,   // [0:302] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -15837,7 +16147,7 @@ func file_protocol_experimental_provider_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
 			NumEnums:      32,
-			NumMessages:   156,
+			NumMessages:   161,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

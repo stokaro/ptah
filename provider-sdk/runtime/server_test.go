@@ -194,3 +194,29 @@ type tablePreparer struct{}
 func (*tablePreparer) PrepareTables(context.Context, *protocol.PrepareTablesRequest) (*protocol.PreparedTables, error) {
 	return &protocol.PreparedTables{Complete: true}, nil
 }
+
+func TestServerRequiresAdvertisedTableCreations(t *testing.T) {
+	c := qt.New(t)
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "schema-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.ProjectTableCreationsFeature}, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.NormalizeValuesFeature, provider.ProjectTableCreationsFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}, ValueNormalizer: &normalizer{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.TableCreations = (*tableProjector)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.TableCreations = &tableProjector{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.CommonTableIdentityFeature)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Engines[0].Features = []string{provider.ProjectTableCreationsFeature}
+	description.Features = []string{provider.NormalizeValuesFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Engines[0].Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	description.Features = []string{provider.ProjectTableCreationsFeature}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type tableProjector struct{}
+
+func (*tableProjector) ProjectTableCreations(context.Context, *protocol.ProjectTableCreationsRequest) (*protocol.ProjectedTableCreations, error) {
+	return &protocol.ProjectedTableCreations{Complete: true}, nil
+}

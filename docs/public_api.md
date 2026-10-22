@@ -2277,7 +2277,11 @@ its names, and refuses an unregistered target with
 `Target.Creations` selects `schemaprojection.TableCreationService` for offline
 source projection. It receives decoded table captures and returns a complete
 ordered batch of computed facets and column key membership. `TableCreation.Facets`
-contains `schemaext.FacetRecord` values keyed by the captured table or index.
+contains `schemaext.FacetRecord` values keyed by the captured table, primary key,
+index, or named constraint. `TableCreationInput.FacetOwners` returns the sorted
+eligible identities, including empty slots, from the same inventory used by
+acceptance. Transports use it to preserve the core ownership boundary.
+
 Computed facets use the desired representation for subsequent owner conversion;
 they may describe creation defaults absent from the source. Duplicate or invented
 owners, changed identity spelling, excluded kinds, and new bindings are refused.
