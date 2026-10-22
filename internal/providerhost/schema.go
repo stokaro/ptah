@@ -60,6 +60,9 @@ func (t *target) registration() engine.Target {
 		result.SchemaRendering, result.Validation = t, t
 		result.Preparation, result.Creations = t, t
 	}
+	if slices.Contains(t.engine.GetFeatures(), provider.ValidateSchemaFeature) {
+		result.Validation = t
+	}
 	if slices.Contains(t.engine.GetFeatures(), provider.PrepareTablesFeature) {
 		result.Preparation = t
 	}
@@ -100,6 +103,9 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 }
 
 func (t *target) ValidateSchema(ctx context.Context, request schemavalidation.Request) (schemavalidation.Result, error) {
+	if slices.Contains(t.engine.GetFeatures(), provider.ValidateSchemaFeature) {
+		return t.validateOwnedSchema(ctx, request)
+	}
 	_, err := t.RenderSchema(ctx, renderer.SchemaRequest{Target: request.Target, Capabilities: request.Capabilities, Identifiers: request.Identifiers, Schema: request.Schema})
 	if err != nil {
 		return schemavalidation.Result{}, err

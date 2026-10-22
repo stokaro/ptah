@@ -363,7 +363,7 @@ before conversion. The resulting common JSON export still reports payload loss.
 
 ## Consequences
 
-Experimental revision 23 refuses earlier revisions. Pre-v1 compatibility does not justify
+Experimental revision 24 refuses earlier revisions. Pre-v1 compatibility does not justify
 an alias, a second decoder, or an embedded fallback. The independent fixture
 proves normalization without a session, exact integer preservation, explicit
 refusal of null and unknown fields, and complete-batch failure. Its synthetic
@@ -1128,3 +1128,23 @@ The YDB provider derives its ordered key from its native CREATE compiler and
 preserves authored settings. It leaves unspecified server defaults unspecified;
 its prediction does not fabricate an observation. Live CREATE and inspection
 qualify the implemented declaration contract separately from offline prediction.
+
+## Schema validation is an independent offline service
+
+Experimental revision 24 defines `ValidateSchema` behind `schema.validate`.
+Native validation consumes captured declarations instead of rendering common SQL
+as a proxy for validity. Preparation, CREATE prediction, and execution retain
+their separate responsibilities. A valid declaration may still need a lifecycle
+service that the provider does not implement.
+
+The adapter transports tables, namespaces, enums, native model state, common and
+native coverage, dependencies, and explicit identifier and capability facts.
+Source-only embedding metadata is materialized into captured columns. Other
+populated declaration families are refused until the transport represents them.
+Child declarations must have exactly one captured table owner; traversing tables
+must never turn an orphaned or ambiguous child into a successful check.
+
+A completed result carries typed schema diagnostics. Incomplete replies and
+provider failures return no diagnostic prefix. Both process boundaries validate
+the request and result, and owner code receives a clone. No validation receipt
+establishes inspection coverage, a migration plan, or an execution outcome.

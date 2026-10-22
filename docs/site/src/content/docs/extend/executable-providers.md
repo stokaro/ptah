@@ -45,7 +45,12 @@ Providers can declare `schema.project-table-creations` for their own offline
 CREATE prediction. Computed values stay within captured owner identities and
 preserve exclusions. Native CREATE planning must replace the host graph step
 with provider operations that retain its dependencies. These services do not
-grant common SQL rendering, schema validation, or native ALTER and DROP support.
+grant common SQL rendering or native ALTER and DROP support.
+
+`schema.validate` separately checks captured declarations offline and returns
+typed diagnostics. It requires neither SQL rendering nor a database session.
+The host rejects declaration families it cannot transport completely; a valid
+declaration does not establish that its migration can be planned or applied.
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 
