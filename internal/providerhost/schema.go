@@ -63,6 +63,9 @@ func (t *target) registration() engine.Target {
 	if slices.Contains(t.engine.GetFeatures(), provider.PrepareTablesFeature) {
 		result.Preparation = t
 	}
+	if slices.Contains(t.engine.GetFeatures(), provider.ProjectTableCreationsFeature) {
+		result.Creations = t
+	}
 	return result
 }
 
@@ -129,9 +132,12 @@ func (t *target) PrepareTables(ctx context.Context, request schemapreparation.Re
 	return schemapreparation.Result{Complete: true, Tables: result.Tables}, nil
 }
 
-// ProjectTableCreations accepts only the lossless common table contract. It
-// records declared key membership and supplies no engine-specific defaults.
+// ProjectTableCreations selects owned prediction or the explicit common
+// identity contract. Neither policy falls back to a built-in engine.
 func (t *target) ProjectTableCreations(ctx context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
+	if slices.Contains(t.engine.GetFeatures(), provider.ProjectTableCreationsFeature) {
+		return t.projectOwnedTableCreations(ctx, request)
+	}
 	if err := ctx.Err(); err != nil {
 		return schemaprojection.TableCreationResult{}, err
 	}
