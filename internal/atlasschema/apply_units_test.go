@@ -51,3 +51,27 @@ func TestCapturedApplyKeepsBaseAndProvidedCapabilitiesSeparate(t *testing.T) {
 	c.Assert(captured.Execute(c.Context(), conn, migrator.MigrationTxModeNone), qt.IsNil)
 	c.Assert(sqliteTableExists(c, path, "prefix"), qt.IsTrue)
 }
+
+func TestCapturedApplyKeepsATrailingSkippedObjectNote(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "target.db")
+	conn := connectSQLite(c, path)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	info := conn.Info()
+	const note = "-- SQLITE: role app_user is not supported by this target; skipped."
+	rendered := planner.RenderedPlan{
+		Request: renderer.Request{Target: info.Dialect, Capabilities: info.Capabilities, Nodes: []ast.Node{ast.NewRawSQL("CREATE TABLE prefix (id INTEGER);"), ast.NewRawSQL(note)}},
+		Result:  renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{"CREATE TABLE prefix (id INTEGER);\n", note + "\n"})},
+		Dialect: info.Dialect,
+	}
+
+	captured, err := atlasschema.CaptureApplyPlan(info, rendered)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := captured.SQL()
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "CREATE TABLE prefix")
+	c.Assert(sql, qt.Contains, note)
+	c.Assert(captured.Execute(c.Context(), conn, migrator.MigrationTxModeAll), qt.IsNil)
+	c.Assert(sqliteTableExists(c, path, "prefix"), qt.IsTrue)
+}
