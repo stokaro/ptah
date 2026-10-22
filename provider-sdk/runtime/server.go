@@ -58,6 +58,7 @@ type Server struct {
 	FeaturePlanner  provider.FeaturePlanner
 	TablePreparer   provider.TablePreparer
 	TableCreations  provider.TableCreationProjector
+	Linter          provider.Linter
 	SchemaValidator provider.SchemaValidator
 }
 
@@ -89,6 +90,7 @@ func (s Server) Validate() error {
 		{provider.PrepareTablesFeature, !nilService(s.TablePreparer)},
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
+		{provider.LintFeature, !nilService(s.Linter)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

@@ -239,3 +239,31 @@ type schemaValidator struct{}
 func (*schemaValidator) ValidateSchema(context.Context, *protocol.ValidateSchemaRequest) (*protocol.SchemaValidation, error) {
 	return &protocol.SchemaValidation{Complete: true}, nil
 }
+
+func TestServerRequiresAdvertisedLinter(t *testing.T) {
+	c := qt.New(t)
+	rules := []*protocol.LintRule{{Code: "XY101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
+	description := &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/test", Version: "1", SemanticIdentity: "lint-1", Engines: []*protocol.Engine{{Id: "test", Features: []string{provider.LintFeature}, LintRules: rules, Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT, IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE}}}, Features: []string{provider.LintFeature}}
+	server := transport.Server{Description: description, Sessions: &sessions{}}
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.Linter = (*linter)(nil)
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+	server.Linter = &linter{}
+	c.Assert(server.Validate(), qt.IsNil)
+	description.Features = nil
+	c.Assert(server.Validate(), qt.ErrorIs, provider.ErrProtocol)
+}
+
+type linter struct{}
+
+func (*linter) SplitLintStatements(context.Context, *protocol.SplitLintRequest) (*protocol.SplitLint, error) {
+	return &protocol.SplitLint{}, nil
+}
+
+func (*linter) AnnotateLintStatements(context.Context, *protocol.AnnotateLintRequest) (*protocol.AnnotatedLint, error) {
+	return &protocol.AnnotatedLint{}, nil
+}
+
+func (*linter) CheckLintMigrations(context.Context, *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
+	return &protocol.CheckedLint{Complete: true}, nil
+}
