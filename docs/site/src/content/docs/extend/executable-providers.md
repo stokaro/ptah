@@ -65,6 +65,11 @@ request is unsupported or its runtime is unavailable. The host releases the leas
 when it is done, and the provider removes the leases it still holds when its
 process ends.
 
+An engine can declare its release lines in the description. Each line names a
+support level and, for a line that claims testing, the image that runs it. A line
+the provider keeps without running it is best effort and carries the reason. The
+host refuses a description that claims testing nothing runs.
+
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 
