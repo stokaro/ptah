@@ -30,6 +30,7 @@ const (
 	Provider_ConvertValues_FullMethodName     = "/ptah.provider.experimental.Provider/ConvertValues"
 	Provider_CompareModels_FullMethodName     = "/ptah.provider.experimental.Provider/CompareModels"
 	Provider_PlanFeatures_FullMethodName      = "/ptah.provider.experimental.Provider/PlanFeatures"
+	Provider_PrepareTables_FullMethodName     = "/ptah.provider.experimental.Provider/PrepareTables"
 	Provider_Execute_FullMethodName           = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName  = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName = "/ptah.provider.experimental.Provider/FinishTransaction"
@@ -66,6 +67,7 @@ type ProviderClient interface {
 	ConvertValues(ctx context.Context, in *ConvertValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
+	PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
@@ -195,6 +197,16 @@ func (c *providerClient) PlanFeatures(ctx context.Context, in *PlanFeaturesReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PlannedFeatures)
 	err := c.cc.Invoke(ctx, Provider_PlanFeatures_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreparedTables)
+	err := c.cc.Invoke(ctx, Provider_PrepareTables_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -370,6 +382,7 @@ type ProviderServer interface {
 	ConvertValues(context.Context, *ConvertValuesRequest) (*NormalizedValues, error)
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
+	PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
@@ -427,6 +440,9 @@ func (UnimplementedProviderServer) CompareModels(context.Context, *CompareModels
 }
 func (UnimplementedProviderServer) PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlanFeatures not implemented")
+}
+func (UnimplementedProviderServer) PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareTables not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -688,6 +704,24 @@ func _Provider_PlanFeatures_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).PlanFeatures(ctx, req.(*PlanFeaturesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareTables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareTablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareTables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareTables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareTables(ctx, req.(*PrepareTablesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1012,6 +1046,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlanFeatures",
 			Handler:    _Provider_PlanFeatures_Handler,
+		},
+		{
+			MethodName: "PrepareTables",
+			Handler:    _Provider_PrepareTables_Handler,
 		},
 		{
 			MethodName: "Execute",

@@ -38,7 +38,10 @@ The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
 additional protocol support. Providers without this feature can still start,
 inspect, and run reviewed SQL migrations through their declared services.
-Schema comparison and common table planning remain unavailable for those providers.
+Providers can declare `schema.prepare-tables` to prepare captured tables offline
+with their own rules. This preserves authored values and inspection knowledge.
+It does not enable identity CREATE prediction or common table planning; those
+require their own supported contracts.
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 

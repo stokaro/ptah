@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 21
+const Revision uint32 = 22
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -113,6 +113,14 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 }
 
 func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
+	if slices.Contains(engine.GetFeatures(), PrepareTablesFeature) {
+		if !slices.Contains(description.GetFeatures(), PrepareTablesFeature) {
+			return fmt.Errorf("%w: engine preparation requires the table preparation service", ErrProtocol)
+		}
+		if slices.Contains(engine.GetFeatures(), CommonTableIdentityFeature) {
+			return fmt.Errorf("%w: engine cannot select both identity and owned table preparation", ErrProtocol)
+		}
+	}
 	if slices.Contains(engine.GetFeatures(), MetadataFeature) && !slices.Contains(description.GetFeatures(), MetadataFeature) {
 		return fmt.Errorf("%w: engine metadata requires the metadata service", ErrProtocol)
 	}
@@ -138,6 +146,10 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 }
 
 func validateSemanticServices(value *protocol.Description) error {
+	if slices.Contains(value.GetFeatures(), PrepareTablesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
+		return fmt.Errorf("%w: table preparation requires value normalization", ErrProtocol)
+	}
+
 	if slices.Contains(value.GetFeatures(), TransactionsFeature) && !slices.Contains(value.GetFeatures(), ExecuteFeature) {
 		return fmt.Errorf("%w: transactions require execution", ErrProtocol)
 	}
