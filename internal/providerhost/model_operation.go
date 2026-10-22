@@ -47,6 +47,16 @@ func normalizedOperationFacts(facts *protocol.OperationSemantics) *operationFact
 }
 
 func (t *target) nativeOperation(payload ast.ExtensionPayload, role protocol.NativeOperation_Role, parent *protocol.Reference) (*protocol.Change, error) {
+	value, err := t.operationValue(payload)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.Change{Object: value.wire.Subject.protocol(), Operation: &protocol.Change_Native{Native: &protocol.NativeOperation{Value: proto.CloneOf(value.normalized), Role: role, Parent: proto.CloneOf(parent)}}}, nil
+}
+
+// operationValue checks the frozen executable, model, and target profile before
+// either rendering or executing a captured operation.
+func (t *target) operationValue(payload ast.ExtensionPayload) (*resolvedModel, error) {
 	if payload == nil {
 		return nil, fmt.Errorf("%w: missing native operation", schemaext.ErrInvalidValue)
 	}
@@ -65,5 +75,5 @@ func (t *target) nativeOperation(payload ast.ExtensionPayload, role protocol.Nat
 	if value.wire.Engine != t.engine.GetId() || !slices.Equal(featureSet(value.wire.Features), featureSet(t.engine.GetFeatures())) {
 		return nil, fmt.Errorf("%w: native operation target profile changed", schemaext.ErrIncompatibleCodec)
 	}
-	return &protocol.Change{Object: value.wire.Subject.protocol(), Operation: &protocol.Change_Native{Native: &protocol.NativeOperation{Value: proto.CloneOf(value.normalized), Role: role, Parent: proto.CloneOf(parent)}}}, nil
+	return value, nil
 }

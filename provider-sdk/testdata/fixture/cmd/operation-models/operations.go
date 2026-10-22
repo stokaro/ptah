@@ -145,8 +145,8 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 			continue
 		}
 		transactional, known := r.GetCapabilities()["transactional_ddl"]
-		if !known || transactional {
-			return nil, fmt.Errorf("fixture requires explicit nontransactional DDL")
+		if !known || transactional != p.transactionalDDL {
+			return nil, fmt.Errorf("fixture requires its selected transactional DDL profile")
 		}
 		sql, err := renderNative(change.GetNative())
 		if err != nil {
