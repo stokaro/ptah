@@ -37,7 +37,7 @@ func TestProviderPublishesAndChecksLintRulesIndependently(t *testing.T) {
 	c.Assert(split.Files[0][0].Effects, qt.HasLen, 0)
 
 	result, err := runtime.CheckMigrations(c.Context(), lintext.CheckRequest{
-		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(map[capability.Capability]bool{})},
+		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(make(map[capability.Capability]bool))},
 		Codes:  []string{"FX101"},
 		Files:  []lintext.File{{Name: "1.sql", Up: true, Statements: split.Files[0]}},
 	})
@@ -52,7 +52,7 @@ func TestProviderLintDiscardsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(c.Context())
 	cancel()
 	result, err := runtime.CheckMigrations(ctx, lintext.CheckRequest{
-		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(map[capability.Capability]bool{})},
+		Target: lintext.Target{Name: "fixture", Capabilities: capability.Of(make(map[capability.Capability]bool))},
 		Codes:  []string{"FX101"},
 	})
 	c.Assert(err, qt.ErrorIs, context.Canceled)

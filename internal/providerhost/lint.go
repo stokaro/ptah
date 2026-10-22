@@ -3,6 +3,7 @@ package providerhost
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -54,7 +55,7 @@ func lintSources(sources []lintext.Source) []*protocol.LintSource {
 func lintStatements(statements []lintext.Statement) []*protocol.LintStatement {
 	result := make([]*protocol.LintStatement, len(statements))
 	for i, statement := range statements {
-		value := &protocol.LintStatement{Start: uint32(statement.Start), End: uint32(statement.End), Line: uint32(statement.Line), Sql: statement.SQL,
+		value := &protocol.LintStatement{Start: unsigned(statement.Start), End: unsigned(statement.End), Line: unsigned(statement.Line), Sql: statement.SQL,
 			Canonical: statement.Canonical, Words: slices.Clone(statement.Words), SourceWords: slices.Clone(statement.SourceWords), Comments: slices.Clone(statement.Comments)}
 		for _, effect := range statement.Effects {
 			value.Effects = append(value.Effects, lintEffect(effect))
@@ -62,6 +63,12 @@ func lintStatements(statements []lintext.Statement) []*protocol.LintStatement {
 		result[i] = value
 	}
 	return result
+}
+
+// unsigned clamps a position into the wire's range. A clamped position cannot
+// match the source text, so the owner's reply is refused rather than misread.
+func unsigned(n int) uint32 {
+	return uint32(min(max(int64(n), 0), math.MaxUint32)) // #nosec G115 -- clamped into range on this line
 }
 
 func lintEffect(effect lintext.Effect) *protocol.LintEffect {
