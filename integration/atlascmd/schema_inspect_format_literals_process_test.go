@@ -5,6 +5,7 @@ package atlas_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,12 +143,6 @@ func TestNativeBinarySchemaInspectBareFormatsStillRender(t *testing.T) {
 			want:   "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n",
 		},
 		{
-			name:   "JSON empty",
-			dbPath: emptyDB,
-			format: "json",
-			want:   `{"schemas":[{"name":"main"}]}`,
-		},
-		{
 			name:   "HCL empty",
 			dbPath: emptyDB,
 			format: "hcl",
@@ -172,6 +167,35 @@ func TestNativeBinarySchemaInspectBareFormatsStillRender(t *testing.T) {
 			c.Assert(stderr, qt.Equals, "")
 		})
 	}
+}
+
+// TestNativeBinarySchemaInspectJSONWritesTheDesiredModel pins the native JSON
+// shape: Ptah's desired model with inspected-namespace coverage, not the compat
+// adapter's compact `schemas` report.
+func TestNativeBinarySchemaInspectJSONWritesTheDesiredModel(t *testing.T) {
+	c := qt.New(t)
+	native := buildSchemaInspectBinary(c, "ptah", "ptah.run/cmd/ptah")
+	emptyDB := filepath.Join(c.TempDir(), "empty.db")
+	createSchemaInspectSQLiteDatabase(c, emptyDB)
+
+	stdout, stderr, err := runSchemaInspectProcess(
+		native,
+		"",
+		"schema", "inspect",
+		"--db-url", "sqlite://"+emptyDB,
+		"--format", "json",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", stderr))
+	c.Assert(stderr, qt.Equals, "")
+	var document struct {
+		FeatureCoverage map[string]any `json:"feature_coverage"`
+		Schemas         []struct{ Name string }
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &document), qt.IsNil)
+	c.Assert(document.FeatureCoverage["representation"], qt.Equals, "desired")
+	c.Assert(document.Schemas, qt.HasLen, 1)
+	c.Assert(document.Schemas[0].Name, qt.Equals, "main")
 }
 
 func buildSchemaInspectBinary(c *qt.C, name, packagePath string) string {

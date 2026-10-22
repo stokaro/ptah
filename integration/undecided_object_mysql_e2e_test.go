@@ -296,7 +296,7 @@ func TestJSONDocumentsCarryAnUndecidedObjectE2E(t *testing.T) {
 		{
 			name: "schema apply",
 			args: []string{"schema", "apply", "--auto-approve", "--json"},
-			want: undecidedDocument{ContractVersion: 2, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
+			want: undecidedDocument{ContractVersion: 3, Outcome: "no-changes", Undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}}},
 		},
 		{
 			name: "schema drift",
