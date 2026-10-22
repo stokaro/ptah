@@ -287,7 +287,7 @@ func TestCompatCommand_MigrateLintDefaultTextClassifiesRenames(t *testing.T) {
 		{
 			name:     "column rename",
 			base:     "CREATE TABLE users (id int);\n",
-			rename:   "ALTER TABLE users RENAME COLUMN id TO oid;\n",
+			rename:   "ALTER TABLE users RENAME COLUMN id TO uid;\n",
 			exitCode: 1,
 			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
 				"\n" +
@@ -327,7 +327,7 @@ func TestCompatCommand_MigrateLintDefaultTextClassifiesRenames(t *testing.T) {
 		{
 			name:     "control: rename of an object created in the same file",
 			base:     "CREATE TABLE seed (x int);\n",
-			rename:   "CREATE TABLE users (id int);\nALTER TABLE users RENAME COLUMN id TO oid;\n",
+			rename:   "CREATE TABLE users (id int);\nALTER TABLE users RENAME COLUMN id TO uid;\n",
 			exitCode: 0,
 			want: "Analyzing changes from version 1 to 2 (1 migration in total):\n" +
 				"\n" +
@@ -476,7 +476,7 @@ func TestCompatCommand_MigrateLintProjectGlobalLintLog(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO uid;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(atlasProjectLintLogConfig), 0o600), qt.IsNil)
@@ -492,7 +492,7 @@ func TestCompatCommand_MigrateLintProjectEnvLintLog(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO oid;\n")
+	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n\nCREATE TABLE pets (id int);\n\nALTER TABLE users RENAME COLUMN id TO uid;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "DROP TABLE users;\n")
 	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "3.sql", "DROP TABLE pets;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(atlasProjectLintLogConfig), 0o600), qt.IsNil)
