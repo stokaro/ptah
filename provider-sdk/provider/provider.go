@@ -137,6 +137,9 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if err := validateModelPlanning(description, engine); err != nil {
 		return err
 	}
+	if err := validateLintRules(description, engine); err != nil {
+		return err
+	}
 	return validateYAMLSourceKeys(description, engine)
 }
 

@@ -22,6 +22,9 @@ service Provider {
   rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
   rpc ProjectTableCreations(ProjectTableCreationsRequest) returns (ProjectedTableCreations);
   rpc ValidateSchema(ValidateSchemaRequest) returns (SchemaValidation);
+  rpc SplitLintStatements(SplitLintRequest) returns (SplitLint);
+  rpc AnnotateLintStatements(AnnotateLintRequest) returns (AnnotatedLint);
+  rpc CheckLintMigrations(CheckLintRequest) returns (CheckedLint);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -64,6 +67,7 @@ message Engine {
   repeated YAMLSourceKey yaml_source_keys = 7;
   repeated ModelComparison comparisons = 8;
   repeated ModelPlanning planning = 9;
+  repeated LintRule lint_rules = 10;
 }
 // YAMLSourceKey is an explicit owner claim on shared YAML frontend syntax.
 // The host refuses collisions with common keys or other selected owners.
@@ -1531,3 +1535,160 @@ message SchemaCoverageLimit {
  string provenance = 4;
 }
 message SchemaDependencies { repeated string tables = 1; }
+
+// LintRule describes one rule an engine checks, as data the host reads without
+// running it. The rule judges the engine that declares it. Codes are unique
+// across every provider the host holds.
+message LintRule {
+  enum Severity {
+    SEVERITY_UNSPECIFIED = 0;
+    INFO = 1;
+    WARNING = 2;
+    ERROR = 3;
+  }
+  string code = 1;
+  string title = 2;
+  Severity severity = 3;
+  // applies_to_down extends a statement rule to the rollback half of a
+  // migration.
+  bool applies_to_down = 4;
+  // subsumes names rules whose finding on the same statement this rule's
+  // finding replaces.
+  repeated string subsumes = 5;
+}
+
+// LintSource is one migration file offered for splitting.
+message LintSource {
+  string name = 1;
+  string sql = 2;
+  int64 version = 3;
+  bool up = 4;
+  bool down = 5;
+  bool repeatable = 6;
+}
+
+enum LintFact {
+  LINT_FACT_UNSPECIFIED = 0;
+  LINT_FACT_STATEFUL_DROP = 1;
+  LINT_FACT_UNIQUE_INDEX = 2;
+  LINT_FACT_REBUILD_DROP = 3;
+  LINT_FACT_REBUILD_RENAME = 4;
+  LINT_FACT_SAFETY_EFFECT = 5;
+}
+
+enum LintImpact {
+  LINT_IMPACT_UNSPECIFIED = 0;
+  LINT_IMPACT_BEHAVIORAL = 1;
+  LINT_IMPACT_DESTRUCTIVE = 2;
+}
+
+// LintEffect is one fact the owner recognizes in a statement.
+message LintEffect {
+  LintFact fact = 1;
+  string object = 2;
+  string kind = 3;
+  string table = 4;
+  repeated string columns = 5;
+  string clause = 6;
+  string failure = 7;
+  // impact and reason belong to LINT_FACT_SAFETY_EFFECT alone.
+  LintImpact impact = 8;
+  string reason = 9;
+}
+
+// LintStatement is one statement of a file. Start and end are byte offsets
+// into the source text, and line counts from 1.
+message LintStatement {
+  uint32 start = 1;
+  uint32 end = 2;
+  uint32 line = 3;
+  string sql = 4;
+  string canonical = 5;
+  repeated string words = 6;
+  repeated string source_words = 7;
+  repeated string comments = 8;
+  repeated LintEffect effects = 9;
+}
+
+// LintFile is one migration file of a lint run with its statements.
+message LintFile {
+  string name = 1;
+  int64 version = 2;
+  bool up = 3;
+  bool down = 4;
+  bool has_pair = 5;
+  bool no_transaction = 6;
+  bool repeatable = 7;
+  repeated LintStatement statements = 8;
+}
+
+// SplitLintRequest asks the engine's owner to split migration sources into
+// statements. It performs no I/O and opens no session.
+message SplitLintRequest {
+  string engine = 1;
+  repeated LintSource sources = 2;
+}
+message SplitLint {
+  // files holds one entry per source, in request order.
+  repeated LintFile files = 1;
+  // judged lists the facts the owner reports on statements.
+  repeated LintFact judged = 2;
+}
+
+// AnnotateLintRequest asks for the facts of statements the host split with a
+// scanner that knows no dialect.
+message AnnotateLintRequest {
+  string engine = 1;
+  repeated LintFact facts = 2;
+  repeated LintSource sources = 3;
+  repeated LintFile files = 4;
+}
+message LintAnnotation {
+  repeated LintEffect effects = 1;
+  // declined reports a statement the owner does not judge. It carries no effect.
+  bool declined = 2;
+}
+message LintAnnotations {
+  repeated LintAnnotation statements = 1;
+}
+message AnnotatedLint {
+  repeated LintAnnotations files = 1;
+}
+
+// CheckLintRequest asks the owner for the findings of the enabled rules over
+// every file of a lint run, in the order the migrator applies them.
+message CheckLintRequest {
+  string engine = 1;
+  string server_version = 2;
+  map<string, bool> capabilities = 3;
+  repeated string codes = 4;
+  repeated LintFile files = 5;
+  // compatibility is empty for Ptah's own surface and "atlas" for the
+  // Atlas-compatible one.
+  string compatibility = 6;
+}
+message LintSubject {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    TABLE = 1;
+    COLUMN = 2;
+  }
+  Kind kind = 1;
+  string name = 2;
+  string parent = 3;
+  string data_type = 4;
+}
+message LintFinding {
+  string code = 1;
+  // file indexes the request's files. statement indexes the file's
+  // statements, or is -1 for a finding about the whole file.
+  int32 file = 2;
+  int32 statement = 3;
+  string message = 4;
+  repeated LintSubject subjects = 5;
+}
+message CheckedLint {
+  // complete is set by an owner that judged every enabled rule over every file.
+  bool complete = 1;
+  repeated LintFinding findings = 2;
+}
