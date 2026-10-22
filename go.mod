@@ -177,7 +177,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/vuln v1.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/api v0.306.0 // indirect
+	google.golang.org/api v0.307.0 // indirect
 	google.golang.org/genproto v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
