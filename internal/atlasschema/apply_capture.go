@@ -50,6 +50,12 @@ func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (A
 	var indexes []int
 	for _, unit := range units {
 		if !rendered.Result.ExecutableUnits && strings.TrimSpace(sqlutil.StripCommentsForDialect(unit.Fragment.SQL, rendered.Dialect)) == "" {
+			// A comment-only unit is never executed alone. It trails the
+			// statements, so it stays readable in the plan by riding on the
+			// SQL unit before it, which is where a skipped object's note lands.
+			if last := len(plan.units) - 1; last >= 0 && plan.units[last].Native == nil {
+				plan.units[last].SQL += "\n" + unit.Fragment.SQL
+			}
 			continue
 		}
 		plan.units = append(plan.units, unit.Fragment)
