@@ -32,6 +32,7 @@ const (
 	Provider_PlanFeatures_FullMethodName          = "/ptah.provider.experimental.Provider/PlanFeatures"
 	Provider_PrepareTables_FullMethodName         = "/ptah.provider.experimental.Provider/PrepareTables"
 	Provider_ProjectTableCreations_FullMethodName = "/ptah.provider.experimental.Provider/ProjectTableCreations"
+	Provider_ValidateSchema_FullMethodName        = "/ptah.provider.experimental.Provider/ValidateSchema"
 	Provider_Execute_FullMethodName               = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName      = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName     = "/ptah.provider.experimental.Provider/FinishTransaction"
@@ -70,6 +71,7 @@ type ProviderClient interface {
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
 	PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error)
 	ProjectTableCreations(ctx context.Context, in *ProjectTableCreationsRequest, opts ...grpc.CallOption) (*ProjectedTableCreations, error)
+	ValidateSchema(ctx context.Context, in *ValidateSchemaRequest, opts ...grpc.CallOption) (*SchemaValidation, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
@@ -219,6 +221,16 @@ func (c *providerClient) ProjectTableCreations(ctx context.Context, in *ProjectT
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ProjectedTableCreations)
 	err := c.cc.Invoke(ctx, Provider_ProjectTableCreations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ValidateSchema(ctx context.Context, in *ValidateSchemaRequest, opts ...grpc.CallOption) (*SchemaValidation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SchemaValidation)
+	err := c.cc.Invoke(ctx, Provider_ValidateSchema_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -396,6 +408,7 @@ type ProviderServer interface {
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
 	PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error)
 	ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error)
+	ValidateSchema(context.Context, *ValidateSchemaRequest) (*SchemaValidation, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
@@ -459,6 +472,9 @@ func (UnimplementedProviderServer) PrepareTables(context.Context, *PrepareTables
 }
 func (UnimplementedProviderServer) ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProjectTableCreations not implemented")
+}
+func (UnimplementedProviderServer) ValidateSchema(context.Context, *ValidateSchemaRequest) (*SchemaValidation, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ValidateSchema not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -756,6 +772,24 @@ func _Provider_ProjectTableCreations_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).ProjectTableCreations(ctx, req.(*ProjectTableCreationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ValidateSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidateSchemaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ValidateSchema(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ValidateSchema_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ValidateSchema(ctx, req.(*ValidateSchemaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1088,6 +1122,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProjectTableCreations",
 			Handler:    _Provider_ProjectTableCreations_Handler,
+		},
+		{
+			MethodName: "ValidateSchema",
+			Handler:    _Provider_ValidateSchema_Handler,
 		},
 		{
 			MethodName: "Execute",
