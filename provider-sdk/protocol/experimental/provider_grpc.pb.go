@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v7.35.1
-// source: provider.proto
+// source: protocol/experimental/provider.proto
 
 package protocol
 
@@ -1379,5 +1379,5 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "provider.proto",
+	Metadata: "protocol/experimental/provider.proto",
 }
