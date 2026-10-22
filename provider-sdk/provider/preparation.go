@@ -94,7 +94,7 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 		if !proto.Equal(input.Subject, output.GetSubject()) {
 			return fmt.Errorf("%w: preparation changed table identity or order", ErrProtocol)
 		}
-		if err := validatePreparedKeys(input.Desired, output); err != nil {
+		if err := validateColumnKeys(input.Desired, output); err != nil {
 			return err
 		}
 		if err := validateResolvedFacets(description, request, input, output.ResolvedFacets); err != nil {
@@ -104,16 +104,22 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 	return nil
 }
 
-func validatePreparedKeys(input *protocol.DeclaredTable, output *protocol.PreparedTable) error {
-	if len(output.ColumnPrimaryKeys) > 0 && !output.ColumnPrimaryKeysPrepared {
+type columnKeyResult interface {
+	GetColumnPrimaryKeysPrepared() bool
+	GetColumnPrimaryKeys() []string
+}
+
+func validateColumnKeys(input *protocol.DeclaredTable, result columnKeyResult) error {
+	prepared, keys := result.GetColumnPrimaryKeysPrepared(), result.GetColumnPrimaryKeys()
+	if len(keys) > 0 && !prepared {
 		return fmt.Errorf("%w: prepared column keys require a completion receipt", ErrProtocol)
 	}
-	if err := validateComparisonNames(output.ColumnPrimaryKeys); err != nil {
+	if err := validateComparisonNames(keys); err != nil {
 		return err
 	}
-	for _, key := range output.ColumnPrimaryKeys {
+	for _, key := range keys {
 		if !slices.ContainsFunc(input.Columns, func(column *protocol.DeclaredColumn) bool { return column.Name == key }) {
-			return fmt.Errorf("%w: preparation names an undeclared key column", ErrProtocol)
+			return fmt.Errorf("%w: table result names an undeclared key column", ErrProtocol)
 		}
 	}
 	return nil
@@ -125,7 +131,7 @@ func validateResolvedFacets(description *protocol.Description, request *protocol
 		return err
 	}
 	values := planningValueContext(preparationContext(request))
-	service := &protocol.ModelComparison{Placement: protocol.ModelComparison_FACETS, OwnerKinds: []string{"table", "index", "primary key", "constraint"}}
+	service := &protocol.ModelComparison{Placement: protocol.ModelComparison_FACETS, OwnerKinds: tableFacetOwnerKinds}
 	for _, model := range engine.ValueModels {
 		if model.Representation == protocol.ValueInput_DESIRED {
 			values.Kinds = append(values.Kinds, model.Kind)

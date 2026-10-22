@@ -20,6 +20,7 @@ service Provider {
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
   rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
+  rpc ProjectTableCreations(ProjectTableCreationsRequest) returns (ProjectedTableCreations);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -1443,4 +1444,34 @@ message PreparedTable {
 message PreparedTables {
   bool complete = 1;
   repeated PreparedTable tables = 2;
+}
+
+// ProjectTableCreations predicts CREATE effects from captured declarations.
+// It performs no I/O and establishes neither execution nor catalog inspection.
+message ProjectTableCreationsRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated TableCreationInput tables = 5;
+}
+message TableCreationInput {
+  ComparisonIdentity subject = 1;
+  DeclaredTable declaration = 2;
+  // The caller's allowed facet owners, including owners with no declared values.
+  // The host derives these identities from its shared creation acceptance rules.
+  repeated ComparisonIdentity facet_owners = 3;
+}
+message ProjectedTableCreation {
+  ComparisonIdentity subject = 1;
+  bool column_primary_keys_prepared = 2;
+  repeated string column_primary_keys = 3;
+  // Computed desired values are converted by their selected model owner.
+  repeated ComparisonRecord desired_facets = 4;
+  // Observed overrides apply after conversion. They are predictions, not reads.
+  repeated ComparisonRecord observed_facets = 5;
+}
+message ProjectedTableCreations {
+  bool complete = 1;
+  repeated ProjectedTableCreation tables = 2;
 }
