@@ -232,11 +232,14 @@ func (h *Host) goContribution(engine string, tables annotation.Tables, declarati
 // an index directive must belong to the column or index the directive
 // describes: the host sent that subject, and a provider that answers for
 // another part would set it on an object the author never named. A facet of a
-// table or document directive attaches to the table its owner names.
+// table or document directive attaches to the table its owner names, except
+// that a table directive may also answer for a column of its own table: see
+// [goTableColumn].
 func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declaration annotation.Declaration,
 	decoded decodedSourceValue, owner *protocol.Reference) (table string, subject annotation.Subject, err error) {
 	claim := h.goSource.claims[declaration.Directive].Directive
-	if scope := claim.GetScope(); scope == protocol.GoSourceDirective_COLUMN || scope == protocol.GoSourceDirective_INDEX {
+	scope := claim.GetScope()
+	if scope == protocol.GoSourceDirective_COLUMN || scope == protocol.GoSourceDirective_INDEX {
 		index, expected, err := providersource.GoSubject(engine, tables, claim, declaration)
 		if err != nil {
 			return "", annotation.Subject{}, err
@@ -247,6 +250,9 @@ func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declarati
 		}
 		return tables[index].QualifiedName(), declaration.Subject, nil
 	}
+	if scope == protocol.GoSourceDirective_TABLE && owner.GetKind() == "column" {
+		return goTableColumn(engine, tables, claim, declaration, owner)
+	}
 	if err := decoded.requireTable("Go"); err != nil {
 		return "", annotation.Subject{}, err
 	}
@@ -255,6 +261,30 @@ func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declarati
 		return "", annotation.Subject{}, err
 	}
 	return tables[index].QualifiedName(), annotation.Subject{}, nil
+}
+
+// goTableColumn places a value that a table-scope directive declares for a
+// column, such as the column families a table directive lists the columns of.
+// The column must belong to the table of the directive's struct: the owner
+// names it by the table's schema, the table as the only path component and the
+// column's name, and the field the name denotes is a field of that struct. The
+// frontend attaches the value to that field once the file is read and refuses
+// a name the struct declares no field for. A column of another table, and a
+// reference with a database, catalog or overload, are refused rather than
+// placed by guess.
+func goTableColumn(engine string, tables annotation.Tables, claim *protocol.GoSourceDirective, declaration annotation.Declaration,
+	owner *protocol.Reference) (table string, subject annotation.Subject, err error) {
+	index, _, err := providersource.GoSubject(engine, tables, claim, declaration)
+	if err != nil {
+		return "", annotation.Subject{}, err
+	}
+	home := tables[index]
+	if owner.GetName() == "" || owner.GetDatabase() != "" || owner.GetCatalog() != "" || len(owner.GetOverload()) != 0 ||
+		owner.GetSchema() != home.Schema || !slices.Equal(owner.GetPath(), []string{home.Name}) {
+		return "", annotation.Subject{}, fmt.Errorf("decoded Go facet is owned by column %q of %q, which is not a column of the table %q the directive declares",
+			owner.GetName(), owner.GetPath(), home.QualifiedName())
+	}
+	return home.QualifiedName(), annotation.Subject{Kind: annotation.SubjectColumn, Struct: declaration.Struct, Name: owner.GetName()}, nil
 }
 
 func goTable(tables annotation.Tables, subject *protocol.Reference) (int, error) {

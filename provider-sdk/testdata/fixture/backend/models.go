@@ -79,7 +79,7 @@ func PlatformSourceClaims() (yaml []*protocol.YAMLSourceKey, directives []*proto
 		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:schema:table", Selector: "retention", Attributes: attributes, Models: models},
 		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:schema:field", Selector: "retention", Attributes: attributes, Models: models},
 		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:schema:index", Selector: "retention", Attributes: attributes, Models: models},
-		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:placed", Selector: "retention", Attributes: []string{"seconds", "column"}, Models: models},
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:placed", Selector: "retention", Attributes: []string{"seconds", "column", "of"}, Models: models},
 	}
 	return yaml, directives
 }

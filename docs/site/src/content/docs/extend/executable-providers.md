@@ -510,8 +510,15 @@ fragment subject: kind `column` or `index`, the table's schema, the table as the
 only path component and the written name. The provider answers with a value
 owned by that subject. Ptah refuses a value owned by another column or index
 instead of placing it, and refuses a directive whose field or index directive is
-missing, appears more than once in the comment, or has no `name`. Attribute
-values arrive as text, exactly as written, and the provider decides what a value
+missing, appears more than once in the comment, or has no `name`.
+
+A `TABLE` directive may also declare a value for a column of its own table, such
+as the columns of a column family: the provider names the column as kind `column`, the
+table's schema, the table as the only path component and the column's name. The
+column must be a field of the directive's struct. Ptah refuses a column of
+another table, and a column the struct does not declare.
+
+Attribute values arrive as text, exactly as written, and the provider decides what a value
 means. The source position of an attribute is the position of its comment.
 
 The execution adapter does not support managed data, database cleanup, or

@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -91,22 +92,22 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 	bindingID := fragment.GetBindingId()
 	fields := make(map[string]json.RawMessage)
 	knowledge := protocol.ModelKnowledge_DEFAULTED
-	column := ""
+	column, home := "", ""
 	for _, entry := range mapping.GetEntries() {
+		var err error
 		// A platform property spells its unit with the engine's prefix.
 		switch strings.TrimPrefix(entry.GetKey(), "platform.fixture.") {
 		case "column":
-			text, ok := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
-			if !ok || text.Text == "" {
-				return retentionSource{}, fmt.Errorf("retention column requires a name")
-			}
-			column = text.Text
+			column, err = nonEmptyText(entry.GetValue(), "retention column requires a name")
+		case "of":
+			// The table the column is said to belong to, when it is not the
+			// table of the directive.
+			home, err = nonEmptyText(entry.GetValue(), "retention table requires a name")
 		case "on":
-			text, ok := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
-			if !ok || text.Text == "" || bindingID != "" || subject != nil {
+			if bindingID != "" || subject != nil {
 				return retentionSource{}, fmt.Errorf("retention requires one unambiguous subject")
 			}
-			bindingID = text.Text
+			bindingID, err = nonEmptyText(entry.GetValue(), "retention requires one unambiguous subject")
 		case "table":
 			// The host resolves the table attribute of a Go directive into
 			// the binding, so the value only repeats it.
@@ -114,14 +115,16 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 				return retentionSource{}, fmt.Errorf("retention does not accept a table attribute here")
 			}
 		case "seconds", "minutes":
-			number, err := retentionNumber(document.GetFormat(), entry.GetValue())
-			if err != nil {
-				return retentionSource{}, err
+			var number string
+			if number, err = retentionNumber(document.GetFormat(), entry.GetValue()); err == nil {
+				fields[strings.TrimPrefix(entry.GetKey(), "platform.fixture.")] = json.RawMessage(number)
+				knowledge = protocol.ModelKnowledge_COMPLETE
 			}
-			fields[strings.TrimPrefix(entry.GetKey(), "platform.fixture.")] = json.RawMessage(number)
-			knowledge = protocol.ModelKnowledge_COMPLETE
 		default:
 			return retentionSource{}, fmt.Errorf("unsupported retention field %q", entry.GetKey())
+		}
+		if err != nil {
+			return retentionSource{}, err
 		}
 	}
 	// A fragment that names its subject, as a Go column or index directive
@@ -136,14 +139,36 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 	}
 	// A column setting written on the directive of its table: the value is
 	// owned by the column of that table the directive names.
-	if column != "" && subject != nil && subject.GetKind() == "table" {
-		subject = &protocol.Reference{Engine: subject.GetEngine(), Kind: "column", Schema: subject.GetSchema(), Path: []string{subject.GetName()}, Name: column}
+	if column != "" {
+		subject = columnOf(subject, home, column)
 	}
 	if subject == nil || !slices.Contains([]string{"table", "column", "index"}, subject.GetKind()) {
 		return retentionSource{}, fmt.Errorf("retention table binding is unknown")
 	}
 	payload, err := json.Marshal(fields)
 	return retentionSource{subject: subject, payload: payload, knowledge: knowledge}, err
+}
+
+// nonEmptyText returns the text a value holds, or refuses with message.
+func nonEmptyText(value *protocol.SourceValue, message string) (string, error) {
+	text, ok := value.GetValue().(*protocol.SourceValue_Text)
+	if !ok || text.Text == "" {
+		return "", errors.New(message)
+	}
+	return text.Text, nil
+}
+
+// columnOf is the column of the table a subject names, or of the table home
+// names. A subject that is not a table is returned as it is.
+func columnOf(subject *protocol.Reference, home, column string) *protocol.Reference {
+	if subject == nil || subject.GetKind() != "table" {
+		return subject
+	}
+	table := subject.GetName()
+	if home != "" {
+		table = home
+	}
+	return &protocol.Reference{Engine: subject.GetEngine(), Kind: "column", Schema: subject.GetSchema(), Path: []string{table}, Name: column}
 }
 
 // retentionNumber returns the exact number a retention field holds. A Go

@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
 	"ptah.run/engine"
 )
 
@@ -77,4 +78,54 @@ func TestProviderPlatformAttributesWithoutTheProvider_KeepsThem(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables[0].Overrides["fixture"], qt.DeepEquals, map[string]string{"seconds": "30"})
+}
+
+const placedGoHead = "package p\n\n//ptah:schema:table name=\"records\"\n"
+
+func TestProviderTableDirectiveDeclaresAColumnValue_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+	source := placedGoHead + "//ptah:fixture:placed seconds=5 column=\"body\"\ntype Record struct {\n\t//ptah:schema:field name=\"id\" type=\"INTEGER\"\n\tID int\n\t//ptah:schema:field name=\"body\" type=\"TEXT\"\n\tBody string\n}\n"
+
+	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", source)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, db), qt.DeepEquals, []string{`column body {"seconds":5}`},
+		qt.Commentf("the value belongs to the column, and the table keeps none"))
+}
+
+func TestProviderTableDirectiveDeclaresAColumnValue_Coverage(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+	source := placedGoHead + "//ptah:fixture:placed seconds=5 column=\"body\"\ntype Record struct {\n\t//ptah:schema:field name=\"body\" type=\"TEXT\"\n\tBody string\n}\n"
+
+	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", source)
+
+	c.Assert(err, qt.IsNil)
+	var subjects []string
+	for _, record := range db.FeatureCoverage.SubjectRecords() {
+		subjects = append(subjects, string(record.Subject.Kind)+" "+record.Subject.Parent.Source+" "+record.Subject.Name.Source+" "+string(record.Knowledge.State))
+	}
+	c.Assert(subjects, qt.DeepEquals, []string{"column records body complete"})
+}
+
+func TestProviderTableDirectiveDeclaresAColumnValue_FailurePath(t *testing.T) {
+	runtime := platformProvider(qt.New(t))
+	const body = "type Record struct {\n\t//ptah:schema:field name=\"body\" type=\"TEXT\"\n\tBody string\n}\n"
+	for _, row := range []struct{ name, source, want string }{
+		{"a column the struct does not declare", placedGoHead + "//ptah:fixture:placed seconds=5 column=\"ghost\"\n" + body,
+			`column "ghost" of struct Record is not declared in this file.* on //ptah:fixture:placed at Record`},
+		{"a column of another table", placedGoHead + "//ptah:fixture:placed seconds=5 column=\"body\" of=\"other\"\n" + body,
+			`decoded Go facet is owned by column "body" of \["other"\], which is not a column of the table "records" the directive declares on //ptah:fixture:placed at Record`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := goschema.ParseSource(runtime.Annotations(), "records.go", row.source)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, `(?s).*`+row.want)
+			c.Assert(db.Tables, qt.HasLen, 0)
+		})
+	}
 }
