@@ -66,7 +66,6 @@ func TestBuild_FailurePath(t *testing.T) {
 		mutate func(map[string][]byte)
 		want   string
 	}{
-		{"missing archive", func(f map[string][]byte) { delete(f, linux) }, `linux/amd64: .*no such file`},
 		{"archive without executable", func(f map[string][]byte) {
 			f[linux] = archivetest.TarGz(archivetest.Entry{Name: "README.md", Body: "docs"})
 		}, `linux/amd64: archive does not contain the executable`},
@@ -80,6 +79,13 @@ func TestBuild_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `(?s).*`+test.want+`.*`)
 		})
 	}
+}
+
+func TestBuild_MissingArchive(t *testing.T) {
+	c := qt.New(t)
+	linux := providercatalog.ArchiveName(engine, version, providercatalog.Platform{OS: "linux", Arch: "amd64"})
+	_, err := providerpin.Build(engine, version, release(c, func(f map[string][]byte) { delete(f, linux) }))
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
 func TestBuild_ListingDoesNotMatchArchive(t *testing.T) {
