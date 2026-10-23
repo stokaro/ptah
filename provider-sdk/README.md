@@ -508,8 +508,10 @@ The independent fixture exercises evaluated YAML, HCL, and Go annotation
 fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
-table keys for this RPC. The host HCL and Go annotation adapters, official-engine
-adapters, complete native planning, and history
+table keys for this RPC. The host Go annotation adapter captures the claimed
+directives of a Go file at `DOCUMENT` and `TABLE` scope, with attribute values as
+text, and refuses a provider that claims `COLUMN` or `INDEX` scope. The host HCL
+adapter, official-engine adapters, complete native planning, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 
 ## Observed model coverage

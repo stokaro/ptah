@@ -37,3 +37,11 @@ func yamlSourceKeys() []*protocol.YAMLSourceKey {
 		{Scope: protocol.YAMLSourceKey_TABLE, Key: "retention", Selector: "retention", Models: []string{"example.org/fixture/retention"}},
 	}
 }
+
+// goSourceDirectives claims one Go annotation directive. The host lexes
+// `//ptah:fixture:retention seconds=60` and sends the attributes as a mapping.
+func goSourceDirectives() []*protocol.GoSourceDirective {
+	return []*protocol.GoSourceDirective{
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:retention", Selector: "retention", Attributes: []string{"seconds", "minutes"}, Models: []string{"example.org/fixture/retention"}},
+	}
+}

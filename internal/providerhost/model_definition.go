@@ -73,12 +73,41 @@ func yamlKeyIdentities(claims []*protocol.YAMLSourceKey) []yamlKeyIdentity {
 	return result
 }
 
+// goDirectiveIdentity is the host-owned projection of Go directive ownership.
+// Declaration order is not semantic; scope, selector, attributes and models are.
+type goDirectiveIdentity struct {
+	Scope      string   `json:"scope"`
+	Directive  string   `json:"directive"`
+	Selector   string   `json:"selector"`
+	Attributes []string `json:"attributes"`
+	Models     []string `json:"models"`
+}
+
+// goDirectiveIdentities returns nil for a provider that claims no Go syntax, so
+// the field stays out of its recorded identities.
+func goDirectiveIdentities(claims []*protocol.GoSourceDirective) []goDirectiveIdentity {
+	if len(claims) == 0 {
+		return nil
+	}
+	result := make([]goDirectiveIdentity, 0, len(claims))
+	for _, claim := range claims {
+		attributes, models := slices.Clone(claim.GetAttributes()), slices.Clone(claim.GetModels())
+		slices.Sort(attributes)
+		slices.Sort(models)
+		result = append(result, goDirectiveIdentity{Scope: claim.GetScope().String(), Directive: claim.GetDirective(), Selector: claim.GetSelector(),
+			Attributes: attributes, Models: models})
+	}
+	slices.SortFunc(result, func(a, b goDirectiveIdentity) int { return strings.Compare(a.Directive, b.Directive) })
+	return result
+}
+
 func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error) {
 	type engineModel struct {
 		Model       modelIdentity                `json:"model"`
 		Features    []string                     `json:"features"`
 		Identifiers identifier.Semantics         `json:"identifiers"`
 		YAMLKeys    []yamlKeyIdentity            `json:"yaml_keys"`
+		GoDirective []goDirectiveIdentity        `json:"go_directives,omitempty"`
 		Comparisons []comparisonIdentityContract `json:"comparisons"`
 		Planning    []planningIdentityContract   `json:"planning"`
 	}
@@ -93,6 +122,7 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 			Features:    featureSet(declared.GetFeatures()),
 			Identifiers: rules,
 			YAMLKeys:    yamlKeyIdentities(declared.GetYamlSourceKeys()),
+			GoDirective: goDirectiveIdentities(declared.GetGoSourceDirectives()),
 			Comparisons: comparisonContracts(declared.GetComparisons()), Planning: planningContracts(declared.GetPlanning())}
 	}
 	definition := struct {

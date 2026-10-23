@@ -94,6 +94,11 @@ func capturedRetention(model *protocol.ValueModel, format protocol.SourceDocumen
 		if format == protocol.SourceDocument_YAML {
 			fragment.YamlKey = &protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "retention", Selector: "retention", Models: []string{model.GetKind()}}
 		}
+		if format == protocol.SourceDocument_GO_ANNOTATIONS {
+			fragment.GoDirective = &protocol.GoSourceDirective{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:retention", Selector: "retention", Attributes: []string{"seconds", "minutes"}, Models: []string{model.GetKind()}}
+			fragment.BindingId = name
+			mapping.Entries = mapping.Entries[:0]
+		}
 		switch format {
 		case protocol.SourceDocument_HCL:
 			fragment.Content = &protocol.SourceFragment_Block{Block: &protocol.SourceBlock{Type: "retention", Span: captureSpan(), Attributes: mapping}}

@@ -40,6 +40,23 @@ type Declaration struct {
 	// to, for a declaration of one of the frontend's own directives that an
 	// owner reads by its [TargetScope]. Empty means the declaration names none.
 	Targets []string
+	// Start and End bound the declaration's comment in its file, End being
+	// the position after the last byte. Both are zero where the frontend reads
+	// source it has no positions for.
+	Start, End SourcePosition
+	// FileSize is the length in bytes of the file the declaration is written
+	// in, or 0 where the frontend does not know it.
+	FileSize int
+}
+
+// SourcePosition is a place in a Go source file, in the units a source span uses.
+type SourcePosition struct {
+	// Offset counts bytes from the start of the file, from 0.
+	Offset int
+	// Line counts lines from 1. Zero means the position is unknown.
+	Line int
+	// Column counts bytes from the start of the line, from 1.
+	Column int
 }
 
 // Contribution is one thing a declaration adds to the schema: a standalone

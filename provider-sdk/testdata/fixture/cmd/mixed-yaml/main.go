@@ -18,6 +18,7 @@ func main() {
 	other := proto.CloneOf(description.GetEngines()[0])
 	other.Id = "other-fixture"
 	other.YamlSourceKeys = nil
+	other.GoSourceDirectives = nil // a directive name has one owner
 	for _, model := range other.GetValueModels() {
 		if model.GetRepresentation() == protocol.ValueInput_DESIRED {
 			model.SourceFormats = []protocol.SourceDocument_Format{protocol.SourceDocument_HCL}
