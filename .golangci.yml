@@ -253,6 +253,7 @@ linters:
         - ptah.run/internal/embedpg
         - ptah.run/internal/embedydb
         - ptah.run/internal/migratorext
+        - ptah.run/internal/migratorext/postgres
         - ptah.run/internal/pgdefaultacl
         - ptah.run/internal/pgsnapshot
         - ptah.run/internal/schemaselection
