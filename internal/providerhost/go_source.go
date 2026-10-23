@@ -51,15 +51,18 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 		File:     func() annotation.FileDecoder { return &goFileDecoder{host: h} },
 		Coverage: func([]coverage.Object) (schemaext.Coverage, error) { return h.goBaseCoverage() }}
 	for _, name := range slices.Sorted(maps.Keys(h.goSource.claims)) {
-		claim := h.goSource.claims[name].Directive
-		directive := annotation.Directive{Name: name,
-			Description: "Directive owned by provider " + h.description.GetProviderId() + ".",
-			Scopes:      []annotation.Scope{annotation.ScopeStruct}}
+		owned := h.goSource.claims[name]
+		claim := owned.Directive
+		var attributes []annotation.Attribute
 		for _, attribute := range claim.GetAttributes() {
-			directive.Attributes = append(directive.Attributes, annotation.Attribute{Name: attribute, Value: "string",
+			attributes = append(attributes, annotation.Attribute{Name: attribute, Value: "string",
 				Description: "Attribute of " + name + ", read by provider " + h.description.GetProviderId() + "."})
 		}
-		extension.Directives = append(extension.Directives, directive)
+		if owned.Attributes {
+			extension.Attributes = append(extension.Attributes, annotation.DirectiveAttributes{Directive: name, Attributes: attributes, PerFile: true})
+		} else {
+			extension.Directives = append(extension.Directives, h.goDirective(name, claim, attributes))
+		}
 		for _, kind := range claim.GetModels() {
 			if !slices.Contains(extension.Kinds, schemaext.Kind(kind)) {
 				extension.Kinds = append(extension.Kinds, schemaext.Kind(kind))
@@ -67,6 +70,23 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 		}
 	}
 	return []annotation.Extension{extension}
+}
+
+// goDirective describes a directive of the provider's own. Its scope says where
+// the comment is written and which part of a table the declaration describes:
+// a column directive sits on a field beside the field's directive, and an index
+// directive beside the index directive it describes.
+func (h *Host) goDirective(name string, claim *protocol.GoSourceDirective, attributes []annotation.Attribute) annotation.Directive {
+	directive := annotation.Directive{Name: name, Attributes: attributes,
+		Description: "Directive owned by provider " + h.description.GetProviderId() + ".",
+		Scopes:      []annotation.Scope{annotation.ScopeStruct}}
+	switch claim.GetScope() {
+	case protocol.GoSourceDirective_COLUMN:
+		directive.Scopes, directive.Describes = []annotation.Scope{annotation.ScopeField}, annotation.SubjectColumn
+	case protocol.GoSourceDirective_INDEX:
+		directive.Scopes, directive.Describes = []annotation.Scope{annotation.ScopeStruct, annotation.ScopeField}, annotation.SubjectIndex
+	}
+	return directive
 }
 
 // goBaseCoverage returns what a Go source with no declaration of the provider's
@@ -148,11 +168,11 @@ func (d *goFileDecoder) Finish(tables annotation.Tables) ([]annotation.Contribut
 		declarations := byEngine[engine.GetId()]
 		document, err := d.host.decodeGoSource(engine, tables, declarations)
 		if err != nil {
-			return nil, err
+			return nil, refuseDocument(declarations, err)
 		}
 		fileCoverage, err := d.host.sourceCoverage(engine.GetId(), protocol.SourceDocument_GO_ANNOTATIONS, document.GetCoverage())
 		if err != nil {
-			return nil, err
+			return nil, refuseDocument(declarations, err)
 		}
 		d.subjects = append(d.subjects, fileCoverage.SubjectRecords()...)
 		for i, fragment := range document.GetFragments() {
@@ -166,6 +186,16 @@ func (d *goFileDecoder) Finish(tables annotation.Tables) ([]annotation.Contribut
 		}
 	}
 	return contributions, nil
+}
+
+// refuseDocument places a refusal of a whole document at the first declaration
+// the document carries, which is the one a provider that names none is read as
+// refusing. It says so where the document carried several.
+func refuseDocument(declarations []annotation.Declaration, err error) error {
+	if len(declarations) > 1 {
+		err = fmt.Errorf("%w (reported at the first of %d Go directives sent together)", err, len(declarations))
+	}
+	return &annotation.DeclarationError{Declaration: declarations[0], Err: err}
 }
 
 // Cover adds the subjects the provider stated for this file's declarations to
@@ -188,18 +218,43 @@ func (h *Host) goContribution(engine string, tables annotation.Tables, declarati
 	case protocol.SourceModelValue_NATIVE_OBJECT:
 		result.Object = &schemaext.Object{Ref: decoded.subject, Value: decoded.value, Targets: []string{engine}}
 	case protocol.SourceModelValue_FACET:
-		if err := decoded.requireTable("Go"); err != nil {
+		if result.Table, result.Subject, err = h.goFacetSubject(engine, tables, declaration, decoded, source.GetValue().GetValue().GetOwner()); err != nil {
 			return annotation.Contribution{}, err
 		}
-		index, err := goTable(tables, source.GetValue().GetValue().GetOwner())
-		if err != nil {
-			return annotation.Contribution{}, err
-		}
-		result.Table, result.Facet = tables[index].QualifiedName(), decoded.value
+		result.Facet = decoded.value
 	default:
 		return annotation.Contribution{}, fmt.Errorf("unknown decoded Go placement")
 	}
 	return result, nil
+}
+
+// goFacetSubject says where a decoded facet attaches. A facet of a column or
+// an index directive must belong to the column or index the directive
+// describes: the host sent that subject, and a provider that answers for
+// another part would set it on an object the author never named. A facet of a
+// table or document directive attaches to the table its owner names.
+func (h *Host) goFacetSubject(engine string, tables annotation.Tables, declaration annotation.Declaration,
+	decoded decodedSourceValue, owner *protocol.Reference) (table string, subject annotation.Subject, err error) {
+	claim := h.goSource.claims[declaration.Directive].Directive
+	if scope := claim.GetScope(); scope == protocol.GoSourceDirective_COLUMN || scope == protocol.GoSourceDirective_INDEX {
+		index, expected, err := providersource.GoSubject(engine, tables, claim, declaration)
+		if err != nil {
+			return "", annotation.Subject{}, err
+		}
+		if !providersource.SameSubject(owner, expected) {
+			return "", annotation.Subject{}, fmt.Errorf("decoded Go facet is owned by %s %q, not the %s %q the directive describes",
+				owner.GetKind(), owner.GetName(), expected.GetKind(), expected.GetName())
+		}
+		return tables[index].QualifiedName(), declaration.Subject, nil
+	}
+	if err := decoded.requireTable("Go"); err != nil {
+		return "", annotation.Subject{}, err
+	}
+	index, err := goTable(tables, owner)
+	if err != nil {
+		return "", annotation.Subject{}, err
+	}
+	return tables[index].QualifiedName(), annotation.Subject{}, nil
 }
 
 func goTable(tables annotation.Tables, subject *protocol.Reference) (int, error) {

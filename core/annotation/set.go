@@ -47,6 +47,41 @@ type Declaration struct {
 	// FileSize is the length in bytes of the file the declaration is written
 	// in, or 0 where the frontend does not know it.
 	FileSize int
+	// Subject is the table, column or index the declaration describes, for a
+	// directive whose [Directive.Describes] names a column or an index and for
+	// attributes an owner reads through [DirectiveAttributes.PerFile]. It is
+	// the zero value for any other declaration.
+	Subject Subject
+}
+
+// SubjectKind names a part of a table that a declaration describes.
+type SubjectKind string
+
+// The parts a declaration may describe.
+const (
+	// SubjectTable is the table of the declaration's struct.
+	SubjectTable SubjectKind = "table"
+	// SubjectColumn is a column of the declaration's struct.
+	SubjectColumn SubjectKind = "column"
+	// SubjectIndex is an index declared by the declaration's struct.
+	SubjectIndex SubjectKind = "index"
+)
+
+// Subject is the part of a table a declaration describes, in the terms the
+// author wrote it. The frontend fills it from the field or index directive the
+// declaration is written beside, so an owner never maps a Go field to a column
+// or looks for an index itself.
+type Subject struct {
+	// Kind says which part this is. The zero value means no part.
+	Kind SubjectKind
+	// Struct is the Go struct the part belongs to.
+	Struct string
+	// Name is the column name the field directive writes, or the index name
+	// the index directive writes. It is empty for a table.
+	Name string
+	// Table is the table an index directive names with its table attribute,
+	// as written. It is empty where the index belongs to the table of Struct.
+	Table string
 }
 
 // SourcePosition is a place in a Go source file, in the units a source span uses.
@@ -83,6 +118,11 @@ type Contribution struct {
 	// Targets scope a facet to the targets it holds on, as a declaration's
 	// dialects attribute scopes it. Empty holds on every target.
 	Targets []string
+	// Subject says that a facet belongs to a column or an index of Source's
+	// struct instead of to a table. The zero value and [SubjectTable] attach
+	// the facet to the table Table names. A facet whose column or index the
+	// file does not declare is refused.
+	Subject Subject
 }
 
 // TargetScope hands an owner the declarations of one of the frontend's own
@@ -138,7 +178,24 @@ type DirectiveAttributes struct {
 	// group takes no Parameters. [Set.DecodePrimaryKeyAttributes] decodes
 	// these groups, and [Set.DecodeAttributes] the others.
 	PrimaryKey bool
+	// PerFile hands the declarations that write these attributes to the
+	// owner's [FileDecoder] instead of Decode, which the group leaves unset,
+	// since the owner needs the file's tables to answer. The declaration
+	// carries the frontend's directive name, only the attributes of the
+	// group, and the [Subject] they describe. The facets the file decoder
+	// returns from [FileDecoder.Finish] attach to that subject. The frontend
+	// reads it for the table, field and index directives, and the set refuses
+	// it for any other, since a group nobody calls would drop its attributes
+	// without an error. A group that sets it needs [Extension.File], and sets
+	// neither Decode, Parameters nor PrimaryKey.
+	PerFile bool
 }
+
+// The frontend's own directives that declare a column and an index.
+const (
+	fieldDirective = "ptah:schema:field"
+	indexDirective = "ptah:schema:index"
+)
 
 // tableDirective is the frontend's directive that declares a table, the one
 // whose primary key [DirectiveAttributes.PrimaryKey] attributes describe.
@@ -282,6 +339,28 @@ func checkExtension(index int, extension Extension) error {
 			return fmt.Errorf("annotation extension of %s encodes model %q, which it does not declare", extension.Owner, kind)
 		}
 	}
+	return checkDescribes(extension)
+}
+
+// checkDescribes refuses a directive that describes a part of a table where
+// the frontend cannot find the part: a column directive is written on a field,
+// and an index directive on a struct or a field.
+func checkDescribes(extension Extension) error {
+	for _, directive := range extension.Directives {
+		switch directive.Describes {
+		case "", SubjectTable:
+		case SubjectColumn:
+			if len(directive.Scopes) == 0 || slices.ContainsFunc(directive.Scopes, func(scope Scope) bool { return scope != ScopeField }) {
+				return fmt.Errorf("annotation extension of %s declares column directive %q outside a field comment", extension.Owner, directive.Name)
+			}
+		case SubjectIndex:
+			if len(directive.Scopes) == 0 || slices.ContainsFunc(directive.Scopes, func(scope Scope) bool { return scope != ScopeField && scope != ScopeStruct }) {
+				return fmt.Errorf("annotation extension of %s declares index directive %q outside a struct or field comment", extension.Owner, directive.Name)
+			}
+		default:
+			return fmt.Errorf("annotation extension of %s declares directive %q that describes unknown part %q", extension.Owner, directive.Name, directive.Describes)
+		}
+	}
 	return nil
 }
 
@@ -301,8 +380,11 @@ func (s *Set) claimDirectives(index int, extension Extension) error {
 
 func (s *Set) claimAttributes(index int, extension Extension) error {
 	for _, group := range extension.Attributes {
-		if strings.TrimSpace(group.Directive) == "" || (group.Decode == nil && group.Parameters == nil) {
+		if strings.TrimSpace(group.Directive) == "" || (group.Decode == nil && group.Parameters == nil && !group.PerFile) {
 			return fmt.Errorf("annotation extension of %s declares attributes without a directive or a decoder", extension.Owner)
+		}
+		if err := checkPerFile(extension, group); err != nil {
+			return err
 		}
 		if group.PrimaryKey && (group.Directive != tableDirective || group.Decode == nil || group.Parameters != nil) {
 			return fmt.Errorf("annotation extension of %s declares primary key attributes of %q, which needs the table directive and a decoder alone",
@@ -327,6 +409,23 @@ func (s *Set) claimAttributes(index int, extension Extension) error {
 			}
 			claimed[attribute.Name] = index
 		}
+	}
+	return nil
+}
+
+// checkPerFile refuses a per-file attribute group the frontend would not call
+// or the owner could not answer.
+func checkPerFile(extension Extension, group DirectiveAttributes) error {
+	if !group.PerFile {
+		return nil
+	}
+	if !slices.Contains([]string{tableDirective, fieldDirective, indexDirective}, group.Directive) {
+		return fmt.Errorf("annotation extension of %s reads attributes of %q per file, which the frontend reads for %s, %s and %s only",
+			extension.Owner, group.Directive, tableDirective, fieldDirective, indexDirective)
+	}
+	if extension.File == nil || group.Decode != nil || group.Parameters != nil || group.PrimaryKey {
+		return fmt.Errorf("annotation extension of %s reads attributes of %q per file, which needs a file decoder and no Decode, Parameters or PrimaryKey",
+			extension.Owner, group.Directive)
 	}
 	return nil
 }

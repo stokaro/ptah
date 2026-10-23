@@ -164,6 +164,13 @@ func (s *schemaParseState) parseFieldComment(
 		return err
 	}
 
+	// The attributes owners add to the directive are read per file, since the
+	// owner answers once the file's tables are known.
+	if err := s.declareOwnerAttributes(comment, "ptah:schema:field", kv,
+		annotation.Subject{Kind: annotation.SubjectColumn, Struct: structName, Name: kv["name"]}, location); err != nil {
+		return err
+	}
+
 	for _, name := range field.Names {
 		enumRaw := kv["enum"]
 		var enum []string
@@ -359,6 +366,10 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	options, err := s.annotations.DecodeParameters("ptah:schema:index", kv)
 	if err != nil {
 		return ownerAttributeError(ctx, err)
+	}
+	if err := s.declareOwnerAttributes(comment, "ptah:schema:index", kv,
+		annotation.Subject{Kind: annotation.SubjectIndex, Struct: structName, Name: kv["name"], Table: tableName}, structName); err != nil {
+		return err
 	}
 	s.schemaIndexes = append(s.schemaIndexes, schemamodel.Index{
 		Facets:         facets,
@@ -650,6 +661,10 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	if err != nil {
 		return ownerAttributeError(ctx, err)
 	}
+	if err := s.declareOwnerAttributes(comment, "ptah:schema:table", kv,
+		annotation.Subject{Kind: annotation.SubjectTable, Struct: structName}, structName); err != nil {
+		return err
+	}
 	primaryKey := splitCSVAttribute(kv["primary_key"])
 	if !keyFacets.IsZero() && len(primaryKey) == 0 {
 		// A setting of the key needs the key written where it can hang:
@@ -741,6 +756,9 @@ type structDeclaration struct {
 type schemaCommentTarget struct {
 	structName string
 	field      *ast.Field
+	// group is the comment group the comment is in, which a directive that
+	// describes a column or an index reads its subject from.
+	group *ast.CommentGroup
 }
 
 func newSchemaParseState(filename string, fset *token.FileSet, selection parseSelection) *schemaParseState {
@@ -797,7 +815,7 @@ func (s *schemaParseState) parseAttachedComment(
 		return err
 	}
 	if _, owned := s.annotations.Owner(directive.Name); owned {
-		return s.parseOwnerDirective(comment, directive.Name, target.structName)
+		return s.parseOwnerDirective(comment, directive, target)
 	}
 	return s.parseSharedDirective(comment, directive.Name, target)
 }
@@ -905,7 +923,7 @@ func (s *schemaParseState) processStructComments(structDecl structDeclaration) e
 		return nil
 	}
 
-	target := schemaCommentTarget{structName: structDecl.name}
+	target := schemaCommentTarget{structName: structDecl.name, group: structDecl.genDecl.Doc}
 	for _, comment := range structDecl.genDecl.Doc.List {
 		if err := s.parseStructComment(comment, target); err != nil {
 			return err
@@ -922,6 +940,7 @@ func (s *schemaParseState) processFieldComments(structDecl structDeclaration) er
 		target := schemaCommentTarget{
 			structName: structDecl.name,
 			field:      field,
+			group:      field.Doc,
 		}
 		for _, comment := range field.Doc.List {
 			if err := s.parseStructFieldComment(comment, target); err != nil {

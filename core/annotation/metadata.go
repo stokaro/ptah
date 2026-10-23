@@ -81,6 +81,13 @@ type Directive struct {
 	// AllowPlatform admits platform.<dialect>.<key> attributes beside the
 	// declared ones.
 	AllowPlatform bool `json:"allow_platform,omitempty"`
+	// Describes names the part of a table a declaration of an owner's
+	// directive describes, which the frontend hands the decoder as
+	// [Declaration.Subject]. A column directive is written on a field beside
+	// that field's ptah:schema:field directive. An index directive is written
+	// beside the one ptah:schema:index directive of its comment group. Empty
+	// and [SubjectTable] describe the table of the struct the comment is on.
+	Describes SubjectKind `json:"describes,omitempty"`
 }
 
 // Clone returns an independent copy of the directive.

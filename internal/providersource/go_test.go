@@ -194,18 +194,28 @@ func TestGoClaims_HappyPath(t *testing.T) {
 func TestGoClaims_FailurePath(t *testing.T) {
 	second := proto.CloneOf(goEngine())
 	second.Id = "second"
-	column := proto.CloneOf(goEngine())
-	column.GoSourceDirectives[0].Scope = protocol.GoSourceDirective_COLUMN
-	index := proto.CloneOf(goEngine())
-	index.GoSourceDirectives[0].Scope = protocol.GoSourceDirective_INDEX
+	own := func(directive string, scope protocol.GoSourceDirective_Scope, attributes ...string) *protocol.Engine {
+		engine := proto.CloneOf(goEngine())
+		claim := engine.GetGoSourceDirectives()[0]
+		claim.Directive, claim.Scope, claim.Attributes = directive, scope, attributes
+		return engine
+	}
 	for _, row := range []struct {
 		name    string
 		engines []*protocol.Engine
 		want    string
 	}{
 		{"one name in two engines", []*protocol.Engine{goEngine(), second}, `Go directive "ptah:test.*" is claimed by engines "example" and "second"; a directive name has one owner`},
-		{"column scope", []*protocol.Engine{column}, `Go directive "ptah:test:retention" of engine "example" has scope COLUMN, which the host does not read.*`},
-		{"index scope", []*protocol.Engine{index}, `Go directive "ptah:test:retention" of engine "example" has scope INDEX, which the host does not read.*`},
+		{"attributes of a directive the host does not read", []*protocol.Engine{own("ptah:schema:constraint", protocol.GoSourceDirective_TABLE, "ttl")},
+			`Go directive "ptah:schema:constraint" of engine "example" adds attributes to a frontend directive the host does not read for providers.*`},
+		{"scope that does not fit the directive", []*protocol.Engine{own("ptah:schema:field", protocol.GoSourceDirective_TABLE, "ttl")},
+			`Go directive "ptah:schema:field" of engine "example" has scope TABLE, but the attributes of ptah:schema:field belong at scope COLUMN`},
+		{"frontend directive without attributes", []*protocol.Engine{own("ptah:schema:index", protocol.GoSourceDirective_INDEX)},
+			`Go directive "ptah:schema:index" of engine "example" adds no attribute to a frontend directive`},
+		{"attribute the directive declares", []*protocol.Engine{own("ptah:schema:index", protocol.GoSourceDirective_INDEX, "unique")},
+			`Go directive "ptah:schema:index" of engine "example" adds attribute "unique", which the directive declares already`},
+		{"unspecified scope", []*protocol.Engine{own("ptah:test:retention", protocol.GoSourceDirective_SCOPE_UNSPECIFIED, "seconds")},
+			`Go directive "ptah:test:retention" of engine "example" has scope SCOPE_UNSPECIFIED, which the host does not read`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)

@@ -7,6 +7,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -26,7 +27,7 @@ func (h *Host) sourceCoverage(engine string, format protocol.SourceDocument_Form
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {
-		subject, err := sourceIdentity(record.GetSubject(), record.GetNormalizedSubject())
+		subject, err := h.sourceSubject(engine, record.GetSubject(), record.GetNormalizedSubject())
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
@@ -37,6 +38,35 @@ func (h *Host) sourceCoverage(engine string, format protocol.SourceDocument_Form
 		subjects = append(subjects, schemaext.SubjectCoverage{Kind: schemaext.Kind(record.GetKind()), Subject: subject, Targets: []string{engine}, Knowledge: knowledge})
 	}
 	return schemaext.NewCoverage(schemaext.Desired, kinds, subjects)
+}
+
+// sourceSubject is the identity of a subject a source states coverage for. A
+// column or an index comes from the wire with its table as the path, and the
+// host identifies it as the planner does: the table is the parent. An index
+// of an engine whose index names live in the schema has no parent.
+func (h *Host) sourceSubject(engine string, source, normalized *protocol.Reference) (objectidentity.ID, error) {
+	id, err := sourceIdentity(source, normalized)
+	if err != nil {
+		return objectidentity.ID{}, err
+	}
+	if id.Kind != objectidentity.KindColumn && id.Kind != objectidentity.KindIndex {
+		return id, nil
+	}
+	path := id.Namespace.Values()
+	if len(path) != 1 {
+		return objectidentity.ID{}, unsupported("native Go " + source.GetKind() + " coverage whose path is not its table")
+	}
+	id.Namespace, id.Parent = objectidentity.Parts{}, path[0]
+	if id.Kind == objectidentity.KindIndex {
+		rules, err := identifierRules(h.targets[engine].engine.GetIdentifiers(), h.targets[engine].engine.GetDefaultSchema())
+		if err != nil {
+			return objectidentity.ID{}, err
+		}
+		if rules.IndexNamespace == identifier.IndexNamespaceSchema {
+			id.Parent = objectidentity.Part{}
+		}
+	}
+	return id, nil
 }
 
 func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, error) {
