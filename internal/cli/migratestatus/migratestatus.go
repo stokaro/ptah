@@ -286,10 +286,8 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	// reads it. Without it, the status of an empty database leaves a
 	// schema_migrations table behind, and a SELECT-only account is refused
 	// with the server's CREATE denial (stokaro/ptah#3893).
-	writer := conn.SchemaWriter()
-	restore := writer.IsDryRun()
-	writer.SetDryRun(true)
-	defer writer.SetDryRun(restore)
+	restore := dbcli.SuppressSchemaWrites(conn)
+	defer restore()
 
 	mig, err := migrator.NewFSMigrator(
 		conn,
