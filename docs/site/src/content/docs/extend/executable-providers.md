@@ -341,6 +341,14 @@ are refused. Source-loading support alone does not establish planning or executi
 for those objects and facets. Those operations require their own provider
 services and declarations.
 
+A provider also declares the Go annotation syntax it owns. Each claim in
+`go_source_directives` names a directive, its scope (`DOCUMENT`, `TABLE`, `COLUMN`
+or `INDEX`), the attribute names it accepts and the desired models it can declare.
+Ptah splits the comment into a directive name and key/value attributes, so the
+provider receives parsed attributes and never comment text. A directive name
+belongs to one provider. An attribute the claim does not list is refused before
+the provider runs.
+
 The execution adapter does not support managed data, database cleanup, or
 isolated execution of untrusted SQL. It does not add
 provider selection to `ptah-compat` or native commands outside the list above. Project-file

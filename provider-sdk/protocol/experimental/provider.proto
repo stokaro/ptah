@@ -71,6 +71,7 @@ message Engine {
   repeated ModelPlanning planning = 9;
   repeated LintRule lint_rules = 10;
   repeated ReleaseLine release_lines = 11;
+  repeated GoSourceDirective go_source_directives = 12;
 }
 // ReleaseLine is one release line of an engine and how much testing stands
 // behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
@@ -101,6 +102,21 @@ message YAMLSourceKey {
   string key = 2;
   string selector = 3;
   repeated string models = 4;
+}
+// GoSourceDirective is an explicit owner claim on Go annotation syntax. The
+// host lexes a Go comment into a directive name and key/value attributes, checks
+// that exactly one selected owner claims the name, and sends the owner the
+// parsed attributes as a mapping. The owner never receives comment text. The
+// attributes list names every key the directive accepts; the host refuses
+// others before dispatch. Models name desired value kinds the directive can
+// declare, as for YAMLSourceKey.
+message GoSourceDirective {
+  enum Scope { SCOPE_UNSPECIFIED = 0; DOCUMENT = 1; TABLE = 2; COLUMN = 3; INDEX = 4; }
+  Scope scope = 1;
+  string directive = 2;
+  string selector = 3;
+  repeated string attributes = 4;
+  repeated string models = 5;
 }
 // IdentifierRules are owner-supplied comparison facts. Missing or unknown
 // values are refused; the host must not borrow rules from a built-in engine.
@@ -476,6 +492,8 @@ message SourceBinding {
 message SourceFragment {
   // Frozen negotiated grammar claim, required only for YAML fragments.
   YAMLSourceKey yaml_key = 10;
+  // Frozen negotiated directive claim, required for Go annotation fragments.
+  GoSourceDirective go_directive = 11;
   string id = 1;
   string selector = 2;
   // The shared frontend's attachment context, if already known. An owner may

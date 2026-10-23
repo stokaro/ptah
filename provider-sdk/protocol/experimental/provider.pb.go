@@ -286,6 +286,61 @@ func (YAMLSourceKey_Scope) EnumDescriptor() ([]byte, []int) {
 	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{5, 0}
 }
 
+type GoSourceDirective_Scope int32
+
+const (
+	GoSourceDirective_SCOPE_UNSPECIFIED GoSourceDirective_Scope = 0
+	GoSourceDirective_DOCUMENT          GoSourceDirective_Scope = 1
+	GoSourceDirective_TABLE             GoSourceDirective_Scope = 2
+	GoSourceDirective_COLUMN            GoSourceDirective_Scope = 3
+	GoSourceDirective_INDEX             GoSourceDirective_Scope = 4
+)
+
+// Enum value maps for GoSourceDirective_Scope.
+var (
+	GoSourceDirective_Scope_name = map[int32]string{
+		0: "SCOPE_UNSPECIFIED",
+		1: "DOCUMENT",
+		2: "TABLE",
+		3: "COLUMN",
+		4: "INDEX",
+	}
+	GoSourceDirective_Scope_value = map[string]int32{
+		"SCOPE_UNSPECIFIED": 0,
+		"DOCUMENT":          1,
+		"TABLE":             2,
+		"COLUMN":            3,
+		"INDEX":             4,
+	}
+)
+
+func (x GoSourceDirective_Scope) Enum() *GoSourceDirective_Scope {
+	p := new(GoSourceDirective_Scope)
+	*p = x
+	return p
+}
+
+func (x GoSourceDirective_Scope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GoSourceDirective_Scope) Descriptor() protoreflect.EnumDescriptor {
+	return file_protocol_experimental_provider_proto_enumTypes[5].Descriptor()
+}
+
+func (GoSourceDirective_Scope) Type() protoreflect.EnumType {
+	return &file_protocol_experimental_provider_proto_enumTypes[5]
+}
+
+func (x GoSourceDirective_Scope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GoSourceDirective_Scope.Descriptor instead.
+func (GoSourceDirective_Scope) EnumDescriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6, 0}
+}
+
 type IdentifierRules_Comparison int32
 
 const (
@@ -319,11 +374,11 @@ func (x IdentifierRules_Comparison) String() string {
 }
 
 func (IdentifierRules_Comparison) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[5].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[6].Descriptor()
 }
 
 func (IdentifierRules_Comparison) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[5]
+	return &file_protocol_experimental_provider_proto_enumTypes[6]
 }
 
 func (x IdentifierRules_Comparison) Number() protoreflect.EnumNumber {
@@ -332,7 +387,7 @@ func (x IdentifierRules_Comparison) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IdentifierRules_Comparison.Descriptor instead.
 func (IdentifierRules_Comparison) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7, 0}
 }
 
 type IdentifierRules_IndexNamespace int32
@@ -368,11 +423,11 @@ func (x IdentifierRules_IndexNamespace) String() string {
 }
 
 func (IdentifierRules_IndexNamespace) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[6].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[7].Descriptor()
 }
 
 func (IdentifierRules_IndexNamespace) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[6]
+	return &file_protocol_experimental_provider_proto_enumTypes[7]
 }
 
 func (x IdentifierRules_IndexNamespace) Number() protoreflect.EnumNumber {
@@ -381,7 +436,7 @@ func (x IdentifierRules_IndexNamespace) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IdentifierRules_IndexNamespace.Descriptor instead.
 func (IdentifierRules_IndexNamespace) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6, 1}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7, 1}
 }
 
 type Disposition_State int32
@@ -423,11 +478,11 @@ func (x Disposition_State) String() string {
 }
 
 func (Disposition_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[7].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[8].Descriptor()
 }
 
 func (Disposition_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[7]
+	return &file_protocol_experimental_provider_proto_enumTypes[8]
 }
 
 func (x Disposition_State) Number() protoreflect.EnumNumber {
@@ -436,7 +491,7 @@ func (x Disposition_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Disposition_State.Descriptor instead.
 func (Disposition_State) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{16, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{17, 0}
 }
 
 type NativeOperation_Role int32
@@ -472,11 +527,11 @@ func (x NativeOperation_Role) String() string {
 }
 
 func (NativeOperation_Role) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[8].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[9].Descriptor()
 }
 
 func (NativeOperation_Role) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[8]
+	return &file_protocol_experimental_provider_proto_enumTypes[9]
 }
 
 func (x NativeOperation_Role) Number() protoreflect.EnumNumber {
@@ -485,7 +540,7 @@ func (x NativeOperation_Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NativeOperation_Role.Descriptor instead.
 func (NativeOperation_Role) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{18, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{19, 0}
 }
 
 type FinishTransactionRequest_Action int32
@@ -521,11 +576,11 @@ func (x FinishTransactionRequest_Action) String() string {
 }
 
 func (FinishTransactionRequest_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[9].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[10].Descriptor()
 }
 
 func (FinishTransactionRequest_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[9]
+	return &file_protocol_experimental_provider_proto_enumTypes[10]
 }
 
 func (x FinishTransactionRequest_Action) Number() protoreflect.EnumNumber {
@@ -534,7 +589,7 @@ func (x FinishTransactionRequest_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FinishTransactionRequest_Action.Descriptor instead.
 func (FinishTransactionRequest_Action) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{25, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{26, 0}
 }
 
 type TransactionResult_Outcome int32
@@ -575,11 +630,11 @@ func (x TransactionResult_Outcome) String() string {
 }
 
 func (TransactionResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[10].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[11].Descriptor()
 }
 
 func (TransactionResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[10]
+	return &file_protocol_experimental_provider_proto_enumTypes[11]
 }
 
 func (x TransactionResult_Outcome) Number() protoreflect.EnumNumber {
@@ -588,7 +643,7 @@ func (x TransactionResult_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TransactionResult_Outcome.Descriptor instead.
 func (TransactionResult_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{26, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{27, 0}
 }
 
 type Execution_Outcome int32
@@ -636,11 +691,11 @@ func (x Execution_Outcome) String() string {
 }
 
 func (Execution_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[11].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[12].Descriptor()
 }
 
 func (Execution_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[11]
+	return &file_protocol_experimental_provider_proto_enumTypes[12]
 }
 
 func (x Execution_Outcome) Number() protoreflect.EnumNumber {
@@ -649,7 +704,7 @@ func (x Execution_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Execution_Outcome.Descriptor instead.
 func (Execution_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{27, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{28, 0}
 }
 
 type SQLStatement_Safety int32
@@ -693,11 +748,11 @@ func (x SQLStatement_Safety) String() string {
 }
 
 func (SQLStatement_Safety) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[12].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[13].Descriptor()
 }
 
 func (SQLStatement_Safety) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[12]
+	return &file_protocol_experimental_provider_proto_enumTypes[13]
 }
 
 func (x SQLStatement_Safety) Number() protoreflect.EnumNumber {
@@ -706,7 +761,7 @@ func (x SQLStatement_Safety) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SQLStatement_Safety.Descriptor instead.
 func (SQLStatement_Safety) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{31, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{32, 0}
 }
 
 type ValueInput_Representation int32
@@ -748,11 +803,11 @@ func (x ValueInput_Representation) String() string {
 }
 
 func (ValueInput_Representation) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[13].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[14].Descriptor()
 }
 
 func (ValueInput_Representation) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[13]
+	return &file_protocol_experimental_provider_proto_enumTypes[14]
 }
 
 func (x ValueInput_Representation) Number() protoreflect.EnumNumber {
@@ -761,7 +816,7 @@ func (x ValueInput_Representation) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ValueInput_Representation.Descriptor instead.
 func (ValueInput_Representation) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{33, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{34, 0}
 }
 
 type SourceDocument_Format int32
@@ -803,11 +858,11 @@ func (x SourceDocument_Format) String() string {
 }
 
 func (SourceDocument_Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[14].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[15].Descriptor()
 }
 
 func (SourceDocument_Format) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[14]
+	return &file_protocol_experimental_provider_proto_enumTypes[15]
 }
 
 func (x SourceDocument_Format) Number() protoreflect.EnumNumber {
@@ -816,7 +871,7 @@ func (x SourceDocument_Format) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SourceDocument_Format.Descriptor instead.
 func (SourceDocument_Format) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47, 0}
 }
 
 type SourceTrace_Root int32
@@ -852,11 +907,11 @@ func (x SourceTrace_Root) String() string {
 }
 
 func (SourceTrace_Root) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[15].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[16].Descriptor()
 }
 
 func (SourceTrace_Root) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[15]
+	return &file_protocol_experimental_provider_proto_enumTypes[16]
 }
 
 func (x SourceTrace_Root) Number() protoreflect.EnumNumber {
@@ -865,7 +920,7 @@ func (x SourceTrace_Root) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SourceTrace_Root.Descriptor instead.
 func (SourceTrace_Root) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49, 0}
 }
 
 type ModelKnowledge_State int32
@@ -910,11 +965,11 @@ func (x ModelKnowledge_State) String() string {
 }
 
 func (ModelKnowledge_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[16].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[17].Descriptor()
 }
 
 func (ModelKnowledge_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[16]
+	return &file_protocol_experimental_provider_proto_enumTypes[17]
 }
 
 func (x ModelKnowledge_State) Number() protoreflect.EnumNumber {
@@ -923,7 +978,7 @@ func (x ModelKnowledge_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ModelKnowledge_State.Descriptor instead.
 func (ModelKnowledge_State) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51, 0}
 }
 
 type SourceModelValue_Placement int32
@@ -959,11 +1014,11 @@ func (x SourceModelValue_Placement) String() string {
 }
 
 func (SourceModelValue_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[17].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[18].Descriptor()
 }
 
 func (SourceModelValue_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[17]
+	return &file_protocol_experimental_provider_proto_enumTypes[18]
 }
 
 func (x SourceModelValue_Placement) Number() protoreflect.EnumNumber {
@@ -972,7 +1027,7 @@ func (x SourceModelValue_Placement) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SourceModelValue_Placement.Descriptor instead.
 func (SourceModelValue_Placement) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{61, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{62, 0}
 }
 
 type ModelComparison_Placement int32
@@ -1008,11 +1063,11 @@ func (x ModelComparison_Placement) String() string {
 }
 
 func (ModelComparison_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[18].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[19].Descriptor()
 }
 
 func (ModelComparison_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[18]
+	return &file_protocol_experimental_provider_proto_enumTypes[19]
 }
 
 func (x ModelComparison_Placement) Number() protoreflect.EnumNumber {
@@ -1021,7 +1076,7 @@ func (x ModelComparison_Placement) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ModelComparison_Placement.Descriptor instead.
 func (ModelComparison_Placement) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{64, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{65, 0}
 }
 
 type ChangeSemantics_Impact int32
@@ -1063,11 +1118,11 @@ func (x ChangeSemantics_Impact) String() string {
 }
 
 func (ChangeSemantics_Impact) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[19].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[20].Descriptor()
 }
 
 func (ChangeSemantics_Impact) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[19]
+	return &file_protocol_experimental_provider_proto_enumTypes[20]
 }
 
 func (x ChangeSemantics_Impact) Number() protoreflect.EnumNumber {
@@ -1076,7 +1131,7 @@ func (x ChangeSemantics_Impact) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ChangeSemantics_Impact.Descriptor instead.
 func (ChangeSemantics_Impact) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{83, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{84, 0}
 }
 
 type ChangeSemantics_Access int32
@@ -1118,11 +1173,11 @@ func (x ChangeSemantics_Access) String() string {
 }
 
 func (ChangeSemantics_Access) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[20].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[21].Descriptor()
 }
 
 func (ChangeSemantics_Access) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[20]
+	return &file_protocol_experimental_provider_proto_enumTypes[21]
 }
 
 func (x ChangeSemantics_Access) Number() protoreflect.EnumNumber {
@@ -1131,7 +1186,7 @@ func (x ChangeSemantics_Access) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ChangeSemantics_Access.Descriptor instead.
 func (ChangeSemantics_Access) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{83, 1}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{84, 1}
 }
 
 type PlanningEffect_Action int32
@@ -1173,11 +1228,11 @@ func (x PlanningEffect_Action) String() string {
 }
 
 func (PlanningEffect_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[21].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[22].Descriptor()
 }
 
 func (PlanningEffect_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[21]
+	return &file_protocol_experimental_provider_proto_enumTypes[22]
 }
 
 func (x PlanningEffect_Action) Number() protoreflect.EnumNumber {
@@ -1186,7 +1241,7 @@ func (x PlanningEffect_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningEffect_Action.Descriptor instead.
 func (PlanningEffect_Action) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{90, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91, 0}
 }
 
 type PlanningMetadata_Transaction int32
@@ -1225,11 +1280,11 @@ func (x PlanningMetadata_Transaction) String() string {
 }
 
 func (PlanningMetadata_Transaction) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[22].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[23].Descriptor()
 }
 
 func (PlanningMetadata_Transaction) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[22]
+	return &file_protocol_experimental_provider_proto_enumTypes[23]
 }
 
 func (x PlanningMetadata_Transaction) Number() protoreflect.EnumNumber {
@@ -1238,7 +1293,7 @@ func (x PlanningMetadata_Transaction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningMetadata_Transaction.Descriptor instead.
 func (PlanningMetadata_Transaction) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{92, 0}
 }
 
 type PlanningMetadata_Placement int32
@@ -1271,11 +1326,11 @@ func (x PlanningMetadata_Placement) String() string {
 }
 
 func (PlanningMetadata_Placement) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[23].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[24].Descriptor()
 }
 
 func (PlanningMetadata_Placement) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[23]
+	return &file_protocol_experimental_provider_proto_enumTypes[24]
 }
 
 func (x PlanningMetadata_Placement) Number() protoreflect.EnumNumber {
@@ -1284,7 +1339,7 @@ func (x PlanningMetadata_Placement) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningMetadata_Placement.Descriptor instead.
 func (PlanningMetadata_Placement) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91, 1}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{92, 1}
 }
 
 type PlanningOperation_Phase int32
@@ -1323,11 +1378,11 @@ func (x PlanningOperation_Phase) String() string {
 }
 
 func (PlanningOperation_Phase) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[24].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[25].Descriptor()
 }
 
 func (PlanningOperation_Phase) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[24]
+	return &file_protocol_experimental_provider_proto_enumTypes[25]
 }
 
 func (x PlanningOperation_Phase) Number() protoreflect.EnumNumber {
@@ -1336,7 +1391,7 @@ func (x PlanningOperation_Phase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningOperation_Phase.Descriptor instead.
 func (PlanningOperation_Phase) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{94, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{95, 0}
 }
 
 type PlanningDiagnostic_Code int32
@@ -1375,11 +1430,11 @@ func (x PlanningDiagnostic_Code) String() string {
 }
 
 func (PlanningDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[25].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[26].Descriptor()
 }
 
 func (PlanningDiagnostic_Code) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[25]
+	return &file_protocol_experimental_provider_proto_enumTypes[26]
 }
 
 func (x PlanningDiagnostic_Code) Number() protoreflect.EnumNumber {
@@ -1388,7 +1443,7 @@ func (x PlanningDiagnostic_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningDiagnostic_Code.Descriptor instead.
 func (PlanningDiagnostic_Code) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{101, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{102, 0}
 }
 
 type PlanningTable_Action int32
@@ -1430,11 +1485,11 @@ func (x PlanningTable_Action) String() string {
 }
 
 func (PlanningTable_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[26].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[27].Descriptor()
 }
 
 func (PlanningTable_Action) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[26]
+	return &file_protocol_experimental_provider_proto_enumTypes[27]
 }
 
 func (x PlanningTable_Action) Number() protoreflect.EnumNumber {
@@ -1443,7 +1498,7 @@ func (x PlanningTable_Action) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlanningTable_Action.Descriptor instead.
 func (PlanningTable_Action) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{103, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{104, 0}
 }
 
 type HistoryScope_Format int32
@@ -1479,11 +1534,11 @@ func (x HistoryScope_Format) String() string {
 }
 
 func (HistoryScope_Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[27].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[28].Descriptor()
 }
 
 func (HistoryScope_Format) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[27]
+	return &file_protocol_experimental_provider_proto_enumTypes[28]
 }
 
 func (x HistoryScope_Format) Number() protoreflect.EnumNumber {
@@ -1492,7 +1547,7 @@ func (x HistoryScope_Format) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HistoryScope_Format.Descriptor instead.
 func (HistoryScope_Format) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{123, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{124, 0}
 }
 
 type HistoryRevision_State int32
@@ -1531,11 +1586,11 @@ func (x HistoryRevision_State) String() string {
 }
 
 func (HistoryRevision_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[28].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[29].Descriptor()
 }
 
 func (HistoryRevision_State) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[28]
+	return &file_protocol_experimental_provider_proto_enumTypes[29]
 }
 
 func (x HistoryRevision_State) Number() protoreflect.EnumNumber {
@@ -1544,7 +1599,7 @@ func (x HistoryRevision_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HistoryRevision_State.Descriptor instead.
 func (HistoryRevision_State) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{124, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{125, 0}
 }
 
 type HistoryRevision_Direction int32
@@ -1580,11 +1635,11 @@ func (x HistoryRevision_Direction) String() string {
 }
 
 func (HistoryRevision_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[29].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[30].Descriptor()
 }
 
 func (HistoryRevision_Direction) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[29]
+	return &file_protocol_experimental_provider_proto_enumTypes[30]
 }
 
 func (x HistoryRevision_Direction) Number() protoreflect.EnumNumber {
@@ -1593,7 +1648,7 @@ func (x HistoryRevision_Direction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HistoryRevision_Direction.Descriptor instead.
 func (HistoryRevision_Direction) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{124, 1}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{125, 1}
 }
 
 type HistoryResult_Outcome int32
@@ -1632,11 +1687,11 @@ func (x HistoryResult_Outcome) String() string {
 }
 
 func (HistoryResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[30].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[31].Descriptor()
 }
 
 func (HistoryResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[30]
+	return &file_protocol_experimental_provider_proto_enumTypes[31]
 }
 
 func (x HistoryResult_Outcome) Number() protoreflect.EnumNumber {
@@ -1645,7 +1700,7 @@ func (x HistoryResult_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HistoryResult_Outcome.Descriptor instead.
 func (HistoryResult_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{129, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{130, 0}
 }
 
 type LockResult_Outcome int32
@@ -1690,11 +1745,11 @@ func (x LockResult_Outcome) String() string {
 }
 
 func (LockResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[31].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[32].Descriptor()
 }
 
 func (LockResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[31]
+	return &file_protocol_experimental_provider_proto_enumTypes[32]
 }
 
 func (x LockResult_Outcome) Number() protoreflect.EnumNumber {
@@ -1703,7 +1758,7 @@ func (x LockResult_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LockResult_Outcome.Descriptor instead.
 func (LockResult_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{132, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{133, 0}
 }
 
 type MetadataScope_Kind int32
@@ -1739,11 +1794,11 @@ func (x MetadataScope_Kind) String() string {
 }
 
 func (MetadataScope_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[32].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[33].Descriptor()
 }
 
 func (MetadataScope_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[32]
+	return &file_protocol_experimental_provider_proto_enumTypes[33]
 }
 
 func (x MetadataScope_Kind) Number() protoreflect.EnumNumber {
@@ -1752,7 +1807,7 @@ func (x MetadataScope_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MetadataScope_Kind.Descriptor instead.
 func (MetadataScope_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{133, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{134, 0}
 }
 
 type MetadataResult_Outcome int32
@@ -1788,11 +1843,11 @@ func (x MetadataResult_Outcome) String() string {
 }
 
 func (MetadataResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[33].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[34].Descriptor()
 }
 
 func (MetadataResult_Outcome) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[33]
+	return &file_protocol_experimental_provider_proto_enumTypes[34]
 }
 
 func (x MetadataResult_Outcome) Number() protoreflect.EnumNumber {
@@ -1801,7 +1856,7 @@ func (x MetadataResult_Outcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MetadataResult_Outcome.Descriptor instead.
 func (MetadataResult_Outcome) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{138, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{139, 0}
 }
 
 type ReservedObject_Purpose int32
@@ -1843,11 +1898,11 @@ func (x ReservedObject_Purpose) String() string {
 }
 
 func (ReservedObject_Purpose) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[34].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[35].Descriptor()
 }
 
 func (ReservedObject_Purpose) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[34]
+	return &file_protocol_experimental_provider_proto_enumTypes[35]
 }
 
 func (x ReservedObject_Purpose) Number() protoreflect.EnumNumber {
@@ -1856,7 +1911,7 @@ func (x ReservedObject_Purpose) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReservedObject_Purpose.Descriptor instead.
 func (ReservedObject_Purpose) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{145, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{146, 0}
 }
 
 type SchemaDiagnostic_Code int32
@@ -1895,11 +1950,11 @@ func (x SchemaDiagnostic_Code) String() string {
 }
 
 func (SchemaDiagnostic_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[35].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[36].Descriptor()
 }
 
 func (SchemaDiagnostic_Code) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[35]
+	return &file_protocol_experimental_provider_proto_enumTypes[36]
 }
 
 func (x SchemaDiagnostic_Code) Number() protoreflect.EnumNumber {
@@ -1908,7 +1963,7 @@ func (x SchemaDiagnostic_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SchemaDiagnostic_Code.Descriptor instead.
 func (SchemaDiagnostic_Code) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{158, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{159, 0}
 }
 
 type LintRule_Severity int32
@@ -1947,11 +2002,11 @@ func (x LintRule_Severity) String() string {
 }
 
 func (LintRule_Severity) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[36].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[37].Descriptor()
 }
 
 func (LintRule_Severity) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[36]
+	return &file_protocol_experimental_provider_proto_enumTypes[37]
 }
 
 func (x LintRule_Severity) Number() protoreflect.EnumNumber {
@@ -1960,7 +2015,7 @@ func (x LintRule_Severity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintRule_Severity.Descriptor instead.
 func (LintRule_Severity) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{161, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{162, 0}
 }
 
 type LintSubject_Kind int32
@@ -1996,11 +2051,11 @@ func (x LintSubject_Kind) String() string {
 }
 
 func (LintSubject_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[37].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[38].Descriptor()
 }
 
 func (LintSubject_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[37]
+	return &file_protocol_experimental_provider_proto_enumTypes[38]
 }
 
 func (x LintSubject_Kind) Number() protoreflect.EnumNumber {
@@ -2009,7 +2064,7 @@ func (x LintSubject_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LintSubject_Kind.Descriptor instead.
 func (LintSubject_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{173, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{174, 0}
 }
 
 type DevDatabaseRefusal_Kind int32
@@ -2048,11 +2103,11 @@ func (x DevDatabaseRefusal_Kind) String() string {
 }
 
 func (DevDatabaseRefusal_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_protocol_experimental_provider_proto_enumTypes[38].Descriptor()
+	return file_protocol_experimental_provider_proto_enumTypes[39].Descriptor()
 }
 
 func (DevDatabaseRefusal_Kind) Type() protoreflect.EnumType {
-	return &file_protocol_experimental_provider_proto_enumTypes[38]
+	return &file_protocol_experimental_provider_proto_enumTypes[39]
 }
 
 func (x DevDatabaseRefusal_Kind) Number() protoreflect.EnumNumber {
@@ -2061,7 +2116,7 @@ func (x DevDatabaseRefusal_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DevDatabaseRefusal_Kind.Descriptor instead.
 func (DevDatabaseRefusal_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{177, 0}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{178, 0}
 }
 
 type Empty struct {
@@ -2239,20 +2294,21 @@ func (x *Description) GetFeatures() []string {
 // Engine contains transport-neutral registration data. An alias grants no
 // implementation fallback and a feature is an explicit semantic promise.
 type Engine struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Aliases        []string               `protobuf:"bytes,2,rep,name=aliases,proto3" json:"aliases,omitempty"`
-	DefaultSchema  string                 `protobuf:"bytes,3,opt,name=default_schema,json=defaultSchema,proto3" json:"default_schema,omitempty"`
-	Features       []string               `protobuf:"bytes,4,rep,name=features,proto3" json:"features,omitempty"`
-	Identifiers    *IdentifierRules       `protobuf:"bytes,5,opt,name=identifiers,proto3" json:"identifiers,omitempty"`
-	ValueModels    []*ValueModel          `protobuf:"bytes,6,rep,name=value_models,json=valueModels,proto3" json:"value_models,omitempty"`
-	YamlSourceKeys []*YAMLSourceKey       `protobuf:"bytes,7,rep,name=yaml_source_keys,json=yamlSourceKeys,proto3" json:"yaml_source_keys,omitempty"`
-	Comparisons    []*ModelComparison     `protobuf:"bytes,8,rep,name=comparisons,proto3" json:"comparisons,omitempty"`
-	Planning       []*ModelPlanning       `protobuf:"bytes,9,rep,name=planning,proto3" json:"planning,omitempty"`
-	LintRules      []*LintRule            `protobuf:"bytes,10,rep,name=lint_rules,json=lintRules,proto3" json:"lint_rules,omitempty"`
-	ReleaseLines   []*ReleaseLine         `protobuf:"bytes,11,rep,name=release_lines,json=releaseLines,proto3" json:"release_lines,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Aliases            []string               `protobuf:"bytes,2,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	DefaultSchema      string                 `protobuf:"bytes,3,opt,name=default_schema,json=defaultSchema,proto3" json:"default_schema,omitempty"`
+	Features           []string               `protobuf:"bytes,4,rep,name=features,proto3" json:"features,omitempty"`
+	Identifiers        *IdentifierRules       `protobuf:"bytes,5,opt,name=identifiers,proto3" json:"identifiers,omitempty"`
+	ValueModels        []*ValueModel          `protobuf:"bytes,6,rep,name=value_models,json=valueModels,proto3" json:"value_models,omitempty"`
+	YamlSourceKeys     []*YAMLSourceKey       `protobuf:"bytes,7,rep,name=yaml_source_keys,json=yamlSourceKeys,proto3" json:"yaml_source_keys,omitempty"`
+	Comparisons        []*ModelComparison     `protobuf:"bytes,8,rep,name=comparisons,proto3" json:"comparisons,omitempty"`
+	Planning           []*ModelPlanning       `protobuf:"bytes,9,rep,name=planning,proto3" json:"planning,omitempty"`
+	LintRules          []*LintRule            `protobuf:"bytes,10,rep,name=lint_rules,json=lintRules,proto3" json:"lint_rules,omitempty"`
+	ReleaseLines       []*ReleaseLine         `protobuf:"bytes,11,rep,name=release_lines,json=releaseLines,proto3" json:"release_lines,omitempty"`
+	GoSourceDirectives []*GoSourceDirective   `protobuf:"bytes,12,rep,name=go_source_directives,json=goSourceDirectives,proto3" json:"go_source_directives,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Engine) Reset() {
@@ -2358,6 +2414,13 @@ func (x *Engine) GetLintRules() []*LintRule {
 func (x *Engine) GetReleaseLines() []*ReleaseLine {
 	if x != nil {
 		return x.ReleaseLines
+	}
+	return nil
+}
+
+func (x *Engine) GetGoSourceDirectives() []*GoSourceDirective {
+	if x != nil {
+		return x.GoSourceDirectives
 	}
 	return nil
 }
@@ -2522,6 +2585,89 @@ func (x *YAMLSourceKey) GetModels() []string {
 	return nil
 }
 
+// GoSourceDirective is an explicit owner claim on Go annotation syntax. The
+// host lexes a Go comment into a directive name and key/value attributes, checks
+// that exactly one selected owner claims the name, and sends the owner the
+// parsed attributes as a mapping. The owner never receives comment text. The
+// attributes list names every key the directive accepts; the host refuses
+// others before dispatch. Models name desired value kinds the directive can
+// declare, as for YAMLSourceKey.
+type GoSourceDirective struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Scope         GoSourceDirective_Scope `protobuf:"varint,1,opt,name=scope,proto3,enum=ptah.provider.experimental.GoSourceDirective_Scope" json:"scope,omitempty"`
+	Directive     string                  `protobuf:"bytes,2,opt,name=directive,proto3" json:"directive,omitempty"`
+	Selector      string                  `protobuf:"bytes,3,opt,name=selector,proto3" json:"selector,omitempty"`
+	Attributes    []string                `protobuf:"bytes,4,rep,name=attributes,proto3" json:"attributes,omitempty"`
+	Models        []string                `protobuf:"bytes,5,rep,name=models,proto3" json:"models,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GoSourceDirective) Reset() {
+	*x = GoSourceDirective{}
+	mi := &file_protocol_experimental_provider_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoSourceDirective) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoSourceDirective) ProtoMessage() {}
+
+func (x *GoSourceDirective) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_experimental_provider_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoSourceDirective.ProtoReflect.Descriptor instead.
+func (*GoSourceDirective) Descriptor() ([]byte, []int) {
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GoSourceDirective) GetScope() GoSourceDirective_Scope {
+	if x != nil {
+		return x.Scope
+	}
+	return GoSourceDirective_SCOPE_UNSPECIFIED
+}
+
+func (x *GoSourceDirective) GetDirective() string {
+	if x != nil {
+		return x.Directive
+	}
+	return ""
+}
+
+func (x *GoSourceDirective) GetSelector() string {
+	if x != nil {
+		return x.Selector
+	}
+	return ""
+}
+
+func (x *GoSourceDirective) GetAttributes() []string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *GoSourceDirective) GetModels() []string {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
 // IdentifierRules are owner-supplied comparison facts. Missing or unknown
 // values are refused; the host must not borrow rules from a built-in engine.
 type IdentifierRules struct {
@@ -2536,7 +2682,7 @@ type IdentifierRules struct {
 
 func (x *IdentifierRules) Reset() {
 	*x = IdentifierRules{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[6]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2548,7 +2694,7 @@ func (x *IdentifierRules) String() string {
 func (*IdentifierRules) ProtoMessage() {}
 
 func (x *IdentifierRules) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[6]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2561,7 +2707,7 @@ func (x *IdentifierRules) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifierRules.ProtoReflect.Descriptor instead.
 func (*IdentifierRules) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{6}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *IdentifierRules) GetTableNames() IdentifierRules_Comparison {
@@ -2611,7 +2757,7 @@ type Reference struct {
 
 func (x *Reference) Reset() {
 	*x = Reference{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[7]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2623,7 +2769,7 @@ func (x *Reference) String() string {
 func (*Reference) ProtoMessage() {}
 
 func (x *Reference) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[7]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2636,7 +2782,7 @@ func (x *Reference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reference.ProtoReflect.Descriptor instead.
 func (*Reference) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{7}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Reference) GetEngine() string {
@@ -2718,7 +2864,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[8]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2730,7 +2876,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[8]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2743,7 +2889,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{8}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Envelope) GetProviderId() string {
@@ -2814,7 +2960,7 @@ type OpenRequest struct {
 
 func (x *OpenRequest) Reset() {
 	*x = OpenRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[9]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2826,7 +2972,7 @@ func (x *OpenRequest) String() string {
 func (*OpenRequest) ProtoMessage() {}
 
 func (x *OpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[9]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2839,7 +2985,7 @@ func (x *OpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenRequest.ProtoReflect.Descriptor instead.
 func (*OpenRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{9}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *OpenRequest) GetEngine() string {
@@ -2874,7 +3020,7 @@ type Session struct {
 
 func (x *Session) Reset() {
 	*x = Session{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[10]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2886,7 +3032,7 @@ func (x *Session) String() string {
 func (*Session) ProtoMessage() {}
 
 func (x *Session) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[10]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2899,7 +3045,7 @@ func (x *Session) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Session.ProtoReflect.Descriptor instead.
 func (*Session) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{10}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Session) GetId() string {
@@ -2967,7 +3113,7 @@ type CloseRequest struct {
 
 func (x *CloseRequest) Reset() {
 	*x = CloseRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[11]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2979,7 +3125,7 @@ func (x *CloseRequest) String() string {
 func (*CloseRequest) ProtoMessage() {}
 
 func (x *CloseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[11]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2992,7 +3138,7 @@ func (x *CloseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseRequest.ProtoReflect.Descriptor instead.
 func (*CloseRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{11}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CloseRequest) GetSessionId() string {
@@ -3012,7 +3158,7 @@ type InspectRequest struct {
 
 func (x *InspectRequest) Reset() {
 	*x = InspectRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[12]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3024,7 +3170,7 @@ func (x *InspectRequest) String() string {
 func (*InspectRequest) ProtoMessage() {}
 
 func (x *InspectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[12]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3037,7 +3183,7 @@ func (x *InspectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRequest.ProtoReflect.Descriptor instead.
 func (*InspectRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{12}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *InspectRequest) GetSessionId() string {
@@ -3079,7 +3225,7 @@ type Schema struct {
 
 func (x *Schema) Reset() {
 	*x = Schema{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[13]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3091,7 +3237,7 @@ func (x *Schema) String() string {
 func (*Schema) ProtoMessage() {}
 
 func (x *Schema) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[13]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3104,7 +3250,7 @@ func (x *Schema) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schema.ProtoReflect.Descriptor instead.
 func (*Schema) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{13}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Schema) GetComplete() bool {
@@ -3183,7 +3329,7 @@ type Table struct {
 
 func (x *Table) Reset() {
 	*x = Table{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[14]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3195,7 +3341,7 @@ func (x *Table) String() string {
 func (*Table) ProtoMessage() {}
 
 func (x *Table) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[14]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3208,7 +3354,7 @@ func (x *Table) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Table.ProtoReflect.Descriptor instead.
 func (*Table) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{14}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Table) GetIdentity() *Reference {
@@ -3253,7 +3399,7 @@ type Column struct {
 
 func (x *Column) Reset() {
 	*x = Column{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[15]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3265,7 +3411,7 @@ func (x *Column) String() string {
 func (*Column) ProtoMessage() {}
 
 func (x *Column) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[15]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3278,7 +3424,7 @@ func (x *Column) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Column.ProtoReflect.Descriptor instead.
 func (*Column) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{15}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Column) GetName() string {
@@ -3335,7 +3481,7 @@ type Disposition struct {
 
 func (x *Disposition) Reset() {
 	*x = Disposition{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[16]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3347,7 +3493,7 @@ func (x *Disposition) String() string {
 func (*Disposition) ProtoMessage() {}
 
 func (x *Disposition) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[16]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3360,7 +3506,7 @@ func (x *Disposition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Disposition.ProtoReflect.Descriptor instead.
 func (*Disposition) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{16}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Disposition) GetObject() *Reference {
@@ -3411,7 +3557,7 @@ type Change struct {
 
 func (x *Change) Reset() {
 	*x = Change{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[17]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3423,7 +3569,7 @@ func (x *Change) String() string {
 func (*Change) ProtoMessage() {}
 
 func (x *Change) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[17]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3436,7 +3582,7 @@ func (x *Change) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Change.ProtoReflect.Descriptor instead.
 func (*Change) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{17}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Change) GetId() string {
@@ -3553,7 +3699,7 @@ type NativeOperation struct {
 
 func (x *NativeOperation) Reset() {
 	*x = NativeOperation{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[18]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3565,7 +3711,7 @@ func (x *NativeOperation) String() string {
 func (*NativeOperation) ProtoMessage() {}
 
 func (x *NativeOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[18]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3578,7 +3724,7 @@ func (x *NativeOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeOperation.ProtoReflect.Descriptor instead.
 func (*NativeOperation) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{18}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *NativeOperation) GetValue() *NormalizedValue {
@@ -3615,7 +3761,7 @@ type RenderRequest struct {
 
 func (x *RenderRequest) Reset() {
 	*x = RenderRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[19]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3627,7 +3773,7 @@ func (x *RenderRequest) String() string {
 func (*RenderRequest) ProtoMessage() {}
 
 func (x *RenderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[19]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3640,7 +3786,7 @@ func (x *RenderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderRequest.ProtoReflect.Descriptor instead.
 func (*RenderRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{19}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RenderRequest) GetEngine() string {
@@ -3685,7 +3831,7 @@ type Unit struct {
 
 func (x *Unit) Reset() {
 	*x = Unit{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[20]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3697,7 +3843,7 @@ func (x *Unit) String() string {
 func (*Unit) ProtoMessage() {}
 
 func (x *Unit) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[20]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3710,7 +3856,7 @@ func (x *Unit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Unit.ProtoReflect.Descriptor instead.
 func (*Unit) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{20}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Unit) GetChangeId() string {
@@ -3771,7 +3917,7 @@ type RenderResult struct {
 
 func (x *RenderResult) Reset() {
 	*x = RenderResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3783,7 +3929,7 @@ func (x *RenderResult) String() string {
 func (*RenderResult) ProtoMessage() {}
 
 func (x *RenderResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[21]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3796,7 +3942,7 @@ func (x *RenderResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderResult.ProtoReflect.Descriptor instead.
 func (*RenderResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{21}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RenderResult) GetComplete() bool {
@@ -3829,7 +3975,7 @@ type ExecuteRequest struct {
 
 func (x *ExecuteRequest) Reset() {
 	*x = ExecuteRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3841,7 +3987,7 @@ func (x *ExecuteRequest) String() string {
 func (*ExecuteRequest) ProtoMessage() {}
 
 func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[22]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3854,7 +4000,7 @@ func (x *ExecuteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{22}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ExecuteRequest) GetSessionId() string {
@@ -3898,7 +4044,7 @@ type BeginTransactionRequest struct {
 
 func (x *BeginTransactionRequest) Reset() {
 	*x = BeginTransactionRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3910,7 +4056,7 @@ func (x *BeginTransactionRequest) String() string {
 func (*BeginTransactionRequest) ProtoMessage() {}
 
 func (x *BeginTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[23]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3923,7 +4069,7 @@ func (x *BeginTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginTransactionRequest.ProtoReflect.Descriptor instead.
 func (*BeginTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{23}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *BeginTransactionRequest) GetSessionId() string {
@@ -3959,7 +4105,7 @@ type Transaction struct {
 
 func (x *Transaction) Reset() {
 	*x = Transaction{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3971,7 +4117,7 @@ func (x *Transaction) String() string {
 func (*Transaction) ProtoMessage() {}
 
 func (x *Transaction) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[24]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3984,7 +4130,7 @@ func (x *Transaction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Transaction.ProtoReflect.Descriptor instead.
 func (*Transaction) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{24}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Transaction) GetSessionId() string {
@@ -4019,7 +4165,7 @@ type FinishTransactionRequest struct {
 
 func (x *FinishTransactionRequest) Reset() {
 	*x = FinishTransactionRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[25]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4031,7 +4177,7 @@ func (x *FinishTransactionRequest) String() string {
 func (*FinishTransactionRequest) ProtoMessage() {}
 
 func (x *FinishTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[25]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4044,7 +4190,7 @@ func (x *FinishTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinishTransactionRequest.ProtoReflect.Descriptor instead.
 func (*FinishTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{25}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *FinishTransactionRequest) GetSessionId() string {
@@ -4080,7 +4226,7 @@ type TransactionResult struct {
 
 func (x *TransactionResult) Reset() {
 	*x = TransactionResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[26]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4092,7 +4238,7 @@ func (x *TransactionResult) String() string {
 func (*TransactionResult) ProtoMessage() {}
 
 func (x *TransactionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[26]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4105,7 +4251,7 @@ func (x *TransactionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionResult.ProtoReflect.Descriptor instead.
 func (*TransactionResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{26}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TransactionResult) GetOutcome() TransactionResult_Outcome {
@@ -4144,7 +4290,7 @@ type Execution struct {
 
 func (x *Execution) Reset() {
 	*x = Execution{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[27]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4156,7 +4302,7 @@ func (x *Execution) String() string {
 func (*Execution) ProtoMessage() {}
 
 func (x *Execution) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[27]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4169,7 +4315,7 @@ func (x *Execution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Execution.ProtoReflect.Descriptor instead.
 func (*Execution) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{27}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Execution) GetOutcome() Execution_Outcome {
@@ -4213,7 +4359,7 @@ type AnalyzeSQLRequest struct {
 
 func (x *AnalyzeSQLRequest) Reset() {
 	*x = AnalyzeSQLRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[28]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4225,7 +4371,7 @@ func (x *AnalyzeSQLRequest) String() string {
 func (*AnalyzeSQLRequest) ProtoMessage() {}
 
 func (x *AnalyzeSQLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[28]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4238,7 +4384,7 @@ func (x *AnalyzeSQLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnalyzeSQLRequest.ProtoReflect.Descriptor instead.
 func (*AnalyzeSQLRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{28}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AnalyzeSQLRequest) GetEngine() string {
@@ -4265,7 +4411,7 @@ type SQLAnalysis struct {
 
 func (x *SQLAnalysis) Reset() {
 	*x = SQLAnalysis{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4277,7 +4423,7 @@ func (x *SQLAnalysis) String() string {
 func (*SQLAnalysis) ProtoMessage() {}
 
 func (x *SQLAnalysis) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[29]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4290,7 +4436,7 @@ func (x *SQLAnalysis) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SQLAnalysis.ProtoReflect.Descriptor instead.
 func (*SQLAnalysis) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{29}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SQLAnalysis) GetComplete() bool {
@@ -4316,7 +4462,7 @@ type SQLFile struct {
 
 func (x *SQLFile) Reset() {
 	*x = SQLFile{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4328,7 +4474,7 @@ func (x *SQLFile) String() string {
 func (*SQLFile) ProtoMessage() {}
 
 func (x *SQLFile) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[30]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4341,7 +4487,7 @@ func (x *SQLFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SQLFile.ProtoReflect.Descriptor instead.
 func (*SQLFile) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{30}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SQLFile) GetStatements() []*SQLStatement {
@@ -4368,7 +4514,7 @@ type SQLStatement struct {
 
 func (x *SQLStatement) Reset() {
 	*x = SQLStatement{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4380,7 +4526,7 @@ func (x *SQLStatement) String() string {
 func (*SQLStatement) ProtoMessage() {}
 
 func (x *SQLStatement) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[31]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4393,7 +4539,7 @@ func (x *SQLStatement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SQLStatement.ProtoReflect.Descriptor instead.
 func (*SQLStatement) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{31}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SQLStatement) GetStart() uint32 {
@@ -4466,7 +4612,7 @@ type NormalizeValuesRequest struct {
 
 func (x *NormalizeValuesRequest) Reset() {
 	*x = NormalizeValuesRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4478,7 +4624,7 @@ func (x *NormalizeValuesRequest) String() string {
 func (*NormalizeValuesRequest) ProtoMessage() {}
 
 func (x *NormalizeValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[32]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4491,7 +4637,7 @@ func (x *NormalizeValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizeValuesRequest.ProtoReflect.Descriptor instead.
 func (*NormalizeValuesRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{32}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *NormalizeValuesRequest) GetEngine() string {
@@ -4526,7 +4672,7 @@ type ValueInput struct {
 
 func (x *ValueInput) Reset() {
 	*x = ValueInput{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4538,7 +4684,7 @@ func (x *ValueInput) String() string {
 func (*ValueInput) ProtoMessage() {}
 
 func (x *ValueInput) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[33]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4551,7 +4697,7 @@ func (x *ValueInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValueInput.ProtoReflect.Descriptor instead.
 func (*ValueInput) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{33}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ValueInput) GetId() string {
@@ -4586,7 +4732,7 @@ type NormalizedValues struct {
 
 func (x *NormalizedValues) Reset() {
 	*x = NormalizedValues{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4598,7 +4744,7 @@ func (x *NormalizedValues) String() string {
 func (*NormalizedValues) ProtoMessage() {}
 
 func (x *NormalizedValues) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[34]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4611,7 +4757,7 @@ func (x *NormalizedValues) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedValues.ProtoReflect.Descriptor instead.
 func (*NormalizedValues) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{34}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *NormalizedValues) GetComplete() bool {
@@ -4655,7 +4801,7 @@ type NormalizedValue struct {
 
 func (x *NormalizedValue) Reset() {
 	*x = NormalizedValue{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4667,7 +4813,7 @@ func (x *NormalizedValue) String() string {
 func (*NormalizedValue) ProtoMessage() {}
 
 func (x *NormalizedValue) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[35]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4680,7 +4826,7 @@ func (x *NormalizedValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedValue.ProtoReflect.Descriptor instead.
 func (*NormalizedValue) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{35}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *NormalizedValue) GetId() string {
@@ -4754,7 +4900,7 @@ type SourcePosition struct {
 
 func (x *SourcePosition) Reset() {
 	*x = SourcePosition{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4766,7 +4912,7 @@ func (x *SourcePosition) String() string {
 func (*SourcePosition) ProtoMessage() {}
 
 func (x *SourcePosition) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[36]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4779,7 +4925,7 @@ func (x *SourcePosition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourcePosition.ProtoReflect.Descriptor instead.
 func (*SourcePosition) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{36}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SourcePosition) GetByteOffset() uint64 {
@@ -4813,7 +4959,7 @@ type SourceSpan struct {
 
 func (x *SourceSpan) Reset() {
 	*x = SourceSpan{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4825,7 +4971,7 @@ func (x *SourceSpan) String() string {
 func (*SourceSpan) ProtoMessage() {}
 
 func (x *SourceSpan) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[37]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4838,7 +4984,7 @@ func (x *SourceSpan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceSpan.ProtoReflect.Descriptor instead.
 func (*SourceSpan) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{37}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SourceSpan) GetStart() *SourcePosition {
@@ -4877,7 +5023,7 @@ type SourceValue struct {
 
 func (x *SourceValue) Reset() {
 	*x = SourceValue{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4889,7 +5035,7 @@ func (x *SourceValue) String() string {
 func (*SourceValue) ProtoMessage() {}
 
 func (x *SourceValue) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[38]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4902,7 +5048,7 @@ func (x *SourceValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceValue.ProtoReflect.Descriptor instead.
 func (*SourceValue) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{38}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SourceValue) GetSpan() *SourceSpan {
@@ -5055,7 +5201,7 @@ type SourceSequence struct {
 
 func (x *SourceSequence) Reset() {
 	*x = SourceSequence{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5067,7 +5213,7 @@ func (x *SourceSequence) String() string {
 func (*SourceSequence) ProtoMessage() {}
 
 func (x *SourceSequence) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[39]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5080,7 +5226,7 @@ func (x *SourceSequence) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceSequence.ProtoReflect.Descriptor instead.
 func (*SourceSequence) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{39}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SourceSequence) GetValues() []*SourceValue {
@@ -5099,7 +5245,7 @@ type SourceMapping struct {
 
 func (x *SourceMapping) Reset() {
 	*x = SourceMapping{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5111,7 +5257,7 @@ func (x *SourceMapping) String() string {
 func (*SourceMapping) ProtoMessage() {}
 
 func (x *SourceMapping) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[40]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5124,7 +5270,7 @@ func (x *SourceMapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceMapping.ProtoReflect.Descriptor instead.
 func (*SourceMapping) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{40}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SourceMapping) GetEntries() []*SourceEntry {
@@ -5145,7 +5291,7 @@ type SourceEntry struct {
 
 func (x *SourceEntry) Reset() {
 	*x = SourceEntry{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5157,7 +5303,7 @@ func (x *SourceEntry) String() string {
 func (*SourceEntry) ProtoMessage() {}
 
 func (x *SourceEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[41]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5170,7 +5316,7 @@ func (x *SourceEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceEntry.ProtoReflect.Descriptor instead.
 func (*SourceEntry) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{41}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SourceEntry) GetKey() string {
@@ -5209,7 +5355,7 @@ type SourceBlock struct {
 
 func (x *SourceBlock) Reset() {
 	*x = SourceBlock{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5221,7 +5367,7 @@ func (x *SourceBlock) String() string {
 func (*SourceBlock) ProtoMessage() {}
 
 func (x *SourceBlock) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[42]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5234,7 +5380,7 @@ func (x *SourceBlock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceBlock.ProtoReflect.Descriptor instead.
 func (*SourceBlock) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{42}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SourceBlock) GetType() string {
@@ -5282,7 +5428,7 @@ type SourceLabel struct {
 
 func (x *SourceLabel) Reset() {
 	*x = SourceLabel{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5294,7 +5440,7 @@ func (x *SourceLabel) String() string {
 func (*SourceLabel) ProtoMessage() {}
 
 func (x *SourceLabel) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[43]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5307,7 +5453,7 @@ func (x *SourceLabel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceLabel.ProtoReflect.Descriptor instead.
 func (*SourceLabel) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{43}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SourceLabel) GetValue() string {
@@ -5339,7 +5485,7 @@ type SourceBinding struct {
 
 func (x *SourceBinding) Reset() {
 	*x = SourceBinding{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5351,7 +5497,7 @@ func (x *SourceBinding) String() string {
 func (*SourceBinding) ProtoMessage() {}
 
 func (x *SourceBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[44]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5364,7 +5510,7 @@ func (x *SourceBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceBinding.ProtoReflect.Descriptor instead.
 func (*SourceBinding) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{44}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SourceBinding) GetId() string {
@@ -5398,9 +5544,11 @@ func (x *SourceBinding) GetEntryKey() string {
 type SourceFragment struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Frozen negotiated grammar claim, required only for YAML fragments.
-	YamlKey  *YAMLSourceKey `protobuf:"bytes,10,opt,name=yaml_key,json=yamlKey,proto3" json:"yaml_key,omitempty"`
-	Id       string         `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Selector string         `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	YamlKey *YAMLSourceKey `protobuf:"bytes,10,opt,name=yaml_key,json=yamlKey,proto3" json:"yaml_key,omitempty"`
+	// Frozen negotiated directive claim, required for Go annotation fragments.
+	GoDirective *GoSourceDirective `protobuf:"bytes,11,opt,name=go_directive,json=goDirective,proto3" json:"go_directive,omitempty"`
+	Id          string             `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Selector    string             `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
 	// The shared frontend's attachment context, if already known. An owner may
 	// resolve a written reference against the document's complete binding set.
 	BindingId string     `protobuf:"bytes,3,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
@@ -5421,7 +5569,7 @@ type SourceFragment struct {
 
 func (x *SourceFragment) Reset() {
 	*x = SourceFragment{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5433,7 +5581,7 @@ func (x *SourceFragment) String() string {
 func (*SourceFragment) ProtoMessage() {}
 
 func (x *SourceFragment) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[45]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5446,12 +5594,19 @@ func (x *SourceFragment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceFragment.ProtoReflect.Descriptor instead.
 func (*SourceFragment) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{45}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SourceFragment) GetYamlKey() *YAMLSourceKey {
 	if x != nil {
 		return x.YamlKey
+	}
+	return nil
+}
+
+func (x *SourceFragment) GetGoDirective() *GoSourceDirective {
+	if x != nil {
+		return x.GoDirective
 	}
 	return nil
 }
@@ -5571,7 +5726,7 @@ type SourceDocument struct {
 
 func (x *SourceDocument) Reset() {
 	*x = SourceDocument{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5583,7 +5738,7 @@ func (x *SourceDocument) String() string {
 func (*SourceDocument) ProtoMessage() {}
 
 func (x *SourceDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[46]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5596,7 +5751,7 @@ func (x *SourceDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceDocument.ProtoReflect.Descriptor instead.
 func (*SourceDocument) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{46}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SourceDocument) GetId() string {
@@ -5666,7 +5821,7 @@ type SourcePathStep struct {
 
 func (x *SourcePathStep) Reset() {
 	*x = SourcePathStep{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5678,7 +5833,7 @@ func (x *SourcePathStep) String() string {
 func (*SourcePathStep) ProtoMessage() {}
 
 func (x *SourcePathStep) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[47]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5691,7 +5846,7 @@ func (x *SourcePathStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourcePathStep.ProtoReflect.Descriptor instead.
 func (*SourcePathStep) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{47}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SourcePathStep) GetStep() isSourcePathStep_Step {
@@ -5792,7 +5947,7 @@ type SourceTrace struct {
 
 func (x *SourceTrace) Reset() {
 	*x = SourceTrace{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5804,7 +5959,7 @@ func (x *SourceTrace) String() string {
 func (*SourceTrace) ProtoMessage() {}
 
 func (x *SourceTrace) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[48]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5817,7 +5972,7 @@ func (x *SourceTrace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceTrace.ProtoReflect.Descriptor instead.
 func (*SourceTrace) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{48}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SourceTrace) GetDocumentId() string {
@@ -5873,7 +6028,7 @@ type ValueModel struct {
 
 func (x *ValueModel) Reset() {
 	*x = ValueModel{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5885,7 +6040,7 @@ func (x *ValueModel) String() string {
 func (*ValueModel) ProtoMessage() {}
 
 func (x *ValueModel) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[49]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5898,7 +6053,7 @@ func (x *ValueModel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValueModel.ProtoReflect.Descriptor instead.
 func (*ValueModel) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{49}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ValueModel) GetKind() string {
@@ -5974,7 +6129,7 @@ type ModelKnowledge struct {
 
 func (x *ModelKnowledge) Reset() {
 	*x = ModelKnowledge{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5986,7 +6141,7 @@ func (x *ModelKnowledge) String() string {
 func (*ModelKnowledge) ProtoMessage() {}
 
 func (x *ModelKnowledge) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[50]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5999,7 +6154,7 @@ func (x *ModelKnowledge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelKnowledge.ProtoReflect.Descriptor instead.
 func (*ModelKnowledge) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{50}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ModelKnowledge) GetState() ModelKnowledge_State {
@@ -6028,7 +6183,7 @@ type NamespaceComponent struct {
 
 func (x *NamespaceComponent) Reset() {
 	*x = NamespaceComponent{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6040,7 +6195,7 @@ func (x *NamespaceComponent) String() string {
 func (*NamespaceComponent) ProtoMessage() {}
 
 func (x *NamespaceComponent) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[51]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6053,7 +6208,7 @@ func (x *NamespaceComponent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceComponent.ProtoReflect.Descriptor instead.
 func (*NamespaceComponent) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{51}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *NamespaceComponent) GetSource() string {
@@ -6084,7 +6239,7 @@ type ModelNamespace struct {
 
 func (x *ModelNamespace) Reset() {
 	*x = ModelNamespace{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6096,7 +6251,7 @@ func (x *ModelNamespace) String() string {
 func (*ModelNamespace) ProtoMessage() {}
 
 func (x *ModelNamespace) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[52]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6109,7 +6264,7 @@ func (x *ModelNamespace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelNamespace.ProtoReflect.Descriptor instead.
 func (*ModelNamespace) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{52}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ModelNamespace) GetDatabase() *NamespaceComponent {
@@ -6150,7 +6305,7 @@ type ModelNamespaceKnowledge struct {
 
 func (x *ModelNamespaceKnowledge) Reset() {
 	*x = ModelNamespaceKnowledge{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6162,7 +6317,7 @@ func (x *ModelNamespaceKnowledge) String() string {
 func (*ModelNamespaceKnowledge) ProtoMessage() {}
 
 func (x *ModelNamespaceKnowledge) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[53]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6175,7 +6330,7 @@ func (x *ModelNamespaceKnowledge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelNamespaceKnowledge.ProtoReflect.Descriptor instead.
 func (*ModelNamespaceKnowledge) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{53}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ModelNamespaceKnowledge) GetScope() *ModelNamespace {
@@ -6206,7 +6361,7 @@ type ModelKindCoverage struct {
 
 func (x *ModelKindCoverage) Reset() {
 	*x = ModelKindCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6218,7 +6373,7 @@ func (x *ModelKindCoverage) String() string {
 func (*ModelKindCoverage) ProtoMessage() {}
 
 func (x *ModelKindCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[54]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6231,7 +6386,7 @@ func (x *ModelKindCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelKindCoverage.ProtoReflect.Descriptor instead.
 func (*ModelKindCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{54}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ModelKindCoverage) GetModel() *ValueModel {
@@ -6267,7 +6422,7 @@ type ModelSubjectCoverage struct {
 
 func (x *ModelSubjectCoverage) Reset() {
 	*x = ModelSubjectCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6279,7 +6434,7 @@ func (x *ModelSubjectCoverage) String() string {
 func (*ModelSubjectCoverage) ProtoMessage() {}
 
 func (x *ModelSubjectCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[55]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6292,7 +6447,7 @@ func (x *ModelSubjectCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelSubjectCoverage.ProtoReflect.Descriptor instead.
 func (*ModelSubjectCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{55}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ModelSubjectCoverage) GetKind() string {
@@ -6334,7 +6489,7 @@ type ModelCoverage struct {
 
 func (x *ModelCoverage) Reset() {
 	*x = ModelCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6346,7 +6501,7 @@ func (x *ModelCoverage) String() string {
 func (*ModelCoverage) ProtoMessage() {}
 
 func (x *ModelCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[56]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6359,7 +6514,7 @@ func (x *ModelCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelCoverage.ProtoReflect.Descriptor instead.
 func (*ModelCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{56}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ModelCoverage) GetRepresentation() ValueInput_Representation {
@@ -6398,7 +6553,7 @@ type DecodeSourceRequest struct {
 
 func (x *DecodeSourceRequest) Reset() {
 	*x = DecodeSourceRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6410,7 +6565,7 @@ func (x *DecodeSourceRequest) String() string {
 func (*DecodeSourceRequest) ProtoMessage() {}
 
 func (x *DecodeSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[57]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6423,7 +6578,7 @@ func (x *DecodeSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodeSourceRequest.ProtoReflect.Descriptor instead.
 func (*DecodeSourceRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{57}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *DecodeSourceRequest) GetEngine() string {
@@ -6458,7 +6613,7 @@ type DecodedSource struct {
 
 func (x *DecodedSource) Reset() {
 	*x = DecodedSource{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[58]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6470,7 +6625,7 @@ func (x *DecodedSource) String() string {
 func (*DecodedSource) ProtoMessage() {}
 
 func (x *DecodedSource) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[58]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6483,7 +6638,7 @@ func (x *DecodedSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSource.ProtoReflect.Descriptor instead.
 func (*DecodedSource) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{58}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *DecodedSource) GetComplete() bool {
@@ -6513,7 +6668,7 @@ type DecodedSourceDocument struct {
 
 func (x *DecodedSourceDocument) Reset() {
 	*x = DecodedSourceDocument{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[59]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6525,7 +6680,7 @@ func (x *DecodedSourceDocument) String() string {
 func (*DecodedSourceDocument) ProtoMessage() {}
 
 func (x *DecodedSourceDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[59]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6538,7 +6693,7 @@ func (x *DecodedSourceDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSourceDocument.ProtoReflect.Descriptor instead.
 func (*DecodedSourceDocument) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{59}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DecodedSourceDocument) GetId() string {
@@ -6572,7 +6727,7 @@ type DecodedSourceFragment struct {
 
 func (x *DecodedSourceFragment) Reset() {
 	*x = DecodedSourceFragment{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[60]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6584,7 +6739,7 @@ func (x *DecodedSourceFragment) String() string {
 func (*DecodedSourceFragment) ProtoMessage() {}
 
 func (x *DecodedSourceFragment) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[60]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6597,7 +6752,7 @@ func (x *DecodedSourceFragment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodedSourceFragment.ProtoReflect.Descriptor instead.
 func (*DecodedSourceFragment) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{60}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *DecodedSourceFragment) GetId() string {
@@ -6629,7 +6784,7 @@ type SourceModelValue struct {
 
 func (x *SourceModelValue) Reset() {
 	*x = SourceModelValue{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[61]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6641,7 +6796,7 @@ func (x *SourceModelValue) String() string {
 func (*SourceModelValue) ProtoMessage() {}
 
 func (x *SourceModelValue) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[61]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6654,7 +6809,7 @@ func (x *SourceModelValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceModelValue.ProtoReflect.Descriptor instead.
 func (*SourceModelValue) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{61}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *SourceModelValue) GetPlacement() SourceModelValue_Placement {
@@ -6695,7 +6850,7 @@ type ConvertValuesRequest struct {
 
 func (x *ConvertValuesRequest) Reset() {
 	*x = ConvertValuesRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[62]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6707,7 +6862,7 @@ func (x *ConvertValuesRequest) String() string {
 func (*ConvertValuesRequest) ProtoMessage() {}
 
 func (x *ConvertValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[62]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6720,7 +6875,7 @@ func (x *ConvertValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConvertValuesRequest.ProtoReflect.Descriptor instead.
 func (*ConvertValuesRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{62}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ConvertValuesRequest) GetEngine() string {
@@ -6770,7 +6925,7 @@ type InspectionScopeBinding struct {
 
 func (x *InspectionScopeBinding) Reset() {
 	*x = InspectionScopeBinding{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[63]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6782,7 +6937,7 @@ func (x *InspectionScopeBinding) String() string {
 func (*InspectionScopeBinding) ProtoMessage() {}
 
 func (x *InspectionScopeBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[63]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6795,7 +6950,7 @@ func (x *InspectionScopeBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectionScopeBinding.ProtoReflect.Descriptor instead.
 func (*InspectionScopeBinding) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{63}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *InspectionScopeBinding) GetSelector() string {
@@ -6828,7 +6983,7 @@ type ModelComparison struct {
 
 func (x *ModelComparison) Reset() {
 	*x = ModelComparison{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[64]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6840,7 +6995,7 @@ func (x *ModelComparison) String() string {
 func (*ModelComparison) ProtoMessage() {}
 
 func (x *ModelComparison) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[64]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6853,7 +7008,7 @@ func (x *ModelComparison) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelComparison.ProtoReflect.Descriptor instead.
 func (*ModelComparison) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{64}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ModelComparison) GetId() string {
@@ -6913,7 +7068,7 @@ type ComparisonPart struct {
 
 func (x *ComparisonPart) Reset() {
 	*x = ComparisonPart{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[65]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6925,7 +7080,7 @@ func (x *ComparisonPart) String() string {
 func (*ComparisonPart) ProtoMessage() {}
 
 func (x *ComparisonPart) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[65]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6938,7 +7093,7 @@ func (x *ComparisonPart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonPart.ProtoReflect.Descriptor instead.
 func (*ComparisonPart) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{65}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ComparisonPart) GetSource() string {
@@ -6985,7 +7140,7 @@ type ComparisonIdentity struct {
 
 func (x *ComparisonIdentity) Reset() {
 	*x = ComparisonIdentity{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[66]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6997,7 +7152,7 @@ func (x *ComparisonIdentity) String() string {
 func (*ComparisonIdentity) ProtoMessage() {}
 
 func (x *ComparisonIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[66]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7010,7 +7165,7 @@ func (x *ComparisonIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonIdentity.ProtoReflect.Descriptor instead.
 func (*ComparisonIdentity) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{66}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ComparisonIdentity) GetKind() string {
@@ -7088,7 +7243,7 @@ type ComparisonNamespace struct {
 
 func (x *ComparisonNamespace) Reset() {
 	*x = ComparisonNamespace{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[67]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7100,7 +7255,7 @@ func (x *ComparisonNamespace) String() string {
 func (*ComparisonNamespace) ProtoMessage() {}
 
 func (x *ComparisonNamespace) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[67]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7113,7 +7268,7 @@ func (x *ComparisonNamespace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonNamespace.ProtoReflect.Descriptor instead.
 func (*ComparisonNamespace) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{67}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ComparisonNamespace) GetTargets() []string {
@@ -7182,7 +7337,7 @@ type ComparisonRegion struct {
 
 func (x *ComparisonRegion) Reset() {
 	*x = ComparisonRegion{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[68]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7194,7 +7349,7 @@ func (x *ComparisonRegion) String() string {
 func (*ComparisonRegion) ProtoMessage() {}
 
 func (x *ComparisonRegion) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[68]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7207,7 +7362,7 @@ func (x *ComparisonRegion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonRegion.ProtoReflect.Descriptor instead.
 func (*ComparisonRegion) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{68}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ComparisonRegion) GetScope() *ComparisonNamespace {
@@ -7236,7 +7391,7 @@ type ComparisonKnowledgeSource struct {
 
 func (x *ComparisonKnowledgeSource) Reset() {
 	*x = ComparisonKnowledgeSource{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[69]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7248,7 +7403,7 @@ func (x *ComparisonKnowledgeSource) String() string {
 func (*ComparisonKnowledgeSource) ProtoMessage() {}
 
 func (x *ComparisonKnowledgeSource) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[69]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7261,7 +7416,7 @@ func (x *ComparisonKnowledgeSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonKnowledgeSource.ProtoReflect.Descriptor instead.
 func (*ComparisonKnowledgeSource) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{69}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ComparisonKnowledgeSource) GetOutside() *ModelKnowledge {
@@ -7288,7 +7443,7 @@ type ComparisonKindCoverage struct {
 
 func (x *ComparisonKindCoverage) Reset() {
 	*x = ComparisonKindCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[70]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7300,7 +7455,7 @@ func (x *ComparisonKindCoverage) String() string {
 func (*ComparisonKindCoverage) ProtoMessage() {}
 
 func (x *ComparisonKindCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[70]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7313,7 +7468,7 @@ func (x *ComparisonKindCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonKindCoverage.ProtoReflect.Descriptor instead.
 func (*ComparisonKindCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{70}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ComparisonKindCoverage) GetModel() *ValueModel {
@@ -7342,7 +7497,7 @@ type ComparisonSubjectCoverage struct {
 
 func (x *ComparisonSubjectCoverage) Reset() {
 	*x = ComparisonSubjectCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[71]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7354,7 +7509,7 @@ func (x *ComparisonSubjectCoverage) String() string {
 func (*ComparisonSubjectCoverage) ProtoMessage() {}
 
 func (x *ComparisonSubjectCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[71]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7367,7 +7522,7 @@ func (x *ComparisonSubjectCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonSubjectCoverage.ProtoReflect.Descriptor instead.
 func (*ComparisonSubjectCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{71}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ComparisonSubjectCoverage) GetKind() string {
@@ -7408,7 +7563,7 @@ type ComparisonCoverage struct {
 
 func (x *ComparisonCoverage) Reset() {
 	*x = ComparisonCoverage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[72]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7420,7 +7575,7 @@ func (x *ComparisonCoverage) String() string {
 func (*ComparisonCoverage) ProtoMessage() {}
 
 func (x *ComparisonCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[72]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7433,7 +7588,7 @@ func (x *ComparisonCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonCoverage.ProtoReflect.Descriptor instead.
 func (*ComparisonCoverage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{72}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ComparisonCoverage) GetKinds() []*ComparisonKindCoverage {
@@ -7464,7 +7619,7 @@ type ComparisonRecord struct {
 
 func (x *ComparisonRecord) Reset() {
 	*x = ComparisonRecord{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[73]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7476,7 +7631,7 @@ func (x *ComparisonRecord) String() string {
 func (*ComparisonRecord) ProtoMessage() {}
 
 func (x *ComparisonRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[73]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7489,7 +7644,7 @@ func (x *ComparisonRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonRecord.ProtoReflect.Descriptor instead.
 func (*ComparisonRecord) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{73}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ComparisonRecord) GetSubject() *ComparisonIdentity {
@@ -7531,7 +7686,7 @@ type ComparisonState struct {
 
 func (x *ComparisonState) Reset() {
 	*x = ComparisonState{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[74]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7543,7 +7698,7 @@ func (x *ComparisonState) String() string {
 func (*ComparisonState) ProtoMessage() {}
 
 func (x *ComparisonState) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[74]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7556,7 +7711,7 @@ func (x *ComparisonState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonState.ProtoReflect.Descriptor instead.
 func (*ComparisonState) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{74}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ComparisonState) GetRepresentation() ValueInput_Representation {
@@ -7591,7 +7746,7 @@ type ComparisonParent struct {
 
 func (x *ComparisonParent) Reset() {
 	*x = ComparisonParent{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[75]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7603,7 +7758,7 @@ func (x *ComparisonParent) String() string {
 func (*ComparisonParent) ProtoMessage() {}
 
 func (x *ComparisonParent) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[75]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7616,7 +7771,7 @@ func (x *ComparisonParent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonParent.ProtoReflect.Descriptor instead.
 func (*ComparisonParent) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{75}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ComparisonParent) GetSubject() *ComparisonIdentity {
@@ -7650,7 +7805,7 @@ type RequestedChange struct {
 
 func (x *RequestedChange) Reset() {
 	*x = RequestedChange{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[76]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7662,7 +7817,7 @@ func (x *RequestedChange) String() string {
 func (*RequestedChange) ProtoMessage() {}
 
 func (x *RequestedChange) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[76]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7675,7 +7830,7 @@ func (x *RequestedChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestedChange.ProtoReflect.Descriptor instead.
 func (*RequestedChange) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{76}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *RequestedChange) GetSubject() *ComparisonIdentity {
@@ -7702,7 +7857,7 @@ type ComparisonExclusion struct {
 
 func (x *ComparisonExclusion) Reset() {
 	*x = ComparisonExclusion{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[77]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7714,7 +7869,7 @@ func (x *ComparisonExclusion) String() string {
 func (*ComparisonExclusion) ProtoMessage() {}
 
 func (x *ComparisonExclusion) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[77]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7727,7 +7882,7 @@ func (x *ComparisonExclusion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonExclusion.ProtoReflect.Descriptor instead.
 func (*ComparisonExclusion) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{77}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ComparisonExclusion) GetKind() string {
@@ -7755,7 +7910,7 @@ type ComparisonColumn struct {
 
 func (x *ComparisonColumn) Reset() {
 	*x = ComparisonColumn{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[78]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7767,7 +7922,7 @@ func (x *ComparisonColumn) String() string {
 func (*ComparisonColumn) ProtoMessage() {}
 
 func (x *ComparisonColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[78]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7780,7 +7935,7 @@ func (x *ComparisonColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonColumn.ProtoReflect.Descriptor instead.
 func (*ComparisonColumn) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{78}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ComparisonColumn) GetTable() *ComparisonIdentity {
@@ -7815,7 +7970,7 @@ type ComparisonConstraint struct {
 
 func (x *ComparisonConstraint) Reset() {
 	*x = ComparisonConstraint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[79]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7827,7 +7982,7 @@ func (x *ComparisonConstraint) String() string {
 func (*ComparisonConstraint) ProtoMessage() {}
 
 func (x *ComparisonConstraint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[79]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7840,7 +7995,7 @@ func (x *ComparisonConstraint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonConstraint.ProtoReflect.Descriptor instead.
 func (*ComparisonConstraint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{79}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ComparisonConstraint) GetSubject() *ComparisonIdentity {
@@ -7874,7 +8029,7 @@ type ResolvedIdentifier struct {
 
 func (x *ResolvedIdentifier) Reset() {
 	*x = ResolvedIdentifier{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[80]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7886,7 +8041,7 @@ func (x *ResolvedIdentifier) String() string {
 func (*ResolvedIdentifier) ProtoMessage() {}
 
 func (x *ResolvedIdentifier) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[80]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7899,7 +8054,7 @@ func (x *ResolvedIdentifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvedIdentifier.ProtoReflect.Descriptor instead.
 func (*ResolvedIdentifier) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{80}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ResolvedIdentifier) GetName() string {
@@ -7928,7 +8083,7 @@ type ComparisonIdentifiers struct {
 
 func (x *ComparisonIdentifiers) Reset() {
 	*x = ComparisonIdentifiers{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[81]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7940,7 +8095,7 @@ func (x *ComparisonIdentifiers) String() string {
 func (*ComparisonIdentifiers) ProtoMessage() {}
 
 func (x *ComparisonIdentifiers) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[81]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7953,7 +8108,7 @@ func (x *ComparisonIdentifiers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonIdentifiers.ProtoReflect.Descriptor instead.
 func (*ComparisonIdentifiers) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{81}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ComparisonIdentifiers) GetRules() *IdentifierRules {
@@ -8014,7 +8169,7 @@ type CompareModelsRequest struct {
 
 func (x *CompareModelsRequest) Reset() {
 	*x = CompareModelsRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[82]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8026,7 +8181,7 @@ func (x *CompareModelsRequest) String() string {
 func (*CompareModelsRequest) ProtoMessage() {}
 
 func (x *CompareModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[82]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8039,7 +8194,7 @@ func (x *CompareModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompareModelsRequest.ProtoReflect.Descriptor instead.
 func (*CompareModelsRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{82}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *CompareModelsRequest) GetEngine() string {
@@ -8182,7 +8337,7 @@ type ChangeSemantics struct {
 
 func (x *ChangeSemantics) Reset() {
 	*x = ChangeSemantics{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8194,7 +8349,7 @@ func (x *ChangeSemantics) String() string {
 func (*ChangeSemantics) ProtoMessage() {}
 
 func (x *ChangeSemantics) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[83]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8207,7 +8362,7 @@ func (x *ChangeSemantics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeSemantics.ProtoReflect.Descriptor instead.
 func (*ChangeSemantics) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{83}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ChangeSemantics) GetReplacesOwner() bool {
@@ -8264,7 +8419,7 @@ type ComparedChange struct {
 
 func (x *ComparedChange) Reset() {
 	*x = ComparedChange{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8276,7 +8431,7 @@ func (x *ComparedChange) String() string {
 func (*ComparedChange) ProtoMessage() {}
 
 func (x *ComparedChange) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[84]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8289,7 +8444,7 @@ func (x *ComparedChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparedChange.ProtoReflect.Descriptor instead.
 func (*ComparedChange) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{84}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ComparedChange) GetKind() string {
@@ -8325,7 +8480,7 @@ type ComparisonUndecided struct {
 
 func (x *ComparisonUndecided) Reset() {
 	*x = ComparisonUndecided{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8337,7 +8492,7 @@ func (x *ComparisonUndecided) String() string {
 func (*ComparisonUndecided) ProtoMessage() {}
 
 func (x *ComparisonUndecided) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[85]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8350,7 +8505,7 @@ func (x *ComparisonUndecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparisonUndecided.ProtoReflect.Descriptor instead.
 func (*ComparisonUndecided) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{85}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ComparisonUndecided) GetKind() string {
@@ -8386,7 +8541,7 @@ type ComparedModels struct {
 
 func (x *ComparedModels) Reset() {
 	*x = ComparedModels{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8398,7 +8553,7 @@ func (x *ComparedModels) String() string {
 func (*ComparedModels) ProtoMessage() {}
 
 func (x *ComparedModels) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[86]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8411,7 +8566,7 @@ func (x *ComparedModels) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComparedModels.ProtoReflect.Descriptor instead.
 func (*ComparedModels) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{86}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ComparedModels) GetComplete() bool {
@@ -8455,7 +8610,7 @@ type OperationSemantics struct {
 
 func (x *OperationSemantics) Reset() {
 	*x = OperationSemantics{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8467,7 +8622,7 @@ func (x *OperationSemantics) String() string {
 func (*OperationSemantics) ProtoMessage() {}
 
 func (x *OperationSemantics) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[87]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8480,7 +8635,7 @@ func (x *OperationSemantics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationSemantics.ProtoReflect.Descriptor instead.
 func (*OperationSemantics) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{87}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *OperationSemantics) GetImpact() ChangeSemantics_Impact {
@@ -8525,7 +8680,7 @@ type ModelPlanning struct {
 
 func (x *ModelPlanning) Reset() {
 	*x = ModelPlanning{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8537,7 +8692,7 @@ func (x *ModelPlanning) String() string {
 func (*ModelPlanning) ProtoMessage() {}
 
 func (x *ModelPlanning) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[88]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8550,7 +8705,7 @@ func (x *ModelPlanning) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelPlanning.ProtoReflect.Descriptor instead.
 func (*ModelPlanning) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{88}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *ModelPlanning) GetId() string {
@@ -8592,7 +8747,7 @@ type StepIdentity struct {
 
 func (x *StepIdentity) Reset() {
 	*x = StepIdentity{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8604,7 +8759,7 @@ func (x *StepIdentity) String() string {
 func (*StepIdentity) ProtoMessage() {}
 
 func (x *StepIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[89]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8617,7 +8772,7 @@ func (x *StepIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StepIdentity.ProtoReflect.Descriptor instead.
 func (*StepIdentity) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{89}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *StepIdentity) GetOwner() string {
@@ -8644,7 +8799,7 @@ type PlanningEffect struct {
 
 func (x *PlanningEffect) Reset() {
 	*x = PlanningEffect{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8656,7 +8811,7 @@ func (x *PlanningEffect) String() string {
 func (*PlanningEffect) ProtoMessage() {}
 
 func (x *PlanningEffect) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[90]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8669,7 +8824,7 @@ func (x *PlanningEffect) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningEffect.ProtoReflect.Descriptor instead.
 func (*PlanningEffect) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{90}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *PlanningEffect) GetSubject() *ComparisonIdentity {
@@ -8699,7 +8854,7 @@ type PlanningMetadata struct {
 
 func (x *PlanningMetadata) Reset() {
 	*x = PlanningMetadata{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8711,7 +8866,7 @@ func (x *PlanningMetadata) String() string {
 func (*PlanningMetadata) ProtoMessage() {}
 
 func (x *PlanningMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[91]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8724,7 +8879,7 @@ func (x *PlanningMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningMetadata.ProtoReflect.Descriptor instead.
 func (*PlanningMetadata) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{91}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *PlanningMetadata) GetEffects() []*PlanningEffect {
@@ -8772,7 +8927,7 @@ type PlanningDependency struct {
 
 func (x *PlanningDependency) Reset() {
 	*x = PlanningDependency{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8784,7 +8939,7 @@ func (x *PlanningDependency) String() string {
 func (*PlanningDependency) ProtoMessage() {}
 
 func (x *PlanningDependency) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[92]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8797,7 +8952,7 @@ func (x *PlanningDependency) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningDependency.ProtoReflect.Descriptor instead.
 func (*PlanningDependency) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{92}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *PlanningDependency) GetBefore() *StepIdentity {
@@ -8827,7 +8982,7 @@ type CommonPlanningStep struct {
 
 func (x *CommonPlanningStep) Reset() {
 	*x = CommonPlanningStep{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8839,7 +8994,7 @@ func (x *CommonPlanningStep) String() string {
 func (*CommonPlanningStep) ProtoMessage() {}
 
 func (x *CommonPlanningStep) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[93]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8852,7 +9007,7 @@ func (x *CommonPlanningStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommonPlanningStep.ProtoReflect.Descriptor instead.
 func (*CommonPlanningStep) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{93}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *CommonPlanningStep) GetId() *StepIdentity {
@@ -8896,7 +9051,7 @@ type PlanningOperation struct {
 
 func (x *PlanningOperation) Reset() {
 	*x = PlanningOperation{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8908,7 +9063,7 @@ func (x *PlanningOperation) String() string {
 func (*PlanningOperation) ProtoMessage() {}
 
 func (x *PlanningOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[94]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8921,7 +9076,7 @@ func (x *PlanningOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningOperation.ProtoReflect.Descriptor instead.
 func (*PlanningOperation) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{94}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *PlanningOperation) GetRole() NativeOperation_Role {
@@ -8970,7 +9125,7 @@ type PlanningStep struct {
 
 func (x *PlanningStep) Reset() {
 	*x = PlanningStep{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8982,7 +9137,7 @@ func (x *PlanningStep) String() string {
 func (*PlanningStep) ProtoMessage() {}
 
 func (x *PlanningStep) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[95]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8995,7 +9150,7 @@ func (x *PlanningStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningStep.ProtoReflect.Descriptor instead.
 func (*PlanningStep) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{95}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *PlanningStep) GetId() *StepIdentity {
@@ -9030,7 +9185,7 @@ type PlanningContribution struct {
 
 func (x *PlanningContribution) Reset() {
 	*x = PlanningContribution{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9042,7 +9197,7 @@ func (x *PlanningContribution) String() string {
 func (*PlanningContribution) ProtoMessage() {}
 
 func (x *PlanningContribution) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[96]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9055,7 +9210,7 @@ func (x *PlanningContribution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningContribution.ProtoReflect.Descriptor instead.
 func (*PlanningContribution) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{96}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *PlanningContribution) GetOwner() string {
@@ -9089,7 +9244,7 @@ type PlanningRewrite struct {
 
 func (x *PlanningRewrite) Reset() {
 	*x = PlanningRewrite{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9101,7 +9256,7 @@ func (x *PlanningRewrite) String() string {
 func (*PlanningRewrite) ProtoMessage() {}
 
 func (x *PlanningRewrite) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[97]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9114,7 +9269,7 @@ func (x *PlanningRewrite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningRewrite.ProtoReflect.Descriptor instead.
 func (*PlanningRewrite) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{97}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *PlanningRewrite) GetSources() []*StepIdentity {
@@ -9141,7 +9296,7 @@ type PlanningChange struct {
 
 func (x *PlanningChange) Reset() {
 	*x = PlanningChange{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9153,7 +9308,7 @@ func (x *PlanningChange) String() string {
 func (*PlanningChange) ProtoMessage() {}
 
 func (x *PlanningChange) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[98]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9166,7 +9321,7 @@ func (x *PlanningChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningChange.ProtoReflect.Descriptor instead.
 func (*PlanningChange) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{98}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *PlanningChange) GetSubject() *ComparisonIdentity {
@@ -9195,7 +9350,7 @@ type PlanningReceipt struct {
 
 func (x *PlanningReceipt) Reset() {
 	*x = PlanningReceipt{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9207,7 +9362,7 @@ func (x *PlanningReceipt) String() string {
 func (*PlanningReceipt) ProtoMessage() {}
 
 func (x *PlanningReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[99]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9220,7 +9375,7 @@ func (x *PlanningReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningReceipt.ProtoReflect.Descriptor instead.
 func (*PlanningReceipt) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{99}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *PlanningReceipt) GetSubject() *ComparisonIdentity {
@@ -9261,7 +9416,7 @@ type PlanningParentReceipt struct {
 
 func (x *PlanningParentReceipt) Reset() {
 	*x = PlanningParentReceipt{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9273,7 +9428,7 @@ func (x *PlanningParentReceipt) String() string {
 func (*PlanningParentReceipt) ProtoMessage() {}
 
 func (x *PlanningParentReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[100]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9286,7 +9441,7 @@ func (x *PlanningParentReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningParentReceipt.ProtoReflect.Descriptor instead.
 func (*PlanningParentReceipt) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{100}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *PlanningParentReceipt) GetReceipt() *PlanningReceipt {
@@ -9321,7 +9476,7 @@ type PlanningDiagnostic struct {
 
 func (x *PlanningDiagnostic) Reset() {
 	*x = PlanningDiagnostic{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9333,7 +9488,7 @@ func (x *PlanningDiagnostic) String() string {
 func (*PlanningDiagnostic) ProtoMessage() {}
 
 func (x *PlanningDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[101]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9346,7 +9501,7 @@ func (x *PlanningDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningDiagnostic.ProtoReflect.Descriptor instead.
 func (*PlanningDiagnostic) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{101}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *PlanningDiagnostic) GetCode() PlanningDiagnostic_Code {
@@ -9435,7 +9590,7 @@ type PlanningType struct {
 
 func (x *PlanningType) Reset() {
 	*x = PlanningType{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9447,7 +9602,7 @@ func (x *PlanningType) String() string {
 func (*PlanningType) ProtoMessage() {}
 
 func (x *PlanningType) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[102]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9460,7 +9615,7 @@ func (x *PlanningType) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningType.ProtoReflect.Descriptor instead.
 func (*PlanningType) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{102}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *PlanningType) GetIdentity() *ComparisonIdentity {
@@ -9490,7 +9645,7 @@ type PlanningTable struct {
 
 func (x *PlanningTable) Reset() {
 	*x = PlanningTable{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9502,7 +9657,7 @@ func (x *PlanningTable) String() string {
 func (*PlanningTable) ProtoMessage() {}
 
 func (x *PlanningTable) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[103]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9515,7 +9670,7 @@ func (x *PlanningTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningTable.ProtoReflect.Descriptor instead.
 func (*PlanningTable) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{103}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *PlanningTable) GetSubject() *ComparisonIdentity {
@@ -9569,7 +9724,7 @@ type PlanFeaturesRequest struct {
 
 func (x *PlanFeaturesRequest) Reset() {
 	*x = PlanFeaturesRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9581,7 +9736,7 @@ func (x *PlanFeaturesRequest) String() string {
 func (*PlanFeaturesRequest) ProtoMessage() {}
 
 func (x *PlanFeaturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[104]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9594,7 +9749,7 @@ func (x *PlanFeaturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanFeaturesRequest.ProtoReflect.Descriptor instead.
 func (*PlanFeaturesRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{104}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *PlanFeaturesRequest) GetEngine() string {
@@ -9696,7 +9851,7 @@ type PlannedFeatures struct {
 
 func (x *PlannedFeatures) Reset() {
 	*x = PlannedFeatures{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9708,7 +9863,7 @@ func (x *PlannedFeatures) String() string {
 func (*PlannedFeatures) ProtoMessage() {}
 
 func (x *PlannedFeatures) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[105]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9721,7 +9876,7 @@ func (x *PlannedFeatures) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlannedFeatures.ProtoReflect.Descriptor instead.
 func (*PlannedFeatures) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{105}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *PlannedFeatures) GetComplete() bool {
@@ -9778,7 +9933,7 @@ type CapturedFeatures struct {
 
 func (x *CapturedFeatures) Reset() {
 	*x = CapturedFeatures{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9790,7 +9945,7 @@ func (x *CapturedFeatures) String() string {
 func (*CapturedFeatures) ProtoMessage() {}
 
 func (x *CapturedFeatures) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[106]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9803,7 +9958,7 @@ func (x *CapturedFeatures) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapturedFeatures.ProtoReflect.Descriptor instead.
 func (*CapturedFeatures) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{106}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *CapturedFeatures) GetObjects() *ComparisonState {
@@ -9852,7 +10007,7 @@ type DeclaredTable struct {
 
 func (x *DeclaredTable) Reset() {
 	*x = DeclaredTable{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9864,7 +10019,7 @@ func (x *DeclaredTable) String() string {
 func (*DeclaredTable) ProtoMessage() {}
 
 func (x *DeclaredTable) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[107]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9877,7 +10032,7 @@ func (x *DeclaredTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredTable.ProtoReflect.Descriptor instead.
 func (*DeclaredTable) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{107}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *DeclaredTable) GetName() string {
@@ -10045,7 +10200,7 @@ type DeclaredKeyPart struct {
 
 func (x *DeclaredKeyPart) Reset() {
 	*x = DeclaredKeyPart{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10057,7 +10212,7 @@ func (x *DeclaredKeyPart) String() string {
 func (*DeclaredKeyPart) ProtoMessage() {}
 
 func (x *DeclaredKeyPart) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[108]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10070,7 +10225,7 @@ func (x *DeclaredKeyPart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredKeyPart.ProtoReflect.Descriptor instead.
 func (*DeclaredKeyPart) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{108}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *DeclaredKeyPart) GetColumn() string {
@@ -10135,7 +10290,7 @@ type DeclaredColumn struct {
 
 func (x *DeclaredColumn) Reset() {
 	*x = DeclaredColumn{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10147,7 +10302,7 @@ func (x *DeclaredColumn) String() string {
 func (*DeclaredColumn) ProtoMessage() {}
 
 func (x *DeclaredColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[109]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10160,7 +10315,7 @@ func (x *DeclaredColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredColumn.ProtoReflect.Descriptor instead.
 func (*DeclaredColumn) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{109}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *DeclaredColumn) GetName() string {
@@ -10406,7 +10561,7 @@ type DeclaredEnum struct {
 
 func (x *DeclaredEnum) Reset() {
 	*x = DeclaredEnum{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10418,7 +10573,7 @@ func (x *DeclaredEnum) String() string {
 func (*DeclaredEnum) ProtoMessage() {}
 
 func (x *DeclaredEnum) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[110]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10431,7 +10586,7 @@ func (x *DeclaredEnum) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredEnum.ProtoReflect.Descriptor instead.
 func (*DeclaredEnum) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{110}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *DeclaredEnum) GetName() string {
@@ -10476,7 +10631,7 @@ type CapturedIndexPart struct {
 
 func (x *CapturedIndexPart) Reset() {
 	*x = CapturedIndexPart{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10488,7 +10643,7 @@ func (x *CapturedIndexPart) String() string {
 func (*CapturedIndexPart) ProtoMessage() {}
 
 func (x *CapturedIndexPart) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[111]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10501,7 +10656,7 @@ func (x *CapturedIndexPart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapturedIndexPart.ProtoReflect.Descriptor instead.
 func (*CapturedIndexPart) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{111}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *CapturedIndexPart) GetColumn() string {
@@ -10569,7 +10724,7 @@ type DeclaredIndex struct {
 
 func (x *DeclaredIndex) Reset() {
 	*x = DeclaredIndex{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10581,7 +10736,7 @@ func (x *DeclaredIndex) String() string {
 func (*DeclaredIndex) ProtoMessage() {}
 
 func (x *DeclaredIndex) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[112]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10594,7 +10749,7 @@ func (x *DeclaredIndex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredIndex.ProtoReflect.Descriptor instead.
 func (*DeclaredIndex) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{112}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *DeclaredIndex) GetName() string {
@@ -10730,7 +10885,7 @@ type DeclaredConstraint struct {
 
 func (x *DeclaredConstraint) Reset() {
 	*x = DeclaredConstraint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10742,7 +10897,7 @@ func (x *DeclaredConstraint) String() string {
 func (*DeclaredConstraint) ProtoMessage() {}
 
 func (x *DeclaredConstraint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[113]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10755,7 +10910,7 @@ func (x *DeclaredConstraint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredConstraint.ProtoReflect.Descriptor instead.
 func (*DeclaredConstraint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{113}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *DeclaredConstraint) GetName() string {
@@ -10919,7 +11074,7 @@ type CapturedTrigger struct {
 
 func (x *CapturedTrigger) Reset() {
 	*x = CapturedTrigger{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10931,7 +11086,7 @@ func (x *CapturedTrigger) String() string {
 func (*CapturedTrigger) ProtoMessage() {}
 
 func (x *CapturedTrigger) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[114]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10944,7 +11099,7 @@ func (x *CapturedTrigger) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapturedTrigger.ProtoReflect.Descriptor instead.
 func (*CapturedTrigger) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{114}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *CapturedTrigger) GetName() string {
@@ -11063,7 +11218,7 @@ type ObservedTable struct {
 
 func (x *ObservedTable) Reset() {
 	*x = ObservedTable{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11075,7 +11230,7 @@ func (x *ObservedTable) String() string {
 func (*ObservedTable) ProtoMessage() {}
 
 func (x *ObservedTable) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[115]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11088,7 +11243,7 @@ func (x *ObservedTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObservedTable.ProtoReflect.Descriptor instead.
 func (*ObservedTable) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{115}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *ObservedTable) GetName() string {
@@ -11247,7 +11402,7 @@ type ObservedColumn struct {
 
 func (x *ObservedColumn) Reset() {
 	*x = ObservedColumn{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11259,7 +11414,7 @@ func (x *ObservedColumn) String() string {
 func (*ObservedColumn) ProtoMessage() {}
 
 func (x *ObservedColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[116]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11272,7 +11427,7 @@ func (x *ObservedColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObservedColumn.ProtoReflect.Descriptor instead.
 func (*ObservedColumn) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{116}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *ObservedColumn) GetName() string {
@@ -11506,7 +11661,7 @@ type ObservedIndex struct {
 
 func (x *ObservedIndex) Reset() {
 	*x = ObservedIndex{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11518,7 +11673,7 @@ func (x *ObservedIndex) String() string {
 func (*ObservedIndex) ProtoMessage() {}
 
 func (x *ObservedIndex) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[117]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11531,7 +11686,7 @@ func (x *ObservedIndex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObservedIndex.ProtoReflect.Descriptor instead.
 func (*ObservedIndex) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{117}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *ObservedIndex) GetManagedBy() *ComparisonIdentity {
@@ -11706,7 +11861,7 @@ type ObservedConstraint struct {
 
 func (x *ObservedConstraint) Reset() {
 	*x = ObservedConstraint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[118]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11718,7 +11873,7 @@ func (x *ObservedConstraint) String() string {
 func (*ObservedConstraint) ProtoMessage() {}
 
 func (x *ObservedConstraint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[118]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11731,7 +11886,7 @@ func (x *ObservedConstraint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObservedConstraint.ProtoReflect.Descriptor instead.
 func (*ObservedConstraint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{118}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *ObservedConstraint) GetName() string {
@@ -11937,7 +12092,7 @@ type PlanningColumn struct {
 
 func (x *PlanningColumn) Reset() {
 	*x = PlanningColumn{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[119]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11949,7 +12104,7 @@ func (x *PlanningColumn) String() string {
 func (*PlanningColumn) ProtoMessage() {}
 
 func (x *PlanningColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[119]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11962,7 +12117,7 @@ func (x *PlanningColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningColumn.ProtoReflect.Descriptor instead.
 func (*PlanningColumn) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{119}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *PlanningColumn) GetName() string {
@@ -12144,7 +12299,7 @@ type PlanningDefault struct {
 
 func (x *PlanningDefault) Reset() {
 	*x = PlanningDefault{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[120]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12156,7 +12311,7 @@ func (x *PlanningDefault) String() string {
 func (*PlanningDefault) ProtoMessage() {}
 
 func (x *PlanningDefault) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[120]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12169,7 +12324,7 @@ func (x *PlanningDefault) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningDefault.ProtoReflect.Descriptor instead.
 func (*PlanningDefault) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{120}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *PlanningDefault) GetValue() string {
@@ -12212,7 +12367,7 @@ type PlanningForeignKey struct {
 
 func (x *PlanningForeignKey) Reset() {
 	*x = PlanningForeignKey{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[121]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12224,7 +12379,7 @@ func (x *PlanningForeignKey) String() string {
 func (*PlanningForeignKey) ProtoMessage() {}
 
 func (x *PlanningForeignKey) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[121]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12237,7 +12392,7 @@ func (x *PlanningForeignKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanningForeignKey.ProtoReflect.Descriptor instead.
 func (*PlanningForeignKey) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{121}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *PlanningForeignKey) GetTable() string {
@@ -12330,7 +12485,7 @@ type CapturedFacet struct {
 
 func (x *CapturedFacet) Reset() {
 	*x = CapturedFacet{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[122]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12342,7 +12497,7 @@ func (x *CapturedFacet) String() string {
 func (*CapturedFacet) ProtoMessage() {}
 
 func (x *CapturedFacet) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[122]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12355,7 +12510,7 @@ func (x *CapturedFacet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapturedFacet.ProtoReflect.Descriptor instead.
 func (*CapturedFacet) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{122}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *CapturedFacet) GetKind() string {
@@ -12395,7 +12550,7 @@ type HistoryScope struct {
 
 func (x *HistoryScope) Reset() {
 	*x = HistoryScope{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[123]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12407,7 +12562,7 @@ func (x *HistoryScope) String() string {
 func (*HistoryScope) ProtoMessage() {}
 
 func (x *HistoryScope) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[123]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12420,7 +12575,7 @@ func (x *HistoryScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryScope.ProtoReflect.Descriptor instead.
 func (*HistoryScope) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{123}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *HistoryScope) GetSessionId() string {
@@ -12488,7 +12643,7 @@ type HistoryRevision struct {
 
 func (x *HistoryRevision) Reset() {
 	*x = HistoryRevision{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[124]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12500,7 +12655,7 @@ func (x *HistoryRevision) String() string {
 func (*HistoryRevision) ProtoMessage() {}
 
 func (x *HistoryRevision) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[124]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12513,7 +12668,7 @@ func (x *HistoryRevision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryRevision.ProtoReflect.Descriptor instead.
 func (*HistoryRevision) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{124}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *HistoryRevision) GetVersion() string {
@@ -12633,7 +12788,7 @@ type ReadHistoryRequest struct {
 
 func (x *ReadHistoryRequest) Reset() {
 	*x = ReadHistoryRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[125]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12645,7 +12800,7 @@ func (x *ReadHistoryRequest) String() string {
 func (*ReadHistoryRequest) ProtoMessage() {}
 
 func (x *ReadHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[125]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12658,7 +12813,7 @@ func (x *ReadHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ReadHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{125}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *ReadHistoryRequest) GetScope() *HistoryScope {
@@ -12687,7 +12842,7 @@ type HistorySnapshot struct {
 
 func (x *HistorySnapshot) Reset() {
 	*x = HistorySnapshot{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[126]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12699,7 +12854,7 @@ func (x *HistorySnapshot) String() string {
 func (*HistorySnapshot) ProtoMessage() {}
 
 func (x *HistorySnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[126]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12712,7 +12867,7 @@ func (x *HistorySnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistorySnapshot.ProtoReflect.Descriptor instead.
 func (*HistorySnapshot) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{126}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *HistorySnapshot) GetScope() *HistoryScope {
@@ -12756,7 +12911,7 @@ type PrepareHistoryRequest struct {
 
 func (x *PrepareHistoryRequest) Reset() {
 	*x = PrepareHistoryRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[127]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12768,7 +12923,7 @@ func (x *PrepareHistoryRequest) String() string {
 func (*PrepareHistoryRequest) ProtoMessage() {}
 
 func (x *PrepareHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[127]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12781,7 +12936,7 @@ func (x *PrepareHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareHistoryRequest.ProtoReflect.Descriptor instead.
 func (*PrepareHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{127}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *PrepareHistoryRequest) GetScope() *HistoryScope {
@@ -12814,7 +12969,7 @@ type MutateHistoryRequest struct {
 
 func (x *MutateHistoryRequest) Reset() {
 	*x = MutateHistoryRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[128]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12826,7 +12981,7 @@ func (x *MutateHistoryRequest) String() string {
 func (*MutateHistoryRequest) ProtoMessage() {}
 
 func (x *MutateHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[128]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12839,7 +12994,7 @@ func (x *MutateHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutateHistoryRequest.ProtoReflect.Descriptor instead.
 func (*MutateHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{128}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *MutateHistoryRequest) GetScope() *HistoryScope {
@@ -12883,7 +13038,7 @@ type HistoryResult struct {
 
 func (x *HistoryResult) Reset() {
 	*x = HistoryResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[129]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12895,7 +13050,7 @@ func (x *HistoryResult) String() string {
 func (*HistoryResult) ProtoMessage() {}
 
 func (x *HistoryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[129]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12908,7 +13063,7 @@ func (x *HistoryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryResult.ProtoReflect.Descriptor instead.
 func (*HistoryResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{129}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *HistoryResult) GetScope() *HistoryScope {
@@ -12959,7 +13114,7 @@ type LockScope struct {
 
 func (x *LockScope) Reset() {
 	*x = LockScope{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[130]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12971,7 +13126,7 @@ func (x *LockScope) String() string {
 func (*LockScope) ProtoMessage() {}
 
 func (x *LockScope) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[130]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12984,7 +13139,7 @@ func (x *LockScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockScope.ProtoReflect.Descriptor instead.
 func (*LockScope) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{130}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *LockScope) GetSessionId() string {
@@ -13020,7 +13175,7 @@ type LockRequest struct {
 
 func (x *LockRequest) Reset() {
 	*x = LockRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[131]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13032,7 +13187,7 @@ func (x *LockRequest) String() string {
 func (*LockRequest) ProtoMessage() {}
 
 func (x *LockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[131]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13045,7 +13200,7 @@ func (x *LockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockRequest.ProtoReflect.Descriptor instead.
 func (*LockRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{131}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *LockRequest) GetScope() *LockScope {
@@ -13076,7 +13231,7 @@ type LockResult struct {
 
 func (x *LockResult) Reset() {
 	*x = LockResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[132]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13088,7 +13243,7 @@ func (x *LockResult) String() string {
 func (*LockResult) ProtoMessage() {}
 
 func (x *LockResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[132]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13101,7 +13256,7 @@ func (x *LockResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockResult.ProtoReflect.Descriptor instead.
 func (*LockResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{132}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *LockResult) GetScope() *LockScope {
@@ -13140,7 +13295,7 @@ type MetadataScope struct {
 
 func (x *MetadataScope) Reset() {
 	*x = MetadataScope{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[133]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13152,7 +13307,7 @@ func (x *MetadataScope) String() string {
 func (*MetadataScope) ProtoMessage() {}
 
 func (x *MetadataScope) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[133]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13165,7 +13320,7 @@ func (x *MetadataScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataScope.ProtoReflect.Descriptor instead.
 func (*MetadataScope) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{133}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *MetadataScope) GetSessionId() string {
@@ -13222,7 +13377,7 @@ type MigrationLogRecord struct {
 
 func (x *MigrationLogRecord) Reset() {
 	*x = MigrationLogRecord{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[134]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13234,7 +13389,7 @@ func (x *MigrationLogRecord) String() string {
 func (*MigrationLogRecord) ProtoMessage() {}
 
 func (x *MigrationLogRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[134]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13247,7 +13402,7 @@ func (x *MigrationLogRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrationLogRecord.ProtoReflect.Descriptor instead.
 func (*MigrationLogRecord) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{134}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *MigrationLogRecord) GetRunId() string {
@@ -13339,7 +13494,7 @@ type MigrationTagRecord struct {
 
 func (x *MigrationTagRecord) Reset() {
 	*x = MigrationTagRecord{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[135]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13351,7 +13506,7 @@ func (x *MigrationTagRecord) String() string {
 func (*MigrationTagRecord) ProtoMessage() {}
 
 func (x *MigrationTagRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[135]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13364,7 +13519,7 @@ func (x *MigrationTagRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrationTagRecord.ProtoReflect.Descriptor instead.
 func (*MigrationTagRecord) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{135}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *MigrationTagRecord) GetName() string {
@@ -13405,7 +13560,7 @@ type PrepareMetadataRequest struct {
 
 func (x *PrepareMetadataRequest) Reset() {
 	*x = PrepareMetadataRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[136]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13417,7 +13572,7 @@ func (x *PrepareMetadataRequest) String() string {
 func (*PrepareMetadataRequest) ProtoMessage() {}
 
 func (x *PrepareMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[136]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13430,7 +13585,7 @@ func (x *PrepareMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareMetadataRequest.ProtoReflect.Descriptor instead.
 func (*PrepareMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{136}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *PrepareMetadataRequest) GetScope() *MetadataScope {
@@ -13463,7 +13618,7 @@ type MutateMetadataRequest struct {
 
 func (x *MutateMetadataRequest) Reset() {
 	*x = MutateMetadataRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[137]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13475,7 +13630,7 @@ func (x *MutateMetadataRequest) String() string {
 func (*MutateMetadataRequest) ProtoMessage() {}
 
 func (x *MutateMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[137]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13488,7 +13643,7 @@ func (x *MutateMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutateMetadataRequest.ProtoReflect.Descriptor instead.
 func (*MutateMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{137}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *MutateMetadataRequest) GetScope() *MetadataScope {
@@ -13574,7 +13729,7 @@ type MetadataResult struct {
 
 func (x *MetadataResult) Reset() {
 	*x = MetadataResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[138]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13586,7 +13741,7 @@ func (x *MetadataResult) String() string {
 func (*MetadataResult) ProtoMessage() {}
 
 func (x *MetadataResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[138]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13599,7 +13754,7 @@ func (x *MetadataResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataResult.ProtoReflect.Descriptor instead.
 func (*MetadataResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{138}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *MetadataResult) GetScope() *MetadataScope {
@@ -13641,7 +13796,7 @@ type LookupMetadataTagRequest struct {
 
 func (x *LookupMetadataTagRequest) Reset() {
 	*x = LookupMetadataTagRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[139]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13653,7 +13808,7 @@ func (x *LookupMetadataTagRequest) String() string {
 func (*LookupMetadataTagRequest) ProtoMessage() {}
 
 func (x *LookupMetadataTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[139]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13666,7 +13821,7 @@ func (x *LookupMetadataTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupMetadataTagRequest.ProtoReflect.Descriptor instead.
 func (*LookupMetadataTagRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{139}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *LookupMetadataTagRequest) GetScope() *MetadataScope {
@@ -13702,7 +13857,7 @@ type MetadataTagResult struct {
 
 func (x *MetadataTagResult) Reset() {
 	*x = MetadataTagResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[140]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13714,7 +13869,7 @@ func (x *MetadataTagResult) String() string {
 func (*MetadataTagResult) ProtoMessage() {}
 
 func (x *MetadataTagResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[140]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13727,7 +13882,7 @@ func (x *MetadataTagResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataTagResult.ProtoReflect.Descriptor instead.
 func (*MetadataTagResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{140}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *MetadataTagResult) GetScope() *MetadataScope {
@@ -13771,7 +13926,7 @@ type MetadataReadRequest struct {
 
 func (x *MetadataReadRequest) Reset() {
 	*x = MetadataReadRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[141]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13783,7 +13938,7 @@ func (x *MetadataReadRequest) String() string {
 func (*MetadataReadRequest) ProtoMessage() {}
 
 func (x *MetadataReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[141]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13796,7 +13951,7 @@ func (x *MetadataReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataReadRequest.ProtoReflect.Descriptor instead.
 func (*MetadataReadRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{141}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *MetadataReadRequest) GetScope() *MetadataScope {
@@ -13831,7 +13986,7 @@ type MetadataReadResult struct {
 
 func (x *MetadataReadResult) Reset() {
 	*x = MetadataReadResult{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[142]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13843,7 +13998,7 @@ func (x *MetadataReadResult) String() string {
 func (*MetadataReadResult) ProtoMessage() {}
 
 func (x *MetadataReadResult) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[142]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13856,7 +14011,7 @@ func (x *MetadataReadResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataReadResult.ProtoReflect.Descriptor instead.
 func (*MetadataReadResult) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{142}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *MetadataReadResult) GetScope() *MetadataScope {
@@ -13893,7 +14048,7 @@ type ReadMetadataPageRequest struct {
 
 func (x *ReadMetadataPageRequest) Reset() {
 	*x = ReadMetadataPageRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[143]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13905,7 +14060,7 @@ func (x *ReadMetadataPageRequest) String() string {
 func (*ReadMetadataPageRequest) ProtoMessage() {}
 
 func (x *ReadMetadataPageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[143]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13918,7 +14073,7 @@ func (x *ReadMetadataPageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadMetadataPageRequest.ProtoReflect.Descriptor instead.
 func (*ReadMetadataPageRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{143}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *ReadMetadataPageRequest) GetReader() *MetadataReadRequest {
@@ -13956,7 +14111,7 @@ type MetadataPage struct {
 
 func (x *MetadataPage) Reset() {
 	*x = MetadataPage{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[144]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13968,7 +14123,7 @@ func (x *MetadataPage) String() string {
 func (*MetadataPage) ProtoMessage() {}
 
 func (x *MetadataPage) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[144]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13981,7 +14136,7 @@ func (x *MetadataPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetadataPage.ProtoReflect.Descriptor instead.
 func (*MetadataPage) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{144}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *MetadataPage) GetReader() *MetadataReadResult {
@@ -14041,7 +14196,7 @@ type ReservedObject struct {
 
 func (x *ReservedObject) Reset() {
 	*x = ReservedObject{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[145]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14053,7 +14208,7 @@ func (x *ReservedObject) String() string {
 func (*ReservedObject) ProtoMessage() {}
 
 func (x *ReservedObject) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[145]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14066,7 +14221,7 @@ func (x *ReservedObject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReservedObject.ProtoReflect.Descriptor instead.
 func (*ReservedObject) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{145}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *ReservedObject) GetObject() *Reference {
@@ -14112,7 +14267,7 @@ type PrepareTablesRequest struct {
 
 func (x *PrepareTablesRequest) Reset() {
 	*x = PrepareTablesRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[146]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14124,7 +14279,7 @@ func (x *PrepareTablesRequest) String() string {
 func (*PrepareTablesRequest) ProtoMessage() {}
 
 func (x *PrepareTablesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[146]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14137,7 +14292,7 @@ func (x *PrepareTablesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareTablesRequest.ProtoReflect.Descriptor instead.
 func (*PrepareTablesRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{146}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *PrepareTablesRequest) GetEngine() string {
@@ -14187,7 +14342,7 @@ type TablePreparationInput struct {
 
 func (x *TablePreparationInput) Reset() {
 	*x = TablePreparationInput{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[147]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14199,7 +14354,7 @@ func (x *TablePreparationInput) String() string {
 func (*TablePreparationInput) ProtoMessage() {}
 
 func (x *TablePreparationInput) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[147]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14212,7 +14367,7 @@ func (x *TablePreparationInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TablePreparationInput.ProtoReflect.Descriptor instead.
 func (*TablePreparationInput) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{147}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *TablePreparationInput) GetSubject() *ComparisonIdentity {
@@ -14258,7 +14413,7 @@ type PreparedTable struct {
 
 func (x *PreparedTable) Reset() {
 	*x = PreparedTable{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[148]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14270,7 +14425,7 @@ func (x *PreparedTable) String() string {
 func (*PreparedTable) ProtoMessage() {}
 
 func (x *PreparedTable) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[148]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14283,7 +14438,7 @@ func (x *PreparedTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreparedTable.ProtoReflect.Descriptor instead.
 func (*PreparedTable) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{148}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *PreparedTable) GetSubject() *ComparisonIdentity {
@@ -14324,7 +14479,7 @@ type PreparedTables struct {
 
 func (x *PreparedTables) Reset() {
 	*x = PreparedTables{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14336,7 +14491,7 @@ func (x *PreparedTables) String() string {
 func (*PreparedTables) ProtoMessage() {}
 
 func (x *PreparedTables) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[149]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14349,7 +14504,7 @@ func (x *PreparedTables) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreparedTables.ProtoReflect.Descriptor instead.
 func (*PreparedTables) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{149}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *PreparedTables) GetComplete() bool {
@@ -14381,7 +14536,7 @@ type ProjectTableCreationsRequest struct {
 
 func (x *ProjectTableCreationsRequest) Reset() {
 	*x = ProjectTableCreationsRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14393,7 +14548,7 @@ func (x *ProjectTableCreationsRequest) String() string {
 func (*ProjectTableCreationsRequest) ProtoMessage() {}
 
 func (x *ProjectTableCreationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[150]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14406,7 +14561,7 @@ func (x *ProjectTableCreationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectTableCreationsRequest.ProtoReflect.Descriptor instead.
 func (*ProjectTableCreationsRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{150}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *ProjectTableCreationsRequest) GetEngine() string {
@@ -14457,7 +14612,7 @@ type TableCreationInput struct {
 
 func (x *TableCreationInput) Reset() {
 	*x = TableCreationInput{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14469,7 +14624,7 @@ func (x *TableCreationInput) String() string {
 func (*TableCreationInput) ProtoMessage() {}
 
 func (x *TableCreationInput) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[151]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14482,7 +14637,7 @@ func (x *TableCreationInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TableCreationInput.ProtoReflect.Descriptor instead.
 func (*TableCreationInput) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{151}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{152}
 }
 
 func (x *TableCreationInput) GetSubject() *ComparisonIdentity {
@@ -14521,7 +14676,7 @@ type ProjectedTableCreation struct {
 
 func (x *ProjectedTableCreation) Reset() {
 	*x = ProjectedTableCreation{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[153]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14533,7 +14688,7 @@ func (x *ProjectedTableCreation) String() string {
 func (*ProjectedTableCreation) ProtoMessage() {}
 
 func (x *ProjectedTableCreation) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[152]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[153]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14546,7 +14701,7 @@ func (x *ProjectedTableCreation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectedTableCreation.ProtoReflect.Descriptor instead.
 func (*ProjectedTableCreation) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{152}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{153}
 }
 
 func (x *ProjectedTableCreation) GetSubject() *ComparisonIdentity {
@@ -14594,7 +14749,7 @@ type ProjectedTableCreations struct {
 
 func (x *ProjectedTableCreations) Reset() {
 	*x = ProjectedTableCreations{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[153]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[154]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14606,7 +14761,7 @@ func (x *ProjectedTableCreations) String() string {
 func (*ProjectedTableCreations) ProtoMessage() {}
 
 func (x *ProjectedTableCreations) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[153]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[154]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14619,7 +14774,7 @@ func (x *ProjectedTableCreations) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectedTableCreations.ProtoReflect.Descriptor instead.
 func (*ProjectedTableCreations) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{153}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{154}
 }
 
 func (x *ProjectedTableCreations) GetComplete() bool {
@@ -14657,7 +14812,7 @@ type ValidateSchemaRequest struct {
 
 func (x *ValidateSchemaRequest) Reset() {
 	*x = ValidateSchemaRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[154]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[155]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14669,7 +14824,7 @@ func (x *ValidateSchemaRequest) String() string {
 func (*ValidateSchemaRequest) ProtoMessage() {}
 
 func (x *ValidateSchemaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[154]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[155]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14682,7 +14837,7 @@ func (x *ValidateSchemaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateSchemaRequest.ProtoReflect.Descriptor instead.
 func (*ValidateSchemaRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{154}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{155}
 }
 
 func (x *ValidateSchemaRequest) GetEngine() string {
@@ -14772,7 +14927,7 @@ type ValidationTable struct {
 
 func (x *ValidationTable) Reset() {
 	*x = ValidationTable{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[155]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[156]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14784,7 +14939,7 @@ func (x *ValidationTable) String() string {
 func (*ValidationTable) ProtoMessage() {}
 
 func (x *ValidationTable) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[155]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[156]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14797,7 +14952,7 @@ func (x *ValidationTable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationTable.ProtoReflect.Descriptor instead.
 func (*ValidationTable) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{155}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{156}
 }
 
 func (x *ValidationTable) GetSubject() *ComparisonIdentity {
@@ -14827,7 +14982,7 @@ type DeclaredNamespace struct {
 
 func (x *DeclaredNamespace) Reset() {
 	*x = DeclaredNamespace{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[156]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[157]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14839,7 +14994,7 @@ func (x *DeclaredNamespace) String() string {
 func (*DeclaredNamespace) ProtoMessage() {}
 
 func (x *DeclaredNamespace) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[156]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[157]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14852,7 +15007,7 @@ func (x *DeclaredNamespace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclaredNamespace.ProtoReflect.Descriptor instead.
 func (*DeclaredNamespace) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{156}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{157}
 }
 
 func (x *DeclaredNamespace) GetSubject() *ComparisonIdentity {
@@ -14902,7 +15057,7 @@ type SchemaValidation struct {
 
 func (x *SchemaValidation) Reset() {
 	*x = SchemaValidation{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[157]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[158]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14914,7 +15069,7 @@ func (x *SchemaValidation) String() string {
 func (*SchemaValidation) ProtoMessage() {}
 
 func (x *SchemaValidation) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[157]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[158]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14927,7 +15082,7 @@ func (x *SchemaValidation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaValidation.ProtoReflect.Descriptor instead.
 func (*SchemaValidation) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{157}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{158}
 }
 
 func (x *SchemaValidation) GetComplete() bool {
@@ -14957,7 +15112,7 @@ type SchemaDiagnostic struct {
 
 func (x *SchemaDiagnostic) Reset() {
 	*x = SchemaDiagnostic{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[158]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[159]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14969,7 +15124,7 @@ func (x *SchemaDiagnostic) String() string {
 func (*SchemaDiagnostic) ProtoMessage() {}
 
 func (x *SchemaDiagnostic) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[158]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[159]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14982,7 +15137,7 @@ func (x *SchemaDiagnostic) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaDiagnostic.ProtoReflect.Descriptor instead.
 func (*SchemaDiagnostic) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{158}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{159}
 }
 
 func (x *SchemaDiagnostic) GetCode() SchemaDiagnostic_Code {
@@ -15033,7 +15188,7 @@ type SchemaCoverageLimit struct {
 
 func (x *SchemaCoverageLimit) Reset() {
 	*x = SchemaCoverageLimit{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[159]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[160]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15045,7 +15200,7 @@ func (x *SchemaCoverageLimit) String() string {
 func (*SchemaCoverageLimit) ProtoMessage() {}
 
 func (x *SchemaCoverageLimit) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[159]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[160]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15058,7 +15213,7 @@ func (x *SchemaCoverageLimit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaCoverageLimit.ProtoReflect.Descriptor instead.
 func (*SchemaCoverageLimit) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{159}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{160}
 }
 
 func (x *SchemaCoverageLimit) GetKind() string {
@@ -15098,7 +15253,7 @@ type SchemaDependencies struct {
 
 func (x *SchemaDependencies) Reset() {
 	*x = SchemaDependencies{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[160]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[161]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15110,7 +15265,7 @@ func (x *SchemaDependencies) String() string {
 func (*SchemaDependencies) ProtoMessage() {}
 
 func (x *SchemaDependencies) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[160]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[161]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15123,7 +15278,7 @@ func (x *SchemaDependencies) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchemaDependencies.ProtoReflect.Descriptor instead.
 func (*SchemaDependencies) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{160}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{161}
 }
 
 func (x *SchemaDependencies) GetTables() []string {
@@ -15153,7 +15308,7 @@ type LintRule struct {
 
 func (x *LintRule) Reset() {
 	*x = LintRule{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[161]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[162]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15165,7 +15320,7 @@ func (x *LintRule) String() string {
 func (*LintRule) ProtoMessage() {}
 
 func (x *LintRule) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[161]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[162]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15178,7 +15333,7 @@ func (x *LintRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintRule.ProtoReflect.Descriptor instead.
 func (*LintRule) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{161}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{162}
 }
 
 func (x *LintRule) GetCode() string {
@@ -15231,7 +15386,7 @@ type LintSource struct {
 
 func (x *LintSource) Reset() {
 	*x = LintSource{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[162]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[163]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15243,7 +15398,7 @@ func (x *LintSource) String() string {
 func (*LintSource) ProtoMessage() {}
 
 func (x *LintSource) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[162]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[163]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15256,7 +15411,7 @@ func (x *LintSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintSource.ProtoReflect.Descriptor instead.
 func (*LintSource) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{162}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{163}
 }
 
 func (x *LintSource) GetName() string {
@@ -15320,7 +15475,7 @@ type LintEffect struct {
 
 func (x *LintEffect) Reset() {
 	*x = LintEffect{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[163]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[164]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15332,7 +15487,7 @@ func (x *LintEffect) String() string {
 func (*LintEffect) ProtoMessage() {}
 
 func (x *LintEffect) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[163]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[164]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15345,7 +15500,7 @@ func (x *LintEffect) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintEffect.ProtoReflect.Descriptor instead.
 func (*LintEffect) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{163}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{164}
 }
 
 func (x *LintEffect) GetFact() LintFact {
@@ -15430,7 +15585,7 @@ type LintStatement struct {
 
 func (x *LintStatement) Reset() {
 	*x = LintStatement{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[164]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[165]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15442,7 +15597,7 @@ func (x *LintStatement) String() string {
 func (*LintStatement) ProtoMessage() {}
 
 func (x *LintStatement) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[164]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[165]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15455,7 +15610,7 @@ func (x *LintStatement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintStatement.ProtoReflect.Descriptor instead.
 func (*LintStatement) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{164}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{165}
 }
 
 func (x *LintStatement) GetStart() uint32 {
@@ -15538,7 +15693,7 @@ type LintFile struct {
 
 func (x *LintFile) Reset() {
 	*x = LintFile{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[165]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[166]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15550,7 +15705,7 @@ func (x *LintFile) String() string {
 func (*LintFile) ProtoMessage() {}
 
 func (x *LintFile) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[165]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[166]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15563,7 +15718,7 @@ func (x *LintFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintFile.ProtoReflect.Descriptor instead.
 func (*LintFile) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{165}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{166}
 }
 
 func (x *LintFile) GetName() string {
@@ -15634,7 +15789,7 @@ type SplitLintRequest struct {
 
 func (x *SplitLintRequest) Reset() {
 	*x = SplitLintRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[166]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[167]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15646,7 +15801,7 @@ func (x *SplitLintRequest) String() string {
 func (*SplitLintRequest) ProtoMessage() {}
 
 func (x *SplitLintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[166]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[167]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15659,7 +15814,7 @@ func (x *SplitLintRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SplitLintRequest.ProtoReflect.Descriptor instead.
 func (*SplitLintRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{166}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{167}
 }
 
 func (x *SplitLintRequest) GetEngine() string {
@@ -15688,7 +15843,7 @@ type SplitLint struct {
 
 func (x *SplitLint) Reset() {
 	*x = SplitLint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[167]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[168]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15700,7 +15855,7 @@ func (x *SplitLint) String() string {
 func (*SplitLint) ProtoMessage() {}
 
 func (x *SplitLint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[167]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[168]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15713,7 +15868,7 @@ func (x *SplitLint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SplitLint.ProtoReflect.Descriptor instead.
 func (*SplitLint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{167}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{168}
 }
 
 func (x *SplitLint) GetFiles() []*LintFile {
@@ -15744,7 +15899,7 @@ type AnnotateLintRequest struct {
 
 func (x *AnnotateLintRequest) Reset() {
 	*x = AnnotateLintRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[168]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[169]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15756,7 +15911,7 @@ func (x *AnnotateLintRequest) String() string {
 func (*AnnotateLintRequest) ProtoMessage() {}
 
 func (x *AnnotateLintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[168]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[169]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15769,7 +15924,7 @@ func (x *AnnotateLintRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnnotateLintRequest.ProtoReflect.Descriptor instead.
 func (*AnnotateLintRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{168}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{169}
 }
 
 func (x *AnnotateLintRequest) GetEngine() string {
@@ -15811,7 +15966,7 @@ type LintAnnotation struct {
 
 func (x *LintAnnotation) Reset() {
 	*x = LintAnnotation{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[169]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[170]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15823,7 +15978,7 @@ func (x *LintAnnotation) String() string {
 func (*LintAnnotation) ProtoMessage() {}
 
 func (x *LintAnnotation) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[169]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[170]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15836,7 +15991,7 @@ func (x *LintAnnotation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintAnnotation.ProtoReflect.Descriptor instead.
 func (*LintAnnotation) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{169}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{170}
 }
 
 func (x *LintAnnotation) GetEffects() []*LintEffect {
@@ -15862,7 +16017,7 @@ type LintAnnotations struct {
 
 func (x *LintAnnotations) Reset() {
 	*x = LintAnnotations{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[170]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[171]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15874,7 +16029,7 @@ func (x *LintAnnotations) String() string {
 func (*LintAnnotations) ProtoMessage() {}
 
 func (x *LintAnnotations) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[170]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[171]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15887,7 +16042,7 @@ func (x *LintAnnotations) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintAnnotations.ProtoReflect.Descriptor instead.
 func (*LintAnnotations) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{170}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{171}
 }
 
 func (x *LintAnnotations) GetStatements() []*LintAnnotation {
@@ -15906,7 +16061,7 @@ type AnnotatedLint struct {
 
 func (x *AnnotatedLint) Reset() {
 	*x = AnnotatedLint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[171]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[172]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15918,7 +16073,7 @@ func (x *AnnotatedLint) String() string {
 func (*AnnotatedLint) ProtoMessage() {}
 
 func (x *AnnotatedLint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[171]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[172]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15931,7 +16086,7 @@ func (x *AnnotatedLint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnnotatedLint.ProtoReflect.Descriptor instead.
 func (*AnnotatedLint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{171}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{172}
 }
 
 func (x *AnnotatedLint) GetFiles() []*LintAnnotations {
@@ -15959,7 +16114,7 @@ type CheckLintRequest struct {
 
 func (x *CheckLintRequest) Reset() {
 	*x = CheckLintRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[172]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[173]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15971,7 +16126,7 @@ func (x *CheckLintRequest) String() string {
 func (*CheckLintRequest) ProtoMessage() {}
 
 func (x *CheckLintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[172]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[173]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15984,7 +16139,7 @@ func (x *CheckLintRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckLintRequest.ProtoReflect.Descriptor instead.
 func (*CheckLintRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{172}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{173}
 }
 
 func (x *CheckLintRequest) GetEngine() string {
@@ -16041,7 +16196,7 @@ type LintSubject struct {
 
 func (x *LintSubject) Reset() {
 	*x = LintSubject{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[173]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[174]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16053,7 +16208,7 @@ func (x *LintSubject) String() string {
 func (*LintSubject) ProtoMessage() {}
 
 func (x *LintSubject) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[173]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[174]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16066,7 +16221,7 @@ func (x *LintSubject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintSubject.ProtoReflect.Descriptor instead.
 func (*LintSubject) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{173}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{174}
 }
 
 func (x *LintSubject) GetKind() LintSubject_Kind {
@@ -16112,7 +16267,7 @@ type LintFinding struct {
 
 func (x *LintFinding) Reset() {
 	*x = LintFinding{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[174]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[175]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16124,7 +16279,7 @@ func (x *LintFinding) String() string {
 func (*LintFinding) ProtoMessage() {}
 
 func (x *LintFinding) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[174]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[175]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16137,7 +16292,7 @@ func (x *LintFinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LintFinding.ProtoReflect.Descriptor instead.
 func (*LintFinding) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{174}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{175}
 }
 
 func (x *LintFinding) GetCode() string {
@@ -16186,7 +16341,7 @@ type CheckedLint struct {
 
 func (x *CheckedLint) Reset() {
 	*x = CheckedLint{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[175]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[176]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16198,7 +16353,7 @@ func (x *CheckedLint) String() string {
 func (*CheckedLint) ProtoMessage() {}
 
 func (x *CheckedLint) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[175]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[176]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16211,7 +16366,7 @@ func (x *CheckedLint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckedLint.ProtoReflect.Descriptor instead.
 func (*CheckedLint) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{175}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{176}
 }
 
 func (x *CheckedLint) GetComplete() bool {
@@ -16241,7 +16396,7 @@ type ProvisionDevRequest struct {
 
 func (x *ProvisionDevRequest) Reset() {
 	*x = ProvisionDevRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[176]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[177]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16253,7 +16408,7 @@ func (x *ProvisionDevRequest) String() string {
 func (*ProvisionDevRequest) ProtoMessage() {}
 
 func (x *ProvisionDevRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[176]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[177]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16266,7 +16421,7 @@ func (x *ProvisionDevRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProvisionDevRequest.ProtoReflect.Descriptor instead.
 func (*ProvisionDevRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{176}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{177}
 }
 
 func (x *ProvisionDevRequest) GetEngine() string {
@@ -16294,7 +16449,7 @@ type DevDatabaseRefusal struct {
 
 func (x *DevDatabaseRefusal) Reset() {
 	*x = DevDatabaseRefusal{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[177]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[178]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16306,7 +16461,7 @@ func (x *DevDatabaseRefusal) String() string {
 func (*DevDatabaseRefusal) ProtoMessage() {}
 
 func (x *DevDatabaseRefusal) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[177]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[178]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16319,7 +16474,7 @@ func (x *DevDatabaseRefusal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DevDatabaseRefusal.ProtoReflect.Descriptor instead.
 func (*DevDatabaseRefusal) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{177}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{178}
 }
 
 func (x *DevDatabaseRefusal) GetKind() DevDatabaseRefusal_Kind {
@@ -16349,7 +16504,7 @@ type DevDatabase struct {
 
 func (x *DevDatabase) Reset() {
 	*x = DevDatabase{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[178]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[179]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16361,7 +16516,7 @@ func (x *DevDatabase) String() string {
 func (*DevDatabase) ProtoMessage() {}
 
 func (x *DevDatabase) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[178]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[179]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16374,7 +16529,7 @@ func (x *DevDatabase) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DevDatabase.ProtoReflect.Descriptor instead.
 func (*DevDatabase) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{178}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{179}
 }
 
 func (x *DevDatabase) GetLease() string {
@@ -16408,7 +16563,7 @@ type ReleaseDevRequest struct {
 
 func (x *ReleaseDevRequest) Reset() {
 	*x = ReleaseDevRequest{}
-	mi := &file_protocol_experimental_provider_proto_msgTypes[179]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[180]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16420,7 +16575,7 @@ func (x *ReleaseDevRequest) String() string {
 func (*ReleaseDevRequest) ProtoMessage() {}
 
 func (x *ReleaseDevRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_experimental_provider_proto_msgTypes[179]
+	mi := &file_protocol_experimental_provider_proto_msgTypes[180]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16433,7 +16588,7 @@ func (x *ReleaseDevRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseDevRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseDevRequest) Descriptor() ([]byte, []int) {
-	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{179}
+	return file_protocol_experimental_provider_proto_rawDescGZIP(), []int{180}
 }
 
 func (x *ReleaseDevRequest) GetEngine() string {
@@ -16466,7 +16621,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12+\n" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
-	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\x8d\x05\n" +
+	"\bfeatures\x18\x06 \x03(\tR\bfeatures\"\xee\x05\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
@@ -16480,7 +16635,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\n" +
 	"lint_rules\x18\n" +
 	" \x03(\v2$.ptah.provider.experimental.LintRuleR\tlintRules\x12L\n" +
-	"\rrelease_lines\x18\v \x03(\v2'.ptah.provider.experimental.ReleaseLineR\freleaseLines\"\xb7\x02\n" +
+	"\rrelease_lines\x18\v \x03(\v2'.ptah.provider.experimental.ReleaseLineR\freleaseLines\x12_\n" +
+	"\x14go_source_directives\x18\f \x03(\v2-.ptah.provider.experimental.GoSourceDirectiveR\x12goSourceDirectives\"\xb7\x02\n" +
 	"\vReleaseLine\x12\x12\n" +
 	"\x04line\x18\x01 \x01(\tR\x04line\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12I\n" +
@@ -16502,7 +16658,22 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05Scope\x12\x15\n" +
 	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bDOCUMENT\x10\x01\x12\t\n" +
-	"\x05TABLE\x10\x02\"\x9e\x04\n" +
+	"\x05TABLE\x10\x02\"\xa0\x02\n" +
+	"\x11GoSourceDirective\x12I\n" +
+	"\x05scope\x18\x01 \x01(\x0e23.ptah.provider.experimental.GoSourceDirective.ScopeR\x05scope\x12\x1c\n" +
+	"\tdirective\x18\x02 \x01(\tR\tdirective\x12\x1a\n" +
+	"\bselector\x18\x03 \x01(\tR\bselector\x12\x1e\n" +
+	"\n" +
+	"attributes\x18\x04 \x03(\tR\n" +
+	"attributes\x12\x16\n" +
+	"\x06models\x18\x05 \x03(\tR\x06models\"N\n" +
+	"\x05Scope\x12\x15\n" +
+	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\f\n" +
+	"\bDOCUMENT\x10\x01\x12\t\n" +
+	"\x05TABLE\x10\x02\x12\n" +
+	"\n" +
+	"\x06COLUMN\x10\x03\x12\t\n" +
+	"\x05INDEX\x10\x04\"\x9e\x04\n" +
 	"\x0fIdentifierRules\x12W\n" +
 	"\vtable_names\x18\x01 \x01(\x0e26.ptah.provider.experimental.IdentifierRules.ComparisonR\n" +
 	"tableNames\x12Y\n" +
@@ -16783,10 +16954,11 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x06object\x18\x02 \x01(\v2%.ptah.provider.experimental.ReferenceR\x06object\x12\x1f\n" +
 	"\vstruct_name\x18\x03 \x01(\tR\n" +
 	"structName\x12\x1b\n" +
-	"\tentry_key\x18\x04 \x01(\tR\bentryKey\"\x9d\x04\n" +
+	"\tentry_key\x18\x04 \x01(\tR\bentryKey\"\xef\x04\n" +
 	"\x0eSourceFragment\x12D\n" +
 	"\byaml_key\x18\n" +
-	" \x01(\v2).ptah.provider.experimental.YAMLSourceKeyR\ayamlKey\x12\x0e\n" +
+	" \x01(\v2).ptah.provider.experimental.YAMLSourceKeyR\ayamlKey\x12P\n" +
+	"\fgo_directive\x18\v \x01(\v2-.ptah.provider.experimental.GoSourceDirectiveR\vgoDirective\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bselector\x18\x02 \x01(\tR\bselector\x12\x1d\n" +
 	"\n" +
@@ -18019,654 +18191,659 @@ func file_protocol_experimental_provider_proto_rawDescGZIP() []byte {
 	return file_protocol_experimental_provider_proto_rawDescData
 }
 
-var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 39)
-var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 191)
+var file_protocol_experimental_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 40)
+var file_protocol_experimental_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 192)
 var file_protocol_experimental_provider_proto_goTypes = []any{
 	(TransactionIsolation)(0),            // 0: ptah.provider.experimental.TransactionIsolation
 	(LintFact)(0),                        // 1: ptah.provider.experimental.LintFact
 	(LintImpact)(0),                      // 2: ptah.provider.experimental.LintImpact
 	(ReleaseLine_Support)(0),             // 3: ptah.provider.experimental.ReleaseLine.Support
 	(YAMLSourceKey_Scope)(0),             // 4: ptah.provider.experimental.YAMLSourceKey.Scope
-	(IdentifierRules_Comparison)(0),      // 5: ptah.provider.experimental.IdentifierRules.Comparison
-	(IdentifierRules_IndexNamespace)(0),  // 6: ptah.provider.experimental.IdentifierRules.IndexNamespace
-	(Disposition_State)(0),               // 7: ptah.provider.experimental.Disposition.State
-	(NativeOperation_Role)(0),            // 8: ptah.provider.experimental.NativeOperation.Role
-	(FinishTransactionRequest_Action)(0), // 9: ptah.provider.experimental.FinishTransactionRequest.Action
-	(TransactionResult_Outcome)(0),       // 10: ptah.provider.experimental.TransactionResult.Outcome
-	(Execution_Outcome)(0),               // 11: ptah.provider.experimental.Execution.Outcome
-	(SQLStatement_Safety)(0),             // 12: ptah.provider.experimental.SQLStatement.Safety
-	(ValueInput_Representation)(0),       // 13: ptah.provider.experimental.ValueInput.Representation
-	(SourceDocument_Format)(0),           // 14: ptah.provider.experimental.SourceDocument.Format
-	(SourceTrace_Root)(0),                // 15: ptah.provider.experimental.SourceTrace.Root
-	(ModelKnowledge_State)(0),            // 16: ptah.provider.experimental.ModelKnowledge.State
-	(SourceModelValue_Placement)(0),      // 17: ptah.provider.experimental.SourceModelValue.Placement
-	(ModelComparison_Placement)(0),       // 18: ptah.provider.experimental.ModelComparison.Placement
-	(ChangeSemantics_Impact)(0),          // 19: ptah.provider.experimental.ChangeSemantics.Impact
-	(ChangeSemantics_Access)(0),          // 20: ptah.provider.experimental.ChangeSemantics.Access
-	(PlanningEffect_Action)(0),           // 21: ptah.provider.experimental.PlanningEffect.Action
-	(PlanningMetadata_Transaction)(0),    // 22: ptah.provider.experimental.PlanningMetadata.Transaction
-	(PlanningMetadata_Placement)(0),      // 23: ptah.provider.experimental.PlanningMetadata.Placement
-	(PlanningOperation_Phase)(0),         // 24: ptah.provider.experimental.PlanningOperation.Phase
-	(PlanningDiagnostic_Code)(0),         // 25: ptah.provider.experimental.PlanningDiagnostic.Code
-	(PlanningTable_Action)(0),            // 26: ptah.provider.experimental.PlanningTable.Action
-	(HistoryScope_Format)(0),             // 27: ptah.provider.experimental.HistoryScope.Format
-	(HistoryRevision_State)(0),           // 28: ptah.provider.experimental.HistoryRevision.State
-	(HistoryRevision_Direction)(0),       // 29: ptah.provider.experimental.HistoryRevision.Direction
-	(HistoryResult_Outcome)(0),           // 30: ptah.provider.experimental.HistoryResult.Outcome
-	(LockResult_Outcome)(0),              // 31: ptah.provider.experimental.LockResult.Outcome
-	(MetadataScope_Kind)(0),              // 32: ptah.provider.experimental.MetadataScope.Kind
-	(MetadataResult_Outcome)(0),          // 33: ptah.provider.experimental.MetadataResult.Outcome
-	(ReservedObject_Purpose)(0),          // 34: ptah.provider.experimental.ReservedObject.Purpose
-	(SchemaDiagnostic_Code)(0),           // 35: ptah.provider.experimental.SchemaDiagnostic.Code
-	(LintRule_Severity)(0),               // 36: ptah.provider.experimental.LintRule.Severity
-	(LintSubject_Kind)(0),                // 37: ptah.provider.experimental.LintSubject.Kind
-	(DevDatabaseRefusal_Kind)(0),         // 38: ptah.provider.experimental.DevDatabaseRefusal.Kind
-	(*Empty)(nil),                        // 39: ptah.provider.experimental.Empty
-	(*DescribeRequest)(nil),              // 40: ptah.provider.experimental.DescribeRequest
-	(*Description)(nil),                  // 41: ptah.provider.experimental.Description
-	(*Engine)(nil),                       // 42: ptah.provider.experimental.Engine
-	(*ReleaseLine)(nil),                  // 43: ptah.provider.experimental.ReleaseLine
-	(*YAMLSourceKey)(nil),                // 44: ptah.provider.experimental.YAMLSourceKey
-	(*IdentifierRules)(nil),              // 45: ptah.provider.experimental.IdentifierRules
-	(*Reference)(nil),                    // 46: ptah.provider.experimental.Reference
-	(*Envelope)(nil),                     // 47: ptah.provider.experimental.Envelope
-	(*OpenRequest)(nil),                  // 48: ptah.provider.experimental.OpenRequest
-	(*Session)(nil),                      // 49: ptah.provider.experimental.Session
-	(*CloseRequest)(nil),                 // 50: ptah.provider.experimental.CloseRequest
-	(*InspectRequest)(nil),               // 51: ptah.provider.experimental.InspectRequest
-	(*Schema)(nil),                       // 52: ptah.provider.experimental.Schema
-	(*Table)(nil),                        // 53: ptah.provider.experimental.Table
-	(*Column)(nil),                       // 54: ptah.provider.experimental.Column
-	(*Disposition)(nil),                  // 55: ptah.provider.experimental.Disposition
-	(*Change)(nil),                       // 56: ptah.provider.experimental.Change
-	(*NativeOperation)(nil),              // 57: ptah.provider.experimental.NativeOperation
-	(*RenderRequest)(nil),                // 58: ptah.provider.experimental.RenderRequest
-	(*Unit)(nil),                         // 59: ptah.provider.experimental.Unit
-	(*RenderResult)(nil),                 // 60: ptah.provider.experimental.RenderResult
-	(*ExecuteRequest)(nil),               // 61: ptah.provider.experimental.ExecuteRequest
-	(*BeginTransactionRequest)(nil),      // 62: ptah.provider.experimental.BeginTransactionRequest
-	(*Transaction)(nil),                  // 63: ptah.provider.experimental.Transaction
-	(*FinishTransactionRequest)(nil),     // 64: ptah.provider.experimental.FinishTransactionRequest
-	(*TransactionResult)(nil),            // 65: ptah.provider.experimental.TransactionResult
-	(*Execution)(nil),                    // 66: ptah.provider.experimental.Execution
-	(*AnalyzeSQLRequest)(nil),            // 67: ptah.provider.experimental.AnalyzeSQLRequest
-	(*SQLAnalysis)(nil),                  // 68: ptah.provider.experimental.SQLAnalysis
-	(*SQLFile)(nil),                      // 69: ptah.provider.experimental.SQLFile
-	(*SQLStatement)(nil),                 // 70: ptah.provider.experimental.SQLStatement
-	(*NormalizeValuesRequest)(nil),       // 71: ptah.provider.experimental.NormalizeValuesRequest
-	(*ValueInput)(nil),                   // 72: ptah.provider.experimental.ValueInput
-	(*NormalizedValues)(nil),             // 73: ptah.provider.experimental.NormalizedValues
-	(*NormalizedValue)(nil),              // 74: ptah.provider.experimental.NormalizedValue
-	(*SourcePosition)(nil),               // 75: ptah.provider.experimental.SourcePosition
-	(*SourceSpan)(nil),                   // 76: ptah.provider.experimental.SourceSpan
-	(*SourceValue)(nil),                  // 77: ptah.provider.experimental.SourceValue
-	(*SourceSequence)(nil),               // 78: ptah.provider.experimental.SourceSequence
-	(*SourceMapping)(nil),                // 79: ptah.provider.experimental.SourceMapping
-	(*SourceEntry)(nil),                  // 80: ptah.provider.experimental.SourceEntry
-	(*SourceBlock)(nil),                  // 81: ptah.provider.experimental.SourceBlock
-	(*SourceLabel)(nil),                  // 82: ptah.provider.experimental.SourceLabel
-	(*SourceBinding)(nil),                // 83: ptah.provider.experimental.SourceBinding
-	(*SourceFragment)(nil),               // 84: ptah.provider.experimental.SourceFragment
-	(*SourceDocument)(nil),               // 85: ptah.provider.experimental.SourceDocument
-	(*SourcePathStep)(nil),               // 86: ptah.provider.experimental.SourcePathStep
-	(*SourceTrace)(nil),                  // 87: ptah.provider.experimental.SourceTrace
-	(*ValueModel)(nil),                   // 88: ptah.provider.experimental.ValueModel
-	(*ModelKnowledge)(nil),               // 89: ptah.provider.experimental.ModelKnowledge
-	(*NamespaceComponent)(nil),           // 90: ptah.provider.experimental.NamespaceComponent
-	(*ModelNamespace)(nil),               // 91: ptah.provider.experimental.ModelNamespace
-	(*ModelNamespaceKnowledge)(nil),      // 92: ptah.provider.experimental.ModelNamespaceKnowledge
-	(*ModelKindCoverage)(nil),            // 93: ptah.provider.experimental.ModelKindCoverage
-	(*ModelSubjectCoverage)(nil),         // 94: ptah.provider.experimental.ModelSubjectCoverage
-	(*ModelCoverage)(nil),                // 95: ptah.provider.experimental.ModelCoverage
-	(*DecodeSourceRequest)(nil),          // 96: ptah.provider.experimental.DecodeSourceRequest
-	(*DecodedSource)(nil),                // 97: ptah.provider.experimental.DecodedSource
-	(*DecodedSourceDocument)(nil),        // 98: ptah.provider.experimental.DecodedSourceDocument
-	(*DecodedSourceFragment)(nil),        // 99: ptah.provider.experimental.DecodedSourceFragment
-	(*SourceModelValue)(nil),             // 100: ptah.provider.experimental.SourceModelValue
-	(*ConvertValuesRequest)(nil),         // 101: ptah.provider.experimental.ConvertValuesRequest
-	(*InspectionScopeBinding)(nil),       // 102: ptah.provider.experimental.InspectionScopeBinding
-	(*ModelComparison)(nil),              // 103: ptah.provider.experimental.ModelComparison
-	(*ComparisonPart)(nil),               // 104: ptah.provider.experimental.ComparisonPart
-	(*ComparisonIdentity)(nil),           // 105: ptah.provider.experimental.ComparisonIdentity
-	(*ComparisonNamespace)(nil),          // 106: ptah.provider.experimental.ComparisonNamespace
-	(*ComparisonRegion)(nil),             // 107: ptah.provider.experimental.ComparisonRegion
-	(*ComparisonKnowledgeSource)(nil),    // 108: ptah.provider.experimental.ComparisonKnowledgeSource
-	(*ComparisonKindCoverage)(nil),       // 109: ptah.provider.experimental.ComparisonKindCoverage
-	(*ComparisonSubjectCoverage)(nil),    // 110: ptah.provider.experimental.ComparisonSubjectCoverage
-	(*ComparisonCoverage)(nil),           // 111: ptah.provider.experimental.ComparisonCoverage
-	(*ComparisonRecord)(nil),             // 112: ptah.provider.experimental.ComparisonRecord
-	(*ComparisonState)(nil),              // 113: ptah.provider.experimental.ComparisonState
-	(*ComparisonParent)(nil),             // 114: ptah.provider.experimental.ComparisonParent
-	(*RequestedChange)(nil),              // 115: ptah.provider.experimental.RequestedChange
-	(*ComparisonExclusion)(nil),          // 116: ptah.provider.experimental.ComparisonExclusion
-	(*ComparisonColumn)(nil),             // 117: ptah.provider.experimental.ComparisonColumn
-	(*ComparisonConstraint)(nil),         // 118: ptah.provider.experimental.ComparisonConstraint
-	(*ResolvedIdentifier)(nil),           // 119: ptah.provider.experimental.ResolvedIdentifier
-	(*ComparisonIdentifiers)(nil),        // 120: ptah.provider.experimental.ComparisonIdentifiers
-	(*CompareModelsRequest)(nil),         // 121: ptah.provider.experimental.CompareModelsRequest
-	(*ChangeSemantics)(nil),              // 122: ptah.provider.experimental.ChangeSemantics
-	(*ComparedChange)(nil),               // 123: ptah.provider.experimental.ComparedChange
-	(*ComparisonUndecided)(nil),          // 124: ptah.provider.experimental.ComparisonUndecided
-	(*ComparedModels)(nil),               // 125: ptah.provider.experimental.ComparedModels
-	(*OperationSemantics)(nil),           // 126: ptah.provider.experimental.OperationSemantics
-	(*ModelPlanning)(nil),                // 127: ptah.provider.experimental.ModelPlanning
-	(*StepIdentity)(nil),                 // 128: ptah.provider.experimental.StepIdentity
-	(*PlanningEffect)(nil),               // 129: ptah.provider.experimental.PlanningEffect
-	(*PlanningMetadata)(nil),             // 130: ptah.provider.experimental.PlanningMetadata
-	(*PlanningDependency)(nil),           // 131: ptah.provider.experimental.PlanningDependency
-	(*CommonPlanningStep)(nil),           // 132: ptah.provider.experimental.CommonPlanningStep
-	(*PlanningOperation)(nil),            // 133: ptah.provider.experimental.PlanningOperation
-	(*PlanningStep)(nil),                 // 134: ptah.provider.experimental.PlanningStep
-	(*PlanningContribution)(nil),         // 135: ptah.provider.experimental.PlanningContribution
-	(*PlanningRewrite)(nil),              // 136: ptah.provider.experimental.PlanningRewrite
-	(*PlanningChange)(nil),               // 137: ptah.provider.experimental.PlanningChange
-	(*PlanningReceipt)(nil),              // 138: ptah.provider.experimental.PlanningReceipt
-	(*PlanningParentReceipt)(nil),        // 139: ptah.provider.experimental.PlanningParentReceipt
-	(*PlanningDiagnostic)(nil),           // 140: ptah.provider.experimental.PlanningDiagnostic
-	(*PlanningType)(nil),                 // 141: ptah.provider.experimental.PlanningType
-	(*PlanningTable)(nil),                // 142: ptah.provider.experimental.PlanningTable
-	(*PlanFeaturesRequest)(nil),          // 143: ptah.provider.experimental.PlanFeaturesRequest
-	(*PlannedFeatures)(nil),              // 144: ptah.provider.experimental.PlannedFeatures
-	(*CapturedFeatures)(nil),             // 145: ptah.provider.experimental.CapturedFeatures
-	(*DeclaredTable)(nil),                // 146: ptah.provider.experimental.DeclaredTable
-	(*DeclaredKeyPart)(nil),              // 147: ptah.provider.experimental.DeclaredKeyPart
-	(*DeclaredColumn)(nil),               // 148: ptah.provider.experimental.DeclaredColumn
-	(*DeclaredEnum)(nil),                 // 149: ptah.provider.experimental.DeclaredEnum
-	(*CapturedIndexPart)(nil),            // 150: ptah.provider.experimental.CapturedIndexPart
-	(*DeclaredIndex)(nil),                // 151: ptah.provider.experimental.DeclaredIndex
-	(*DeclaredConstraint)(nil),           // 152: ptah.provider.experimental.DeclaredConstraint
-	(*CapturedTrigger)(nil),              // 153: ptah.provider.experimental.CapturedTrigger
-	(*ObservedTable)(nil),                // 154: ptah.provider.experimental.ObservedTable
-	(*ObservedColumn)(nil),               // 155: ptah.provider.experimental.ObservedColumn
-	(*ObservedIndex)(nil),                // 156: ptah.provider.experimental.ObservedIndex
-	(*ObservedConstraint)(nil),           // 157: ptah.provider.experimental.ObservedConstraint
-	(*PlanningColumn)(nil),               // 158: ptah.provider.experimental.PlanningColumn
-	(*PlanningDefault)(nil),              // 159: ptah.provider.experimental.PlanningDefault
-	(*PlanningForeignKey)(nil),           // 160: ptah.provider.experimental.PlanningForeignKey
-	(*CapturedFacet)(nil),                // 161: ptah.provider.experimental.CapturedFacet
-	(*HistoryScope)(nil),                 // 162: ptah.provider.experimental.HistoryScope
-	(*HistoryRevision)(nil),              // 163: ptah.provider.experimental.HistoryRevision
-	(*ReadHistoryRequest)(nil),           // 164: ptah.provider.experimental.ReadHistoryRequest
-	(*HistorySnapshot)(nil),              // 165: ptah.provider.experimental.HistorySnapshot
-	(*PrepareHistoryRequest)(nil),        // 166: ptah.provider.experimental.PrepareHistoryRequest
-	(*MutateHistoryRequest)(nil),         // 167: ptah.provider.experimental.MutateHistoryRequest
-	(*HistoryResult)(nil),                // 168: ptah.provider.experimental.HistoryResult
-	(*LockScope)(nil),                    // 169: ptah.provider.experimental.LockScope
-	(*LockRequest)(nil),                  // 170: ptah.provider.experimental.LockRequest
-	(*LockResult)(nil),                   // 171: ptah.provider.experimental.LockResult
-	(*MetadataScope)(nil),                // 172: ptah.provider.experimental.MetadataScope
-	(*MigrationLogRecord)(nil),           // 173: ptah.provider.experimental.MigrationLogRecord
-	(*MigrationTagRecord)(nil),           // 174: ptah.provider.experimental.MigrationTagRecord
-	(*PrepareMetadataRequest)(nil),       // 175: ptah.provider.experimental.PrepareMetadataRequest
-	(*MutateMetadataRequest)(nil),        // 176: ptah.provider.experimental.MutateMetadataRequest
-	(*MetadataResult)(nil),               // 177: ptah.provider.experimental.MetadataResult
-	(*LookupMetadataTagRequest)(nil),     // 178: ptah.provider.experimental.LookupMetadataTagRequest
-	(*MetadataTagResult)(nil),            // 179: ptah.provider.experimental.MetadataTagResult
-	(*MetadataReadRequest)(nil),          // 180: ptah.provider.experimental.MetadataReadRequest
-	(*MetadataReadResult)(nil),           // 181: ptah.provider.experimental.MetadataReadResult
-	(*ReadMetadataPageRequest)(nil),      // 182: ptah.provider.experimental.ReadMetadataPageRequest
-	(*MetadataPage)(nil),                 // 183: ptah.provider.experimental.MetadataPage
-	(*ReservedObject)(nil),               // 184: ptah.provider.experimental.ReservedObject
-	(*PrepareTablesRequest)(nil),         // 185: ptah.provider.experimental.PrepareTablesRequest
-	(*TablePreparationInput)(nil),        // 186: ptah.provider.experimental.TablePreparationInput
-	(*PreparedTable)(nil),                // 187: ptah.provider.experimental.PreparedTable
-	(*PreparedTables)(nil),               // 188: ptah.provider.experimental.PreparedTables
-	(*ProjectTableCreationsRequest)(nil), // 189: ptah.provider.experimental.ProjectTableCreationsRequest
-	(*TableCreationInput)(nil),           // 190: ptah.provider.experimental.TableCreationInput
-	(*ProjectedTableCreation)(nil),       // 191: ptah.provider.experimental.ProjectedTableCreation
-	(*ProjectedTableCreations)(nil),      // 192: ptah.provider.experimental.ProjectedTableCreations
-	(*ValidateSchemaRequest)(nil),        // 193: ptah.provider.experimental.ValidateSchemaRequest
-	(*ValidationTable)(nil),              // 194: ptah.provider.experimental.ValidationTable
-	(*DeclaredNamespace)(nil),            // 195: ptah.provider.experimental.DeclaredNamespace
-	(*SchemaValidation)(nil),             // 196: ptah.provider.experimental.SchemaValidation
-	(*SchemaDiagnostic)(nil),             // 197: ptah.provider.experimental.SchemaDiagnostic
-	(*SchemaCoverageLimit)(nil),          // 198: ptah.provider.experimental.SchemaCoverageLimit
-	(*SchemaDependencies)(nil),           // 199: ptah.provider.experimental.SchemaDependencies
-	(*LintRule)(nil),                     // 200: ptah.provider.experimental.LintRule
-	(*LintSource)(nil),                   // 201: ptah.provider.experimental.LintSource
-	(*LintEffect)(nil),                   // 202: ptah.provider.experimental.LintEffect
-	(*LintStatement)(nil),                // 203: ptah.provider.experimental.LintStatement
-	(*LintFile)(nil),                     // 204: ptah.provider.experimental.LintFile
-	(*SplitLintRequest)(nil),             // 205: ptah.provider.experimental.SplitLintRequest
-	(*SplitLint)(nil),                    // 206: ptah.provider.experimental.SplitLint
-	(*AnnotateLintRequest)(nil),          // 207: ptah.provider.experimental.AnnotateLintRequest
-	(*LintAnnotation)(nil),               // 208: ptah.provider.experimental.LintAnnotation
-	(*LintAnnotations)(nil),              // 209: ptah.provider.experimental.LintAnnotations
-	(*AnnotatedLint)(nil),                // 210: ptah.provider.experimental.AnnotatedLint
-	(*CheckLintRequest)(nil),             // 211: ptah.provider.experimental.CheckLintRequest
-	(*LintSubject)(nil),                  // 212: ptah.provider.experimental.LintSubject
-	(*LintFinding)(nil),                  // 213: ptah.provider.experimental.LintFinding
-	(*CheckedLint)(nil),                  // 214: ptah.provider.experimental.CheckedLint
-	(*ProvisionDevRequest)(nil),          // 215: ptah.provider.experimental.ProvisionDevRequest
-	(*DevDatabaseRefusal)(nil),           // 216: ptah.provider.experimental.DevDatabaseRefusal
-	(*DevDatabase)(nil),                  // 217: ptah.provider.experimental.DevDatabase
-	(*ReleaseDevRequest)(nil),            // 218: ptah.provider.experimental.ReleaseDevRequest
-	nil,                                  // 219: ptah.provider.experimental.Session.CapabilitiesEntry
-	nil,                                  // 220: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	nil,                                  // 221: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	nil,                                  // 222: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	nil,                                  // 223: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	nil,                                  // 224: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	nil,                                  // 225: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
-	nil,                                  // 226: ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
-	nil,                                  // 227: ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
-	nil,                                  // 228: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
-	nil,                                  // 229: ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
+	(GoSourceDirective_Scope)(0),         // 5: ptah.provider.experimental.GoSourceDirective.Scope
+	(IdentifierRules_Comparison)(0),      // 6: ptah.provider.experimental.IdentifierRules.Comparison
+	(IdentifierRules_IndexNamespace)(0),  // 7: ptah.provider.experimental.IdentifierRules.IndexNamespace
+	(Disposition_State)(0),               // 8: ptah.provider.experimental.Disposition.State
+	(NativeOperation_Role)(0),            // 9: ptah.provider.experimental.NativeOperation.Role
+	(FinishTransactionRequest_Action)(0), // 10: ptah.provider.experimental.FinishTransactionRequest.Action
+	(TransactionResult_Outcome)(0),       // 11: ptah.provider.experimental.TransactionResult.Outcome
+	(Execution_Outcome)(0),               // 12: ptah.provider.experimental.Execution.Outcome
+	(SQLStatement_Safety)(0),             // 13: ptah.provider.experimental.SQLStatement.Safety
+	(ValueInput_Representation)(0),       // 14: ptah.provider.experimental.ValueInput.Representation
+	(SourceDocument_Format)(0),           // 15: ptah.provider.experimental.SourceDocument.Format
+	(SourceTrace_Root)(0),                // 16: ptah.provider.experimental.SourceTrace.Root
+	(ModelKnowledge_State)(0),            // 17: ptah.provider.experimental.ModelKnowledge.State
+	(SourceModelValue_Placement)(0),      // 18: ptah.provider.experimental.SourceModelValue.Placement
+	(ModelComparison_Placement)(0),       // 19: ptah.provider.experimental.ModelComparison.Placement
+	(ChangeSemantics_Impact)(0),          // 20: ptah.provider.experimental.ChangeSemantics.Impact
+	(ChangeSemantics_Access)(0),          // 21: ptah.provider.experimental.ChangeSemantics.Access
+	(PlanningEffect_Action)(0),           // 22: ptah.provider.experimental.PlanningEffect.Action
+	(PlanningMetadata_Transaction)(0),    // 23: ptah.provider.experimental.PlanningMetadata.Transaction
+	(PlanningMetadata_Placement)(0),      // 24: ptah.provider.experimental.PlanningMetadata.Placement
+	(PlanningOperation_Phase)(0),         // 25: ptah.provider.experimental.PlanningOperation.Phase
+	(PlanningDiagnostic_Code)(0),         // 26: ptah.provider.experimental.PlanningDiagnostic.Code
+	(PlanningTable_Action)(0),            // 27: ptah.provider.experimental.PlanningTable.Action
+	(HistoryScope_Format)(0),             // 28: ptah.provider.experimental.HistoryScope.Format
+	(HistoryRevision_State)(0),           // 29: ptah.provider.experimental.HistoryRevision.State
+	(HistoryRevision_Direction)(0),       // 30: ptah.provider.experimental.HistoryRevision.Direction
+	(HistoryResult_Outcome)(0),           // 31: ptah.provider.experimental.HistoryResult.Outcome
+	(LockResult_Outcome)(0),              // 32: ptah.provider.experimental.LockResult.Outcome
+	(MetadataScope_Kind)(0),              // 33: ptah.provider.experimental.MetadataScope.Kind
+	(MetadataResult_Outcome)(0),          // 34: ptah.provider.experimental.MetadataResult.Outcome
+	(ReservedObject_Purpose)(0),          // 35: ptah.provider.experimental.ReservedObject.Purpose
+	(SchemaDiagnostic_Code)(0),           // 36: ptah.provider.experimental.SchemaDiagnostic.Code
+	(LintRule_Severity)(0),               // 37: ptah.provider.experimental.LintRule.Severity
+	(LintSubject_Kind)(0),                // 38: ptah.provider.experimental.LintSubject.Kind
+	(DevDatabaseRefusal_Kind)(0),         // 39: ptah.provider.experimental.DevDatabaseRefusal.Kind
+	(*Empty)(nil),                        // 40: ptah.provider.experimental.Empty
+	(*DescribeRequest)(nil),              // 41: ptah.provider.experimental.DescribeRequest
+	(*Description)(nil),                  // 42: ptah.provider.experimental.Description
+	(*Engine)(nil),                       // 43: ptah.provider.experimental.Engine
+	(*ReleaseLine)(nil),                  // 44: ptah.provider.experimental.ReleaseLine
+	(*YAMLSourceKey)(nil),                // 45: ptah.provider.experimental.YAMLSourceKey
+	(*GoSourceDirective)(nil),            // 46: ptah.provider.experimental.GoSourceDirective
+	(*IdentifierRules)(nil),              // 47: ptah.provider.experimental.IdentifierRules
+	(*Reference)(nil),                    // 48: ptah.provider.experimental.Reference
+	(*Envelope)(nil),                     // 49: ptah.provider.experimental.Envelope
+	(*OpenRequest)(nil),                  // 50: ptah.provider.experimental.OpenRequest
+	(*Session)(nil),                      // 51: ptah.provider.experimental.Session
+	(*CloseRequest)(nil),                 // 52: ptah.provider.experimental.CloseRequest
+	(*InspectRequest)(nil),               // 53: ptah.provider.experimental.InspectRequest
+	(*Schema)(nil),                       // 54: ptah.provider.experimental.Schema
+	(*Table)(nil),                        // 55: ptah.provider.experimental.Table
+	(*Column)(nil),                       // 56: ptah.provider.experimental.Column
+	(*Disposition)(nil),                  // 57: ptah.provider.experimental.Disposition
+	(*Change)(nil),                       // 58: ptah.provider.experimental.Change
+	(*NativeOperation)(nil),              // 59: ptah.provider.experimental.NativeOperation
+	(*RenderRequest)(nil),                // 60: ptah.provider.experimental.RenderRequest
+	(*Unit)(nil),                         // 61: ptah.provider.experimental.Unit
+	(*RenderResult)(nil),                 // 62: ptah.provider.experimental.RenderResult
+	(*ExecuteRequest)(nil),               // 63: ptah.provider.experimental.ExecuteRequest
+	(*BeginTransactionRequest)(nil),      // 64: ptah.provider.experimental.BeginTransactionRequest
+	(*Transaction)(nil),                  // 65: ptah.provider.experimental.Transaction
+	(*FinishTransactionRequest)(nil),     // 66: ptah.provider.experimental.FinishTransactionRequest
+	(*TransactionResult)(nil),            // 67: ptah.provider.experimental.TransactionResult
+	(*Execution)(nil),                    // 68: ptah.provider.experimental.Execution
+	(*AnalyzeSQLRequest)(nil),            // 69: ptah.provider.experimental.AnalyzeSQLRequest
+	(*SQLAnalysis)(nil),                  // 70: ptah.provider.experimental.SQLAnalysis
+	(*SQLFile)(nil),                      // 71: ptah.provider.experimental.SQLFile
+	(*SQLStatement)(nil),                 // 72: ptah.provider.experimental.SQLStatement
+	(*NormalizeValuesRequest)(nil),       // 73: ptah.provider.experimental.NormalizeValuesRequest
+	(*ValueInput)(nil),                   // 74: ptah.provider.experimental.ValueInput
+	(*NormalizedValues)(nil),             // 75: ptah.provider.experimental.NormalizedValues
+	(*NormalizedValue)(nil),              // 76: ptah.provider.experimental.NormalizedValue
+	(*SourcePosition)(nil),               // 77: ptah.provider.experimental.SourcePosition
+	(*SourceSpan)(nil),                   // 78: ptah.provider.experimental.SourceSpan
+	(*SourceValue)(nil),                  // 79: ptah.provider.experimental.SourceValue
+	(*SourceSequence)(nil),               // 80: ptah.provider.experimental.SourceSequence
+	(*SourceMapping)(nil),                // 81: ptah.provider.experimental.SourceMapping
+	(*SourceEntry)(nil),                  // 82: ptah.provider.experimental.SourceEntry
+	(*SourceBlock)(nil),                  // 83: ptah.provider.experimental.SourceBlock
+	(*SourceLabel)(nil),                  // 84: ptah.provider.experimental.SourceLabel
+	(*SourceBinding)(nil),                // 85: ptah.provider.experimental.SourceBinding
+	(*SourceFragment)(nil),               // 86: ptah.provider.experimental.SourceFragment
+	(*SourceDocument)(nil),               // 87: ptah.provider.experimental.SourceDocument
+	(*SourcePathStep)(nil),               // 88: ptah.provider.experimental.SourcePathStep
+	(*SourceTrace)(nil),                  // 89: ptah.provider.experimental.SourceTrace
+	(*ValueModel)(nil),                   // 90: ptah.provider.experimental.ValueModel
+	(*ModelKnowledge)(nil),               // 91: ptah.provider.experimental.ModelKnowledge
+	(*NamespaceComponent)(nil),           // 92: ptah.provider.experimental.NamespaceComponent
+	(*ModelNamespace)(nil),               // 93: ptah.provider.experimental.ModelNamespace
+	(*ModelNamespaceKnowledge)(nil),      // 94: ptah.provider.experimental.ModelNamespaceKnowledge
+	(*ModelKindCoverage)(nil),            // 95: ptah.provider.experimental.ModelKindCoverage
+	(*ModelSubjectCoverage)(nil),         // 96: ptah.provider.experimental.ModelSubjectCoverage
+	(*ModelCoverage)(nil),                // 97: ptah.provider.experimental.ModelCoverage
+	(*DecodeSourceRequest)(nil),          // 98: ptah.provider.experimental.DecodeSourceRequest
+	(*DecodedSource)(nil),                // 99: ptah.provider.experimental.DecodedSource
+	(*DecodedSourceDocument)(nil),        // 100: ptah.provider.experimental.DecodedSourceDocument
+	(*DecodedSourceFragment)(nil),        // 101: ptah.provider.experimental.DecodedSourceFragment
+	(*SourceModelValue)(nil),             // 102: ptah.provider.experimental.SourceModelValue
+	(*ConvertValuesRequest)(nil),         // 103: ptah.provider.experimental.ConvertValuesRequest
+	(*InspectionScopeBinding)(nil),       // 104: ptah.provider.experimental.InspectionScopeBinding
+	(*ModelComparison)(nil),              // 105: ptah.provider.experimental.ModelComparison
+	(*ComparisonPart)(nil),               // 106: ptah.provider.experimental.ComparisonPart
+	(*ComparisonIdentity)(nil),           // 107: ptah.provider.experimental.ComparisonIdentity
+	(*ComparisonNamespace)(nil),          // 108: ptah.provider.experimental.ComparisonNamespace
+	(*ComparisonRegion)(nil),             // 109: ptah.provider.experimental.ComparisonRegion
+	(*ComparisonKnowledgeSource)(nil),    // 110: ptah.provider.experimental.ComparisonKnowledgeSource
+	(*ComparisonKindCoverage)(nil),       // 111: ptah.provider.experimental.ComparisonKindCoverage
+	(*ComparisonSubjectCoverage)(nil),    // 112: ptah.provider.experimental.ComparisonSubjectCoverage
+	(*ComparisonCoverage)(nil),           // 113: ptah.provider.experimental.ComparisonCoverage
+	(*ComparisonRecord)(nil),             // 114: ptah.provider.experimental.ComparisonRecord
+	(*ComparisonState)(nil),              // 115: ptah.provider.experimental.ComparisonState
+	(*ComparisonParent)(nil),             // 116: ptah.provider.experimental.ComparisonParent
+	(*RequestedChange)(nil),              // 117: ptah.provider.experimental.RequestedChange
+	(*ComparisonExclusion)(nil),          // 118: ptah.provider.experimental.ComparisonExclusion
+	(*ComparisonColumn)(nil),             // 119: ptah.provider.experimental.ComparisonColumn
+	(*ComparisonConstraint)(nil),         // 120: ptah.provider.experimental.ComparisonConstraint
+	(*ResolvedIdentifier)(nil),           // 121: ptah.provider.experimental.ResolvedIdentifier
+	(*ComparisonIdentifiers)(nil),        // 122: ptah.provider.experimental.ComparisonIdentifiers
+	(*CompareModelsRequest)(nil),         // 123: ptah.provider.experimental.CompareModelsRequest
+	(*ChangeSemantics)(nil),              // 124: ptah.provider.experimental.ChangeSemantics
+	(*ComparedChange)(nil),               // 125: ptah.provider.experimental.ComparedChange
+	(*ComparisonUndecided)(nil),          // 126: ptah.provider.experimental.ComparisonUndecided
+	(*ComparedModels)(nil),               // 127: ptah.provider.experimental.ComparedModels
+	(*OperationSemantics)(nil),           // 128: ptah.provider.experimental.OperationSemantics
+	(*ModelPlanning)(nil),                // 129: ptah.provider.experimental.ModelPlanning
+	(*StepIdentity)(nil),                 // 130: ptah.provider.experimental.StepIdentity
+	(*PlanningEffect)(nil),               // 131: ptah.provider.experimental.PlanningEffect
+	(*PlanningMetadata)(nil),             // 132: ptah.provider.experimental.PlanningMetadata
+	(*PlanningDependency)(nil),           // 133: ptah.provider.experimental.PlanningDependency
+	(*CommonPlanningStep)(nil),           // 134: ptah.provider.experimental.CommonPlanningStep
+	(*PlanningOperation)(nil),            // 135: ptah.provider.experimental.PlanningOperation
+	(*PlanningStep)(nil),                 // 136: ptah.provider.experimental.PlanningStep
+	(*PlanningContribution)(nil),         // 137: ptah.provider.experimental.PlanningContribution
+	(*PlanningRewrite)(nil),              // 138: ptah.provider.experimental.PlanningRewrite
+	(*PlanningChange)(nil),               // 139: ptah.provider.experimental.PlanningChange
+	(*PlanningReceipt)(nil),              // 140: ptah.provider.experimental.PlanningReceipt
+	(*PlanningParentReceipt)(nil),        // 141: ptah.provider.experimental.PlanningParentReceipt
+	(*PlanningDiagnostic)(nil),           // 142: ptah.provider.experimental.PlanningDiagnostic
+	(*PlanningType)(nil),                 // 143: ptah.provider.experimental.PlanningType
+	(*PlanningTable)(nil),                // 144: ptah.provider.experimental.PlanningTable
+	(*PlanFeaturesRequest)(nil),          // 145: ptah.provider.experimental.PlanFeaturesRequest
+	(*PlannedFeatures)(nil),              // 146: ptah.provider.experimental.PlannedFeatures
+	(*CapturedFeatures)(nil),             // 147: ptah.provider.experimental.CapturedFeatures
+	(*DeclaredTable)(nil),                // 148: ptah.provider.experimental.DeclaredTable
+	(*DeclaredKeyPart)(nil),              // 149: ptah.provider.experimental.DeclaredKeyPart
+	(*DeclaredColumn)(nil),               // 150: ptah.provider.experimental.DeclaredColumn
+	(*DeclaredEnum)(nil),                 // 151: ptah.provider.experimental.DeclaredEnum
+	(*CapturedIndexPart)(nil),            // 152: ptah.provider.experimental.CapturedIndexPart
+	(*DeclaredIndex)(nil),                // 153: ptah.provider.experimental.DeclaredIndex
+	(*DeclaredConstraint)(nil),           // 154: ptah.provider.experimental.DeclaredConstraint
+	(*CapturedTrigger)(nil),              // 155: ptah.provider.experimental.CapturedTrigger
+	(*ObservedTable)(nil),                // 156: ptah.provider.experimental.ObservedTable
+	(*ObservedColumn)(nil),               // 157: ptah.provider.experimental.ObservedColumn
+	(*ObservedIndex)(nil),                // 158: ptah.provider.experimental.ObservedIndex
+	(*ObservedConstraint)(nil),           // 159: ptah.provider.experimental.ObservedConstraint
+	(*PlanningColumn)(nil),               // 160: ptah.provider.experimental.PlanningColumn
+	(*PlanningDefault)(nil),              // 161: ptah.provider.experimental.PlanningDefault
+	(*PlanningForeignKey)(nil),           // 162: ptah.provider.experimental.PlanningForeignKey
+	(*CapturedFacet)(nil),                // 163: ptah.provider.experimental.CapturedFacet
+	(*HistoryScope)(nil),                 // 164: ptah.provider.experimental.HistoryScope
+	(*HistoryRevision)(nil),              // 165: ptah.provider.experimental.HistoryRevision
+	(*ReadHistoryRequest)(nil),           // 166: ptah.provider.experimental.ReadHistoryRequest
+	(*HistorySnapshot)(nil),              // 167: ptah.provider.experimental.HistorySnapshot
+	(*PrepareHistoryRequest)(nil),        // 168: ptah.provider.experimental.PrepareHistoryRequest
+	(*MutateHistoryRequest)(nil),         // 169: ptah.provider.experimental.MutateHistoryRequest
+	(*HistoryResult)(nil),                // 170: ptah.provider.experimental.HistoryResult
+	(*LockScope)(nil),                    // 171: ptah.provider.experimental.LockScope
+	(*LockRequest)(nil),                  // 172: ptah.provider.experimental.LockRequest
+	(*LockResult)(nil),                   // 173: ptah.provider.experimental.LockResult
+	(*MetadataScope)(nil),                // 174: ptah.provider.experimental.MetadataScope
+	(*MigrationLogRecord)(nil),           // 175: ptah.provider.experimental.MigrationLogRecord
+	(*MigrationTagRecord)(nil),           // 176: ptah.provider.experimental.MigrationTagRecord
+	(*PrepareMetadataRequest)(nil),       // 177: ptah.provider.experimental.PrepareMetadataRequest
+	(*MutateMetadataRequest)(nil),        // 178: ptah.provider.experimental.MutateMetadataRequest
+	(*MetadataResult)(nil),               // 179: ptah.provider.experimental.MetadataResult
+	(*LookupMetadataTagRequest)(nil),     // 180: ptah.provider.experimental.LookupMetadataTagRequest
+	(*MetadataTagResult)(nil),            // 181: ptah.provider.experimental.MetadataTagResult
+	(*MetadataReadRequest)(nil),          // 182: ptah.provider.experimental.MetadataReadRequest
+	(*MetadataReadResult)(nil),           // 183: ptah.provider.experimental.MetadataReadResult
+	(*ReadMetadataPageRequest)(nil),      // 184: ptah.provider.experimental.ReadMetadataPageRequest
+	(*MetadataPage)(nil),                 // 185: ptah.provider.experimental.MetadataPage
+	(*ReservedObject)(nil),               // 186: ptah.provider.experimental.ReservedObject
+	(*PrepareTablesRequest)(nil),         // 187: ptah.provider.experimental.PrepareTablesRequest
+	(*TablePreparationInput)(nil),        // 188: ptah.provider.experimental.TablePreparationInput
+	(*PreparedTable)(nil),                // 189: ptah.provider.experimental.PreparedTable
+	(*PreparedTables)(nil),               // 190: ptah.provider.experimental.PreparedTables
+	(*ProjectTableCreationsRequest)(nil), // 191: ptah.provider.experimental.ProjectTableCreationsRequest
+	(*TableCreationInput)(nil),           // 192: ptah.provider.experimental.TableCreationInput
+	(*ProjectedTableCreation)(nil),       // 193: ptah.provider.experimental.ProjectedTableCreation
+	(*ProjectedTableCreations)(nil),      // 194: ptah.provider.experimental.ProjectedTableCreations
+	(*ValidateSchemaRequest)(nil),        // 195: ptah.provider.experimental.ValidateSchemaRequest
+	(*ValidationTable)(nil),              // 196: ptah.provider.experimental.ValidationTable
+	(*DeclaredNamespace)(nil),            // 197: ptah.provider.experimental.DeclaredNamespace
+	(*SchemaValidation)(nil),             // 198: ptah.provider.experimental.SchemaValidation
+	(*SchemaDiagnostic)(nil),             // 199: ptah.provider.experimental.SchemaDiagnostic
+	(*SchemaCoverageLimit)(nil),          // 200: ptah.provider.experimental.SchemaCoverageLimit
+	(*SchemaDependencies)(nil),           // 201: ptah.provider.experimental.SchemaDependencies
+	(*LintRule)(nil),                     // 202: ptah.provider.experimental.LintRule
+	(*LintSource)(nil),                   // 203: ptah.provider.experimental.LintSource
+	(*LintEffect)(nil),                   // 204: ptah.provider.experimental.LintEffect
+	(*LintStatement)(nil),                // 205: ptah.provider.experimental.LintStatement
+	(*LintFile)(nil),                     // 206: ptah.provider.experimental.LintFile
+	(*SplitLintRequest)(nil),             // 207: ptah.provider.experimental.SplitLintRequest
+	(*SplitLint)(nil),                    // 208: ptah.provider.experimental.SplitLint
+	(*AnnotateLintRequest)(nil),          // 209: ptah.provider.experimental.AnnotateLintRequest
+	(*LintAnnotation)(nil),               // 210: ptah.provider.experimental.LintAnnotation
+	(*LintAnnotations)(nil),              // 211: ptah.provider.experimental.LintAnnotations
+	(*AnnotatedLint)(nil),                // 212: ptah.provider.experimental.AnnotatedLint
+	(*CheckLintRequest)(nil),             // 213: ptah.provider.experimental.CheckLintRequest
+	(*LintSubject)(nil),                  // 214: ptah.provider.experimental.LintSubject
+	(*LintFinding)(nil),                  // 215: ptah.provider.experimental.LintFinding
+	(*CheckedLint)(nil),                  // 216: ptah.provider.experimental.CheckedLint
+	(*ProvisionDevRequest)(nil),          // 217: ptah.provider.experimental.ProvisionDevRequest
+	(*DevDatabaseRefusal)(nil),           // 218: ptah.provider.experimental.DevDatabaseRefusal
+	(*DevDatabase)(nil),                  // 219: ptah.provider.experimental.DevDatabase
+	(*ReleaseDevRequest)(nil),            // 220: ptah.provider.experimental.ReleaseDevRequest
+	nil,                                  // 221: ptah.provider.experimental.Session.CapabilitiesEntry
+	nil,                                  // 222: ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	nil,                                  // 223: ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	nil,                                  // 224: ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	nil,                                  // 225: ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	nil,                                  // 226: ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	nil,                                  // 227: ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	nil,                                  // 228: ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
+	nil,                                  // 229: ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
+	nil,                                  // 230: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
+	nil,                                  // 231: ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
 }
 var file_protocol_experimental_provider_proto_depIdxs = []int32{
-	42,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
-	45,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	88,  // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
-	44,  // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
-	103, // 4: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
-	127, // 5: ptah.provider.experimental.Engine.planning:type_name -> ptah.provider.experimental.ModelPlanning
-	200, // 6: ptah.provider.experimental.Engine.lint_rules:type_name -> ptah.provider.experimental.LintRule
-	43,  // 7: ptah.provider.experimental.Engine.release_lines:type_name -> ptah.provider.experimental.ReleaseLine
-	3,   // 8: ptah.provider.experimental.ReleaseLine.support:type_name -> ptah.provider.experimental.ReleaseLine.Support
-	4,   // 9: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
-	5,   // 10: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	5,   // 11: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	5,   // 12: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
-	6,   // 13: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
-	46,  // 14: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
-	45,  // 15: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
-	219, // 16: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
-	53,  // 17: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
-	47,  // 18: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
-	55,  // 19: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
-	95,  // 20: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	102, // 21: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
-	184, // 22: ptah.provider.experimental.Schema.reserved_objects:type_name -> ptah.provider.experimental.ReservedObject
-	46,  // 23: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
-	54,  // 24: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
-	47,  // 25: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
-	46,  // 26: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
-	47,  // 27: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
-	46,  // 28: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
-	7,   // 29: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
-	46,  // 30: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
-	53,  // 31: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
-	39,  // 32: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
-	54,  // 33: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
-	57,  // 34: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
-	74,  // 35: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	8,   // 36: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	46,  // 37: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
-	56,  // 38: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
-	220, // 39: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
-	47,  // 40: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
-	59,  // 41: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
-	59,  // 42: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
-	0,   // 43: ptah.provider.experimental.BeginTransactionRequest.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
-	0,   // 44: ptah.provider.experimental.Transaction.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
-	9,   // 45: ptah.provider.experimental.FinishTransactionRequest.action:type_name -> ptah.provider.experimental.FinishTransactionRequest.Action
-	10,  // 46: ptah.provider.experimental.TransactionResult.outcome:type_name -> ptah.provider.experimental.TransactionResult.Outcome
-	11,  // 47: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
-	69,  // 48: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
-	70,  // 49: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
-	12,  // 50: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
-	72,  // 51: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
-	13,  // 52: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	47,  // 53: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
-	74,  // 54: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
-	47,  // 55: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
-	46,  // 56: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
-	105, // 57: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
-	122, // 58: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
-	126, // 59: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
-	75,  // 60: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
-	75,  // 61: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
-	76,  // 62: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
-	39,  // 63: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
-	46,  // 64: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
-	78,  // 65: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
-	79,  // 66: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
-	77,  // 67: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
-	80,  // 68: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
-	76,  // 69: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
-	77,  // 70: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
-	82,  // 71: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
-	79,  // 72: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
-	81,  // 73: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
-	76,  // 74: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
-	76,  // 75: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
-	46,  // 76: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
-	44,  // 77: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
-	46,  // 78: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
-	79,  // 79: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
-	76,  // 80: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
-	77,  // 81: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
-	81,  // 82: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
-	14,  // 83: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
-	83,  // 84: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
-	84,  // 85: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
-	88,  // 86: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
-	86,  // 87: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
-	15,  // 88: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
-	13,  // 89: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	14,  // 90: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
-	16,  // 91: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
-	90,  // 92: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
-	90,  // 93: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
-	90,  // 94: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
-	90,  // 95: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
-	91,  // 96: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
-	89,  // 97: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	88,  // 98: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	89,  // 99: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	92,  // 100: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
-	46,  // 101: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
-	46,  // 102: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
-	89,  // 103: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	13,  // 104: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	93,  // 105: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
-	94,  // 106: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
-	85,  // 107: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
-	98,  // 108: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
-	95,  // 109: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
-	99,  // 110: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
-	100, // 111: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
-	17,  // 112: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
-	74,  // 113: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
-	87,  // 114: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
-	13,  // 115: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
-	13,  // 116: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
-	74,  // 117: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
-	91,  // 118: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
-	18,  // 119: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
-	104, // 120: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 121: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 122: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 123: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 124: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 125: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 126: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 127: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 128: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 129: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 130: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
-	104, // 131: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
-	106, // 132: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
-	89,  // 133: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	89,  // 134: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
-	107, // 135: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
-	88,  // 136: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
-	108, // 137: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
-	105, // 138: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	89,  // 139: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	109, // 140: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
-	110, // 141: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
-	105, // 142: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	74,  // 143: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
-	13,  // 144: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
-	112, // 145: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
-	111, // 146: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
-	105, // 147: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 148: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 149: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 150: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	45,  // 151: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
-	119, // 152: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
-	120, // 153: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	221, // 154: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
-	113, // 155: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
-	113, // 156: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
-	114, // 157: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
-	115, // 158: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
-	105, // 159: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 160: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
-	116, // 161: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
-	117, // 162: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
-	105, // 163: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
-	118, // 164: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	118, // 165: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
-	19,  // 166: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	20,  // 167: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	105, // 168: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	74,  // 169: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	105, // 170: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	113, // 171: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
-	123, // 172: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
-	124, // 173: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
-	19,  // 174: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	20,  // 175: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
-	105, // 176: ptah.provider.experimental.PlanningEffect.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	21,  // 177: ptah.provider.experimental.PlanningEffect.action:type_name -> ptah.provider.experimental.PlanningEffect.Action
-	129, // 178: ptah.provider.experimental.PlanningMetadata.effects:type_name -> ptah.provider.experimental.PlanningEffect
-	22,  // 179: ptah.provider.experimental.PlanningMetadata.transaction:type_name -> ptah.provider.experimental.PlanningMetadata.Transaction
-	19,  // 180: ptah.provider.experimental.PlanningMetadata.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
-	23,  // 181: ptah.provider.experimental.PlanningMetadata.placement:type_name -> ptah.provider.experimental.PlanningMetadata.Placement
-	128, // 182: ptah.provider.experimental.PlanningDependency.before:type_name -> ptah.provider.experimental.StepIdentity
-	128, // 183: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
-	128, // 184: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
-	130, // 185: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	158, // 186: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.PlanningColumn
-	105, // 187: ptah.provider.experimental.CommonPlanningStep.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
-	8,   // 188: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
-	105, // 189: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
-	74,  // 190: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
-	24,  // 191: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
-	128, // 192: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
-	130, // 193: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
-	133, // 194: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
-	134, // 195: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
-	131, // 196: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
-	128, // 197: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
-	128, // 198: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
-	105, // 199: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	74,  // 200: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
-	105, // 201: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	128, // 202: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
-	138, // 203: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
-	26,  // 204: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	25,  // 205: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
-	105, // 206: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 207: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	26,  // 208: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
-	146, // 209: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	154, // 210: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
-	120, // 211: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	222, // 212: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
-	137, // 213: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
-	142, // 214: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
-	141, // 215: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
-	141, // 216: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
-	132, // 217: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
-	135, // 218: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
-	138, // 219: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
-	139, // 220: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
-	136, // 221: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
-	140, // 222: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
-	113, // 223: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
-	113, // 224: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
-	147, // 225: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
-	148, // 226: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
-	149, // 227: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	152, // 228: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
-	151, // 229: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
-	153, // 230: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	145, // 231: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	150, // 232: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	223, // 233: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
-	105, // 234: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 235: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	155, // 236: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
-	156, // 237: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
-	157, // 238: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
-	153, // 239: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
-	145, // 240: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	105, // 241: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
-	150, // 242: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
-	224, // 243: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
-	105, // 244: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 245: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
-	159, // 246: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
-	160, // 247: ptah.provider.experimental.PlanningColumn.foreign_key:type_name -> ptah.provider.experimental.PlanningForeignKey
-	161, // 248: ptah.provider.experimental.PlanningColumn.facets:type_name -> ptah.provider.experimental.CapturedFacet
-	161, // 249: ptah.provider.experimental.PlanningForeignKey.facets:type_name -> ptah.provider.experimental.CapturedFacet
-	74,  // 250: ptah.provider.experimental.CapturedFacet.value:type_name -> ptah.provider.experimental.NormalizedValue
-	27,  // 251: ptah.provider.experimental.HistoryScope.format:type_name -> ptah.provider.experimental.HistoryScope.Format
-	28,  // 252: ptah.provider.experimental.HistoryRevision.state:type_name -> ptah.provider.experimental.HistoryRevision.State
-	29,  // 253: ptah.provider.experimental.HistoryRevision.direction:type_name -> ptah.provider.experimental.HistoryRevision.Direction
-	162, // 254: ptah.provider.experimental.ReadHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	162, // 255: ptah.provider.experimental.HistorySnapshot.scope:type_name -> ptah.provider.experimental.HistoryScope
-	163, // 256: ptah.provider.experimental.HistorySnapshot.revisions:type_name -> ptah.provider.experimental.HistoryRevision
-	162, // 257: ptah.provider.experimental.PrepareHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	162, // 258: ptah.provider.experimental.MutateHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
-	163, // 259: ptah.provider.experimental.MutateHistoryRequest.expected:type_name -> ptah.provider.experimental.HistoryRevision
-	163, // 260: ptah.provider.experimental.MutateHistoryRequest.replacement:type_name -> ptah.provider.experimental.HistoryRevision
-	162, // 261: ptah.provider.experimental.HistoryResult.scope:type_name -> ptah.provider.experimental.HistoryScope
-	30,  // 262: ptah.provider.experimental.HistoryResult.outcome:type_name -> ptah.provider.experimental.HistoryResult.Outcome
-	169, // 263: ptah.provider.experimental.LockRequest.scope:type_name -> ptah.provider.experimental.LockScope
-	169, // 264: ptah.provider.experimental.LockResult.scope:type_name -> ptah.provider.experimental.LockScope
-	31,  // 265: ptah.provider.experimental.LockResult.outcome:type_name -> ptah.provider.experimental.LockResult.Outcome
-	32,  // 266: ptah.provider.experimental.MetadataScope.kind:type_name -> ptah.provider.experimental.MetadataScope.Kind
-	172, // 267: ptah.provider.experimental.PrepareMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	172, // 268: ptah.provider.experimental.MutateMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	173, // 269: ptah.provider.experimental.MutateMetadataRequest.append_log:type_name -> ptah.provider.experimental.MigrationLogRecord
-	174, // 270: ptah.provider.experimental.MutateMetadataRequest.put_tag:type_name -> ptah.provider.experimental.MigrationTagRecord
-	172, // 271: ptah.provider.experimental.MetadataResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	33,  // 272: ptah.provider.experimental.MetadataResult.outcome:type_name -> ptah.provider.experimental.MetadataResult.Outcome
-	172, // 273: ptah.provider.experimental.LookupMetadataTagRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	172, // 274: ptah.provider.experimental.MetadataTagResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	174, // 275: ptah.provider.experimental.MetadataTagResult.record:type_name -> ptah.provider.experimental.MigrationTagRecord
-	172, // 276: ptah.provider.experimental.MetadataReadRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
-	172, // 277: ptah.provider.experimental.MetadataReadResult.scope:type_name -> ptah.provider.experimental.MetadataScope
-	180, // 278: ptah.provider.experimental.ReadMetadataPageRequest.reader:type_name -> ptah.provider.experimental.MetadataReadRequest
-	181, // 279: ptah.provider.experimental.MetadataPage.reader:type_name -> ptah.provider.experimental.MetadataReadResult
-	173, // 280: ptah.provider.experimental.MetadataPage.logs:type_name -> ptah.provider.experimental.MigrationLogRecord
-	174, // 281: ptah.provider.experimental.MetadataPage.tags:type_name -> ptah.provider.experimental.MigrationTagRecord
-	46,  // 282: ptah.provider.experimental.ReservedObject.object:type_name -> ptah.provider.experimental.Reference
-	46,  // 283: ptah.provider.experimental.ReservedObject.normalized_object:type_name -> ptah.provider.experimental.Reference
-	34,  // 284: ptah.provider.experimental.ReservedObject.purpose:type_name -> ptah.provider.experimental.ReservedObject.Purpose
-	120, // 285: ptah.provider.experimental.PrepareTablesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	225, // 286: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
-	186, // 287: ptah.provider.experimental.PrepareTablesRequest.tables:type_name -> ptah.provider.experimental.TablePreparationInput
-	105, // 288: ptah.provider.experimental.TablePreparationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	146, // 289: ptah.provider.experimental.TablePreparationInput.desired:type_name -> ptah.provider.experimental.DeclaredTable
-	154, // 290: ptah.provider.experimental.TablePreparationInput.current:type_name -> ptah.provider.experimental.ObservedTable
-	89,  // 291: ptah.provider.experimental.TablePreparationInput.current_knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
-	105, // 292: ptah.provider.experimental.PreparedTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	112, // 293: ptah.provider.experimental.PreparedTable.resolved_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	187, // 294: ptah.provider.experimental.PreparedTables.tables:type_name -> ptah.provider.experimental.PreparedTable
-	120, // 295: ptah.provider.experimental.ProjectTableCreationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	226, // 296: ptah.provider.experimental.ProjectTableCreationsRequest.capabilities:type_name -> ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
-	190, // 297: ptah.provider.experimental.ProjectTableCreationsRequest.tables:type_name -> ptah.provider.experimental.TableCreationInput
-	105, // 298: ptah.provider.experimental.TableCreationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	146, // 299: ptah.provider.experimental.TableCreationInput.declaration:type_name -> ptah.provider.experimental.DeclaredTable
-	105, // 300: ptah.provider.experimental.TableCreationInput.facet_owners:type_name -> ptah.provider.experimental.ComparisonIdentity
-	105, // 301: ptah.provider.experimental.ProjectedTableCreation.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	112, // 302: ptah.provider.experimental.ProjectedTableCreation.desired_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	112, // 303: ptah.provider.experimental.ProjectedTableCreation.observed_facets:type_name -> ptah.provider.experimental.ComparisonRecord
-	191, // 304: ptah.provider.experimental.ProjectedTableCreations.tables:type_name -> ptah.provider.experimental.ProjectedTableCreation
-	120, // 305: ptah.provider.experimental.ValidateSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
-	227, // 306: ptah.provider.experimental.ValidateSchemaRequest.capabilities:type_name -> ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
-	194, // 307: ptah.provider.experimental.ValidateSchemaRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
-	195, // 308: ptah.provider.experimental.ValidateSchemaRequest.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
-	149, // 309: ptah.provider.experimental.ValidateSchemaRequest.enums:type_name -> ptah.provider.experimental.DeclaredEnum
-	145, // 310: ptah.provider.experimental.ValidateSchemaRequest.features:type_name -> ptah.provider.experimental.CapturedFeatures
-	198, // 311: ptah.provider.experimental.ValidateSchemaRequest.not_described:type_name -> ptah.provider.experimental.SchemaCoverageLimit
-	228, // 312: ptah.provider.experimental.ValidateSchemaRequest.dependencies:type_name -> ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
-	105, // 313: ptah.provider.experimental.ValidationTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	146, // 314: ptah.provider.experimental.ValidationTable.declaration:type_name -> ptah.provider.experimental.DeclaredTable
-	105, // 315: ptah.provider.experimental.DeclaredNamespace.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
-	197, // 316: ptah.provider.experimental.SchemaValidation.diagnostics:type_name -> ptah.provider.experimental.SchemaDiagnostic
-	35,  // 317: ptah.provider.experimental.SchemaDiagnostic.code:type_name -> ptah.provider.experimental.SchemaDiagnostic.Code
-	36,  // 318: ptah.provider.experimental.LintRule.severity:type_name -> ptah.provider.experimental.LintRule.Severity
-	1,   // 319: ptah.provider.experimental.LintEffect.fact:type_name -> ptah.provider.experimental.LintFact
-	2,   // 320: ptah.provider.experimental.LintEffect.impact:type_name -> ptah.provider.experimental.LintImpact
-	202, // 321: ptah.provider.experimental.LintStatement.effects:type_name -> ptah.provider.experimental.LintEffect
-	203, // 322: ptah.provider.experimental.LintFile.statements:type_name -> ptah.provider.experimental.LintStatement
-	201, // 323: ptah.provider.experimental.SplitLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
-	204, // 324: ptah.provider.experimental.SplitLint.files:type_name -> ptah.provider.experimental.LintFile
-	1,   // 325: ptah.provider.experimental.SplitLint.judged:type_name -> ptah.provider.experimental.LintFact
-	1,   // 326: ptah.provider.experimental.AnnotateLintRequest.facts:type_name -> ptah.provider.experimental.LintFact
-	201, // 327: ptah.provider.experimental.AnnotateLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
-	204, // 328: ptah.provider.experimental.AnnotateLintRequest.files:type_name -> ptah.provider.experimental.LintFile
-	202, // 329: ptah.provider.experimental.LintAnnotation.effects:type_name -> ptah.provider.experimental.LintEffect
-	208, // 330: ptah.provider.experimental.LintAnnotations.statements:type_name -> ptah.provider.experimental.LintAnnotation
-	209, // 331: ptah.provider.experimental.AnnotatedLint.files:type_name -> ptah.provider.experimental.LintAnnotations
-	229, // 332: ptah.provider.experimental.CheckLintRequest.capabilities:type_name -> ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
-	204, // 333: ptah.provider.experimental.CheckLintRequest.files:type_name -> ptah.provider.experimental.LintFile
-	37,  // 334: ptah.provider.experimental.LintSubject.kind:type_name -> ptah.provider.experimental.LintSubject.Kind
-	212, // 335: ptah.provider.experimental.LintFinding.subjects:type_name -> ptah.provider.experimental.LintSubject
-	213, // 336: ptah.provider.experimental.CheckedLint.findings:type_name -> ptah.provider.experimental.LintFinding
-	38,  // 337: ptah.provider.experimental.DevDatabaseRefusal.kind:type_name -> ptah.provider.experimental.DevDatabaseRefusal.Kind
-	216, // 338: ptah.provider.experimental.DevDatabase.refusal:type_name -> ptah.provider.experimental.DevDatabaseRefusal
-	199, // 339: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry.value:type_name -> ptah.provider.experimental.SchemaDependencies
-	40,  // 340: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
-	48,  // 341: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
-	50,  // 342: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
-	51,  // 343: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
-	58,  // 344: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
-	67,  // 345: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
-	96,  // 346: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
-	71,  // 347: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
-	101, // 348: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
-	121, // 349: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
-	143, // 350: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
-	185, // 351: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
-	189, // 352: ptah.provider.experimental.Provider.ProjectTableCreations:input_type -> ptah.provider.experimental.ProjectTableCreationsRequest
-	193, // 353: ptah.provider.experimental.Provider.ValidateSchema:input_type -> ptah.provider.experimental.ValidateSchemaRequest
-	205, // 354: ptah.provider.experimental.Provider.SplitLintStatements:input_type -> ptah.provider.experimental.SplitLintRequest
-	207, // 355: ptah.provider.experimental.Provider.AnnotateLintStatements:input_type -> ptah.provider.experimental.AnnotateLintRequest
-	211, // 356: ptah.provider.experimental.Provider.CheckLintMigrations:input_type -> ptah.provider.experimental.CheckLintRequest
-	215, // 357: ptah.provider.experimental.Provider.ProvisionDevDatabase:input_type -> ptah.provider.experimental.ProvisionDevRequest
-	218, // 358: ptah.provider.experimental.Provider.ReleaseDevDatabase:input_type -> ptah.provider.experimental.ReleaseDevRequest
-	61,  // 359: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
-	62,  // 360: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
-	64,  // 361: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
-	164, // 362: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
-	166, // 363: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
-	167, // 364: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
-	175, // 365: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
-	176, // 366: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
-	178, // 367: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
-	180, // 368: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	182, // 369: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
-	180, // 370: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
-	170, // 371: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
-	170, // 372: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
-	170, // 373: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
-	41,  // 374: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
-	49,  // 375: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
-	39,  // 376: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
-	52,  // 377: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
-	60,  // 378: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
-	68,  // 379: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
-	97,  // 380: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
-	73,  // 381: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
-	73,  // 382: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
-	125, // 383: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
-	144, // 384: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
-	188, // 385: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
-	192, // 386: ptah.provider.experimental.Provider.ProjectTableCreations:output_type -> ptah.provider.experimental.ProjectedTableCreations
-	196, // 387: ptah.provider.experimental.Provider.ValidateSchema:output_type -> ptah.provider.experimental.SchemaValidation
-	206, // 388: ptah.provider.experimental.Provider.SplitLintStatements:output_type -> ptah.provider.experimental.SplitLint
-	210, // 389: ptah.provider.experimental.Provider.AnnotateLintStatements:output_type -> ptah.provider.experimental.AnnotatedLint
-	214, // 390: ptah.provider.experimental.Provider.CheckLintMigrations:output_type -> ptah.provider.experimental.CheckedLint
-	217, // 391: ptah.provider.experimental.Provider.ProvisionDevDatabase:output_type -> ptah.provider.experimental.DevDatabase
-	39,  // 392: ptah.provider.experimental.Provider.ReleaseDevDatabase:output_type -> ptah.provider.experimental.Empty
-	66,  // 393: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
-	63,  // 394: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
-	65,  // 395: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
-	165, // 396: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
-	168, // 397: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
-	168, // 398: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
-	177, // 399: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	177, // 400: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
-	179, // 401: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
-	181, // 402: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	183, // 403: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
-	181, // 404: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
-	171, // 405: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
-	171, // 406: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
-	171, // 407: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
-	374, // [374:408] is the sub-list for method output_type
-	340, // [340:374] is the sub-list for method input_type
-	340, // [340:340] is the sub-list for extension type_name
-	340, // [340:340] is the sub-list for extension extendee
-	0,   // [0:340] is the sub-list for field type_name
+	43,  // 0: ptah.provider.experimental.Description.engines:type_name -> ptah.provider.experimental.Engine
+	47,  // 1: ptah.provider.experimental.Engine.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	90,  // 2: ptah.provider.experimental.Engine.value_models:type_name -> ptah.provider.experimental.ValueModel
+	45,  // 3: ptah.provider.experimental.Engine.yaml_source_keys:type_name -> ptah.provider.experimental.YAMLSourceKey
+	105, // 4: ptah.provider.experimental.Engine.comparisons:type_name -> ptah.provider.experimental.ModelComparison
+	129, // 5: ptah.provider.experimental.Engine.planning:type_name -> ptah.provider.experimental.ModelPlanning
+	202, // 6: ptah.provider.experimental.Engine.lint_rules:type_name -> ptah.provider.experimental.LintRule
+	44,  // 7: ptah.provider.experimental.Engine.release_lines:type_name -> ptah.provider.experimental.ReleaseLine
+	46,  // 8: ptah.provider.experimental.Engine.go_source_directives:type_name -> ptah.provider.experimental.GoSourceDirective
+	3,   // 9: ptah.provider.experimental.ReleaseLine.support:type_name -> ptah.provider.experimental.ReleaseLine.Support
+	4,   // 10: ptah.provider.experimental.YAMLSourceKey.scope:type_name -> ptah.provider.experimental.YAMLSourceKey.Scope
+	5,   // 11: ptah.provider.experimental.GoSourceDirective.scope:type_name -> ptah.provider.experimental.GoSourceDirective.Scope
+	6,   // 12: ptah.provider.experimental.IdentifierRules.table_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	6,   // 13: ptah.provider.experimental.IdentifierRules.column_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	6,   // 14: ptah.provider.experimental.IdentifierRules.index_names:type_name -> ptah.provider.experimental.IdentifierRules.Comparison
+	7,   // 15: ptah.provider.experimental.IdentifierRules.index_namespace:type_name -> ptah.provider.experimental.IdentifierRules.IndexNamespace
+	48,  // 16: ptah.provider.experimental.Envelope.owner:type_name -> ptah.provider.experimental.Reference
+	47,  // 17: ptah.provider.experimental.Session.identifiers:type_name -> ptah.provider.experimental.IdentifierRules
+	221, // 18: ptah.provider.experimental.Session.capabilities:type_name -> ptah.provider.experimental.Session.CapabilitiesEntry
+	55,  // 19: ptah.provider.experimental.Schema.tables:type_name -> ptah.provider.experimental.Table
+	49,  // 20: ptah.provider.experimental.Schema.native_objects:type_name -> ptah.provider.experimental.Envelope
+	57,  // 21: ptah.provider.experimental.Schema.dispositions:type_name -> ptah.provider.experimental.Disposition
+	97,  // 22: ptah.provider.experimental.Schema.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	104, // 23: ptah.provider.experimental.Schema.scope_bindings:type_name -> ptah.provider.experimental.InspectionScopeBinding
+	186, // 24: ptah.provider.experimental.Schema.reserved_objects:type_name -> ptah.provider.experimental.ReservedObject
+	48,  // 25: ptah.provider.experimental.Table.identity:type_name -> ptah.provider.experimental.Reference
+	56,  // 26: ptah.provider.experimental.Table.columns:type_name -> ptah.provider.experimental.Column
+	49,  // 27: ptah.provider.experimental.Table.facets:type_name -> ptah.provider.experimental.Envelope
+	48,  // 28: ptah.provider.experimental.Table.normalized_identity:type_name -> ptah.provider.experimental.Reference
+	49,  // 29: ptah.provider.experimental.Column.facets:type_name -> ptah.provider.experimental.Envelope
+	48,  // 30: ptah.provider.experimental.Disposition.object:type_name -> ptah.provider.experimental.Reference
+	8,   // 31: ptah.provider.experimental.Disposition.state:type_name -> ptah.provider.experimental.Disposition.State
+	48,  // 32: ptah.provider.experimental.Change.object:type_name -> ptah.provider.experimental.Reference
+	55,  // 33: ptah.provider.experimental.Change.create_table:type_name -> ptah.provider.experimental.Table
+	40,  // 34: ptah.provider.experimental.Change.drop_table:type_name -> ptah.provider.experimental.Empty
+	56,  // 35: ptah.provider.experimental.Change.add_column:type_name -> ptah.provider.experimental.Column
+	59,  // 36: ptah.provider.experimental.Change.native:type_name -> ptah.provider.experimental.NativeOperation
+	76,  // 37: ptah.provider.experimental.NativeOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	9,   // 38: ptah.provider.experimental.NativeOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	48,  // 39: ptah.provider.experimental.NativeOperation.parent:type_name -> ptah.provider.experimental.Reference
+	58,  // 40: ptah.provider.experimental.RenderRequest.changes:type_name -> ptah.provider.experimental.Change
+	222, // 41: ptah.provider.experimental.RenderRequest.capabilities:type_name -> ptah.provider.experimental.RenderRequest.CapabilitiesEntry
+	49,  // 42: ptah.provider.experimental.Unit.native:type_name -> ptah.provider.experimental.Envelope
+	61,  // 43: ptah.provider.experimental.RenderResult.units:type_name -> ptah.provider.experimental.Unit
+	61,  // 44: ptah.provider.experimental.ExecuteRequest.units:type_name -> ptah.provider.experimental.Unit
+	0,   // 45: ptah.provider.experimental.BeginTransactionRequest.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
+	0,   // 46: ptah.provider.experimental.Transaction.isolation:type_name -> ptah.provider.experimental.TransactionIsolation
+	10,  // 47: ptah.provider.experimental.FinishTransactionRequest.action:type_name -> ptah.provider.experimental.FinishTransactionRequest.Action
+	11,  // 48: ptah.provider.experimental.TransactionResult.outcome:type_name -> ptah.provider.experimental.TransactionResult.Outcome
+	12,  // 49: ptah.provider.experimental.Execution.outcome:type_name -> ptah.provider.experimental.Execution.Outcome
+	71,  // 50: ptah.provider.experimental.SQLAnalysis.files:type_name -> ptah.provider.experimental.SQLFile
+	72,  // 51: ptah.provider.experimental.SQLFile.statements:type_name -> ptah.provider.experimental.SQLStatement
+	13,  // 52: ptah.provider.experimental.SQLStatement.safety:type_name -> ptah.provider.experimental.SQLStatement.Safety
+	74,  // 53: ptah.provider.experimental.NormalizeValuesRequest.values:type_name -> ptah.provider.experimental.ValueInput
+	14,  // 54: ptah.provider.experimental.ValueInput.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	49,  // 55: ptah.provider.experimental.ValueInput.value:type_name -> ptah.provider.experimental.Envelope
+	76,  // 56: ptah.provider.experimental.NormalizedValues.values:type_name -> ptah.provider.experimental.NormalizedValue
+	49,  // 57: ptah.provider.experimental.NormalizedValue.value:type_name -> ptah.provider.experimental.Envelope
+	48,  // 58: ptah.provider.experimental.NormalizedValue.normalized_owner:type_name -> ptah.provider.experimental.Reference
+	107, // 59: ptah.provider.experimental.NormalizedValue.required_objects:type_name -> ptah.provider.experimental.ComparisonIdentity
+	124, // 60: ptah.provider.experimental.NormalizedValue.change_semantics:type_name -> ptah.provider.experimental.ChangeSemantics
+	128, // 61: ptah.provider.experimental.NormalizedValue.operation_semantics:type_name -> ptah.provider.experimental.OperationSemantics
+	77,  // 62: ptah.provider.experimental.SourceSpan.start:type_name -> ptah.provider.experimental.SourcePosition
+	77,  // 63: ptah.provider.experimental.SourceSpan.end:type_name -> ptah.provider.experimental.SourcePosition
+	78,  // 64: ptah.provider.experimental.SourceValue.span:type_name -> ptah.provider.experimental.SourceSpan
+	40,  // 65: ptah.provider.experimental.SourceValue.null:type_name -> ptah.provider.experimental.Empty
+	48,  // 66: ptah.provider.experimental.SourceValue.reference:type_name -> ptah.provider.experimental.Reference
+	80,  // 67: ptah.provider.experimental.SourceValue.sequence:type_name -> ptah.provider.experimental.SourceSequence
+	81,  // 68: ptah.provider.experimental.SourceValue.mapping:type_name -> ptah.provider.experimental.SourceMapping
+	79,  // 69: ptah.provider.experimental.SourceSequence.values:type_name -> ptah.provider.experimental.SourceValue
+	82,  // 70: ptah.provider.experimental.SourceMapping.entries:type_name -> ptah.provider.experimental.SourceEntry
+	78,  // 71: ptah.provider.experimental.SourceEntry.key_span:type_name -> ptah.provider.experimental.SourceSpan
+	79,  // 72: ptah.provider.experimental.SourceEntry.value:type_name -> ptah.provider.experimental.SourceValue
+	84,  // 73: ptah.provider.experimental.SourceBlock.labels:type_name -> ptah.provider.experimental.SourceLabel
+	81,  // 74: ptah.provider.experimental.SourceBlock.attributes:type_name -> ptah.provider.experimental.SourceMapping
+	83,  // 75: ptah.provider.experimental.SourceBlock.children:type_name -> ptah.provider.experimental.SourceBlock
+	78,  // 76: ptah.provider.experimental.SourceBlock.span:type_name -> ptah.provider.experimental.SourceSpan
+	78,  // 77: ptah.provider.experimental.SourceLabel.span:type_name -> ptah.provider.experimental.SourceSpan
+	48,  // 78: ptah.provider.experimental.SourceBinding.object:type_name -> ptah.provider.experimental.Reference
+	45,  // 79: ptah.provider.experimental.SourceFragment.yaml_key:type_name -> ptah.provider.experimental.YAMLSourceKey
+	46,  // 80: ptah.provider.experimental.SourceFragment.go_directive:type_name -> ptah.provider.experimental.GoSourceDirective
+	48,  // 81: ptah.provider.experimental.SourceFragment.subject:type_name -> ptah.provider.experimental.Reference
+	81,  // 82: ptah.provider.experimental.SourceFragment.inherited_attributes:type_name -> ptah.provider.experimental.SourceMapping
+	78,  // 83: ptah.provider.experimental.SourceFragment.span:type_name -> ptah.provider.experimental.SourceSpan
+	79,  // 84: ptah.provider.experimental.SourceFragment.value:type_name -> ptah.provider.experimental.SourceValue
+	83,  // 85: ptah.provider.experimental.SourceFragment.block:type_name -> ptah.provider.experimental.SourceBlock
+	15,  // 86: ptah.provider.experimental.SourceDocument.format:type_name -> ptah.provider.experimental.SourceDocument.Format
+	85,  // 87: ptah.provider.experimental.SourceDocument.bindings:type_name -> ptah.provider.experimental.SourceBinding
+	86,  // 88: ptah.provider.experimental.SourceDocument.fragments:type_name -> ptah.provider.experimental.SourceFragment
+	90,  // 89: ptah.provider.experimental.SourceDocument.models:type_name -> ptah.provider.experimental.ValueModel
+	88,  // 90: ptah.provider.experimental.SourceTrace.path:type_name -> ptah.provider.experimental.SourcePathStep
+	16,  // 91: ptah.provider.experimental.SourceTrace.root:type_name -> ptah.provider.experimental.SourceTrace.Root
+	14,  // 92: ptah.provider.experimental.ValueModel.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	15,  // 93: ptah.provider.experimental.ValueModel.source_formats:type_name -> ptah.provider.experimental.SourceDocument.Format
+	17,  // 94: ptah.provider.experimental.ModelKnowledge.state:type_name -> ptah.provider.experimental.ModelKnowledge.State
+	92,  // 95: ptah.provider.experimental.ModelNamespace.database:type_name -> ptah.provider.experimental.NamespaceComponent
+	92,  // 96: ptah.provider.experimental.ModelNamespace.catalog:type_name -> ptah.provider.experimental.NamespaceComponent
+	92,  // 97: ptah.provider.experimental.ModelNamespace.schema:type_name -> ptah.provider.experimental.NamespaceComponent
+	92,  // 98: ptah.provider.experimental.ModelNamespace.path_prefix:type_name -> ptah.provider.experimental.NamespaceComponent
+	93,  // 99: ptah.provider.experimental.ModelNamespaceKnowledge.scope:type_name -> ptah.provider.experimental.ModelNamespace
+	91,  // 100: ptah.provider.experimental.ModelNamespaceKnowledge.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	90,  // 101: ptah.provider.experimental.ModelKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	91,  // 102: ptah.provider.experimental.ModelKindCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	94,  // 103: ptah.provider.experimental.ModelKindCoverage.regions:type_name -> ptah.provider.experimental.ModelNamespaceKnowledge
+	48,  // 104: ptah.provider.experimental.ModelSubjectCoverage.subject:type_name -> ptah.provider.experimental.Reference
+	48,  // 105: ptah.provider.experimental.ModelSubjectCoverage.normalized_subject:type_name -> ptah.provider.experimental.Reference
+	91,  // 106: ptah.provider.experimental.ModelSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	14,  // 107: ptah.provider.experimental.ModelCoverage.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	95,  // 108: ptah.provider.experimental.ModelCoverage.kinds:type_name -> ptah.provider.experimental.ModelKindCoverage
+	96,  // 109: ptah.provider.experimental.ModelCoverage.subjects:type_name -> ptah.provider.experimental.ModelSubjectCoverage
+	87,  // 110: ptah.provider.experimental.DecodeSourceRequest.documents:type_name -> ptah.provider.experimental.SourceDocument
+	100, // 111: ptah.provider.experimental.DecodedSource.documents:type_name -> ptah.provider.experimental.DecodedSourceDocument
+	97,  // 112: ptah.provider.experimental.DecodedSourceDocument.coverage:type_name -> ptah.provider.experimental.ModelCoverage
+	101, // 113: ptah.provider.experimental.DecodedSourceDocument.fragments:type_name -> ptah.provider.experimental.DecodedSourceFragment
+	102, // 114: ptah.provider.experimental.DecodedSourceFragment.values:type_name -> ptah.provider.experimental.SourceModelValue
+	18,  // 115: ptah.provider.experimental.SourceModelValue.placement:type_name -> ptah.provider.experimental.SourceModelValue.Placement
+	76,  // 116: ptah.provider.experimental.SourceModelValue.value:type_name -> ptah.provider.experimental.NormalizedValue
+	89,  // 117: ptah.provider.experimental.SourceModelValue.source:type_name -> ptah.provider.experimental.SourceTrace
+	14,  // 118: ptah.provider.experimental.ConvertValuesRequest.from:type_name -> ptah.provider.experimental.ValueInput.Representation
+	14,  // 119: ptah.provider.experimental.ConvertValuesRequest.to:type_name -> ptah.provider.experimental.ValueInput.Representation
+	76,  // 120: ptah.provider.experimental.ConvertValuesRequest.values:type_name -> ptah.provider.experimental.NormalizedValue
+	93,  // 121: ptah.provider.experimental.InspectionScopeBinding.namespaces:type_name -> ptah.provider.experimental.ModelNamespace
+	19,  // 122: ptah.provider.experimental.ModelComparison.placement:type_name -> ptah.provider.experimental.ModelComparison.Placement
+	106, // 123: ptah.provider.experimental.ComparisonIdentity.database:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 124: ptah.provider.experimental.ComparisonIdentity.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 125: ptah.provider.experimental.ComparisonIdentity.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 126: ptah.provider.experimental.ComparisonIdentity.path:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 127: ptah.provider.experimental.ComparisonIdentity.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 128: ptah.provider.experimental.ComparisonIdentity.name:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 129: ptah.provider.experimental.ComparisonIdentity.signature:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 130: ptah.provider.experimental.ComparisonNamespace.database:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 131: ptah.provider.experimental.ComparisonNamespace.catalog:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 132: ptah.provider.experimental.ComparisonNamespace.schema:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 133: ptah.provider.experimental.ComparisonNamespace.parent:type_name -> ptah.provider.experimental.ComparisonPart
+	106, // 134: ptah.provider.experimental.ComparisonNamespace.path_prefix:type_name -> ptah.provider.experimental.ComparisonPart
+	108, // 135: ptah.provider.experimental.ComparisonRegion.scope:type_name -> ptah.provider.experimental.ComparisonNamespace
+	91,  // 136: ptah.provider.experimental.ComparisonRegion.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	91,  // 137: ptah.provider.experimental.ComparisonKnowledgeSource.outside:type_name -> ptah.provider.experimental.ModelKnowledge
+	109, // 138: ptah.provider.experimental.ComparisonKnowledgeSource.regions:type_name -> ptah.provider.experimental.ComparisonRegion
+	90,  // 139: ptah.provider.experimental.ComparisonKindCoverage.model:type_name -> ptah.provider.experimental.ValueModel
+	110, // 140: ptah.provider.experimental.ComparisonKindCoverage.sources:type_name -> ptah.provider.experimental.ComparisonKnowledgeSource
+	107, // 141: ptah.provider.experimental.ComparisonSubjectCoverage.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	91,  // 142: ptah.provider.experimental.ComparisonSubjectCoverage.knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	111, // 143: ptah.provider.experimental.ComparisonCoverage.kinds:type_name -> ptah.provider.experimental.ComparisonKindCoverage
+	112, // 144: ptah.provider.experimental.ComparisonCoverage.subjects:type_name -> ptah.provider.experimental.ComparisonSubjectCoverage
+	107, // 145: ptah.provider.experimental.ComparisonRecord.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	76,  // 146: ptah.provider.experimental.ComparisonRecord.value:type_name -> ptah.provider.experimental.NormalizedValue
+	14,  // 147: ptah.provider.experimental.ComparisonState.representation:type_name -> ptah.provider.experimental.ValueInput.Representation
+	114, // 148: ptah.provider.experimental.ComparisonState.records:type_name -> ptah.provider.experimental.ComparisonRecord
+	113, // 149: ptah.provider.experimental.ComparisonState.coverage:type_name -> ptah.provider.experimental.ComparisonCoverage
+	107, // 150: ptah.provider.experimental.ComparisonParent.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 151: ptah.provider.experimental.RequestedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 152: ptah.provider.experimental.ComparisonColumn.table:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 153: ptah.provider.experimental.ComparisonConstraint.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	47,  // 154: ptah.provider.experimental.ComparisonIdentifiers.rules:type_name -> ptah.provider.experimental.IdentifierRules
+	121, // 155: ptah.provider.experimental.ComparisonIdentifiers.resolved_names:type_name -> ptah.provider.experimental.ResolvedIdentifier
+	122, // 156: ptah.provider.experimental.CompareModelsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	223, // 157: ptah.provider.experimental.CompareModelsRequest.capabilities:type_name -> ptah.provider.experimental.CompareModelsRequest.CapabilitiesEntry
+	115, // 158: ptah.provider.experimental.CompareModelsRequest.desired:type_name -> ptah.provider.experimental.ComparisonState
+	115, // 159: ptah.provider.experimental.CompareModelsRequest.current:type_name -> ptah.provider.experimental.ComparisonState
+	116, // 160: ptah.provider.experimental.CompareModelsRequest.parents:type_name -> ptah.provider.experimental.ComparisonParent
+	117, // 161: ptah.provider.experimental.CompareModelsRequest.requests:type_name -> ptah.provider.experimental.RequestedChange
+	107, // 162: ptah.provider.experimental.CompareModelsRequest.declared_relations:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 163: ptah.provider.experimental.CompareModelsRequest.declared_roles:type_name -> ptah.provider.experimental.ComparisonIdentity
+	118, // 164: ptah.provider.experimental.CompareModelsRequest.exclusions:type_name -> ptah.provider.experimental.ComparisonExclusion
+	119, // 165: ptah.provider.experimental.CompareModelsRequest.declared_columns:type_name -> ptah.provider.experimental.ComparisonColumn
+	107, // 166: ptah.provider.experimental.CompareModelsRequest.required:type_name -> ptah.provider.experimental.ComparisonIdentity
+	120, // 167: ptah.provider.experimental.CompareModelsRequest.desired_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	120, // 168: ptah.provider.experimental.CompareModelsRequest.current_constraints:type_name -> ptah.provider.experimental.ComparisonConstraint
+	20,  // 169: ptah.provider.experimental.ChangeSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	21,  // 170: ptah.provider.experimental.ChangeSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	107, // 171: ptah.provider.experimental.ComparedChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	76,  // 172: ptah.provider.experimental.ComparedChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	107, // 173: ptah.provider.experimental.ComparisonUndecided.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	115, // 174: ptah.provider.experimental.ComparedModels.desired:type_name -> ptah.provider.experimental.ComparisonState
+	125, // 175: ptah.provider.experimental.ComparedModels.changes:type_name -> ptah.provider.experimental.ComparedChange
+	126, // 176: ptah.provider.experimental.ComparedModels.undecided:type_name -> ptah.provider.experimental.ComparisonUndecided
+	20,  // 177: ptah.provider.experimental.OperationSemantics.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	21,  // 178: ptah.provider.experimental.OperationSemantics.access:type_name -> ptah.provider.experimental.ChangeSemantics.Access
+	107, // 179: ptah.provider.experimental.PlanningEffect.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	22,  // 180: ptah.provider.experimental.PlanningEffect.action:type_name -> ptah.provider.experimental.PlanningEffect.Action
+	131, // 181: ptah.provider.experimental.PlanningMetadata.effects:type_name -> ptah.provider.experimental.PlanningEffect
+	23,  // 182: ptah.provider.experimental.PlanningMetadata.transaction:type_name -> ptah.provider.experimental.PlanningMetadata.Transaction
+	20,  // 183: ptah.provider.experimental.PlanningMetadata.impact:type_name -> ptah.provider.experimental.ChangeSemantics.Impact
+	24,  // 184: ptah.provider.experimental.PlanningMetadata.placement:type_name -> ptah.provider.experimental.PlanningMetadata.Placement
+	130, // 185: ptah.provider.experimental.PlanningDependency.before:type_name -> ptah.provider.experimental.StepIdentity
+	130, // 186: ptah.provider.experimental.PlanningDependency.after:type_name -> ptah.provider.experimental.StepIdentity
+	130, // 187: ptah.provider.experimental.CommonPlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	132, // 188: ptah.provider.experimental.CommonPlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	160, // 189: ptah.provider.experimental.CommonPlanningStep.added_column:type_name -> ptah.provider.experimental.PlanningColumn
+	107, // 190: ptah.provider.experimental.CommonPlanningStep.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	9,   // 191: ptah.provider.experimental.PlanningOperation.role:type_name -> ptah.provider.experimental.NativeOperation.Role
+	107, // 192: ptah.provider.experimental.PlanningOperation.parent:type_name -> ptah.provider.experimental.ComparisonIdentity
+	76,  // 193: ptah.provider.experimental.PlanningOperation.value:type_name -> ptah.provider.experimental.NormalizedValue
+	25,  // 194: ptah.provider.experimental.PlanningOperation.phase:type_name -> ptah.provider.experimental.PlanningOperation.Phase
+	130, // 195: ptah.provider.experimental.PlanningStep.id:type_name -> ptah.provider.experimental.StepIdentity
+	132, // 196: ptah.provider.experimental.PlanningStep.metadata:type_name -> ptah.provider.experimental.PlanningMetadata
+	135, // 197: ptah.provider.experimental.PlanningStep.operation:type_name -> ptah.provider.experimental.PlanningOperation
+	136, // 198: ptah.provider.experimental.PlanningContribution.steps:type_name -> ptah.provider.experimental.PlanningStep
+	133, // 199: ptah.provider.experimental.PlanningContribution.dependencies:type_name -> ptah.provider.experimental.PlanningDependency
+	130, // 200: ptah.provider.experimental.PlanningRewrite.sources:type_name -> ptah.provider.experimental.StepIdentity
+	130, // 201: ptah.provider.experimental.PlanningRewrite.replacement:type_name -> ptah.provider.experimental.StepIdentity
+	107, // 202: ptah.provider.experimental.PlanningChange.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	76,  // 203: ptah.provider.experimental.PlanningChange.value:type_name -> ptah.provider.experimental.NormalizedValue
+	107, // 204: ptah.provider.experimental.PlanningReceipt.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	130, // 205: ptah.provider.experimental.PlanningReceipt.steps:type_name -> ptah.provider.experimental.StepIdentity
+	140, // 206: ptah.provider.experimental.PlanningParentReceipt.receipt:type_name -> ptah.provider.experimental.PlanningReceipt
+	27,  // 207: ptah.provider.experimental.PlanningParentReceipt.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	26,  // 208: ptah.provider.experimental.PlanningDiagnostic.code:type_name -> ptah.provider.experimental.PlanningDiagnostic.Code
+	107, // 209: ptah.provider.experimental.PlanningType.identity:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 210: ptah.provider.experimental.PlanningTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	27,  // 211: ptah.provider.experimental.PlanningTable.action:type_name -> ptah.provider.experimental.PlanningTable.Action
+	148, // 212: ptah.provider.experimental.PlanningTable.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	156, // 213: ptah.provider.experimental.PlanningTable.current:type_name -> ptah.provider.experimental.ObservedTable
+	122, // 214: ptah.provider.experimental.PlanFeaturesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	224, // 215: ptah.provider.experimental.PlanFeaturesRequest.capabilities:type_name -> ptah.provider.experimental.PlanFeaturesRequest.CapabilitiesEntry
+	139, // 216: ptah.provider.experimental.PlanFeaturesRequest.changes:type_name -> ptah.provider.experimental.PlanningChange
+	144, // 217: ptah.provider.experimental.PlanFeaturesRequest.tables:type_name -> ptah.provider.experimental.PlanningTable
+	143, // 218: ptah.provider.experimental.PlanFeaturesRequest.desired_types:type_name -> ptah.provider.experimental.PlanningType
+	143, // 219: ptah.provider.experimental.PlanFeaturesRequest.current_types:type_name -> ptah.provider.experimental.PlanningType
+	134, // 220: ptah.provider.experimental.PlanFeaturesRequest.common_steps:type_name -> ptah.provider.experimental.CommonPlanningStep
+	137, // 221: ptah.provider.experimental.PlannedFeatures.contributions:type_name -> ptah.provider.experimental.PlanningContribution
+	140, // 222: ptah.provider.experimental.PlannedFeatures.changes:type_name -> ptah.provider.experimental.PlanningReceipt
+	141, // 223: ptah.provider.experimental.PlannedFeatures.parents:type_name -> ptah.provider.experimental.PlanningParentReceipt
+	138, // 224: ptah.provider.experimental.PlannedFeatures.rewrites:type_name -> ptah.provider.experimental.PlanningRewrite
+	142, // 225: ptah.provider.experimental.PlannedFeatures.diagnostics:type_name -> ptah.provider.experimental.PlanningDiagnostic
+	115, // 226: ptah.provider.experimental.CapturedFeatures.objects:type_name -> ptah.provider.experimental.ComparisonState
+	115, // 227: ptah.provider.experimental.CapturedFeatures.facets:type_name -> ptah.provider.experimental.ComparisonState
+	149, // 228: ptah.provider.experimental.DeclaredTable.primary_key_parts:type_name -> ptah.provider.experimental.DeclaredKeyPart
+	150, // 229: ptah.provider.experimental.DeclaredTable.columns:type_name -> ptah.provider.experimental.DeclaredColumn
+	151, // 230: ptah.provider.experimental.DeclaredTable.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	154, // 231: ptah.provider.experimental.DeclaredTable.constraints:type_name -> ptah.provider.experimental.DeclaredConstraint
+	153, // 232: ptah.provider.experimental.DeclaredTable.indexes:type_name -> ptah.provider.experimental.DeclaredIndex
+	155, // 233: ptah.provider.experimental.DeclaredTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	147, // 234: ptah.provider.experimental.DeclaredTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	152, // 235: ptah.provider.experimental.DeclaredIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	225, // 236: ptah.provider.experimental.DeclaredIndex.storage_parameters:type_name -> ptah.provider.experimental.DeclaredIndex.StorageParametersEntry
+	107, // 237: ptah.provider.experimental.DeclaredIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 238: ptah.provider.experimental.DeclaredConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	157, // 239: ptah.provider.experimental.ObservedTable.columns:type_name -> ptah.provider.experimental.ObservedColumn
+	158, // 240: ptah.provider.experimental.ObservedTable.indexes:type_name -> ptah.provider.experimental.ObservedIndex
+	159, // 241: ptah.provider.experimental.ObservedTable.constraints:type_name -> ptah.provider.experimental.ObservedConstraint
+	155, // 242: ptah.provider.experimental.ObservedTable.triggers:type_name -> ptah.provider.experimental.CapturedTrigger
+	147, // 243: ptah.provider.experimental.ObservedTable.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	107, // 244: ptah.provider.experimental.ObservedIndex.managed_by:type_name -> ptah.provider.experimental.ComparisonIdentity
+	152, // 245: ptah.provider.experimental.ObservedIndex.parts:type_name -> ptah.provider.experimental.CapturedIndexPart
+	226, // 246: ptah.provider.experimental.ObservedIndex.storage_parameters:type_name -> ptah.provider.experimental.ObservedIndex.StorageParametersEntry
+	107, // 247: ptah.provider.experimental.ObservedIndex.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 248: ptah.provider.experimental.ObservedConstraint.requires:type_name -> ptah.provider.experimental.ComparisonIdentity
+	161, // 249: ptah.provider.experimental.PlanningColumn.default:type_name -> ptah.provider.experimental.PlanningDefault
+	162, // 250: ptah.provider.experimental.PlanningColumn.foreign_key:type_name -> ptah.provider.experimental.PlanningForeignKey
+	163, // 251: ptah.provider.experimental.PlanningColumn.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	163, // 252: ptah.provider.experimental.PlanningForeignKey.facets:type_name -> ptah.provider.experimental.CapturedFacet
+	76,  // 253: ptah.provider.experimental.CapturedFacet.value:type_name -> ptah.provider.experimental.NormalizedValue
+	28,  // 254: ptah.provider.experimental.HistoryScope.format:type_name -> ptah.provider.experimental.HistoryScope.Format
+	29,  // 255: ptah.provider.experimental.HistoryRevision.state:type_name -> ptah.provider.experimental.HistoryRevision.State
+	30,  // 256: ptah.provider.experimental.HistoryRevision.direction:type_name -> ptah.provider.experimental.HistoryRevision.Direction
+	164, // 257: ptah.provider.experimental.ReadHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	164, // 258: ptah.provider.experimental.HistorySnapshot.scope:type_name -> ptah.provider.experimental.HistoryScope
+	165, // 259: ptah.provider.experimental.HistorySnapshot.revisions:type_name -> ptah.provider.experimental.HistoryRevision
+	164, // 260: ptah.provider.experimental.PrepareHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	164, // 261: ptah.provider.experimental.MutateHistoryRequest.scope:type_name -> ptah.provider.experimental.HistoryScope
+	165, // 262: ptah.provider.experimental.MutateHistoryRequest.expected:type_name -> ptah.provider.experimental.HistoryRevision
+	165, // 263: ptah.provider.experimental.MutateHistoryRequest.replacement:type_name -> ptah.provider.experimental.HistoryRevision
+	164, // 264: ptah.provider.experimental.HistoryResult.scope:type_name -> ptah.provider.experimental.HistoryScope
+	31,  // 265: ptah.provider.experimental.HistoryResult.outcome:type_name -> ptah.provider.experimental.HistoryResult.Outcome
+	171, // 266: ptah.provider.experimental.LockRequest.scope:type_name -> ptah.provider.experimental.LockScope
+	171, // 267: ptah.provider.experimental.LockResult.scope:type_name -> ptah.provider.experimental.LockScope
+	32,  // 268: ptah.provider.experimental.LockResult.outcome:type_name -> ptah.provider.experimental.LockResult.Outcome
+	33,  // 269: ptah.provider.experimental.MetadataScope.kind:type_name -> ptah.provider.experimental.MetadataScope.Kind
+	174, // 270: ptah.provider.experimental.PrepareMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	174, // 271: ptah.provider.experimental.MutateMetadataRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	175, // 272: ptah.provider.experimental.MutateMetadataRequest.append_log:type_name -> ptah.provider.experimental.MigrationLogRecord
+	176, // 273: ptah.provider.experimental.MutateMetadataRequest.put_tag:type_name -> ptah.provider.experimental.MigrationTagRecord
+	174, // 274: ptah.provider.experimental.MetadataResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	34,  // 275: ptah.provider.experimental.MetadataResult.outcome:type_name -> ptah.provider.experimental.MetadataResult.Outcome
+	174, // 276: ptah.provider.experimental.LookupMetadataTagRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	174, // 277: ptah.provider.experimental.MetadataTagResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	176, // 278: ptah.provider.experimental.MetadataTagResult.record:type_name -> ptah.provider.experimental.MigrationTagRecord
+	174, // 279: ptah.provider.experimental.MetadataReadRequest.scope:type_name -> ptah.provider.experimental.MetadataScope
+	174, // 280: ptah.provider.experimental.MetadataReadResult.scope:type_name -> ptah.provider.experimental.MetadataScope
+	182, // 281: ptah.provider.experimental.ReadMetadataPageRequest.reader:type_name -> ptah.provider.experimental.MetadataReadRequest
+	183, // 282: ptah.provider.experimental.MetadataPage.reader:type_name -> ptah.provider.experimental.MetadataReadResult
+	175, // 283: ptah.provider.experimental.MetadataPage.logs:type_name -> ptah.provider.experimental.MigrationLogRecord
+	176, // 284: ptah.provider.experimental.MetadataPage.tags:type_name -> ptah.provider.experimental.MigrationTagRecord
+	48,  // 285: ptah.provider.experimental.ReservedObject.object:type_name -> ptah.provider.experimental.Reference
+	48,  // 286: ptah.provider.experimental.ReservedObject.normalized_object:type_name -> ptah.provider.experimental.Reference
+	35,  // 287: ptah.provider.experimental.ReservedObject.purpose:type_name -> ptah.provider.experimental.ReservedObject.Purpose
+	122, // 288: ptah.provider.experimental.PrepareTablesRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	227, // 289: ptah.provider.experimental.PrepareTablesRequest.capabilities:type_name -> ptah.provider.experimental.PrepareTablesRequest.CapabilitiesEntry
+	188, // 290: ptah.provider.experimental.PrepareTablesRequest.tables:type_name -> ptah.provider.experimental.TablePreparationInput
+	107, // 291: ptah.provider.experimental.TablePreparationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	148, // 292: ptah.provider.experimental.TablePreparationInput.desired:type_name -> ptah.provider.experimental.DeclaredTable
+	156, // 293: ptah.provider.experimental.TablePreparationInput.current:type_name -> ptah.provider.experimental.ObservedTable
+	91,  // 294: ptah.provider.experimental.TablePreparationInput.current_knowledge:type_name -> ptah.provider.experimental.ModelKnowledge
+	107, // 295: ptah.provider.experimental.PreparedTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	114, // 296: ptah.provider.experimental.PreparedTable.resolved_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	189, // 297: ptah.provider.experimental.PreparedTables.tables:type_name -> ptah.provider.experimental.PreparedTable
+	122, // 298: ptah.provider.experimental.ProjectTableCreationsRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	228, // 299: ptah.provider.experimental.ProjectTableCreationsRequest.capabilities:type_name -> ptah.provider.experimental.ProjectTableCreationsRequest.CapabilitiesEntry
+	192, // 300: ptah.provider.experimental.ProjectTableCreationsRequest.tables:type_name -> ptah.provider.experimental.TableCreationInput
+	107, // 301: ptah.provider.experimental.TableCreationInput.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	148, // 302: ptah.provider.experimental.TableCreationInput.declaration:type_name -> ptah.provider.experimental.DeclaredTable
+	107, // 303: ptah.provider.experimental.TableCreationInput.facet_owners:type_name -> ptah.provider.experimental.ComparisonIdentity
+	107, // 304: ptah.provider.experimental.ProjectedTableCreation.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	114, // 305: ptah.provider.experimental.ProjectedTableCreation.desired_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	114, // 306: ptah.provider.experimental.ProjectedTableCreation.observed_facets:type_name -> ptah.provider.experimental.ComparisonRecord
+	193, // 307: ptah.provider.experimental.ProjectedTableCreations.tables:type_name -> ptah.provider.experimental.ProjectedTableCreation
+	122, // 308: ptah.provider.experimental.ValidateSchemaRequest.identifiers:type_name -> ptah.provider.experimental.ComparisonIdentifiers
+	229, // 309: ptah.provider.experimental.ValidateSchemaRequest.capabilities:type_name -> ptah.provider.experimental.ValidateSchemaRequest.CapabilitiesEntry
+	196, // 310: ptah.provider.experimental.ValidateSchemaRequest.tables:type_name -> ptah.provider.experimental.ValidationTable
+	197, // 311: ptah.provider.experimental.ValidateSchemaRequest.namespaces:type_name -> ptah.provider.experimental.DeclaredNamespace
+	151, // 312: ptah.provider.experimental.ValidateSchemaRequest.enums:type_name -> ptah.provider.experimental.DeclaredEnum
+	147, // 313: ptah.provider.experimental.ValidateSchemaRequest.features:type_name -> ptah.provider.experimental.CapturedFeatures
+	200, // 314: ptah.provider.experimental.ValidateSchemaRequest.not_described:type_name -> ptah.provider.experimental.SchemaCoverageLimit
+	230, // 315: ptah.provider.experimental.ValidateSchemaRequest.dependencies:type_name -> ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry
+	107, // 316: ptah.provider.experimental.ValidationTable.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	148, // 317: ptah.provider.experimental.ValidationTable.declaration:type_name -> ptah.provider.experimental.DeclaredTable
+	107, // 318: ptah.provider.experimental.DeclaredNamespace.subject:type_name -> ptah.provider.experimental.ComparisonIdentity
+	199, // 319: ptah.provider.experimental.SchemaValidation.diagnostics:type_name -> ptah.provider.experimental.SchemaDiagnostic
+	36,  // 320: ptah.provider.experimental.SchemaDiagnostic.code:type_name -> ptah.provider.experimental.SchemaDiagnostic.Code
+	37,  // 321: ptah.provider.experimental.LintRule.severity:type_name -> ptah.provider.experimental.LintRule.Severity
+	1,   // 322: ptah.provider.experimental.LintEffect.fact:type_name -> ptah.provider.experimental.LintFact
+	2,   // 323: ptah.provider.experimental.LintEffect.impact:type_name -> ptah.provider.experimental.LintImpact
+	204, // 324: ptah.provider.experimental.LintStatement.effects:type_name -> ptah.provider.experimental.LintEffect
+	205, // 325: ptah.provider.experimental.LintFile.statements:type_name -> ptah.provider.experimental.LintStatement
+	203, // 326: ptah.provider.experimental.SplitLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
+	206, // 327: ptah.provider.experimental.SplitLint.files:type_name -> ptah.provider.experimental.LintFile
+	1,   // 328: ptah.provider.experimental.SplitLint.judged:type_name -> ptah.provider.experimental.LintFact
+	1,   // 329: ptah.provider.experimental.AnnotateLintRequest.facts:type_name -> ptah.provider.experimental.LintFact
+	203, // 330: ptah.provider.experimental.AnnotateLintRequest.sources:type_name -> ptah.provider.experimental.LintSource
+	206, // 331: ptah.provider.experimental.AnnotateLintRequest.files:type_name -> ptah.provider.experimental.LintFile
+	204, // 332: ptah.provider.experimental.LintAnnotation.effects:type_name -> ptah.provider.experimental.LintEffect
+	210, // 333: ptah.provider.experimental.LintAnnotations.statements:type_name -> ptah.provider.experimental.LintAnnotation
+	211, // 334: ptah.provider.experimental.AnnotatedLint.files:type_name -> ptah.provider.experimental.LintAnnotations
+	231, // 335: ptah.provider.experimental.CheckLintRequest.capabilities:type_name -> ptah.provider.experimental.CheckLintRequest.CapabilitiesEntry
+	206, // 336: ptah.provider.experimental.CheckLintRequest.files:type_name -> ptah.provider.experimental.LintFile
+	38,  // 337: ptah.provider.experimental.LintSubject.kind:type_name -> ptah.provider.experimental.LintSubject.Kind
+	214, // 338: ptah.provider.experimental.LintFinding.subjects:type_name -> ptah.provider.experimental.LintSubject
+	215, // 339: ptah.provider.experimental.CheckedLint.findings:type_name -> ptah.provider.experimental.LintFinding
+	39,  // 340: ptah.provider.experimental.DevDatabaseRefusal.kind:type_name -> ptah.provider.experimental.DevDatabaseRefusal.Kind
+	218, // 341: ptah.provider.experimental.DevDatabase.refusal:type_name -> ptah.provider.experimental.DevDatabaseRefusal
+	201, // 342: ptah.provider.experimental.ValidateSchemaRequest.DependenciesEntry.value:type_name -> ptah.provider.experimental.SchemaDependencies
+	41,  // 343: ptah.provider.experimental.Provider.Describe:input_type -> ptah.provider.experimental.DescribeRequest
+	50,  // 344: ptah.provider.experimental.Provider.Open:input_type -> ptah.provider.experimental.OpenRequest
+	52,  // 345: ptah.provider.experimental.Provider.Close:input_type -> ptah.provider.experimental.CloseRequest
+	53,  // 346: ptah.provider.experimental.Provider.Inspect:input_type -> ptah.provider.experimental.InspectRequest
+	60,  // 347: ptah.provider.experimental.Provider.Render:input_type -> ptah.provider.experimental.RenderRequest
+	69,  // 348: ptah.provider.experimental.Provider.AnalyzeSQL:input_type -> ptah.provider.experimental.AnalyzeSQLRequest
+	98,  // 349: ptah.provider.experimental.Provider.DecodeSource:input_type -> ptah.provider.experimental.DecodeSourceRequest
+	73,  // 350: ptah.provider.experimental.Provider.NormalizeValues:input_type -> ptah.provider.experimental.NormalizeValuesRequest
+	103, // 351: ptah.provider.experimental.Provider.ConvertValues:input_type -> ptah.provider.experimental.ConvertValuesRequest
+	123, // 352: ptah.provider.experimental.Provider.CompareModels:input_type -> ptah.provider.experimental.CompareModelsRequest
+	145, // 353: ptah.provider.experimental.Provider.PlanFeatures:input_type -> ptah.provider.experimental.PlanFeaturesRequest
+	187, // 354: ptah.provider.experimental.Provider.PrepareTables:input_type -> ptah.provider.experimental.PrepareTablesRequest
+	191, // 355: ptah.provider.experimental.Provider.ProjectTableCreations:input_type -> ptah.provider.experimental.ProjectTableCreationsRequest
+	195, // 356: ptah.provider.experimental.Provider.ValidateSchema:input_type -> ptah.provider.experimental.ValidateSchemaRequest
+	207, // 357: ptah.provider.experimental.Provider.SplitLintStatements:input_type -> ptah.provider.experimental.SplitLintRequest
+	209, // 358: ptah.provider.experimental.Provider.AnnotateLintStatements:input_type -> ptah.provider.experimental.AnnotateLintRequest
+	213, // 359: ptah.provider.experimental.Provider.CheckLintMigrations:input_type -> ptah.provider.experimental.CheckLintRequest
+	217, // 360: ptah.provider.experimental.Provider.ProvisionDevDatabase:input_type -> ptah.provider.experimental.ProvisionDevRequest
+	220, // 361: ptah.provider.experimental.Provider.ReleaseDevDatabase:input_type -> ptah.provider.experimental.ReleaseDevRequest
+	63,  // 362: ptah.provider.experimental.Provider.Execute:input_type -> ptah.provider.experimental.ExecuteRequest
+	64,  // 363: ptah.provider.experimental.Provider.BeginTransaction:input_type -> ptah.provider.experimental.BeginTransactionRequest
+	66,  // 364: ptah.provider.experimental.Provider.FinishTransaction:input_type -> ptah.provider.experimental.FinishTransactionRequest
+	166, // 365: ptah.provider.experimental.Provider.ReadHistory:input_type -> ptah.provider.experimental.ReadHistoryRequest
+	168, // 366: ptah.provider.experimental.Provider.PrepareHistory:input_type -> ptah.provider.experimental.PrepareHistoryRequest
+	169, // 367: ptah.provider.experimental.Provider.MutateHistory:input_type -> ptah.provider.experimental.MutateHistoryRequest
+	177, // 368: ptah.provider.experimental.Provider.PrepareMetadata:input_type -> ptah.provider.experimental.PrepareMetadataRequest
+	178, // 369: ptah.provider.experimental.Provider.MutateMetadata:input_type -> ptah.provider.experimental.MutateMetadataRequest
+	180, // 370: ptah.provider.experimental.Provider.LookupMetadataTag:input_type -> ptah.provider.experimental.LookupMetadataTagRequest
+	182, // 371: ptah.provider.experimental.Provider.OpenMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	184, // 372: ptah.provider.experimental.Provider.ReadMetadataPage:input_type -> ptah.provider.experimental.ReadMetadataPageRequest
+	182, // 373: ptah.provider.experimental.Provider.CloseMetadataRead:input_type -> ptah.provider.experimental.MetadataReadRequest
+	172, // 374: ptah.provider.experimental.Provider.TryLock:input_type -> ptah.provider.experimental.LockRequest
+	172, // 375: ptah.provider.experimental.Provider.CheckLock:input_type -> ptah.provider.experimental.LockRequest
+	172, // 376: ptah.provider.experimental.Provider.ReleaseLock:input_type -> ptah.provider.experimental.LockRequest
+	42,  // 377: ptah.provider.experimental.Provider.Describe:output_type -> ptah.provider.experimental.Description
+	51,  // 378: ptah.provider.experimental.Provider.Open:output_type -> ptah.provider.experimental.Session
+	40,  // 379: ptah.provider.experimental.Provider.Close:output_type -> ptah.provider.experimental.Empty
+	54,  // 380: ptah.provider.experimental.Provider.Inspect:output_type -> ptah.provider.experimental.Schema
+	62,  // 381: ptah.provider.experimental.Provider.Render:output_type -> ptah.provider.experimental.RenderResult
+	70,  // 382: ptah.provider.experimental.Provider.AnalyzeSQL:output_type -> ptah.provider.experimental.SQLAnalysis
+	99,  // 383: ptah.provider.experimental.Provider.DecodeSource:output_type -> ptah.provider.experimental.DecodedSource
+	75,  // 384: ptah.provider.experimental.Provider.NormalizeValues:output_type -> ptah.provider.experimental.NormalizedValues
+	75,  // 385: ptah.provider.experimental.Provider.ConvertValues:output_type -> ptah.provider.experimental.NormalizedValues
+	127, // 386: ptah.provider.experimental.Provider.CompareModels:output_type -> ptah.provider.experimental.ComparedModels
+	146, // 387: ptah.provider.experimental.Provider.PlanFeatures:output_type -> ptah.provider.experimental.PlannedFeatures
+	190, // 388: ptah.provider.experimental.Provider.PrepareTables:output_type -> ptah.provider.experimental.PreparedTables
+	194, // 389: ptah.provider.experimental.Provider.ProjectTableCreations:output_type -> ptah.provider.experimental.ProjectedTableCreations
+	198, // 390: ptah.provider.experimental.Provider.ValidateSchema:output_type -> ptah.provider.experimental.SchemaValidation
+	208, // 391: ptah.provider.experimental.Provider.SplitLintStatements:output_type -> ptah.provider.experimental.SplitLint
+	212, // 392: ptah.provider.experimental.Provider.AnnotateLintStatements:output_type -> ptah.provider.experimental.AnnotatedLint
+	216, // 393: ptah.provider.experimental.Provider.CheckLintMigrations:output_type -> ptah.provider.experimental.CheckedLint
+	219, // 394: ptah.provider.experimental.Provider.ProvisionDevDatabase:output_type -> ptah.provider.experimental.DevDatabase
+	40,  // 395: ptah.provider.experimental.Provider.ReleaseDevDatabase:output_type -> ptah.provider.experimental.Empty
+	68,  // 396: ptah.provider.experimental.Provider.Execute:output_type -> ptah.provider.experimental.Execution
+	65,  // 397: ptah.provider.experimental.Provider.BeginTransaction:output_type -> ptah.provider.experimental.Transaction
+	67,  // 398: ptah.provider.experimental.Provider.FinishTransaction:output_type -> ptah.provider.experimental.TransactionResult
+	167, // 399: ptah.provider.experimental.Provider.ReadHistory:output_type -> ptah.provider.experimental.HistorySnapshot
+	170, // 400: ptah.provider.experimental.Provider.PrepareHistory:output_type -> ptah.provider.experimental.HistoryResult
+	170, // 401: ptah.provider.experimental.Provider.MutateHistory:output_type -> ptah.provider.experimental.HistoryResult
+	179, // 402: ptah.provider.experimental.Provider.PrepareMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	179, // 403: ptah.provider.experimental.Provider.MutateMetadata:output_type -> ptah.provider.experimental.MetadataResult
+	181, // 404: ptah.provider.experimental.Provider.LookupMetadataTag:output_type -> ptah.provider.experimental.MetadataTagResult
+	183, // 405: ptah.provider.experimental.Provider.OpenMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	185, // 406: ptah.provider.experimental.Provider.ReadMetadataPage:output_type -> ptah.provider.experimental.MetadataPage
+	183, // 407: ptah.provider.experimental.Provider.CloseMetadataRead:output_type -> ptah.provider.experimental.MetadataReadResult
+	173, // 408: ptah.provider.experimental.Provider.TryLock:output_type -> ptah.provider.experimental.LockResult
+	173, // 409: ptah.provider.experimental.Provider.CheckLock:output_type -> ptah.provider.experimental.LockResult
+	173, // 410: ptah.provider.experimental.Provider.ReleaseLock:output_type -> ptah.provider.experimental.LockResult
+	377, // [377:411] is the sub-list for method output_type
+	343, // [343:377] is the sub-list for method input_type
+	343, // [343:343] is the sub-list for extension type_name
+	343, // [343:343] is the sub-list for extension extendee
+	0,   // [0:343] is the sub-list for field type_name
 }
 
 func init() { file_protocol_experimental_provider_proto_init() }
@@ -18674,19 +18851,19 @@ func file_protocol_experimental_provider_proto_init() {
 	if File_protocol_experimental_provider_proto != nil {
 		return
 	}
-	file_protocol_experimental_provider_proto_msgTypes[15].OneofWrappers = []any{}
-	file_protocol_experimental_provider_proto_msgTypes[17].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[16].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[18].OneofWrappers = []any{
 		(*Change_CreateTable)(nil),
 		(*Change_DropTable)(nil),
 		(*Change_AddColumn)(nil),
 		(*Change_DropColumn)(nil),
 		(*Change_Native)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[20].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[21].OneofWrappers = []any{
 		(*Unit_Sql)(nil),
 		(*Unit_Native)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[38].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[39].OneofWrappers = []any{
 		(*SourceValue_Null)(nil),
 		(*SourceValue_Boolean)(nil),
 		(*SourceValue_Text)(nil),
@@ -18696,29 +18873,29 @@ func file_protocol_experimental_provider_proto_init() {
 		(*SourceValue_Sequence)(nil),
 		(*SourceValue_Mapping)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[45].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[46].OneofWrappers = []any{
 		(*SourceFragment_Value)(nil),
 		(*SourceFragment_Block)(nil),
 		(*SourceFragment_Sql)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[47].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[48].OneofWrappers = []any{
 		(*SourcePathStep_Key)(nil),
 		(*SourcePathStep_Index)(nil),
 		(*SourcePathStep_Attribute)(nil),
 		(*SourcePathStep_Child)(nil),
 		(*SourcePathStep_Label)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[83].OneofWrappers = []any{}
-	file_protocol_experimental_provider_proto_msgTypes[101].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[84].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[102].OneofWrappers = []any{
 		(*PlanningDiagnostic_Change)(nil),
 		(*PlanningDiagnostic_Parent)(nil),
 	}
-	file_protocol_experimental_provider_proto_msgTypes[112].OneofWrappers = []any{}
 	file_protocol_experimental_provider_proto_msgTypes[113].OneofWrappers = []any{}
-	file_protocol_experimental_provider_proto_msgTypes[116].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[114].OneofWrappers = []any{}
 	file_protocol_experimental_provider_proto_msgTypes[117].OneofWrappers = []any{}
 	file_protocol_experimental_provider_proto_msgTypes[118].OneofWrappers = []any{}
-	file_protocol_experimental_provider_proto_msgTypes[137].OneofWrappers = []any{
+	file_protocol_experimental_provider_proto_msgTypes[119].OneofWrappers = []any{}
+	file_protocol_experimental_provider_proto_msgTypes[138].OneofWrappers = []any{
 		(*MutateMetadataRequest_AppendLog)(nil),
 		(*MutateMetadataRequest_PutTag)(nil),
 		(*MutateMetadataRequest_DeleteTag)(nil),
@@ -18728,8 +18905,8 @@ func file_protocol_experimental_provider_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_experimental_provider_proto_rawDesc), len(file_protocol_experimental_provider_proto_rawDesc)),
-			NumEnums:      39,
-			NumMessages:   191,
+			NumEnums:      40,
+			NumMessages:   192,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

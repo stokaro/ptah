@@ -99,8 +99,8 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 	if err := w.node(0); err != nil {
 		return err
 	}
-	if format != protocol.SourceDocument_YAML && fragment.GetYamlKey() != nil {
-		return sourceError("YAML grammar claim on another source format")
+	if err := foreignGrammarClaim(format, fragment); err != nil {
+		return err
 	}
 	if err := w.span(fragment.GetSpan(), authoredSource); err != nil {
 		return err
@@ -132,6 +132,17 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 	default:
 		return sourceError("fragment content is missing")
 	}
+}
+
+// foreignGrammarClaim refuses a grammar claim on a source format it does not name.
+func foreignGrammarClaim(format protocol.SourceDocument_Format, fragment *protocol.SourceFragment) error {
+	if format != protocol.SourceDocument_YAML && fragment.GetYamlKey() != nil {
+		return sourceError("YAML grammar claim on another source format")
+	}
+	if format != protocol.SourceDocument_GO_ANNOTATIONS && fragment.GetGoDirective() != nil {
+		return sourceError("Go directive claim on another source format")
+	}
+	return nil
 }
 
 func (w *sourceWalk) span(span *protocol.SourceSpan, origin sourceOrigin) error {
