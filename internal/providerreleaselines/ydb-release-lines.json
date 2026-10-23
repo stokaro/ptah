@@ -1,0 +1,56 @@
+{
+  "provider": "github.com/stokaro/ptah-ydb-plugin",
+  "engines": [
+    {
+      "engine": "ydb",
+      "lines": [
+        {
+          "line": "26.2",
+          "label": "YDB 26.2",
+          "support": "certified",
+          "image": "ydbplatform/local-ydb:26.2",
+          "note": "The current release, and the first line that sets and drops a column default in place."
+        },
+        {
+          "line": "26.1",
+          "label": "YDB 26.1",
+          "support": "best_effort",
+          "image": "ydbplatform/local-ydb:26.1",
+          "unprobed": "YDB publishes no support period for its open-source lines, and the test suite runs only the newest and the oldest certified line; the others were measured by hand once.",
+          "note": "The first line that adds a column with a default to a table holding rows."
+        },
+        {
+          "line": "25.4",
+          "label": "YDB 25.4",
+          "support": "best_effort",
+          "image": "ydbplatform/local-ydb:25.4",
+          "unprobed": "YDB publishes no support period for its open-source lines, and the test suite runs only the newest and the oldest certified line; the others were measured by hand once.",
+          "note": "The first line whose topic consumer takes availability_period."
+        },
+        {
+          "line": "25.3",
+          "label": "YDB 25.3",
+          "support": "best_effort",
+          "image": "ydbplatform/local-ydb:25.3",
+          "unprobed": "YDB publishes no support period for its open-source lines, and the test suite runs only the newest and the oldest certified line; the others were measured by hand once.",
+          "note": "The first line that takes a literal default on JsonDocument and DyNumber."
+        },
+        {
+          "line": "25.2",
+          "label": "YDB 25.2",
+          "support": "best_effort",
+          "image": "ydbplatform/local-ydb:25.2",
+          "unprobed": "YDB publishes no support period for its open-source lines, and the test suite runs only the newest and the oldest certified line; the others were measured by hand once.",
+          "note": "The first line with the 64-bit date and time types and a Decimal of any precision."
+        },
+        {
+          "line": "25.1",
+          "label": "YDB 25.1",
+          "support": "certified",
+          "image": "ydbplatform/local-ydb:25.1",
+          "note": "The oldest line the plugin supports: no 64-bit date types and Decimal(22,9) only."
+        }
+      ]
+    }
+  ]
+}
