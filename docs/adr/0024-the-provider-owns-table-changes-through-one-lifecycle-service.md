@@ -55,12 +55,18 @@ and `drop_column` changes for tables it owns, so ordering between columns and
 settings (family after add, before drop) is expressed in one plan graph with one
 owner.
 
-**Each pull request moves one facet and deletes its host counterpart.** The
-host's source readers (`ydbsource`, `yqlparse`) and the declared-family refusal
-in `engine/builtin/renderer.go` read the family rules. They move in the sources
-step. Until then the host keeps `internal/ydbfamily` and the deletion of the
-other family files waits for the same pull request that routes provider targets
-through the plugin, so the host never carries two working paths for one table.
+**Each pull request moves one facet into the plugin. The host code is deleted
+after the default flips.** A selected provider replaces the whole runtime, and
+the built-in registry refuses to register a provider under the name `ydb`. The
+host's YDB planner, comparer and renderer therefore stay reachable for every
+user who has not configured the plugin, until the default engine for `ydb://`
+URLs is the plugin. Deleting one family earlier would break the built-in path
+for that family. The order is: the plugin gains a facet, the host accepts the
+matching change for a provider that owns the table lifecycle, the default flips
+to the plugin, and then the host packages go in dependency order. The host's
+source readers (`ydbsource`, `yqlparse`) and the declared-family refusal in
+`engine/builtin/renderer.go` read the family rules, so `internal/ydbfamily` goes
+with the sources step.
 
 ## Alternatives considered
 
@@ -93,6 +99,6 @@ model, a comparison and a plan branch each.
 The protocol grows one facet model per family before v1. The conformance suite
 covers each.
 
-Host deletion happens in steps, and some host code (`ydbfamily` and its source
-readers) lives until the sources step. The coverage table in the working notes
-tracks which files remain.
+Host deletion happens after the default flips, in dependency order, and some
+host code (`ydbfamily` and its source readers) lives until the sources step. The
+coverage table in the working notes tracks which files remain.
