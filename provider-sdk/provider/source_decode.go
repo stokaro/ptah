@@ -48,6 +48,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateYAMLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
+		if err := validateGoSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
+			return err
+		}
 		if len(document.GetFragments()) != 0 && len(kinds) == 0 {
 			return sourceError("fragments require explicit model scope")
 		}
@@ -128,6 +131,9 @@ func validateSourceModelValue(
 	envelope := normalized.GetValue()
 	if document.GetFormat() == protocol.SourceDocument_YAML && !slices.Contains(fragment.GetYamlKey().GetModels(), envelope.GetKind()) {
 		return sourceError("decoded YAML value is outside its key claim")
+	}
+	if fragment.GetGoDirective() != nil && !slices.Contains(fragment.GetGoDirective().GetModels(), envelope.GetKind()) {
+		return sourceError("decoded Go value is outside its directive claim")
 	}
 	switch value.GetPlacement() {
 	case protocol.SourceModelValue_NATIVE_OBJECT:

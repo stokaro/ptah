@@ -146,7 +146,10 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if slices.Contains(engine.GetFeatures(), DevDatabaseFeature) && !slices.Contains(description.GetFeatures(), DevDatabaseFeature) {
 		return fmt.Errorf("%w: engine dev database provisioning requires the service", ErrProtocol)
 	}
-	return validateYAMLSourceKeys(description, engine)
+	if err := validateYAMLSourceKeys(description, engine); err != nil {
+		return err
+	}
+	return validateGoSourceDirectives(description, engine)
 }
 
 func validateSemanticServices(value *protocol.Description) error {

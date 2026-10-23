@@ -447,6 +447,24 @@ implicit table attachment. The client and server validate these facts before
 owner code runs. Other source formats cannot carry a YAML claim. Grammar claims
 are metadata, not a promise that the host has connected every frontend adapter.
 
+Each engine that decodes Go annotations declares `go_source_directives`. A claim
+names the directive, its `DOCUMENT`, `TABLE`, `COLUMN` or `INDEX` scope, a decoder
+selector, the attribute names it accepts, and the desired model kinds it can
+declare. The host lexes the comment; the owner receives the parsed attributes as a
+mapping in a `GO_ANNOTATIONS` fragment and never the comment text. The SDK refuses
+a directive name claimed twice within the engine, an attribute that is empty,
+duplicated or contains whitespace, `=`, `,` or a quote, and models that are
+unknown or do not accept Go annotations. The host must also refuse a name claimed
+by another selected owner.
+
+A Go fragment of an engine with claims carries the exact negotiated
+`go_directive`. Its selector must match, its document must enroll every model the
+claim names, and every attribute key must appear in the claim. A table directive
+needs a common table binding. A column or index directive needs that binding and a
+`subject` of kind `column` or `index`. A document directive has no attachment.
+Other source formats cannot carry a Go claim. An engine that declares no
+directives keeps accepting captured Go fragments without one.
+
 Captured values preserve missing entries, explicit null, false, empty values,
 exact number text, expressions, and structured references. Mapping keys,
 block attributes, child blocks, and labels retain their separate namespaces.
