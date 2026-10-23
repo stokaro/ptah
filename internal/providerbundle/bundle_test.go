@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/providerarchive/archivetest"
 	"ptah.run/internal/providerbundle"
 	"ptah.run/internal/providercatalog"
+	"ptah.run/internal/providerconfig"
 )
 
 const providerID = "github.com/stokaro/ptah-ydb-plugin"
@@ -218,4 +219,18 @@ func TestVerifyArchives_FailurePath(t *testing.T) {
 		_, err := providerbundle.VerifyArchives(c.TempDir(), []providercatalog.Platform{linux}, fixture.lookup)
 		c.Assert(err, qt.ErrorMatches, `(?s).*want exactly one host archive for linux/amd64.*found 0.*`)
 	})
+}
+
+// The archive path the release packages and the path the host reads are one
+// layout.
+func TestArchivePath_MatchesTheHostLayout(t *testing.T) {
+	c := qt.New(t)
+	entry, found := providercatalog.Lookup("ydb")
+	c.Assert(found, qt.IsTrue)
+	pin, found := providercatalog.LookupPin("ydb")
+	c.Assert(found, qt.IsTrue)
+	for _, artifact := range pin.Artifacts {
+		want := filepath.ToSlash(providerconfig.BundledPath(providerconfig.BundledDir, entry.ProviderID, pin.Version, artifact.Executable))
+		c.Assert(providerbundle.ArchivePath(entry, pin, artifact), qt.Equals, want)
+	}
 }

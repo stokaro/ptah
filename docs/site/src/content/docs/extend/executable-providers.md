@@ -152,6 +152,27 @@ distribution is built for one platform, so the path has no platform part. Ptah
 never copies the bundled file into the user store. The user store is the
 directory `ptah providers install` writes to, described above.
 
+The full distribution places the YDB provider there: the release archives, the
+container image (`/usr/local/bin/providers`) and the Homebrew cask. The release
+build fetches the pinned archive, checks the archive and the executable against
+the pinned digests, and packages that one executable in every channel, so the
+bundled file and the file `providers install` stores are the same bytes. The
+`install.sh`, `install.ps1` and GitHub Action installers verify the archive
+against `checksums.txt` and copy the `providers` directory beside the binaries.
+A build from source or `go install` has no bundled provider and needs
+`ptah providers install ydb` once. DuckDB and Spanner are in no distribution.
+
+Which engine serves a `ydb://` address does not depend on any of this. Without
+`--provider-engine` or a manifest entry for `ydb`, the engine built into `ptah`
+serves it in this documentation version, and the presence of a bundled or stored
+file changes nothing.
+
+Offline use needs no extra command. With a bundled or installed provider, normal
+work opens no network connection. A host without access to GitHub can use an
+internal mirror through `--download-base-url`, or receive a verified executable
+by other means and select it with a manifest entry (absolute path and digest).
+Neither changes the pinned digests.
+
 Rules 2 and 3 build the installation in memory from the catalog and the pin: the
 provider ID and engines come from the catalog, and the expected SHA-256 is the
 pinned digest of the executable. Nothing is written to a manifest. The
