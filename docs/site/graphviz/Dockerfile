@@ -12,11 +12,6 @@
 # exist, `nshine/dot` publishes only `latest` and carries a 2018 build, and the
 # upstream `graphviz/graphviz` image is a Windows build toolchain last tagged in
 # 2021.
-#
-# The base is pinned by digest rather than by tag. Alpine rotates patch releases
-# inside a stable branch, so `alpine:3.22` is a moving target and its `graphviz`
-# package moves with it -- which would change the committed bytes without
-# changing this file. Renovate tracks the digest.
 FROM alpine:3.24
 
 # font-dejavu is not decoration. Graphviz measures every label to lay the graph
