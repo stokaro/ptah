@@ -113,8 +113,8 @@ func checkGoClaim(engine *protocol.Engine, claim *protocol.GoSourceDirective) (a
 // GoAnnotations captures the Go directives one file declares for one engine as
 // a GO_ANNOTATIONS document. The host has already lexed each comment: a
 // fragment carries the attributes as text, never the comment, and the claim the
-// provider negotiated. A table-scope directive is bound to the table of its
-// struct. Every declaration must name a directive the engine claims, and all
+// provider negotiated. A table-scope directive is bound to the table its
+// table attribute names, or to the table of its struct where it has none. Every declaration must name a directive the engine claims, and all
 // must come from one file. Without declarations the document only enrolls the
 // engine's Go models, which makes the provider state what a Go source covers.
 // The caller validates the request against the negotiated description.
@@ -186,14 +186,18 @@ func goFragment(engine *protocol.Engine, tables annotation.Tables, bindings []st
 // is bound to and, for a column or an index, the reference the provider
 // receives as the fragment's subject: kind column or index, the table's schema,
 // the table as the only path component, and the name the field or index
-// directive writes. A document-scope claim has no table and returns -1.
+// directive writes. A table-scope declaration binds to the table its table
+// attribute names, resolved as the table attribute of an index directive is,
+// and to the table of its struct where it writes none. A table that the file
+// does not declare, or declares in more than one schema, is refused. A
+// document-scope claim has no table and returns -1.
 //
 // The caller compares the owner of a value the provider decoded with this
 // reference, so a column directive cannot declare a setting of another column.
 func GoSubject(engine string, tables annotation.Tables, claim *protocol.GoSourceDirective, declaration annotation.Declaration) (table int, subject *protocol.Reference, err error) {
 	switch claim.GetScope() {
 	case protocol.GoSourceDirective_TABLE:
-		table, err = tables.Owning(declaration.Struct, "", "the table directive")
+		table, err = tables.Owning(declaration.Struct, tableAttribute(declaration), "the "+declaration.Directive+" directive")
 		return table, nil, err
 	case protocol.GoSourceDirective_COLUMN, protocol.GoSourceDirective_INDEX:
 		kind := annotation.SubjectColumn
@@ -211,6 +215,19 @@ func GoSubject(engine string, tables annotation.Tables, claim *protocol.GoSource
 	default:
 		return -1, nil, nil
 	}
+}
+
+// tableAttribute returns the table a table-scope directive names with its
+// table attribute, resolved by [annotation.Tables.Owning] as the frontend
+// resolves the table attribute of an index directive. It is empty, meaning the
+// table of the declaration's struct, where the attribute is absent. An
+// attribute that an owner adds to the frontend's own table directive is not
+// a reference: that directive names its table with name.
+func tableAttribute(declaration annotation.Declaration) string {
+	if declaration.Subject.Kind == annotation.SubjectTable {
+		return ""
+	}
+	return declaration.Attributes["table"]
 }
 
 func goClaim(engine *protocol.Engine, directive string) *protocol.GoSourceDirective {

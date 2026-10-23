@@ -213,6 +213,62 @@ func TestProviderGoDirectivesAtColumnAndIndexScope_HappyPath(t *testing.T) {
 	})
 }
 
+// holderGoSource declares a table directive on a struct that maps to no table.
+// The directive names the table it describes with the table attribute, as an
+// index directive does, and the same attribute moves a directive of a table's
+// own struct to another table.
+const holderGoSource = `package p
+
+//ptah:schema:table name="records" schema="app"
+type Record struct{}
+
+//ptah:schema:table name="events"
+type Event struct{}
+
+//ptah:fixture:table-retention table="records" seconds=5
+type Holder struct{}
+
+//ptah:schema:table name="extra"
+//ptah:fixture:table-retention table="events" minutes=2
+type Extra struct{}
+`
+
+func TestProviderGoTableDirectiveNamesItsTable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := scopedGoProvider(c)
+
+	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", holderGoSource)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, db), qt.DeepEquals, []string{
+		`table records {"seconds":5}`,
+		`table events {"seconds":120}`,
+	})
+}
+
+func TestProviderGoTableDirectiveNamesItsTable_FailurePath(t *testing.T) {
+	runtime := scopedGoProvider(qt.New(t))
+	const head = "package p\n\n//ptah:schema:table name=\"records\" schema=\"app\"\ntype Record struct{}\n\n" +
+		"//ptah:schema:table name=\"records\" schema=\"archive\"\ntype Archived struct{}\n\n"
+	for _, row := range []struct{ name, source, want string }{
+		{"a struct without a table that names none", head + "//ptah:fixture:table-retention seconds=1\ntype Holder struct{}\n",
+			`struct Holder maps to no table in this file.* on //ptah:fixture:table-retention at Holder`},
+		{"a table the file does not declare", head + "//ptah:fixture:table-retention table=\"absent\" seconds=1\ntype Holder struct{}\n",
+			`table "absent" is not declared in this file, and the ptah:fixture:table-retention directive is declared beside its table on //ptah:fixture:table-retention at Holder`},
+		{"a table declared in two schemas", head + "//ptah:fixture:table-retention table=\"records\" seconds=1\ntype Holder struct{}\n",
+			`table "records" is declared in schemas "app" and "archive"; name the schema in the table attribute on //ptah:fixture:table-retention at Holder`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := goschema.ParseSource(runtime.Annotations(), "records.go", row.source)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+			c.Assert(err, qt.ErrorMatches, row.want)
+		})
+	}
+}
+
 func TestProviderGoDirectivesAtColumnAndIndexScope_Coverage(t *testing.T) {
 	c := qt.New(t)
 	runtime := scopedGoProvider(c)

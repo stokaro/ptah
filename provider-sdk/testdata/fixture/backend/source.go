@@ -98,6 +98,12 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 				return retentionSource{}, fmt.Errorf("retention requires one unambiguous subject")
 			}
 			bindingID = text.Text
+		case "table":
+			// The host resolves the table attribute of a Go directive into
+			// the binding, so the value only repeats it.
+			if document.GetFormat() != protocol.SourceDocument_GO_ANNOTATIONS || bindingID == "" {
+				return retentionSource{}, fmt.Errorf("retention does not accept a table attribute here")
+			}
 		case "seconds", "minutes":
 			number, err := retentionNumber(document.GetFormat(), entry.GetValue())
 			if err != nil {

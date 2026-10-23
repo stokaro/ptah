@@ -58,6 +58,7 @@ func ScopedGoSourceDirectives() []*protocol.GoSourceDirective {
 	return []*protocol.GoSourceDirective{
 		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:fixture:column-retention", Selector: "retention", Attributes: attributes, Models: models},
 		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:fixture:index-retention", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:table-retention", Selector: "retention", Attributes: []string{"seconds", "minutes", "table"}, Models: models},
 		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:schema:table", Selector: "retention", Attributes: attributes, Models: models},
 		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:schema:field", Selector: "retention", Attributes: attributes, Models: models},
 		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:schema:index", Selector: "retention", Attributes: attributes, Models: models},
