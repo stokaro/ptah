@@ -590,6 +590,13 @@ func postgresIndexStateProblem(state migratorext.IndexState) string {
 			quotedTarget(state),
 		)
 	}
+	if isUsableForTarget(state) {
+		return fmt.Sprintf(
+			"index %s on target table %s has a different definition than the migration declares",
+			quotedName(state),
+			quotedTarget(state),
+		)
+	}
 	if !isAttachedToTarget(state) {
 		actual := sqlident.Qualified(platform.Postgres, state.IndexedTableSchema, state.IndexedTable)
 		return fmt.Sprintf(

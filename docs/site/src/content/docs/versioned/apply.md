@@ -1076,6 +1076,16 @@ drop will execute in the current attempt. A statement skipped by dirty-resume
 cannot serve as that cleanup. Ptah resolves both unqualified drops and target
 tables through `search_path`, then checks the schema-level relation name. An
 index on another table or a non-index relation with that name is a conflict.
+
+So is a usable index on the target whose definition differs from the declared
+one: Ptah builds the declared index on an empty copy of the table and compares
+the two definitions PostgreSQL renders, so the same index spelled another way
+still applies. That copy is a temporary table, so the comparison needs the
+`TEMPORARY` privilege on the database, and a role without it is refused rather
+than let past the check. PostgreSQL renders a storage parameter such as
+`fillfactor` whenever one is set, even to its default, so an index created with
+one differs from the same index declared without it.
+
 After the body, Ptah positively verifies on the active transaction or connection
 that every conditional create's statement-local schema, target table, and index
 name still describe a usable result. Equal raw names under different
