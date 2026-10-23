@@ -496,6 +496,12 @@ directive of its own. A claim on any other Ptah directive, a scope that does not
 fit the directive, a claim without attributes and an attribute the directive
 already has are refused when the provider starts.
 
+An attribute can be a platform property, such as `platform.ydb.row_deletion_column`.
+The provider claims it by its full name. The value is then the provider's: Ptah
+sends it to the provider and does not keep a copy in the table's, column's or
+index's platform overrides. A platform property that no provider claims stays in
+those overrides, and the adapter refuses a table that carries one.
+
 Both kinds may sit before or after the `ptah:schema:table` comment. Ptah
 collects the directives of one Go file and sends them to the provider as one
 document, so a provider sees every table of the file when it decodes. A column

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -90,8 +91,16 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 	bindingID := fragment.GetBindingId()
 	fields := make(map[string]json.RawMessage)
 	knowledge := protocol.ModelKnowledge_DEFAULTED
+	column := ""
 	for _, entry := range mapping.GetEntries() {
-		switch entry.GetKey() {
+		// A platform property spells its unit with the engine's prefix.
+		switch strings.TrimPrefix(entry.GetKey(), "platform.fixture.") {
+		case "column":
+			text, ok := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
+			if !ok || text.Text == "" {
+				return retentionSource{}, fmt.Errorf("retention column requires a name")
+			}
+			column = text.Text
 		case "on":
 			text, ok := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
 			if !ok || text.Text == "" || bindingID != "" || subject != nil {
@@ -109,7 +118,7 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 			if err != nil {
 				return retentionSource{}, err
 			}
-			fields[entry.GetKey()] = json.RawMessage(number)
+			fields[strings.TrimPrefix(entry.GetKey(), "platform.fixture.")] = json.RawMessage(number)
 			knowledge = protocol.ModelKnowledge_COMPLETE
 		default:
 			return retentionSource{}, fmt.Errorf("unsupported retention field %q", entry.GetKey())
@@ -124,6 +133,11 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 				subject = proto.CloneOf(binding.GetObject())
 			}
 		}
+	}
+	// A column setting written on the directive of its table: the value is
+	// owned by the column of that table the directive names.
+	if column != "" && subject != nil && subject.GetKind() == "table" {
+		subject = &protocol.Reference{Engine: subject.GetEngine(), Kind: "column", Schema: subject.GetSchema(), Path: []string{subject.GetName()}, Name: column}
 	}
 	if subject == nil || !slices.Contains([]string{"table", "column", "index"}, subject.GetKind()) {
 		return retentionSource{}, fmt.Errorf("retention table binding is unknown")

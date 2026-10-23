@@ -239,7 +239,7 @@ func (s *schemaParseState) parseFieldComment(
 			GeneratedExpression: kv["generated"],
 			GeneratedKind:       generatedColumnKind(kv),
 			Comment:             kv["comment"],
-			Overrides:           parseutils.ParsePlatformSpecific(kv),
+			Overrides:           parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:field", kv)),
 		})
 	}
 	return nil
@@ -378,7 +378,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Fields:         fields,
 		Unique:         kv["unique"] == "true",
 		Comment:        kv["comment"],
-		Overrides:      parseutils.ParsePlatformProperties(kv),
+		Overrides:      parseutils.ParsePlatformProperties(s.hostAttributes("ptah:schema:index", kv)),
 		Invisible:      kv["invisible"] == "true",
 		Type:           kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; the ClickHouse owner consumes it as the skipping-index type
 		Condition:      firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
@@ -687,7 +687,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		DependsOn:         splitDependsOn(kv["depends_on"]),
 		CustomSQL:         kv["custom"],
 		Facets:            facets,
-		Overrides:         parseutils.ParsePlatformSpecific(kv),
+		Overrides:         parseutils.ParsePlatformSpecific(s.hostAttributes("ptah:schema:table", kv)),
 	})
 	return nil
 }

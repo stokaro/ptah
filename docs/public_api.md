@@ -343,6 +343,11 @@ the declaration from `Reader.DecodeAttributes` with the same subject. A
 that part once the file is read, and the frontend refuses a facet whose part the
 file does not declare.
 
+A `PerFile` attribute written as a platform property,
+`platform.<dialect>.<name>`, is the owner's alone: the frontend leaves it out of
+the `Overrides` of the table, field or index it describes (`Set.ReadsPerFile`
+reports which attributes those are).
+
 An owner may also read declarations of the frontend's own directives that
 their target scope makes its own. A `TargetScope` names a directive, the
 dialects whose declarations the owner reads, and whether it also reads the

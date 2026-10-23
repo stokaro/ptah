@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/ptaherr"
@@ -318,4 +319,27 @@ func (s *schemaParseState) attachPartFacet(pending pendingFacet) error {
 		*slot = facets
 	}
 	return nil
+}
+
+// hostAttributes returns the attributes of a frontend directive that stay in
+// the common model: kv without the platform properties an owner reads per file.
+// A property such as platform.ydb.row_deletion_column that a provider claimed
+// is the provider's value, and a copy in the table's Overrides would reach a
+// host that refuses overrides it cannot project. A platform property no owner
+// claims stays, and so do the attributes that are not platform properties.
+func (s *schemaParseState) hostAttributes(directive string, kv map[string]string) map[string]string {
+	var kept map[string]string
+	for name := range kv {
+		if !annotationmeta.IsPlatformAttribute(name) || !s.annotations.ReadsPerFile(directive, name) {
+			continue
+		}
+		if kept == nil {
+			kept = maps.Clone(kv)
+		}
+		delete(kept, name)
+	}
+	if kept == nil {
+		return kv
+	}
+	return kept
 }
