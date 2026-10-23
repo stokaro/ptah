@@ -5198,6 +5198,9 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 		if p.readsKeyOptions() && (p.nextIsWord("INDEX") || p.nextIsWord("KEY")) {
 			return oneOperation(p.parseAlterIndexVisibility())
 		}
+		if p.nextIsWord("CONSTRAINT") {
+			return oneOperation(p.parseAlterConstraintOperation())
+		}
 		return oneOperation(p.parseAlterColumnOperation())
 	case "MODIFY":
 		return oneOperation(p.parseModifyOperation())
@@ -5208,6 +5211,40 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 	default:
 		return nil, fmt.Errorf("unsupported ALTER operation: %s at position %d", operation, p.current.Start)
 	}
+}
+
+// parseAlterConstraintOperation reads ALTER CONSTRAINT name followed by the
+// deferral clauses, which PostgreSQL takes to change when a foreign key is
+// checked. A dialect without deferral refuses the clauses with its own message.
+func (p *Parser) parseAlterConstraintOperation() (ast.AlterOperation, error) {
+	if err := p.expect(lexer.TokenIdentifier, "ALTER"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	start := p.current.Start
+	if err := p.expect(lexer.TokenIdentifier, "CONSTRAINT"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name: %w", err)
+	}
+	clauses, err := p.parseDeferral()
+	if err != nil {
+		return nil, err
+	}
+	if !clauses.written {
+		return nil, fmt.Errorf("ALTER CONSTRAINT at position %d: only [NOT] DEFERRABLE and INITIALLY DEFERRED | IMMEDIATE are supported", start)
+	}
+	operation := &ast.AlterConstraintOperation{ConstraintName: name, Initially: clauses.timingWritten}
+	switch {
+	case clauses.notDeferrable:
+		operation.Deferrable = new(false)
+	case clauses.deferrable:
+		operation.Deferrable = new(true)
+	}
+	return operation, nil
 }
 
 // parseValidateConstraintOperation reads VALIDATE CONSTRAINT name, which the

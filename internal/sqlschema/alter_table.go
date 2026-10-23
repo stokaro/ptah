@@ -861,6 +861,69 @@ func applyValidateConstraint(target alterTarget, operation *ast.ValidateConstrai
 		target.written, operation.ConstraintName)
 }
 
+// applyAlterConstraint changes when a foreign key the schema declares by name is
+// checked. A property the statement leaves out keeps its value, and a key made
+// not deferrable loses its timing, as the server records it. A name the table
+// holds no foreign key under is refused, as the server refuses it.
+func applyAlterConstraint(target alterTarget, operation *ast.AlterConstraintOperation) error {
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
+	if target.alterForeignKeyDeferral(name, operation) {
+		return nil
+	}
+	return fmt.Errorf(
+		"ALTER TABLE %s ALTER CONSTRAINT %s names no foreign key this schema declares by that name",
+		target.written, operation.ConstraintName)
+}
+
+// alterForeignKeyDeferral applies the deferral change to the foreign key named
+// name, and reports whether the table has one.
+func (t alterTarget) alterForeignKeyDeferral(name string, operation *ast.AlterConstraintOperation) bool {
+	for _, database := range t.databases {
+		for i := range database.Constraints {
+			constraint := &database.Constraints[i]
+			if constraint.StructName == t.structName && constraint.Name == name &&
+				strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+				after := changedDeferral(deferralState{constraint.Deferrable, constraint.Initially}, operation)
+				constraint.Deferrable, constraint.Initially = after.deferrable, after.initially
+				return true
+			}
+		}
+		for i := range database.Fields {
+			field := &database.Fields[i]
+			if field.StructName == t.structName && field.Foreign != "" && field.ForeignKeyName == name {
+				after := changedDeferral(deferralState{field.Deferrable, field.Initially}, operation)
+				field.Deferrable, field.Initially = after.deferrable, after.initially
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// deferralState is when a foreign key is checked: whether the check may be put
+// off, and the default timing of a key that may.
+type deferralState struct {
+	deferrable bool
+	initially  string
+}
+
+// changedDeferral returns the state a key has after the operation, given the one
+// it had. A property the operation leaves out keeps its value, and a key that is
+// not deferrable has no timing.
+func changedDeferral(before deferralState, operation *ast.AlterConstraintOperation) deferralState {
+	after := before
+	if operation.Deferrable != nil {
+		after.deferrable = *operation.Deferrable
+	}
+	if operation.Initially != "" {
+		after.initially = operation.Initially
+	}
+	if !after.deferrable {
+		after.initially = ""
+	}
+	return after
+}
+
 // validateNamedConstraint marks the CHECK or foreign key named name validated,
 // and reports whether the table has one.
 func (t alterTarget) validateNamedConstraint(name string) bool {

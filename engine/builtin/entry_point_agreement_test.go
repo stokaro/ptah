@@ -228,5 +228,6 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"StatementList":                           &ast.StatementList{},
 		"UpsertNode":                              &ast.UpsertNode{},
 		"ValidateConstraintOperation":             &ast.ValidateConstraintOperation{},
+		"AlterConstraintOperation":                &ast.AlterConstraintOperation{},
 	}
 }

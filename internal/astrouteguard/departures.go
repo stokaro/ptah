@@ -234,6 +234,7 @@ var extractionBaseline = []BaselineKind{
 	{Name: "AlterAsyncReplicationNode", Marker: Unmarked},
 	{Name: "AlterChangefeedTopicOperation", Marker: AlterOperationMarker},
 	{Name: "AlterColumnOperation", Marker: AlterOperationMarker},
+	{Name: "AlterConstraintOperation", Marker: AlterOperationMarker},
 	{Name: "AlterCoordinationNodeNode", Marker: Unmarked},
 	{Name: "AlterGeneratedColumnExpressionOperation", Marker: AlterOperationMarker},
 	{Name: "AlterIndexNode", Marker: Unmarked},

@@ -259,6 +259,30 @@ func (op *ValidateConstraintOperation) Accept(visitor Visitor) error { return vi
 // alterOperation implements the marker method for type safety.
 func (op *ValidateConstraintOperation) alterOperation() {}
 
+// AlterConstraintOperation represents ALTER TABLE ... ALTER CONSTRAINT name
+// [NOT] DEFERRABLE | INITIALLY DEFERRED | INITIALLY IMMEDIATE, which changes
+// when a foreign key is checked without dropping and re-adding it.
+//
+// Each field is a change to make, and a field left unset keeps what the
+// constraint has: PostgreSQL reads `ALTER CONSTRAINT c INITIALLY IMMEDIATE` as a
+// change of timing alone.
+type AlterConstraintOperation struct {
+	// ConstraintName is the name of the constraint to change.
+	ConstraintName string
+	// Deferrable is the new deferrability, or nil to keep it. A pointer, because
+	// `NOT DEFERRABLE` and no clause at all are different statements.
+	Deferrable *bool
+	// Initially is the new default timing, "deferred" or "immediate", or empty
+	// to keep it.
+	Initially string
+}
+
+// Accept hands the visitor this operation.
+func (op *AlterConstraintOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *AlterConstraintOperation) alterOperation() {}
+
 // DropConstraintOperation represents a DROP CONSTRAINT operation in ALTER TABLE statements.
 //
 // This operation removes an existing constraint from a table. The constraint can be

@@ -1107,6 +1107,8 @@ func applyAlterOperation(
 		return applyRenameIndex(database, target, typed)
 	case *ast.ValidateConstraintOperation:
 		return applyValidateConstraint(target, typed)
+	case *ast.AlterConstraintOperation:
+		return applyAlterConstraint(target, typed)
 	case *ast.AlterIndexVisibilityOperation:
 		return applyIndexVisibility(target, typed)
 	case *ast.RenameTableOperation:
@@ -1216,6 +1218,8 @@ func describeAlterOperation(op ast.AlterOperation) string {
 		return "RENAME COLUMN " + typed.OldName
 	case *ast.ValidateConstraintOperation:
 		return "VALIDATE CONSTRAINT " + typed.ConstraintName
+	case *ast.AlterConstraintOperation:
+		return "ALTER CONSTRAINT " + typed.ConstraintName
 	case *ast.AlterIndexVisibilityOperation:
 		return "ALTER INDEX " + typed.IndexName
 	default:

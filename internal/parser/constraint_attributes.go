@@ -28,6 +28,11 @@ type deferral struct {
 	start int
 	// notDeferrable is NOT DEFERRABLE, written.
 	notDeferrable bool
+	// timingWritten is the INITIALLY timing as written. initially drops it for
+	// a constraint that is not deferrable, which is right for a new constraint
+	// and wrong for ALTER CONSTRAINT, where a lone INITIALLY IMMEDIATE changes
+	// the timing of a constraint the clause does not describe.
+	timingWritten string
 	// written is whether any clause was.
 	written bool
 	// grammar is how the dialect the clauses were read with reads them.
@@ -72,6 +77,7 @@ func (p *Parser) parseDeferral() (deferral, error) {
 				return deferral{}, err
 			}
 			result.initially = timing
+			result.timingWritten = timing
 		default:
 			if !result.written {
 				return result, nil

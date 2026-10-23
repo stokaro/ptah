@@ -450,6 +450,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.AddColumnOperation,
 		*ast.AddConstraintOperation,
 		*ast.ValidateConstraintOperation,
+		*ast.AlterConstraintOperation,
 		*ast.AddEnumValueOperation,
 		*ast.AddIndexOperation,
 		*ast.AlterGeneratedColumnExpressionOperation,
@@ -979,6 +980,8 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 		case *ast.ValidateConstraintOperation:
 			r.w.WriteLinef("ALTER TABLE %s VALIDATE CONSTRAINT %s;",
 				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.ConstraintName))
+		case *ast.AlterConstraintOperation:
+			r.w.WriteLinef("%s;", alterConstraintSQL(r, node.Name, op))
 		case *ast.DropConstraintOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", r.escapeQualifiedIdentifier(node.Name))
 			if op.IfExists {
@@ -3557,4 +3560,25 @@ func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) er
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// alterConstraintSQL renders ALTER TABLE ... ALTER CONSTRAINT, naming only the
+// properties the operation changes.
+func alterConstraintSQL(r *Renderer, table string, op *ast.AlterConstraintOperation) string {
+	sql := fmt.Sprintf("ALTER TABLE %s ALTER CONSTRAINT %s",
+		r.escapeQualifiedIdentifier(table), r.escapeIdentifier(op.ConstraintName))
+	if op.Deferrable != nil {
+		if *op.Deferrable {
+			sql += " DEFERRABLE"
+		} else {
+			sql += " NOT DEFERRABLE"
+		}
+	}
+	switch op.Initially {
+	case "deferred":
+		sql += " INITIALLY DEFERRED"
+	case "immediate":
+		sql += " INITIALLY IMMEDIATE"
+	}
+	return sql
 }
