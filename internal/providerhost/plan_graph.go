@@ -77,6 +77,8 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 			name, action = typed.name, plangraph.Create
 		case *ast.DropTableNode:
 			name, action = typed.Name, plangraph.Drop
+		case *pendingTableDrop:
+			name, action = typed.name, plangraph.Drop
 		case *ast.AlterTableNode:
 			name, action = typed.Name, plangraph.Alter
 		case *pendingColumnChange:

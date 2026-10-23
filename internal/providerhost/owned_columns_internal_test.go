@@ -165,7 +165,6 @@ func TestOwnedLifecycleKeepsRefusals_FailurePath(t *testing.T) {
 		{"modified column", modified(func(d *difftypes.TableDiff) {
 			d.ColumnsModified = []difftypes.ColumnDiff{{ColumnName: "added"}}
 		}), `.*TableDiff\.ColumnsModified.*`},
-		{"removed table", &difftypes.SchemaDiff{TablesRemoved: difftypes.TableRemovals{{Name: "records"}}}, `.*` + `common table planning without .*`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
