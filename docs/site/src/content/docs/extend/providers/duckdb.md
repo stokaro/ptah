@@ -28,7 +28,8 @@ The catalog recognizes `duckdb` as engine names.
 
 Official DuckDB executable artifacts remain under development in
 [issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity; it does not provide a released download.
+this identity. This Ptah release pins no DuckDB provider release, so
+`ptah providers install duckdb` refuses with `provider_no_release_pinned`.
 
 This provider is optional. Installing the main Ptah binary does not establish
 a DuckDB provider installation.

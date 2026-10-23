@@ -26,9 +26,12 @@ The official provider ID is `github.com/stokaro/ptah-ydb-plugin`. Its designated
 is [stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin).
 The catalog recognizes `ydb` and `ydbs` as engine names.
 
-Official YDB executable artifacts remain under development in
-[issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity; it does not provide a released download.
+Each Ptah release pins one tested release of this provider. Install it with
+`ptah providers install ydb`, then declare it in a manifest as described below.
+The [install procedure](../../executable-providers/#install-the-pinned-official-provider)
+covers the download, the checks, and where the file is stored. Remaining work on
+official providers is tracked in
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
 The full distribution policy includes this provider. A standalone binary or
 source build needs an explicitly installed provider. An incomplete bundle needs
@@ -45,7 +48,8 @@ policy. An empty `installations` array means this invocation selected no manifes
 
 ## Declare a trusted installation
 
-When you have a compatible YDB artifact, verify its publisher and checksum
+When you have a compatible YDB artifact, for example the executable that
+`ptah providers install ydb` printed, verify its publisher and checksum
 before authorizing it. Create an explicit manifest using the
 [executable-provider procedure](../../executable-providers/#select-the-executable).
 Set `provider_id` to `github.com/stokaro/ptah-ydb-plugin` and declare the canonical engine

@@ -1,5 +1,6 @@
 // Package providers exposes provider catalog, installation, and negotiation
-// diagnostics. Listing never starts an executable or connects to a database.
+// diagnostics, and installs the pinned official provider of an engine. Listing
+// and installing never start an executable or connect to a database.
 package providers
 
 import (
@@ -16,12 +17,13 @@ import (
 	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/providerinstall"
 )
 
 // NewCommand returns the native provider diagnostics namespace.
 func NewCommand() *cobra.Command {
-	command := &cobra.Command{Use: "providers", Short: "Inspect provider configuration and verify trusted executables"}
-	command.AddCommand(newListCommand(), newCheckCommand())
+	command := &cobra.Command{Use: "providers", Short: "Inspect provider configuration, verify trusted executables and install pinned official providers"}
+	command.AddCommand(newListCommand(), newCheckCommand(), newInstallCommand(providerinstall.Installer{}))
 	cmdutil.ConfigureCommandArgs(command, cmdutil.NoPositionalArgs)
 	return command
 }

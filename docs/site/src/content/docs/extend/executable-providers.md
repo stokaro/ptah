@@ -10,12 +10,15 @@ goal: "Inspect a provider database, apply a saved schema plan, and verify conver
 sourceOfTruth:
   - "internal/cli/internal/providercommand"
   - "internal/providerhost"
+  - "internal/providerinstall"
+  - "internal/providercatalog"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
+  - cli-ptah-providers-install
 generated: false
 overlaps: []
 disposition: keep
@@ -84,6 +87,41 @@ host refuses a description that claims testing nothing runs.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
+
+## Install the pinned official provider
+
+Each Ptah release pins one tested version of an official provider and, for each
+platform, the SHA-256 of its archive and of the executable inside it. Install the
+pinned provider for the engine you need:
+
+```console
+ptah providers install ydb
+```
+
+The command takes an engine and no version. It downloads the archive for the
+current platform from the provider's GitHub release, compares the archive with
+the pinned digest before it reads anything from it, extracts only the expected
+executable, and compares that with its pinned digest. It then stores the
+executable under the user cache directory, in
+`ptah/providers/<provider-id>/<version>/<os>_<arch>/`, readable only by you. The
+command never runs the executable, never edits a manifest, and never looks for a
+newer release. Running it again for a verified installation downloads nothing.
+An interrupted or parallel run leaves no executable that is only partly written.
+
+The output names the executable and its SHA-256. To use the installation, write
+a manifest entry with that absolute path and digest, as described in the next
+section. Ptah does not select a provider from the user cache by itself; only a
+manifest entry selects one.
+
+Only engines whose provider has a release are pinned. For an engine without a
+pinned release, and for a platform the pin does not cover, the command fails with
+a diagnostic that names the engine or the platform.
+
+`--download-base-url` (environment variable `PTAH_DOWNLOAD_BASE_URL`) replaces
+the directory the archive is fetched from, for example an internal mirror that
+serves the same file names. It changes where the bytes come from and nothing
+else: the pinned digests still decide what is accepted. Add `--json` for a
+machine-readable report.
 
 ## Select the executable
 
@@ -315,6 +353,14 @@ preserve these fields in `provider_diagnostic`. Installation checks use `diagnos
 | Code | Action |
 | --- | --- |
 | `provider_missing` | Follow the engine-specific setup page and configure a trusted artifact. |
+| `provider_no_release_pinned` | This Ptah release pins no release of that provider. Select a provider you obtained and verified through the manifest. |
+| `provider_platform_unsupported` | The pin has no archive for this platform. Install from another platform or select a verified executable through the manifest. |
+| `provider_download_failed` | Check the network, the proxy and `--download-base-url`, then run `providers install` again. |
+| `provider_archive_untrusted` | The downloaded archive does not match the pinned digest. Nothing was extracted. Check the mirror or the network path. |
+| `provider_archive_invalid` | The archive is not a valid provider archive or lacks the executable. Nothing was installed. |
+| `provider_executable_untrusted` | The executable in the archive does not match the pinned digest. Nothing was installed. |
+| `provider_store_failed` | Check the user cache directory and its permissions. |
+| `provider_unknown_engine` | Name an engine from `ptah providers list`. |
 | `provider_disabled` | Enable the intended installation explicitly. |
 | `provider_executable_missing` | Restore the executable or correct its absolute path. |
 | `provider_unreadable` | Check file permissions and ensure the path names a regular file. |

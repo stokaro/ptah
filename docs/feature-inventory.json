@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 97,
+  "claimed": 98,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -469,6 +469,12 @@
       "id": "cli-ptah-providers-check",
       "kind": "native-verb",
       "surface": "ptah providers check",
+      "claimed_by": "docs/site/src/content/docs/extend/executable-providers.md"
+    },
+    {
+      "id": "cli-ptah-providers-install",
+      "kind": "native-verb",
+      "surface": "ptah providers install",
       "claimed_by": "docs/site/src/content/docs/extend/executable-providers.md"
     },
     {
