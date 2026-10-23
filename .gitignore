@@ -52,6 +52,11 @@ internal/cli/atlas/dev
 # `ptah assist --ephemeral` keeps no record at all (stokaro/ptah#1489).
 .ptah/sessions/
 
+# A workspace file lets the host and provider-sdk build together while both
+# change. The committed go.mod files pin tags, so the file is local state.
+/go.work
+/go.work.sum
+
 # Agent worktrees. AGENTS.md requires every change to be made in a linked
 # worktree parked at one of these two paths, so a whole second checkout of this
 # repository lives here routinely.

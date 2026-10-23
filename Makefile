@@ -2,7 +2,7 @@
 
 .PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver integration-test-ydb db-start-ydb clean docker-build lint lint-qtlint lint-nolintguard lint-golangci lint-fix install-hooks conformance
 
-VERSION ?= $(shell git describe --tags --always --dirty)
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -X ptah.run/internal/buildinfo.Version=$(VERSION) \

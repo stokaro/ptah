@@ -22,6 +22,20 @@ process acceptance builds run with `GOWORK=off`.
 `runtime` starts and serves authenticated subprocesses. The runtime does not
 compare schemas, order migration dependencies, or maintain migration history.
 
+## Versions
+
+The SDK is its own Go module, so it has its own tags: `provider-sdk/v0.N.0`.
+The host, the fixture and every provider repository pin a tag in `go.mod`, not a
+pseudo-version. The tag name has the module path as its prefix, which is why
+release automation that matches `v*` does not see it.
+
+A maintainer tags the SDK when a change to the SDK has to reach a module that
+consumes it, and bumps the pins in the same pull request that uses the change.
+The SDK is experimental, so a change to the protocol or the Go API raises the
+minor number and may break consumers. Local work across the host and the SDK does
+not need a bump: use an uncommitted `go.work` file, and build with `GOWORK=off`
+before you push.
+
 ## Service contract
 
 | Operation | Required result |
