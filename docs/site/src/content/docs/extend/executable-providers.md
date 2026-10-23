@@ -108,10 +108,10 @@ command never runs the executable, never edits a manifest, and never looks for a
 newer release. Running it again for a verified installation downloads nothing.
 An interrupted or parallel run leaves no executable that is only partly written.
 
-The output names the executable and its SHA-256. To use the installation, write
-a manifest entry with that absolute path and digest, as described in the next
-section. Ptah does not select a provider from the user cache by itself; only a
-manifest entry selects one.
+The output names the executable and its SHA-256. Ptah selects the installation
+by itself when the command asks for the engine's provider, as described in
+[Which provider serves an engine](#which-provider-serves-an-engine). You do not
+write a manifest entry for it.
 
 Only engines whose provider has a release are pinned. For an engine without a
 pinned release, and for a platform the pin does not cover, the command fails with
@@ -122,6 +122,57 @@ the directory the archive is fetched from, for example an internal mirror that
 serves the same file names. It changes where the bytes come from and nothing
 else: the pinned digests still decide what is accepted. Add `--json` for a
 machine-readable report.
+
+## Which provider serves an engine
+
+When a command asks for an executable provider, Ptah validates the manifest and
+then takes the first candidate that exists. Later candidates are not consulted.
+
+1. The installation the manifest selects for the engine.
+2. The bundled official provider, for an official engine whose release pins a
+   provider.
+3. The official provider in the user store, for the same engine.
+4. None. The command fails with `provider_missing` and the instruction
+   `ptah providers install <engine>`.
+
+A command asks for an executable provider with `--provider-engine`, or when a
+manifest entry claims the engine. An official engine that still has a built-in
+implementation, such as YDB, keeps it when the command does neither.
+
+The bundled provider is the executable of the pinned release, placed by the
+distribution beside the resolved `ptah` executable (symbolic links evaluated):
+
+```text
+<directory of ptah>/providers/<provider-id>/<version>/<executable>
+```
+
+For YDB on Linux that is
+`providers/github.com/stokaro/ptah-ydb-plugin/<version>/ptah-plugin-ydb`. A
+distribution is built for one platform, so the path has no platform part. Ptah
+never copies the bundled file into the user store. The user store is the
+directory `ptah providers install` writes to, described above.
+
+Rules 2 and 3 build the installation in memory from the catalog and the pin: the
+provider ID and engines come from the catalog, and the expected SHA-256 is the
+pinned digest of the executable. Nothing is written to a manifest. The
+installation goes through the same checks as a manifest entry: the digest before
+every start, then the provider ID, the declared engines, the protocol and the
+required features.
+
+A candidate that exists and fails a check ends the search:
+
+- A selected manifest entry that is disabled, missing or corrupt is never
+  replaced by a bundled or stored provider.
+- A bundled executable whose digest differs from the pin is refused, even when
+  the user store holds a good copy.
+- A stored executable whose digest differs from the pin is refused. Run
+  `ptah providers install <engine>` to replace it.
+
+A candidate whose file does not exist is absent, and the search continues. Only
+the pinned version is looked at. Copies of other versions in the user store are
+ignored, however many there are. Ptah does not search `PATH`, the working
+directory or a project file. A platform the pin does not cover fails with
+`provider_platform_unsupported`, which names the platform.
 
 ## Select the executable
 
@@ -352,9 +403,9 @@ preserve these fields in `provider_diagnostic`. Installation checks use `diagnos
 
 | Code | Action |
 | --- | --- |
-| `provider_missing` | Follow the engine-specific setup page and configure a trusted artifact. |
+| `provider_missing` | Run the `ptah providers install <engine>` command the message names. For an engine without a pinned release, follow the engine-specific setup page and select a trusted artifact through the manifest. |
 | `provider_no_release_pinned` | This Ptah release pins no release of that provider. Select a provider you obtained and verified through the manifest. |
-| `provider_platform_unsupported` | The pin has no archive for this platform. Install from another platform or select a verified executable through the manifest. |
+| `provider_platform_unsupported` | The pin has no archive for this platform, so neither a bundled nor an installed provider can serve it. Select a verified executable through the manifest. |
 | `provider_download_failed` | Check the network, the proxy and `--download-base-url`, then run `providers install` again. |
 | `provider_archive_untrusted` | The downloaded archive does not match the pinned digest. Nothing was extracted. Check the mirror or the network path. |
 | `provider_archive_invalid` | The archive is not a valid provider archive or lacks the executable. Nothing was installed. |
@@ -362,9 +413,9 @@ preserve these fields in `provider_diagnostic`. Installation checks use `diagnos
 | `provider_store_failed` | Check the user cache directory and its permissions. |
 | `provider_unknown_engine` | Name an engine from `ptah providers list`. |
 | `provider_disabled` | Enable the intended installation explicitly. |
-| `provider_executable_missing` | Restore the executable or correct its absolute path. |
+| `provider_executable_missing` | Restore the executable or correct its absolute path in the manifest. |
 | `provider_unreadable` | Check file permissions and ensure the path names a regular file. |
-| `provider_untrusted` | Verify provenance before accepting a different checksum. |
+| `provider_untrusted` | For a manifest entry, verify provenance before accepting a different checksum. For a bundled provider, repair or reinstall Ptah. For a stored provider, run `ptah providers install <engine>`. |
 | `provider_start_failed` | Check the executable platform and startup environment. |
 | `provider_incompatible` | Select an artifact with the required identity and protocol. |
 | `provider_identity_mismatch` | Correct the declared engines and aliases after reviewing the artifact. |

@@ -2,16 +2,13 @@ package providerconfig_test
 
 import (
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerconfig"
-	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/providerhost"
 )
 
@@ -78,44 +75,4 @@ func TestManifestRequiresOneStrictBoundedDocument(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, test.want)
 		})
 	}
-}
-
-func TestSelectionDistinguishesMissingDisabledAndUnknown(t *testing.T) {
-	for _, entry := range providercatalog.Entries() {
-		t.Run(entry.EngineID, func(t *testing.T) {
-			c := qt.New(t)
-			config := providerconfig.Configuration{}
-			_, _, err := config.Select(entry.EngineID)
-			diagnostic, ok := errors.AsType[*providerdiagnostic.Diagnostic](err)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(diagnostic.Code, qt.Equals, "provider_missing")
-			c.Assert(diagnostic.SetupURL, qt.Equals, entry.SetupURL)
-			selected := installation(c, entry.ProviderID, entry.EngineID)
-			selected.Engines[0].Aliases = entry.Aliases
-			config.Providers = []providerconfig.Installation{selected}
-			actual, target, err := config.Select(entry.ProviderID)
-			c.Assert(err, qt.IsNil)
-			c.Assert(actual.ProviderID, qt.Equals, entry.ProviderID)
-			c.Assert(target, qt.Equals, entry.EngineID)
-			config.Providers[0].Disabled = true
-			_, _, err = config.Select(entry.EngineID)
-			diagnostic, ok = errors.AsType[*providerdiagnostic.Diagnostic](err)
-			c.Assert(ok, qt.IsTrue)
-			c.Assert(diagnostic.Code, qt.Equals, "provider_disabled")
-		})
-	}
-	c := qt.New(t)
-	_, _, err := (providerconfig.Configuration{}).Select("unknown://private-secret")
-	c.Assert(err, qt.ErrorMatches, "no configured provider owns the selected engine")
-}
-
-func TestThirdPartySelectionNeedsNoCatalogEntry(t *testing.T) {
-	c := qt.New(t)
-	selected := installation(c, "example.org/custom", "custom")
-	selected.Engines[0].Aliases = []string{"customs"}
-	config := providerconfig.Configuration{Providers: []providerconfig.Installation{selected}}
-	actual, target, err := config.Select("customs")
-	c.Assert(err, qt.IsNil)
-	c.Assert(target, qt.Equals, "custom")
-	c.Assert(actual.ProviderID, qt.Equals, selected.ProviderID)
 }

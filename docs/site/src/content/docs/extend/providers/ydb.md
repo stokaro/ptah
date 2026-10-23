@@ -27,7 +27,9 @@ is [stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin).
 The catalog recognizes `ydb` and `ydbs` as engine names.
 
 Each Ptah release pins one tested release of this provider. Install it with
-`ptah providers install ydb`, then declare it in a manifest as described below.
+`ptah providers install ydb`. A command that asks for the provider with
+`--provider-engine ydb` then selects the installed or bundled copy without a
+manifest; a manifest entry, described below, overrides both.
 The [install procedure](../../executable-providers/#install-the-pinned-official-provider)
 covers the download, the checks, and where the file is stored. Remaining work on
 official providers is tracked in
@@ -72,8 +74,11 @@ before treating that result as database capability evidence.
 
 ## Resolve a refusal
 
-With no configured installation, an explicit selection reports
-`provider_missing`, engine ID `ydb`, and this setup page. A disabled entry
+With no manifest entry, no bundled provider and no installed provider, an
+explicit selection reports `provider_missing`, engine ID `ydb`, the command
+`ptah providers install ydb`, and this setup page. A bundled or installed
+executable that does not match the pinned digest is refused with
+`provider_untrusted`, and no other copy is tried. A disabled entry
 reports `provider_disabled`. Missing executable bytes, checksum mismatches,
 startup failures, and incompatible protocols have distinct codes.
 
@@ -85,6 +90,8 @@ correct the reported installation state, then repeat the check above.
 Pass `--provider-config providers.json --provider-engine ydb` to supported
 native schema commands. This explicitly requires the executable provider;
 an absent or failed installation cannot select an embedded implementation.
+Without `--provider-config`, the flag selects the bundled or installed
+provider.
 
 The [native provider workflow](../../executable-providers/) describes inspection,
 saved plans, application, and its protocol limitations. The catalog does not add

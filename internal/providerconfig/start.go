@@ -32,7 +32,7 @@ func Start(ctx context.Context, installation Installation, target string) (*prov
 	}
 	if !maps.Equal(actual, installation.Claims()) {
 		host.Close()
-		return nil, installation.Diagnostic(target, "provider_identity_mismatch", "The executable's engine declarations differ from the trusted manifest.")
+		return nil, installation.Diagnostic(target, "provider_identity_mismatch", installation.origin.mismatch())
 	}
 	return host, nil
 }

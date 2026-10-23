@@ -32,6 +32,9 @@ func TestProviderCheckReportsStructuredMissingInstallation(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
 		t.Run(entry.EngineID, func(t *testing.T) {
 			c := qt.New(t)
+			t.Setenv("XDG_CACHE_HOME", c.TempDir())
+			t.Setenv("HOME", c.TempDir())
+			t.Setenv("LocalAppData", c.TempDir())
 			command := providers.NewCommand()
 			var out, stderr bytes.Buffer
 			command.SetOut(&out)

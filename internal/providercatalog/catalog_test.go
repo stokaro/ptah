@@ -70,6 +70,21 @@ func TestMissingDiagnosticPreservesGuidance(t *testing.T) {
 	}
 }
 
+func TestMissingDiagnosticCarriesTheInstallInstructionOnlyForAPinnedEngine(t *testing.T) {
+	for _, entry := range providercatalog.Entries() {
+		t.Run(entry.EngineID, func(t *testing.T) {
+			c := qt.New(t)
+			pinned := providercatalog.MissingInstallable(entry)
+			c.Assert(pinned.Code, qt.Equals, "provider_missing")
+			c.Assert(pinned.Message, qt.Contains, "`ptah providers install "+entry.EngineID+"`")
+			c.Assert(pinned.Message, qt.Contains, entry.SetupURL)
+			unpinned := providercatalog.Missing(entry)
+			c.Assert(unpinned.Code, qt.Equals, "provider_missing")
+			c.Assert(unpinned.Message, qt.Not(qt.Contains), "ptah providers install")
+		})
+	}
+}
+
 func TestOfficialOwnersRegisterWithTheEngineRuntime(t *testing.T) {
 	c := qt.New(t)
 	for _, entry := range providercatalog.Entries() {
