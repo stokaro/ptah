@@ -9,7 +9,7 @@
 # What happens, in order: resolve a release, prove the install directory is
 # writable, download the archive and checksums.txt into a temporary directory,
 # verify the archive's SHA-256 against checksums.txt, unpack, and move the
-# binaries into place as the last step.
+# binaries and the bundled providers/ directory into place as the last step.
 #
 # What does not happen: no shell startup file is edited, no sudo is invoked, and
 # nothing is installed that failed verification. The only file written outside
@@ -83,6 +83,10 @@ Options:
   --dry-run          print what would happen, download nothing, write nothing
   --quiet            report errors only
   -h, --help         print this and exit
+
+The archive's providers/ directory, when it has one, is installed beside the
+binaries as <bin-dir>/providers. ptah finds its bundled YDB provider there. It
+is installed whichever binaries --only selects.
 
 Every option has an environment twin, because a script read from a pipe cannot
 always be given arguments:
@@ -599,6 +603,56 @@ install_binaries() {
 	say "installed $(printf '%s' "$selected" | sed 's/ /, /g') in $(display_path "$bindir")"
 }
 
+# install_providers places the archive's providers/ directory beside the
+# binaries. The host looks for an official provider in a providers/ directory
+# next to the resolved ptah executable, at
+# providers/<provider-id>/<version>/<executable>, so the layout in the archive
+# is copied as it is. The archive was verified against checksums.txt above, and
+# the host hashes the executable against the digest pinned in the ptah release
+# before it starts it.
+#
+# An archive without providers/ is installed as before: a release that predates
+# the bundle has none, and that is not an error. A providers/ that is not a
+# directory is one, because a half-understood layout must not be copied.
+#
+# Files are replaced one by one, each through a mktemp staging name and a rename
+# in its own directory, exactly like the binaries. The directory itself is never
+# removed, so a provider the reader placed there for another version or engine
+# stays. A providers/ in the install directory that is a symlink is refused: the
+# copy would write through it.
+install_providers() {
+	local source="$tmpdir/unpack/providers" list="$tmpdir/providers.list" file relative dest count=0
+	if [ ! -e "$source" ] && [ ! -L "$source" ]; then
+		return 0
+	fi
+	if [ -L "$source" ] || [ ! -d "$source" ]; then
+		fail 5 "$asset has a providers entry that is not a directory"
+	fi
+	if [ -L "$bindir/providers" ]; then
+		fail 7 "$bindir/providers is a symbolic link; remove it so the bundled providers can be installed"
+	fi
+	find "$source" -type f >"$list" ||
+		fail 5 "could not list the providers in $asset"
+	while IFS= read -r file; do
+		relative="${file#"$source"/}"
+		dest="$bindir/providers/$relative"
+		mkdir -p "$(dirname "$dest")" ||
+			fail 7 "could not create $(dirname "$dest")"
+		staging_file="$(mktemp "$(dirname "$dest")/.ptah-install.XXXXXXXXXX")" ||
+			fail 7 "could not create a staging file in $(dirname "$dest")"
+		cp "$file" "$staging_file" ||
+			fail 7 "could not write $staging_file"
+		chmod 0755 "$staging_file"
+		mv -f "$staging_file" "$dest" ||
+			fail 7 "could not install $dest"
+		staging_file=""
+		count=$((count + 1))
+	done <"$list"
+	if [ "$count" -gt 0 ]; then
+		say "installed $count bundled provider file(s) in $(display_path "$bindir")/providers"
+	fi
+}
+
 # display_path shortens a path inside $HOME to its ~ form. The absolute path is
 # what the machine uses and what an error should name; the tilde is what a
 # person writes when telling somebody else where the binaries went.
@@ -730,6 +784,7 @@ plan_only() {
 	say "would download $asset from $base_url/download/$version_tag"
 	say "would verify its sha256 against checksums.txt with $hasher"
 	say "would install $(printf '%s' "$selected" | sed 's/ /, /g') in $(display_path "$bindir")"
+	say "would install the providers/ directory of the archive beside them, when it has one"
 	if [ "$opt_no_modify_path" = false ] && [ -n "${GITHUB_PATH-}" ]; then
 		say "would add $(display_path "$bindir") to \$GITHUB_PATH"
 	fi
@@ -781,6 +836,7 @@ main() {
 
 	unpack
 	install_binaries
+	install_providers
 	report_version
 	update_github_path
 	report_path

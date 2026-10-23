@@ -89,6 +89,20 @@ when `version` is `latest`. Direct module fetch avoids stale Go module proxy
 results for moving refs. Use `binary-path` when a workflow builds Ptah from
 source before invoking the action.
 
+A downloaded release archive is verified against the release's `checksums.txt`
+before anything is unpacked. The action stops with an error when the digest
+differs, when `checksums.txt` has no entry for the archive, when the release
+has the archive but no `checksums.txt`, or when the runner has neither
+`sha256sum` nor `shasum`. It does not build from source in any of those cases.
+The source build runs only when the release has no archive for the runner.
+
+The release archive carries the pinned YDB provider in a `providers` directory
+beside `ptah`, and the action installs that directory next to the binary it
+puts on `PATH`. A build from source, whether by the fallback or through
+`binary-path`, has no bundled provider. A workflow that needs YDB in that case
+runs `ptah providers install ydb` itself, and the pinned digests in that Ptah
+build decide what it accepts.
+
 The action runs:
 
 ```bash

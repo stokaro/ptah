@@ -119,6 +119,10 @@ esac
 site="$work/site"
 mkdir -p "$site/download"
 
+# provider_dir is where the archives hold the bundled provider, relative to the
+# archive root and to the install directory.
+provider_dir="providers/github.com/stokaro/ptah-ydb-plugin/0.1.1"
+
 # build_release writes one fixture release: three stub binaries that report the
 # version they came from, packed flat exactly as the published archives are --
 # LICENSE, README.md and the three programs, with no top-level directory.
@@ -140,7 +144,19 @@ build_release() {
 		} >"$stage/$name"
 		chmod 0755 "$stage/$name"
 	done
-	tar -czf "$dir/$asset" -C "$stage" LICENSE README.md ptah ptah-compat ptah-ls
+	# v0.1.0 stands for a release that predates the bundled provider, so an
+	# archive without a providers/ directory stays installable.
+	if [ "$version" = 0.1.0 ]; then
+		tar -czf "$dir/$asset" -C "$stage" LICENSE README.md ptah ptah-compat ptah-ls
+	else
+		mkdir -p "$stage/$provider_dir"
+		{
+			printf '#!/bin/sh\n'
+			printf 'printf "%%s\\n" "provider: %s"\n' "$version"
+		} >"$stage/$provider_dir/ptah-plugin-ydb"
+		chmod 0755 "$stage/$provider_dir/ptah-plugin-ydb"
+		tar -czf "$dir/$asset" -C "$stage" LICENSE README.md ptah ptah-compat ptah-ls providers
+	fi
 	printf '%s\n' "$asset"
 }
 
@@ -564,6 +580,77 @@ binary: $name" ]; then
 	pass "install, all three binaries land and run"
 }
 
+case_providers() {
+	local bindir exe
+	bindir="$(fresh_bindir)"
+	exe="$bindir/$provider_dir/ptah-plugin-ydb"
+	invoke PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script"
+	expect_status 0 "an install with a bundled provider exits 0" || return 0
+	checks=$((checks + 1))
+	if [ ! -x "$exe" ]; then
+		report "$current / providers: $exe is missing or not executable"
+		return 0
+	fi
+	checks=$((checks + 1))
+	if [ "$("$exe")" != "provider: 0.2.0" ]; then
+		report "$current / providers: $exe is not the provider the archive carried"
+		return 0
+	fi
+	expect_contains "$out" "bundled provider file(s)" "the install says it placed the providers" || return 0
+	# Nothing but the provider tree and the binaries lands in the directory:
+	# a staging file left behind would be found by the next run.
+	checks=$((checks + 1))
+	if find "$bindir" -name '.ptah-install*' | grep -q .; then
+		report "$current / providers: a staging file was left in $bindir"
+		return 0
+	fi
+
+	# A file the reader placed under providers/ stays, and a second run replaces
+	# the provider it installed.
+	mkdir -p "$bindir/providers/example.com/other/1.0.0"
+	printf 'mine\n' >"$bindir/providers/example.com/other/1.0.0/keep"
+	printf 'stale\n' >"$exe"
+	invoke PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script"
+	expect_status 0 "a second install exits 0" || return 0
+	checks=$((checks + 1))
+	if [ "$("$exe")" != "provider: 0.2.0" ]; then
+		report "$current / providers: the second install did not replace the provider"
+		return 0
+	fi
+	checks=$((checks + 1))
+	if [ "$(cat "$bindir/providers/example.com/other/1.0.0/keep")" != "mine" ]; then
+		report "$current / providers: a file the reader placed under providers/ was removed"
+		return 0
+	fi
+
+	# --only picks binaries; the providers directory goes beside whichever is
+	# installed, because every one of them reads it.
+	bindir="$(fresh_bindir)"
+	invoke PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script" --only ptah-ls
+	expect_status 0 "--only ptah-ls exits 0" || return 0
+	checks=$((checks + 1))
+	if [ ! -x "$bindir/$provider_dir/ptah-plugin-ydb" ]; then
+		report "$current / providers: --only ptah-ls left the provider out"
+		return 0
+	fi
+
+	# An archive without providers/ installs as it always did.
+	bindir="$(fresh_bindir)"
+	invoke PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script" --version v0.1.0
+	expect_status 0 "an archive without providers exits 0" || return 0
+	expect_absent "$bindir/providers" "no providers directory is created for such an archive" || return 0
+
+	# A providers/ that is a symlink would be written through.
+	bindir="$(fresh_bindir)"
+	mkdir -p "$work/elsewhere"
+	ln -s "$work/elsewhere" "$bindir/providers"
+	invoke PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script"
+	expect_status 7 "a symlinked providers directory exits 7" || return 0
+	expect_contains "$err" "providers is a symbolic link" "the refusal says why" || return 0
+	expect_empty_dir "$work/elsewhere" "nothing is written through the link" || return 0
+	pass "the bundled providers directory lands beside the binaries and replaces only its own files"
+}
+
 case_install_twice() {
 	local bindir
 	bindir="$(fresh_bindir)"
@@ -947,6 +1034,7 @@ run_suite() {
 	case_help
 	case_unknown_option
 	case_install
+	case_providers
 	case_install_twice
 	case_pinned_version
 	case_checksum_mismatch

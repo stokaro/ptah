@@ -5,7 +5,8 @@ Installs the Ptah command-line tools on Windows.
 .DESCRIPTION
 Detects the processor architecture, resolves a release tag, downloads the
 matching .zip from the Ptah releases, verifies it against the published
-checksums.txt, extracts it, and copies the binaries into a per-user directory.
+checksums.txt, extracts it, and copies the binaries and the bundled providers
+directory into a per-user directory.
 
     irm https://ptah.run/install.ps1 | iex
 
@@ -508,6 +509,7 @@ function Install-Ptah {
         Write-PtahNote "would download $assetName from $baseUrl/download/$tag/"
         Write-PtahNote 'would verify sha256 against checksums.txt'
         Write-PtahNote "would install $($selected -join ', ') in $installDir"
+        Write-PtahNote 'would install the providers directory of the archive beside them, when it has one'
         return
     }
 
@@ -546,10 +548,50 @@ function Install-Ptah {
         $extracted = Join-Path $workDir 'extracted'
         Expand-Archive -LiteralPath $archive -DestinationPath $extracted -Force
 
-        # The archive is flat: LICENSE, README.md and the three .exe files sit
-        # at its root. Copying it whole into the bin directory would leave the
-        # license and the readme there too, so the binaries are copied by name,
-        # and that copy is the last write of the run.
+        # The archive is flat: LICENSE, README.md, the three .exe files and a
+        # providers directory sit at its root. Copying it whole into the bin
+        # directory would leave the license and the readme there too, so the
+        # binaries are copied by name, and that copy is the last write of the
+        # run.
+        #
+        # The providers directory goes first. ptah looks for its bundled YDB
+        # provider in a providers directory beside ptah.exe, at
+        # providers\<provider-id>\<version>\<executable>, so the layout is
+        # copied as it is. The archive was verified against checksums.txt above,
+        # and the host hashes the executable against the digest pinned in the
+        # ptah release before it starts it. An archive without the directory
+        # installs as before. Files are copied one by one and the directory is
+        # never removed, so a provider the reader placed there stays.
+        $providersSource = Join-Path $extracted 'providers'
+        if (Test-Path -LiteralPath $providersSource) {
+            $sourceItem = Get-Item -LiteralPath $providersSource -Force
+            if ((-not $sourceItem.PSIsContainer) -or (($sourceItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                Stop-Ptah 5 "$assetName has a providers entry that is not a directory"
+            }
+            $providersTarget = Join-Path $installDir 'providers'
+            if (Test-Path -LiteralPath $providersTarget) {
+                $targetItem = Get-Item -LiteralPath $providersTarget -Force
+                if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    Stop-Ptah 7 "$providersTarget is a link; remove it so the bundled providers can be installed"
+                }
+            }
+            $providerFiles = 0
+            foreach ($file in Get-ChildItem -LiteralPath $providersSource -Recurse -File -Force) {
+                $relative = $file.FullName.Substring($providersSource.Length).TrimStart('\', '/')
+                $destination = Join-Path $providersTarget $relative
+                try {
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+                    Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+                } catch {
+                    Stop-Ptah 7 "cannot write $destination; close any program running it and try again"
+                }
+                $providerFiles++
+            }
+            if ($providerFiles -gt 0) {
+                Write-PtahNote "installed $providerFiles bundled provider file(s) in $providersTarget"
+            }
+        }
+
         $replaced = @()
         foreach ($name in $selected) {
             $source = Join-Path $extracted "$name.exe"
