@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/providercatalog"
+	"ptah.run/internal/providersource"
 )
 
 // Spec selects executable bytes already trusted by the caller. Environment is
@@ -70,6 +71,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 	if err := host.initializeModels(); err != nil {
 		client.Close()
 		return nil, err
+	}
+	if err = providersource.CheckYAMLKeys(host.description.GetEngines()); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("%w: %w", provider.ErrProtocol, err)
 	}
 	if host.goSource, err = goDirectiveClaims(host.description); err != nil {
 		client.Close()

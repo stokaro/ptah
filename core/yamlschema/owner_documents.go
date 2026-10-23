@@ -1,9 +1,11 @@
 package yamlschema
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"go.yaml.in/yaml/v3"
@@ -27,7 +29,22 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 			input.Fragments = append(input.Fragments, fragment)
 		}
 	}
+	groups, err := ownerPlatformGroups(owners, data)
+	if err != nil {
+		return err
+	}
 	for index, table := range input.Tables {
+		for _, group := range owners.PlatformGroups() {
+			node, written := groups[table.Key][group]
+			if !written {
+				continue
+			}
+			fragment, err := capture.fragment([]string{yamlext.EntryTable, table.Key, yamlext.PlatformKeyPrefix + group}, index, &node)
+			if err != nil {
+				return err
+			}
+			input.Fragments = append(input.Fragments, fragment)
+		}
 		for _, key := range sortedKeys(d.Tables[table.Key].Owned) {
 			if owners.DocumentKey(yamlext.EntryTable, key) {
 				node := d.Tables[table.Key].Owned[key]
@@ -108,4 +125,41 @@ func captureKind(kind yaml.Kind) yamlext.NodeKind {
 	default:
 		return ""
 	}
+}
+
+// ownerPlatformGroups returns, for each table key, the groups of its platform
+// key that a document owner claims, with the node each group is written as.
+// The typed decoding of the platform key keeps only strings, and an owner reads
+// the value with its source positions, so the document is decoded again for the
+// groups. A document that claims none is not decoded again.
+func ownerPlatformGroups(owners yamlext.Set, data []byte) (map[string]map[string]yaml.Node, error) {
+	claimed := owners.PlatformGroups()
+	if len(claimed) == 0 {
+		return nil, nil
+	}
+	rest := reflect.StructField{Name: "Rest", Type: reflect.TypeFor[map[string]yaml.Node](), Tag: `yaml:",inline"`}
+	entry := reflect.StructOf([]reflect.StructField{
+		{Name: "Platform", Type: reflect.TypeFor[map[string]yaml.Node](), Tag: `yaml:"platform"`}, rest,
+	})
+	wrapper := reflect.New(reflect.StructOf([]reflect.StructField{
+		{Name: "Tables", Type: reflect.MapOf(reflect.TypeFor[string](), entry), Tag: `yaml:"tables"`}, rest,
+	}))
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(wrapper.Interface()); err != nil {
+		return nil, fmt.Errorf("parse YAML schema: %w", err)
+	}
+	groups := make(map[string]map[string]yaml.Node)
+	tables := wrapper.Elem().Field(0)
+	for _, key := range tables.MapKeys() {
+		platform, _ := reflect.TypeAssert[map[string]yaml.Node](tables.MapIndex(key).Field(0))
+		for _, group := range claimed {
+			if node, written := platform[group]; written {
+				if groups[key.String()] == nil {
+					groups[key.String()] = make(map[string]yaml.Node)
+				}
+				groups[key.String()][group] = node
+			}
+		}
+	}
+	return groups, nil
 }

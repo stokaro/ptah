@@ -3437,6 +3437,17 @@ retain scalar spelling, tags, explicit nulls, aliases, sequence order, and line
 and column positions. Each owner receives a private copy. Duplicate mapping
 keys and cyclic aliases in captured fragments are refused before dispatch.
 
+A document owner may claim one group of a table entry's `platform` key. An
+`EntrySection` whose key is `yamlext.PlatformKeyPrefix` and a group name, such
+as `platform.ydb`, hands the owner the value of `platform: {ydb: ...}` of each
+table that writes it, as a fragment with the path `tables`, the table key and
+the claimed key. `yamlext.PlatformGroup` reads the key, and `Set.PlatformGroups`
+lists the groups the owners of a set claim. The claimed group is the owner's:
+the frontend leaves it out of the table's `Overrides`. The same group written
+under `overrides`, and every group nobody claims, stay in `Overrides`. Only a
+document owner can claim a group, and any other dotted table key is refused when
+the set is built.
+
 `DocumentResult` returns contributions and explicit desired coverage together.
 No objects does not imply absence, and no coverage record means uninspected.
 The set refuses undeclared model kinds, another owner's coverage, invalid table

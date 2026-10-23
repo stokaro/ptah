@@ -205,3 +205,49 @@ func TestYAMLSelectsEachEnginesOwnClaims(t *testing.T) {
 		})
 	}
 }
+
+func platformEngine(keys ...*protocol.YAMLSourceKey) []*protocol.Engine {
+	return []*protocol.Engine{{Id: "example", Aliases: []string{"examples"}, YamlSourceKeys: keys}}
+}
+
+func TestCheckYAMLKeys_HappyPath(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		keys []*protocol.YAMLSourceKey
+	}{
+		{"no key", nil},
+		{"undotted keys", []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "values"}, {Scope: protocol.YAMLSourceKey_TABLE, Key: "values"}}},
+		{"the platform group of the engine", []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_TABLE, Key: "platform.example"}}},
+		{"the platform group of an alias", []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_TABLE, Key: "platform.examples"}}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(providersource.CheckYAMLKeys(platformEngine(row.keys...)), qt.IsNil)
+		})
+	}
+}
+
+func TestCheckYAMLKeys_FailurePath(t *testing.T) {
+	for _, row := range []struct {
+		name, want string
+		key        *protocol.YAMLSourceKey
+	}{
+		{"a dotted key that is no platform group", `YAML key "a.b" of engine "example" is dotted`,
+			&protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_TABLE, Key: "a.b"}},
+		{"a group with a dot", `YAML key "platform.example.ttl" of engine "example" is dotted`,
+			&protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_TABLE, Key: "platform.example.ttl"}},
+		{"a platform group at document scope", `YAML key "platform.example" of engine "example" claims a platform group, which a table entry holds`,
+			&protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_DOCUMENT, Key: "platform.example"}},
+		{"the platform group of another engine", `claims the platform group "mysql", which names no engine of the provider`,
+			&protocol.YAMLSourceKey{Scope: protocol.YAMLSourceKey_TABLE, Key: "platform.mysql"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := providersource.CheckYAMLKeys(platformEngine(row.key))
+
+			c.Assert(err, qt.ErrorMatches, `.*`+row.want+`.*`)
+		})
+	}
+}

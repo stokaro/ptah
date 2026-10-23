@@ -455,7 +455,26 @@ rollback. A stale plan refuses application after the target changes.
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete
 interpretation and coverage from the owner. Unknown keys and unsupported values
-are refused. Source-loading support alone does not establish planning or execution support
+are refused.
+
+A provider can also claim the group of its own engine in a table's `platform`
+key, where the common syntax holds platform properties. The claim is a
+`TABLE` key `platform.<engine>`, and the engine is one the provider declares, by
+its ID or an alias. For a table that writes
+
+```yaml
+tables:
+  events:
+    platform:
+      ydb: {row_deletion_column: created_at, row_deletion_interval: PT1H}
+```
+
+the provider receives the mapping of the `ydb` group with its keys unprefixed,
+and Ptah keeps no copy of the group in the table's platform overrides. Groups of
+other engines stay in the overrides. A group written under `overrides` is not
+the provider's and stays there too. Ptah refuses at startup a dotted key that is
+not `platform.<engine>`, a platform group claimed at document scope, and a group
+that names no engine of the provider. Source-loading support alone does not establish planning or execution support
 for those objects and facets. Those operations require their own provider
 services and declarations.
 

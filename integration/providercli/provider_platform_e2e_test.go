@@ -3,13 +3,18 @@
 package providercli_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/yamlschema"
 	"ptah.run/engine"
+	"ptah.run/internal/providerhost"
 )
 
 func platformProvider(c *qt.C) *engine.Runtime {
@@ -128,4 +133,79 @@ func TestProviderTableDirectiveDeclaresAColumnValue_FailurePath(t *testing.T) {
 			c.Assert(db.Tables, qt.HasLen, 0)
 		})
 	}
+}
+
+const platformYAMLSource = `tables:
+  records:
+    columns:
+      id: {type: INTEGER}
+    platform:
+      mysql: {engine: InnoDB}
+      fixture: {seconds: 9007199254740993}
+  plain:
+    columns:
+      id: {type: INTEGER}
+`
+
+func TestProviderClaimedPlatformGroup_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+
+	db, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte(platformYAMLSource))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":9007199254740993}`})
+	c.Assert(db.Tables[0].Name, qt.Equals, "plain")
+	c.Assert(db.Tables[1].Overrides, qt.DeepEquals, map[string]map[string]string{"mysql": {"engine": "InnoDB"}},
+		qt.Commentf("the provider's group leaves the common overrides, and another engine's stays"))
+}
+
+func TestProviderClaimedPlatformGroup_Coverage(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+
+	db, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte(platformYAMLSource))
+
+	c.Assert(err, qt.IsNil)
+	var subjects []string
+	for _, record := range db.FeatureCoverage.SubjectRecords() {
+		subjects = append(subjects, string(record.Subject.Kind)+" "+record.Subject.Name.Source+" "+string(record.Knowledge.State))
+	}
+	c.Assert(subjects, qt.DeepEquals, []string{"table records complete"})
+}
+
+func TestProviderClaimedPlatformGroup_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+
+	db, err := yamlschema.Parse(c.Context(), runtime.YAML(),
+		[]byte("tables:\n  records:\n    columns:\n      id: {type: INTEGER}\n    platform:\n      fixture: {seconds: soon}\n"))
+
+	c.Assert(err, qt.ErrorMatches, `YAML document of example.org/fixture: provider decode source failed.*`)
+	c.Assert(db, qt.IsNil)
+}
+
+// TestProviderPlatformGroupWithoutTheClaim_KeepsIt is the control: a provider
+// that claims no group leaves the group in the overrides.
+func TestProviderPlatformGroupWithoutTheClaim_KeepsIt(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProvider(c)
+
+	db, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte(platformYAMLSource))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables[1].Overrides["fixture"], qt.DeepEquals, map[string]string{"seconds": "9007199254740993"})
+}
+
+func TestProviderClaimOfAnotherEnginesPlatformGroup_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	executable := independentCLIProviderCommand(c, "platform-foreign-group")
+	data, err := os.ReadFile(executable)
+	c.Assert(err, qt.IsNil)
+	digest := sha256.Sum256(data)
+
+	host, err := providerhost.Start(c.Context(), providerhost.Spec{Executable: executable, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture"})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*claims the platform group "mysql", which names no engine of the provider.*`)
+	c.Assert(host, qt.IsNil)
 }
