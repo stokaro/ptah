@@ -210,7 +210,10 @@ jobs:
       # archive against checksums.txt before unpacking, refuses when the check
       # cannot happen, and places the providers directory beside ptah.
       - name: Check the action installer
-        run: scripts/check-action-install.sh
+        run: |
+          set -euo pipefail
+          scripts/check-action-install.sh
+          scripts/check-action-install-selftest.sh
 
   readme-example:
     name: README example

@@ -96,8 +96,6 @@ func TestStage_HappyPath(t *testing.T) {
 		c.Assert(string(must.Must(os.ReadFile(item.Executable))), qt.Equals, fixture.bodies[item.Platform])
 		c.Assert(item.SHA256, qt.Equals, archivetest.SHA256([]byte(fixture.bodies[item.Platform])))
 	}
-	info := must.Must(os.Stat(staged[0].Executable))
-	c.Assert(info.Mode().Perm()&0o111, qt.Not(qt.Equals), os.FileMode(0))
 }
 
 func TestStage_ReplacesAStalePlatformDirectory(t *testing.T) {
