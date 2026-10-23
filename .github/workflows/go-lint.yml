@@ -206,6 +206,15 @@ jobs:
           scripts/check-goreleaser-artifact-names-selftest.sh
           scripts/check-goreleaser-artifact-names.sh
 
+      # The action's install.sh against a fixture release: it verifies the
+      # archive against checksums.txt before unpacking, refuses when the check
+      # cannot happen, and places the providers directory beside ptah.
+      - name: Check the action installer
+        run: |
+          set -euo pipefail
+          scripts/check-action-install.sh
+          scripts/check-action-install-selftest.sh
+
   readme-example:
     name: README example
     needs: scope

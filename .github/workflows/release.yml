@@ -106,6 +106,25 @@ jobs:
             docker run --rm --platform "linux/$arch" --entrypoint ptah-ls "$image" --version
           done
 
+      # The bundled YDB provider, in the two places a user meets it without a
+      # download. Each host archive must hold the pinned executable at
+      # providers/<provider-id>/<version>/<executable> with the pinned digest,
+      # for every platform the pin covers. Each image must hold the same bytes
+      # beside /usr/local/bin/ptah. The staged tree the images were built from
+      # was verified against the pin by the before hook.
+      - name: Check the bundled provider in every archive and image
+        run: |
+          set -euo pipefail
+          go run ./internal/cmd/providerbundle --verify-archives dist
+          version="$(jq -r .version dist/metadata.json)"
+          for arch in amd64 arm64; do
+            image="ghcr.io/stokaro/ptah:${version}-${arch}"
+            want="$(sha256sum .release-providers/linux_${arch}/providers/*/*/*/*/ptah-plugin-ydb | cut -d ' ' -f 1)"
+            got="$(docker run --rm --platform "linux/$arch" --entrypoint sh "$image" -c 'sha256sum /usr/local/bin/providers/*/*/*/*/ptah-plugin-ydb' | cut -d ' ' -f 1)"
+            test -n "$want"
+            test "$want" = "$got"
+          done
+
   release-check-gate:
     name: Release check gate
     if: always() && github.event_name == 'pull_request'

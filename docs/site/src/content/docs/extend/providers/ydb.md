@@ -30,6 +30,11 @@ Each Ptah release pins one tested release of this provider. Install it with
 `ptah providers install ydb`. A command that asks for the provider with
 `--provider-engine ydb` then selects the installed or bundled copy without a
 manifest; a manifest entry, described below, overrides both.
+The full distribution (release archives, container image, Homebrew cask, and the
+installers) contains this provider at the bundled location, so it needs no
+install step. A build from source or `go install` does. Without
+`--provider-engine ydb`, a `ydb://` address is served by the engine built into
+`ptah` in this documentation version.
 The [install procedure](../../executable-providers/#install-the-pinned-official-provider)
 covers the download, the checks, and where the file is stored. Remaining work on
 official providers is tracked in

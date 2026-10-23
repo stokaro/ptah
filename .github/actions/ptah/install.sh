@@ -49,10 +49,11 @@ install_from_source() {
 }
 mkdir -p "$install_dir"
 
+api_url="${PTAH_ACTION_API_URL:-https://api.github.com/repos/stokaro/ptah}"
 if [[ "$version" == "latest" ]]; then
-	release_url="https://api.github.com/repos/stokaro/ptah/releases/latest"
+	release_url="$api_url/releases/latest"
 else
-	release_url="https://api.github.com/repos/stokaro/ptah/releases/tags/$version"
+	release_url="$api_url/releases/tags/$version"
 fi
 
 curl_args=(-fsSL)
@@ -64,17 +65,69 @@ if ! curl "${curl_args[@]}" "$release_url" -o "$tmp_dir/release.json"; then
 	exit 0
 fi
 
-asset_url="$(
+# Exit 2 means the release has no archive for this runner, which is the one case
+# that builds from source. Exit 3 means it has an archive and no checksums.txt:
+# that is a refusal, because falling back to source would turn a missing
+# checksum file into a different, unreviewed install.
+selection_status=0
+selection="$(
 	node "$GITHUB_ACTION_PATH/select-asset.js" "$tmp_dir/release.json" "$os" "$arch"
-)" || {
-	install_from_source
-	exit 0
-}
-archive="$tmp_dir/ptah.tar.gz"
-curl "${curl_args[@]}" "$asset_url" -o "$archive"
-tar -xzf "$archive" -C "$tmp_dir"
+)" || selection_status=$?
+case "$selection_status" in
+	0) ;;
+	2)
+		install_from_source
+		exit 0
+		;;
+	*)
+		printf 'refusing to install: the release has an archive for %s/%s but no checksums.txt to verify it\n' "$os" "$arch" >&2
+		exit 1
+		;;
+esac
+asset_name="$(printf '%s\n' "$selection" | sed -n 1p)"
+asset_url="$(printf '%s\n' "$selection" | sed -n 2p)"
+checksums_url="$(printf '%s\n' "$selection" | sed -n 3p)"
 
-ptah_bin="$tmp_dir/ptah"
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{print $1}'
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | awk '{print $1}'
+	else
+		printf 'need sha256sum or shasum to verify the Ptah archive\n' >&2
+		return 1
+	fi
+}
+
+archive="$tmp_dir/$asset_name"
+checksums="$tmp_dir/checksums.txt"
+curl "${curl_args[@]}" "$asset_url" -o "$archive"
+curl "${curl_args[@]}" "$checksums_url" -o "$checksums"
+
+# Verify before anything is unpacked, and refuse on every way the check can fail
+# to happen: no line for the archive, an empty digest, a missing hash tool, a
+# different digest. The name is matched as a whole field, so the archive's own
+# .sbom.json line cannot stand in for it.
+want="$(awk -v name="$asset_name" '$2 == name { print $1; exit }' "$checksums")"
+if [[ -z "$want" ]]; then
+	printf 'refusing to install: checksums.txt has no entry for %s\n' "$asset_name" >&2
+	exit 1
+fi
+got="$(sha256_of "$archive")"
+if [[ -z "$got" ]]; then
+	printf 'refusing to install: could not compute the SHA-256 of %s\n' "$asset_name" >&2
+	exit 1
+fi
+if [[ "$want" != "$got" ]]; then
+	printf 'refusing to install: checksum mismatch for %s\n  want %s\n  got  %s\n' "$asset_name" "$want" "$got" >&2
+	exit 1
+fi
+
+unpack_dir="$tmp_dir/unpack"
+mkdir -p "$unpack_dir"
+tar -xzf "$archive" -C "$unpack_dir"
+
+ptah_bin="$unpack_dir/ptah"
 if [[ ! -x "$ptah_bin" ]]; then
 	printf 'downloaded archive did not contain an executable ptah binary\n' >&2
 	exit 1
@@ -82,6 +135,13 @@ fi
 
 cp "$ptah_bin" "$install_dir/ptah"
 chmod +x "$install_dir/ptah"
+
+# The bundled providers directory goes beside ptah, where the host looks for it.
+# An archive from a release that predates the bundle has none.
+if [[ -d "$unpack_dir/providers" && ! -L "$unpack_dir/providers" ]]; then
+	mkdir -p "$install_dir/providers"
+	cp -R "$unpack_dir/providers/." "$install_dir/providers/"
+fi
 
 printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
 printf 'ptah-bin=%s\n' "$install_dir/ptah" >>"$GITHUB_OUTPUT"
