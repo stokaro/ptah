@@ -162,7 +162,7 @@ jobs:
           - 3306:3306
 
       mariadb:
-        image: mariadb:12.3
+        image: mariadb:13.0
         env:
           MARIADB_DATABASE: ptah_test
           MARIADB_USER: ptah_user
@@ -200,7 +200,7 @@ jobs:
           - 3316:3306
 
       mariadb-dev:
-        image: mariadb:12.3
+        image: mariadb:13.0
         env:
           MARIADB_ROOT_PASSWORD: root_password
         options: >-
