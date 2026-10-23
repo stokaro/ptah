@@ -54,7 +54,7 @@ kinds, which is the coupling ADR 0023 removes.
 **The provider accepts the syntax the bundled source accepts.** A user who
 switches an engine to its provider keeps every annotation and YAML key that
 worked. Until the bundled code is deleted, a corpus of annotated fixtures is
-decoded through both paths and the resulting desired state is compared. A
+decoded through both paths and the resulting desired schema is compared. A
 difference is a defect of the provider.
 
 **Coverage is declared per source.** A provider reports for each decoded source
