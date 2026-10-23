@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,6 +40,10 @@ type Installation struct {
 	providerhost.Spec
 	Engines  []Engine `json:"engines"`
 	Disabled bool     `json:"disabled,omitempty"`
+
+	// origin records where the installation came from. The zero value is a
+	// manifest entry. It is never read from or written to a manifest.
+	origin origin
 }
 
 // Configuration is a versioned explicit installation manifest.
@@ -123,14 +128,19 @@ func (c Configuration) validate() error {
 	return nil
 }
 
-// Select resolves one explicit engine selector. Disabled entries remain
-// distinguishable from absent entries and never select a different provider.
-func (c Configuration) Select(selector string) (Installation, string, error) {
+// errUnclaimed says the manifest names no installation for the engine.
+var errUnclaimed = errors.New("manifest claims no such engine")
+
+// selected resolves one explicit engine selector against the manifest alone: it
+// is selection rule 1. A disabled entry remains distinguishable from an absent
+// entry and never selects a different provider. An engine the manifest does not
+// claim yields errUnclaimed, so the caller can continue with the next rule.
+func (c Configuration) selected(selector string) (Installation, string, error) {
 	if err := c.validate(); err != nil {
 		return Installation{}, "", err
 	}
 	name := strings.ToLower(strings.TrimSpace(selector))
-	if entry, found := providercatalog.Lookup(name); found {
+	if entry, known := providercatalog.Lookup(name); known {
 		name = entry.EngineID
 	}
 	for _, installation := range c.Providers {
@@ -143,10 +153,7 @@ func (c Configuration) Select(selector string) (Installation, string, error) {
 			}
 		}
 	}
-	if entry, found := providercatalog.Lookup(selector); found {
-		return Installation{}, "", providercatalog.Missing(entry)
-	}
-	return Installation{}, "", fmt.Errorf("no configured provider owns the selected engine")
+	return Installation{}, "", errUnclaimed
 }
 
 // Claims returns every canonical engine and alias with its canonical target.

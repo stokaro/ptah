@@ -17,22 +17,22 @@ func (i Installation) Verify(engine string) error {
 	}
 	file, err := os.Open(i.Executable)
 	if errors.Is(err, os.ErrNotExist) {
-		return i.Diagnostic(engine, "provider_executable_missing", "The configured provider executable was not found; restore it or correct the trusted manifest.")
+		return i.Diagnostic(engine, "provider_executable_missing", "The "+i.origin.label()+" provider executable was not found; "+i.origin.restore(engine)+".")
 	}
 	if err != nil {
-		return i.Diagnostic(engine, "provider_unreadable", "The configured provider executable cannot be read; check its file permissions.")
+		return i.Diagnostic(engine, "provider_unreadable", "The "+i.origin.label()+" provider executable cannot be read; check its file permissions.")
 	}
 	defer func() { _ = file.Close() }()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return i.Diagnostic(engine, "provider_unreadable", "The configured provider executable must be a readable regular file.")
+		return i.Diagnostic(engine, "provider_unreadable", "The "+i.origin.label()+" provider executable must be a readable regular file.")
 	}
 	digest := sha256.New()
 	if _, err := io.Copy(digest, file); err != nil {
-		return i.Diagnostic(engine, "provider_unreadable", "The configured provider executable could not be read completely.")
+		return i.Diagnostic(engine, "provider_unreadable", "The "+i.origin.label()+" provider executable could not be read completely.")
 	}
 	if !strings.EqualFold(hex.EncodeToString(digest.Sum(nil)), i.SHA256) {
-		return i.Diagnostic(engine, "provider_untrusted", "The provider executable does not match its trusted SHA-256 checksum; verify its provenance before changing the manifest.")
+		return i.Diagnostic(engine, "provider_untrusted", i.origin.untrusted(engine))
 	}
 	return nil
 }

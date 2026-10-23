@@ -84,11 +84,11 @@ func prepare(cmd *cobra.Command, path, selectedEngine string) (context.Context, 
 	if selector == "" {
 		return cmd.Context(), nil, nil
 	}
-	installation, target, err := config.Select(selector)
+	if servedEmbedded(config, selector, explicit) {
+		return cmd.Context(), nil, nil
+	}
+	installation, target, err := providerconfig.DefaultResolver().Select(config, selector)
 	if err != nil {
-		if !explicit && platform.NormalizeDialect(selector) != "" && !configuredFor(config, selector) {
-			return cmd.Context(), nil, nil
-		}
 		if !configured && !explicit {
 			if _, known := providercatalog.Lookup(selector); !known {
 				return cmd.Context(), nil, nil
@@ -100,6 +100,18 @@ func prepare(cmd *cobra.Command, path, selectedEngine string) (context.Context, 
 		return nil, nil, err
 	}
 	return selectProvider(cmd.Context(), installation, target)
+}
+
+// servedEmbedded reports whether an engine with a built-in implementation keeps
+// that implementation for this invocation. Only an explicit --provider-engine,
+// or a manifest entry that claims the engine, asks for a provider instead; the
+// bundled and stored candidates of the selection order are not consulted for an
+// engine that is still built in.
+//
+// This is the one place the default for an official engine is decided. Serving
+// an engine from its provider by default means returning false here for it.
+func servedEmbedded(config providerconfig.Configuration, selector string, explicit bool) bool {
+	return !explicit && platform.NormalizeDialect(selector) != "" && !configuredFor(config, selector)
 }
 
 func targetSelector(cmd *cobra.Command) string {

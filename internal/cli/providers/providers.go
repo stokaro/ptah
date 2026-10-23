@@ -130,7 +130,7 @@ func newCheckCommand() *cobra.Command {
 		if err != nil {
 			return opts.fail(cmd, err)
 		}
-		installation, target, err := config.Select(opts.engine)
+		installation, target, err := providerconfig.DefaultResolver().Select(config, opts.engine)
 		if err != nil {
 			return opts.fail(cmd, err)
 		}
