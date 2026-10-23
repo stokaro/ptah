@@ -33,8 +33,8 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// Without the common-table contract the host cannot interpret a table
 	// operation itself. A provider that owns the lifecycle declares parent
 	// kinds, assesses each captured creation and column change, and claims the
-	// host's placeholder. Removals have no such path yet.
-	if !p.commonTables && ((len(diff.TablesAdded) > 0 && !p.assessParents) || (len(diff.TablesModified) > 0 && !p.assessParents) || len(diff.TablesRemoved) > 0) {
+	// host's placeholder.
+	if !p.commonTables && !p.assessParents && (len(diff.TablesAdded) > 0 || len(diff.TablesModified) > 0 || len(diff.TablesRemoved) > 0) {
 		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
@@ -74,6 +74,10 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		}
 	}
 	for _, name := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
+		if !p.commonTables {
+			nodes = append(nodes, &pendingTableDrop{name: name})
+			continue
+		}
 		nodes = append(nodes, &ast.DropTableNode{Name: name})
 	}
 	return p.schedule(ctx, runtime, diff, nodes, removalStart)

@@ -53,9 +53,10 @@ and every added or dropped column is a step the provider must claim. An added
 column reaches the provider with its full definition, including defaults,
 comments, collation, and facets. A column step reads its table and creates or
 drops one column of it. The host refuses a plan that leaves such a step
-unclaimed, and the error names the table and the column. Changes to existing
-columns, indexes, and table comments, and table removal, are refused. These
-services do not grant common SQL rendering.
+unclaimed, and the error names the table and the column. A removed table
+reaches the provider with its captured state, and the drop is a step the
+provider must claim in the same way. Changes to existing columns, indexes, and
+table comments are refused. These services do not grant common SQL rendering.
 
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.

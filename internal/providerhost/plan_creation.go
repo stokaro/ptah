@@ -32,6 +32,16 @@ func (p commonPlanner) creationNode(creation difftypes.TableCreation) (ast.Node,
 	return commonTable(schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields})
 }
 
+// pendingTableDrop stands in for the removal of a table whose provider owns
+// the table lifecycle. The host has no common-table interpretation to render a
+// DROP with, so only the provider's graph step can. Rendering it is always an
+// error.
+type pendingTableDrop struct{ name string }
+
+func (n *pendingTableDrop) Accept(ast.Visitor) error {
+	return unsupported("unclaimed provider table removal " + n.name)
+}
+
 // pendingColumnChange stands in for a column addition or removal on a table
 // whose provider owns the table lifecycle. The host has no common-table
 // interpretation to render it with, so only the provider's graph step can. The
@@ -51,12 +61,14 @@ func (n *pendingColumnChange) Accept(ast.Visitor) error {
 	return unsupported(fmt.Sprintf("unclaimed provider addition of column %s to table %s", n.column, n.table))
 }
 
-// rejectUnclaimedChanges refuses a plan in which a provider left a creation
-// or a column change as the host's placeholder, naming the first one.
+// rejectUnclaimedChanges refuses a plan in which a provider left a creation,
+// a removal or a column change as the host's placeholder, naming the first one.
 func rejectUnclaimedChanges(nodes []ast.Node) error {
 	for _, node := range nodes {
 		switch pending := node.(type) {
 		case *pendingTableCreation:
+			return pending.Accept(nil)
+		case *pendingTableDrop:
 			return pending.Accept(nil)
 		case *pendingColumnChange:
 			return pending.Accept(nil)
