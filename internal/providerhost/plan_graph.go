@@ -52,7 +52,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	if err != nil {
 		return nil, err
 	}
-	if err := rejectUnclaimedCreations(scheduled); err != nil {
+	if err := rejectUnclaimedChanges(scheduled); err != nil {
 		return nil, err
 	}
 	return scheduled, nil
@@ -79,6 +79,8 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 			name, action = typed.Name, plangraph.Drop
 		case *ast.AlterTableNode:
 			name, action = typed.Name, plangraph.Alter
+		case *pendingColumnChange:
+			name, action = typed.table, plangraph.Alter
 		default:
 			return nil, fmt.Errorf("%w: unsupported common planning node %T", schemaext.ErrInvalidValue, node)
 		}
@@ -88,23 +90,51 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 			return nil, fmt.Errorf("%w: common operation has no captured parent", schemaext.ErrInvalidValue)
 		}
 		step := featureplan.CommonStep{Parent: parent, Effects: []plangraph.Effect{{Subject: parent, Action: action}}}
-		if table, ok := node.(*ast.AlterTableNode); ok {
-			if len(table.Operations) != 1 {
-				return nil, fmt.Errorf("%w: common ALTER must carry one operation", schemaext.ErrInvalidValue)
+		edit, err := columnChange(node)
+		if err != nil {
+			return nil, err
+		}
+		if edit != nil {
+			// A column step reads its table and creates or drops one column of
+			// it, the footprint a provider that plans columns expects. Altering
+			// the table itself would claim a change this step does not make
+			// and would clash with the provider's own table operations.
+			action = plangraph.Drop
+			if edit.added != nil {
+				step.AddedColumn, action = edit.added, plangraph.Create
 			}
-			var column string
-			switch operation := table.Operations[0].(type) {
-			case *ast.AddColumnOperation:
-				step.AddedColumn, column, action = operation.Column, operation.Column.Name, plangraph.Create
-			case *ast.DropColumnOperation:
-				column, action = operation.ColumnName, plangraph.Drop
-			default:
-				return nil, fmt.Errorf("%w: unsupported common ALTER operation", schemaext.ErrInvalidValue)
-			}
-			subject := planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, column))
-			step.Effects = append(step.Effects, plangraph.Effect{Subject: subject, Action: action})
+			subject := planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, edit.name))
+			step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
 		}
 		metadata[i] = step
 	}
 	return metadata, nil
+}
+
+// columnEdit is the one column a step adds or drops. added is nil for a drop.
+type columnEdit struct {
+	name  string
+	added *ast.ColumnNode
+}
+
+// columnChange reads the column a common ALTER node or a placeholder adds or
+// drops. It returns nil for a node that changes no column.
+func columnChange(node ast.Node) (*columnEdit, error) {
+	switch typed := node.(type) {
+	case *pendingColumnChange:
+		return &columnEdit{name: typed.column, added: typed.added}, nil
+	case *ast.AlterTableNode:
+		if len(typed.Operations) != 1 {
+			return nil, fmt.Errorf("%w: common ALTER must carry one operation", schemaext.ErrInvalidValue)
+		}
+		switch operation := typed.Operations[0].(type) {
+		case *ast.AddColumnOperation:
+			return &columnEdit{name: operation.Column.Name, added: operation.Column}, nil
+		case *ast.DropColumnOperation:
+			return &columnEdit{name: operation.ColumnName}, nil
+		default:
+			return nil, fmt.Errorf("%w: unsupported common ALTER operation", schemaext.ErrInvalidValue)
+		}
+	}
+	return nil, nil
 }

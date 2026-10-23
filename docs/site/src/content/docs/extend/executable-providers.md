@@ -44,8 +44,18 @@ with their own rules. This preserves authored values and inspection knowledge.
 Providers can declare `schema.project-table-creations` for their own offline
 CREATE prediction. Computed values stay within captured owner identities and
 preserve exclusions. Native CREATE planning must replace the host graph step
-with provider operations that retain its dependencies. These services do not
-grant common SQL rendering or native ALTER and DROP support.
+with provider operations that retain its dependencies.
+
+A provider that owns the table lifecycle without
+`schema.common-table-identity.v1` also receives altered tables. The planning
+request carries the captured desired and current state of each altered table,
+and every added or dropped column is a step the provider must claim. An added
+column reaches the provider with its full definition, including defaults,
+comments, collation, and facets. A column step reads its table and creates or
+drops one column of it. The host refuses a plan that leaves such a step
+unclaimed, and the error names the table and the column. Changes to existing
+columns, indexes, and table comments, and table removal, are refused. These
+services do not grant common SQL rendering.
 
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.

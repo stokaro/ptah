@@ -1,6 +1,8 @@
 package providerhost
 
 import (
+	"fmt"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemacapture"
@@ -30,9 +32,33 @@ func (p commonPlanner) creationNode(creation difftypes.TableCreation) (ast.Node,
 	return commonTable(schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields})
 }
 
-func rejectUnclaimedCreations(nodes []ast.Node) error {
+// pendingColumnChange stands in for a column addition or removal on a table
+// whose provider owns the table lifecycle. The host has no common-table
+// interpretation to render it with, so only the provider's graph step can. The
+// operand keeps the full captured field, so the provider sees facets, defaults
+// and comments. Rendering it is always an error.
+type pendingColumnChange struct {
+	table  string
+	column string
+	// added is nil for a removal.
+	added *ast.ColumnNode
+}
+
+func (n *pendingColumnChange) Accept(ast.Visitor) error {
+	if n.added == nil {
+		return unsupported(fmt.Sprintf("unclaimed provider removal of column %s from table %s", n.column, n.table))
+	}
+	return unsupported(fmt.Sprintf("unclaimed provider addition of column %s to table %s", n.column, n.table))
+}
+
+// rejectUnclaimedChanges refuses a plan in which a provider left a creation
+// or a column change as the host's placeholder, naming the first one.
+func rejectUnclaimedChanges(nodes []ast.Node) error {
 	for _, node := range nodes {
-		if pending, ok := node.(*pendingTableCreation); ok {
+		switch pending := node.(type) {
+		case *pendingTableCreation:
+			return pending.Accept(nil)
+		case *pendingColumnChange:
 			return pending.Accept(nil)
 		}
 	}

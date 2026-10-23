@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
 )
 
@@ -29,7 +30,11 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if diff == nil {
 		return nil, fmt.Errorf("provider planner requires a diff")
 	}
-	if !p.commonTables && ((len(diff.TablesAdded) > 0 && !p.assessParents) || len(diff.TablesRemoved) > 0 || len(diff.TablesModified) > 0) {
+	// Without the common-table contract the host cannot interpret a table
+	// operation itself. A provider that owns the lifecycle declares parent
+	// kinds, assesses each captured creation and column change, and claims the
+	// host's placeholder. Removals have no such path yet.
+	if !p.commonTables && ((len(diff.TablesAdded) > 0 && !p.assessParents) || (len(diff.TablesModified) > 0 && !p.assessParents) || len(diff.TablesRemoved) > 0) {
 		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
@@ -54,7 +59,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, node)
 	}
 	for _, table := range diff.TablesModified {
-		additions, removals, err := commonAlterations(table)
+		additions, removals, err := p.alterations(table)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +79,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	return p.schedule(ctx, runtime, diff, nodes, removalStart)
 }
 
-func commonAlterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
+func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
 	if err := onlyFields(table, "TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"); err != nil {
 		return nil, nil, err
 	}
@@ -84,9 +89,22 @@ func commonAlterations(table difftypes.TableDiff) (nodes, removals []ast.Node, e
 	name := tableref.CanonicalExact(table.Desired.Table.Schema, table.Desired.Table.Name)
 	nodes = make([]ast.Node, 0, len(table.ColumnsAdded))
 	for _, field := range table.ColumnsRemoved {
+		if !p.commonTables {
+			removals = append(removals, &pendingColumnChange{table: name, column: field.Name})
+			continue
+		}
 		removals = append(removals, &ast.AlterTableNode{Name: name, Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: field.Name}}})
 	}
 	for _, field := range table.ColumnsAdded {
+		if !p.commonTables {
+			// The owner interprets the whole declaration, so the operand keeps
+			// every property the field carries.
+			if field.Name == "" || field.Type == "" {
+				return nil, nil, fmt.Errorf("provider column requires a name and type")
+			}
+			nodes = append(nodes, &pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)})
+			continue
+		}
 		column, err := commonColumn(field)
 		if err != nil {
 			return nil, nil, err

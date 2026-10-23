@@ -17,6 +17,7 @@ type operation struct {
 	Transaction string       `json:"transaction,omitempty"`
 	To          *string      `json:"to,omitempty"`
 	Column      *addedColumn `json:"column,omitempty"`
+	DropColumn  string       `json:"dropColumn,omitempty"`
 }
 
 type addedColumn struct {
@@ -64,8 +65,16 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	if _, present := fields["column"]; present && op.Action != "add-column" {
 		return nil, fmt.Errorf("only add-column accepts a column")
 	}
+	if _, present := fields["dropColumn"]; present && op.Action != "drop-column" {
+		return nil, fmt.Errorf("only drop-column accepts a column name")
+	}
 	impact := protocol.ChangeSemantics_ADDITIVE
 	switch op.Action {
+	case "drop-column":
+		if op.DropColumn == "" || strings.ContainsRune(op.DropColumn, 0) {
+			return nil, fmt.Errorf("drop-column requires a column name")
+		}
+		impact = protocol.ChangeSemantics_DESTRUCTIVE
 	case "add-column":
 		if err := op.Column.validate(); err != nil {
 			return nil, err
@@ -186,6 +195,11 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 			sql += " NOT NULL"
 		}
 		return sql + ";", nil
+	case "drop-column":
+		if native.GetRole() != protocol.NativeOperation_ALTER_TABLE || !proto.Equal(native.GetParent(), subject) {
+			return "", fmt.Errorf("drop-column requires its actual table parent")
+		}
+		return "ALTER TABLE " + name + " DROP COLUMN " + quote(op.DropColumn) + ";", nil
 	case "rename":
 		if native.GetRole() != protocol.NativeOperation_ALTER_TABLE || !proto.Equal(native.GetParent(), subject) {
 			return "", fmt.Errorf("rename requires its actual table parent")
