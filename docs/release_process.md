@@ -75,6 +75,16 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    goreleaser release --snapshot --clean --skip=sign,docker
    ```
 
+   The `before` hook runs `go run ./internal/cmd/providerbundle`, which
+   downloads the pinned YDB provider archives, so a snapshot needs network
+   access to GitHub. The command checks each archive and each executable
+   against the digests in `internal/providercatalog/pins_gen.go` and stages the
+   executables under `.release-providers/`. A mismatch, an unreachable archive
+   or a platform the pin does not cover fails the build. To package against an
+   internal mirror, run the command yourself with `--base-url <mirror>` and add
+   `--skip=before` to the `goreleaser` call; the digests still decide what is
+   accepted.
+
 3. Create and push an annotated semver tag. Never move or delete a pushed tag;
    if a release run fails, fix the cause and cut the next patch version:
 
@@ -85,6 +95,7 @@ waiting on one is a reason to cut it rather than a note on its own backlog
 
 4. Wait for the `Release` workflow to finish.
 5. Verify the GitHub Release contains archives for Linux, macOS, and Windows,
+   each holding `providers/<provider-id>/<version>/<executable>` beside `ptah`,
    the source archive, `checksums.txt`, SBOM artifacts, and one
    `<artifact>.sigstore.json` cosign bundle per checksum and SBOM file. Verify a
    bundle:
@@ -99,7 +110,11 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    in `/usr/local/bin` for both Linux architectures. The PR release check
    builds the snapshot images and runs every binary on amd64 and arm64.
    It also checks that `/usr/share/licenses/ptah/LICENSE` matches the source
-   license, so downstream images can copy it alongside the binaries.
+   license, so downstream images can copy it alongside the binaries. Each image
+   holds the pinned YDB provider in `/usr/local/bin/providers/`, and the check
+   compares its digest with the staged copy. The same job runs
+   `providerbundle --verify-archives dist`, which opens the host archive of every
+   platform and compares the provider inside with the pin.
    GHCR is the address the documentation
    gives a reader, because Docker Hub rate-limits anonymous pulls and GHCR does
    not; Docker Hub carries the same images as a mirror:
@@ -154,6 +169,12 @@ waiting on one is a reason to cut it rather than a note on its own backlog
    ptah-ls --version
    ptah-compat migrate --help
    ```
+
+   The cask unpacks the whole archive into its Caskroom directory and links the
+   three binaries into the Homebrew `bin` directory. The bundled provider is the
+   `providers` directory beside the real `ptah`; Ptah resolves the link before it
+   looks there, so the cask has no provider stanza. `ptah-edge` compiles from
+   source and bundles no provider: its users run `ptah providers install ydb`.
 
 ## The Tap Holds A Cask And A Formula
 

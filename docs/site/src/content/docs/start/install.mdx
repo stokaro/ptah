@@ -77,6 +77,10 @@ The `Version:` line comes from the installed binary. The script runs it before
 reporting success, so an archive that cannot execute on the current machine is
 not left as an apparently successful install.
 
+The archive also carries the pinned YDB provider in a `providers` directory,
+and the installer copies it next to the binaries. See
+[The bundled YDB provider](../install-options/#the-bundled-ydb-provider).
+
 :::note
 Piping a script into a shell is optional. The
 [installation options](../install-options/#inspect-the-installer-before-running-it)
