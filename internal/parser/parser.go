@@ -27,6 +27,7 @@ import (
 	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/routineext/compound"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewcolumns"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -1732,6 +1733,11 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 	}
 	p.skipWhitespace()
 
+	columns, err := p.parseViewColumnAliases()
+	if err != nil {
+		return nil, err
+	}
+
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after view name: %w", err)
 	}
@@ -1741,7 +1747,46 @@ func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
 		return nil, fmt.Errorf("expected view body after AS at position %d", p.current.Start)
 	}
 
+	// A catalog keeps `CREATE VIEW v (a, b) AS SELECT x, y` as `SELECT x AS a,
+	// y AS b`, so the names are folded into the body here
+	// (stokaro/ptah#3172).
+	body, err = viewcolumns.WithAliases(body, columns)
+	if err != nil {
+		return nil, fmt.Errorf("view %s: %w", viewName, err)
+	}
+
 	return ast.NewCreateView(viewName).SetBody(body), nil
+}
+
+// parseViewColumnAliases reads the optional column name list that follows a
+// view name, or returns nil when the view has none.
+func (p *Parser) parseViewColumnAliases() ([]string, error) {
+	if !p.current.MatchOperatorValue("(") {
+		return nil, nil
+	}
+	p.advance()
+
+	var names []string
+	for {
+		p.skipWhitespace()
+		name, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected view column name: %w", err)
+		}
+		names = append(names, name)
+		p.skipWhitespace()
+
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			p.advance()
+			p.skipWhitespace()
+			return names, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in view column list at position %d", p.current.Start)
+	}
 }
 
 func (p *Parser) collectStatementBody() string {

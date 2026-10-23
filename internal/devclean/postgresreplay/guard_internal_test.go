@@ -108,6 +108,48 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 	}
 }
 
+func TestValidatePostgresReplayStatement_SessionRoutineInPgTemp(t *testing.T) {
+	const statement = `CREATE OR REPLACE FUNCTION pg_temp.generate_ulid() RETURNS text AS $$ SELECT 'x' $$ LANGUAGE sql`
+
+	tests := []struct {
+		name    string
+		dialect string
+		scope   replay.Scope
+		wantErr string
+	}{
+		{
+			name:    "owned server and pinned session",
+			dialect: platform.Postgres,
+			scope:   replay.Scope{Server: true, Session: true},
+		},
+		{
+			name:    "owned server without a pinned session",
+			dialect: platform.Postgres,
+			scope:   replay.Scope{Server: true},
+			wantErr: `postgres migration replay rejects protected namespace "pg_temp" mutation .*`,
+		},
+		{
+			name:    "another dialect of the family",
+			dialect: platform.CockroachDB,
+			scope:   replay.Scope{Server: true, Session: true},
+			wantErr: `cockroachdb migration replay rejects protected namespace "pg_temp" mutation .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := guard{dialect: test.dialect}.Validate(statement, test.scope)
+			if test.wantErr == "" {
+				c.Assert(err, qt.IsNil)
+				return
+			}
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
 func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 	tests := []struct {
 		name      string

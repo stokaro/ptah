@@ -105,6 +105,8 @@ func TestWithAliases_FailurePath(t *testing.T) {
 		{name: "fewer items than columns", body: "SELECT a FROM t", names: []string{"x", "y"}},
 		{name: "more items than columns", body: "SELECT a, b, c FROM t", names: []string{"x", "y"}},
 		{name: "a star nobody can count", body: "SELECT * FROM t", names: []string{"x", "y"}},
+		{name: "a lone star given one name", body: "SELECT * FROM t", names: []string{"x"}},
+		{name: "a qualified star given one name", body: "SELECT t.* FROM t", names: []string{"x"}},
 		{name: "not a select at all", body: "TABLE t", names: []string{"x"}},
 		{name: "an empty name", body: "SELECT a FROM t", names: []string{"  "}},
 	}
