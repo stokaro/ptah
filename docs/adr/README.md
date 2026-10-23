@@ -35,7 +35,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0023](0023-engine-knowledge-moves-with-the-provider.md) | Engine knowledge moves with the provider | Proposed |
 | [0024](0024-the-provider-owns-table-changes-through-one-lifecycle-service.md) | The provider owns table changes through one lifecycle service | Proposed |
 | [0025](0025-a-provider-declares-the-source-syntax-it-owns.md) | A provider declares the source syntax it owns | Proposed |
-| [0026](0026-official-providers-are-pinned-in-the-release-installed-explicitly-and-bundled-by-the-distribution.md) | Official providers are pinned in the release, installed explicitly, and bundled by the distribution | Proposed |
+| [0026](0026-official-providers-are-pinned-in-the-release-installed-explicitly-and-bundled-by-the-distribution.md) | Official providers are pinned in the release, installed explicitly, and bundled by the distribution | Accepted |
 
 ## Writing one
 

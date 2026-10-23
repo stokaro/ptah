@@ -1,6 +1,6 @@
 # ADR 0026: Official providers are pinned in the release, installed explicitly, and bundled by the distribution
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
