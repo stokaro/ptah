@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 
 	"example.com/ptah-fixture-provider/backend"
@@ -24,6 +25,7 @@ type owner struct {
 	operationEnvelope *protocol.Envelope
 	nativeUnits       bool
 	transactionalDDL  bool
+	ownedLifecycle    bool
 }
 
 func main() {
@@ -37,7 +39,7 @@ func main() {
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "owned" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -51,10 +53,16 @@ func main() {
 		d.Features = append(d.Features, provider.LocksFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.LocksFeature)
 	}
+	if mode == "owned" {
+		// The provider owns the table lifecycle: the host never interprets a
+		// table operation, and the provider claims each column step itself.
+		d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
+	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
 		"properties": {
-			"action": {"enum": ["create", "rename", "drop", "add-column"]},
+			"action": {"enum": ["create", "rename", "drop", "add-column", "drop-column"]},
+			"dropColumn": {"type": "string"},
 			"column": {
 				"additionalProperties": false,
 				"properties": {
@@ -83,7 +91,7 @@ func main() {
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
-	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "", transactionalDDL: mode == "native-transactional", operationEnvelope: &protocol.Envelope{
+	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned", ownedLifecycle: mode == "owned", transactionalDDL: mode == "native-transactional", operationEnvelope: &protocol.Envelope{
 		ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:]),
 	}}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
