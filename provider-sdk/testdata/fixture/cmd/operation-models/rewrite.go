@@ -20,6 +20,14 @@ func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table 
 			continue
 		}
 		if column == nil {
+			if p.ownedLifecycle && table.GetAction() == protocol.PlanningTable_DROP && droppedTable(common) {
+				step, rewrite, err := p.planTableDrop(request, table, common, i)
+				if err != nil {
+					return nil, nil, err
+				}
+				steps, rewrites = append(steps, step), append(rewrites, rewrite)
+				continue
+			}
 			if dropped := droppedColumn(common); p.ownedLifecycle && dropped != "" {
 				step, rewrite, err := p.planColumnDrop(request, table, common, dropped, i)
 				if err != nil {
@@ -91,5 +99,40 @@ func (p *owner) planColumnDrop(request *protocol.PlanFeaturesRequest, table *pro
 	metadata.Impact, metadata.Reason = value.GetOperationSemantics().GetImpact(), value.GetOperationSemantics().GetReason()
 	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: id}, Metadata: metadata,
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_ALTER_TABLE, Parent: proto.CloneOf(table.GetSubject())}}
+	return step, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(common.GetId())}, Replacement: proto.CloneOf(step.Id)}, nil
+}
+
+// droppedTable reports whether a common step drops its table, the only effect a
+// table removal carries.
+func droppedTable(common *protocol.CommonPlanningStep) bool {
+	for _, effect := range common.GetMetadata().GetEffects() {
+		if effect.GetAction() == protocol.PlanningEffect_DROP && effect.GetSubject().GetKind() == "table" {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *owner) planTableDrop(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable, common *protocol.CommonPlanningStep, index int) (*protocol.PlanningStep, *protocol.PlanningRewrite, error) {
+	if table.GetCurrent() == nil {
+		return nil, nil, fmt.Errorf("table removal requires an observed table")
+	}
+	payload, err := json.Marshal(operation{Action: "drop"})
+	if err != nil {
+		return nil, nil, err
+	}
+	id := "table-drop/" + strconv.Itoa(index)
+	envelope := proto.CloneOf(p.operationEnvelope)
+	envelope.Payload = payload
+	envelope.Owner = &protocol.Reference{Engine: request.GetEngine(), Kind: "table", Schema: table.GetCurrent().GetSchema(), Name: table.GetCurrent().GetName()}
+	value, err := normalize(&protocol.ValueInput{Id: id, Representation: protocol.ValueInput_OPERATION, Value: envelope})
+	if err != nil {
+		return nil, nil, err
+	}
+	metadata := proto.CloneOf(common.GetMetadata())
+	metadata.Transaction = protocol.PlanningMetadata_FORBIDDEN
+	metadata.Impact, metadata.Reason = value.GetOperationSemantics().GetImpact(), value.GetOperationSemantics().GetReason()
+	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: id}, Metadata: metadata,
+		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
 	return step, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(common.GetId())}, Replacement: proto.CloneOf(step.Id)}, nil
 }
