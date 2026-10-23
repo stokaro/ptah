@@ -51,3 +51,42 @@ func TestProviderCheckReportsStructuredMissingInstallation(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderInstallRefusesEnginesThatCannotBeInstalled(t *testing.T) {
+	for _, test := range []struct{ name, engine, code string }{
+		{"duckdb has no release", "duckdb", "provider_no_release_pinned"},
+		{"spanner has no release", "spanner", "provider_no_release_pinned"},
+		{"unknown engine", "oracle", "provider_unknown_engine"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("XDG_CACHE_HOME", c.TempDir())
+			t.Setenv("HOME", c.TempDir())
+			t.Setenv("LocalAppData", c.TempDir())
+			command := providers.NewCommand()
+			var out, stderr bytes.Buffer
+			command.SetOut(&out)
+			command.SetErr(&stderr)
+			command.SetArgs([]string{"install", test.engine, "--json"})
+			c.Assert(command.ExecuteContext(c.Context()), qt.IsNotNil)
+			var report struct {
+				Status     string
+				Diagnostic providerdiagnostic.Diagnostic
+			}
+			c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
+			c.Assert(report.Status, qt.Equals, "failed")
+			c.Assert(report.Diagnostic.Code, qt.Equals, test.code)
+		})
+	}
+}
+
+func TestProviderInstallTakesExactlyOneEngineAndNoVersion(t *testing.T) {
+	for _, args := range [][]string{{"install"}, {"install", "ydb", "duckdb"}, {"install", "ydb", "--version", "1.0.0"}} {
+		c := qt.New(t)
+		command := providers.NewCommand()
+		command.SetOut(&bytes.Buffer{})
+		command.SetErr(&bytes.Buffer{})
+		command.SetArgs(args)
+		c.Assert(command.ExecuteContext(c.Context()), qt.IsNotNil, qt.Commentf("%v", args))
+	}
+}

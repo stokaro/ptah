@@ -1,0 +1,154 @@
+// Package providerpin builds the pin of an official provider release from the
+// release's assets and renders it as the Go source the host compiles in. The
+// provider pin generator in internal/cmd/providerpin is its only caller; a
+// regular build never runs it and never contacts a release server.
+package providerpin
+
+import (
+	"bufio"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"go/format"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"ptah.run/internal/providerarchive"
+	"ptah.run/internal/providercatalog"
+)
+
+// ChecksumsFile is the name of the checksum listing a provider release publishes.
+const ChecksumsFile = "checksums.txt"
+
+// ParseChecksums reads a "<sha256>  <file>" listing. It refuses a malformed
+// digest and a file named twice.
+func ParseChecksums(r io.Reader) (map[string]string, error) {
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		digest, name, found := strings.Cut(text, " ")
+		name = strings.TrimPrefix(strings.TrimSpace(name), "*")
+		if !found || name == "" || !providercatalog.ValidDigest(digest) {
+			return nil, fmt.Errorf("%s line %d: want a lowercase SHA-256 and a file name", ChecksumsFile, line)
+		}
+		if _, dup := result[name]; dup {
+			return nil, fmt.Errorf("%s line %d: %q is listed twice", ChecksumsFile, line, name)
+		}
+		result[name] = digest
+	}
+	return result, scanner.Err()
+}
+
+// Build reads one release from dir, which holds checksums.txt and the archives
+// of every platform, and returns its pin. Each archive must match the digest the
+// listing gives it, and must hold the platform's executable, whose digest the pin
+// records. The listing is checked against the archives, never trusted in place
+// of them. Every platform in [providercatalog.Platforms] must be present.
+func Build(engineID, version, dir string) (providercatalog.Pin, error) {
+	pin := providercatalog.Pin{EngineID: engineID, Version: version, Tag: "v" + version}
+	listing, err := os.Open(filepath.Join(dir, ChecksumsFile))
+	if err != nil {
+		return pin, fmt.Errorf("open release listing: %w", err)
+	}
+	defer func() { _ = listing.Close() }()
+	sums, err := ParseChecksums(listing)
+	if err != nil {
+		return pin, err
+	}
+	var errs []error
+	for _, platform := range providercatalog.Platforms() {
+		artifact, err := buildArtifact(engineID, version, dir, platform, sums)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", platform, err))
+			continue
+		}
+		pin.Artifacts = append(pin.Artifacts, artifact)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return pin, err
+	}
+	return pin, pin.Validate()
+}
+
+func buildArtifact(engineID, version, dir string, platform providercatalog.Platform, sums map[string]string) (providercatalog.Artifact, error) {
+	artifact := providercatalog.Artifact{
+		Platform:   platform,
+		Archive:    providercatalog.ArchiveName(engineID, version, platform),
+		Executable: providercatalog.ExecutableName(engineID, platform),
+	}
+	listed, ok := sums[artifact.Archive]
+	if !ok {
+		return artifact, fmt.Errorf("%s does not list %s", ChecksumsFile, artifact.Archive)
+	}
+	path := filepath.Join(dir, artifact.Archive)
+	digest, err := fileDigest(path)
+	if err != nil {
+		return artifact, err
+	}
+	if digest != listed {
+		return artifact, fmt.Errorf("%s has SHA-256 %s but %s lists %s", artifact.Archive, digest, ChecksumsFile, listed)
+	}
+	artifact.ArchiveSHA256 = digest
+	hash := sha256.New()
+	if err := providerarchive.CopyExecutable(path, artifact.Executable, hash); err != nil {
+		return artifact, err
+	}
+	artifact.ExecutableSHA256 = hex.EncodeToString(hash.Sum(nil))
+	return artifact, nil
+}
+
+func fileDigest(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// Render returns the Go source of the pins file for package providercatalog.
+// The header records the command that reproduces it. Pins are sorted by engine,
+// so the output depends only on the set. Two pins for one engine are refused.
+func Render(pins []providercatalog.Pin) ([]byte, error) {
+	sorted := slices.Clone(pins)
+	slices.SortFunc(sorted, func(a, b providercatalog.Pin) int { return strings.Compare(a.EngineID, b.EngineID) })
+	for i, pin := range sorted {
+		if err := pin.Validate(); err != nil {
+			return nil, fmt.Errorf("pin %q: %w", pin.EngineID, err)
+		}
+		if i > 0 && sorted[i-1].EngineID == pin.EngineID {
+			return nil, fmt.Errorf("engine %q is pinned twice", pin.EngineID)
+		}
+	}
+	releases := make([]string, len(sorted))
+	for i, pin := range sorted {
+		releases[i] = "--release " + pin.EngineID + "=" + pin.Version
+	}
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "// Code generated by go run ./internal/cmd/providerpin; DO NOT EDIT.\n// Regenerate with: go run ./internal/cmd/providerpin %s\n\npackage providercatalog\n\n", strings.Join(releases, " "))
+	b.WriteString("// pins holds one tested provider release per engine that has a release.\n")
+	b.WriteString("// An engine with no release carries no entry.\nvar pins = []Pin{\n")
+	for _, pin := range sorted {
+		fmt.Fprintf(&b, "\t{\n\t\tEngineID: %q, Version: %q, Tag: %q,\n\t\tArtifacts: []Artifact{\n", pin.EngineID, pin.Version, pin.Tag)
+		for _, a := range pin.Artifacts {
+			fmt.Fprintf(&b, "\t\t\t{\n\t\t\t\tPlatform: Platform{%q, %q},\n\t\t\t\tArchive: %q,\n\t\t\t\tArchiveSHA256: %q,\n\t\t\t\tExecutable: %q,\n\t\t\t\tExecutableSHA256: %q,\n\t\t\t},\n",
+				a.Platform.OS, a.Platform.Arch, a.Archive, a.ArchiveSHA256, a.Executable, a.ExecutableSHA256)
+		}
+		b.WriteString("\t\t},\n\t},\n")
+	}
+	b.WriteString("}\n")
+	return format.Source(b.Bytes())
+}

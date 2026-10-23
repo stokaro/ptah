@@ -28,7 +28,8 @@ The catalog recognizes `spanner`, `cloudspanner`, `google-spanner`, and `google_
 
 Official Spanner executable artifacts remain under development in
 [issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity; it does not provide a released download.
+this identity. This Ptah release pins no Spanner provider release, so
+`ptah providers install spanner` refuses with `provider_no_release_pinned`.
 
 This provider is optional. Select it explicitly for Spanner work. A PostgreSQL
 URL does not select Spanner, and a failed provider never falls back to PostgreSQL.

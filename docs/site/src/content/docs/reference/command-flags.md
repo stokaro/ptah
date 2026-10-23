@@ -1369,6 +1369,17 @@ Read the columns as follows.
 
 </div>
 
+**`ptah providers install`**
+
+<div class="ptah-wide-table">
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--download-base-url` | `string` | — | `PTAH_DOWNLOAD_BASE_URL` | — |
+| `--json` | `bool` | `false` | — | — |
+
+</div>
+
 **`ptah providers list`**
 
 <div class="ptah-wide-table">
