@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -994,7 +995,12 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 		WithTransactionMode(in.settings.txMode).
 		WithMigrationLockTimeout(in.settings.migrationLockTimeout).
 		WithSkipChecks(in.opts.skipChecks).
-		WithLogger(in.runtime.Logger()).
+		WithLogger(slog.New(readFloor{
+			Handler: in.runtime.Logger().Handler(),
+			// Only the unlocked reads put the writer in dry-run mode behind a
+			// run that did not ask for one.
+			quiet: func() bool { return !in.opts.dryRun && in.conn.SchemaWriter().IsDryRun() },
+		})).
 		WithObserver(in.runtime.Observer()), nil
 }
 
