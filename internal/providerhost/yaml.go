@@ -57,7 +57,7 @@ func (h *Host) decodeYAML(ctx context.Context, input yamlext.Document) (yamlext.
 			return yamlext.DocumentResult{}, err
 		}
 		document := decoded.GetDocuments()[0]
-		coverage, err := h.sourceCoverage(engine.GetId(), document.GetCoverage())
+		coverage, err := h.sourceCoverage(engine.GetId(), protocol.SourceDocument_YAML, document.GetCoverage())
 		if err != nil {
 			return yamlext.DocumentResult{}, err
 		}
@@ -82,33 +82,23 @@ func (h *Host) decodeYAML(ctx context.Context, input yamlext.Document) (yamlext.
 }
 
 func (h *Host) sourceContribution(engine string, tables yamlext.Tables, source *protocol.SourceModelValue) (yamlext.Contribution, error) {
-	value := source.GetValue()
-	kind := schemaext.Kind(value.GetValue().GetKind())
-	contract := h.models[modelKey{kind: kind, representation: schemaext.Desired}]
-	if contract == nil {
-		return yamlext.Contribution{}, fmt.Errorf("decoded YAML model is not registered")
-	}
-	resolved, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
+	decoded, err := h.decodedValue(engine, source)
 	if err != nil {
 		return yamlext.Contribution{}, err
 	}
-	subject, err := sourceIdentity(value.GetValue().GetOwner(), value.GetNormalizedOwner())
-	if err != nil {
-		return yamlext.Contribution{}, err
-	}
-	result := yamlext.Contribution{Label: string(kind), Targets: []string{engine}}
+	result := yamlext.Contribution{Label: string(decoded.kind), Targets: []string{engine}}
 	switch source.GetPlacement() {
 	case protocol.SourceModelValue_NATIVE_OBJECT:
-		result.Object = &schemaext.Object{Ref: subject, Value: resolved, Targets: []string{engine}}
+		result.Object = &schemaext.Object{Ref: decoded.subject, Value: decoded.value, Targets: []string{engine}}
 	case protocol.SourceModelValue_FACET:
-		if !subject.Database.Empty() || !subject.Catalog.Empty() || !subject.Namespace.IsZero() || !subject.Signature.IsZero() {
-			return yamlext.Contribution{}, unsupported("native YAML table facet with database, catalog, path, or overload qualification")
+		if err := decoded.requireTable("YAML"); err != nil {
+			return yamlext.Contribution{}, err
 		}
-		index, err := sourceTable(tables, value.GetValue().GetOwner())
+		index, err := sourceTable(tables, source.GetValue().GetValue().GetOwner())
 		if err != nil {
 			return yamlext.Contribution{}, err
 		}
-		result.Table, result.Facet = index, resolved
+		result.Table, result.Facet = index, decoded.value
 	default:
 		return yamlext.Contribution{}, fmt.Errorf("unknown decoded YAML placement")
 	}

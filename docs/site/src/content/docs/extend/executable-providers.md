@@ -349,6 +349,18 @@ provider receives parsed attributes and never comment text. A directive name
 belongs to one provider. An attribute the claim does not list is refused before
 the provider runs.
 
+Ptah reads a claimed directive from the doc comment of a struct, where it reads
+its own directives. A `TABLE` directive declares a facet of the table of that
+struct, and a `DOCUMENT` directive declares an object that belongs to no table.
+Both may sit before or after the `ptah:schema:table` comment. Ptah collects the
+directives of one Go file and sends them to the provider as one document, so a
+provider sees every table of the file when it decodes. Attribute values arrive
+as text, exactly as written, and the provider decides what a value means. The
+source position of an attribute is the position of its comment. A provider that
+claims a directive at `COLUMN` or `INDEX` scope is refused when it starts,
+because Ptah does not yet tell the provider which column or index a comment
+sits on, and ignoring the claim would drop the attribute without an error.
+
 The execution adapter does not support managed data, database cleanup, or
 isolated execution of untrusted SQL. It does not add
 provider selection to `ptah-compat` or native commands outside the list above. Project-file

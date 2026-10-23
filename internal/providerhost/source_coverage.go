@@ -10,16 +10,19 @@ import (
 	"ptah.run/core/schemaext"
 )
 
-func (h *Host) sourceCoverage(engine string, source *protocol.ModelCoverage) (schemaext.Coverage, error) {
+// sourceCoverage converts the coverage a provider returned for a document of
+// format into the host's coverage, with the kind-wide knowledge the format can
+// support.
+func (h *Host) sourceCoverage(engine string, format protocol.SourceDocument_Format, source *protocol.ModelCoverage) (schemaext.Coverage, error) {
 	var kinds []schemaext.KindCoverage
 	for _, record := range source.GetKinds() {
 		kind := schemaext.Kind(record.GetModel().GetKind())
 		contract := h.models[modelKey{kind: kind, representation: schemaext.Desired}]
 		if contract == nil {
-			return schemaext.Coverage{}, fmt.Errorf("decoded YAML coverage model is not registered")
+			return schemaext.Coverage{}, fmt.Errorf("decoded source coverage model is not registered")
 		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
-			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(yamlModelKnowledge(contract))})
+			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(modelKnowledge(contract, format))})
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {
@@ -42,7 +45,7 @@ func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, e
 	}
 	state, ok := states[knowledge.GetState()]
 	if !ok {
-		return schemaext.Knowledge{}, fmt.Errorf("incomplete decoded YAML knowledge")
+		return schemaext.Knowledge{}, fmt.Errorf("incomplete decoded source knowledge")
 	}
 	return schemaext.Knowledge{State: state, Reason: knowledge.GetReason()}, nil
 }
@@ -79,13 +82,21 @@ func sourceParts(source, normalized []string, label string) (objectidentity.Part
 }
 
 // Kind-wide coverage has no target scope in the shared schema. A model another
-// registered engine cannot express in YAML must not acquire absence authority
-// from an engine that can. Explicit subject records retain their target scope.
-func yamlModelKnowledge(contract *modelContract) schemaext.Knowledge {
+// registered engine cannot express in the source format must not acquire
+// absence authority from an engine that can. Explicit subject records retain
+// their target scope.
+func modelKnowledge(contract *modelContract, format protocol.SourceDocument_Format) schemaext.Knowledge {
 	for _, model := range contract.engines {
-		if !slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_YAML) {
-			return schemaext.Knowledge{State: schemaext.Uninspected, Reason: "YAML does not describe this model for every registered engine"}
+		if !slices.Contains(model.GetSourceFormats(), format) {
+			return schemaext.Knowledge{State: schemaext.Uninspected, Reason: sourceFormatName(format) + " does not describe this model for every registered engine"}
 		}
 	}
 	return schemaext.Knowledge{State: schemaext.Complete}
+}
+
+func sourceFormatName(format protocol.SourceDocument_Format) string {
+	if format == protocol.SourceDocument_GO_ANNOTATIONS {
+		return "Go annotations"
+	}
+	return format.String()
 }

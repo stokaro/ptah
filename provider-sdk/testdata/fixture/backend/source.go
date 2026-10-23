@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -97,11 +98,11 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 			}
 			bindingID = text.Text
 		case "seconds", "minutes":
-			number, ok := entry.GetValue().GetValue().(*protocol.SourceValue_Number)
-			if !ok {
-				return retentionSource{}, fmt.Errorf("retention requires an exact number")
+			number, err := retentionNumber(document.GetFormat(), entry.GetValue())
+			if err != nil {
+				return retentionSource{}, err
 			}
-			fields[entry.GetKey()] = json.RawMessage(number.Number)
+			fields[entry.GetKey()] = json.RawMessage(number)
 			knowledge = protocol.ModelKnowledge_COMPLETE
 		default:
 			return retentionSource{}, fmt.Errorf("unsupported retention field %q", entry.GetKey())
@@ -122,6 +123,22 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 	}
 	payload, err := json.Marshal(fields)
 	return retentionSource{subject: subject, payload: payload, knowledge: knowledge}, err
+}
+
+// retentionNumber returns the exact number a retention field holds. A Go
+// annotation attribute is always text, because the host lexes the comment and
+// does not guess a type, so the owner reads an unsigned integer out of it. The
+// other formats carry numbers and refuse text.
+func retentionNumber(format protocol.SourceDocument_Format, value *protocol.SourceValue) (string, error) {
+	switch content := value.GetValue().(type) {
+	case *protocol.SourceValue_Number:
+		return content.Number, nil
+	case *protocol.SourceValue_Text:
+		if number, err := strconv.ParseUint(content.Text, 10, 64); err == nil && format == protocol.SourceDocument_GO_ANNOTATIONS {
+			return strconv.FormatUint(number, 10), nil
+		}
+	}
+	return "", fmt.Errorf("retention requires an exact number")
 }
 
 var _ provider.SourceDecoder = (*Provider)(nil)

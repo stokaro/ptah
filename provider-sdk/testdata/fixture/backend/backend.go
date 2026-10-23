@@ -44,7 +44,7 @@ type session struct {
 func Description() *protocol.Description {
 	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-10",
 		Engines: []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature},
-			Identifiers: identifierRules(), ValueModels: valueModels(), YamlSourceKeys: yamlSourceKeys()}},
+			Identifiers: identifierRules(), ValueModels: valueModels(), YamlSourceKeys: yamlSourceKeys(), GoSourceDirectives: goSourceDirectives()}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature, provider.DecodeSourceFeature, provider.ConvertValuesFeature}}
 }
 

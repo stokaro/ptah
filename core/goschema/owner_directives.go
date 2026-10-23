@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/token"
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/ptaherr"
@@ -37,11 +38,29 @@ func (s *schemaParseState) parseOwnerDirective(comment *ast.Comment, directive, 
 		return err
 	}
 	declaration := annotation.Declaration{Directive: directive, Attributes: kv, Struct: structName, Line: ctx.line, File: ctx.file}
+	declaration.Start, declaration.End, declaration.FileSize = s.commentSpan(comment)
 	contributions, err := s.owners.Decode(declaration)
 	if err != nil {
 		return s.ownerError(declaration, err)
 	}
 	return s.contribute(declaration, contributions)
+}
+
+// commentSpan locates a comment in its file for an owner that reports where a
+// declaration is written. It returns zero positions where the parse has no
+// file set.
+func (s *schemaParseState) commentSpan(comment *ast.Comment) (start, end annotation.SourcePosition, size int) {
+	if s.fset == nil || comment == nil {
+		return annotation.SourcePosition{}, annotation.SourcePosition{}, 0
+	}
+	position := func(pos token.Pos) annotation.SourcePosition {
+		located := s.fset.Position(pos)
+		return annotation.SourcePosition{Offset: located.Offset, Line: located.Line, Column: located.Column}
+	}
+	if file := s.fset.File(comment.Slash); file != nil {
+		size = file.Size()
+	}
+	return position(comment.Slash), position(comment.End()), size
 }
 
 // finishOwnerDirectives asks the owners for what the file's declarations

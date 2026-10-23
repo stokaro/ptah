@@ -40,6 +40,7 @@ type Host struct {
 	targets     map[string]*target
 	models      map[modelKey]*modelContract
 	modelCodecs []schemaext.Codec
+	goSource    *goSource
 }
 
 type target struct {
@@ -67,6 +68,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		host.targets[engine.GetId()] = &target{host: host, engine: engine}
 	}
 	if err := host.initializeModels(); err != nil {
+		client.Close()
+		return nil, err
+	}
+	if host.goSource, err = goDirectiveClaims(host.description); err != nil {
 		client.Close()
 		return nil, err
 	}
@@ -125,6 +130,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		OfflineIdentifiers identifier.Semantics         `json:"offline_identifiers"`
 		Models             []modelIdentity              `json:"models"`
 		YAMLKeys           []yamlKeyIdentity            `json:"yaml_keys"`
+		GoDirectives       []goDirectiveIdentity        `json:"go_directives,omitempty"`
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
 		Planning           []planningIdentityContract   `json:"planning"`
 	}{8,
@@ -135,6 +141,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		rules,
 		modelIdentities(t.engine.GetValueModels()),
 		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
+		goDirectiveIdentities(t.engine.GetGoSourceDirectives()),
 		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
