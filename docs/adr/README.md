@@ -34,6 +34,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0022](0022-provider-values-are-resolved-in-semantic-batches.md) | Provider values are resolved in semantic batches | Proposed |
 | [0023](0023-engine-knowledge-moves-with-the-provider.md) | Engine knowledge moves with the provider | Proposed |
 | [0024](0024-the-provider-owns-table-changes-through-one-lifecycle-service.md) | The provider owns table changes through one lifecycle service | Proposed |
+| [0025](0025-a-provider-declares-the-source-syntax-it-owns.md) | A provider declares the source syntax it owns | Proposed |
 
 ## Writing one
 
