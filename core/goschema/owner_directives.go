@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/annotation"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/annotationmeta"
 )
 
 // pendingFacet is a table facet an owner directive declared. The file may
@@ -17,33 +18,98 @@ import (
 type pendingFacet struct {
 	structName string
 	table      string
-	value      schemaext.Value
-	targets    []string
-	label      string
-	directive  string
-	ctx        annotationErrorContext
+	// subject is the column or index the facet belongs to instead of the table.
+	subject   annotation.Subject
+	value     schemaext.Value
+	targets   []string
+	label     string
+	directive string
+	ctx       annotationErrorContext
 }
 
 // parseOwnerDirective reads a directive a selected owner declares. The
 // frontend validates the attributes against the owner's grammar and hands the
 // owner the declaration; what the owner returns joins the schema the way the
 // frontend's own feature declarations do.
-func (s *schemaParseState) parseOwnerDirective(comment *ast.Comment, directive, structName string) error {
+func (s *schemaParseState) parseOwnerDirective(comment *ast.Comment, directive annotationmeta.Directive, target schemaCommentTarget) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
-	ctx := s.annotationContext(comment, "//"+directive, structName)
+	ctx := s.annotationContext(comment, "//"+directive.Name, target.structName)
 	if err := validateAttributes(kv, ctx); err != nil {
 		return err
 	}
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
-	declaration := annotation.Declaration{Directive: directive, Attributes: kv, Struct: structName, Line: ctx.line, File: ctx.file}
+	subject, err := s.ownerSubject(directive, target, ctx)
+	if err != nil {
+		return err
+	}
+	declaration := annotation.Declaration{Directive: directive.Name, Attributes: kv, Struct: target.structName, Line: ctx.line, File: ctx.file, Subject: subject}
 	declaration.Start, declaration.End, declaration.FileSize = s.commentSpan(comment)
 	contributions, err := s.owners.Decode(declaration)
 	if err != nil {
 		return s.ownerError(declaration, err)
 	}
 	return s.contribute(declaration, contributions)
+}
+
+// declareOwnerAttributes hands the attributes owners add to one of the
+// frontend's own directives, which they read per file, to those owners with the
+// part of the table the directive describes. The facets they return attach to
+// that part once the file is read.
+func (s *schemaParseState) declareOwnerAttributes(comment *ast.Comment, directive string, kv map[string]string, subject annotation.Subject, location string) error {
+	ctx := s.annotationContext(comment, "//"+directive, location)
+	declaration := annotation.Declaration{Directive: directive, Attributes: kv, Struct: subject.Struct, Line: ctx.line, File: ctx.file, Subject: subject}
+	declaration.Start, declaration.End, declaration.FileSize = s.commentSpan(comment)
+	contributions, err := s.owners.DecodeAttributes(declaration)
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
+	if len(contributions) == 0 {
+		return nil
+	}
+	return s.contribute(declaration, contributions)
+}
+
+// ownerSubject finds the column or index a directive describes, from the
+// ptah:schema:field or ptah:schema:index directive in the comment group it is
+// written in. A group that names none, or an index group that names several, is
+// refused: the owner would otherwise decide for a part the author did not name.
+func (s *schemaParseState) ownerSubject(directive annotationmeta.Directive, target schemaCommentTarget, ctx annotationErrorContext) (annotation.Subject, error) {
+	var (
+		sibling string
+		kind    annotation.SubjectKind
+	)
+	switch directive.Describes {
+	case annotation.SubjectColumn:
+		sibling, kind = "ptah:schema:field", annotation.SubjectColumn
+	case annotation.SubjectIndex:
+		sibling, kind = "ptah:schema:index", annotation.SubjectIndex
+	default:
+		return annotation.Subject{}, nil
+	}
+	article := map[annotation.SubjectKind]string{annotation.SubjectColumn: "a column", annotation.SubjectIndex: "an index"}
+	var written []map[string]string
+	if target.group != nil {
+		for _, other := range target.group.List {
+			if matched, ok := s.catalog.MatchCommentDirective(other.Text); ok && matched.Name == sibling {
+				written = append(written, s.kv.ParseKeyValueComment(other.Text))
+			}
+		}
+	}
+	switch {
+	case len(written) == 0:
+		return annotation.Subject{}, s.placementError(ctx, directive.Name, fmt.Sprintf("%s directive is written beside the %s directive of its %s", article[kind], sibling, kind))
+	case len(written) > 1:
+		return annotation.Subject{}, s.placementError(ctx, directive.Name, fmt.Sprintf("this comment has %d %s directives, and %s directive describes exactly one", len(written), sibling, article[kind]))
+	case written[0]["name"] == "":
+		return annotation.Subject{}, s.placementError(ctx, directive.Name, fmt.Sprintf("the %s directive it describes needs a name attribute", sibling))
+	}
+	subject := annotation.Subject{Kind: kind, Struct: target.structName, Name: written[0]["name"]}
+	if kind == annotation.SubjectIndex {
+		subject.Table = written[0]["table"]
+	}
+	return subject, nil
 }
 
 // commentSpan locates a comment in its file for an owner that reports where a
@@ -88,7 +154,7 @@ func (s *schemaParseState) contribute(declaration annotation.Declaration, contri
 	ctx := s.declarationContext(declaration)
 	for _, contribution := range contributions {
 		if contribution.Facet != nil {
-			s.pendingFacets = append(s.pendingFacets, pendingFacet{structName: declaration.Struct, table: contribution.Table,
+			s.pendingFacets = append(s.pendingFacets, pendingFacet{structName: declaration.Struct, table: contribution.Table, subject: contribution.Subject,
 				value: contribution.Facet, targets: contribution.Targets, label: contribution.Label, directive: declaration.Directive, ctx: ctx})
 			continue
 		}
@@ -123,13 +189,18 @@ func (s *schemaParseState) ownerError(declaration annotation.Declaration, err er
 		err = declared.Err
 	}
 	ctx := s.declarationContext(declaration)
+	message := fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location)
+	if declaration.Directive == "" {
+		// A refusal that names no declaration has no place to report.
+		message = err.Error()
+	}
 	return &ptaherr.ParseError{
 		File:      ctx.file,
 		Line:      ctx.line,
 		Directive: declaration.Directive,
 		Attribute: attribute,
 		Err:       fmt.Errorf("%w: %w", ptaherr.ErrInvalidAttributeValue, err),
-		Message:   fmt.Sprintf("%v on %s at %s", err, ctx.directive, ctx.location),
+		Message:   message,
 	}
 }
 
@@ -150,6 +221,12 @@ func (s *schemaParseState) declarationContext(declaration annotation.Declaration
 // table nobody declares has no effect.
 func (s *schemaParseState) attachOwnerFacets() error {
 	for _, pending := range s.pendingFacets {
+		if pending.subject.Kind == annotation.SubjectColumn || pending.subject.Kind == annotation.SubjectIndex {
+			if err := s.attachPartFacet(pending); err != nil {
+				return err
+			}
+			continue
+		}
 		index, err := s.ownerTable(pending.structName, pending.table, pending.ctx, pending.directive, pending.label)
 		if err != nil {
 			return err
@@ -198,4 +275,47 @@ func (s *schemaParseState) placementError(ctx annotationErrorContext, directive,
 		Err:       ptaherr.ErrInvalidAttributeValue,
 		Message:   fmt.Sprintf("%s on %s at %s", reason, ctx.directive, ctx.location),
 	}
+}
+
+// attachPartFacet gives the facet an owner declared for a column or an index
+// to every field or index of the file that the subject names. The facet's
+// subject is refused rather than dropped when the file declares no such part,
+// or when the part already carries a facet of the same model.
+func (s *schemaParseState) attachPartFacet(pending pendingFacet) error {
+	subject := pending.subject
+	var slots []*schemaext.Facets
+	switch subject.Kind {
+	case annotation.SubjectColumn:
+		for i := range s.schemaFields {
+			if s.schemaFields[i].StructName == subject.Struct && s.schemaFields[i].Name == subject.Name {
+				slots = append(slots, &s.schemaFields[i].Facets)
+			}
+		}
+	case annotation.SubjectIndex:
+		for i := range s.schemaIndexes {
+			if s.schemaIndexes[i].StructName == subject.Struct && s.schemaIndexes[i].Name == subject.Name && s.schemaIndexes[i].TableName == subject.Table {
+				slots = append(slots, &s.schemaIndexes[i].Facets)
+			}
+		}
+	}
+	if len(slots) == 0 {
+		return s.placementError(pending.ctx, pending.directive, fmt.Sprintf("%s %q of struct %s is not declared in this file, and %s is declared beside it",
+			subject.Kind, subject.Name, subject.Struct, pending.label))
+	}
+	for _, slot := range slots {
+		facets, err := slot.With(pending.value)
+		if errors.Is(err, schemaext.ErrDuplicate) {
+			return s.placementError(pending.ctx, pending.directive, fmt.Sprintf("%s %q declares %s twice", subject.Kind, subject.Name, pending.label))
+		}
+		if err != nil {
+			return err
+		}
+		if len(pending.targets) > 0 {
+			if facets, err = facets.WithTargetScope(pending.value.Kind(), pending.targets...); err != nil {
+				return err
+			}
+		}
+		*slot = facets
+	}
+	return nil
 }

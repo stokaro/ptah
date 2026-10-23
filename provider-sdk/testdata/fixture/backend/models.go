@@ -45,3 +45,21 @@ func goSourceDirectives() []*protocol.GoSourceDirective {
 		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:retention", Selector: "retention", Attributes: []string{"seconds", "minutes"}, Models: []string{"example.org/fixture/retention"}},
 	}
 }
+
+// ScopedGoSourceDirectives claims the Go syntax the host reads beyond table
+// scope. Column and index directives are written beside the field or index
+// directive they describe, and the attributes of the frontend's own table,
+// field and index directives belong to the provider. Every claim reads the same
+// retention values, so the fixture shows where a value attaches and nothing
+// else.
+func ScopedGoSourceDirectives() []*protocol.GoSourceDirective {
+	attributes := []string{"seconds", "minutes"}
+	models := []string{"example.org/fixture/retention"}
+	return []*protocol.GoSourceDirective{
+		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:fixture:column-retention", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:fixture:index-retention", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:schema:table", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:schema:field", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:schema:index", Selector: "retention", Attributes: attributes, Models: models},
+	}
+}

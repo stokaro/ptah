@@ -330,6 +330,19 @@ declares. A `DeclarationError` names the attribute a refusal is about and,
 from `Finish`, the declaration it refuses; the frontend reports the refusal
 there as a `ptaherr.ParseError` that wraps the owner's error.
 
+A declaration can describe a column or an index. A `Directive` whose `Describes`
+is `SubjectColumn` is written on a field beside that field's
+`ptah:schema:field` directive, and one that describes `SubjectIndex` beside the
+single `ptah:schema:index` directive of its comment. The frontend hands the
+decoder the part as `Declaration.Subject`: the struct, the column or index name
+the directive writes and, for an index, the table it names. A group of
+attributes with `PerFile` set adds attributes to the frontend's table, field or
+index directive and reads them through the owner's `FileDecoder`, which gets
+the declaration from `Reader.DecodeAttributes` with the same subject. A
+`Contribution` whose `Subject` names a column or an index attaches its facet to
+that part once the file is read, and the frontend refuses a facet whose part the
+file does not declare.
+
 An owner may also read declarations of the frontend's own directives that
 their target scope makes its own. A `TargetScope` names a directive, the
 dialects whose declarations the owner reads, and whether it also reads the

@@ -80,7 +80,7 @@ func (p KeyValueParser) ParseKeyValueComment(comment string) map[string]string {
 	}
 
 	// Then, handle standalone boolean attributes (no =value)
-	cleanComment := keyValuePairRe.ReplaceAllString(comment, "")
+	cleanComment := withoutDirectiveName(keyValuePairRe.ReplaceAllString(comment, ""))
 	for _, match := range boolRe.FindAllStringSubmatch(cleanComment, -1) {
 		attr := match[1]
 		if skip[attr] {
@@ -103,6 +103,22 @@ func (p KeyValueParser) ParseKeyValueComment(comment string) map[string]string {
 	}
 
 	return result
+}
+
+// withoutDirectiveName drops the directive's own name from a comment, so a word
+// of the name is never read as a bare attribute. A directive of an owner may be
+// named with any word, `index` included, which is also an attribute name and so
+// is not one of the skipped directive tokens.
+func withoutDirectiveName(comment string) string {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
+	if !strings.HasPrefix(trimmed, "ptah:") {
+		return comment
+	}
+	end := strings.IndexAny(trimmed, " \t")
+	if end < 0 {
+		return ""
+	}
+	return trimmed[end:]
 }
 
 // isRetiredAttribute reports whether the directive recognizes this attribute

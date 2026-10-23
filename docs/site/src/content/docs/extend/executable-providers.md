@@ -349,17 +349,41 @@ provider receives parsed attributes and never comment text. A directive name
 belongs to one provider. An attribute the claim does not list is refused before
 the provider runs.
 
-Ptah reads a claimed directive from the doc comment of a struct, where it reads
-its own directives. A `TABLE` directive declares a facet of the table of that
-struct, and a `DOCUMENT` directive declares an object that belongs to no table.
-Both may sit before or after the `ptah:schema:table` comment. Ptah collects the
-directives of one Go file and sends them to the provider as one document, so a
-provider sees every table of the file when it decodes. Attribute values arrive
-as text, exactly as written, and the provider decides what a value means. The
-source position of an attribute is the position of its comment. A provider that
-claims a directive at `COLUMN` or `INDEX` scope is refused when it starts,
-because Ptah does not yet tell the provider which column or index a comment
-sits on, and ignoring the claim would drop the attribute without an error.
+A claim is one of two kinds. A directive of the provider's own, such as
+`ptah:fixture:retention`, is written in a doc comment and describes one part of
+a table:
+
+- `DOCUMENT` and `TABLE` directives sit on a struct. A `TABLE` directive declares
+  a facet of the table of that struct, and a `DOCUMENT` directive declares an
+  object that belongs to no table.
+- A `COLUMN` directive sits on a field, in the same comment as that field's
+  `ptah:schema:field` directive, and describes the column that directive names
+  with `name=`.
+- An `INDEX` directive sits in the same comment as exactly one
+  `ptah:schema:index` directive, on a struct or a field, and describes the index
+  that directive names with `name=`. An index the directive describes in another
+  struct's table is the one named by that directive's `table=`.
+
+A claim that names `ptah:schema:table`, `ptah:schema:field` or
+`ptah:schema:index` instead gives the provider attributes of Ptah's own
+directive. Its scope is the part the directive declares: `TABLE` for the table
+directive, `COLUMN` for the field directive and `INDEX` for the index directive.
+The provider receives only the attributes it claims, with the same subject as a
+directive of its own. A claim on any other Ptah directive, a scope that does not
+fit the directive, a claim without attributes and an attribute the directive
+already has are refused when the provider starts.
+
+Both kinds may sit before or after the `ptah:schema:table` comment. Ptah
+collects the directives of one Go file and sends them to the provider as one
+document, so a provider sees every table of the file when it decodes. A column
+or index fragment names its table in the binding and the column or index as the
+fragment subject: kind `column` or `index`, the table's schema, the table as the
+only path component and the written name. The provider answers with a value
+owned by that subject. Ptah refuses a value owned by another column or index
+instead of placing it, and refuses a directive whose field or index directive is
+missing, appears more than once in the comment, or has no `name`. Attribute
+values arrive as text, exactly as written, and the provider decides what a value
+means. The source position of an attribute is the position of its comment.
 
 The execution adapter does not support managed data, database cleanup, or
 isolated execution of untrusted SQL. It does not add

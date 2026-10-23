@@ -3,6 +3,7 @@ package annotation
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -200,6 +201,43 @@ func (r *Reader) Decode(declaration Declaration) ([]Contribution, error) {
 		return nil, err
 	}
 	return contributions, nil
+}
+
+// DecodeAttributes hands the attributes a declaration of one of the
+// frontend's own directives wrote to the owners that read them per file (see
+// [DirectiveAttributes.PerFile]). Each owner's [FileDecoder] receives a
+// declaration whose Directive is the frontend's directive and whose Attributes
+// are the ones that owner's groups read. The contributions a decoder returns
+// for it are checked as [Reader.Decode] checks them. An owner that reads none
+// of the written attributes is not called.
+func (r *Reader) DecodeAttributes(declaration Declaration) ([]Contribution, error) {
+	var joined []Contribution
+	for index, extension := range r.set.extensions {
+		written := make(map[string]string)
+		for _, group := range extension.Attributes {
+			if group.PerFile {
+				maps.Copy(written, group.written(declaration.Directive, declaration.Attributes))
+			}
+		}
+		if len(written) == 0 {
+			continue
+		}
+		decoder, err := r.file(index)
+		if err != nil {
+			return nil, err
+		}
+		owned := declaration
+		owned.Attributes, owned.Targets = written, slices.Clone(declaration.Targets)
+		contributions, err := decoder.Decode(owned)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkContributions(extension, declaration.Directive, contributions); err != nil {
+			return nil, err
+		}
+		joined = append(joined, contributions...)
+	}
+	return joined, nil
 }
 
 // Finish asks each owner that read a declaration of the file through a

@@ -475,7 +475,12 @@ A Go fragment of an engine with claims carries the exact negotiated
 `go_directive`. Its selector must match, its document must enroll every model the
 claim names, and every attribute key must appear in the claim. A table directive
 needs a common table binding. A column or index directive needs that binding and a
-`subject` of kind `column` or `index`. A document directive has no attachment.
+`subject` of kind `column` or `index`; the host sends the table's schema, the
+table as the only path component and the name the field or index directive
+writes, and refuses a value the owner returns for another subject. A claim whose
+directive is `ptah:schema:table`, `ptah:schema:field` or `ptah:schema:index` adds
+the listed attributes to that directive and takes the scope `TABLE`, `COLUMN` or
+`INDEX` respectively. A document directive has no attachment.
 Other source formats cannot carry a Go claim. An engine that declares no
 directives keeps accepting captured Go fragments without one.
 
@@ -509,8 +514,9 @@ fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
 retention to SQLite. The host YAML frontend captures negotiated document and
 table keys for this RPC. The host Go annotation adapter captures the claimed
-directives of a Go file at `DOCUMENT` and `TABLE` scope, with attribute values as
-text, and refuses a provider that claims `COLUMN` or `INDEX` scope. The host HCL
+directives of a Go file at every scope, with attribute values as text, and the
+attributes a provider claims on Ptah's table, field and index directives. It
+refuses a claim on any other Ptah directive. The host HCL
 adapter, official-engine adapters, complete native planning, and history
 remain part of #4204; this transport is not a claim of YDB source support.
 

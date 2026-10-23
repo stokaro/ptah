@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -108,17 +109,17 @@ func retentionSourceFields(document *protocol.SourceDocument, fragment *protocol
 			return retentionSource{}, fmt.Errorf("unsupported retention field %q", entry.GetKey())
 		}
 	}
-	if bindingID != "" {
-		if subject != nil {
-			return retentionSource{}, fmt.Errorf("conflicting retention subjects")
-		}
+	// A fragment that names its subject, as a Go column or index directive
+	// does, also carries the binding of the table it belongs to. The binding is
+	// context then, and resolves nothing.
+	if bindingID != "" && subject == nil {
 		for _, binding := range document.GetBindings() {
 			if binding.GetId() == bindingID {
 				subject = proto.CloneOf(binding.GetObject())
 			}
 		}
 	}
-	if subject == nil || subject.GetKind() != "table" {
+	if subject == nil || !slices.Contains([]string{"table", "column", "index"}, subject.GetKind()) {
 		return retentionSource{}, fmt.Errorf("retention table binding is unknown")
 	}
 	payload, err := json.Marshal(fields)
