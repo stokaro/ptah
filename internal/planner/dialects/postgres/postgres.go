@@ -1673,6 +1673,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result, foreignKeysReleased := p.releaseRemovedForeignKeys(result, diff)
 	result = p.releaseKeyNames(result, diff, released)
 
+	// 5c. Views that read a column whose type changes leave first: PostgreSQL
+	// refuses ALTER COLUMN TYPE under a view. Step 6.6 puts them back.
+	result = p.dropViewsBeforeRetype(result, diff)
+
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
 
@@ -1697,6 +1701,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.addNewViewLikeObjects(result, diff, relationPlaced)
 	result = p.modifyExistingViews(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff)
+	result = p.recreateViewsAfterRetype(result, diff)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
 

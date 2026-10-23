@@ -736,6 +736,26 @@ so `INSERT OR UPDATE` is `insert = true` and `update = true`. It leaves out a
 trigger with `UPDATE OF` columns, a condition or transition tables, and says
 so, because the HCL trigger block has no attribute for them.
 
+## Changing a column type under a view
+
+PostgreSQL refuses `ALTER COLUMN ... TYPE` on a column a view or materialized
+view reads, whether or not that view changes:
+
+```text
+ERROR:  cannot alter type of a column used by a view or rule
+```
+
+When a plan retypes a column, Ptah drops the declared views and materialized
+views that read its table, directly or through another view, before the column
+step. It creates them again after it, in dependency order. A live view the
+declaration no longer holds is dropped at the same point, because the removal
+step comes after the column step. The rollback migration does the same in the
+other direction.
+
+The drop is `DROP VIEW ... CASCADE`, so grants on a dropped view and any object
+that depends on it and that the schema does not declare go with it. A plan with
+no retyped column keeps `CREATE OR REPLACE VIEW`, which leaves both alone.
+
 ## Materialized view refresh
 
 Ptah does not refresh materialized views, and a declaration cannot ask it to.
