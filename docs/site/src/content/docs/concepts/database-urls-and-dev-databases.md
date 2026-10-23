@@ -265,6 +265,32 @@ unless the file opts out with `-- +ptah no_transaction` or
 is gone before the next. In a file that opts out, PostgreSQL ignores a
 `SET LOCAL` with a warning, on replay and on apply alike.
 
+A PostgreSQL migration file that opens and closes its own transaction replays
+as written. A history written for a runner that sends each file as it is, such
+as golang-migrate, has files that begin with `BEGIN` and end with `COMMIT`. Replay
+reads such a file as a whole before it runs a statement, accepts the `BEGIN` or
+`START TRANSACTION` and the `COMMIT` or `END` that close it, and runs the file
+without a transaction of its own, because a `BEGIN` inside one is a warning and
+the `COMMIT` after it would end the replay's transaction instead. A file that
+fails is rolled back on the pinned session before the dev database is cleaned.
+The whole file is refused, with the statement named, when it:
+
+- leaves a transaction open, closes one it did not open, or opens one inside
+  another;
+- takes its own work back with `ROLLBACK` or `ABORT`, or uses `SAVEPOINT`,
+  `RELEASE` or `ROLLBACK TO`;
+- writes `AND CHAIN` or `AND NO CHAIN`, `PREPARE TRANSACTION` or
+  `COMMIT PREPARED`, or a `BEGIN` mode other than an isolation level, access
+  mode or `DEFERRABLE`;
+- asks for a transaction around the file with `-- atlas:txmode file` and opens
+  its own.
+
+This holds for PostgreSQL only, and only where Ptah replays an existing
+migration directory. Anywhere else the guard keeps refusing each of these
+statements on its own. `LOCK TABLE` is accepted for the same reason as `SET LOCAL`: PostgreSQL
+refuses it outside a transaction block, and its lock ends with the transaction.
+A lock on a table in a protected namespace is refused.
+
 Three parameters stay refused even for one transaction. `search_path` (and its
 alias `SET SCHEMA`) decides where an unqualified name lands, which would let a
 `CREATE FUNCTION` reach `pg_catalog`. `role` and `session_authorization` change

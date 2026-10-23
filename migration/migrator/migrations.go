@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
@@ -103,6 +104,23 @@ type StatementClaimer interface {
 // validated before the first statement runs.
 type StatementValidator interface {
 	ValidateStatement(stmt string) error
+}
+
+// TransactionBoundaryValidator is a [StatementValidator] that can also read a
+// whole migration file for the transaction the file opens and closes itself.
+//
+// It exists for the replay of an existing history, where a file written for a
+// runner that sends it as it is begins with BEGIN and ends with COMMIT. The
+// statements it names are accepted as the file's own boundaries; every other
+// statement is validated as usual. Nothing in it is reached by a validator
+// that does not implement it, so a caller that installs a plain
+// [StatementValidator] keeps refusing the same statements it always did.
+type TransactionBoundaryValidator interface {
+	StatementValidator
+	// TransactionBoundaries returns the indexes, in statements, of the
+	// statements that are the file's own transaction boundaries. A non-nil
+	// error refuses the whole file.
+	TransactionBoundaries(statements []string) ([]int, error)
 }
 
 // StatementEvent describes one successfully executed migration statement.
@@ -337,6 +355,10 @@ type sqlMigrationFile struct {
 	// reduced to a flag: whether it would take over a statement of this body
 	// is a question only it can answer, and the answer differs per statement.
 	interceptor StatementInterceptor
+	// ownsTransactions reports whether the file opens and closes its own
+	// transaction, as the validator installed for it reads the file. It is nil
+	// when no validator that reads boundaries was installed.
+	ownsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []migrationfile.AtlasTxtarCheckFile
@@ -486,6 +508,9 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 		txModeSource: txMode.Source,
 		txModeErr:    txMode.Err,
 		interceptor:  hooks.interceptor,
+		ownsTransactions: func(conn *dbschema.DatabaseConnection) (bool, error) {
+			return fileOwnsTransactions(conn, filename, sql, hooks.validator)
+		},
 	}, nil
 }
 
@@ -577,6 +602,10 @@ type Migration struct {
 	downSQLFunc       sqlMigrationFunc
 	upInterceptor     StatementInterceptor
 	downInterceptor   StatementInterceptor
+	// upOwnsTransactions reads the up body for a transaction it opens and
+	// closes itself; see [TransactionBoundaryValidator]. It is nil for a
+	// migration loaded without such a validator.
+	upOwnsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.
@@ -743,9 +772,75 @@ func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConn
 	}
 	txMode := m.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
 	mode := migrationExecutionModeForFileTxMode(txMode.Mode)
+	if m.upOwnsTransactions != nil {
+		owns, err := m.upOwnsTransactions(conn)
+		if err != nil {
+			return err
+		}
+		if owns {
+			return m.replayOwnTransactions(ctx, conn, txMode)
+		}
+	}
 	return m.replayInExecutionMode(ctx, conn, mode, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return m.upSQLFunc(ctx, conn, mode)
 	})
+}
+
+// replayOwnTransactions replays a body that opens and closes its own
+// transaction. It runs on conn as it is, outside any transaction of the
+// replay's: a BEGIN inside one is a warning, and the COMMIT after it would end
+// the replay's transaction instead of the body's.
+//
+// A body that fails is rolled back on the same session before the error is
+// returned, because the session is the one the replay then cleans the dev
+// database on, and a transaction left aborted refuses every statement of the
+// cleanup. A body that asks for an enclosing transaction by name is refused:
+// it cannot have both.
+func (m *Migration) replayOwnTransactions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	txMode migrationfile.ParsedFileTxMode,
+) error {
+	if txMode.Err != nil {
+		return txMode.Err
+	}
+	if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
+		return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", m.Version)
+	}
+	err := m.upSQLFunc(ctx, conn, migrationExecutionNoTransaction)
+	if err == nil {
+		return nil
+	}
+	rollbackCtx, release := context.WithTimeout(context.WithoutCancel(ctx), ownTransactionRollbackTimeout)
+	defer release()
+	if rollbackErr := executeSQLOn(rollbackCtx, conn, "ROLLBACK"); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.Version, rollbackErr))
+	}
+	return err
+}
+
+// ownTransactionRollbackTimeout bounds the ROLLBACK that ends a failed body's
+// transaction. It runs on a context the failure did not cancel, so a cancelled
+// replay still leaves the session usable for the cleanup.
+const ownTransactionRollbackTimeout = 10 * time.Second
+
+// fileOwnsTransactions reports whether validator reads sql as a file that opens
+// and closes its own transaction.
+func fileOwnsTransactions(
+	conn *dbschema.DatabaseConnection,
+	filename, sql string,
+	validator StatementValidator,
+) (bool, error) {
+	reader, ok := validator.(TransactionBoundaryValidator)
+	if !ok {
+		return false, nil
+	}
+	statements := splitSQLStatementsForConnection(conn, sql)
+	boundaries, err := fileTransactionBoundaries(filename, statements, reader)
+	if err != nil {
+		return false, err
+	}
+	return len(boundaries) > 0, nil
 }
 
 // replayInExecutionMode runs up on conn inside one transaction when mode is
@@ -1052,9 +1147,13 @@ func validateMigrationStatements(
 	if validator == nil {
 		return nil
 	}
+	boundaries, err := fileTransactionBoundaries(filename, statements, validator)
+	if err != nil {
+		return err
+	}
 	for i, statement := range statements {
 		statement = strings.TrimSpace(statement)
-		if statement == "" {
+		if statement == "" || slices.Contains(boundaries, i) {
 			continue
 		}
 		if err := validator.ValidateStatement(statement); err != nil {
@@ -1067,6 +1166,31 @@ func validateMigrationStatements(
 		}
 	}
 	return nil
+}
+
+// fileTransactionBoundaries asks validator which statements of a file are its
+// own transaction boundaries, when validator can say. A file it refuses is
+// reported against the statement it names.
+func fileTransactionBoundaries(filename string, statements []string, validator StatementValidator) ([]int, error) {
+	reader, ok := validator.(TransactionBoundaryValidator)
+	if !ok {
+		return nil, nil
+	}
+	boundaries, err := reader.TransactionBoundaries(statements)
+	if err == nil {
+		return boundaries, nil
+	}
+	failure := &MigrationExecutionError{
+		Err:            fmt.Errorf("failed to validate migration SQL in %s: %w", filename, err),
+		StatementIndex: 1,
+		Total:          len(statements),
+	}
+	var structure interface{ StatementIndex() int }
+	if errors.As(err, &structure) && structure.StatementIndex() < len(statements) {
+		failure.Statement = strings.TrimSpace(statements[structure.StatementIndex()])
+		failure.StatementIndex = structure.StatementIndex() + 1
+	}
+	return nil, failure
 }
 
 // MigrationExecutionError reports the statement that failed while applying a

@@ -108,20 +108,23 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 	}
 }
 
-func TestValidatePostgresReplayStatement_SessionRoutineInPgTemp(t *testing.T) {
-	const statement = `CREATE OR REPLACE FUNCTION pg_temp.generate_ulid() RETURNS text AS $$ SELECT 'x' $$ LANGUAGE sql`
+const sessionRoutineInPgTemp = `CREATE OR REPLACE FUNCTION pg_temp.generate_ulid() RETURNS text AS $$ SELECT 'x' $$ LANGUAGE sql`
 
+func TestValidatePostgresReplayStatement_SessionRoutineInPgTemp_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	err := guard{dialect: platform.Postgres}.Validate(sessionRoutineInPgTemp, replay.Scope{Server: true, Session: true})
+
+	c.Assert(err, qt.IsNil)
+}
+
+func TestValidatePostgresReplayStatement_SessionRoutineInPgTemp_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		scope   replay.Scope
 		wantErr string
 	}{
-		{
-			name:    "owned server and pinned session",
-			dialect: platform.Postgres,
-			scope:   replay.Scope{Server: true, Session: true},
-		},
 		{
 			name:    "owned server without a pinned session",
 			dialect: platform.Postgres,
@@ -140,11 +143,8 @@ func TestValidatePostgresReplayStatement_SessionRoutineInPgTemp(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := guard{dialect: test.dialect}.Validate(statement, test.scope)
-			if test.wantErr == "" {
-				c.Assert(err, qt.IsNil)
-				return
-			}
+			err := guard{dialect: test.dialect}.Validate(sessionRoutineInPgTemp, test.scope)
+
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

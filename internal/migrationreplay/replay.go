@@ -266,7 +266,12 @@ func replayOnLockedConnection(
 			migrator.WithMigrationDirFormat(dirFormat),
 			migrator.WithAtlasTemplateData(atlasTemplateData),
 			migrator.WithAtlasRevisionVersions(revisionVersions),
-			migrator.WithStatementValidator(devclean.NewDevReplayGuard(replayConn.Info()).WithSessionScope()),
+			// A history written for a runner that sends each file as it is carries
+			// files that open and close their own transaction. Replay runs those
+			// outside a transaction of its own and rolls a failed one back on this
+			// pinned session, which it then cleans.
+			migrator.WithStatementValidator(
+				devclean.NewDevReplayGuard(replayConn.Info()).WithSessionScope().WithOwnTransactions()),
 		)
 		if err != nil {
 			return fmt.Errorf("load migration directory: %w", err)
