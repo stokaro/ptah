@@ -1074,6 +1074,7 @@ drop will execute in the current attempt. A statement skipped by dirty-resume
 cannot serve as that cleanup. Ptah resolves both unqualified drops and target
 tables through `search_path`, then checks the schema-level relation name. An
 index on another table or a non-index relation with that name is a conflict.
+
 So is a usable index on the target whose definition differs from the declared
 one: Ptah builds the declared index on an empty copy of the table and compares
 the two definitions PostgreSQL renders, so the same index spelled another way
