@@ -25,7 +25,14 @@ func (h *Host) decodedValue(engine string, source *protocol.SourceModelValue) (d
 	if contract == nil {
 		return decodedSourceValue{}, fmt.Errorf("decoded source model is not registered")
 	}
-	resolved, err := contract.resolved(modelWire{Format: 1, Engine: engine}, value)
+	selected := h.targets[engine]
+	if selected == nil {
+		return decodedSourceValue{}, fmt.Errorf("decoded source value names engine %q, which the provider does not declare", engine)
+	}
+	// A value carries the feature profile of the engine it was decoded for, as
+	// every other value does. A comparison or a plan accepts one profile per
+	// batch, and a value without one would set the batch's profile to none.
+	resolved, err := contract.resolved(modelWire{Format: 1, Engine: engine, Features: featureSet(selected.engine.GetFeatures())}, value)
 	if err != nil {
 		return decodedSourceValue{}, err
 	}

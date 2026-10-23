@@ -70,6 +70,15 @@ markers: a step without a parent belongs to no table, and refusing it refuses
 every plan. A step with effects and a parent is a table change the service
 either claims or leaves to the host.
 
+Every value and native operation Ptah holds for an engine carries the engine's
+feature list as its target profile, and a comparison or a plan accepts one
+profile per batch. That includes a value decoded from a YAML or Go source. A
+provider that lists the same features in the session it opens and in the
+inspection snapshot it returns (`target_features`) as in its engine description
+gets one profile for observed, desired and planned values. A provider that
+leaves them empty refuses every comparison between an inspected facet and a
+declared one with "comparison requires one captured target profile".
+
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid

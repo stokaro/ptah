@@ -5,6 +5,7 @@ package providercli_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine"
 	"ptah.run/internal/providerhost"
@@ -208,4 +210,24 @@ func TestProviderClaimOfAnotherEnginesPlatformGroup_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*claims the platform group "mysql", which names no engine of the provider.*`)
 	c.Assert(host, qt.IsNil)
+}
+
+// TestProviderDecodedFacetCarriesTheEngineProfile pins that a value decoded
+// from a source carries the target profile of the engine, as a native operation
+// does. A comparison and a plan accept one profile per batch, and the profile of
+// the first value sets it, so a decoded value without one made the plan refuse
+// every native operation it held.
+func TestProviderDecodedFacetCarriesTheEngineProfile(t *testing.T) {
+	c := qt.New(t)
+	runtime := platformProvider(c)
+
+	db, err := yamlschema.Parse(c.Context(), runtime.YAML(), []byte(platformYAMLSource))
+
+	c.Assert(err, qt.IsNil)
+	encoded, err := runtime.Codecs().EncodeFacets(c.Context(), schemaext.Desired, db.Tables[1].Facets)
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded, qt.HasLen, 1)
+	var wire struct{ Features []string }
+	c.Assert(json.Unmarshal(encoded[0].Value.Payload, &wire), qt.IsNil)
+	c.Assert(wire.Features, qt.DeepEquals, []string{"columns", "schema.common-table-identity.v1", "tables"})
 }
