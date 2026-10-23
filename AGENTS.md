@@ -193,10 +193,7 @@ exists to surface. Every contour runs on a push to `master`.
 ### The version matrix
 
 Release lines are declared once, in `internal/capabilityprobe/cells.go`;
-adding one is a literal there plus `scripts/check-docsync.sh --write`. The YDB
-lines are also declared by the YDB plugin, which publishes them beside each
-release; `internal/providerreleaselines` pins that document by version and
-digest, and a test requires the two to agree.
+adding one is a literal there plus `scripts/check-docsync.sh --write`.
 `go run ./internal/cmd/capmatrix matrix` says what the pipeline fans out over.
 
 The probe fan-out does not run on a pull request by default
