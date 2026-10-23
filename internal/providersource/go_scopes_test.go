@@ -157,6 +157,60 @@ func TestGoSubject_FailurePath(t *testing.T) {
 	}
 }
 
+func holderClaim() *protocol.GoSourceDirective {
+	return &protocol.GoSourceDirective{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:test:holder", Selector: "table", Attributes: []string{"table", "depth"}}
+}
+
+func TestGoSubject_TableScopeHappyPath(t *testing.T) {
+	tables, _ := captureScopedGo(qt.New(t), scopedGoSource)
+	for _, row := range []struct {
+		name        string
+		declaration annotation.Declaration
+		want        int
+	}{
+		{"the table of the struct", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Other"}, 1},
+		{"a table the attribute names, from a struct without one", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Holder",
+			Attributes: map[string]string{"table": "records"}}, 0},
+		{"a table the attribute names, over the struct's own", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Other",
+			Attributes: map[string]string{"table": "app.records"}}, 0},
+		{"an attribute of the frontend's own table directive is not a reference", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Other",
+			Subject: annotation.Subject{Kind: annotation.SubjectTable, Struct: "Other"}, Attributes: map[string]string{"table": "records"}}, 1},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			table, subject, err := providersource.GoSubject("example", tables, holderClaim(), row.declaration)
+			c.Assert(err, qt.IsNil)
+			c.Assert(table, qt.Equals, row.want)
+			c.Assert(subject, qt.IsNil)
+		})
+	}
+}
+
+func TestGoSubject_TableScopeFailurePath(t *testing.T) {
+	tables, _ := captureScopedGo(qt.New(t), scopedGoSource)
+	tables = append(tables, annotation.Table{Schema: "archive", Name: "records", Struct: "Archived"})
+	for _, row := range []struct {
+		name        string
+		declaration annotation.Declaration
+		want        string
+	}{
+		{"a struct without a table and no attribute", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Holder"},
+			`struct Holder maps to no table in this file; name the table with the table attribute`},
+		{"a table the file does not declare", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Holder", Attributes: map[string]string{"table": "absent"}},
+			`table "absent" is not declared in this file, and the ptah:test:holder directive is declared beside its table`},
+		{"a table declared in two schemas", annotation.Declaration{Directive: "ptah:test:holder", Struct: "Holder", Attributes: map[string]string{"table": "records"}},
+			`table "records" is declared in schemas "app" and "archive"; name the schema in the table attribute`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			table, subject, err := providersource.GoSubject("example", tables, holderClaim(), row.declaration)
+			c.Assert(err, qt.ErrorMatches, row.want)
+			c.Assert(table, qt.Equals, -1)
+			c.Assert(subject, qt.IsNil)
+		})
+	}
+}
+
 func TestSameSubject(t *testing.T) {
 	c := qt.New(t)
 	want := &protocol.Reference{Engine: "example", Kind: "column", Schema: "app", Path: []string{"records"}, Name: "id"}

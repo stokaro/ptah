@@ -401,7 +401,12 @@ a table:
 
 - `DOCUMENT` and `TABLE` directives sit on a struct. A `TABLE` directive declares
   a facet of the table of that struct, and a `DOCUMENT` directive declares an
-  object that belongs to no table.
+  object that belongs to no table. A `TABLE` directive that lists `table` among
+  its attributes can name another table of the file with `table=`, written with
+  its schema where two schemas hold the same name. That lets a struct that maps
+  to no table hold the directive. Ptah refuses a name the file does not declare
+  and a name declared in more than one schema, as it does for the `table=` of an
+  index directive.
 - A `COLUMN` directive sits on a field, in the same comment as that field's
   `ptah:schema:field` directive, and describes the column that directive names
   with `name=`.
