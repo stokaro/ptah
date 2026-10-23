@@ -61,6 +61,15 @@ reaches the provider with its captured state, and the drop is a step the
 provider must claim in the same way. Changes to existing columns, indexes, and
 table comments are refused. These services do not grant common SQL rendering.
 
+The common steps of a planning request include ordering markers beside the steps
+that change a table. A marker has no parent, no effects and no added column. It
+stands for the start or end of a phase of the plan, such as
+`common/prerequisite-creations`, and a provider orders its own steps against it.
+A lifecycle service that matches common steps to its tables must skip the
+markers: a step without a parent belongs to no table, and refusing it refuses
+every plan. A step with effects and a parent is a table change the service
+either claims or leaves to the host.
+
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
