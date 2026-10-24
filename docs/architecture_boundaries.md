@@ -38,6 +38,7 @@ features, database implementations, or external modules.
 | `renderer-consumers-import-builtins` | Selected rendering consumers must not link built-in rendering factories. | 0 |
 | `neutral-packages-link-owners` | Models, contracts, the runtime, orchestration and Go export must not link a concrete dialect, feature or built-in owner. | 0 |
 | `sql-reader-links-owners` | The shared SQL reader must not link a concrete dialect, feature or built-in owner. | 0 |
+| `yql-parser-importers` | Only the in-process YDB reading may import the YQL parser, which moves into the YDB provider. | per package, in the JSON |
 | `shared-packages-name-dialects` | Shared packages must not name a dialect, so that a new engine needs no edit to shared code. | per package, in the JSON |
 
 A count may fall and may never rise. A rule at zero is therefore enforced
@@ -159,6 +160,17 @@ families. The dialect-name rule reads them as per-engine helpers by their names
 and leaves them out of the shared set; see
 [What the dialect-name rule holds](#what-the-dialect-name-rule-holds). A helper
 that interprets syntax an owner models moves to the owner instead.
+
+### What the YQL parser rule holds
+
+`yql-parser-importers` counts the packages that import `internal/yqlparse`.
+ADR 0027 moves the parser into the YDB provider, which then reads its SQL
+documents whole, and the host keeps no grammar of the engine. Until then
+`internal/ydbsql` and `internal/syntaxext/yql` import it, one finding each. A
+third importer is refused, and the move records zero. Tests are not loaded, so
+a test that parses YQL is not counted. The rule reads at least 500 packages, a
+floor the source states, so a load that matched little of the module cannot
+report no importer and pass.
 
 ### What the dialect-name rule holds
 
@@ -328,6 +340,7 @@ test and the control that make it evidence.
 | Rendering selection: consumers cannot select built-in factories through their dependency graph | `renderer-consumers-import-builtins` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect built-in import is refused; a similarly named package is accepted |
 | Owner isolation: neutral packages link no concrete owner | `neutral-packages-link-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: an indirect owner import is refused in two neutral packages with separate import graphs |
 | SQL reader isolation: the shared SQL reader links no owner | `sql-reader-links-owners` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a direct owner import into the parser and an indirect one into `internal/sqlschema` are refused, a dialect helper import is accepted, and a baseline above the tree is refused |
+| YQL parser importers: no package outside the in-process YDB reading imports the YQL parser | `yql-parser-importers` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: a new importer is refused and the repaired tree is accepted |
 | Dialect names: shared packages name no more dialects than recorded | `shared-packages-name-dialects` in `scripts/check-architecture-boundaries.sh` | `…-selftest.sh`: each counted shape in a shared package is refused; the same name in an owner, a helper or the bundle, and words that are not dialect names, are accepted; a stale package baseline is refused |
 
 ## How target facts are held
