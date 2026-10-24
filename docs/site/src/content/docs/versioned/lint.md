@@ -44,9 +44,8 @@ migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently 
 
 A clean run prints `No lint findings.` and exits `0`.
 
-Every rule identifier, with its one-line meaning, the dialects it applies to,
-the surface that reports it, and whether the name is Atlas's or Ptah's, is
-enumerated in [Lint rules](../../reference/lint-rules/).
+[Lint rules](../../reference/lint-rules/) lists every rule identifier with its
+meaning, dialects, surface, and origin.
 
 ## Which server the run plans against
 
@@ -160,6 +159,9 @@ Useful controls, all designed for CI:
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
+- `--provider-config` selects an
+  [executable provider](../../extend/executable-providers/), which splits and
+  checks its engine's files.
 
 For OCI-distributed directories, `lint --dir oci://...` lints the published
 artifact, and `--attach` stores the canonical report next to it — see

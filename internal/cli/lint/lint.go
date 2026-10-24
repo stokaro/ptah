@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
@@ -197,7 +197,10 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
-	runtime, err := builtin.New()
+	// The runtime a provider selection installed, or the bundled one. A
+	// selected provider owns its engine's split, rules and annotations here as
+	// it owns every other service of that engine.
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
@@ -357,6 +360,23 @@ func writeServerVersionNotice(w io.Writer, format string, report migrationlintre
 		return nil
 	}
 	return migrationlintreport.WriteServerVersionNotice(w, report)
+}
+
+// ReportSetupFailure reports an error that stopped the command before it ran,
+// such as a provider that did not start, the way the command reports its own
+// errors: an error report in the requested format on stderr, and exit code 2.
+// A format or threshold the command would refuse falls back to its default, as
+// the command's own validation does.
+func ReportSetupFailure(cmd *cobra.Command, err error) error {
+	format, _ := cmd.Flags().GetString("format")
+	if migrationlintreport.ValidateFormat(format) != nil {
+		format = formatText
+	}
+	failOn, _ := cmd.Flags().GetString("fail-on")
+	if migrationlintreport.ValidateFailOn(failOn) != nil {
+		failOn = failOnError
+	}
+	return writeError(cmd.ErrOrStderr(), format, failOn, err.Error())
 }
 
 func writeError(w io.Writer, format, failOn, msg string) error {

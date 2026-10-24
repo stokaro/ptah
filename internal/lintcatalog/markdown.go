@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/sqllint"
 )
@@ -19,7 +21,17 @@ import (
 // stand behind would turn a broken catalog into documentation instead of into a
 // failure.
 func WriteMarkdown(w io.Writer) error {
-	entries, err := Entries()
+	runtime, err := builtin.New()
+	if err != nil {
+		return err
+	}
+	return WriteMarkdownFrom(w, runtime)
+}
+
+// WriteMarkdownFrom is [WriteMarkdown] with runtime as the source of the rules
+// engine owners publish; see [MigrationEntriesFrom].
+func WriteMarkdownFrom(w io.Writer, runtime lintext.Runtime) error {
+	entries, err := EntriesFrom(runtime)
 	if err != nil {
 		return err
 	}

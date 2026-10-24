@@ -2,12 +2,13 @@ package atlas
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
+	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/featureselect"
@@ -25,6 +26,11 @@ type verifiedAtlasSchemaPlan struct {
 	// analyze the plan's SQL needs it and must not re-derive it from the URL:
 	// what the connection reports is what the checks above ran under.
 	dialect string
+	// runtime is the runtime the plan was read, planned and replayed with: the
+	// bundled one, extended with the provider of every engine the transition
+	// names. A caller analyzing the plan's SQL uses it, so a provider that
+	// serves the target's engine splits and judges that SQL too.
+	runtime *engine.Runtime
 }
 
 // verifyAtlasSchemaPlanFile reads the plan file named by file and runs the two
@@ -61,7 +67,7 @@ func verifyAtlasSchemaPlanFile(
 	transition atlasSchemaPlanTransitionFlags,
 	devServerDisposable bool,
 ) (verifiedAtlasSchemaPlan, error) {
-	runtime, err := builtin.New()
+	runtime, err := atlasRuntime(cmd.Context(), append(slices.Clone(transition.fromURLs), transition.toURLs...), transition.devURL)
 	if err != nil {
 		return verifiedAtlasSchemaPlan{}, err
 	}
@@ -156,7 +162,7 @@ func verifyAtlasSchemaPlanFile(
 	}); err != nil {
 		return verifiedAtlasSchemaPlan{}, err
 	}
-	return verifiedAtlasSchemaPlan{plan: plan, dialect: conn.Info().Dialect}, nil
+	return verifiedAtlasSchemaPlan{plan: plan, dialect: conn.Info().Dialect, runtime: runtime}, nil
 }
 
 // atlasSchemaPlanFilePath resolves a --file URL to a local plan-file path.

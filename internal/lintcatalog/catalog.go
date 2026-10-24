@@ -1,10 +1,13 @@
 // Package lintcatalog enumerates every lint rule Ptah's binaries can report.
 //
 // The enumeration is derived from the registries the linters actually consult:
-// [lint.Rules] for migration lint and [sqllint.CatalogIDs] for SQL lint. What a
-// registry cannot carry -- a rule's one-line meaning, and whether its
-// identifier is Atlas's or Ptah's -- is declared here and joined to the
-// registry by code. [Entries] fails when the two sides disagree in either
+// [lint.Rules] for migration lint, over the rules a runtime's engine owners
+// publish, and [sqllint.CatalogIDs] for SQL lint. The bundled runtime is the
+// default source; [MigrationEntriesFrom] takes another, such as one holding an
+// executable provider, whose published rule catalog then joins the
+// enumeration. What a registry cannot carry -- a rule's one-line meaning, and
+// whether its identifier is Atlas's or Ptah's -- is declared here and joined to
+// the registry by code. [Entries] fails when the two sides disagree in either
 // direction, so a rule cannot exist in the code and be missing from the
 // documentation, and a documented rule cannot outlive the code that emitted it.
 //
@@ -18,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/lintext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/sqllint"
@@ -831,9 +835,20 @@ func (e Entry) SurfaceLabel() string {
 	return "none"
 }
 
-// Entries returns every rule both linters register, migration lint first.
+// Entries returns every rule both linters register, migration lint first,
+// reading the rules engine owners publish from the bundled runtime.
 func Entries() ([]Entry, error) {
-	migration, err := MigrationEntries()
+	runtime, err := builtin.New()
+	if err != nil {
+		return nil, err
+	}
+	return EntriesFrom(runtime)
+}
+
+// EntriesFrom is [Entries] with runtime as the source of the rules engine
+// owners publish; see [MigrationEntriesFrom].
+func EntriesFrom(runtime lintext.Runtime) ([]Entry, error) {
+	migration, err := MigrationEntriesFrom(runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -852,6 +867,21 @@ func MigrationEntries() ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	return MigrationEntriesFrom(runtime)
+}
+
+// MigrationEntriesFrom returns every rule migration lint applies with
+// runtime, in the order lint.Rules returns them: the rules migration lint
+// checks itself, then every rule the runtime's engine owners publish.
+//
+// The runtime is the source of the owners' rules and nothing else; only its
+// rule listing is read. A runtime that holds an executable provider lists the
+// rule catalog the provider published when it started, so an engine an
+// official provider serves is documented from that catalog the way a bundled
+// owner is documented from its registration. The meanings stay here, keyed by
+// code, and the join refuses a published rule this package does not describe
+// as it refuses a bundled one.
+func MigrationEntriesFrom(runtime lintext.Runtime) ([]Entry, error) {
 	rules, err := lint.Rules(runtime)
 	if err != nil {
 		return nil, err

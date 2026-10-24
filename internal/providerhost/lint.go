@@ -150,8 +150,23 @@ type lintService struct {
 	target *target
 }
 
+// CheckMigrations answers a run that names no target itself and sends every
+// other run to the owner.
+//
+// A run that names no target sends every published rule over the host's
+// dialect-blind split, which is not the owner's split and need not be the
+// owner's dialect. The wire request always names the engine, so it cannot
+// tell the owner that the run named none, and an owner judging that split as
+// its own would report hazards of its engine in SQL written for another. The
+// adapter answers instead: complete, with no finding, which is what the
+// bundled YDB owner answers for its YD rules. The run still reaches the owner
+// through AnnotateStatements, which is how a run that names no target learns
+// the facts only the owner recognizes.
 func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
 	name := s.target.engine.GetId()
+	if request.Target.Name == "" {
+		return s.untargeted(ctx, request)
+	}
 	if request.Target.Name != name {
 		return lintext.CheckResult{}, fmt.Errorf("%w: lint target changed", lintext.ErrInvalid)
 	}
@@ -181,4 +196,19 @@ func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckR
 		result.Findings = append(result.Findings, value)
 	}
 	return result, nil
+}
+
+// untargeted is the answer to a run that names no target: complete, with no
+// finding. A code the engine does not publish wraps lintext.ErrInvalid and a
+// canceled run returns the context's error, as a bundled owner answers both.
+func (s lintService) untargeted(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
+	for _, code := range request.Codes {
+		if !slices.ContainsFunc(s.target.engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == code }) {
+			return lintext.CheckResult{}, fmt.Errorf("%w: engine %q publishes no lint rule %s", lintext.ErrInvalid, s.target.engine.GetId(), code)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return lintext.CheckResult{}, err
+	}
+	return lintext.CheckResult{Complete: true}, nil
 }

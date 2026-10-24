@@ -82,3 +82,18 @@ func TestCommonTablePlannerRequiresEngineContract(t *testing.T) {
 		})
 	}
 }
+
+// TestCommonTablePlannerIgnoresMatchedCounts plans a diff that changes nothing
+// and keeps a table. The counts of what the comparison paired are for the
+// drift report; a planner that read them as a change it cannot carry refused
+// every plan that keeps a table.
+func TestCommonTablePlannerIgnoresMatchedCounts(t *testing.T) {
+	c := qt.New(t)
+	selected := &target{engine: &protocol.Engine{Id: "fixture", Features: []string{provider.CommonTableIdentityFeature}}, host: &Host{description: &protocol.Description{}}}
+	runtime, err := engine.New(engine.Provider{ID: "example.org/fixture", Targets: []engine.Target{selected.registration()}})
+	c.Assert(err, qt.IsNil)
+	planner := selected.registration().Planner(planext.Options{})
+	nodes, err := planner.GenerateMigrationAST(c.Context(), runtime, &difftypes.SchemaDiff{Matched: difftypes.MatchedCounts{Tables: 1, Columns: 1}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 0)
+}

@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/lint"
 	"ptah.run/internal/cli/migrate"
 	"ptah.run/internal/cli/migratebaseline"
@@ -75,7 +76,12 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(providerMigrationCommand(migraterepair.NewMigrateRepairCommand(), "Repair migration revision metadata", "Repair migration revision metadata after a dirty or partial migration state."))
 	cmd.AddCommand(migrationCommand(migratehash.NewMigrateHashCommand(), "Write or update migration directory integrity", "Write or update the migration directory integrity file."))
 	cmd.AddCommand(migrationCommand(migratevalidate.NewMigrateValidateCommand(), "Validate migration directory integrity", "Validate the migration directory against its integrity file."))
-	cmd.AddCommand(migrationCommand(lint.NewLintCommand(), "Lint migration files", "Lint migration files for production-unsafe patterns."))
+	// Lint reports a provider that did not start in its own error report,
+	// which carries --format and --fail-on rather than --json.
+	cmd.AddCommand(providercommand.Configure(
+		migrationCommand(lint.NewLintCommand(), "Lint migration files", "Lint migration files for production-unsafe patterns."),
+		lint.ReportSetupFailure,
+	))
 	cmd.AddCommand(migrationCommand(migrateedit.NewMigrateEditCommand(), "Edit a migration and re-hash", "Edit a migration's SQL and rewrite the integrity file, refusing already-applied migrations."))
 	cmd.AddCommand(migrationCommand(migraterebase.NewMigrateRebaseCommand(), "Move a migration to the end of history", "Re-timestamp a migration to the end of history and rewrite the integrity file, refusing already-applied migrations."))
 	cmd.AddCommand(migrationCommand(migraterm.NewMigrateRmCommand(), "Delete a migration and re-hash", "Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations."))

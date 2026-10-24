@@ -15,6 +15,7 @@ sourceOfTruth:
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
+  - "integration/providercli/provider_lint_cli_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -36,6 +37,7 @@ Provider selection is available on these native commands:
   `migrations status`, and `migrations log`.
 - Migration metadata: `migrations tag`, `migrations baseline`, `migrations set`,
   and `migrations repair`.
+- Migration lint: `migrations lint`.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -88,7 +90,15 @@ declaration does not establish that its migration can be planned or applied.
 declares the rule catalog in its description, splits migration files with its own
 lexing, and returns findings for the rule codes the host enables. A result that
 is not complete is an error, never a clean run. The host keeps output formats,
-severity thresholds, and suppression.
+severity thresholds, and suppression. It also resolves a `--server-version` to
+the engine's capabilities and sends them with each check.
+
+A run that names no dialect is split by the host without one. The host answers
+the check for the provider, with no finding of its rules, because the request
+cannot tell the provider that the SQL may be another engine's. The provider
+still annotates that split. A lint run cannot replay migrations on a provider's
+dev database yet: the replay cleans the dev database first, and the protocol
+has no way to clean a provider's database.
 
 `database.dev` lets a provider create throwaway databases for its engine. The host
 sends the operator's request as typed and never names an image. The provider
@@ -266,7 +276,10 @@ load ends the search. Native `ptah` never reads the variable.
 
 The provider starts when a connection, a dev database or a planning runtime
 first needs it, and it ends when the command returns, fails or is interrupted. A
-command that names only built-in engines starts no process.
+command that names only built-in engines starts no process. `migrate lint`,
+`schema plan lint` and the lint pass of `schema apply` lint with the same
+runtime, so the provider of the engine their URLs name splits and checks the
+SQL.
 
 On this surface a provider adds to the built-in engines. A URL scheme the
 provider serves goes to the provider, and every other scheme keeps its built-in
