@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -51,9 +52,8 @@ INSERT INTO events SELECT id + 10, 20 FROM pg_temp.second_ids;
 				return nil
 			})
 			c.Assert(replayErr, qt.IsNil)
-			var temporaryCount, permanentCount, neighborValue int
-			c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE oid IN ($1, $2)", firstOID, secondOID).Scan(&temporaryCount), qt.IsNil)
-			c.Assert(temporaryCount, qt.Equals, 0)
+			waitForSessionEnd(c, realm, firstOID, secondOID)
+			var permanentCount, neighborValue int
 			c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'").Scan(&permanentCount), qt.IsNil)
 			c.Assert(permanentCount, qt.Equals, 0)
 			c.Assert(neighborSession.QueryRowContext(c.Context(), "SELECT id FROM pg_temp.neighbor_state").Scan(&neighborValue), qt.IsNil)
@@ -61,6 +61,27 @@ INSERT INTO events SELECT id + 10, 20 FROM pg_temp.second_ids;
 		}
 		return nil
 	}), qt.IsNil)
+}
+
+// waitForSessionEnd waits until the temporary tables a replay created are gone
+// from the catalog. The replay discards its session, and PostgreSQL drops a
+// session's temporary tables while its backend exits, which happens after the
+// client has closed the connection: another session can still find them for a
+// moment. A session returned to the pool would keep them for as long as it
+// lived, so the wait reaching its bound is the failure this proves absent.
+func waitForSessionEnd(c *qt.C, realm *dbschema.DatabaseConnection, first, second uint32) {
+	c.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var left int
+		c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE oid IN ($1, $2)", first, second).Scan(&left), qt.IsNil)
+		if left == 0 {
+			return
+		}
+		c.Assert(time.Now().Before(deadline), qt.IsTrue,
+			qt.Commentf("%d temporary tables of the replayed session are still in pg_class", left))
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestPostgresTemporaryTableReplay_StatementFailure(t *testing.T) {
