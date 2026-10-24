@@ -73,8 +73,9 @@ The SQLite renderer and planner support:
   a key column that gains or loses `AUTOINCREMENT`, added and removed table
   constraints (including enum-backed `CHECK`
   constraints), a changed `STRICT` or `WITHOUT ROWID` option, and a column
-  drop combined with a column addition. SQLite stores no comment, so a
-  column whose comment alone changed is left as it is. A column the
+  drop combined with a column addition. SQLite stores no comment on a table
+  or a column, so the comparison does not compare one, and a declared comment
+  is neither a difference nor a reason to rebuild. A column the
   desired schema makes `NOT NULL` with a default is backfilled in the copy with
   `IFNULL(<column>, <default>)`, so rows already holding `NULL` survive.
 - Column **additions** ALTER TABLE cannot express, through the same rebuild.

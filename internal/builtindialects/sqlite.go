@@ -104,9 +104,9 @@ func sqlite() descriptor.Dialect {
 		InlineEnum:               descriptor.InlineEnum{Type: "TEXT", Check: descriptor.InlineEnumCheckBare},
 		ForeignKeysInCreateTable: true,
 		// Comparison: what comparing a declaration with a catalog reads.
-		// SQLite keeps a table's name as the bytes it was given, and names
-		// its own backing structures sqlite_autoindex_*, which no statement
-		// can refer to.
+		// SQLite keeps a table's name as the bytes it was given, names its
+		// own backing structures sqlite_autoindex_*, which no statement can
+		// refer to, and stores no comment on a table or a column.
 		Comparison: descriptor.Comparison{
 			VerbatimTableNames:   true,
 			InternalIndexPrefix:  "sqlite_autoindex_",
@@ -115,6 +115,7 @@ func sqlite() descriptor.Dialect {
 			PrimaryKeyNullable:   true,
 			RowidTables:          true,
 			TypeAffinity:         true,
+			NoTableComments:      true,
 		},
 
 		// SQLite has no enum type, so an enum column is TEXT with a CHECK.

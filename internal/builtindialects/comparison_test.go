@@ -73,6 +73,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			RowidTables:          true,
 			TypeAffinity:         true,
 			DefaultGeneratedKind: "VIRTUAL",
+			NoTableComments:      true,
 		},
 		"sqlserver": {
 			UniqueIndexStandsAlone: true,

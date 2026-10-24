@@ -282,6 +282,18 @@ func commentChange(desired, current string) *difftypes.CommentChange {
 	return &difftypes.CommentChange{Current: current, Desired: desired}
 }
 
+// storedCommentChange is [commentChange] for a table's or a column's comment,
+// and nil on a target that stores neither, which its comparison facts declare
+// as NoTableComments: there the catalog reports no comment whatever was
+// declared, and the difference would be one on every run that no plan can
+// close.
+func storedCommentChange(dialect, desired, current string) *difftypes.CommentChange {
+	if comparisonOf(dialect).NoTableComments {
+		return nil
+	}
+	return commentChange(desired, current)
+}
+
 // Columns performs detailed property-level comparison between a generated column and database column.
 //
 // This function is the most granular level of schema comparison, analyzing individual
@@ -433,7 +445,7 @@ func columnsWithDesiredDomains(
 		ColumnName:    genCol.Name,
 		Desired:       genCol.Clone(),
 		Changes:       make(map[string]string),
-		CommentChange: commentChange(genCol.Comment, dbCol.Comment),
+		CommentChange: storedCommentChange(dialect, genCol.Comment, dbCol.Comment),
 		NotNullConstraintNameChange: notNullConstraintNameChange(
 			genCol.NotNullConstraintName, dbCol.NotNullConstraintName),
 	}
