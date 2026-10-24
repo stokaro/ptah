@@ -460,6 +460,14 @@ hold a foreign key of the same cut name. A `CREATE INDEX IF NOT EXISTS` that
 lands on a name already in use is skipped, as the server skips it. The refusal
 names both declarations and the name they share.
 
+The same namespaces decide a name written twice. A table created again without
+`IF NOT EXISTS`, a second index of one name, an index, view or sequence named
+like a table, or a constraint added under a name the table already uses is
+refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
+`UNIQUE` constraints that one `CREATE TABLE` writes identically, name and
+definition alike, are read as one, as the server keeps one. A schema directory
+refuses an object that a later file declares again in its own words.
+
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
 and `"PUBLIC"` is the `PUBLIC` keyword.

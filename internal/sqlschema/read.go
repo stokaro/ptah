@@ -154,12 +154,16 @@ func convert(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
-	if err := document.followStoredNames(statements, dialect, opts.StoredNames); err != nil {
+	redeclared, err := document.followStoredNames(statements, dialect, opts.StoredNames)
+	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
 	database, err := convertStatements(ctx, statements, parsed, dialect, document, owners, relations)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
+	}
+	if redeclared != nil {
+		return schemamodel.Database{}, nil, redeclared
 	}
 	return database, statements, nil
 }

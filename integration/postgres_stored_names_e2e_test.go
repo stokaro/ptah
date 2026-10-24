@@ -83,7 +83,8 @@ func TestPostgresStoredNamesMatchTheCatalogE2E(t *testing.T) {
 
 // TestPostgresStoredNameCollisionsAgreeWithTheServerE2E runs each file on the
 // server and through the reader: the reader refuses exactly the files the
-// server refuses.
+// server refuses, for a name cut to one already in use and for a name
+// written twice.
 func TestPostgresStoredNameCollisionsAgreeWithTheServerE2E(t *testing.T) {
 	long := strings.Repeat("k", 63)
 	tests := []struct {
@@ -130,6 +131,19 @@ func TestPostgresStoredNameCollisionsAgreeWithTheServerE2E(t *testing.T) {
 			sql: "CREATE TABLE t (a int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
 				`CREATE INDEX IF NOT EXISTS "` + long + `_beta" ON t (a);`,
 		},
+		// A name written twice, which the reader used to merge
+		// (stokaro/ptah#4914).
+		{name: "an index created twice", sql: "CREATE TABLE t (a int, b int);\nCREATE INDEX ix ON t (a);\nCREATE INDEX ix ON t (b);", refused: true},
+		{name: "an index named like a table", sql: "CREATE TABLE t (a int);\nCREATE INDEX t ON t (a);", refused: true},
+		{name: "a view named like a table", sql: "CREATE TABLE t (a int);\nCREATE VIEW t AS SELECT 1 AS x;", refused: true},
+		{name: "a sequence named like a table", sql: "CREATE TABLE t (a int);\nCREATE SEQUENCE t;", refused: true},
+		{name: "a table named like a primary key's index", sql: "CREATE TABLE t (a int, CONSTRAINT t_pk PRIMARY KEY (a));\nCREATE TABLE t_pk (x int);", refused: true},
+		{name: "a constraint added under a name in use", sql: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, a int, CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (id));\nALTER TABLE c ADD CONSTRAINT fk CHECK (a > 0);", refused: true},
+		{name: "a column written twice", sql: "CREATE TABLE t (a int, a int);", refused: true},
+		{name: "a table created twice", sql: "CREATE TABLE t (a int);\nCREATE TABLE t (b int);", refused: true},
+		{name: "a table guarded by IF NOT EXISTS", sql: "CREATE TABLE t (a int);\nCREATE TABLE IF NOT EXISTS t (b int);"},
+		{name: "a unique constraint written twice the same way", sql: "CREATE TABLE r3 (a int, CONSTRAINT r3_k UNIQUE (a), CONSTRAINT r3_k UNIQUE (a));"},
+		{name: "a view replaced", sql: "CREATE TABLE t (a int);\nCREATE VIEW v AS SELECT a FROM t;\nCREATE OR REPLACE VIEW v AS SELECT a FROM t;"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
