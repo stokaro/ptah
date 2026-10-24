@@ -129,7 +129,15 @@ This is an amendment, and it names the text it changes:
 | Text | Change |
 | ---- | ------ |
 | ADR 0021: "An explicit native selection owns its connection scope. Unregistered schemes are refused even when a bundled driver exists." | Kept for an explicit selection. A default selection is additive. |
-| ADR 0021: "No working-directory, PATH, environment, or implicit project-file discovery authorizes a binary. The operator supplies the manifest path explicitly." | Narrow exception: `PTAH_PROVIDER_CONFIG` identifies an explicit manifest file, as `--provider-config` does. It authorizes nothing by itself. The manifest entry (absolute executable path, SHA-256, provider ID, engines) and the checks of ADR 0026 authorize the binary: pinned digests, identity and integrity verification before every start, protocol and feature checks. Nothing is searched. No implicit fallback exists: a named manifest that fails to load, or an entry that fails verification, ends the search. |
+| ADR 0021: "No working-directory, PATH, environment, or implicit project-file discovery authorizes a binary." | Narrow exception, stated below the table. |
+
+The exception to ADR 0021: `PTAH_PROVIDER_CONFIG` identifies an explicit manifest
+file, as `--provider-config` does. It authorizes nothing by itself. The manifest
+entry (absolute executable path, SHA-256, provider ID, engines) and the checks of
+ADR 0026 authorize the binary: pinned digests, identity and integrity verification
+before every start, and protocol and feature checks. Nothing is searched. No
+implicit fallback exists: a named manifest that fails to load, or an entry that
+fails verification, ends the search.
 
 `dbschema.WithNativeConnections` gains an additive mode. The engine runtime gains
 a way to extend the built-in runtime with a provider's targets. Both keep the
