@@ -10,7 +10,7 @@ import (
 
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
-	"ptah.run/internal/cli/root"
+	cliroot "ptah.run/internal/cli/root"
 )
 
 // These tests pin stokaro/ptah#974 on `ptah-compat migrate status`: the
@@ -450,7 +450,7 @@ func TestCompatMigrateStatus_RunReportsUnhashedFilesTogether(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	code := root.RunContext(t.Context(), cmd, "migrate", "status",
+	code := cliroot.RunContext(t.Context(), cmd, "migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "nested.db"), "--dir", "file://"+dir)
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
