@@ -22,7 +22,6 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -43,8 +42,16 @@ import (
 	"ptah.run/migration/migrator"
 )
 
+// atlasSchemaApplyRuntime is what the verb plans, applies and lints with. One
+// runtime serves all three, so a provider that serves the target's engine
+// splits and judges the statements it planned.
+type atlasSchemaApplyRuntime interface {
+	atlasschema.PlanRuntime
+	migrationlint.Runtime
+}
+
 type atlasSchemaApplyOptions struct {
-	runtime     atlasschema.PlanRuntime
+	runtime     atlasSchemaApplyRuntime
 	url         string
 	filePaths   []string
 	toURLs      []string
@@ -1250,12 +1257,10 @@ func lintAtlasSchemaApplyPlan(ctx context.Context, opts atlasSchemaApplyOptions,
 	if opts.skipLint || len(statements) == 0 {
 		return nil
 	}
-	// The plan's statements are split by the target's owner.
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
-	findings, err := atlasschema.LintPlan(ctx, runtime, statements, atlasSchemaApplyLintOptions(opts, dialect))
+	// The plan's statements are split by the target's owner, in the runtime
+	// the verb planned with: a provider that serves the target's engine owns
+	// its split and its rules here too.
+	findings, err := atlasschema.LintPlan(ctx, opts.runtime, statements, atlasSchemaApplyLintOptions(opts, dialect))
 	if err != nil {
 		return err
 	}

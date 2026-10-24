@@ -62,6 +62,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_DIALECT",             // dialect name
 	"PTAH_DIR",                 // migration directory URL
 	"PTAH_FIXTURE_HOST_SECRET", // test-provider secret used to prove environment isolation
+	"PTAH_FIXTURE_LINT_RULES",  // test-provider lint rule catalog, as JSON
 	"PTAH_FIXTURE_PID_FILE",    // test-provider process identity output path
 	"PTAH_FORMAT",              // Go template
 	"PTAH_GIT_PASSWORD",        // Git password or token for a git+https pull, used with PTAH_GIT_USERNAME
