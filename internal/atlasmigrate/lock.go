@@ -14,6 +14,7 @@ var errDirLocked = errors.New("migration directory is locked")
 
 type dirLock struct {
 	file *os.File
+	path string
 }
 
 type heldMigrationDirectoryLock struct {
@@ -158,7 +159,7 @@ func tryAcquireDirLock(lockPath string) (*dirLock, error) {
 	if err != nil || !os.SameFile(current, pathInfo) {
 		return nil, errors.Join(errDirLocked, unlockFile(file), file.Close())
 	}
-	return &dirLock{file: file}, nil
+	return &dirLock{file: file, path: lockPath}, nil
 }
 
 func waitForDirLockRetry(ctx context.Context, startedAt time.Time, timeout time.Duration) error {
@@ -180,14 +181,28 @@ func waitForDirLockRetry(ctx context.Context, startedAt time.Time, timeout time.
 	}
 }
 
+// release gives up the lock and removes the lock file, so a run leaves no file
+// beside the migration directory. The file sat in the repository after every
+// `migrate diff`, next to the directory it guarded, where Atlas leaves nothing.
+//
+// The exclusion holds because the file is removed only where no other process
+// can hold it. On Unix it is unlinked while the lock is still held: a process
+// that opened it before then can lock it only after this one unlocks, and then
+// finds the path gone or naming a newer file, which [tryAcquireDirLock] answers
+// as still locked, so it opens the path again. On Windows a file another
+// process has open cannot be removed at all, so it is removed after it is
+// closed, and stays when someone has already opened it. A removal that fails
+// leaves the file for the next run to reuse, as before.
 func (l *dirLock) release() error {
 	if l == nil {
 		return nil
 	}
+	removeLockFileBeforeUnlock(l.path)
 	unlockErr := unlockFile(l.file)
 	closeErr := l.file.Close()
 	if err := errors.Join(unlockErr, closeErr); err != nil {
 		return fmt.Errorf("release migration directory lock: %w", err)
 	}
+	removeLockFileAfterClose(l.path)
 	return nil
 }
