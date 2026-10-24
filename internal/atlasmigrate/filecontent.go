@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -138,7 +139,7 @@ func BuildMigrationFileContents(
 		{ordered.enumValues, "_enum_values", true},
 		{transactional, "_transactional", false},
 		{ordered.concurrentIndexes, "_concurrent_indexes", true},
-		{ordered.validations, "_constraint_validations", true},
+		{ordered.validations, validationSuffix, true},
 	} {
 		if len(group.nodes) == 0 {
 			continue
@@ -155,6 +156,10 @@ func BuildMigrationFileContents(
 	}
 	return contents, nil
 }
+
+// validationSuffix names the file that validates constraints already in the
+// database. A golang-migrate run numbers its files after it.
+const validationSuffix = "_constraint_validations"
 
 // noTransactionGroups are the statements that leave the transactional file,
 // grouped by where their file belongs.
@@ -214,7 +219,7 @@ func renderMigrationFileContent(
 }
 
 // attachReversePlan records the reverse of the whole plan on the LAST file of
-// it, and renders that reverse the same way the forward half was rendered.
+// it that has a rollback to give (see [reverseOwner]), and renders that reverse the same way the forward half was rendered.
 //
 // The last file, and not each file, because a rollback runs newest-first: the
 // files of one diff run are staged at consecutive versions, so the last one is
@@ -240,11 +245,25 @@ func attachReversePlan(
 	if err != nil {
 		return nil, err
 	}
-	last := len(contents) - 1
+	last := reverseOwner(contents)
 	contents[last].DownSQL = sql
 	contents[last].ReverseStatements = reverse
 	contents[last].ReverseNoTransaction = requiresNoTransaction
 	return contents, nil
+}
+
+// reverseOwner picks the file that carries the rollback of the run.
+//
+// It is the last file, except for the validations that end a run: they have no
+// rollback of their own, and a rollback of one step that ran the whole reverse
+// would undo statements from files the migrator still records as applied.
+func reverseOwner(contents []MigrationFileContent) int {
+	for i := range slices.Backward(contents) {
+		if !strings.HasPrefix(contents[i].NameSuffix, validationSuffix) {
+			return i
+		}
+	}
+	return len(contents) - 1
 }
 
 // validateForeignTransactionMode refuses a foreign artifact unless its source

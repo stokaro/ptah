@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -881,7 +883,7 @@ func (t alterTarget) alterForeignKeyDeferral(name string, operation *ast.AlterCo
 	for _, database := range t.databases {
 		for i := range database.Constraints {
 			constraint := &database.Constraints[i]
-			if constraint.StructName == t.structName && constraint.Name == name &&
+			if constraint.StructName == t.structName && t.sameStoredName(constraint.Name, name) &&
 				strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 				after := changedDeferral(deferralState{constraint.Deferrable, constraint.Initially}, operation)
 				constraint.Deferrable, constraint.Initially = after.deferrable, after.initially
@@ -890,7 +892,7 @@ func (t alterTarget) alterForeignKeyDeferral(name string, operation *ast.AlterCo
 		}
 		for i := range database.Fields {
 			field := &database.Fields[i]
-			if field.StructName == t.structName && field.Foreign != "" && field.ForeignKeyName == name {
+			if field.StructName == t.structName && field.Foreign != "" && t.sameStoredName(field.ForeignKeyName, name) {
 				after := changedDeferral(deferralState{field.Deferrable, field.Initially}, operation)
 				field.Deferrable, field.Initially = after.deferrable, after.initially
 				return true
@@ -905,6 +907,37 @@ func (t alterTarget) alterForeignKeyDeferral(name string, operation *ast.AlterCo
 type deferralState struct {
 	deferrable bool
 	initially  string
+}
+
+// postgresIdentifierBytes is NAMEDATALEN - 1: the server stores an identifier
+// cut to this many bytes.
+const postgresIdentifierBytes = 63
+
+// sameStoredName reports whether two spellings name one constraint. On the
+// PostgreSQL family a name longer than the limit is stored cut to it, so a file
+// that adds a constraint under the long name and alters it under the stored one
+// (as Ent's export does) names one constraint.
+func (t alterTarget) sameStoredName(declared, written string) bool {
+	if declared == written {
+		return true
+	}
+	if t.sourcePlatform != platform.Postgres && t.sourcePlatform != platform.YugabyteDB {
+		return false
+	}
+	return storedIdentifier(declared) == storedIdentifier(written)
+}
+
+// storedIdentifier cuts name to the bytes the server keeps, on a character
+// boundary as the server does.
+func storedIdentifier(name string) string {
+	if len(name) <= postgresIdentifierBytes {
+		return name
+	}
+	cut := postgresIdentifierBytes
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
 }
 
 // changedDeferral returns the state a key has after the operation, given the one

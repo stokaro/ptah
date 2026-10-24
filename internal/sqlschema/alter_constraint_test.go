@@ -1,6 +1,7 @@
 package sqlschema_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -36,8 +37,11 @@ func boolWord(value bool) string {
 // TestRead_AlterConstraint_HappyPath reads ALTER CONSTRAINT onto a foreign key,
 // the statement Ent's schema export writes to make its keys deferred. Each row's
 // SQL was run on PostgreSQL 15.19, which recorded what the row expects in
-// pg_constraint.condeferrable and condeferred.
+// pg_constraint.condeferrable and condeferred. The server stores a name cut to
+// 63 bytes, and the row with the long name measured that the cut name addresses
+// the constraint.
 func TestRead_AlterConstraint_HappyPath(t *testing.T) {
+	longName := "fk_" + strings.Repeat("x", 70)
 	const tables = "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, p int);\n" +
 		"ALTER TABLE c ADD CONSTRAINT c_p FOREIGN KEY (p) REFERENCES p (id);\n"
 	tests := []struct {
@@ -74,6 +78,13 @@ func TestRead_AlterConstraint_HappyPath(t *testing.T) {
 			name: "INITIALLY IMMEDIATE alone leaves a key not deferrable",
 			sql:  tables + "ALTER TABLE c ALTER CONSTRAINT c_p INITIALLY IMMEDIATE;",
 			want: []string{"c_p: deferrable=false initially="},
+		},
+		{
+			name: "the stored name of a key whose name was cut",
+			sql: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, p int);\n" +
+				"ALTER TABLE c ADD CONSTRAINT " + longName + " FOREIGN KEY (p) REFERENCES p (id);\n" +
+				"ALTER TABLE c ALTER CONSTRAINT " + longName[:63] + " DEFERRABLE INITIALLY DEFERRED;",
+			want: []string{longName + ": deferrable=true initially=deferred"},
 		},
 		{
 			name: "a key written on a column",

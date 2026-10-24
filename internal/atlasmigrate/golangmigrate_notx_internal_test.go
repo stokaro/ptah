@@ -115,3 +115,24 @@ func TestGolangMigrateWritesEachNoTransactionStatementAsAMigration(t *testing.T)
 		c.Assert(validateForeignTransactionMode(atlasmigrateimport.FormatGolangMigrate, content), qt.IsNil)
 	}
 }
+
+// TestReverseStaysOnTheLastFileThatCanUndoSomething pins where the rollback of
+// a run lands when validations end it. A validation has no rollback, so the
+// reverse of the run belongs to the file before them: `down` of one step would
+// otherwise run the whole reverse while the migrator still records the files
+// before it as applied.
+func TestReverseStaysOnTheLastFileThatCanUndoSomething(t *testing.T) {
+	c := qt.New(t)
+	contents := []MigrationFileContent{
+		{NameSuffix: "_transactional"},
+		{NameSuffix: validationSuffix + "_1"},
+		{NameSuffix: validationSuffix + "_2"},
+	}
+
+	attached, err := attachReversePlan(contents, "postgres", []string{`ALTER TABLE "c" DROP COLUMN "note";`}, "{{ sql . }}", false)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(attached[0].DownSQL, qt.Contains, "DROP COLUMN")
+	c.Assert(attached[1].DownSQL, qt.Equals, "")
+	c.Assert(attached[2].DownSQL, qt.Equals, "")
+}
