@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 1
+const ContractMinor uint32 = 2
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -38,9 +38,10 @@ const (
 // an existing message, in a new slice. A host lists the ones it acts on in
 // Options.HostFeatures; a provider sees what the host listed in HostFeatures.
 // A new RPC needs no host feature, since a host that does not know it never
-// calls it.
+// calls it, unless it comes with an addition to an existing message: the
+// embedding store declares Engine.embeddings, so its calls are two-way too.
 func TwoWayFeatures() []string {
-	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature}
+	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -128,9 +129,10 @@ func ValidateHostFeatures(features []string) error {
 
 // NegotiatedDescription returns a copy of description with every two-way
 // feature the host did not list removed, from the provider's features and
-// from each engine's, and with the query dialects removed unless the host
-// lists QueryDialectFeature. Both sides validate with this copy, so neither
-// sends an addition the other did not ask for. Services and everything the
+// from each engine's. The query dialects are removed unless the host lists
+// QueryDialectFeature, and the embedding store declarations unless it lists
+// EmbeddingStoreFeature. Both sides validate with this copy, so neither sends
+// an addition the other did not ask for. Services and everything the
 // contract had at minor 0 are kept.
 func NegotiatedDescription(description *protocol.Description, hostFeatures []string) *protocol.Description {
 	negotiated := proto.CloneOf(description)
@@ -145,6 +147,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		engine.Features = slices.DeleteFunc(engine.Features, unlisted)
 		if !slices.Contains(hostFeatures, QueryDialectFeature) {
 			engine.QueryDialect = nil
+		}
+		if !slices.Contains(hostFeatures, EmbeddingStoreFeature) {
+			engine.Embeddings = nil
 		}
 	}
 	return negotiated

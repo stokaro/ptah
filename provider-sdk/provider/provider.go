@@ -167,10 +167,14 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	return validateSQLSchemaDeclaration(description, engine)
 }
 
-// validateEngineAdditions checks what contract 25.1 adds to an engine: the
-// data services it names, its statement facts, and its query dialect.
+// validateEngineAdditions checks what contracts 25.1 and 25.2 add to an
+// engine: the data services it names, its statement facts, its query dialect
+// and its embedding store.
 func validateEngineAdditions(description *protocol.Description, engine *protocol.Engine) error {
 	if err := validateDataServices(description, engine); err != nil {
+		return err
+	}
+	if err := validateEmbeddingEngine(description, engine); err != nil {
 		return err
 	}
 	if slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
