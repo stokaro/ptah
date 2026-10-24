@@ -214,16 +214,32 @@ func TestIndependentProviderProcess(t *testing.T) {
 	})
 }
 
+// buildFixture builds a fixture program against the in-tree SDK, not against
+// the published tag the fixture's go.mod pins. The client in these tests is the
+// SDK under test, and a client and a provider negotiate only at the exact same
+// protocol revision, so a fixture built from the tag stops negotiating as soon
+// as a change moves the revision. A workspace file in a temporary directory
+// joins the fixture module and the in-tree SDK for this build alone: the
+// fixture's go.mod and go.sum stay as committed, no workspace file enters the
+// tree, and the host's own tests keep building the fixture from its pinned tag.
 func buildFixture(c *qt.C, program string) string {
 	c.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	c.Assert(ok, qt.IsTrue)
-	dir := filepath.Join(filepath.Dir(source), "..", "testdata", "fixture")
+	sdk, err := filepath.Abs(filepath.Join(filepath.Dir(source), ".."))
+	c.Assert(err, qt.IsNil)
+	dir := filepath.Join(sdk, "testdata", "fixture")
+	workspace := filepath.Join(c.TempDir(), "go.work")
+	initialize := exec.CommandContext(c.Context(), "go", "work", "init", dir, sdk)
+	initialize.Dir = filepath.Dir(workspace)
+	initialize.Env = append(os.Environ(), "GOWORK=")
+	output, err := initialize.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("fixture workspace: %s", output))
 	binary := filepath.Join(c.TempDir(), program+".exe")
 	command := exec.CommandContext(c.Context(), "go", "build", "-o", binary, "./cmd/"+program)
 	command.Dir = dir
-	command.Env = append(os.Environ(), "GOWORK=off")
-	output, err := command.CombinedOutput()
+	command.Env = append(os.Environ(), "GOWORK="+workspace)
+	output, err = command.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("fixture build: %s", output))
 	return binary
 }
