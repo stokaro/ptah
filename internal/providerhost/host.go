@@ -49,6 +49,20 @@ type target struct {
 	engine *protocol.Engine
 }
 
+// hostFeatures are the two-way features of the contract
+// (provider.TwoWayFeatures) this host acts on, which it lists when it starts a
+// provider. A feature joins the list in the change that adds the adapter
+// acting on it: an addition the list does not name stays out of every
+// exchange with the provider.
+var hostFeatures = []string{
+	// The migrator hands a migration's statement timeout to the provider with
+	// each unit; see session.BoundsStatements.
+	provider.StatementTimeoutFeature,
+	// A dev URL of an engine whose provider creates dev realms enters a
+	// realm; see DevDatabaseOwner.EnterRealm.
+	provider.DevRealmsFeature,
+}
+
 // Start verifies the selected artifact and negotiates experimental services.
 // A failure releases the subprocess and returns no host.
 func Start(ctx context.Context, spec Spec) (*Host, error) {
@@ -56,6 +70,7 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		Executable: spec.Executable, SHA256: spec.SHA256, ProviderID: spec.ProviderID,
 		Environment:      slices.Clone(spec.Environment),
 		RequiredFeatures: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature},
+		HostFeatures:     slices.Clone(hostFeatures),
 	})
 	if err != nil {
 		return nil, err

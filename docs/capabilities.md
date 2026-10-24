@@ -1033,6 +1033,12 @@ file, exactly as any other command reaching the same URL would.
 
 ## Current consumers
 
+- **Executable providers.** A provider reports the capabilities of each session
+  it opens, and the host validates them like a preset. A provider that offers
+  `units.statement-timeout` carries `migration_statement_timeout` on its
+  sessions unless it states the key itself: the host sends the timeout with
+  each unit, and the provider stops the unit. It carries no
+  `migration_lock_timeout`, so a migration's lock timeout is refused.
 - **Foreign key rendering.** Schema rendering validates every foreign key
   before producing statements, including owner/target tables, local and
   referenced columns, compatible column types, duplicate columns and names,

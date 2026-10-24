@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 )
 
@@ -184,7 +185,7 @@ func TestGuardServerRehearsal_HappyPath(t *testing.T) {
 		"CREATE TABLE `more`.`m` (`id` int NOT NULL, PRIMARY KEY (`id`))",
 		"ALTER TABLE `app`.`t` ADD COLUMN `name` varchar(10)",
 		"DROP DATABASE `old`",
-	}, wholeMySQLServerInfo)
+	}, devclean.NewDevReplayGuard(wholeMySQLServerInfo), wholeMySQLServerInfo)
 
 	c.Assert(err, qt.IsNil)
 }
@@ -207,7 +208,7 @@ func TestGuardServerRehearsal_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, wholeMySQLServerInfo)
+			err := guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, devclean.NewDevReplayGuard(wholeMySQLServerInfo), wholeMySQLServerInfo)
 
 			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: `+
 				`mysql migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
@@ -230,8 +231,8 @@ func TestGuardServerRehearsal_OwnedServer(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(release)
 
-			c.Assert(guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, owned), qt.IsNil)
-			c.Assert(guardRehearsedPlan([]string{"CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM `app`.`t`"}, owned),
+			c.Assert(guardRehearsedPlan([]string{"CREATE DATABASE `more`", test.statement}, devclean.NewDevReplayGuard(owned), owned), qt.IsNil)
+			c.Assert(guardRehearsedPlan([]string{"CREATE EVENT purge ON SCHEDULE EVERY 1 MINUTE DO DELETE FROM `app`.`t`"}, devclean.NewDevReplayGuard(owned), owned),
 				qt.ErrorMatches, `statement 1 cannot be rehearsed on a whole dev server: `+
 					`mariadb migration replay rejects CREATE executable stored body because its effects cannot be confined to the disposable database realm`)
 		})

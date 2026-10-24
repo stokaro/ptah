@@ -18,7 +18,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/defaultprivnote"
@@ -126,7 +125,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if conn == nil {
 		return InspectResult{}, errors.New("schema inspect requires database connection")
 	}
-	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return InspectResult{}, err
 	}
 

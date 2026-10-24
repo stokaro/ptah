@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	providerruntime "github.com/stokaro/ptah/provider-sdk/runtime"
 
 	"ptah.run/catalog"
@@ -53,6 +54,12 @@ func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, erro
 	for name, value := range remote.GetCapabilities() {
 		flags[capability.Capability(name)] = value
 	}
+	// A provider that stops a unit at the statement timeout sent with it
+	// carries a migration's statement timeout; see session.BoundsStatements.
+	// A fact the provider stated itself stands.
+	if _, stated := flags[capability.MigrationStatementTimeout]; !stated && t.boundsStatements() {
+		flags[capability.MigrationStatementTimeout] = true
+	}
 	caps := capability.Of(flags)
 	if err := caps.Validate(); err != nil {
 		return catalog.ServerInfo{}, fmt.Errorf("provider session capabilities: %w", err)
@@ -75,8 +82,16 @@ func (s *session) OpenSession(ctx context.Context) (dbschema.NativeSession, erro
 	}
 	return s.target.Open(ctx, dbschema.NativeRequest{Address: s.address})
 }
-func (*session) RestrictUntrustedSQL(context.Context) error {
-	return unsupported("untrusted SQL isolation")
+
+// RestrictUntrustedSQL answers for a dev session that runs statements Ptah did
+// not author. The protocol carries no session-level restriction, so an engine
+// is confined by its provider's replay guard, which judges every statement
+// before the host runs it; an engine without one cannot be confined.
+func (s *session) RestrictUntrustedSQL(context.Context) error {
+	if !s.target.offers(provider.ReplayGuardFeature) {
+		return unsupported("untrusted SQL isolation")
+	}
+	return nil
 }
 func (s *session) Close() error {
 	s.closeOnce.Do(func() {
@@ -89,12 +104,6 @@ func (s *session) Close() error {
 }
 func (s *session) IsDryRun() bool       { return s.dry.Load() }
 func (s *session) SetDryRun(value bool) { s.dry.Store(value) }
-func (s *session) DropAllTables(context.Context) error {
-	if s.IsDryRun() {
-		return nil
-	}
-	return unsupported("database cleanup")
-}
 func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
 	if err := ctx.Err(); err != nil {
 		return err

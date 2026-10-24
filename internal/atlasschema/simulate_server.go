@@ -122,12 +122,11 @@ func openRehearsalDatabase(
 // nothing outlives the run that matters, and the rehearsal runs what a
 // migration replay there runs; see [devclean.DevReplayRealm]. On any other
 // server a refusal that ownership would lift names the two ways to it.
-func guardRehearsedPlan(statements []string, dev catalog.ServerInfo) error {
+func guardRehearsedPlan(statements []string, guard *devclean.ReplayGuard, dev catalog.ServerInfo) error {
 	place := "the dev database"
 	if dev.WholeServer {
 		place = "a whole dev server"
 	}
-	guard := devclean.NewDevReplayGuard(dev)
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
 			return fmt.Errorf("statement %d cannot be rehearsed on %s: %w", i+1, place, err)

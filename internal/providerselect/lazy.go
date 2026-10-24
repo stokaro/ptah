@@ -213,6 +213,40 @@ func (l *Lazy) ProvisionDev(ctx context.Context, rawURL string) (string, func(),
 	return started.Dev.ProvisionDev(ctx, rawURL)
 }
 
+// RealmSchemes implements [devdocker.ExternalRealms]. It lists the URL
+// schemes of the engines a provider serves by this Lazy's configuration,
+// without starting any: whether an engine creates dev realms is known only
+// once its provider runs, and [Lazy.EnterRealm] asks it then.
+func (l *Lazy) RealmSchemes() []string {
+	var schemes []string
+	for _, installation := range l.config.Providers {
+		for name := range installation.Claims() {
+			schemes = append(schemes, strings.ToLower(name))
+		}
+	}
+	slices.Sort(schemes)
+	return slices.Compact(schemes)
+}
+
+// EnterRealm implements [devdocker.ExternalRealms]. It starts the provider
+// that serves rawURL and asks it for a dev realm in the database the URL
+// names. A provider whose engine creates no realm leaves the URL as it is,
+// and its database is the dev database.
+func (l *Lazy) EnterRealm(ctx context.Context, rawURL string) (string, func(), error) {
+	l.mu.Lock()
+	started, err := l.devOwnerLocked(ctx, rawURL)
+	l.mu.Unlock()
+	if err != nil {
+		return "", func() {}, err
+	}
+	realms, owns := started.Dev.(devdocker.ExternalRealms)
+	scheme, _, _ := strings.Cut(strings.TrimSpace(rawURL), ":")
+	if !owns || !slices.Contains(realms.RealmSchemes(), strings.ToLower(scheme)) {
+		return rawURL, func() {}, nil
+	}
+	return realms.EnterRealm(ctx, rawURL)
+}
+
 func (l *Lazy) devOwnerLocked(ctx context.Context, rawURL string) (*Started, error) {
 	if l.closed {
 		return nil, ErrClosed

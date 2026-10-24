@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgextension"
+	"ptah.run/internal/devclean"
 	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -76,7 +77,7 @@ func TestRehearsalBaselineRefusesAPlannedBaseline(t *testing.T) {
 			)
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(guardRehearsalBaseline(statements, test.info), qt.ErrorMatches, test.wantErr)
+			c.Assert(guardRehearsalBaseline(statements, devclean.NewBaselineGuard(test.info), test.info.Dialect), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
@@ -92,7 +93,7 @@ func TestRehearsalBaselineRefusesARealmRootGrant(t *testing.T) {
 	err := guardRehearsalBaseline([]string{
 		ydbTable,
 		"GRANT 'ydb.access.grant' ON `/local/ptah_dev/abc` TO `ACCESS-ADMINS`;",
-	}, realm)
+	}, devclean.NewBaselineGuard(realm), realm.Dialect)
 
 	c.Assert(err, qt.ErrorMatches, `baseline statement 2 \(GRANT .*\) cannot be rehearsed: ydb rehearsal baseline refuses GRANT permission change .*`)
 }

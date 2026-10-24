@@ -47,6 +47,7 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	}
 	executionCtx := scoped.withTransactionalProgressRecorder(ctx, txConn, migration, startedAt, run.direction)
 	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
+	executionCtx = withStatementBound(executionCtx, txConn, run.timeouts)
 	if err := run.execute(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		return rollback(err, fmt.Sprintf("%s %d", run.bodyFailure, migration.Version))

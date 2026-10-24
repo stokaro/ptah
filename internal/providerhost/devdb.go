@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -41,27 +42,49 @@ func (h *Host) DevDatabases() *DevDatabaseOwner {
 	if !slices.Contains(h.description.GetFeatures(), provider.DevDatabaseFeature) {
 		return nil
 	}
-	var engines []string
+	owner := &DevDatabaseOwner{host: h, realms: make(map[string]string)}
 	for _, engine := range h.description.GetEngines() {
-		if slices.Contains(engine.GetFeatures(), provider.DevDatabaseFeature) {
-			engines = append(engines, engine.GetId())
+		if !slices.Contains(engine.GetFeatures(), provider.DevDatabaseFeature) {
+			continue
+		}
+		owner.engines = append(owner.engines, engine.GetId())
+		// A realm address travels only when both sides list the feature,
+		// and the negotiated description keeps it only then.
+		if slices.Contains(engine.GetFeatures(), provider.DevRealmsFeature) {
+			for _, scheme := range append([]string{engine.GetId()}, engine.GetAliases()...) {
+				owner.realms[scheme] = engine.GetId()
+			}
 		}
 	}
-	if len(engines) == 0 {
+	if len(owner.engines) == 0 {
 		return nil
 	}
-	slices.Sort(engines)
-	return &DevDatabaseOwner{host: h, engines: engines}
+	slices.Sort(owner.engines)
+	return owner
 }
 
 // DevDatabaseOwner provisions dev databases through the provider process.
 type DevDatabaseOwner struct {
 	host    *Host
 	engines []string
+	// realms maps each URL scheme of an engine that creates dev realms to
+	// the engine.
+	realms map[string]string
 }
 
 // DevEngines lists the engines the provider provisions.
 func (o *DevDatabaseOwner) DevEngines() []string { return slices.Clone(o.engines) }
+
+// RealmSchemes lists the URL schemes of the engines whose provider creates a
+// realm of its own for a run inside a database the operator names.
+func (o *DevDatabaseOwner) RealmSchemes() []string {
+	schemes := make([]string, 0, len(o.realms))
+	for scheme := range o.realms {
+		schemes = append(schemes, scheme)
+	}
+	slices.Sort(schemes)
+	return schemes
+}
 
 // ProvisionDev asks the provider for a dev database. The operator's URL goes
 // through as typed. The reply is a lease the release gives back, or a typed
@@ -71,7 +94,34 @@ func (o *DevDatabaseOwner) ProvisionDev(ctx context.Context, rawURL string) (str
 	if err != nil {
 		return "", nil, err
 	}
-	reply, err := o.host.client.ProvisionDevDatabase(ctx, &protocol.ProvisionDevRequest{Engine: engine, Spec: rawURL})
+	return o.provision(ctx, engine, &protocol.ProvisionDevRequest{Engine: engine, Spec: rawURL})
+}
+
+// EnterRealm asks the provider for a realm of the run's own inside the
+// database the operator's URL names. The URL can carry credentials, as an
+// address passed to Open can; the realm's address keeps its scheme and host
+// and either its credentials or none. The release removes the realm.
+//
+// A realm address names a host, so a URL that names none is not one a realm
+// is created in: it comes back as it is, and its database is the dev
+// database.
+func (o *DevDatabaseOwner) EnterRealm(ctx context.Context, rawURL string) (string, func(), error) {
+	address, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", nil, fmt.Errorf("the dev URL does not parse")
+	}
+	engine, found := o.realms[strings.ToLower(address.Scheme)]
+	if !found {
+		return "", nil, fmt.Errorf("the provider creates no dev realm for this URL")
+	}
+	if address.Host == "" {
+		return rawURL, func() {}, nil
+	}
+	return o.provision(ctx, engine, &protocol.ProvisionDevRequest{Engine: engine, Address: rawURL})
+}
+
+func (o *DevDatabaseOwner) provision(ctx context.Context, engine string, request *protocol.ProvisionDevRequest) (string, func(), error) {
+	reply, err := o.host.client.ProvisionDevDatabase(ctx, request)
 	if err != nil {
 		return "", nil, err
 	}
@@ -92,12 +142,18 @@ func (o *DevDatabaseOwner) ProvisionDev(ctx context.Context, rawURL string) (str
 	}), nil
 }
 
+// devEngine reads the engine out of either form of docker URL the operator
+// types: `docker://<engine>/...` and `docker+<engine>://...`.
 func devEngine(rawURL string) (string, error) {
-	rest, found := strings.CutPrefix(rawURL, "docker://")
-	if !found || rest == "" {
-		return "", errors.New("a provider dev database needs a docker:// URL")
+	if rest, found := strings.CutPrefix(rawURL, "docker://"); found && rest != "" {
+		engine, _, _ := strings.Cut(rest, "/")
+		engine, _, _ = strings.Cut(engine, "?")
+		return engine, nil
 	}
-	engine, _, _ := strings.Cut(rest, "/")
-	engine, _, _ = strings.Cut(engine, "?")
-	return engine, nil
+	if rest, found := strings.CutPrefix(rawURL, "docker+"); found {
+		if engine, _, ok := strings.Cut(rest, "://"); ok && engine != "" {
+			return engine, nil
+		}
+	}
+	return "", errors.New("a provider dev database needs a docker:// or docker+<engine>:// URL")
 }

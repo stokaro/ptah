@@ -2,6 +2,7 @@ package devclean
 
 import (
 	"ptah.run/catalog"
+	"ptah.run/dbschema"
 )
 
 // BaselineGuard holds the baseline a plan rehearsal writes, to recreate the
@@ -23,7 +24,17 @@ type BaselineGuard struct {
 // NewBaselineGuard is the guard for the baseline of a plan rehearsal on the
 // dev database reached through info.
 func NewBaselineGuard(info catalog.ServerInfo) *BaselineGuard {
-	replay := *NewDevReplayGuard(info)
+	return newBaselineGuard(NewDevReplayGuard(info))
+}
+
+// NewBaselineGuardFor is [NewBaselineGuard] for the dev database conn reaches,
+// with the guard [NewDevReplayGuardFor] gives it.
+func NewBaselineGuardFor(conn *dbschema.DatabaseConnection) *BaselineGuard {
+	return newBaselineGuard(NewDevReplayGuardFor(conn))
+}
+
+func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
+	replay := *guard
 	replay.baseline = true
 	return &BaselineGuard{replay: &replay}
 }

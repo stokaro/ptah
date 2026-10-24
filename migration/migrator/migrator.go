@@ -2874,6 +2874,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
 	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
+	executionCtx = withStatementBound(executionCtx, txConn, timeouts)
 	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)

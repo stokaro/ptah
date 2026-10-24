@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -13,6 +14,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/statementtimeout"
 )
 
 var (
@@ -87,9 +89,13 @@ func (s *session) dispatchUnits(ctx context.Context, transactionID string, units
 	if err := s.lockError(); err != nil {
 		return err
 	}
-	_, err := s.target.host.client.Execute(ctx, &protocol.ExecuteRequest{
-		SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID, Units: units,
-	})
+	request := &protocol.ExecuteRequest{SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID, Units: units}
+	// A migration's statement timeout reaches the provider with the units,
+	// and the provider stops a unit that runs longer; see BoundsStatements.
+	if timeout, bounded := statementtimeout.From(ctx); bounded {
+		request.StatementTimeoutNanoseconds = timeout.Nanoseconds()
+	}
+	_, err := s.target.host.client.Execute(ctx, request)
 	if err == nil {
 		return nil
 	}
@@ -104,4 +110,16 @@ func (t dryTransaction) ValidateUnits(ctx context.Context, units []renderer.Frag
 }
 func (t dryTransaction) ExecuteUnits(ctx context.Context, units []renderer.Fragment) error {
 	return t.ValidateUnits(ctx, units)
+}
+
+// BoundsStatements reports whether the provider stops a unit at the statement
+// timeout the host sends with it, so the migrator hands it the migration's
+// statement timeout instead of a setting to run first.
+func (s *session) BoundsStatements() bool { return s.target.boundsStatements() }
+
+// boundsStatements reports whether the provider offers statement timeouts.
+// The negotiated description keeps the feature only when the host lists it
+// too.
+func (t *target) boundsStatements() bool {
+	return slices.Contains(t.host.description.GetFeatures(), provider.StatementTimeoutFeature)
 }

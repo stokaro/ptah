@@ -17,6 +17,7 @@ sourceOfTruth:
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
+  - "integration/providercli/provider_devclean_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -98,15 +99,36 @@ A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request
 cannot tell the provider that the SQL may be another engine's. The provider
 still annotates that split. A lint run cannot replay migrations on a provider's
-dev database yet: the replay cleans the dev database first, and the protocol
-has no way to clean a provider's database.
+dev database yet: lint does not take an engine that only a provider serves as
+its dialect.
 
 `database.dev` lets a provider create throwaway databases for its engine. The host
-sends the operator's request as typed and never names an image. The provider
+sends the operator's request as typed and never names an image, in either form:
+`docker://<engine>/...` or `docker+<engine>://...`. The provider
 answers with a lease and an address, or with a typed refusal that says whether the
 request is unsupported or its runtime is unavailable. The host releases the lease
 when it is done, and the provider removes the leases it still holds when its
-process ends.
+process ends. An engine that also declares `database.dev-realms` gets a realm of
+the run's own inside the database a `--dev-url` names, created and removed by
+the provider, for a database the operator cannot create.
+
+A provider's dev database is cleaned and guarded by the provider, so
+`schema apply --dev-url` rehearses a plan on it:
+
+- `database.dev-cleanup` lists what the dev database holds and empties it. The
+  host judges the database clean when the list is empty, refuses one that is
+  not, and treats a cleanup whose outcome the provider cannot confirm as not
+  clean.
+- `database.dev-replay-guard` judges each statement the host runs on the dev
+  database and refuses one whose effects reach past it. Without the guard the
+  host runs nothing there.
+- The host tells the dev database from the target by the database each session
+  reports, since it reads no provider address.
+
+`units.statement-timeout` carries a migration's statement timeout to the
+provider with each unit, and the provider stops a unit that runs longer. A
+migration's lock timeout is refused: the protocol has nothing that bounds a lock
+wait.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line

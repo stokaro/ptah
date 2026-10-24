@@ -149,6 +149,7 @@ func TestSelector(t *testing.T) {
 		{"a catalog name", []providerselect.Target{{Flag: "dialect", Value: "ydb"}}, "ydb"},
 		{"a dialect that is no URL", []providerselect.Target{{Flag: "dialect", Value: "Fixture"}}, "fixture"},
 		{"a docker dev URL", []providerselect.Target{{Flag: "dev-url", Value: "docker://fixture/1?x=y"}}, "fixture"},
+		{"a docker+ dev URL", []providerselect.Target{{Flag: "dev-url", Value: "docker+Fixture://_/example.org/fixture:2/dev"}}, "fixture"},
 		{"a docker URL on another flag is a scheme", []providerselect.Target{{Flag: "db-url", Value: "docker://fixture/1"}}, "docker"},
 		{"the first target that names an engine wins", []providerselect.Target{{Flag: "db-url", Value: ""}, {Flag: "dialect", Value: "first"}, {Flag: "dev-url", Value: "docker://second/1"}}, "first"},
 	}
