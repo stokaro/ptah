@@ -15,7 +15,7 @@ import (
 
 // Revision identifies this experimental contract. A different revision is
 // refused before a session opens; it is not a stable protocol major version.
-const Revision uint32 = 24
+const Revision uint32 = 25
 
 const (
 	// CommonTableIdentityFeature promises the common table comparison contract:
@@ -149,10 +149,16 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if err := validateYAMLSourceKeys(description, engine); err != nil {
 		return err
 	}
-	return validateGoSourceDirectives(description, engine)
+	if err := validateGoSourceDirectives(description, engine); err != nil {
+		return err
+	}
+	return validateSQLSchemaDeclaration(description, engine)
 }
 
 func validateSemanticServices(value *protocol.Description) error {
+	if err := validateSQLSchemaService(value); err != nil {
+		return err
+	}
 	if slices.Contains(value.GetFeatures(), ValidateSchemaFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: schema validation requires value normalization", ErrProtocol)
 	}

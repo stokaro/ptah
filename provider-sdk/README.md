@@ -47,6 +47,7 @@ before you push.
 | `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `ReadSQLSchema` | A complete offline reading of every SQL schema document of an engine that declares the `DOCUMENT` mode: declared objects, per-document declarations, coverage and positioned diagnostics, or an error and no schema. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
@@ -373,6 +374,94 @@ observed objects and facets, and dispatches contextual comparison to their owner
 Native planning and migration backend operations require the separate services
 described below; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
+## SQL schema documents
+
+A desired schema can be a SQL file. An engine declares in `Engine.sql_schema`
+how a provider takes part in reading it. A target has exactly one mode.
+
+- `FRAGMENTS` is the mode of an engine with no declaration. The host lexes and
+  parses the document with the shared grammar and sends the statements it does
+  not model to `DecodeSource` as `SQL` fragments.
+- `DOCUMENT` is for a dialect whose grammar the shared one cannot read, such as
+  YQL. The provider reads every SQL document of the engine in full through
+  `ReadSQLSchema`, and the host does not lex or parse the text. The engine
+  offers the feature `schema.read-sql`, and so does the provider.
+  `header_kinds` lists the kinds a `ptah:not-described` header of such a
+  document may name.
+
+`FRAGMENTS` declares neither the feature nor header kinds. The SDK refuses a
+description that names the feature without `DOCUMENT`, `DOCUMENT` without the
+feature, a feature no engine uses, and an unknown or duplicate header kind.
+
+`ReadSQLSchema` is a pure function of its request. It has no session, address
+or credential. The host reads the files, applies its project-directory
+confinement and sends `SQLDocument` entries with an ID, a path used only in
+diagnostics, and the text. The provider opens nothing. Documents arrive in the
+order the load runs them, and the reply is the result of running all of them,
+so a later document can alter what an earlier one declared. The request also
+carries the identifier rules, the database root that absolute paths in the
+documents resolve against, and the header entries of the declared kinds.
+
+A complete reply (`complete=true`) holds:
+
+- `tables`, `namespaces`, `enums`, `views`, `sequences`, `roles` and `grants`,
+  the common objects. `tables` and `enums` are the messages `ValidateSchema`
+  already uses. `SQLRole` carries no password. `SQLGrant` has a `revoked` flag
+  because a REVOKE asserts absence, which differs from an unlisted grant.
+- `native_objects`, the DESIRED values of provider-owned models whose source
+  formats include `SQL`.
+- `declarations`, one entry per requested document in request order, for the
+  host's check that a later file of a schema directory does not declare again
+  what an earlier one did: objects left declared, objects declared under a
+  clause that admits an existing one, and `CREATE TABLE` and `DROP TABLE`
+  statements in order. The provider decides what a statement means. The host
+  owns the directory rule.
+- `coverage`, the DESIRED claim the load makes about unmanaged objects.
+- `traces`, exactly one `SQLObjectTrace` for every object of the collections
+  above. It selects the object by collection and index and carries a
+  `SourceTrace` whose `span` lies inside the requested document. The fragment
+  ID, path and root stay empty, because the document is not split into
+  fragments.
+- `diagnostics`, warnings only.
+
+A failure is a gRPC error when the batch is unusable, or a reply with
+`complete=false`. That reply carries at least one error `SQLDiagnostic` and no
+schema: every other field is empty, so a refused load exposes no prefix. A
+diagnostic has a code (`SYNTAX`, `UNSUPPORTED`, `INVALID`, `INCOMPLETE`), a
+severity, a document ID, a span with byte offset, line and column, and a
+message of one line and at most 512 bytes. A construct the provider recognizes
+and cannot represent is `UNSUPPORTED` and named, never skipped. A message names
+a span and a short token and never quotes a statement, since a schema file can
+carry a secret value. A canceled call returns no result.
+
+Both transport boundaries run the same checks and return no schema when one
+fails: a request that does not name a `DOCUMENT` engine, a reply with the wrong
+document count or order, a span outside its text, an unowned or unnegotiated
+native object, a duplicate object under the engine's identifier rules,
+missing coverage, a missing or repeated trace, and an incomplete reply without
+an error diagnostic.
+
+Every field of the host's common database model has a home in the reply or is
+refused by name:
+
+| Host model field | Home in `SQLSchema` |
+| --- | --- |
+| Schemas | `namespaces` |
+| Tables, columns, indexes, constraints, triggers | `tables` (`DeclaredTable`) |
+| Enums | `enums` |
+| Views, materialized views | `views` (`materialized` flag) |
+| Sequences | `sequences` |
+| Roles | `roles` |
+| Grants, revoked grants | `grants` (`revoked` flag) |
+| Facets and feature objects owned by the provider | `native_objects` |
+| What the header says is not described | `coverage` |
+| Functions, row-level security policies and enabled tables, managed data, embedded fields | None. The provider reports `UNSUPPORTED` and names the construct. |
+
+The SDK conformance tests in `runtime` read a small table dialect through both
+transport boundaries: load order, a later document that alters an earlier one,
+per-document declarations, positioned refusals, a refused load that exposes no
+prefix, and cancellation. The fixture provider does not implement the operation.
+
 ## Contextual model comparison
 
 The optional `models.compare` service uses a `ModelComparer`. Each engine names
@@ -431,7 +520,7 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 24 carries `source.decode`, complete `ValueModel` definitions,
+Experimental revision 25 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
 It refuses earlier revisions. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a

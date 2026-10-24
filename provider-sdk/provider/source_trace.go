@@ -35,6 +35,9 @@ func resolveFragmentTrace(fragment *protocol.SourceFragment, trace *protocol.Sou
 	if len(trace.GetPath()) > MaxSourceDepth {
 		return nil, sourceError("trace exceeds depth limit")
 	}
+	if trace.GetSpan() != nil {
+		return nil, sourceError("fragment trace carries a whole-document span")
+	}
 	cursor := traceCursor{}
 	switch trace.GetRoot() {
 	case protocol.SourceTrace_CONTENT:
