@@ -224,6 +224,32 @@ func TestServer_StatesTheContractInItsInstructions(t *testing.T) {
 	c.Assert(result.Instructions, qt.Contains, "Every tool here reads")
 }
 
+// TestServer_InstructionsStateTheOperatorsScope pins the instructions to the
+// boundary ADR 0006 decides. A declared schema resolves only inside the
+// directories the operator configured, and read_database takes the name of a
+// configured target. A sentence inviting the model to supply any path or URL
+// describes a surface the session refuses.
+func TestServer_InstructionsStateTheOperatorsScope(t *testing.T) {
+	t.Run("without a workspace", func(t *testing.T) {
+		c := qt.New(t)
+		assertOperatorScope(c, connect(c, readOnlyConfig(c), nil).InitializeResult().Instructions)
+	})
+	t.Run("with a workspace", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := newWorkspace(c, agentpolicy.VerdictDeny, nil)
+		assertOperatorScope(c, connect(c, fixture.config, nil).InitializeResult().Instructions)
+	})
+}
+
+// assertOperatorScope checks one variant of the instructions.
+func assertOperatorScope(c *qt.C, instructions string) {
+	c.Helper()
+	c.Assert(instructions, qt.Contains, "read only from the directories the operator configured")
+	c.Assert(instructions, qt.Contains, "A database is read only if the operator configured it")
+	c.Assert(instructions, qt.Contains, "no URL is accepted")
+	c.Assert(instructions, qt.Not(qt.Contains), "own permissions")
+}
+
 // TestServer_ReportsAnOperationFailureAsAResultRatherThanAProtocolError pins
 // the shape a failing call takes.
 //
