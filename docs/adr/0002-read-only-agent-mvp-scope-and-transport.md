@@ -171,3 +171,12 @@ a name that turns out wrong is a versioned change rather than an edit.
 provider abstraction, session storage, and the evaluation corpus are the sibling
 children of #1483. This record decides only what #1485 is blocked on, and says
 so rather than pretending to a scope it did not research.
+
+## Amendments
+
+- The header names section 2.3 as superseded by
+  [ADR 0006](0006-one-authorized-agent-runtime.md). Section 2.3 is the transport
+  decision, and ADR 0006 keeps it: its section 4 lists the stdio decision among
+  what did not change. What ADR 0006 replaces is the arrangement in which the
+  four read operations ran without a session. No section of this record states
+  that arrangement. ADR 0006 section 1.1 measures it.

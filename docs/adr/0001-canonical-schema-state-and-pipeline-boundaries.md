@@ -732,3 +732,16 @@ than by editing the text above:
 #1348 does not change how a target profile is assembled. Both issues are open.
 If either lands a different contract, D5 and D7 are the decisions to revisit;
 the rest of this ADR does not depend on their internals.
+
+## Amendments
+
+- [ADR 0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md)
+  removes the parallel core. That also reverses the choice of alternative B in
+  section 6, a new path beside the old one. The shipping pipeline migrates in
+  place. Sections 7, 10 and 13 describe a canonical model beside the shipping
+  one and a differential test between the two, and neither exists.
+- [ADR 0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md)
+  rejects one universal schema struct (its section 4) and keeps
+  `schemamodel.Database` and `catalog.Database` separate (its section 5). That
+  contradicts invariant 1 and decisions D1 and D6 here, which ADR 0012 section 4
+  leaves standing. No record decides which of the two holds.

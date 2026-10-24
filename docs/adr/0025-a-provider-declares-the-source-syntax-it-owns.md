@@ -99,3 +99,7 @@ they disagree. Rejected.
   dialect with its own grammar declares `DOCUMENT` mode and owns the whole SQL
   document.
 - HCL claims remain open; a later record applies this ADR's claim pattern to them.
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  says Ptah's own pipelines do not run against optional plugins. No record
+  decides whether the YDB provider is one, and so whether the corpus decoded
+  through both paths runs in Ptah's pipelines.

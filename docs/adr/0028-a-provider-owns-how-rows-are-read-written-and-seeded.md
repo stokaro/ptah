@@ -350,3 +350,16 @@ These are for the future implementation. None holds today.
 - The ledger report names the seed file that conflicted. The provider need not say
   which key conflicted.
 - Embeddings ordering is stated in Consequences as a flip precondition.
+
+## Amendments
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  supersedes ADR 0026 and keeps the provision this record cites from it: the
+  embedded YDB code is deleted in the release that makes the provider serve
+  `ydb://`. The embeddings flip precondition in Consequences stands on that
+  provision.
+- ADR 0031 replaces "Versioning": an additive change raises the minor contract
+  version, not `provider.Revision`, which is the major version.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
+  record decides whether the YDB provider is one, and so whether the live tests
+  under `integration/` in the acceptance criteria run in Ptah's pipelines.

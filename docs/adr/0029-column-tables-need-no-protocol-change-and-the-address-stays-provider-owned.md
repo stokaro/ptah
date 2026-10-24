@@ -246,3 +246,16 @@ These are for the future implementation. None holds today.
 - The CI services in both the host workflow
   (`.github/workflows/go-integration-tests.yml`) and the plugin's own CI publish the
   monitoring port. Both are acceptance work for step 3 and step 6 above.
+
+## Amendments
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  supersedes ADR 0026. Its table replaces the sentence in "Versioning" about the
+  pin: no pin moves, and the plugin release raises its `min_contract` if step 6
+  needs a newer contract. No distribution carries a provider, so the host
+  end-to-end criterion runs through an installed provider rather than a bundled
+  one.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
+  record decides whether the YDB provider is one, and so whether that host
+  end-to-end test, and the host CI service in "Decided questions", run in Ptah's
+  pipelines.

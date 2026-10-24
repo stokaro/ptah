@@ -237,3 +237,10 @@ one at a time.
   necessary, but an agent that does not call it first will meet the refusal
   instead. That is the cost of §2.3, accepted for the protocol constraint that
   produced it.
+
+## Amendments
+
+- [ADR 0006](0006-one-authorized-agent-runtime.md) section 2.7 renames
+  `describe_workspace` from §2.7 here to `describe_session`. That tool works
+  without a workspace and is listed with the reading tools, so the artifact tools
+  a workspace adds are `read_artifact`, `preview_patch` and `apply_patch`.

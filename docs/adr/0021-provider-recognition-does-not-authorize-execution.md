@@ -84,3 +84,18 @@ The official repository identities are reserved by the catalog; they are not
 proof of published release artifacts. Distribution policy is not an installed
 file inventory. Stable protocol version 1 must wait for independent qualification
 of YDB, DuckDB, and Spanner.
+
+## Amendments
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md),
+  which supersedes ADR 0026, replaces the rule that no command downloads,
+  enables, replaces, or updates a provider: `providers install` downloads and
+  replaces the store installation of one provider. It also takes distribution
+  policy out of the catalog: an entry holds no version, no digest and no
+  distribution flag.
+- [ADR 0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md)
+  makes a default selection additive: the provider's URL schemes join the
+  built-in drivers, and only an explicit `--provider-engine` selection keeps the
+  exclusive connection scope stated here. It also accepts `PTAH_PROVIDER_CONFIG`
+  as an explicit manifest named by an environment variable, a narrow exception
+  to the rule that no environment discovery authorizes a binary.

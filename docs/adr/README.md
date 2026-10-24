@@ -19,7 +19,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
 | [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Proposed |
 | [0009](0009-remote-transport-authentication.md) | What a remote MCP transport would have to decide before it could exist | Superseded by 0018 |
-| [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Proposed |
+| [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Superseded by 0013 |
 | [0011](0011-database-code-analysis-starts-from-what-the-tree-already-derives.md) | Database-code analysis starts from what the tree already derives | Proposed |
 | [0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) | The canonical core is removed, and the shipping pipeline migrates in place | Proposed |
 | [0013](0013-inference-state-transitions-answer-with-their-provenance.md) | An inference-state transition answers with its provenance, and its approval binds to exact content | Proposed |
@@ -53,3 +53,19 @@ a new record that names it, and its own status line is updated to point there.
 - Ground the context in something measured. A record that argues from how the
   code ought to look cannot be checked by the next reader.
 - End with the consequences accepted, including the ones that are costs.
+
+## Statuses
+
+The status line of a record and its row in the index carry one of these values:
+
+- **Proposed**: the record is written and the maintainers have not accepted it.
+  The code may already follow it.
+- **Accepted**: the maintainers accepted the decision.
+- **Superseded by NNNN**: a later record replaces the decision. Read that record
+  for what holds.
+- **Obsolete**: no record replaces the decision, and it governs nothing that
+  exists. The status line gives the reason in one sentence.
+
+A record that a later one contradicts only in part keeps its status. Its header
+("Superseded in part") or an "Amendments" section at its end names each part
+that changed and links the record that changed it.
