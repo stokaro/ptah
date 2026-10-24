@@ -52,7 +52,7 @@ func (h *Host) Provider() engine.Provider {
 }
 
 func (t *target) registration() engine.Target {
-	result := engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t, Splitter: t,
+	result := engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t, Splitter: t, Data: t.dataServices(),
 		Planner: func(options planext.Options) planext.Planner {
 			return commonPlanner{options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
 				commonTables:  t.supportsCommonTables(),

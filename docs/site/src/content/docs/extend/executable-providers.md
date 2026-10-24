@@ -19,6 +19,7 @@ sourceOfTruth:
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
   - "integration/providercli/provider_sql_lint_e2e_test.go"
+  - "integration/providercli/provider_data_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -41,6 +42,7 @@ Provider selection is available on these native commands:
 - Migration metadata: `migrations tag`, `migrations baseline`, `migrations set`,
   and `migrations repair`.
 - Lint: `migrations lint` and `sql lint`.
+- Declared rows and seed files: `migrations data` and `seed`.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -88,6 +90,27 @@ declared one with "comparison requires one captured target profile".
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
 declaration does not establish that its migration can be planned or applied.
+
+Declared rows (`//ptah:schema:data`) and seed files reach a provider through
+four services. The host keeps the row diff, the order across tables, protected
+tables and the saved plan.
+
+- `data.type-rows` types the declared and the live rows into one canonical form.
+- `data.read-rows` reads the live rows in key order.
+- `data.render-writes` spells every write. A plan and a data migration hold the
+  statements as text, and a write the provider can render only as a native
+  operation is refused.
+- `data.seeds` runs each `ptah seed` file and records it in a ledger of its own
+  in one step. It reports a key conflict, which `--idempotent` tolerates, and
+  refuses a file before it runs when the engine cannot run one of its
+  statements in a transaction. An outcome the provider cannot confirm is
+  reported as such, and the file is not sent again.
+
+A provider without these features refuses declared rows and seed files: the
+host does not write its own `INSERT` text or `schema_seeds` table for it. An
+engine's `query_dialect` is how the query builder, `core/query`, spells
+statements for it. The host registers it with `query.RegisterDialect` when it
+starts the provider.
 
 `lint.migrations` lets a provider own the lint rules of its engine. The provider
 declares the rule catalog in its description, splits migration files with its own

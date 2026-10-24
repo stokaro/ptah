@@ -1038,7 +1038,15 @@ file, exactly as any other command reaching the same URL would.
   `units.statement-timeout` carries `migration_statement_timeout` on its
   sessions unless it states the key itself: the host sends the timeout with
   each unit, and the provider stops the unit. It carries no
-  `migration_lock_timeout`, so a migration's lock timeout is refused.
+  `migration_lock_timeout`, so a migration's lock timeout is refused. The
+  provider's row typing and row write rendering (`data.type-rows`,
+  `data.render-writes`) receive the target's capabilities with each request,
+  because they decide the type a declared column lands on and the statement a
+  write takes. The query
+  builder renders for a provider engine with the capability facts the engine's
+  query dialect declares (`default_capabilities`) when its caller names no
+  target; a key the declaration leaves out is unknown, and the clause it gates
+  is refused.
 - **Foreign key rendering.** Schema rendering validates every foreign key
   before producing statements, including owner/target tables, local and
   referenced columns, compatible column types, duplicate columns and names,

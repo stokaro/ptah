@@ -13,6 +13,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/migration/seeder"
 )
@@ -43,7 +44,10 @@ file, so re-running the command is a no-op unless --force is set.
 
 Editing an applied seed file is refused: the recorded checksum no longer matches
 the file. Add a new seed file with the change, or pass --force to re-apply the
-edited one.`,
+edited one.
+
+With --provider-config, an executable provider runs each file through its seed
+service and records it in a ledger of its own instead of schema_seeds.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSeed(cmd.Context(), runOptions{
 				dbURL:             dbURL,
@@ -77,7 +81,9 @@ edited one.`,
 	)
 
 	cmdutil.ConfigureCommand(cmd)
-	return cmd
+	// An executable provider runs the seed files of the engines it serves,
+	// through its seed service and its own ledger.
+	return providercommand.Configure(cmd, cmdutil.Fail)
 }
 
 type runOptions struct {

@@ -52,8 +52,9 @@ func (Seeds) TableNames(ctx context.Context, db dataext.Database, schema string)
 //
 // YDB has no savepoint, and a conflict ends the transaction it ran in -- the
 // next statement in it answers `Transaction not found` -- so a file that hits
-// a duplicate key fails whole, and nothing of it is applied. An idempotent run
-// records it with [Seeds.Record].
+// a duplicate key fails whole, and nothing of it is applied. The error then
+// wraps dataext.ErrKeyConflict, and an idempotent run records the file with
+// [Seeds.Record].
 func (Seeds) Apply(ctx context.Context, db dataext.Database, seed dataext.Seed) error {
 	queries, err := yqlquery.Split(seed.Text)
 	if err != nil {
@@ -65,7 +66,7 @@ func (Seeds) Apply(ctx context.Context, db dataext.Database, seed dataext.Seed) 
 				"in one; move this statement to a migration: %s", query.Kind, query.Source)
 		}
 	}
-	return seedTransaction(ctx, db, func(tx *sql.Tx) error {
+	err = seedTransaction(ctx, db, func(tx *sql.Tx) error {
 		for _, query := range queries {
 			if _, err := tx.ExecContext(ctx, query.Text); err != nil {
 				return err
@@ -76,6 +77,10 @@ func (Seeds) Apply(ctx context.Context, db dataext.Database, seed dataext.Seed) 
 		}
 		return nil
 	})
+	if KeyConflict(err) {
+		return fmt.Errorf("%w: %w", dataext.ErrKeyConflict, err)
+	}
+	return err
 }
 
 // Record writes the row that records a seed, in a transaction of its own.

@@ -4,9 +4,11 @@
 // A seed file is named NNN_description.env.sql. The env segment names the
 // environment the file belongs to, and env "all" runs in every environment.
 // Applied seeds are recorded by path together with a SHA-256 checksum in a
-// schema_seeds table the seeder creates in the target database, so a re-run
-// skips every recorded file and refuses one whose bytes changed with a
-// [ChecksumMismatchError] rather than reporting it skipped. Protected
+// schema_seeds table the seeder creates in the target database, or in the
+// ledger of an engine whose seed service keeps its own, as an executable
+// provider's does, so a re-run skips every recorded file and refuses one whose
+// bytes changed with a [ChecksumMismatchError] rather than reporting it
+// skipped. Protected
 // environments ("prod" and "production" unless [Options.ProtectedEnvs] says
 // otherwise) and protected tables refuse a run unless [Options.AllowProd] is
 // set.
@@ -37,7 +39,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
-	ydbschema "ptah.run/internal/dbschema/ydb"
 	"ptah.run/internal/protectedtable"
 )
 
@@ -251,8 +252,11 @@ func ValidateOptions(opts Options) error {
 // together with the row that records it, run again when YDB aborts it for a
 // conflicting transaction, and a file holding a statement YDB runs only
 // outside a transaction -- a scheme statement, or BATCH UPDATE and BATCH
-// DELETE -- is refused before it runs. A seed already recorded with a matching checksum is
-// skipped; a recorded seed whose file changed stops the run with a
+// DELETE -- is refused before it runs. A connection whose owner runs seed
+// files itself (dbschema.DatabaseConnection.Seeds), an executable provider's
+// session, runs each file through that service, which keeps its own ledger
+// and creates it, so Apply creates no tracker table there. A seed already
+// recorded with a matching checksum is skipped; a recorded seed whose file changed stops the run with a
 // *[ChecksumMismatchError], retrieved with [errors.As]; [Options.Force]
 // re-applies both. An environment no seed matches is not an error: Apply
 // applies nothing and returns an empty Result.
@@ -270,11 +274,12 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 		return nil, err
 	}
 	described, _ := platform.Lookup(conn.Info().Dialect)
-	if described.Seeds.ByOwner && conn.Seeds() == nil {
+	owned := conn.Seeds()
+	if described.Seeds.ByOwner && owned == nil {
 		return nil, fmt.Errorf("seeds on %s run through the engine's seed service, and the connection has none",
 			described.Name)
 	}
-	if opts.Idempotent && !described.Seeds.ByOwner &&
+	if opts.Idempotent && owned == nil &&
 		(!described.Seeds.Transactional || described.Savepoint.Create == "") {
 		return nil, fmt.Errorf("--idempotent is not supported for %s seeds because transactions and savepoints are unavailable", described.Name)
 	}
@@ -292,10 +297,7 @@ func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, o
 		return result, nil
 	}
 
-	if err := ensureTracker(ctx, conn); err != nil {
-		return nil, err
-	}
-	applied, err := appliedSeeds(ctx, conn)
+	applied, err := readApplied(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +332,7 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 		return fmt.Errorf("read seed file %q: %w", seed.Path, err)
 	}
 	described, _ := platform.Lookup(conn.Info().Dialect)
-	if described.Seeds.ByOwner {
+	if conn.Seeds() != nil {
 		return applySeedByOwner(ctx, conn, dataext.Seed{
 			Path: seed.Path, Filename: seed.Filename, Checksum: seed.Checksum, Text: string(data), Env: opts.Env,
 		}, opts)
@@ -387,8 +389,9 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 }
 
 // applySeedByOwner runs a seed file through the connection's seed service,
-// for an engine whose seed files do not run as split statements
-// (descriptor.Seeds.ByOwner). The service runs the file and its record in one
+// for an engine whose seed files do not run as split statements: one whose
+// descriptor says so (descriptor.Seeds.ByOwner), and an executable provider's.
+// The service runs the file and its record in one
 // transaction, so a file that fails leaves nothing of itself applied. YDB has
 // no savepoint, and a conflict ends the transaction it ran in, so with
 // [Options.Idempotent] a file that hits a duplicate key is rolled back whole
@@ -475,6 +478,23 @@ const portableTrackerDDL = `CREATE TABLE IF NOT EXISTS schema_seeds (
     applied_at TIMESTAMP NOT NULL
 )`
 
+// readApplied returns the checksum recorded for each applied seed path: from
+// the seed service's own ledger where it keeps one ([dataext.SeedLedger]), and
+// otherwise from the schema_seeds tracker table, which it creates first.
+func readApplied(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]string, error) {
+	if ledger, ok := conn.Seeds().(dataext.SeedLedger); ok {
+		applied, err := ledger.Ledger(ctx, conn)
+		if err != nil {
+			return nil, fmt.Errorf("read the seed ledger: %w", err)
+		}
+		return applied, nil
+	}
+	if err := ensureTracker(ctx, conn); err != nil {
+		return nil, err
+	}
+	return appliedSeeds(ctx, conn)
+}
+
 // appliedSeeds returns the checksum recorded for each applied seed path.
 //
 // The rows are read oldest first so the newest row for a path wins. On every
@@ -546,10 +566,10 @@ func ensureSafeTarget(ctx context.Context, conn *dbschema.DatabaseConnection, op
 // portable information_schema query bound to the schema. A dialect whose seeds
 // run through the connection's seed service lists them through it.
 func existingTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
-	described, _ := platform.Lookup(conn.Info().Dialect)
-	if described.Seeds.ByOwner {
-		return conn.Seeds().TableNames(ctx, conn, conn.Info().Schema)
+	if owned := conn.Seeds(); owned != nil {
+		return owned.TableNames(ctx, conn, conn.Info().Schema)
 	}
+	described, _ := platform.Lookup(conn.Info().Dialect)
 	query := described.Seeds.TablesQuery
 	var args []any
 	if query == "" {
@@ -638,13 +658,14 @@ func savepointStatements(dialect string) seedSavepoint {
 }
 
 // IsConflictError reports whether err looks like a duplicate-key conflict —
-// the failure [Options.Idempotent] tolerates. PostgreSQL (SQLSTATE 23505),
-// MySQL/MariaDB (error 1062) and YDB (PRECONDITION_FAILED with issue 2012,
-// `Conflict with existing key`) are recognized through their driver error
-// types with [errors.As]; any other error falls back to a case-insensitive
-// match on the usual duplicate-key message wordings.
+// the failure [Options.Idempotent] tolerates. An error a seed service wraps
+// around dataext.ErrKeyConflict is one, which is how YDB's seed service and
+// an executable provider's report it; PostgreSQL (SQLSTATE 23505) and
+// MySQL/MariaDB (error 1062) are recognized through their driver error types
+// with [errors.As]; any other error falls back to a case-insensitive match on
+// the usual duplicate-key message wordings.
 func IsConflictError(err error) bool {
-	if ydbschema.KeyConflict(err) {
+	if errors.Is(err, dataext.ErrKeyConflict) {
 		return true
 	}
 	var pgErr *pgconn.PgError

@@ -77,7 +77,9 @@ import (
 // from its Go value. A dialect whose descriptor says its owner writes some
 // literals (descriptor.Literals.ByOwner), as YDB's and Oracle's do, is refused
 // with an error naming it when services carries neither a Literals nor a
-// Columns service; an empty diff needs none.
+// Columns service; an empty diff needs none. An owner that spells whole row
+// writes (dataext.Services.Writes) renders through [RenderContext] and
+// [RenderStatementsContext], and Render refuses a non-empty diff for it.
 //
 // # YDB
 //
@@ -120,6 +122,9 @@ func RenderStatements(diff *DataDiff, dialect string, services dataext.Services)
 
 	if len(diff.Keys) == 0 {
 		return nil, nil, errors.New("datadiff: keys must be non-empty to render a non-empty diff")
+	}
+	if services.Writes != nil {
+		return nil, nil, fmt.Errorf("datadiff: the owner of %s renders its row writes; render through RenderStatementsContext", dialect)
 	}
 
 	t, err := newTarget(dialect, services)

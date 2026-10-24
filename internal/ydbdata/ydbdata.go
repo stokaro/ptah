@@ -9,13 +9,12 @@
 package ydbdata
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
-	"ptah.run/catalog"
 	"ptah.run/core/dataext"
-	"ptah.run/core/platform/capability"
 	"ptah.run/internal/ydbtype"
 )
 
@@ -64,33 +63,28 @@ var _ dataext.Rows = Rows{}
 // Decimal reads back and with the local moment the driver returns, so a
 // converged row plans nothing. A declared value its column cannot hold is an
 // error naming the column and the type.
-func (Rows) TypeRows(
-	caps capability.Capabilities,
-	liveTable *catalog.Table,
-	declaredTypes map[string]string,
-	desired, live []map[string]any,
-) (dataext.TypedRows, error) {
-	columnTypes := make(map[string]string, len(declaredTypes))
-	if liveTable != nil {
-		for _, column := range liveTable.Columns {
+func (Rows) TypeRows(_ context.Context, request dataext.RowsRequest) (dataext.TypedRows, error) {
+	columnTypes := make(map[string]string, len(request.DeclaredTypes))
+	if request.LiveTable != nil {
+		for _, column := range request.LiveTable.Columns {
 			columnTypes[column.Name] = column.DataType
 		}
 	}
-	for column, declared := range declaredTypes {
+	for column, declared := range request.DeclaredTypes {
 		if _, isLive := columnTypes[column]; isLive {
 			continue
 		}
-		mapping, err := ydbtype.Map(declared, caps)
+		mapping, err := ydbtype.Map(declared, request.Capabilities)
 		if err != nil {
 			return dataext.TypedRows{}, fmt.Errorf("column %q: %w", column, err)
 		}
 		columnTypes[column] = mapping.Type
 	}
-	typedDesired, err := ydbtype.CanonicalRows(columnTypes, desired)
+	typedDesired, err := ydbtype.CanonicalRows(columnTypes, request.Desired)
 	if err != nil {
 		return dataext.TypedRows{}, fmt.Errorf("declared %w", err)
 	}
-	typedLive, err := ydbtype.CanonicalRows(columnTypes, live)
+	typedLive, err := ydbtype.CanonicalRows(columnTypes, request.Live)
 	if err != nil {
 		return dataext.TypedRows{}, fmt.Errorf("live %w", err)
 	}

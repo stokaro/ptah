@@ -695,6 +695,8 @@ Read the columns as follows.
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--root-dir` | `string` | — | `PTAH_ROOT_DIR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
@@ -1808,6 +1810,8 @@ Read the columns as follows.
 | `--idempotent` | `bool` | `false` | `PTAH_IDEMPOTENT` | — |
 | `--protected-env` | `stringArray` | `[prod,production]` | `PTAH_PROTECTED_ENV` | — |
 | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--seeds-dir` | `string` | `seeds` | `PTAH_SEEDS_DIR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
 

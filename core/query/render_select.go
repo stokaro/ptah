@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
@@ -59,7 +58,7 @@ import (
 // On YDB it also returns an error for a construct the target's capabilities
 // lack; see [RenderSelectWithCapabilities].
 func RenderSelect(stmt *SelectStatement, dialect string) (string, []any, error) {
-	return RenderSelectWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+	return RenderSelectWithCapabilities(stmt, dialect, defaultCapabilities(dialect))
 }
 
 // RenderSelectWithCapabilities renders a SELECT statement as [RenderSelect]
@@ -105,9 +104,12 @@ type selectRenderer struct {
 	dialect     string
 	placeholder descriptor.Placeholder
 	query       descriptor.Query
-	caps        capability.Capabilities
-	args        []any
-	buf         strings.Builder
+	// quoting is how a registered spelling writes a name, nil for a dialect
+	// the process registry describes, which quotes by its name.
+	quoting *descriptor.Quoting
+	caps    capability.Capabilities
+	args    []any
+	buf     strings.Builder
 	// nestDepth bounds WITH nesting; see maxNestDepth.
 	nestDepth int
 }
@@ -117,18 +119,19 @@ type selectRenderer struct {
 // is described, with the placeholder style and spellings its descriptor
 // states, and core/query names no dialect.
 func newSelectRenderer(dialect string, caps capability.Capabilities) (*selectRenderer, error) {
-	described, ok := platform.Lookup(dialect)
+	described, quoting, ok := lookupDialect(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: SELECT rendering is not supported for dialect %q", dialect)
 	}
-	return newDescribedRenderer(described, caps), nil
+	return newDescribedRenderer(described, quoting, caps), nil
 }
 
-func newDescribedRenderer(described descriptor.Dialect, caps capability.Capabilities) *selectRenderer {
+func newDescribedRenderer(described descriptor.Dialect, quoting *descriptor.Quoting, caps capability.Capabilities) *selectRenderer {
 	return &selectRenderer{
 		dialect:     described.Name,
 		placeholder: described.Placeholder,
 		query:       described.Query,
+		quoting:     quoting,
 		caps:        caps,
 	}
 }
@@ -199,6 +202,9 @@ func (r *selectRenderer) bindBound(value int64) string {
 
 // quote returns identifier quoted for the renderer's dialect.
 func (r *selectRenderer) quote(identifier string) string {
+	if r.quoting != nil {
+		return sqlident.IdentWith(*r.quoting, identifier)
+	}
 	return sqlident.Ident(r.dialect, identifier)
 }
 

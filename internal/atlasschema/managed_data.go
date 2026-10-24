@@ -279,7 +279,7 @@ func managedDataDiff(
 	// be cut back into statements at line breaks: a declared value may carry a
 	// newline, which is legal inside a literal and is the byte the script joins
 	// statements with (stokaro/ptah#3278).
-	up, _, err := datadiff.RenderStatements(diff, conn.Info().Dialect, services)
+	up, _, err := datadiff.RenderStatementsContext(ctx, diff, conn.Info().Dialect, services, conn.Info().Capabilities)
 	if err != nil {
 		return nil, managedrows.Read{}, fmt.Errorf("render managed rows of %s: %w", qualified, err)
 	}

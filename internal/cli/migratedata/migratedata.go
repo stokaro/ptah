@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/datamigrate"
 	"ptah.run/migration/generator"
 	"ptah.run/migration/migrationfile"
@@ -125,7 +125,7 @@ func migrateDataCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(ctx)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

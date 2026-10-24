@@ -64,6 +64,9 @@ var hostFeatures = []string{
 	// `ptah sql lint` reads a provider's statement facts; see
 	// sqllint.Options.Owner.
 	provider.LintStatementFactsFeature,
+	// The query builder renders an engine from the spelling its provider
+	// declares; see registerQueryDialects.
+	provider.QueryDialectFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
@@ -99,6 +102,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		return nil, err
 	}
 	if host.goSource, err = goDirectiveClaims(host.description); err != nil {
+		client.Close()
+		return nil, err
+	}
+	if err = registerQueryDialects(host.description.GetEngines()); err != nil {
 		client.Close()
 		return nil, err
 	}

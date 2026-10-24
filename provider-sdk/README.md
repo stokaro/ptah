@@ -1062,7 +1062,9 @@ The SDK conformance tests in `runtime` read pages and resume them, separate an
 empty table from a missing one, type two spellings into one form, render each
 write mode, refuse a batch with no prefix, keep a ledger entry only with the
 file it ran, detect a changed checksum, refuse a file before it runs, and
-report a lost seed reply as unknown without sending it again.
+report a lost seed reply as unknown without sending it again. The process
+tests in `integration` run the same list against the fixture's SQLite through
+its `data` program, with a transaction that rolls the declared rows back.
 
 ## Dev database cleanup and the replay guard
 

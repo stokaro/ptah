@@ -106,7 +106,9 @@ func commonSchema(schema *schemamodel.Database, defaultSchema string) ([]ast.Nod
 	if schema == nil {
 		return nil, fmt.Errorf("provider schema is required")
 	}
-	if err := onlyFields(*schema, "Tables", "Fields", "Schemas", "Dependencies", "FeatureCoverage", "NotDescribed"); err != nil {
+	// Declared rows are the host's data stage, which the provider serves
+	// through its row services; they render no schema object.
+	if err := onlyFields(*schema, "Tables", "Fields", "Schemas", "Dependencies", "FeatureCoverage", "NotDescribed", "ManagedData"); err != nil {
 		return nil, err
 	}
 	for _, namespace := range schema.Schemas {

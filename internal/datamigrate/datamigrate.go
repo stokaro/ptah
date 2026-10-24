@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/dataext"
 	"ptah.run/core/goschema"
 	"ptah.run/core/manageddata"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -156,7 +157,7 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		dialect = conn.Info().Dialect
 	}
 	orderByDependency(inspected.desired, inspected.diffs)
-	return composeByPhase(inspected.diffs, dialect, opts.Data)
+	return composeByPhase(ctx, inspected.diffs, dialect, opts.Data, conn.Info().Capabilities)
 }
 
 // TableDrift is how far one managed table's live rows sit from its
@@ -463,9 +464,15 @@ func orderByDependency(db *schemamodel.Database, diffs []*datadiff.DataDiff) {
 // runs all INSERTs parents-first, then all UPDATEs, then all DELETEs
 // children-first; down is the exact reverse-inverse (undo DELETEs parents-first,
 // then UPDATEs and INSERTs children-first). Each phase is rendered from a
-// single-operation sub-diff via datadiff.Render, so the proven per-table
+// single-operation sub-diff via datadiff.RenderContext, so the proven per-table
 // inverse contract composes into a global reversible migration.
-func composeByPhase(ordered []*datadiff.DataDiff, dialect string, services dataext.Services) (upSQL, downSQL string, err error) {
+func composeByPhase(
+	ctx context.Context,
+	ordered []*datadiff.DataDiff,
+	dialect string,
+	services dataext.Services,
+	caps capability.Capabilities,
+) (upSQL, downSQL string, err error) {
 	type phased struct {
 		insUp, insDown string
 		updUp, updDown string
@@ -474,13 +481,13 @@ func composeByPhase(ordered []*datadiff.DataDiff, dialect string, services datae
 	rendered := make([]phased, len(ordered))
 	for i, d := range ordered {
 		var p phased
-		if p.insUp, p.insDown, err = datadiff.Render(subDiff(d, d.Inserts, nil, nil), dialect, services); err != nil {
+		if p.insUp, p.insDown, err = datadiff.RenderContext(ctx, subDiff(d, d.Inserts, nil, nil), dialect, services, caps); err != nil {
 			return "", "", err
 		}
-		if p.updUp, p.updDown, err = datadiff.Render(subDiff(d, nil, d.Updates, nil), dialect, services); err != nil {
+		if p.updUp, p.updDown, err = datadiff.RenderContext(ctx, subDiff(d, nil, d.Updates, nil), dialect, services, caps); err != nil {
 			return "", "", err
 		}
-		if p.delUp, p.delDown, err = datadiff.Render(subDiff(d, nil, nil, d.Deletes), dialect, services); err != nil {
+		if p.delUp, p.delDown, err = datadiff.RenderContext(ctx, subDiff(d, nil, nil, d.Deletes), dialect, services, caps); err != nil {
 			return "", "", err
 		}
 		rendered[i] = p

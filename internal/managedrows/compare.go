@@ -158,7 +158,7 @@ func Compare(
 			return nil, err
 		}
 		desired = narrowed
-		live, err = dbschema.ReadTableRows(ctx, conn, declaration.Schema, declaration.Table, columns)
+		live, err = dbschema.ReadKeyedTableRows(ctx, conn, declaration.Schema, declaration.Table, columns, declaration.Keys)
 		if err != nil {
 			return nil, fmt.Errorf("read declared rows of %s: %w", qualified, err)
 		}
@@ -169,7 +169,10 @@ func Compare(
 
 	references, columnTypes := declarationShape(req.Desired, declaration)
 	if req.Data.Rows != nil {
-		typed, err := req.Data.Rows.TypeRows(conn.Info().Capabilities, liveTable, columnTypes, desired, live)
+		typed, err := req.Data.Rows.TypeRows(ctx, dataext.RowsRequest{
+			Capabilities: conn.Info().Capabilities, Schema: declaration.Schema, Table: declaration.Table,
+			LiveTable: liveTable, DeclaredTypes: columnTypes, Desired: desired, Live: live,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("compare declared rows of %s: %w", qualified, err)
 		}

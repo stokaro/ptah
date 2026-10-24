@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/ydbdata"
 )
@@ -26,7 +27,8 @@ func TestRowsTypeRows_HappyPath(t *testing.T) {
 	read := []map[string]any{{"code": "CZ", "rate": "1.5",
 		"joined": time.Date(2026, time.January, 2, 1, 0, 0, 0, time.FixedZone("CET", 3600))}}
 
-	typed, err := ydbdata.Rows{}.TypeRows(capability.YDB262(), live, declared, desired, read)
+	typed, err := ydbdata.Rows{}.TypeRows(c.Context(), dataext.RowsRequest{Capabilities: capability.YDB262(), Table: "rates",
+		LiveTable: live, DeclaredTypes: declared, Desired: desired, Live: read})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(typed.ColumnTypes, qt.DeepEquals, map[string]string{
@@ -45,9 +47,9 @@ func TestRowsTypeRows_HappyPath(t *testing.T) {
 // no declaration types keeps its value for the diff to refuse.
 func TestRowsTypeRows_HappyPath_NarrowLineAndUntypedColumn(t *testing.T) {
 	c := qt.New(t)
-	typed, err := ydbdata.Rows{}.TypeRows(capability.YDB251(), nil,
-		map[string]string{"since": "DATE"},
-		[]map[string]any{{"since": "2026-01-02", "note": 7}}, nil)
+	typed, err := ydbdata.Rows{}.TypeRows(c.Context(), dataext.RowsRequest{Capabilities: capability.YDB251(), Table: "events",
+		DeclaredTypes: map[string]string{"since": "DATE"},
+		Desired:       []map[string]any{{"since": "2026-01-02", "note": 7}}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(typed.ColumnTypes, qt.DeepEquals, map[string]string{"since": "Date"})
@@ -89,7 +91,8 @@ func TestRowsTypeRows_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			typed, err := ydbdata.Rows{}.TypeRows(capability.YDB262(), test.live, test.declared, test.desired, test.read)
+			typed, err := ydbdata.Rows{}.TypeRows(c.Context(), dataext.RowsRequest{Capabilities: capability.YDB262(), Table: "t",
+				LiveTable: test.live, DeclaredTypes: test.declared, Desired: test.desired, Live: test.read})
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(typed.ColumnTypes, qt.IsNil)
 			c.Assert(typed.Desired, qt.IsNil)
