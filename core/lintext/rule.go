@@ -24,7 +24,9 @@
 // judgment of a statement only it recognizes, which ptah.run/migration/safety
 // takes in place of reading the statement's words: the splitter of a plan's
 // target judges the plan's statements, and every annotator judges those of a
-// migration that names no target.
+// migration that names no target. [FactStatementKind],
+// [FactMissingPrimaryKey] and [FactRequiredCapability] let a linter with no
+// grammar for a dialect read what each statement is from the owner's split.
 //
 // A run that names no target is split by the host's dialect-blind scanner, so
 // no owner splits it. The host then asks every owner that registers an

@@ -175,8 +175,9 @@ func writeSQLRules(w io.Writer, entries []Entry) error {
 	fmt.Fprintf(&out,
 		"%d rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. "+
 			"The compatibility surface has no verb that reaches them. A YDB file is analyzed as YQL independently of "+
-			"the desired-schema parser, and can report %s only.\n\n",
-		len(rules), codeList(sqllint.YQLCatalogIDs()))
+			"the desired-schema parser, and can report %s only. A file of an executable provider's engine is read from "+
+			"the statement facts of the provider's split and can report %s only.\n\n",
+		len(rules), codeList(sqllint.YQLCatalogIDs()), codeList(sqllint.OwnerCatalogIDs()))
 	out.WriteString(ruleTable(rules))
 	_, err := io.WriteString(w, out.String())
 	return err

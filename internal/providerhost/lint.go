@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 )
@@ -38,9 +39,19 @@ var (
 		lintext.FactStatefulDrop: protocol.LintFact_LINT_FACT_STATEFUL_DROP, lintext.FactUniqueIndex: protocol.LintFact_LINT_FACT_UNIQUE_INDEX,
 		lintext.FactRebuildDrop: protocol.LintFact_LINT_FACT_REBUILD_DROP, lintext.FactRebuildRename: protocol.LintFact_LINT_FACT_REBUILD_RENAME,
 		lintext.FactSafetyEffect: protocol.LintFact_LINT_FACT_SAFETY_EFFECT,
+		// The statement facts reach the host only under the two-way feature
+		// lint.statement-facts, which hostFeatures lists.
+		lintext.FactStatementKind: protocol.LintFact_LINT_FACT_STATEMENT_KIND, lintext.FactMissingPrimaryKey: protocol.LintFact_LINT_FACT_MISSING_PRIMARY_KEY,
+		lintext.FactRequiredCapability: protocol.LintFact_LINT_FACT_REQUIRED_CAPABILITY,
 	}
 	lintImpacts = map[schemaext.Impact]protocol.LintImpact{
 		schemaext.Behavioral: protocol.LintImpact_LINT_IMPACT_BEHAVIORAL, schemaext.Destructive: protocol.LintImpact_LINT_IMPACT_DESTRUCTIVE,
+	}
+	lintClasses = map[lintext.StatementClass]protocol.LintStatementClass{
+		lintext.ClassCreateTable: protocol.LintStatementClass_LINT_STATEMENT_CLASS_CREATE_TABLE,
+		lintext.ClassAlterTable:  protocol.LintStatementClass_LINT_STATEMENT_CLASS_ALTER_TABLE,
+		lintext.ClassSchema:      protocol.LintStatementClass_LINT_STATEMENT_CLASS_SCHEMA,
+		lintext.ClassOther:       protocol.LintStatementClass_LINT_STATEMENT_CLASS_OTHER,
 	}
 )
 
@@ -73,24 +84,17 @@ func unsigned(n int) uint32 {
 
 func lintEffect(effect lintext.Effect) *protocol.LintEffect {
 	return &protocol.LintEffect{Fact: lintFacts[effect.Fact], Object: effect.Object, Kind: effect.Kind, Table: effect.Table, Columns: slices.Clone(effect.Columns),
-		Clause: effect.Clause, Failure: effect.Failure, Impact: lintImpacts[effect.Impact], Reason: effect.Reason}
+		Clause: effect.Clause, Failure: effect.Failure, Impact: lintImpacts[effect.Impact], Reason: effect.Reason,
+		StatementClass: lintClasses[effect.Class], Capability: string(effect.Capability)}
 }
 
 func lintEffects(effects []*protocol.LintEffect) []lintext.Effect {
 	var result []lintext.Effect
 	for _, effect := range effects {
-		value := lintext.Effect{Object: effect.GetObject(), Kind: effect.GetKind(), Table: effect.GetTable(), Columns: slices.Clone(effect.GetColumns()),
-			Clause: effect.GetClause(), Failure: effect.GetFailure(), Reason: effect.GetReason()}
-		for fact, wire := range lintFacts {
-			if wire == effect.GetFact() {
-				value.Fact = fact
-			}
-		}
-		for impact, wire := range lintImpacts {
-			if wire == effect.GetImpact() {
-				value.Impact = impact
-			}
-		}
+		value := lintext.Effect{Fact: fromWire(lintFacts, effect.GetFact()), Object: effect.GetObject(), Kind: effect.GetKind(), Table: effect.GetTable(),
+			Columns: slices.Clone(effect.GetColumns()), Clause: effect.GetClause(), Failure: effect.GetFailure(),
+			Impact: fromWire(lintImpacts, effect.GetImpact()), Reason: effect.GetReason(),
+			Class: fromWire(lintClasses, effect.GetStatementClass()), Capability: capability.Capability(effect.GetCapability())}
 		result = append(result, value)
 	}
 	return result
@@ -143,6 +147,18 @@ func (t *target) AnnotateStatements(ctx context.Context, request lintext.Annotat
 		}
 	}
 	return result, nil
+}
+
+// fromWire is the host's value for a wire value, and the zero value for one
+// the map does not hold, which validation then refuses where a fact needs it.
+func fromWire[H, W comparable](values map[H]W, wire W) H {
+	for value, known := range values {
+		if known == wire {
+			return value
+		}
+	}
+	var none H
+	return none
 }
 
 // lintService checks one engine's rules through its owner.

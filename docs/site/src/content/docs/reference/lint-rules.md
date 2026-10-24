@@ -401,7 +401,7 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 ## SQL lint rules
 
-7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A YDB file is analyzed as YQL independently of the desired-schema parser, and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
+7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A YDB file is analyzed as YQL independently of the desired-schema parser, and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only. A file of an executable provider's engine is read from the statement facts of the provider's split and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |

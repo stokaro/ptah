@@ -29,3 +29,20 @@ func TestExplicitRuntimeDoesNotFallBackToBundledTargets(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(invalid, qt.IsNil)
 }
+
+// A selection is reported as one, and a context without one reports none.
+func TestSelectedReportsOnlyAnExplicitRuntime(t *testing.T) {
+	c := qt.New(t)
+	empty, err := engine.New()
+	c.Assert(err, qt.IsNil)
+	selected, err := engineruntime.With(c.Context(), empty)
+	c.Assert(err, qt.IsNil)
+
+	actual, found := engineruntime.Selected(selected)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(actual, qt.Equals, empty)
+
+	none, found := engineruntime.Selected(c.Context())
+	c.Assert(found, qt.IsFalse)
+	c.Assert(none, qt.IsNil)
+}

@@ -505,6 +505,14 @@ from another process:
   Its `Effect.Impact` is `schemaext.Behavioral` or `schemaext.Destructive`,
   never additive, and its `Effect.Reason` says why. Only this fact carries an
   impact or a reason, and a statement carries one judgment at most.
+- The statement facts let a linter read an owner's split instead of parsing
+  it. `FactStatementKind` gives each statement its `Effect.Class` (a
+  `StatementClass`) and its kind in the dialect's words, and a split that
+  judges it gives every statement exactly one. `FactMissingPrimaryKey` names a
+  table a `ClassCreateTable` statement creates without a primary key, and
+  `FactRequiredCapability` names in `Effect.Capability` a key of the
+  capability registry the statement needs, which the host compares with the
+  target's capabilities.
 - `Annotator` judges facts over a split the owner did not make: a run that
   names no target splits with the host's dialect-blind scanner and asks every
   annotator in one call. The answer is best-effort, and a statement the

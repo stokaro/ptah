@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 )
 
@@ -98,7 +99,44 @@ const (
 	// effect of this fact for a statement, or none, and none means the
 	// statement is not one the owner judges, not that it is harmless.
 	FactSafetyEffect Fact = "safety-effect"
+	// FactStatementKind says what a statement is, for a linter that reads the
+	// owner's split instead of parsing the statement: [Effect.Class] is what
+	// it does to the schema, [Effect.Kind] names it in the dialect's words for
+	// a message, such as CREATE TABLE, UPSERT or named expression, and
+	// [Effect.Object] is what it acts on, when it names one. A split that
+	// judges it gives every statement exactly one.
+	FactStatementKind Fact = "statement-kind"
+	// FactMissingPrimaryKey is a table the statement creates without a
+	// primary key, named in [Effect.Table]. A statement it is judged for that
+	// does not carry it creates no such table.
+	FactMissingPrimaryKey Fact = "missing-primary-key"
+	// FactRequiredCapability is a capability the statement needs from its
+	// target, keyed in [Effect.Capability]. Object, Kind, Table and Clause
+	// name the part of the statement that needs it, such as an index and the
+	// clause that adds it. The host compares the key with the target's
+	// capabilities; the owner does not.
+	FactRequiredCapability Fact = "required-capability"
 )
+
+// StatementClass is what a statement does to the schema, as a
+// [FactStatementKind] effect reports it.
+type StatementClass string
+
+const (
+	// ClassCreateTable creates a table.
+	ClassCreateTable StatementClass = "create-table"
+	// ClassAlterTable alters a table.
+	ClassAlterTable StatementClass = "alter-table"
+	// ClassSchema creates, alters or drops another schema object, or drops a
+	// table.
+	ClassSchema StatementClass = "schema"
+	// ClassOther changes no schema object: a data change, a query, a setting
+	// or a named expression.
+	ClassOther StatementClass = "other"
+)
+
+// classes are the statement classes this package defines.
+var classes = []StatementClass{ClassCreateTable, ClassAlterTable, ClassSchema, ClassOther}
 
 // Effect is one fact about what a statement does.
 type Effect struct {
@@ -127,6 +165,12 @@ type Effect struct {
 	// of its own. Reason says why, in the words a report shows.
 	Impact schemaext.Impact `json:"impact,omitempty"`
 	Reason string           `json:"reason,omitempty"`
+	// Class is what a [FactStatementKind] statement does to the schema, and
+	// no other fact carries it.
+	Class StatementClass `json:"class,omitempty"`
+	// Capability is the key a [FactRequiredCapability] names, one the
+	// capability registry declares, and no other fact carries it.
+	Capability capability.Capability `json:"capability,omitempty"`
 }
 
 // Routine is what a rule may read of the routine a statement defines.
@@ -168,10 +212,9 @@ type Splitter interface {
 // falls outside its source, overlaps the one before it, disagrees with its
 // text, or has no line, a judged fact this package does not define, one of
 // the two rebuild facts judged without the other, an effect of a fact the
-// split does not list as judged, and effects [ValidateAnnotate] refuses too: an
-// Impact or a Reason on a fact other than [FactSafetyEffect], a safety effect
-// whose Impact is not Behavioral or Destructive or whose Reason is empty, and
-// two safety effects on one statement. Each failure wraps [ErrInvalid].
+// split does not list as judged, a statement without a kind where the split
+// judges [FactStatementKind], and the effects [ValidateAnnotate] refuses too.
+// Each failure wraps [ErrInvalid].
 func ValidateSplit(request SplitRequest, result SplitResult) error {
 	if len(result.Files) != len(request.Sources) {
 		return fmt.Errorf("%w: a split of %d sources returned %d", ErrInvalid, len(request.Sources), len(result.Files))
@@ -197,7 +240,7 @@ func ValidateSplit(request SplitRequest, result SplitResult) error {
 					return fmt.Errorf("%w: statement %d of %s reports %q, which the split does not judge", ErrInvalid, j, source.Name, effect.Fact)
 				}
 			}
-			if fault := effectsFault(statement.Effects); fault != "" {
+			if fault := effectsFault(statement.Effects, result.Judged); fault != "" {
 				return fmt.Errorf("%w: statement %d of %s %s", ErrInvalid, j, source.Name, fault)
 			}
 			end = statement.End
@@ -207,29 +250,83 @@ func ValidateSplit(request SplitRequest, result SplitResult) error {
 }
 
 // facts are the facts this package defines.
-var facts = []Fact{FactStatefulDrop, FactUniqueIndex, FactRebuildDrop, FactRebuildRename, FactSafetyEffect}
+var facts = []Fact{
+	FactStatefulDrop, FactUniqueIndex, FactRebuildDrop, FactRebuildRename, FactSafetyEffect,
+	FactStatementKind, FactMissingPrimaryKey, FactRequiredCapability,
+}
 
 // effectsFault says what is wrong with one statement's effects, as the rest of
-// a sentence that names the statement, and is empty when nothing is. A split
-// and an annotation are held to it alike, so an owner's judgment reads the same
-// whichever of them carried it.
-func effectsFault(effects []Effect) string {
-	judged := 0
-	for _, effect := range effects {
-		if effect.Fact != FactSafetyEffect {
-			if effect.Impact != "" || effect.Reason != "" {
-				return fmt.Sprintf("carries an impact or a reason on %q, which only %q carries", effect.Fact, FactSafetyEffect)
-			}
-			continue
+// a sentence that names the statement, and is empty when nothing is. judged
+// are the facts the statement was judged for. A split and an annotation are
+// held to it alike, so an owner's judgment reads the same whichever of them
+// carried it: an Impact or a Reason on a fact other than [FactSafetyEffect], a
+// safety effect whose Impact is not Behavioral or Destructive or whose Reason
+// is empty, two safety effects or two kinds on one statement, no kind where
+// [FactStatementKind] was judged, a kind with an unknown class or no name, a
+// missing primary key that names no table or sits on a statement whose kind
+// creates none, and a class or a capability key on a fact that does not carry
+// it, or a key the capability registry does not declare.
+func effectsFault(effects []Effect, judged []Fact) string {
+	safety := 0
+	var kind *Effect
+	for i, effect := range effects {
+		if fault := fieldsFault(effect); fault != "" {
+			return fault
 		}
-		judged++
-		switch {
-		case effect.Impact != schemaext.Behavioral && effect.Impact != schemaext.Destructive:
+		switch effect.Fact {
+		case FactSafetyEffect:
+			safety++
+			if safety > 1 {
+				return fmt.Sprintf("reports %q twice", FactSafetyEffect)
+			}
+		case FactStatementKind:
+			if kind != nil {
+				return fmt.Sprintf("reports %q twice", FactStatementKind)
+			}
+			kind = &effects[i]
+		}
+	}
+	if kind == nil && slices.Contains(judged, FactStatementKind) {
+		return fmt.Sprintf("has no %q", FactStatementKind)
+	}
+	for _, effect := range effects {
+		if effect.Fact == FactMissingPrimaryKey && kind != nil && kind.Class != ClassCreateTable {
+			return fmt.Sprintf("reports %q on a statement of class %q", FactMissingPrimaryKey, kind.Class)
+		}
+	}
+	return ""
+}
+
+// fieldsFault says what is wrong with the fields of one effect, as
+// [effectsFault] says it, and is empty when nothing is.
+func fieldsFault(effect Effect) string {
+	switch {
+	case effect.Fact != FactSafetyEffect && (effect.Impact != "" || effect.Reason != ""):
+		return fmt.Sprintf("carries an impact or a reason on %q, which only %q carries", effect.Fact, FactSafetyEffect)
+	case effect.Fact != FactStatementKind && effect.Class != "":
+		return fmt.Sprintf("carries a class on %q, which only %q carries", effect.Fact, FactStatementKind)
+	case effect.Fact != FactRequiredCapability && effect.Capability != "":
+		return fmt.Sprintf("carries a capability on %q, which only %q carries", effect.Fact, FactRequiredCapability)
+	}
+	switch effect.Fact {
+	case FactSafetyEffect:
+		if effect.Impact != schemaext.Behavioral && effect.Impact != schemaext.Destructive {
 			return fmt.Sprintf("judges impact %q, which is not %q or %q", effect.Impact, schemaext.Behavioral, schemaext.Destructive)
-		case strings.TrimSpace(effect.Reason) == "":
+		}
+		if strings.TrimSpace(effect.Reason) == "" {
 			return fmt.Sprintf("judges impact %q without a reason", effect.Impact)
-		case judged > 1:
-			return fmt.Sprintf("reports %q twice", FactSafetyEffect)
+		}
+	case FactStatementKind:
+		if !slices.Contains(classes, effect.Class) || strings.TrimSpace(effect.Kind) == "" {
+			return fmt.Sprintf("reports a kind of class %q named %q, which is not a known class and a name", effect.Class, effect.Kind)
+		}
+	case FactMissingPrimaryKey:
+		if strings.TrimSpace(effect.Table) == "" {
+			return fmt.Sprintf("reports %q and names no table", FactMissingPrimaryKey)
+		}
+	case FactRequiredCapability:
+		if !slices.Contains(capability.All(), effect.Capability) {
+			return fmt.Sprintf("requires capability %q, which the capability registry does not declare", effect.Capability)
 		}
 	}
 	return ""

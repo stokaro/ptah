@@ -1822,6 +1822,8 @@ Read the columns as follows.
 | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--disable` | `stringArray` | `[]` | `PTAH_DISABLE` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--stdin` | `bool` | `false` | `PTAH_STDIN` | — |
 

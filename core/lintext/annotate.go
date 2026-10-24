@@ -78,11 +78,13 @@ func ValidateAnnotateRequest(request AnnotateRequest) error {
 
 // ValidateAnnotate reports a result that does not answer request: a file or
 // statement count other than the request's, an effect of a fact the request
-// did not ask about, a declined statement that carries an effect, and effects
-// [ValidateSplit] refuses too: an Impact or a Reason on a fact other than
-// [FactSafetyEffect], a safety effect whose Impact is not Behavioral or
-// Destructive or whose Reason is empty, and two safety effects on one
-// statement. Each failure wraps [ErrInvalid].
+// did not ask about, a declined statement that carries an effect, a statement
+// it does not decline without a kind where the request asks for
+// [FactStatementKind], and effects [ValidateSplit] refuses too: an Impact or a
+// Reason on a fact other than [FactSafetyEffect], a safety effect whose Impact
+// is not Behavioral or Destructive or whose Reason is empty, two safety
+// effects or two kinds on one statement, and the kind, primary key and
+// capability faults [ValidateSplit] lists. Each failure wraps [ErrInvalid].
 func ValidateAnnotate(request AnnotateRequest, result AnnotateResult) error {
 	if len(result.Files) != len(request.Files) {
 		return fmt.Errorf("%w: an annotation of %d files returned %d", ErrInvalid, len(request.Files), len(result.Files))
@@ -100,7 +102,11 @@ func ValidateAnnotate(request AnnotateRequest, result AnnotateResult) error {
 					return fmt.Errorf("%w: statement %d of file %d reports %q, which the request did not ask about", ErrInvalid, j, i, effect.Fact)
 				}
 			}
-			if fault := effectsFault(annotation.Effects); fault != "" {
+			asked := request.Facts
+			if annotation.Declined {
+				asked = nil
+			}
+			if fault := effectsFault(annotation.Effects, asked); fault != "" {
 				return fmt.Errorf("%w: statement %d of file %d %s", ErrInvalid, j, i, fault)
 			}
 		}
