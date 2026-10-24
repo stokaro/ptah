@@ -82,4 +82,3 @@ internal/cli/atlas/dev
 # The gates themselves use `go run`, which writes nothing, so nothing needed
 # the file. Build into `bin/`, which `/bin/*` above already ignores.
 /exporteddocs
-/.release-providers/

@@ -96,12 +96,11 @@ has the archive but no `checksums.txt`, or when the runner has neither
 `sha256sum` nor `shasum`. It does not build from source in any of those cases.
 The source build runs only when the release has no archive for the runner.
 
-The release archive carries the pinned YDB provider in a `providers` directory
-beside `ptah`, and the action installs that directory next to the binary it
-puts on `PATH`. A build from source, whether by the fallback or through
-`binary-path`, has no bundled provider. A workflow that needs YDB in that case
-runs `ptah providers install ydb` itself, and the pinned digests in that Ptah
-build decide what it accepts.
+The action installs Ptah only. A database provider is installed separately: a
+workflow that needs YDB runs `ptah providers install ydb` in a step after the
+action. That command installs the newest provider release whose minimum provider
+contract version this Ptah meets, and checks it against the release's
+`checksums.txt`.
 
 The action runs:
 

@@ -1,6 +1,7 @@
 // Package providers exposes provider catalog, installation, and negotiation
-// diagnostics, and installs the pinned official provider of an engine. Listing
-// and installing never start an executable or connect to a database.
+// diagnostics, and installs a release of an engine's official provider into the
+// user store. Listing and installing never start an executable or connect to a
+// database.
 package providers
 
 import (
@@ -22,7 +23,7 @@ import (
 
 // NewCommand returns the native provider diagnostics namespace.
 func NewCommand() *cobra.Command {
-	command := &cobra.Command{Use: "providers", Short: "Inspect provider configuration, verify trusted executables and install pinned official providers"}
+	command := &cobra.Command{Use: "providers", Short: "Inspect provider configuration, verify trusted executables and install official providers"}
 	command.AddCommand(newListCommand(), newCheckCommand(), newInstallCommand(providerinstall.Installer{}))
 	cmdutil.ConfigureCommandArgs(command, cmdutil.NoPositionalArgs)
 	return command

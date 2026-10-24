@@ -45,8 +45,8 @@ const providerConfigEnvVar = "PTAH_PROVIDER_CONFIG"
 // and returns the lazy resolver for one command invocation. Nothing starts
 // until a connection needs a provider.
 //
-// An unset variable selects no manifest, which leaves the bundled and stored
-// official providers of the selection order. A set but blank value is refused,
+// An unset variable selects no manifest, which leaves the stored official
+// providers of the selection order. A set but blank value is refused,
 // because `PTAH_PROVIDER_CONFIG=` and an absent variable are different
 // configuration states, and a blank manifest path is a mistake to report rather
 // than a default.

@@ -55,11 +55,17 @@ func TestProviderCheckReportsStructuredMissingInstallation(t *testing.T) {
 	}
 }
 
-func TestProviderInstallRefusesEnginesThatCannotBeInstalled(t *testing.T) {
-	for _, test := range []struct{ name, engine, code string }{
-		{"duckdb has no release", "duckdb", "provider_no_release_pinned"},
-		{"spanner has no release", "spanner", "provider_no_release_pinned"},
-		{"unknown engine", "oracle", "provider_unknown_engine"},
+// Each case is refused before any request, so the shipped command needs no
+// release server.
+func TestProviderInstallRefusesBeforeDownloading(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		code string
+	}{
+		{"unknown engine", []string{"oracle"}, "provider_unknown_engine"},
+		{"a mirror without a version", []string{"ydb", "--download-base-url", "http://127.0.0.1:1/mirror"}, "provider_version_required"},
+		{"a version that is not semantic", []string{"ydb", "--version", "latest"}, "provider_version_invalid"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -70,7 +76,7 @@ func TestProviderInstallRefusesEnginesThatCannotBeInstalled(t *testing.T) {
 			var out, stderr bytes.Buffer
 			command.SetOut(&out)
 			command.SetErr(&stderr)
-			command.SetArgs([]string{"install", test.engine, "--json"})
+			command.SetArgs(append(append([]string{"install"}, test.args...), "--json"))
 			c.Assert(command.ExecuteContext(c.Context()), qt.IsNotNil)
 			var report struct {
 				Status     string
@@ -83,9 +89,9 @@ func TestProviderInstallRefusesEnginesThatCannotBeInstalled(t *testing.T) {
 	}
 }
 
-func TestProviderInstallTakesExactlyOneEngineAndNoVersion(t *testing.T) {
-	for _, args := range [][]string{{"install"}, {"install", "ydb", "duckdb"}, {"install", "ydb", "--version", "1.0.0"}} {
-		c := qt.New(t)
+func TestProviderInstallTakesExactlyOneEngine(t *testing.T) {
+	c := qt.New(t)
+	for _, args := range [][]string{{"install"}, {"install", "ydb", "duckdb"}} {
 		command := providers.NewCommand()
 		command.SetOut(&bytes.Buffer{})
 		command.SetErr(&bytes.Buffer{})

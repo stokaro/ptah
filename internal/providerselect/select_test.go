@@ -25,7 +25,7 @@ func fixtureConfig(c *qt.C) providerconfig.Configuration {
 	}
 }
 
-// emptyResolver finds no bundled or stored official provider.
+// emptyResolver finds no stored official provider.
 func emptyResolver() *providerconfig.Resolver { return &providerconfig.Resolver{} }
 
 func TestChoose_HappyPath(t *testing.T) {

@@ -94,11 +94,9 @@ Boolean installer variables accept `1`, `0`, `true`, `false`, `yes`, or `no`.
 An empty or unknown value is a configuration error rather than a silent default.
 
 Both installers verify the archive against `checksums.txt` before they unpack
-it, and refuse to install when the check cannot run. They copy the archive's
-`providers` directory next to the binaries, whichever binaries `--only` selects,
-because every one of them looks for its bundled provider there. See
-[The bundled YDB provider](#the-bundled-ydb-provider). An installer replaces the
-provider files it installs and leaves other files under `providers` alone.
+it, and refuse to install when the check cannot run. They install the Ptah
+binaries only; a database provider is installed separately, as
+[Install a database provider](#install-a-database-provider) describes.
 
 ## Install with Homebrew
 
@@ -125,12 +123,6 @@ brew upgrade --fetch-HEAD ptah-edge
 Both formulas provide binaries with the same names. Remove one formula before
 switching to the other so Homebrew does not leave the earlier links on `PATH`.
 
-The cask unpacks the release archive as it is and links the three binaries into
-the Homebrew `bin` directory. The `providers` directory stays beside the real
-`ptah` in the cask's own directory, which is where Ptah looks after it follows
-the link. The edge formula compiles from source and contains no bundled
-provider.
-
 ## Install with the Go toolchain
 
 Install the native CLI from a tagged module version:
@@ -147,8 +139,7 @@ go install ptah.run/cmd/ptah-ls@vX.Y.Z
 ```
 
 The binaries land in `GOBIN`, or in `$(go env GOPATH)/bin` when `GOBIN` is
-unset. That directory is not automatically on `PATH`. A `go install` build has no
-bundled provider; see [The bundled YDB provider](#the-bundled-ydb-provider).
+unset. That directory is not automatically on `PATH`.
 
 ## Build from a checkout
 
@@ -159,8 +150,7 @@ make build
 ```
 
 `make build` writes `ptah`, `ptah-compat`, `ptah-ls`, and the integration-test
-runner under `bin/`. The build uses the toolchain declared in `go.mod`. It
-contacts no network and contains no bundled provider.
+runner under `bin/`. The build uses the toolchain declared in `go.mod`.
 
 Verify the source revision represented by the binary:
 
@@ -205,8 +195,7 @@ while you downloaded only one archive. Stop if the matching line does not say
 
 The archive has no top-level directory. Extract it into a temporary directory,
 then install the three binaries by name so `LICENSE` and `README.md` do not land
-in the binary directory. Copy the `providers` directory into the same binary
-directory, so that it sits beside `ptah`.
+in the binary directory.
 
 ### On macOS, how you download decides whether it runs
 
@@ -271,8 +260,7 @@ release provenance is part of your trust decision.
 ## Container image
 
 The image contains `ptah`, `ptah-compat`, and `ptah-ls` in `/usr/local/bin`
-for Linux amd64 and arm64, and the pinned YDB provider in
-`/usr/local/bin/providers`. Its default entry point is `ptah`; select another
+for Linux amd64 and arm64. Its default entry point is `ptah`; select another
 binary with `--entrypoint`:
 
 ```bash
@@ -290,44 +278,37 @@ FROM postgres:15-alpine
 COPY --from=ptah-bin /usr/local/bin/ptah-compat /usr/local/bin/ptah-compat
 ```
 
-## The bundled YDB provider
+## Install a database provider
 
-Each Ptah release pins one tested release of the YDB provider. The release
-archives, the container image, and the Homebrew cask contain that provider's
-executable, taken from the pinned release and checked against the pinned archive
-digest and executable digest when the release is built. It sits in a `providers`
-directory beside the `ptah` executable:
-
-```text
-<directory of ptah>/providers/<provider-id>/<version>/<executable>
-```
-
-Ptah follows symbolic links to `ptah` before it looks there, and it checks the
-executable against the pinned digest before every start. The pin covers Linux,
-macOS, and Windows on amd64 and arm64, which are the platforms the release
-builds. A platform without a pinned archive gets a diagnostic that names the
-platform and promises no bundled provider.
-
-A build from a checkout, `go install`, and the edge formula contain no provider.
-Run this once, and Ptah finds the installed copy without a manifest:
+An engine served by an executable provider, such as YDB through
+[stokaro/ptah-ydb-plugin](https://github.com/stokaro/ptah-ydb-plugin), needs
+that provider installed separately. No release archive, container image,
+Homebrew cask, installer script or GitHub Action carries one, so every
+installation channel takes the same step:
 
 ```console
 ptah providers install ydb
 ```
 
-DuckDB and Spanner are in no distribution; install them the same way.
+The command installs the newest provider release that works with this Ptah. A
+provider declares the minimum provider contract version it needs, and Ptah
+checks it against the contract version it speaks, so a provider release is not
+tied to one Ptah release. `--version` installs a chosen release instead. The
+command checks the download against the release's `checksums.txt`, stores the
+executable in your user cache directory, and records its SHA-256, which Ptah
+checks before every start.
 
 A command uses the YDB provider when you pass `--provider-engine ydb`. Without
 that flag, a `ydb://` address is served by the YDB engine built into `ptah` in
 this documentation version. Which engine serves `ydb://` is decided by the Ptah
 release, and the presence of a file on disk does not change it.
 
-With the provider bundled or installed, normal work needs no network. On a host
-that cannot reach GitHub, either point `ptah providers install` at an internal
-mirror with `--download-base-url`, or copy a verified executable to the host and
-select it in a provider manifest. The pinned digests decide what is accepted in
-both cases. See
-[Test an executable provider](../../extend/executable-providers/#install-the-pinned-official-provider).
+With the provider installed, normal work needs no network. On a host that cannot
+reach GitHub, install from an internal mirror with `--download-base-url` and
+`--version`, or copy a verified executable to the host and select it in a
+provider manifest. A container image installs the provider in a build step of
+its own, as the user that runs the image. See
+[Test an executable provider](../../extend/executable-providers/#install-an-official-provider).
 
 ## Shell completion and editor support
 

@@ -11,6 +11,7 @@ sourceOfTruth:
   - "internal/cli/internal/providercommand"
   - "internal/providerhost"
   - "internal/providerinstall"
+  - "internal/providerrelease"
   - "internal/providercatalog"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
@@ -116,39 +117,84 @@ host refuses a description that claims testing nothing runs.
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.
 
-## Install the pinned official provider
+## Install an official provider
 
-Each Ptah release pins one tested version of an official provider and, for each
-platform, the SHA-256 of its archive and of the executable inside it. Install the
-pinned provider for the engine you need:
+An official provider is installed separately from Ptah. No Ptah release pins a
+provider version, and no release archive, container image, installer or GitHub
+Action carries one. Install the provider of the engine you need:
 
 ```console
 ptah providers install ydb
 ```
 
-The command takes an engine and no version. It downloads the archive for the
-current platform from the provider's GitHub release, compares the archive with
-the pinned digest before it reads anything from it, extracts only the expected
-executable, and compares that with its pinned digest. It then stores the
-executable under the user cache directory, in
-`ptah/providers/<provider-id>/<version>/<os>_<arch>/`, readable only by you. The
-command never runs the executable, never edits a manifest, and never looks for a
-newer release. Running it again for a verified installation downloads nothing.
-An interrupted or parallel run leaves no executable that is only partly written.
+A provider is compatible with the provider contract, not with particular Ptah
+versions. The contract version has two parts, MAJOR.MINOR. The major version
+changes only on an incompatible change, and Ptah and the provider must have the
+same one. The minor version grows with each compatible addition. Each provider
+release declares the minimum contract it needs, and Ptah runs it when the major
+versions are equal and Ptah's minor version is at least the release's. What a
+provider can do beyond its minimum is agreed at startup, feature by feature. A
+Ptah release does not change the contract version by itself, so a provider
+release keeps working across Ptah releases that speak a contract it accepts.
+Provider authors find the rules in the
+[provider SDK README (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md).
 
-The output names the executable and its SHA-256. Ptah selects the installation
-by itself when the command asks for the engine's provider, as described in
+Without `--version`, the command lists the releases of the provider's GitHub
+repository and installs the newest one whose minimum contract this Ptah meets.
+It considers published releases only, not drafts or prereleases, and skips a
+release that does not publish `ptah-provider.json`, the small document that
+names a release's archives and its minimum contract. A release whose
+`ptah-provider.json` is malformed stops the command instead of being skipped.
+
+`--version 0.2.0` (or `v0.2.0`) installs that release and does not list
+releases. A release whose minimum contract this Ptah does not meet is refused,
+and the message names both versions:
+
+```text
+the ydb provider 0.3.0 needs contract 26.0 or a later 26.x; this Ptah speaks contract 25.0
+```
+
+The command takes the archive for the current platform from `ptah-provider.json`.
+It downloads the release's `checksums.txt` and checks `ptah-provider.json` and
+the archive against it before it reads anything from the archive. A missing
+`checksums.txt`, a missing or empty entry, an entry listed twice and a different
+digest all refuse the install.
+
+The command extracts only the expected executable and stores it under the user
+cache directory, in `ptah/providers/<provider-id>/<version>/<os>_<arch>/`,
+readable only by you. Then it writes the install record
+`ptah/providers/<provider-id>/installed-<os>_<arch>.json`, which names that
+version and holds the executable's SHA-256. The command never runs the
+executable and never edits a manifest. Installing the release the record already
+names downloads no archive. An interrupted or parallel run leaves no executable
+that is only partly written, and the record keeps naming a complete
+installation.
+
+The output names the version, its minimum contract, the executable and its
+SHA-256. Ptah selects the installation by itself when the command asks for the
+engine's provider, as described in
 [Which provider serves an engine](#which-provider-serves-an-engine). You do not
 write a manifest entry for it.
 
-Only engines whose provider has a release are pinned. For an engine without a
-pinned release, and for a platform the pin does not cover, the command fails with
-a diagnostic that names the engine or the platform.
+Listing releases uses the GitHub API without credentials, which limits how often
+an address can ask each hour. When the limit is reached, pass `--version`. A
+release that publishes no archive for the current platform fails with
+`provider_platform_unsupported`, which names the platform.
 
 `--download-base-url` (environment variable `PTAH_DOWNLOAD_BASE_URL`) replaces
-the directory the archive is fetched from, for example an internal mirror that
-serves the same file names. It changes where the bytes come from and nothing
-else: the pinned digests still decide what is accepted. Add `--json` for a
+`https://github.com` in every download address. A mirror serves the GitHub
+release download layout:
+
+```text
+<base>/<owner>/<repo>/releases/download/v<version>/ptah-provider.json
+<base>/<owner>/<repo>/releases/download/v<version>/checksums.txt
+<base>/<owner>/<repo>/releases/download/v<version>/<archive>
+```
+
+A mirror cannot list releases, so `--download-base-url` needs `--version`; without
+it the command fails with `provider_version_required` before it sends a request.
+The mirror changes where the bytes come from and nothing else: the release's
+`checksums.txt` still decides what is accepted. Add `--json` for a
 machine-readable report.
 
 ## Which provider serves an engine
@@ -157,71 +203,48 @@ When a command asks for an executable provider, Ptah validates the manifest and
 then takes the first candidate that exists. Later candidates are not consulted.
 
 1. The installation the manifest selects for the engine.
-2. The bundled official provider, for an official engine whose release pins a
-   provider.
-3. The official provider in the user store, for the same engine.
-4. None. The command fails with `provider_missing` and the instruction
+2. The installation in the user store that the install record of the engine's
+   provider names for the current platform.
+3. None. The command fails with `provider_missing` and the instruction
    `ptah providers install <engine>`.
 
 A command asks for an executable provider with `--provider-engine`, or when a
 manifest entry claims the engine. An official engine that still has a built-in
-implementation, such as YDB, keeps it when the command does neither.
+implementation, such as YDB, keeps it when the command does neither, and the
+presence of an installed provider changes nothing.
 
-The bundled provider is the executable of the pinned release, placed by the
-distribution beside the resolved `ptah` executable (symbolic links evaluated):
-
-```text
-<directory of ptah>/providers/<provider-id>/<version>/<executable>
-```
-
-For YDB on Linux that is
-`providers/github.com/stokaro/ptah-ydb-plugin/<version>/ptah-plugin-ydb`. A
-distribution is built for one platform, so the path has no platform part. Ptah
-never copies the bundled file into the user store. The user store is the
-directory `ptah providers install` writes to, described above.
-
-The full distribution places the YDB provider there: the release archives, the
-container image (`/usr/local/bin/providers`) and the Homebrew cask. The release
-build fetches the pinned archive, checks the archive and the executable against
-the pinned digests, and packages that one executable in every channel, so the
-bundled file and the file `providers install` stores are the same bytes. The
-`install.sh`, `install.ps1` and GitHub Action installers verify the archive
-against `checksums.txt` and copy the `providers` directory beside the binaries.
-A build from source or `go install` has no bundled provider and needs
-`ptah providers install ydb` once. DuckDB and Spanner are in no distribution.
-
-Which engine serves a `ydb://` address does not depend on any of this. Without
-`--provider-engine` or a manifest entry for `ydb`, the engine built into `ptah`
-serves it in this documentation version, and the presence of a bundled or stored
-file changes nothing.
-
-Offline use needs no extra command. With a bundled or installed provider, normal
-work opens no network connection. A host without access to GitHub can use an
-internal mirror through `--download-base-url`, or receive a verified executable
-by other means and select it with a manifest entry (absolute path and digest).
-Neither changes the pinned digests.
-
-Rules 2 and 3 build the installation in memory from the catalog and the pin: the
-provider ID and engines come from the catalog, and the expected SHA-256 is the
-pinned digest of the executable. Nothing is written to a manifest. The
-installation goes through the same checks as a manifest entry: the digest before
-every start, then the provider ID, the declared engines, the protocol and the
-required features.
+Rule 2 builds the installation in memory from the catalog and the install
+record: the provider ID and engines come from the catalog, and the expected
+SHA-256 is the one the record holds. Nothing is written to a manifest. The
+installation goes through the same checks as a manifest entry: the minimum
+contract, the digest before every start, then the provider ID, the declared
+engines, the contract and the required features.
 
 A candidate that exists and fails a check ends the search:
 
 - A selected manifest entry that is disabled, missing or corrupt is never
-  replaced by a bundled or stored provider.
-- A bundled executable whose digest differs from the pin is refused, even when
-  the user store holds a good copy.
-- A stored executable whose digest differs from the pin is refused. Run
-  `ptah providers install <engine>` to replace it.
+  replaced by a stored provider.
+- A stored executable whose digest differs from its record is refused with
+  `provider_untrusted`. Run `ptah providers install <engine>` to replace it.
+- A record whose minimum contract this Ptah does not meet is refused with
+  `provider_incompatible` before the process starts. Run
+  `ptah providers install <engine>` to install a release this Ptah can run.
+- A record that cannot be read is refused with `provider_store_invalid`.
 
-A candidate whose file does not exist is absent, and the search continues. Only
-the pinned version is looked at. Copies of other versions in the user store are
-ignored, however many there are. Ptah does not search `PATH`, the working
-directory or a project file. A platform the pin does not cover fails with
-`provider_platform_unsupported`, which names the platform.
+Only the version the record names is looked at. Other versions in the user store
+are ignored, however many there are. Ptah does not search `PATH`, the working
+directory or a project file.
+
+Offline use needs no extra command. With a provider installed, normal work opens
+no network connection. A host without access to GitHub can install from an
+internal mirror with `--download-base-url` and `--version`, or receive a verified
+executable by other means and select it with a manifest entry (absolute path and
+digest).
+
+A container image that needs a provider installs it in a build step of its own,
+as the user that runs the image later, because the store is that user's cache
+directory. A GitHub Actions workflow runs `ptah providers install <engine>` in a
+step after the action.
 
 ## Select the executable
 
@@ -492,21 +515,29 @@ preserve these fields in `provider_diagnostic`. Installation checks use `diagnos
 
 | Code | Action |
 | --- | --- |
-| `provider_missing` | Run the `ptah providers install <engine>` command the message names. For an engine without a pinned release, follow the engine-specific setup page and select a trusted artifact through the manifest. |
-| `provider_no_release_pinned` | This Ptah release pins no release of that provider. Select a provider you obtained and verified through the manifest. |
-| `provider_platform_unsupported` | The pin has no archive for this platform, so neither a bundled nor an installed provider can serve it. Select a verified executable through the manifest. |
-| `provider_download_failed` | Check the network, the proxy and `--download-base-url`, then run `providers install` again. |
-| `provider_archive_untrusted` | The downloaded archive does not match the pinned digest. Nothing was extracted. Check the mirror or the network path. |
+| `provider_missing` | Run the `ptah providers install <engine>` command the message names, or select a trusted artifact through the manifest. |
+| `provider_no_release` | The provider's repository has no published release with `ptah-provider.json`. Select a provider you obtained and verified through the manifest. |
+| `provider_no_compatible_release` | No release has a minimum contract this Ptah meets. The message names this Ptah's contract and the newest releases with their minimums. Use a Ptah release that speaks one of them, or select a verified artifact through the manifest. |
+| `provider_release_incompatible` | The release `--version` names needs a contract this Ptah does not meet. Name another release, or omit `--version` to install the newest one this Ptah can run. |
+| `provider_release_asset_missing` | The release has no `ptah-provider.json`, `checksums.txt` or archive where the layout says. Check the version and the mirror. |
+| `provider_release_invalid` | The release's `ptah-provider.json` is malformed or names another provider, version or engine. Report it to the provider's maintainers, or name another release with `--version`. |
+| `provider_platform_unsupported` | The release publishes no archive for this platform. Install another release, or select a verified executable through the manifest. |
+| `provider_checksum_missing` | The release's `checksums.txt` has no entry for `ptah-provider.json` or the archive. Nothing was installed. |
+| `provider_checksum_invalid` | The entry is empty, is not a SHA-256 or is listed twice. Nothing was installed. |
+| `provider_checksum_mismatch` | A downloaded file does not match `checksums.txt`. Nothing was extracted. Check the mirror or the network path. |
+| `provider_version_required` | A mirror cannot list releases. Add `--version`. |
+| `provider_version_invalid` | Pass a semantic version such as `0.2.0`. |
+| `provider_download_failed` | Check the network, the proxy and `--download-base-url`, then run `providers install` again. When the GitHub API limit is reached, pass `--version`. |
 | `provider_archive_invalid` | The archive is not a valid provider archive or lacks the executable. Nothing was installed. |
-| `provider_executable_untrusted` | The executable in the archive does not match the pinned digest. Nothing was installed. |
 | `provider_store_failed` | Check the user cache directory and its permissions. |
+| `provider_store_invalid` | The install record cannot be used. Run `ptah providers install <engine>` to replace it. |
 | `provider_unknown_engine` | Name an engine from `ptah providers list`. |
 | `provider_disabled` | Enable the intended installation explicitly. |
-| `provider_executable_missing` | Restore the executable or correct its absolute path in the manifest. |
+| `provider_executable_missing` | Restore the executable or correct its absolute path in the manifest. For a stored provider, run `ptah providers install <engine>`. |
 | `provider_unreadable` | Check file permissions and ensure the path names a regular file. |
-| `provider_untrusted` | For a manifest entry, verify provenance before accepting a different checksum. For a bundled provider, repair or reinstall Ptah. For a stored provider, run `ptah providers install <engine>`. |
+| `provider_untrusted` | For a manifest entry, verify provenance before accepting a different checksum. For a stored provider, run `ptah providers install <engine>`. |
 | `provider_start_failed` | Check the executable platform and startup environment. |
-| `provider_incompatible` | Select an artifact with the required identity and protocol. |
+| `provider_incompatible` | Select an artifact with the required identity and contract. For a stored provider whose minimum contract this Ptah does not meet, run `ptah providers install <engine>`. |
 | `provider_identity_mismatch` | Correct the declared engines and aliases after reviewing the artifact. |
 | `provider_target_mismatch` | Make the database target agree with the selected engine. |
 
@@ -646,8 +677,9 @@ every unregistered URL scheme, including schemes with embedded drivers.
 
 The official catalog recognizes [YDB](../providers/ydb/),
 [DuckDB](../providers/duckdb/), and [Spanner](../providers/spanner/). These entries
-state provider ownership and distribution policy. Official extraction and
-release artifacts remain part of [issue #4204](https://github.com/stokaro/ptah/issues/4204).
+state provider ownership and the GitHub repository whose releases
+`providers install` reads. Official extraction remains part of
+[issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
 Continue with [plan approval and target checks](../../direct/plan-and-approve/) or the
 [public embedding API](../public-api/).

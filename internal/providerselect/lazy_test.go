@@ -101,13 +101,13 @@ func TestLazyNativeRegistration_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, providerselect.ErrClosed)
 		c.Assert(found, qt.IsFalse)
 	})
-	t.Run("an official engine with no pinned provider is reported as missing", func(t *testing.T) {
+	t.Run("an official engine with no installed provider is reported as missing", func(t *testing.T) {
 		c := qt.New(t)
 		lazy := providerselect.NewLazy(providerconfig.Configuration{}, false, emptyResolver())
 
 		_, found, err := lazy.NativeRegistration(c.Context(), "duckdb")
 
-		c.Assert(err, qt.ErrorMatches, `(?s).*pins no provider release.*`)
+		c.Assert(err, qt.ErrorMatches, `(?s).*installed separately, and no installation was found.*ptah providers install duckdb.*`)
 		c.Assert(found, qt.IsFalse)
 	})
 }

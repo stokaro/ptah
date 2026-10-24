@@ -250,28 +250,6 @@ assert old in s, "anchor moved: the prerequisite block"
 p.write_text(s.replace(old, "\tdetect_hasher\n"))
 '
 
-# The providers/ directory left in the archive. ptah then installs fine and
-# cannot find the YDB provider it was distributed with.
-run_mutation "the bundled providers directory not installed" '
-import os, pathlib
-p = pathlib.Path(os.environ["MUTANT"])
-s = p.read_text()
-old = "\tinstall_binaries\n\tinstall_providers\n"
-assert old in s, "anchor moved: the install sequence"
-p.write_text(s.replace(old, "\tinstall_binaries\n"))
-'
-
-# A providers/ symlink in the install directory followed. The copy writes the
-# provider tree wherever the link points.
-run_mutation "a symlinked providers directory followed" '
-import os, pathlib
-p = pathlib.Path(os.environ["MUTANT"])
-s = p.read_text()
-old = "\tif [ -L \"$bindir/providers\" ]; then"
-assert old in s, "anchor moved: the providers symlink refusal"
-p.write_text(s.replace(old, "\tif false; then"))
-'
-
 echo
 if [ "$failures" -ne 0 ]; then
 	echo "check-install-script-selftest: $failures of $checked mutations went unnoticed" >&2

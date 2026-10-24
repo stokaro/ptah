@@ -52,10 +52,9 @@ The installer verifies a downloaded archive against the release's
 `checksums.txt` before it unpacks anything, and stops when the digest differs,
 when `checksums.txt` has no line for the archive, or when the release has the
 archive and no `checksums.txt`. It builds from source only when the release has
-no archive for the runner. The release archive carries the pinned YDB provider
-in a `providers` directory, and the installer places that directory beside the
-`ptah` it puts on `PATH`. A build from source has no bundled provider; run
-`ptah providers install ydb` in the workflow when it needs one.
+no archive for the runner. The action installs Ptah only. A workflow that needs
+a database provider, such as the YDB provider, runs
+`ptah providers install ydb` in a step after the action.
 
 The `checks: write` permission is needed for the destructive-change check run.
 The `issues: write` and `pull-requests: write` permissions are needed for

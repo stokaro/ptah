@@ -158,7 +158,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `project adopt` | reads | none | — | classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there |
 | `project inspect` | none | none | — | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `providers check` | none | none | — | starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database |
-| `providers install` | none | none | — | downloads the pinned official provider archive, checks it against the pinned digests and stores the executable in the user cache; it opens no database and never runs the downloaded file |
+| `providers install` | none | none | — | downloads an official provider release whose minimum contract this Ptah meets, checks it against the release's checksums.txt and stores the executable in the user cache; it opens no database and never runs the downloaded file |
 | `providers list` | none | none | — | lists official provider identities and checks configured executable bytes without starting a process or opening a database |
 | `schema annotations` | none | none | — | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema apply` | **writes** | **rewrites** | `--db-url`, `--dev-url` | applies a desired schema to the target; the dev database is where "the plan is rehearsed on before touching the target" |
@@ -249,7 +249,7 @@ permission.
 | `project adopt` | classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there |
 | `project inspect` | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `providers check` | starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database |
-| `providers install` | downloads the pinned official provider archive, checks it against the pinned digests and stores the executable in the user cache; it opens no database and never runs the downloaded file |
+| `providers install` | downloads an official provider release whose minimum contract this Ptah meets, checks it against the release's checksums.txt and stores the executable in the user cache; it opens no database and never runs the downloaded file |
 | `providers list` | lists official provider identities and checks configured executable bytes without starting a process or opening a database |
 | `schema annotations` | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema approve` | signs a saved plan file with an SSH key and writes the signature beside it |

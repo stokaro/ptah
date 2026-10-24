@@ -64,24 +64,30 @@ func TestMissingDiagnosticPreservesGuidance(t *testing.T) {
 			c.Assert(decoded.RepositoryURL, qt.Equals, entry.RepositoryURL)
 			c.Assert(decoded.SetupURL, qt.Equals, entry.SetupURL)
 			c.Assert(decoded.Error(), qt.Contains, "supported through")
-			c.Assert(decoded.Error(), qt.Contains, "no configured installation")
+			c.Assert(decoded.Error(), qt.Contains, "installed separately, and no installation was found")
+			c.Assert(decoded.Error(), qt.Contains, "Run `ptah providers install "+entry.EngineID+"`")
 			c.Assert(decoded.Error(), qt.Contains, entry.SetupURL)
 		})
 	}
 }
 
-func TestMissingDiagnosticCarriesTheInstallInstructionOnlyForAPinnedEngine(t *testing.T) {
+func TestEveryEntryNamesAGitHubReleaseSource(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
 		t.Run(entry.EngineID, func(t *testing.T) {
 			c := qt.New(t)
-			pinned := providercatalog.MissingInstallable(entry)
-			c.Assert(pinned.Code, qt.Equals, "provider_missing")
-			c.Assert(pinned.Message, qt.Contains, "`ptah providers install "+entry.EngineID+"`")
-			c.Assert(pinned.Message, qt.Contains, entry.SetupURL)
-			unpinned := providercatalog.Missing(entry)
-			c.Assert(unpinned.Code, qt.Equals, "provider_missing")
-			c.Assert(unpinned.Message, qt.Not(qt.Contains), "ptah providers install")
+			owner, repo, found := entry.GitHubRepository()
+			c.Assert(found, qt.IsTrue)
+			c.Assert("github.com/"+owner+"/"+repo, qt.Equals, entry.ProviderID)
 		})
+	}
+}
+
+func TestGitHubRepository_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	for _, address := range []string{"", "https://gitlab.com/stokaro/ptah-ydb-plugin", "https://github.com/stokaro", "https://github.com/stokaro/ptah/sub", "http://github.com/stokaro/ptah"} {
+		owner, repo, found := providercatalog.Entry{RepositoryURL: address}.GitHubRepository()
+		c.Assert(found, qt.IsFalse, qt.Commentf("%q", address))
+		c.Assert(owner+repo, qt.Equals, "")
 	}
 }
 

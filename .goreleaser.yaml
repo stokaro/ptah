@@ -5,14 +5,6 @@ project_name: ptah
 before:
   hooks:
     - go mod tidy
-    # Fetches the YDB provider archive of every platform from the release the
-    # pin in internal/providercatalog/pins_gen.go names, checks the archive and
-    # the executable against the pinned digests, and lays the executables out
-    # under .release-providers/<os>_<arch>/providers/. The archives, the image
-    # and the Homebrew cask all ship that one staging tree. Nothing resolves a
-    # newer provider release; a digest mismatch or a platform the pin does not
-    # cover stops the build.
-    - go run ./internal/cmd/providerbundle --out .release-providers
 
 builds:
   - id: ptah
@@ -107,11 +99,6 @@ archives:
     files:
       - README.md
       - LICENSE
-      # The bundled provider directory sits beside the ptah executable, which is
-      # where the host looks for it (providerconfig.BundledDir). The archive is
-      # flat, so unpacking it into a bin directory yields bin/providers/....
-      - src: ".release-providers/{{ .Os }}_{{ .Arch }}/providers"
-        dst: providers
 
 checksum:
   name_template: checksums.txt
@@ -199,13 +186,8 @@ dockers_v2:
       - ptah-compat
       - ptah-ls
     dockerfile: Dockerfile
-    # The YDB provider executables staged by the before hook, for the two image
-    # platforms only. The Dockerfile copies the one that matches the platform
-    # being built to the bundled location beside ptah.
     extra_files:
       - LICENSE
-      - .release-providers/linux_amd64
-      - .release-providers/linux_arm64
     images:
       - "ghcr.io/stokaro/ptah"
       - "docker.io/stokaro/ptah"
@@ -243,13 +225,6 @@ dockers_v2:
 # macOS ones, and Homebrew installs a cask that requires no macOS wherever it
 # runs: measured on Homebrew 4.6.20 in the `homebrew/brew` image, which
 # downloaded the v0.5.0 Linux archive and linked all three binaries.
-#
-# The cask stages the whole archive in its Caskroom directory and links the
-# three binaries into the Homebrew bin directory. The archive's providers/
-# directory therefore lands beside the real ptah executable, and the host
-# resolves the `ptah` symlink before it looks for the bundled provider, so the
-# cask needs no stanza for it. Upgrading replaces the Caskroom version directory
-# and the provider with it.
 homebrew_casks:
   - name: ptah
     ids:

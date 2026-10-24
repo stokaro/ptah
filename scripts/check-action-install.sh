@@ -5,9 +5,8 @@
 # The properties held here are the ones a workflow author cannot see: the
 # archive is verified against checksums.txt before anything is unpacked, every
 # way the check can fail to happen is a refusal (a wrong digest, no entry for
-# the archive, no checksums.txt in the release), and a verified archive's
-# providers directory lands beside the installed ptah. Nothing here reaches
-# GitHub; PTAH_ACTION_API_URL aims the script at the fixture.
+# the archive, no checksums.txt in the release). Nothing here reaches GitHub;
+# PTAH_ACTION_API_URL aims the script at the fixture.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -64,22 +63,13 @@ pass() { printf '  ok    %s\n' "$*"; }
 site="$work/site"
 mkdir -p "$site"
 asset="ptah_1.0.0_${os}_${arch}.tar.gz"
-provider_dir="providers/github.com/stokaro/ptah-ydb-plugin/0.1.1"
 
 stage="$work/stage"
-mkdir -p "$stage/$provider_dir"
+mkdir -p "$stage"
 printf '#!/bin/sh\necho ptah\n' >"$stage/ptah"
-printf '#!/bin/sh\necho provider\n' >"$stage/$provider_dir/ptah-plugin-ydb"
-chmod 0755 "$stage/ptah" "$stage/$provider_dir/ptah-plugin-ydb"
-tar -czf "$site/$asset" -C "$stage" ptah providers
+chmod 0755 "$stage/ptah"
+tar -czf "$site/$asset" -C "$stage" ptah
 good="$("${hasher[@]}" "$site/$asset" | awk '{print $1}')"
-
-# An archive from a release that predates the bundle.
-stage_old="$work/stage-old"
-mkdir -p "$stage_old"
-cp "$stage/ptah" "$stage_old/ptah"
-tar -czf "$site/old_${os}_${arch}.tar.gz" -C "$stage_old" ptah
-old_good="$("${hasher[@]}" "$site/old_${os}_${arch}.tar.gz" | awk '{print $1}')"
 
 port_file="$work/port"
 python3 - "$site" "$port_file" <<'PY' &
@@ -144,25 +134,15 @@ expect() {
 	return 1
 }
 
-# A sound release installs ptah and its providers directory.
+# A sound release installs ptah.
 release_json "$asset" yes
 printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$asset.sbom.json" >"$site/checksums.txt"
 printf '%s  %s\n' "$good" "$asset" >>"$site/checksums.txt"
 run_install
 if expect "a verified archive installs (exit $status)" [ "$status" -eq 0 ] &&
 	expect "ptah is installed and executable" test -x "$bindir/ptah" &&
-	expect "the provider lands at the bundled path beside ptah" test -x "$bindir/$provider_dir/ptah-plugin-ydb" &&
 	expect "ptah-bin is published" grep -qF "ptah-bin=$bindir/ptah" "$runner/output"; then
-	pass "a verified archive installs ptah and the providers directory beside it"
-fi
-
-# An archive with no providers directory installs ptah alone.
-release_json "old_${os}_${arch}.tar.gz" yes
-printf '%s  %s\n' "$old_good" "old_${os}_${arch}.tar.gz" >"$site/checksums.txt"
-run_install
-if expect "an archive without providers installs (exit $status)" [ "$status" -eq 0 ] &&
-	expect "no providers directory is created" not test -e "$bindir/providers"; then
-	pass "an archive that predates the bundle still installs"
+	pass "a verified archive installs ptah"
 fi
 
 # A digest that does not match refuses, and nothing is installed.

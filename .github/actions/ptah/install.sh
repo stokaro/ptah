@@ -136,12 +136,5 @@ fi
 cp "$ptah_bin" "$install_dir/ptah"
 chmod +x "$install_dir/ptah"
 
-# The bundled providers directory goes beside ptah, where the host looks for it.
-# An archive from a release that predates the bundle has none.
-if [[ -d "$unpack_dir/providers" && ! -L "$unpack_dir/providers" ]]; then
-	mkdir -p "$install_dir/providers"
-	cp -R "$unpack_dir/providers/." "$install_dir/providers/"
-fi
-
 printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
 printf 'ptah-bin=%s\n' "$install_dir/ptah" >>"$GITHUB_OUTPUT"

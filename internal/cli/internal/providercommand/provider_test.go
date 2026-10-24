@@ -3,7 +3,6 @@ package providercommand_test
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerinstall"
+	"ptah.run/internal/providerrelease"
 )
 
 func TestProviderSelectionRequiresAnExplicitFlag(t *testing.T) {
@@ -70,22 +70,23 @@ func isolateStore(c *qt.C) {
 	c.Setenv("LocalAppData", c.TempDir())
 }
 
-// corruptPinnedStoreCopy installs bytes that do not match the pin where the
-// pinned YDB provider belongs in the user store.
-func corruptPinnedStoreCopy(c *qt.C) string {
+// corruptStoreCopy installs a record for the YDB provider in the user store and
+// an executable whose bytes do not match it.
+func corruptStoreCopy(c *qt.C) string {
 	c.Helper()
-	pin, found := providercatalog.LookupPin("ydb")
-	c.Assert(found, qt.IsTrue)
 	entry, found := providercatalog.Lookup("ydb")
-	c.Assert(found, qt.IsTrue)
-	platform := providercatalog.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH}
-	artifact, found := pin.Artifact(platform)
 	c.Assert(found, qt.IsTrue)
 	root, err := providerinstall.DefaultRoot()
 	c.Assert(err, qt.IsNil)
-	path := filepath.Join(providerinstall.Dir(root, entry.ProviderID, pin.Version, platform), artifact.Executable)
+	platform := providerrelease.Running()
+	c.Assert(providerinstall.WriteRecord(root, platform, providerinstall.Record{
+		Schema: providerinstall.RecordSchema, ProviderID: entry.ProviderID, Version: "0.2.0",
+		MinContract: providerrelease.HostContract(), Engines: []string{"ydb"}, SHA256: strings.Repeat("a", 64),
+		Executable: "0.2.0/" + platform.OS + "_" + platform.Arch + "/ptah-plugin-ydb",
+	}), qt.IsNil)
+	path := filepath.Join(providerinstall.Dir(root, entry.ProviderID, "0.2.0", platform), "ptah-plugin-ydb")
 	c.Assert(os.MkdirAll(filepath.Dir(path), 0o700), qt.IsNil)
-	c.Assert(os.WriteFile(path, []byte("not the pinned provider"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte("not the recorded provider"), 0o600), qt.IsNil)
 	return path
 }
 
@@ -95,12 +96,12 @@ func newProbe(calls *int) *cobra.Command {
 	return cmd
 }
 
-// The pinned YDB provider is selectable only by asking for it. A URL alone
-// keeps the built-in engine and never reads the bundled directory or the store.
+// The YDB provider is selectable only by asking for it. A URL alone keeps the
+// built-in engine and never reads the store.
 func TestOfficialEngineWithABuiltInImplementationIgnoresTheStoreWithoutAnExplicitRequest(t *testing.T) {
 	c := qt.New(t)
 	isolateStore(c)
-	corruptPinnedStoreCopy(c)
+	corruptStoreCopy(c)
 	calls := 0
 	cmd := newProbe(&calls)
 	cmd.SetArgs([]string{"--db-url", "ydb://localhost:2136/local"})
@@ -114,17 +115,17 @@ func TestExplicitProviderEngineWithNothingInstalledReportsTheInstallInstruction(
 	calls := 0
 	cmd := newProbe(&calls)
 	cmd.SetArgs([]string{"--provider-engine", "ydb"})
-	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*no bundled or installed provider was found.*ptah providers install ydb.*`)
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*installed separately, and no installation was found.*ptah providers install ydb.*`)
 	c.Assert(calls, qt.Equals, 0)
 }
 
 func TestExplicitProviderEngineRefusesACorruptStoreCopy(t *testing.T) {
 	c := qt.New(t)
 	isolateStore(c)
-	corruptPinnedStoreCopy(c)
+	corruptStoreCopy(c)
 	calls := 0
 	cmd := newProbe(&calls)
 	cmd.SetArgs([]string{"--provider-engine", "ydb"})
-	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*installed provider executable does not match the SHA-256 checksum pinned.*ptah providers install ydb.*`)
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*installed provider executable does not match the SHA-256 digest its install record holds.*ptah providers install ydb.*`)
 	c.Assert(calls, qt.Equals, 0)
 }
