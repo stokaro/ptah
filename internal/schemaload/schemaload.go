@@ -361,8 +361,8 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	formats := sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations(),
-		sourceformats.WithNotices(o.notices(), "schema command "+commandDisplay(command)))
+	formats := sourceformats.NewWithNotices(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations(),
+		o.notices(), "schema command "+commandDisplay(command))
 	return schemasource.Run(ctx, formats, command)
 }
 

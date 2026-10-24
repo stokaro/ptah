@@ -441,8 +441,8 @@ func (s Set) resolveRemoteSchema(ctx context.Context, opts ResolveOptions) (Stat
 func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (State, error) {
 	command := s.Sources[0].Command
 	command.Dialect = opts.Dialect
-	formats := sourceformats.New(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.HCL(), opts.Runtime.CoverageVocabulary(), featureselect.RelationsOf(opts.Runtime),
-		sourceformats.WithNotices(opts.ReportIgnored, s.Flag+" "+strconv.Quote(s.Sources[0].Raw)))
+	formats := sourceformats.NewWithNotices(opts.Runtime.YAML(), opts.Runtime.SQL(), opts.Runtime.HCL(), opts.Runtime.CoverageVocabulary(), featureselect.RelationsOf(opts.Runtime),
+		opts.ReportIgnored, s.Flag+" "+strconv.Quote(s.Sources[0].Raw))
 	schema, err := schemasource.Run(ctx, formats, command)
 	if err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, s.Sources[0].Raw, err)

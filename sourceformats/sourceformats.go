@@ -40,25 +40,19 @@ type Relations interface {
 // reading HCL the zero hcl set; pass sqlext.None or hclext.None to read the
 // reader's own syntax only. With nil relations, a DROP TABLE in a SQL
 // document whose model holds a standalone feature object is refused.
-func New(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage.Vocabulary, relations Relations, options ...Option) schemasource.Formats {
-	r := readers{owners: owners, sql: sql, hcl: hcl, vocabulary: vocabulary, relations: relations}
-	for _, option := range options {
-		option(&r)
-	}
-	return r
+func New(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage.Vocabulary, relations Relations) schemasource.Formats {
+	return readers{owners: owners, sql: sql, hcl: hcl, vocabulary: vocabulary, relations: relations}
 }
 
-// Option adjusts the readers [New] returns.
-type Option func(*readers)
-
-// WithNotices writes a warning line to out for each name a SQL document writes
-// longer than the identifier limit of a server that cuts it, naming source as
-// what was read. The document's objects are recorded under the name the
-// server keeps either way.
-func WithNotices(out io.Writer, source string) Option {
-	return func(r *readers) {
-		r.notices, r.source = out, source
-	}
+// NewWithNotices returns the readers [New] returns, which also write a warning
+// line to notices for each name a SQL document writes longer than the
+// identifier limit of a server that cuts it, naming source as what was read.
+// The document's objects are recorded under the name the server keeps either
+// way. A nil notices writes nothing, as [New] does.
+func NewWithNotices(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage.Vocabulary, relations Relations, notices io.Writer, source string) schemasource.Formats {
+	r := readers{owners: owners, sql: sql, hcl: hcl, vocabulary: vocabulary, relations: relations}
+	r.notices, r.source = notices, source
+	return r
 }
 
 type readers struct {
