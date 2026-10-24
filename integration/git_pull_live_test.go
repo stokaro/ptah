@@ -9,6 +9,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	gittransport "github.com/go-git/go-git/v5/plumbing/transport"
 
 	"ptah.run/internal/gitsource"
 	"ptah.run/internal/gitsource/gitsourcetest"
@@ -33,6 +35,40 @@ func gitFetch(c *qt.C, server *gitsourcetest.HTTPS, options gitsource.Options) (
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	return gitsource.Fetch(ctx, options)
+}
+
+// sshFetch fetches over SSH from a server that exports repository.
+func sshFetch(c *qt.C, repository *gitsourcetest.Repository, options gitsource.Options) (gitsource.Result, error) {
+	server := gitsourcetest.ServeSSH(c, repository.Root)
+	reference, err := gitsource.ParseReference(server.Reference("app.git"))
+	c.Assert(err, qt.IsNil)
+	key, err := os.ReadFile(server.KeyFile)
+	c.Assert(err, qt.IsNil)
+	dialer, auth, err := gitsource.Dial(reference, gitsource.Credentials{SSHKey: key}, gitsource.Trust{KnownHostsFile: server.KnownHostsFile})
+	c.Assert(err, qt.IsNil)
+	options.Reference, options.Transport, options.Auth = reference, dialer, auth
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return gitsource.Fetch(ctx, options)
+}
+
+// advertisesCommitsByID reports whether the HTTPS server says, in its ref
+// advertisement, that it gives commits by their id.
+func advertisesCommitsByID(c *qt.C, server *gitsourcetest.HTTPS) bool {
+	reference, err := gitsource.ParseReference(server.Reference("app.git"))
+	c.Assert(err, qt.IsNil)
+	dialer, auth, err := gitsource.Dial(reference,
+		gitsource.Credentials{Username: gitUser, Password: gitPassword}, gitsource.Trust{CAFile: server.CAFile})
+	c.Assert(err, qt.IsNil)
+	endpoint, err := gittransport.NewEndpoint(reference.URL.String())
+	c.Assert(err, qt.IsNil)
+	session, err := dialer.NewUploadPackSession(endpoint, auth)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = session.Close() }()
+	advertised, err := session.AdvertisedReferencesContext(context.Background())
+	c.Assert(err, qt.IsNil)
+	return advertised.Capabilities.Supports(capability.AllowReachableSHA1InWant) ||
+		advertised.Capabilities.Supports(capability.AllowTipSHA1InWant)
 }
 
 func schemaDigest(c *qt.C, content string) string {
@@ -107,10 +143,32 @@ func TestGitFetch_HappyPath(t *testing.T) {
 		c := qt.New(t)
 		u := newUntagged(c)
 		u.repository.Config(c, "uploadpack.allowReachableSHA1InWant", "true")
+		c.Assert(advertisesCommitsByID(c, u.server), qt.IsTrue)
 		result, err := gitFetch(c, u.server, gitsource.Options{Ref: gitsource.Ref{Commit: u.first}, Path: "db/schema.hcl", Kind: gitsource.File})
 		c.Assert(err, qt.IsNil)
 		c.Assert(result.Commit, qt.Equals, u.first)
 		c.Assert(result.ContentDigest, qt.Equals, schemaDigest(c, schemaV1))
+	})
+	// Git's smart HTTP server gives a commit a branch reaches without saying
+	// so: each request is answered on its own, against the refs as they are.
+	t.Run("a commit no ref names, over HTTPS from a server that does not say it gives commits by id", func(t *testing.T) {
+		c := qt.New(t)
+		u := newUntagged(c)
+		c.Assert(advertisesCommitsByID(c, u.server), qt.IsFalse)
+		result, err := gitFetch(c, u.server, gitsource.Options{Ref: gitsource.Ref{Commit: u.first}, Path: "db/schema.hcl", Kind: gitsource.File})
+		c.Assert(err, qt.IsNil)
+		c.Assert(result.Commit, qt.Equals, u.first)
+		c.Assert(result.ContentDigest, qt.Equals, schemaDigest(c, schemaV1))
+	})
+	t.Run("a commit the branch moved past is found along it over SSH", func(t *testing.T) {
+		c := qt.New(t)
+		u := newUntagged(c)
+		result, err := sshFetch(c, u.repository, gitsource.Options{
+			Ref:  gitsource.Ref{Branch: "main", Commit: u.first},
+			Path: "db/schema.hcl", Kind: gitsource.File, ExpectDigest: schemaDigest(c, schemaV1),
+		})
+		c.Assert(err, qt.IsNil)
+		c.Assert(result.Commit, qt.Equals, u.first)
 	})
 	t.Run("a commit alone that a tag names, from any server", func(t *testing.T) {
 		c := qt.New(t)
@@ -174,11 +232,23 @@ func TestGitFetch_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `.*may have been force-pushed away`)
 		c.Assert(result, qt.DeepEquals, gitsource.Result{})
 	})
-	t.Run("a commit no ref names, from a server that gives commits only at a ref", func(t *testing.T) {
+	// git-upload-pack over SSH holds one conversation, and gives only what it
+	// advertised unless it is configured to give more.
+	t.Run("a commit no ref names, over SSH from a server that gives commits only at a ref", func(t *testing.T) {
 		c := qt.New(t)
 		u := newUntagged(c)
-		result, err := gitFetch(c, u.server, gitsource.Options{Ref: gitsource.Ref{Commit: u.first}, Path: "db/schema.hcl", Kind: gitsource.File})
+		result, err := sshFetch(c, u.repository, gitsource.Options{Ref: gitsource.Ref{Commit: u.first}, Path: "db/schema.hcl", Kind: gitsource.File})
 		c.Assert(err, qt.ErrorIs, gitsource.ErrUnsupportedID)
+		c.Assert(err, qt.ErrorMatches, `.*no branch or tag names commit [0-9a-f]{40}, and the server gives commits only at a branch or tag`)
+		c.Assert(result, qt.DeepEquals, gitsource.Result{})
+	})
+	t.Run("a commit alone force-pushed away, over HTTPS", func(t *testing.T) {
+		c := qt.New(t)
+		h := newHistory(c)
+		h.repository.Reset(c, h.first)
+		result, err := gitFetch(c, h.server, gitsource.Options{Ref: gitsource.Ref{Commit: h.second}, Path: "db/schema.hcl", Kind: gitsource.File})
+		c.Assert(err, qt.ErrorIs, gitsource.ErrUnsupportedID)
+		c.Assert(err, qt.ErrorMatches, `.*no branch or tag names commit [0-9a-f]{40}, and the server did not give it by its id: .*not our ref.*`)
 		c.Assert(result, qt.DeepEquals, gitsource.Result{})
 	})
 	t.Run("content other than the expected digest", func(t *testing.T) {

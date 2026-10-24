@@ -44,7 +44,7 @@ const (
 )
 
 // deepenSteps are the depths a pinned commit is looked for along its branch
-// or tag when the server does not give commits by id. Each attempt is a
+// or tag when the server does not give it by its id. Each attempt is a
 // fetch of its own, all of them within MaxFetchBytes.
 var deepenSteps = []int{16, 256, 4096}
 
@@ -286,7 +286,26 @@ func (f *fetcher) commit(ctx context.Context) (*memory.Storage, *object.Commit, 
 	case advertisedValue(advertised, want),
 		advertised.Capabilities.Supports(capability.AllowReachableSHA1InWant):
 		return f.fetchOne(ctx, advertised, want, want, 1)
-	case tip.IsZero():
+	}
+	var refused error
+	if f.endpoint.Protocol == "https" {
+		// Git's smart HTTP server answers each request on its own and cannot
+		// know which refs the client was shown, so it gives any commit a
+		// branch or tag reaches without saying so in its advertisement.
+		storage, commit, err := f.fetchOne(ctx, advertised, want, want, 1)
+		switch {
+		case err == nil:
+			return storage, commit, nil
+		case errors.Is(err, ErrTooLarge), ctx.Err() != nil:
+			return nil, nil, err
+		}
+		refused = err
+	}
+	if tip.IsZero() {
+		if refused != nil {
+			return nil, nil, fmt.Errorf("%w: %s: no branch or tag names commit %s, and the server did not give it by its id: %w",
+				ErrUnsupportedID, f.options.Reference.Raw, want, refused)
+		}
 		return nil, nil, fmt.Errorf("%w: %s: no branch or tag names commit %s, and the server gives commits only at a branch or tag",
 			ErrUnsupportedID, f.options.Reference.Raw, want)
 	}

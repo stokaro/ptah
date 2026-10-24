@@ -71,12 +71,14 @@ to read:
 | `--commit <id>` | that commit, given as its full 40-character id |
 | `--branch main --commit <id>` | that commit, which the branch named when it was resolved |
 
-A commit the branch or tag still points at is fetched by the ref. One the ref
-has moved past is fetched by its id when the server allows it
-(`uploadpack.allowReachableSHA1InWant`; GitHub and GitLab do); otherwise Ptah
-looks for it along the branch or tag, up to 4,096 commits back. A commit that
-is no longer there, because the branch was force-pushed, is refused and says
-so.
+A commit the branch or tag still points at is fetched by the ref. Any other
+commit is asked for by its id over HTTPS: Git's smart HTTP server gives every
+commit a branch or tag reaches, whether or not its advertisement says so. Over
+SSH it is asked for by its id only when the server says it allows that
+(`uploadpack.allowReachableSHA1InWant`; GitHub and GitLab do). Where the server
+does not give the commit by its id, Ptah looks for it along the branch or tag,
+up to 4,096 commits back, and refuses `--commit` alone. A commit that is no
+longer there, because the branch was force-pushed, is refused and says so.
 
 ## Hold a pull to its content
 
