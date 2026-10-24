@@ -172,15 +172,22 @@ transaction runs on that session while no transaction is open on it.
 `schema diff` asks the server its `--from` side was read from, while that
 connection is still open: the `--from` database itself, or the dev database
 session the `--from` migration directory was replayed on, before the replay's
-cleanup. It does so when `--to` is a schema file or another declaration. A
-`--from` database answers without `--dev-url`.
+cleanup. It does so when `--to` is a schema file or another declaration, and
+when both sides are databases. A `--from` database answers without `--dev-url`.
 
 When `--from` is a schema file and `--to` is a database or a migration
 directory, `schema diff` creates the file on the `--dev-url` database, reads it
 back, and compares what it read. The `--from` side then holds the server's
 spelling too, as Atlas CE's does. Two schema files are compared as written: they
-spell an expression the same way when they declare the same schema. Two
-databases or directories both hold the server's spelling already.
+spell an expression the same way when they declare the same schema.
+
+Two databases are not always spelled alike, even on one server version. The
+server prints `kind IN ('a', 'b')` as `kind::text = ANY ((ARRAY['a'::character
+varying, 'b'::character varying])::text[])`. A migration that writes that text
+back stores `kind::text = ANY (ARRAY[('a'::character varying)::text, ...])`.
+`schema diff` therefore asks the `--from` database how it spells each
+expression of the `--to` database. A migration directory compared with a
+database is still compared as the two servers printed it.
 
 A declaration the server refuses is compared with Ptah's own folding instead.
 So is a comparison on a session with a transaction open, where the rollback
