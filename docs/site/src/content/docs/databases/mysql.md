@@ -581,6 +581,11 @@ MariaDB replaces a trigger that keeps its name with one
 `CREATE OR REPLACE TRIGGER`, which keeps the old trigger when the server
 refuses the new body and takes no lock. A rename takes the lock there too.
 
+The plan check rates the `DROP TRIGGER` of a trigger the block creates again as
+the change it is, a warning, so `--check-destructive` passes a changed
+trigger. The `DROP TRIGGER` of a renamed trigger's old name removes that
+trigger, and is destructive.
+
 - The statements run in order on one session, as `migrations up`,
   `schema apply` and `ptah-compat migrate apply` run them. A program that runs
   planned statements on a connection pool can leave a statement waiting behind

@@ -68,11 +68,24 @@ view is destructive because the plan drops it and creates it again; one whose
 only change is a setting its owner changes in place keeps its rows and is a
 warning.
 
-The severities describe the change, not the statements a plan writes for it.
-`ptah migrations plan --check-destructive` reads each statement, and does not
-count `DROP VIEW`, `DROP MATERIALIZED VIEW`, `DROP SEQUENCE` or `DROP TRIGGER`
-as destructive, so a plan can pass that check where the drift check at
-`--severity destructive` fails.
+The plan check rates the statements a plan writes for a change as this page
+rates the change, and tests plan each removal and each replacement on the
+engines that have it and fail when the two ratings differ:
+
+- `ptah migrations plan --check-destructive` refuses a plan that drops a
+  sequence, a view, a materialized view or a trigger, and rates a `REVOKE` a
+  warning.
+- A drop of a view or a trigger that the same plan creates again, under the
+  same name and for a trigger on the same table, replaces the object rather
+  than removing it. It is a warning, as `views_modified` and
+  `triggers_modified` are, and so is a `CREATE OR REPLACE` of either.
+- A drop with `CASCADE` stays destructive even when the object is created
+  again: `CASCADE` also drops every object that depends on it, and creating it
+  again does not bring them back. A PostgreSQL view whose column list changes
+  is dropped that way, so the plan check refuses a plan that changes one while
+  the drift report counts a modified view.
+- A sequence and a materialized view lose their position or their rows when
+  they are dropped, so a drop of either is destructive whatever follows it.
 
 ## Settings and parts of an object
 

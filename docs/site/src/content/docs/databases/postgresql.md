@@ -770,7 +770,10 @@ other direction.
 
 The drop is `DROP VIEW ... CASCADE`, so grants on a dropped view and any object
 that depends on it and that the schema does not declare go with it. A plan with
-no retyped column keeps `CREATE OR REPLACE VIEW`, which leaves both alone.
+no retyped column keeps `CREATE OR REPLACE VIEW`, which leaves both alone. The
+plan check rates the `DROP VIEW ... CASCADE` destructive although the plan
+creates the view again, so `--check-destructive` refuses the plan; a
+`CREATE OR REPLACE VIEW` is a warning.
 
 ## Materialized view refresh
 

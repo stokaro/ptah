@@ -47,8 +47,9 @@ func TestAssessSQL_ReplacingATableIsDestructive(t *testing.T) {
 
 // The words that only look like a replaced table replace nothing that holds
 // data: a plain CREATE TABLE, the TEMPORARY form (measured on MariaDB 12.3.3, the
-// table it shadows keeps its rows), a replaced view, and MySQL's REPLACE
-// statement, which writes rows.
+// table it shadows keeps its rows), and MySQL's REPLACE statement, which writes
+// rows. A replaced view holds no data either, and is the modification
+// TestAssessSQL_RatesEachReplacementPerEngine rates.
 func TestAssessSQL_WordsThatReplaceNoTable(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -57,7 +58,6 @@ func TestAssessSQL_WordsThatReplaceNoTable(t *testing.T) {
 		{name: "CREATE TABLE", statement: "CREATE TABLE victim (id INT)"},
 		{name: "a table named replace", statement: "CREATE TABLE `replace` (id INT)"},
 		{name: "CREATE OR REPLACE TEMPORARY TABLE", statement: "CREATE OR REPLACE TEMPORARY TABLE scratch (id INT)"},
-		{name: "CREATE OR REPLACE VIEW", statement: "CREATE OR REPLACE VIEW v AS SELECT id FROM victim"},
 		{name: "REPLACE INTO", statement: "REPLACE INTO victim (id) VALUES (1)"},
 		{name: "REPLACE without INTO", statement: "REPLACE victim VALUES (1)"},
 	}
