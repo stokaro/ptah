@@ -3,6 +3,8 @@ package sqlschema
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -11,6 +13,11 @@ import (
 // ErrStoredNameCollision is the refusal of a file in which two different names
 // are stored as one, in a namespace where the server refuses the second.
 var ErrStoredNameCollision = errors.New("two names the file writes are stored as one")
+
+// ErrNameInUse is the refusal of a file that declares a name already in use in
+// a namespace where the server refuses the second declaration, such as an
+// index named like a table, or a table created twice without IF NOT EXISTS.
+var ErrNameInUse = errors.New("a name the file declares is already in use")
 
 // StoredName is a name a statement wrote longer than the identifier limit of a
 // server that cuts it, and the name that server keeps.
@@ -54,19 +61,29 @@ func (n StoredName) String() string {
 //     foreign key of the same name;
 //   - column names are unique per table.
 //
-// Only a collision that cutting causes is decided here: two different written
-// names stored as one. Two declarations that write the same name are the rest
-// of the reader's business, as they were before names were cut.
+// A collision that cutting causes, two different written names stored as one,
+// is refused at once. A name written twice is held until the conversion has
+// run: the reader refuses some of those itself, in words of its own, such as
+// two constraints of one CREATE TABLE, and the rest it would merge into one
+// object, where the server refuses the second statement (stokaro/ptah#4914).
 type storedNames struct {
 	sourcePlatform string
 	defaultSchema  string
 	spaces         map[string]map[string]storedEntry
 	cut            []StoredName
+	// duplicate is the first name the current file declares again without
+	// IF NOT EXISTS, refused once its conversion has run.
+	duplicate error
+	// file numbers the file being read, counted from one, so a name an
+	// earlier file of a schema directory declared is told from this file's.
+	file int
 }
 
 type storedEntry struct {
 	kind    string
 	written string
+	// file numbers the file of a schema directory that declared the name.
+	file int
 }
 
 const (
@@ -140,11 +157,15 @@ var existingRule = map[bool]onExisting{false: refuseExisting, true: skipExisting
 // declare records one name. existed reports that the namespace already held
 // a name stored the same way.
 func (s *storedNames) declare(space, owner, kind, raw string, rule onExisting) (existed bool, err error) {
-	written := strings.TrimSpace(raw)
-	if written == "" {
+	if strings.TrimSpace(raw) == "" {
 		return false, nil
 	}
-	written = foldedIdentifierPart(s.sourcePlatform, written)
+	return s.declareName(space, owner, kind, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)), rule)
+}
+
+// declareName is [storedNames.declare] for a name already read the way the
+// server reads it, as [storedNames.relation] reads one.
+func (s *storedNames) declareName(space, owner, kind, written string, rule onExisting) (existed bool, err error) {
 	stored := storedIdentifier(s.sourcePlatform, written)
 	if written != stored {
 		s.cut = append(s.cut, StoredName{
@@ -160,10 +181,23 @@ func (s *storedNames) declare(space, owner, kind, raw string, rule onExisting) (
 	}
 	previous, found := names[stored]
 	if !found {
-		names[stored] = storedEntry{kind: kind, written: written}
+		names[stored] = storedEntry{kind: kind, written: written, file: s.file}
 		return false, nil
 	}
-	if previous.written == written || rule == skipExisting {
+	if rule == skipExisting {
+		return true, nil
+	}
+	if previous.written == written {
+		// A schema directory refuses an object of one kind that a later file
+		// declares again, in words of its own; a name taken across kinds, or
+		// within one file, is this check's.
+		if previous.file != s.file && previous.kind == kind {
+			return true, nil
+		}
+		if s.duplicate == nil {
+			s.duplicate = fmt.Errorf("%w: %s %q in %s takes the name of %s %q, and the server refuses the second declaration",
+				ErrNameInUse, kind, written, scopeLabel(space, owner), previous.kind, previous.written)
+		}
 		return true, nil
 	}
 	return true, fmt.Errorf("%w: %s %q and %s %q in %s are both stored as %q, and the server refuses the second",
@@ -171,14 +205,39 @@ func (s *storedNames) declare(space, owner, kind, raw string, rule onExisting) (
 }
 
 func (s *storedNames) drop(space, owner, raw string) {
-	name := foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw))
-	delete(s.spaces[spaceKey(space, owner)], storedIdentifier(s.sourcePlatform, name))
+	s.dropName(space, owner, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)))
+}
+
+// dropName is [storedNames.drop] for a name already read.
+func (s *storedNames) dropName(space, owner, written string) {
+	delete(s.spaces[spaceKey(space, owner)], storedIdentifier(s.sourcePlatform, written))
 }
 
 func (s *storedNames) rename(space, owner, kind, from, to string) error {
 	s.drop(space, owner, from)
 	_, err := s.declare(space, owner, kind, to, refuseExisting)
 	return err
+}
+
+// renameName is [storedNames.rename] from a name already read.
+func (s *storedNames) renameName(space, owner, kind, from, to string) error {
+	s.dropName(space, owner, from)
+	_, err := s.declare(space, owner, kind, to, refuseExisting)
+	return err
+}
+
+// repeatsIndexConstraint reports whether a PRIMARY KEY or UNIQUE constraint is
+// written, name and definition alike, by one that comes before it in the same
+// CREATE TABLE. The server keeps one of the two, measured on PostgreSQL 15.19;
+// it does that only for the constraints that build an index, and it refuses
+// two definitions under one name.
+func repeatsIndexConstraint(before []*ast.ConstraintNode, constraint *ast.ConstraintNode) bool {
+	if constraint == nil || (constraint.Type != ast.PrimaryKeyConstraint && constraint.Type != ast.UniqueConstraint) {
+		return false
+	}
+	return slices.ContainsFunc(before, func(earlier *ast.ConstraintNode) bool {
+		return earlier != nil && reflect.DeepEqual(*earlier, *constraint)
+	})
 }
 
 // dropTable forgets a table and everything declared on it.
@@ -218,7 +277,7 @@ func (s *storedNames) follow(statement ast.Node) error {
 			return nil
 		}
 		index := s.relation(node.Name)
-		return s.rename(relationSpace, index.schema, "index", index.written, node.NewName)
+		return s.renameName(relationSpace, index.schema, "index", index.written, node.NewName)
 	case *ast.DropIndexNode:
 		s.dropRelation(node.Name)
 	case *ast.DropViewNode:
@@ -237,18 +296,18 @@ func (s *storedNames) follow(statement ast.Node) error {
 
 func (s *storedNames) declareRelation(kind, raw string, rule onExisting) error {
 	name := s.relation(raw)
-	_, err := s.declare(relationSpace, name.schema, kind, name.written, rule)
+	_, err := s.declareName(relationSpace, name.schema, kind, name.written, rule)
 	return err
 }
 
 func (s *storedNames) dropRelation(raw string) {
 	name := s.relation(raw)
-	s.drop(relationSpace, name.schema, name.written)
+	s.dropName(relationSpace, name.schema, name.written)
 }
 
 func (s *storedNames) createTable(node *ast.CreateTableNode) error {
 	table := s.relation(node.Name)
-	existed, err := s.declare(relationSpace, table.schema, "table", table.written, existingRule[node.IfNotExists])
+	existed, err := s.declareName(relationSpace, table.schema, "table", table.written, existingRule[node.IfNotExists])
 	if err != nil || existed {
 		// A table declared again declares nothing new on it: the server either
 		// skipped the statement or refused it, and the reader decides which.
@@ -259,7 +318,10 @@ func (s *storedNames) createTable(node *ast.CreateTableNode) error {
 			return err
 		}
 	}
-	for _, constraint := range node.Constraints {
+	for i, constraint := range node.Constraints {
+		if repeatsIndexConstraint(node.Constraints[:i], constraint) {
+			continue
+		}
 		if err := s.constraint(table, constraint); err != nil {
 			return err
 		}
@@ -388,7 +450,8 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 func (s *storedNames) renameTable(table *relation, newName string) error {
 	renamed := s.relation(newName)
 	renamed.schema = table.schema
-	if err := s.rename(relationSpace, table.schema, "table", table.written, renamed.written); err != nil {
+	s.dropName(relationSpace, table.schema, table.written)
+	if _, err := s.declareName(relationSpace, table.schema, "table", renamed.written, refuseExisting); err != nil {
 		return err
 	}
 	for _, space := range []string{constraintSpace, columnSpace} {
@@ -402,21 +465,30 @@ func (s *storedNames) renameTable(table *relation, newName string) error {
 }
 
 // followStoredNames checks the names statements declare against the names the
-// document already holds, on a dialect whose server cuts long names, and
-// reports each name it cuts to notice. It runs before the conversion, which
-// records only the stored names and could not tell a collision from a
-// redeclaration.
-func (d *Document) followStoredNames(statements *ast.StatementList, dialect string, notice func(StoredName)) error {
+// document already holds and reports each name it cuts to notice. It runs
+// before the conversion, which records only the stored names and could not
+// tell a collision from a redeclaration, and refuses a collision that cutting
+// causes there. A name the file declares again is returned as pending, for
+// the caller to refuse once the conversion has run.
+//
+// The namespaces are PostgreSQL's catalog, measured on 15.19. The check runs
+// for the dialects whose descriptor says their server cuts long names the way
+// PostgreSQL's lexer does, PostgreSQL and YugabyteDB, which keep that catalog.
+// CockroachDB keeps a long name whole and names an index per table, so it is
+// not one of them.
+func (d *Document) followStoredNames(statements *ast.StatementList, dialect string, notice func(StoredName)) (pending, err error) {
 	if statements == nil || !cutsNames(dialect) {
-		return nil
+		return nil, nil
 	}
 	if d.names == nil || d.names.sourcePlatform != dialect {
 		d.names = newStoredNames(dialect)
 	}
+	d.names.duplicate = nil
+	d.names.file++
 	reported := len(d.names.cut)
 	for _, statement := range statements.Statements {
 		if err := d.names.follow(statement); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if notice != nil {
@@ -424,5 +496,5 @@ func (d *Document) followStoredNames(statements *ast.StatementList, dialect stri
 			notice(name)
 		}
 	}
-	return nil
+	return d.names.duplicate, nil
 }
