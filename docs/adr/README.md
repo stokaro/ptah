@@ -41,6 +41,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0029](0029-column-tables-need-no-protocol-change-and-the-address-stays-provider-owned.md) | Column tables need no protocol change, and the connection address stays provider-owned | Accepted |
 | [0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md) | ptah-compat resolves providers through the native pipeline | Accepted |
 | [0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md) | Official providers are installed separately, and Ptah pins no provider release | Accepted |
+| [0032](0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md) | The embedding store is a provider service, and the host keeps the lifecycle | Accepted |
 
 ## Writing one
 
