@@ -40,9 +40,12 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
 		return nil, err
 	}
+	// Matched counts the pairs a comparison made, for the drift report. It is
+	// not a change, and a plan that refused it would refuse every diff that
+	// keeps a table.
 	if err := onlyFields(*diff, "TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath"); err != nil {
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "Matched"); err != nil {
 		return nil, err
 	}
 	nodes := make([]ast.Node, 0)
