@@ -72,6 +72,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -595,7 +596,7 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 			PrimaryKey: cleanStrings(table.PrimaryKey),
 			Checks:     cleanStrings(table.Checks),
 			CustomSQL:  string(table.CustomSQL),
-			Overrides:  mergePlatform(table.Platform, table.Overrides),
+			Overrides:  mergePlatform(withoutGroups(table.Platform, owners.PlatformGroups()), table.Overrides),
 
 			Facets: facets,
 		})
@@ -1322,6 +1323,22 @@ func cleanStrings(values stringList) []string {
 		}
 	}
 	return result
+}
+
+// withoutGroups returns spec without the groups a document owner claims.
+// The value of such a group is the owner's, and a copy in the table's overrides
+// would reach a consumer that refuses overrides it cannot project. Only the
+// platform key is read this way: a group written under overrides stays, so it
+// is never dropped without reaching the owner.
+func withoutGroups(spec platformSpec, groups []string) platformSpec {
+	if !slices.ContainsFunc(groups, func(group string) bool { _, written := spec[group]; return written }) {
+		return spec
+	}
+	kept := maps.Clone(spec)
+	for _, group := range groups {
+		delete(kept, group)
+	}
+	return kept
 }
 
 func mergePlatform(primary, secondary platformSpec) map[string]map[string]string {

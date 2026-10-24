@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -15,6 +16,33 @@ import (
 
 	"ptah.run/core/yamlext"
 )
+
+// CheckYAMLKeys refuses a YAML key claim the host cannot read. A key without a
+// dot names a key of the document or of a table entry. A key with a dot claims
+// a group of the table entry's platform key, so it has table scope, is
+// "platform." and the name of an engine of the same provider, as the platform
+// key spells the engine, and no other dotted key is read.
+func CheckYAMLKeys(engines []*protocol.Engine) error {
+	for _, engine := range engines {
+		for _, claim := range engine.GetYamlSourceKeys() {
+			if !strings.Contains(claim.GetKey(), ".") {
+				continue
+			}
+			group, claimed := yamlext.PlatformGroup(claim.GetKey())
+			switch {
+			case !claimed:
+				return fmt.Errorf("YAML key %q of engine %q is dotted but is not %q and a group name", claim.GetKey(), engine.GetId(), yamlext.PlatformKeyPrefix)
+			case claim.GetScope() != protocol.YAMLSourceKey_TABLE:
+				return fmt.Errorf("YAML key %q of engine %q claims a platform group, which a table entry holds; its scope is %s", claim.GetKey(), engine.GetId(), claim.GetScope())
+			case !slices.ContainsFunc(engines, func(owner *protocol.Engine) bool {
+				return owner.GetId() == group || slices.Contains(owner.GetAliases(), group)
+			}):
+				return fmt.Errorf("YAML key %q of engine %q claims the platform group %q, which names no engine of the provider", claim.GetKey(), engine.GetId(), group)
+			}
+		}
+	}
+	return nil
+}
 
 // YAML captures one engine's negotiated YAML keys and all common table bindings.
 // Missing keys still enroll their models so the owner must state their coverage.

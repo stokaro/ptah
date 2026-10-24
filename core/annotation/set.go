@@ -461,6 +461,19 @@ func (s Set) Attributes(directive string) []Attribute {
 	return result
 }
 
+// ReadsPerFile reports whether an owner of the set holds the attribute name of
+// directive as its own, read per file (see [DirectiveAttributes.PerFile]). The
+// value is then the owner's, and the frontend does not keep it in its own model
+// beside the owner's.
+func (s Set) ReadsPerFile(directive, name string) bool {
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool {
+		return slices.ContainsFunc(extension.Attributes, func(group DirectiveAttributes) bool {
+			return group.PerFile && group.Directive == directive &&
+				slices.ContainsFunc(group.Attributes, func(attribute Attribute) bool { return attribute.Name == name })
+		})
+	})
+}
+
 // AttributedDirectives returns, sorted, the directives to which the set's
 // owners add attributes.
 func (s Set) AttributedDirectives() []string {

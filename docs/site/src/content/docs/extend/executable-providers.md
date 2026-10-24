@@ -61,6 +61,24 @@ reaches the provider with its captured state, and the drop is a step the
 provider must claim in the same way. Changes to existing columns, indexes, and
 table comments are refused. These services do not grant common SQL rendering.
 
+The common steps of a planning request include ordering markers beside the steps
+that change a table. A marker has no parent, no effects and no added column. It
+stands for the start or end of a phase of the plan, such as
+`common/prerequisite-creations`, and a provider orders its own steps against it.
+A lifecycle service that matches common steps to its tables must skip the
+markers: a step without a parent belongs to no table, and refusing it refuses
+every plan. A step with effects and a parent is a table change the service
+either claims or leaves to the host.
+
+Every value and native operation Ptah holds for an engine carries the engine's
+feature list as its target profile, and a comparison or a plan accepts one
+profile per batch. That includes a value decoded from a YAML or Go source. A
+provider that lists the same features in the session it opens and in the
+inspection snapshot it returns (`target_features`) as in its engine description
+gets one profile for observed, desired and planned values. A provider that
+leaves them empty refuses every comparison between an inspected facet and a
+declared one with "comparison requires one captured target profile".
+
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
@@ -455,7 +473,26 @@ rollback. A stale plan refuses application after the target changes.
 YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete
 interpretation and coverage from the owner. Unknown keys and unsupported values
-are refused. Source-loading support alone does not establish planning or execution support
+are refused.
+
+A provider can also claim the group of its own engine in a table's `platform`
+key, where the common syntax holds platform properties. The claim is a
+`TABLE` key `platform.<engine>`, and the engine is one the provider declares, by
+its ID or an alias. For a table that writes
+
+```yaml
+tables:
+  events:
+    platform:
+      ydb: {row_deletion_column: created_at, row_deletion_interval: PT1H}
+```
+
+the provider receives the mapping of the `ydb` group with its keys unprefixed,
+and Ptah keeps no copy of the group in the table's platform overrides. Groups of
+other engines stay in the overrides. A group written under `overrides` is not
+the provider's and stays there too. Ptah refuses at startup a dotted key that is
+not `platform.<engine>`, a platform group claimed at document scope, and a group
+that names no engine of the provider. Source-loading support alone does not establish planning or execution support
 for those objects and facets. Those operations require their own provider
 services and declarations.
 
@@ -496,6 +533,12 @@ directive of its own. A claim on any other Ptah directive, a scope that does not
 fit the directive, a claim without attributes and an attribute the directive
 already has are refused when the provider starts.
 
+An attribute can be a platform property, such as `platform.ydb.row_deletion_column`.
+The provider claims it by its full name. The value is then the provider's: Ptah
+sends it to the provider and does not keep a copy in the table's, column's or
+index's platform overrides. A platform property that no provider claims stays in
+those overrides, and the adapter refuses a table that carries one.
+
 Both kinds may sit before or after the `ptah:schema:table` comment. Ptah
 collects the directives of one Go file and sends them to the provider as one
 document, so a provider sees every table of the file when it decodes. A column
@@ -504,8 +547,15 @@ fragment subject: kind `column` or `index`, the table's schema, the table as the
 only path component and the written name. The provider answers with a value
 owned by that subject. Ptah refuses a value owned by another column or index
 instead of placing it, and refuses a directive whose field or index directive is
-missing, appears more than once in the comment, or has no `name`. Attribute
-values arrive as text, exactly as written, and the provider decides what a value
+missing, appears more than once in the comment, or has no `name`.
+
+A `TABLE` directive may also declare a value for a column of its own table, such
+as the columns of a column family: the provider names the column as kind `column`, the
+table's schema, the table as the only path component and the column's name. The
+column must be a field of the directive's struct. Ptah refuses a column of
+another table, and a column the struct does not declare.
+
+Attribute values arrive as text, exactly as written, and the provider decides what a value
 means. The source position of an attribute is the position of its comment.
 
 The execution adapter does not support managed data, database cleanup, or

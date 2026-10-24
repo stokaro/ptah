@@ -184,3 +184,35 @@ func TestNewSet_PerFileAttributesAndSubjects_HappyPath(t *testing.T) {
 	c.Assert(set.AttributedDirectives(), qt.DeepEquals, []string{"ptah:schema:field", "ptah:schema:index", "ptah:schema:table"})
 	c.Assert(set.Directives()[0].Describes, qt.Equals, annotation.SubjectIndex)
 }
+
+func TestSet_ReadsPerFile(t *testing.T) {
+	var files []*recordingFile
+	set, err := annotation.NewSet(perFileWidget(&files, nil, perFile("ptah:schema:table", "platform.widget.ttl")))
+	qt.New(t).Assert(err, qt.IsNil)
+	for _, row := range []struct {
+		name, directive, attribute string
+		want                       bool
+	}{
+		{"an attribute the owner reads per file", "ptah:schema:table", "platform.widget.ttl", true},
+		{"another attribute of the directive", "ptah:schema:table", "platform.widget.other", false},
+		{"the same attribute of another directive", "ptah:schema:field", "platform.widget.ttl", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(set.ReadsPerFile(row.directive, row.attribute), qt.Equals, row.want)
+		})
+	}
+}
+
+func TestSet_ReadsPerFile_NotForAnAttributeTheOwnerDecodesWholesale(t *testing.T) {
+	c := qt.New(t)
+	extension := widget("example.org/widget", "ptah:schema:widget")
+	extension.Attributes = []annotation.DirectiveAttributes{{Directive: "ptah:schema:table", Attributes: []annotation.Attribute{{Name: "platform.widget.ttl", Value: "string"}},
+		Decode: func(map[string]string) (schemaext.Facets, error) { return schemaext.Facets{}, nil }}}
+	set, err := annotation.NewSet(extension)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(set.ReadsPerFile("ptah:schema:table", "platform.widget.ttl"), qt.IsFalse,
+		qt.Commentf("the common model keeps a property an in-process owner reads, because the owner reads it from there"))
+}

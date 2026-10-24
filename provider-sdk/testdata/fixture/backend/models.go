@@ -64,3 +64,22 @@ func ScopedGoSourceDirectives() []*protocol.GoSourceDirective {
 		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:schema:index", Selector: "retention", Attributes: attributes, Models: models},
 	}
 }
+
+// PlatformSourceClaims returns the claims of a provider that keeps a
+// retention setting in the platform group of the common syntax, as
+// platform.fixture.seconds on a Go directive and as the fixture group of the
+// platform key in YAML, and that declares a setting of one column on the
+// directive of its table. The value is the provider's, so the host must not
+// keep a copy in the common model.
+func PlatformSourceClaims() (yaml []*protocol.YAMLSourceKey, directives []*protocol.GoSourceDirective) {
+	attributes := []string{"platform.fixture.seconds", "platform.fixture.minutes"}
+	models := []string{"example.org/fixture/retention"}
+	yaml = []*protocol.YAMLSourceKey{{Scope: protocol.YAMLSourceKey_TABLE, Key: "platform.fixture", Selector: "retention", Models: models}}
+	directives = []*protocol.GoSourceDirective{
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:schema:table", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_COLUMN, Directive: "ptah:schema:field", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_INDEX, Directive: "ptah:schema:index", Selector: "retention", Attributes: attributes, Models: models},
+		{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:placed", Selector: "retention", Attributes: []string{"seconds", "column", "of"}, Models: models},
+	}
+	return yaml, directives
+}

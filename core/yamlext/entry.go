@@ -61,6 +61,43 @@ type EntrySection struct {
 	Decode func(decode func(target any) error, table Table) ([]Contribution, error)
 }
 
+// PlatformKeyPrefix starts the key an owner uses to claim one group of the
+// table entry's platform key. A document that writes
+//
+//	platform:
+//	  ydb: {row_deletion_column: created_at}
+//
+// declares the group ydb, and the owner claims it as the table entry key
+// "platform.ydb". The key is not a spelling the document can contain: the
+// frontend finds the group under platform and hands the owner its value.
+const PlatformKeyPrefix = "platform."
+
+// PlatformGroup reports whether key claims a group of a table entry's platform
+// key, and which group. The key is [PlatformKeyPrefix] and a group name without
+// a dot.
+func PlatformGroup(key string) (group string, claimed bool) {
+	group, claimed = strings.CutPrefix(key, PlatformKeyPrefix)
+	if !claimed || strings.TrimSpace(group) == "" || strings.Contains(group, ".") {
+		return "", false
+	}
+	return group, true
+}
+
+// PlatformGroups returns, sorted, the groups of a table entry's platform key
+// that an owner of the set reads as a document owner (see [PlatformGroup]). The
+// value of such a group is the owner's: the frontend does not keep it in the
+// table's platform overrides.
+func (s Set) PlatformGroups() []string {
+	var groups []string
+	for key := range s.entryKeys[EntryTable] {
+		if group, claimed := PlatformGroup(key); claimed && s.DocumentKey(EntryTable, key) {
+			groups = append(groups, group)
+		}
+	}
+	slices.Sort(groups)
+	return groups
+}
+
 func (s *Set) claimEntryKeys(index int, extension Extension) error {
 	for _, group := range extension.EntryAttributes {
 		if !slices.Contains([]string{EntryTable, EntryIndex, EntryFunction, EntryMaterializedView}, group.Entry) || (group.Decode == nil && group.Parameters == nil) {
@@ -75,6 +112,13 @@ func (s *Set) claimEntryKeys(index int, extension Extension) error {
 	for _, section := range extension.EntrySections {
 		if section.Decode == nil && extension.Document == nil {
 			return fmt.Errorf("YAML extension of %s declares a table key without a decoder", extension.Owner)
+		}
+		if _, claimed := PlatformGroup(section.Key); strings.Contains(section.Key, ".") && !claimed {
+			return fmt.Errorf("YAML extension of %s declares the table key %q; a dotted table key claims a platform group and reads %q and a group name",
+				extension.Owner, section.Key, PlatformKeyPrefix)
+		}
+		if _, claimed := PlatformGroup(section.Key); claimed && section.Decode != nil {
+			return fmt.Errorf("YAML extension of %s decodes the platform group %q locally; only a document owner reads a platform group", extension.Owner, section.Key)
 		}
 		if err := s.claimEntryKey(index, extension, EntryTable, section.Key); err != nil {
 			return err

@@ -1,6 +1,7 @@
 package yamlext_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -138,6 +139,70 @@ func TestNewSet_EntryKeys_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(set.Selected(), qt.IsFalse)
+		})
+	}
+}
+
+func TestPlatformGroup(t *testing.T) {
+	for _, row := range []struct {
+		key, group string
+		claimed    bool
+	}{
+		{"platform.ydb", "ydb", true},
+		{"platform.", "", false},
+		{"platform. ", "", false},
+		{"platform.ydb.ttl", "", false},
+		{"platform", "", false},
+		{"ydb", "", false},
+		{"Platform.ydb", "", false},
+	} {
+		t.Run(row.key, func(t *testing.T) {
+			c := qt.New(t)
+
+			group, claimed := yamlext.PlatformGroup(row.key)
+
+			c.Assert(claimed, qt.Equals, row.claimed)
+			c.Assert(group, qt.Equals, row.group)
+		})
+	}
+}
+
+func TestSet_PlatformGroups(t *testing.T) {
+	c := qt.New(t)
+	document := func(context.Context, yamlext.Document) (yamlext.DocumentResult, error) {
+		return yamlext.DocumentResult{}, nil
+	}
+	set, err := yamlext.NewSet(yamlext.Extension{Owner: "example.org/a", Document: document,
+		EntrySections: []yamlext.EntrySection{{Key: "platform.zeta"}, {Key: "plain"}, {Key: "platform.alpha"}}})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(set.PlatformGroups(), qt.DeepEquals, []string{"alpha", "zeta"})
+}
+
+func TestNewSet_PlatformGroupClaims_FailurePath(t *testing.T) {
+	document := func(context.Context, yamlext.Document) (yamlext.DocumentResult, error) {
+		return yamlext.DocumentResult{}, nil
+	}
+	for _, row := range []struct {
+		name      string
+		extension yamlext.Extension
+		want      string
+	}{
+		{"a dotted key that is not a platform group", yamlext.Extension{Document: document, EntrySections: []yamlext.EntrySection{{Key: "a.b"}}},
+			`declares the table key "a.b"`},
+		{"a group with a dot", yamlext.Extension{Document: document, EntrySections: []yamlext.EntrySection{{Key: "platform.a.b"}}},
+			`declares the table key "platform.a.b"`},
+		{"a group a local decoder reads", yamlext.Extension{Kinds: []schemaext.Kind{levelKind}, Coverage: emptyClaim, EntrySections: []yamlext.EntrySection{{Key: "platform.a",
+			Decode: func(func(any) error, yamlext.Table) ([]yamlext.Contribution, error) { return nil, nil }}}},
+			`decodes the platform group "platform.a" locally`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			row.extension.Owner = "example.org/a"
+
+			_, err := yamlext.NewSet(row.extension)
+
+			c.Assert(err, qt.ErrorMatches, `.*`+row.want+`.*`)
 		})
 	}
 }
