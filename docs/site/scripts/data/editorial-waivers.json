@@ -120,6 +120,12 @@
     "reason": "The task keeps field-number compatibility, review, and verification in one stateful export workflow."
   },
   {
+    "route": "/schema/sql/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page is the single account of what the SQL schema reader accepts. Each statement it reads is described beside the rules for the statements around it, and splitting the page would separate a statement from the state it changes."
+  },
+  {
     "route": "/versioned/apply/",
     "check": "page-length",
     "target": "page",

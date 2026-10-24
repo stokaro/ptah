@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/ast"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -909,31 +909,28 @@ type deferralState struct {
 	initially  string
 }
 
-// postgresIdentifierBytes is NAMEDATALEN - 1: the server stores an identifier
-// cut to this many bytes.
-const postgresIdentifierBytes = 63
-
-// sameStoredName reports whether two spellings name one constraint. On the
-// PostgreSQL family a name longer than the limit is stored cut to it, so a file
-// that adds a constraint under the long name and alters it under the stored one
-// (as Ent's export does) names one constraint.
+// sameStoredName reports whether two spellings name one constraint. A server
+// that counts identifier limits in bytes keeps a longer name cut to the limit,
+// so a file that adds a constraint under the long name and alters it under the
+// stored one (as Ent's export does) names one constraint.
 func (t alterTarget) sameStoredName(declared, written string) bool {
 	if declared == written {
 		return true
 	}
-	if t.sourcePlatform != platform.Postgres && t.sourcePlatform != platform.YugabyteDB {
+	limit := factsOf(t.sourcePlatform).identifierLimit
+	if limit.Unit != string(capability.IdentifierBytes) || limit.Max <= 0 {
 		return false
 	}
-	return storedIdentifier(declared) == storedIdentifier(written)
+	return storedIdentifier(declared, limit.Max) == storedIdentifier(written, limit.Max)
 }
 
 // storedIdentifier cuts name to the bytes the server keeps, on a character
 // boundary as the server does.
-func storedIdentifier(name string) string {
-	if len(name) <= postgresIdentifierBytes {
+func storedIdentifier(name string, limit int) string {
+	if len(name) <= limit {
 		return name
 	}
-	cut := postgresIdentifierBytes
+	cut := limit
 	for cut > 0 && !utf8.RuneStart(name[cut]) {
 		cut--
 	}
