@@ -15,8 +15,9 @@ const renderIndent = "  "
 // binary does when it is given an indent. That binary reads the indent as the
 // unit a statement's inner lines are indented by, not as a prefix: a statement
 // and the comment above it start at the first column, and the columns of a
-// CREATE TABLE sit one indent in. Measured on v1.0.0 against PostgreSQL 15.19,
-// `{{ sql . "\t" }}` writes
+// CREATE TABLE sit one indent in. Measured on v1.3.0, the version
+// internal/atlasreference pins, against PostgreSQL 15.19 (v1.0.0 writes the
+// same bytes), `{{ sql . "\t" }}` writes
 //
 //	-- Create "owners" table
 //	CREATE TABLE "owners" (
