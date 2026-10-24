@@ -80,14 +80,21 @@ type objectKind struct {
 // Every category [ClassifySchemaDiff] reports either belongs to one of these
 // kinds or names something that is not a kind of object:
 //
-//   - stem_modified counts the pairs of a kind that differ. They are already
-//     counted on both sides.
+//   - stem_modified, indexes_renamed and constraints_validated count the
+//     pairs of a kind that differ, and the plan changes in place. They are
+//     already counted on both sides.
 //   - unique_protections_removed counts index removals a UNIQUE constraint
 //     enforces. Each is one of the indexes_removed already.
 //   - rls_force_added and rls_force_removed count tables whose FORCE ROW LEVEL
 //     SECURITY flag turns on and off. The flag is a setting of a table, and a
 //     table this diff enables carries its FORCE in the enablement, so counting
 //     the flag here would miss it.
+//   - index_visibility_changed counts indexes whose visibility to the
+//     optimizer changes, a setting of an index both sides hold.
+//   - grant_options_added and grant_options_removed count grants whose WITH
+//     GRANT OPTION turns on and off, a setting of a grant both sides hold.
+//   - comments_changed counts the comments a plan writes in place, each on an
+//     object counted under its own kind.
 //   - vector_dimension_changed counts column modifications, which
 //     columns_modified counts as well.
 //   - table_constraints_added and table_constraints_removed count a table's own
@@ -189,6 +196,65 @@ var objectKinds = []objectKind{
 		added:         func(d *difftypes.SchemaDiff) int { return len(d.ConstraintsAdded) },
 		removed:       func(d *difftypes.SchemaDiff) int { return len(d.ConstraintsRemoved) },
 		addedSeverity: Warning, removedSeverity: Destructive,
+	},
+	// A sequence holds its position, which no declaration carries: one
+	// dropped and created again starts over, and its next value can be a key
+	// a row already holds.
+	{
+		stem:          "sequences",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.Sequences },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.SequencesAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.SequencesRemoved) },
+		addedSeverity: Safe, removedSeverity: Destructive,
+	},
+	// A view holds no rows, but readers and other views query it by name, as
+	// they call a function, and a removed one has no declaration to restore it
+	// from.
+	{
+		stem:          "views",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.Views },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.ViewsAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.ViewsRemoved) },
+		addedSeverity: Safe, removedSeverity: Destructive,
+	},
+	// A dropped materialized view takes its rows with it.
+	{
+		stem:          "materialized_views",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.MaterializedViews },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.MaterializedViewsAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.MaterializedViewsRemoved) },
+		addedSeverity: Safe, removedSeverity: Destructive,
+	},
+	// A trigger runs on every write to its table, so removing one removes
+	// executable behavior, as removing a function does. On PostgreSQL the plan
+	// drops the function Ptah generated for the trigger with it.
+	{
+		stem:          "triggers",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.Triggers },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.TriggersAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.TriggersRemoved) },
+		addedSeverity: Safe, removedSeverity: Destructive,
+	},
+	// A grant and a membership hold no data and no behavior, and the entry
+	// names everything the statement that gives them back needs, so a removal
+	// is a warning, as an index's is: a role loses what it relied on, and the
+	// grant a rollback writes restores it. An addition is rated as roles_added
+	// is, and as the plan rates GRANT: the declaration asks for the access.
+	// A REVOKE the declaration states for an object the plan creates is one of
+	// the grants_removed; see [difftypes.MatchedCounts.Grants].
+	{
+		stem:          "grants",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.Grants },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.GrantsAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.GrantsRemoved) },
+		addedSeverity: Safe, removedSeverity: Warning,
+	},
+	{
+		stem:          "role_memberships",
+		matched:       func(d *difftypes.SchemaDiff) int { return d.Matched.RoleMemberships },
+		added:         func(d *difftypes.SchemaDiff) int { return len(d.RoleMembershipsAdded) },
+		removed:       func(d *difftypes.SchemaDiff) int { return len(d.RoleMembershipsRemoved) },
+		addedSeverity: Safe, removedSeverity: Warning,
 	},
 }
 

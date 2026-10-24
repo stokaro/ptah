@@ -102,3 +102,46 @@ func TestCompareSchemas_ADocumentAgainstItselfCountsEveryKindAlike(t *testing.T)
 		})
 	}
 }
+
+// TestCompareSchemas_CountsTheKindsBesideTables is the same invariant for the
+// kinds a table does not hold, on PostgreSQL, which has them all: a sequence, a
+// view, a materialized view, a trigger, and a role with a grant.
+func TestCompareSchemas_CountsTheKindsBesideTables(t *testing.T) {
+	c := qt.New(t)
+	document := func() *schemamodel.Database {
+		db := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+			Fields: []schemamodel.Field{
+				{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
+				{StructName: "User", Name: "email", Type: "TEXT"},
+			},
+			Sequences:         []schemamodel.Sequence{{Name: "order_seq"}},
+			Views:             []schemamodel.View{{Name: "user_emails", Body: "SELECT email FROM users"}},
+			MaterializedViews: []schemamodel.MaterializedView{{Name: "user_count", Body: "SELECT count(*) AS n FROM users"}},
+			Triggers: []schemamodel.Trigger{{
+				StructName: "User", Name: "touch_users", Table: "users",
+				Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW", Body: "RETURN NEW;",
+			}},
+			Roles:  []schemamodel.Role{{Name: "app_reader"}},
+			Grants: []schemamodel.Grant{{Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		}
+		schemamodel.Finalize(db)
+		return db
+	}
+	runtime := must.Must(builtin.New())
+
+	diff, err := schemadiff.CompareSchemas(t.Context(), document(), document(), platform.Postgres, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(safety.Inventory(diff), qt.DeepEquals, []safety.InventoryEntry{
+		{Kind: "columns", Desired: 2, Observed: 2},
+		{Kind: "grants", Desired: 1, Observed: 1},
+		{Kind: "materialized_views", Desired: 1, Observed: 1},
+		{Kind: "roles", Desired: 1, Observed: 1},
+		{Kind: "sequences", Desired: 1, Observed: 1},
+		{Kind: "tables", Desired: 1, Observed: 1},
+		{Kind: "triggers", Desired: 1, Observed: 1},
+		{Kind: "views", Desired: 1, Observed: 1},
+	})
+}

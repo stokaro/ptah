@@ -212,6 +212,16 @@ concern a whole namespace. Text summaries count these as comparison limits.
 `github-actions` annotates every limit. `ptah schema serve` counts and lists them
 the same way.
 
+### What each finding names
+
+A finding is named for the kind of object it counts and for what applying the
+desired schema would do to it: `<kind>_added` counts the objects the database
+lacks, `<kind>_removed` the objects the desired schema does not declare, and
+`<kind>_modified` the objects both hold that differ. Every difference the
+comparison reports is counted under a category, so a report whose `drift` is
+true has at least one finding. [Drift findings](../../reference/drift-findings/)
+lists every category and the severity it carries.
+
 ### How much each side holds
 
 The findings say what differs. The JSON report's `inventory` says how much of
@@ -254,7 +264,10 @@ findings do:
   types both sides hold, so a table only one side holds counts under `tables`
   and its columns are not counted;
 - an index or a constraint whose definition changed is dropped and created
-  again, so it counts once on each side and not as one object both hold.
+  again, so it counts once on each side and not as one object both hold. A
+  materialized view whose definition changed is dropped and created again too,
+  but the comparison reports it as `materialized_views_modified`, so it counts
+  as one object both sides hold.
 
 | Kind | What it counts |
 | --- | --- |
@@ -265,17 +278,29 @@ findings do:
 | `enums` | Enum types. |
 | `enum_values` | Values of the enum types both sides hold. |
 | `functions` | Functions and procedures, one per overload. |
+| `sequences` | Standalone sequences. The sequence behind a SERIAL or identity column belongs to its column and is not counted. |
+| `views` | Views. |
+| `materialized_views` | Materialized views. |
+| `triggers` | Triggers. |
 | `roles` | The roles the desired schema declares. A role it does not declare is not compared, so the database side counts only the declared roles it holds. |
+| `role_memberships` | Memberships of a role in another, on YDB, the target that compares them. The database side counts the declared memberships it holds, and every membership between two declared roles. |
+| `grants` | Privileges, one per role, privilege and object, or column of an object. A declared `ALL` is one, however many privileges the database reports for it. |
 | `schemas` | Databases, on a comparison of a whole MySQL or MariaDB server. |
+
+The database side of `grants` counts every privilege the database holds for a
+role the desired schema declares, and each privilege the desired schema grants
+another role that the database holds. A `REVOKE` the desired schema states for
+an object the plan creates counts on the database side too: the plan revokes
+what PostgreSQL grants the object when it is created, so the `REVOKE` names a
+privilege the database does not hold yet.
 
 `rls_policies` and `rls_enabled_tables` count the policies and the enablements
 the shared comparison pairs. Against PostgreSQL, policies and row-level security
 belong to their feature owner, so a PostgreSQL report has neither kind.
 
 An object a feature owner compares, such as a PostgreSQL extension, policy or
-domain, has no inventory entry. Its findings are named
-`feature_changes:<change kind>`, and the owner reports the objects that differ
-and not how many match.
+domain, has no inventory entry: the owner reports the objects that differ and
+not how many match.
 
 ### An extension the schema does not describe
 

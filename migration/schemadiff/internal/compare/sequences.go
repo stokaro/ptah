@@ -76,6 +76,7 @@ func sequencesWithSemantics(
 			diff.SequencesAdded = append(diff.SequencesAdded, generatedSequence)
 			continue
 		}
+		diff.Matched.Sequences++
 		if changes := sequenceChanges(generatedSequence, databaseSequence); len(changes) > 0 {
 			diff.SequencesModified = append(diff.SequencesModified, difftypes.SequenceDiff{
 				SequenceName: generatedNames[identity],

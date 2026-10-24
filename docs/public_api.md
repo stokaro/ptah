@@ -2834,6 +2834,12 @@ documents what each pair count holds; a diff assembled by hand carries zero
 pairs. A feature owner's objects are not counted. `functions_removed` counts the
 procedures a diff removes beside the functions.
 
+`ClassifySchemaDiff` counts every change a comparison reports under at least
+one category, so a diff for which `HasChanges` answers true has findings. A
+modified table or enum type is counted by what changed in it. The categories
+and their severities are listed on the drift findings reference page,
+`docs/site/src/content/docs/reference/drift-findings.md`.
+
 `migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
 once and returns a `RenderedPlan`: the rendering request, which holds the
 planned nodes, and one fragment per node. `Units()` returns SQL or native
