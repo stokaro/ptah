@@ -116,9 +116,9 @@ when it is no longer an eligible rollback target.
 
 ## What is supported today
 
-PostgreSQL with pgvector or YDB, and an embedding endpoint that speaks the
-OpenAI-compatible `/v1/embeddings` API. No other database engine and no other
-provider API. On YDB the consistency mode is `immutable`, because the outbox
+PostgreSQL with pgvector, YDB, or an engine whose executable provider keeps an
+embedding store, and an embedding endpoint that speaks the OpenAI-compatible
+`/v1/embeddings` API. No other database engine and no other provider API. On YDB the consistency mode is `immutable`, because the outbox
 needs row triggers YDB does not have.
 [Support and limitations](../reference/support-and-limitations/) is the exact
 list, including what Ptah cannot check for you.

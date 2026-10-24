@@ -154,10 +154,36 @@ type Started struct {
 
 	host     *providerhost.Host
 	provider engine.Provider
+	target   string
 }
 
 // Close stops the provider process.
 func (s *Started) Close() { s.host.Close() }
+
+// EmbeddingStore returns the embedding store of the engine the invocation
+// selected, for the requests that need no session, or refuses an engine whose
+// provider keeps none.
+func (s *Started) EmbeddingStore() (providerhost.EmbeddingStore, error) {
+	return s.host.EmbeddingStore(s.target)
+}
+
+type startedKey struct{}
+
+// WithStarted returns a context from which [StartedFrom] returns started, for
+// a command that asks the provider it selected for a request with no
+// connection.
+func WithStarted(ctx context.Context, started *Started) context.Context {
+	return context.WithValue(ctx, startedKey{}, started)
+}
+
+// StartedFrom returns the provider [WithStarted] installed, or nil.
+func StartedFrom(ctx context.Context) *Started {
+	if ctx == nil {
+		return nil
+	}
+	started, _ := ctx.Value(startedKey{}).(*Started)
+	return started
+}
 
 // Start verifies the chosen installation, starts it, and builds the runtime for
 // mode. Every failure closes any process it started.
@@ -176,7 +202,7 @@ func (c *Choice) Start(ctx context.Context, mode Mode) (*Started, error) {
 		host.Close()
 		return nil, err
 	}
-	started := &Started{Runtime: runtime, Connections: host.Connections(), host: host, provider: host.Provider()}
+	started := &Started{Runtime: runtime, Connections: host.Connections(), host: host, provider: host.Provider(), target: c.Target}
 	if owner := host.DevDatabases(); owner != nil {
 		started.Dev = owner
 	}

@@ -159,7 +159,7 @@ func TestReproducibility_DescribeAndThePlanWordAPartialAnswerIdentically(t *test
 	c := qt.New(t)
 	loaded := embedspec.Loaded{Spec: describableSpec("")}
 
-	described, err := DescribeSpecification(loaded)
+	described, err := DescribeSpecification(c.Context(), loaded)
 	c.Assert(err, qt.IsNil)
 
 	fact := reproducibilityFact(c, configuredFacts(loaded))
@@ -175,7 +175,7 @@ func TestReproducibility_OnlyThePlanCarriesAPremiseForAFullAnswer(t *testing.T) 
 	c := qt.New(t)
 	loaded := embedspec.Loaded{Spec: describableSpec("1")}
 
-	described, err := DescribeSpecification(loaded)
+	described, err := DescribeSpecification(c.Context(), loaded)
 	c.Assert(err, qt.IsNil)
 
 	fact := reproducibilityFact(c, configuredFacts(loaded))

@@ -1,10 +1,12 @@
 package embedconnect_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/embedconnect"
 	"ptah.run/internal/embedgen"
 )
@@ -23,7 +25,7 @@ func TestRefuseAnotherEngine_HappyPath(t *testing.T) {
 	} {
 		t.Run(dbURL, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(embedconnect.RefuseAnotherEngine(dbURL), qt.IsNil)
+			c.Assert(embedconnect.RefuseAnotherEngine(c.Context(), dbURL), qt.IsNil)
 		})
 	}
 }
@@ -37,18 +39,40 @@ func TestRefuseAnotherEngine_FailurePath(t *testing.T) {
 		want  string
 	}{
 		{name: "mysql", dbURL: "mysql://localhost:3306/db",
-			want: `ptah inference works against PostgreSQL with pgvector and against YDB, and "mysql://" names ` +
-				`another engine: a generation's run state and its vectors need one of those two, so there is ` +
-				`nothing here to run against mysql`},
+			want: `ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine ` +
+				`with an embedding store, and "mysql://" names another engine: a generation's run state and its ` +
+				`vectors need one of those, so there is nothing here to run against mysql`},
 		{name: "the PostgreSQL family", dbURL: "crdb://localhost:26257/db",
 			want: `.* "crdb://" names another engine: .* run against cockroachdb`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(embedconnect.RefuseAnotherEngine(test.dbURL), qt.ErrorMatches, test.want)
+			c.Assert(embedconnect.RefuseAnotherEngine(c.Context(), test.dbURL), qt.ErrorMatches, test.want)
 		})
 	}
+}
+
+// connector stands for a provider's connector. Nothing here opens it.
+type connector struct{}
+
+func (connector) Open(context.Context, dbschema.NativeRequest) (dbschema.NativeSession, error) {
+	panic("the refusal is decided before anything connects")
+}
+
+// A scheme a selected provider serves is the provider's to answer, even when
+// Ptah knows the dialect it names: the provider owns that engine for the
+// invocation, and its embedding store says what it can hold.
+func TestRefuseAnotherEngine_AProviderServesTheScheme(t *testing.T) {
+	c := qt.New(t)
+	ctx, err := dbschema.WithNativeConnections(c.Context(),
+		map[string]dbschema.NativeRegistration{"mysql": {Target: "mysql", Connector: connector{}}})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(embedconnect.RefuseAnotherEngine(ctx, "mysql://localhost:3306/db"), qt.IsNil)
+	c.Assert(embedconnect.RefuseAnotherEngine(ctx, "MySQL://localhost:3306/db"), qt.IsNil)
+	c.Assert(embedconnect.RefuseAnotherEngine(c.Context(), "mysql://localhost:3306/db"), qt.ErrorMatches,
+		`.* "mysql://" names another engine: .*`)
 }
 
 // targetSpec is a specification that describes a target on either engine but
@@ -79,7 +103,7 @@ func TestTargetObjects_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.representation, func(t *testing.T) {
 			c := qt.New(t)
-			objects, err := embedconnect.TargetObjects(targetSpec(test.representation))
+			objects, err := embedconnect.TargetObjects(c.Context(), targetSpec(test.representation))
 			c.Assert(err, qt.IsNil)
 			c.Assert(objects.Column.Type, qt.Equals, test.wantType)
 		})
@@ -93,7 +117,7 @@ func TestTargetObjects_FailurePath(t *testing.T) {
 	spec := targetSpec("bfloat16")
 	spec.Target.IndexMethod = "hnsw"
 
-	objects, err := embedconnect.TargetObjects(spec)
+	objects, err := embedconnect.TargetObjects(c.Context(), spec)
 
 	c.Assert(err, qt.ErrorMatches, `target objects: no operator class is known for representation "bfloat16"`)
 	c.Assert(objects, qt.DeepEquals, embedgen.TargetObjects{})

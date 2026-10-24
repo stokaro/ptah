@@ -1237,6 +1237,8 @@ write state on the token it was read with and refuse a second writer with an
 old one, commit a batch with its checkpoint, refuse a malformed batch before
 sending it, report a lost write as unknown without sending it again, assign
 event sequences, page the source and the verification walk, and answer the
-storage calls. The fixture provider does not serve the store;
-[issue #4204](https://github.com/stokaro/ptah/issues/4204) owns its SQLite
-implementation and the process tests.
+storage calls. The fixture's `embeddings` program serves the store on SQLite,
+and the process tests in `integration` run against it: prepare, scan and
+resume, a batch commit and a conflicting one, verification paging, an
+exhaustive search, structure and counts, retirement with an ownership refusal,
+and a crash after a commit whose checkpoint the next read shows.

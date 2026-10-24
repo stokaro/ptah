@@ -172,7 +172,7 @@ func runAbandon(
 	if reason == "" {
 		return fmt.Errorf("--reason is required")
 	}
-	if err := validateDatabaseURL(dbURL); err != nil {
+	if err := validateDatabaseURL(ctx, dbURL); err != nil {
 		return err
 	}
 	backend, err := embedconnect.Open(ctx, dbURL)

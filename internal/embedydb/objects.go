@@ -91,8 +91,7 @@ func vectorColumn(spec embedgen.Spec) schemamodel.Field {
 		Name:       spec.Target.Column,
 		Type:       ColumnType,
 		Nullable:   true,
-		Comment: fmt.Sprintf("embedding generation %s (%s, %s)",
-			spec.Identity().Short(), spec.Model.Identifier, spec.Target.Metric),
+		Comment:    spec.ColumnComment(),
 	}
 }
 

@@ -76,6 +76,31 @@ func TestHatchedByInterface_IsWrittenDown(t *testing.T) {
 		"ptah.run/internal/embedpg.Unprocessed",
 		// The second error type's Unwrap.
 		"ptah.run/internal/embedprovider.Unwrap",
+		// The backend over a provider's embedding store, reached through
+		// embedbackend's contract and the engine's narrow interfaces for the
+		// same reason as the two above. integration/providercli drives each of
+		// them through the command line against the fixture provider.
+		"ptah.run/internal/embedrpc.AppendEvent",
+		"ptah.run/internal/embedrpc.Commit",
+		"ptah.run/internal/embedrpc.CountGenerationRows",
+		"ptah.run/internal/embedrpc.Current",
+		"ptah.run/internal/embedrpc.Dialect",
+		"ptah.run/internal/embedrpc.EnsureRunIndex",
+		"ptah.run/internal/embedrpc.EnsureSchema",
+		"ptah.run/internal/embedrpc.Events",
+		"ptah.run/internal/embedrpc.GenerationIndexExists",
+		"ptah.run/internal/embedrpc.Measure",
+		"ptah.run/internal/embedrpc.NewSearcher",
+		"ptah.run/internal/embedrpc.NewSource",
+		"ptah.run/internal/embedrpc.NewTarget",
+		"ptah.run/internal/embedrpc.PrepareRun",
+		"ptah.run/internal/embedrpc.QueryParameters",
+		"ptah.run/internal/embedrpc.ReadStructure",
+		"ptah.run/internal/embedrpc.RunsForGeneration",
+		"ptah.run/internal/embedrpc.Scan",
+		"ptah.run/internal/embedrpc.Search",
+		"ptah.run/internal/embedrpc.VerificationCorpus",
+		"ptah.run/internal/embedrpc.WithResolvedRelations",
 		// The YDB backend, reached through embedbackend's contract for the
 		// same reason as the PostgreSQL one above. The integration suite's YDB
 		// lifecycle test drives each of them through the command line.

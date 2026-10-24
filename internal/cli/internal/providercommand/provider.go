@@ -118,5 +118,5 @@ func apply(ctx context.Context, started *providerselect.Started) (context.Contex
 	if started.Dev != nil {
 		selected = devdocker.WithExternal(selected, started.Dev)
 	}
-	return selected, nil
+	return providerselect.WithStarted(selected, started), nil
 }

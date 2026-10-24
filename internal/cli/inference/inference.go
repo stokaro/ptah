@@ -9,6 +9,8 @@ package inference
 
 import (
 	"github.com/spf13/cobra"
+
+	"ptah.run/internal/cli/internal/providercommand"
 )
 
 // NewCommand returns the inference command tree.
@@ -47,29 +49,38 @@ None of them is implied by another. A backfill finishing does not mean the
 corpus is right; verification passing does not mean anything has cut over; and
 cutting over does not make the old generation disposable.
 
-The database is PostgreSQL with pgvector or YDB, and the --db-url scheme
-decides which. Both keep the run state in tables of their own beside the
-vectors. On YDB a vector is stored as a float vector in a String column and
-indexed with vector_kmeans_tree, and the consistency mode is immutable: the
-outbox mode records changes with row triggers, which YDB does not have.`,
+The database is PostgreSQL with pgvector, YDB, or an engine whose executable
+provider keeps an embedding store, and the --db-url scheme decides which. Each
+keeps the run state in tables of its own beside the vectors. On YDB a vector is
+stored as a float vector in a String column and indexed with vector_kmeans_tree,
+and the consistency mode is immutable: the outbox mode records changes with row
+triggers, which YDB does not have.
+
+--provider-config and --provider-engine select an executable provider, as they
+do for ptah schema and ptah migrations. The provider then owns the run-state
+layout, the vector storage, the index and the searches, and builds immutable
+generations; Ptah keeps every lifecycle decision.`,
 		SilenceUsage: true,
 	}
 
-	cmd.AddCommand(newDescribeCommand())
+	cmd.AddCommand(withProvider(newDescribeCommand()))
+	// probe asks the embedding endpoint and reaches no database, so it has no
+	// engine for a provider to serve.
 	cmd.AddCommand(newProbeCommand())
-	cmd.AddCommand(newPlanCommand())
-	cmd.AddCommand(newPrepareCommand())
-	cmd.AddCommand(newBackfillCommand())
-	cmd.AddCommand(newCatchUpCommand())
-	cmd.AddCommand(newIndexCommand())
-	cmd.AddCommand(newPauseCommand())
-	cmd.AddCommand(newResumeCommand())
-	cmd.AddCommand(newAbandonCommand())
-	cmd.AddCommand(newVerifyCommand())
-	cmd.AddCommand(newEvaluateCommand())
-	cmd.AddCommand(newStatusCommand())
-	cmd.AddCommand(newCutoverCommand())
-	cmd.AddCommand(newRollbackCommand())
-	cmd.AddCommand(newRetireCommand())
+	for _, verb := range []*cobra.Command{
+		newPlanCommand(), newPrepareCommand(), newBackfillCommand(), newCatchUpCommand(), newIndexCommand(),
+		newPauseCommand(), newResumeCommand(), newAbandonCommand(), newVerifyCommand(), newEvaluateCommand(),
+		newStatusCommand(), newCutoverCommand(), newRollbackCommand(), newRetireCommand(),
+	} {
+		cmd.AddCommand(withProvider(verb))
+	}
 	return cmd
+}
+
+// withProvider gives a verb the shared --provider-config and
+// --provider-engine flags. A selected provider serves the verb's database URL
+// and, for describe, the engine the target objects are described for. A
+// failure to select or start one is the verb's own error.
+func withProvider(verb *cobra.Command) *cobra.Command {
+	return providercommand.Configure(verb, func(_ *cobra.Command, err error) error { return err })
 }

@@ -93,7 +93,7 @@ func (s *session) close() {
 // a registry, and a run that was going to be refused for naming no database
 // should not spend a network round trip finding that out.
 func open(ctx context.Context, options commonOptions) (*session, error) {
-	if err := validateDatabaseURL(options.dbURL); err != nil {
+	if err := validateDatabaseURL(ctx, options.dbURL); err != nil {
 		return nil, err
 	}
 	loaded, err := options.spec.resolve(ctx)
@@ -124,11 +124,11 @@ func open(ctx context.Context, options commonOptions) (*session, error) {
 // require opening it. Kept separate from the connection so specification-led
 // verbs preserve their error order: arguments and engine first, specification
 // second, network third.
-func validateDatabaseURL(dbURL string) error {
+func validateDatabaseURL(ctx context.Context, dbURL string) error {
 	if strings.TrimSpace(dbURL) == "" {
 		return fmt.Errorf("--db-url is required")
 	}
-	return embedconnect.RefuseAnotherEngine(dbURL)
+	return embedconnect.RefuseAnotherEngine(ctx, dbURL)
 }
 
 // resolve reads the specification from wherever the operator put it: a file

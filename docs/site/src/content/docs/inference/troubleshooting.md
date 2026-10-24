@@ -23,13 +23,16 @@ disposition: keep
 
 Each entry is a message you might see, what it means, and the fix.
 
-## `ptah inference works against PostgreSQL with pgvector and against YDB`
+## `ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine`
 
 **Cause.** The `--db-url` names another engine. The run state and the vectors
-live in the database, and the two engines with a backend for them are
-PostgreSQL with pgvector and YDB.
+live in the database, and the engines with a backend for them are PostgreSQL
+with pgvector, YDB, and an engine whose executable provider keeps an embedding
+store.
 
-**Fix.** Point it at a PostgreSQL database with pgvector or at a YDB database.
+**Fix.** Point it at a PostgreSQL database with pgvector or at a YDB database,
+or select the provider that serves the engine with `--provider-config` or
+`--provider-engine`.
 
 ## `has no triggers, and the outbox consistency mode records each source change`
 

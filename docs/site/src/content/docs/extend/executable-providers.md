@@ -20,6 +20,8 @@ sourceOfTruth:
   - "integration/providercli/provider_devclean_e2e_test.go"
   - "integration/providercli/provider_sql_lint_e2e_test.go"
   - "integration/providercli/provider_data_e2e_test.go"
+  - "internal/embedrpc"
+  - "integration/providercli/provider_inference_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -43,6 +45,7 @@ Provider selection is available on these native commands:
   and `migrations repair`.
 - Lint: `migrations lint` and `sql lint`.
 - Declared rows and seed files: `migrations data` and `seed`.
+- Inference: every `inference` verb except `probe`.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -159,6 +162,18 @@ A provider's dev database is cleaned and guarded by the provider, so
   host runs nothing there.
 - The host tells the dev database from the target by the database each session
   reports, since it reads no provider address.
+
+`embeddings.store` lets a provider keep the generations of `ptah inference`.
+The host lists the feature, and each engine that lists it declares the
+consistency modes it builds, `immutable` today. Ptah keeps the lifecycle: it
+reads the run state with the provider's token, decides, and sends back only the
+records the decision changed. A provider that finds another token writes
+nothing, and Ptah reads and decides again. The provider owns the layout of the
+run state, the generation's storage, the scans, the vector writes, the index
+and the searches, and refuses what its engine cannot hold. `inference describe
+--provider-engine <engine>` asks it what a generation needs without a database.
+A provider without the feature serves every other command, and `ptah
+inference` refuses its engine by name.
 
 `units.statement-timeout` carries a migration's statement timeout to the
 provider with each unit, and the provider stops a unit that runs longer. A
