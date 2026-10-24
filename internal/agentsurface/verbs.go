@@ -30,8 +30,8 @@ var verbs = map[string]Verb{
 	"providers list": {TargetNone, ScratchNone,
 		"lists official provider identities and checks configured executable bytes without starting a process or opening a database"},
 	"providers install": {TargetNone, ScratchNone,
-		"downloads the pinned official provider archive, checks it against the pinned digests and stores the executable in the user cache; " +
-			"it opens no database and never runs the downloaded file"},
+		"downloads an official provider release whose minimum contract this Ptah meets, checks it against the release's checksums.txt " +
+			"and stores the executable in the user cache; it opens no database and never runs the downloaded file"},
 	"providers check": {TargetNone, ScratchNone,
 		"starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database"},
 

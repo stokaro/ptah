@@ -8,37 +8,42 @@ import (
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/providerinstall"
+	"ptah.run/internal/providerrelease"
 )
 
 type installOptions struct {
 	baseURL string
+	version string
 	json    bool
 }
 
 type installReport struct {
-	ContractVersion int    `json:"contract_version"`
-	Status          string `json:"status"`
-	EngineID        string `json:"engine_id"`
-	ProviderID      string `json:"provider_id"`
-	Version         string `json:"version"`
-	Platform        string `json:"platform"`
-	Executable      string `json:"executable"`
-	SHA256          string `json:"sha256"`
+	ContractVersion int                      `json:"contract_version"`
+	Status          string                   `json:"status"`
+	EngineID        string                   `json:"engine_id"`
+	ProviderID      string                   `json:"provider_id"`
+	Version         string                   `json:"version"`
+	MinContract     providerrelease.Contract `json:"min_contract"`
+	Platform        string                   `json:"platform"`
+	Executable      string                   `json:"executable"`
+	SHA256          string                   `json:"sha256"`
 }
 
 // newInstallCommand builds `providers install`. base carries the installer
-// settings the command line does not: tests set the pins and platform, and the
-// shipped command passes the zero value. The store location and the download
-// base URL are filled in per run.
+// settings the command line does not: tests set the release API, the platform
+// and the host contract, and the shipped command passes the zero value. The
+// store location, the version and the download base URL are filled in per run.
 func newInstallCommand(base providerinstall.Installer) *cobra.Command {
 	opts := new(installOptions)
 	command := &cobra.Command{
 		Use:   "install <engine>",
-		Short: "Download, verify and store the pinned official provider of an engine without running it",
-		Long: "Download the provider release this Ptah release pins for the engine, check the archive and the executable " +
-			"against the pinned SHA-256 digests, and store the executable in the user store. " +
-			"The command takes no version, never runs the downloaded file and does not edit the provider manifest. " +
-			"Installing a verified provider again changes nothing.",
+		Short: "Download, verify and store an official provider release without running it",
+		Long: "Download the newest release of the engine's official provider whose minimum contract version this Ptah meets, " +
+			"or the release --version names, and store its executable in the user store. " +
+			"The release's ptah-provider.json and archive are checked against the release's checksums.txt before anything is extracted, " +
+			"and the executable's SHA-256 is recorded so that every start can check it. " +
+			"The command never runs the downloaded file and does not edit the provider manifest. " +
+			"Installing the release the store already holds downloads no archive.",
 	}
 	command.RunE = func(cmd *cobra.Command, args []string) error {
 		installer := base
@@ -48,12 +53,13 @@ func newInstallCommand(base providerinstall.Installer) *cobra.Command {
 			return failJSON(cmd, opts.json, err)
 		}
 		installer.Root = root
-		result, err := installer.Install(cmd.Context(), args[0])
+		result, err := installer.Install(cmd.Context(), args[0], opts.version)
 		if err != nil {
 			return failJSON(cmd, opts.json, err)
 		}
 		report := installReport{ContractVersion: 1, Status: "installed", EngineID: result.EngineID, ProviderID: result.ProviderID,
-			Version: result.Version, Platform: result.Platform.String(), Executable: result.Executable, SHA256: result.SHA256}
+			Version: result.Version, MinContract: result.MinContract, Platform: result.Platform.String(),
+			Executable: result.Executable, SHA256: result.SHA256}
 		if !result.Installed {
 			report.Status = "already_installed"
 		}
@@ -61,15 +67,19 @@ func newInstallCommand(base providerinstall.Installer) *cobra.Command {
 			return writeJSON(cmd, report)
 		}
 		verb := map[bool]string{true: "Installed", false: "Already installed"}[result.Installed]
-		fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s for %s (%s)\nexecutable: %s\nsha256: %s\n",
-			verb, report.ProviderID, report.Version, report.Platform, report.EngineID, report.Executable, report.SHA256)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s for %s (%s), minimum contract %s\nexecutable: %s\nsha256: %s\n",
+			verb, report.ProviderID, report.Version, report.Platform, report.EngineID, report.MinContract, report.Executable, report.SHA256)
 		return nil
 	}
+	command.Flags().StringVar(&opts.version, "version", "",
+		"Release to install, such as 0.2.0; refused when this Ptah does not meet its minimum contract version. Required with --download-base-url")
 	command.Flags().StringVar(&opts.baseURL, "download-base-url", "",
-		"Directory URL to fetch the pinned archive from instead of the official release; the pinned digests still decide what is accepted")
+		"Mirror that replaces https://github.com and serves the GitHub release download layout; the release's checksums.txt still decides what is accepted")
 	command.Flags().BoolVar(&opts.json, "json", false, "Print one JSON document")
-	if err := cmdflags.DisableEnvBinding(command.Flags(), "json"); err != nil {
-		panic(err)
+	for _, name := range []string{"version", "json"} {
+		if err := cmdflags.DisableEnvBinding(command.Flags(), name); err != nil {
+			panic(err)
+		}
 	}
 	cmdutil.ConfigureCommandArgs(command, cobra.ExactArgs(1))
 	return command

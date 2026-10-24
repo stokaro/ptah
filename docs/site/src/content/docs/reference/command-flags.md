@@ -1379,6 +1379,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--download-base-url` | `string` | — | `PTAH_DOWNLOAD_BASE_URL` | — |
 | `--json` | `bool` | `false` | — | — |
+| `--version` | `string` | — | — | — |
 
 </div>
 

@@ -28,8 +28,8 @@ The catalog recognizes `spanner`, `cloudspanner`, `google-spanner`, and `google_
 
 Official Spanner executable artifacts remain under development in
 [issue #4204](https://github.com/stokaro/ptah/issues/4204). The catalog reserves
-this identity. This Ptah release pins no Spanner provider release, so
-`ptah providers install spanner` refuses with `provider_no_release_pinned`.
+this identity. Its repository publishes no release with `ptah-provider.json`,
+so `ptah providers install spanner` refuses with `provider_no_release`.
 
 This provider is optional. Select it explicitly for Spanner work. A PostgreSQL
 URL does not select Spanner, and a failed provider never falls back to PostgreSQL.
@@ -40,8 +40,8 @@ List the catalog without executing providers:
 ptah providers list --json
 ```
 
-The Spanner entry reports its provider ID, repository, setup link, and distribution
-policy. An empty `installations` array means this invocation selected no manifest.
+The Spanner entry reports its provider ID, repository and setup link. An empty
+`installations` array means this invocation selected no manifest.
 
 ## Declare a trusted installation
 

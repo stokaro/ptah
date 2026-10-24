@@ -139,9 +139,9 @@ rather than a person.
 | `ptah project` | Read a project file and report what Ptah makes of it | group |
 | `ptah project adopt` | Classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there | — |
 | `ptah project inspect` | Reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database | — |
-| `ptah providers` | Inspect provider configuration, verify trusted executables and install pinned official providers | group |
+| `ptah providers` | Inspect provider configuration, verify trusted executables and install official providers | group |
 | `ptah providers check` | Starts one explicitly trusted provider to verify its identity and protocol, then closes it without opening a database | — |
-| `ptah providers install` | Downloads the pinned official provider archive, checks it against the pinned digests and stores the executable in the user cache; it opens no database and never runs the downloaded file | — |
+| `ptah providers install` | Downloads an official provider release whose minimum contract this Ptah meets, checks it against the release's checksums.txt and stores the executable in the user cache; it opens no database and never runs the downloaded file | — |
 | `ptah providers list` | Lists official provider identities and checks configured executable bytes without starting a process or opening a database | — |
 | `ptah schema` | Work with desired schema definitions | group |
 | `ptah schema annotations` | Exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema | — |

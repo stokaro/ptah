@@ -525,5 +525,6 @@ A `docker://` dev URL or an `atlas.hcl` `docker` block starts a container image
 on your Docker daemon, with no host mounts or privileges; review the image
 name as you would in a compose file. A provider manifest is read only from a
 path you pass with `--provider-config` or `PTAH_PROVIDER_CONFIG`, never
-discovered, and each executable in it is checked against its pinned digest.
+discovered, and each executable in it is checked against the digest the
+manifest holds.
 

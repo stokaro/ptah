@@ -1,5 +1,8 @@
 // Package providercatalog identifies official executable providers without
 // loading implementations, opening databases, or granting execution permission.
+// An entry maps an engine to the identity of its provider and the provider to
+// the GitHub repository whose releases install reads. It holds no version and
+// no digest: an official provider is installed separately from Ptah.
 package providercatalog
 
 import (
@@ -10,16 +13,16 @@ import (
 )
 
 // Entry contains recognition and setup metadata, never engine capabilities.
-// BundledByDefault describes distribution policy, not an installed artifact.
+// RepositoryURL is a GitHub repository; its releases are where the provider's
+// releases live.
 type Entry struct {
-	EngineID         string   `json:"engine_id"`
-	DisplayName      string   `json:"display_name"`
-	Aliases          []string `json:"aliases"`
-	URLSchemes       []string `json:"url_schemes"`
-	ProviderID       string   `json:"provider_id"`
-	RepositoryURL    string   `json:"repository_url"`
-	SetupURL         string   `json:"setup_url"`
-	BundledByDefault bool     `json:"bundled_by_default"`
+	EngineID      string   `json:"engine_id"`
+	DisplayName   string   `json:"display_name"`
+	Aliases       []string `json:"aliases"`
+	URLSchemes    []string `json:"url_schemes"`
+	ProviderID    string   `json:"provider_id"`
+	RepositoryURL string   `json:"repository_url"`
+	SetupURL      string   `json:"setup_url"`
 }
 
 var entries = []Entry{
@@ -37,7 +40,7 @@ var entries = []Entry{
 	{
 		EngineID: "ydb", DisplayName: "YDB", Aliases: []string{"ydbs"}, URLSchemes: []string{"ydb", "ydbs"},
 		ProviderID: "github.com/stokaro/ptah-ydb-plugin", RepositoryURL: "https://github.com/stokaro/ptah-ydb-plugin",
-		SetupURL: "https://docs.ptah.run/edge/extend/providers/ydb/", BundledByDefault: true,
+		SetupURL: "https://docs.ptah.run/edge/extend/providers/ydb/",
 	},
 }
 
@@ -48,6 +51,18 @@ func Entries() []Entry {
 		result[i] = clone(entry)
 	}
 	return result
+}
+
+// GitHubRepository returns the owner and the name of the GitHub repository
+// whose releases are the provider's release source, or false when
+// RepositoryURL is not a https://github.com/<owner>/<repo> address.
+func (e Entry) GitHubRepository() (owner, repo string, ok bool) {
+	rest, onGitHub := strings.CutPrefix(e.RepositoryURL, "https://github.com/")
+	owner, repo, split := strings.Cut(strings.TrimSuffix(rest, "/"), "/")
+	if !onGitHub || !split || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", false
+	}
+	return owner, repo, true
 }
 
 // Lookup recognizes an explicit engine name, provider ID, database URL, or

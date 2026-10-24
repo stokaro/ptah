@@ -10,8 +10,8 @@
 //
 // Selection is data until [Choice.Start] runs: nothing here executes a binary
 // because a name, a URL scheme or a catalog entry matched. A manifest entry or
-// a pinned official artifact authorizes bytes, and those bytes are hashed before
-// each start.
+// the install record of an official provider authorizes bytes, and those bytes
+// are hashed before each start.
 package providerselect
 
 import (
@@ -50,7 +50,7 @@ type Request struct {
 	Explicit bool
 	// Targets are the connection values the invocation names.
 	Targets []Target
-	// Resolver locates bundled and stored official providers. Nil selects
+	// Resolver locates stored official providers. Nil selects
 	// [providerconfig.DefaultResolver].
 	Resolver *providerconfig.Resolver
 }
@@ -105,8 +105,8 @@ func Choose(request Request) (*Choice, error) {
 // servedBuiltIn reports whether an engine with a built-in implementation keeps
 // that implementation for this invocation. Only an explicit engine, or a
 // manifest entry that claims the engine, asks for a provider instead; the
-// bundled and stored candidates of the selection order are not consulted for an
-// engine that is still built in.
+// stored candidate of the selection order is not consulted for an engine that
+// is still built in.
 //
 // This is the one place the default for an official engine is decided. Serving
 // an engine from its provider by default means returning false here for it.

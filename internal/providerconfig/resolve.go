@@ -3,82 +3,59 @@ package providerconfig
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"runtime"
+	"slices"
 
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/providerinstall"
+	"ptah.run/internal/providerrelease"
 )
 
-// CodeUnsupported is the diagnostic code for an official engine whose pin has
-// no artifact for the running platform.
-const CodeUnsupported = providerinstall.CodeUnsupported
+// CodeStoreInvalid is the diagnostic code for an install record that exists and
+// cannot be used: unreadable, malformed, or naming another engine.
+const CodeStoreInvalid = "provider_store_invalid"
 
-// BundledDir is the directory below the one that holds the resolved ptah
-// executable where a distribution places official providers.
-const BundledDir = "providers"
-
-// Resolver selects the provider that serves an engine. It holds locations and
-// the pin lookup, never state: every call reads the file system afresh.
+// Resolver selects the provider that serves an engine. It holds locations,
+// never state: every call reads the file system afresh.
 type Resolver struct {
-	// BundledRoot is the directory a distribution places providers in,
-	// normally [BundledDir] beside the resolved ptah executable. Empty disables
-	// the bundled candidate.
-	BundledRoot string
 	// StoreRoot is the user store `ptah providers install` writes to, normally
 	// [providerinstall.DefaultRoot]. Empty disables the store candidate.
 	StoreRoot string
-	// Platform selects the pinned artifact. The zero value is the running
+	// Platform selects the install record. The zero value is the running
 	// platform.
-	Platform providercatalog.Platform
-	// Pins looks up the pinned release of an engine. Nil selects the pins
-	// compiled into [providercatalog].
-	Pins func(engineID string) (providercatalog.Pin, bool)
+	Platform providerrelease.Platform
+	// Host is the contract version an installation's minimum is checked
+	// against. The zero value is [providerrelease.HostContract].
+	Host providerrelease.Contract
 }
 
-// DefaultResolver returns the resolver of the running Ptah: the bundled
-// directory beside the resolved executable and the default user store. A
-// location that cannot be determined is left empty and its candidate is never
-// consulted. Nothing is read from PATH, the working directory or a project file.
+// DefaultResolver returns the resolver of the running Ptah: the default user
+// store. A store that cannot be located is left empty and never consulted.
+// Nothing is read from PATH, the working directory or a project file.
 func DefaultResolver() Resolver {
 	var result Resolver
-	if executable, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-			result.BundledRoot = filepath.Join(filepath.Dir(resolved), BundledDir)
-		}
-	}
 	if root, err := providerinstall.DefaultRoot(); err == nil {
 		result.StoreRoot = root
 	}
 	return result
 }
 
-// BundledPath returns where a distribution places the executable of one
-// pinned artifact below root: <root>/<provider-id>/<version>/<executable>.
-// A distribution is built for one platform, so the path has no platform part.
-func BundledPath(root, providerID, version, executable string) string {
-	return filepath.Join(root, filepath.FromSlash(providerID), version, executable)
-}
-
 // Select resolves the provider for one engine selector. The first rule that
 // matches decides and later rules are not consulted:
 //
 //  1. the installation the manifest selects for the engine;
-//  2. the bundled official provider pinned in this release;
-//  3. the official provider in the user store with the pinned version and
-//     executable digest;
-//  4. none, which is a provider_missing diagnostic carrying the install
+//  2. the user-store installation the install record of the engine's provider
+//     names for this platform;
+//  3. none, which is a provider_missing diagnostic carrying the install
 //     instruction.
 //
-// A candidate that exists is returned even when its bytes are wrong. Select does
-// not hash it: [Start] and [Installation.Verify] do, and refuse. A candidate is
-// absent only when its executable does not exist, so a corrupt bundled file is
-// never replaced by a good stored copy. Only the pinned version is looked at;
-// other versions on disk are not read.
+// A candidate exists when its install record exists. A record that exists and
+// cannot be used is refused, and so is one whose minimum contract the host
+// does not meet: neither is skipped. Select does not hash the executable;
+// [Start] and [Installation.Verify] do, and refuse. Other versions in the store
+// are not read.
 func (r Resolver) Select(config Configuration, selector string) (Installation, string, error) {
 	installation, target, err := config.selected(selector)
 	if !errors.Is(err, errUnclaimed) {
@@ -88,65 +65,64 @@ func (r Resolver) Select(config Configuration, selector string) (Installation, s
 	if !official {
 		return Installation{}, "", errors.New("no configured provider owns the selected engine")
 	}
-	lookup := r.Pins
-	if lookup == nil {
-		lookup = providercatalog.LookupPin
-	}
-	pin, pinned := lookup(entry.EngineID)
-	if !pinned {
+	if r.StoreRoot == "" {
 		return Installation{}, "", providercatalog.Missing(entry)
 	}
 	platform := r.Platform
-	if platform == (providercatalog.Platform{}) {
-		platform = providercatalog.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH}
+	if platform == (providerrelease.Platform{}) {
+		platform = providerrelease.Running()
 	}
-	artifact, covered := pin.Artifact(platform)
-	if !covered {
-		return Installation{}, "", &providerdiagnostic.Diagnostic{
-			Code: CodeUnsupported, EngineID: entry.EngineID, ProviderID: entry.ProviderID,
-			RepositoryURL: entry.RepositoryURL, SetupURL: entry.SetupURL,
-			Message: fmt.Sprintf("this Ptah release pins no %s provider archive for %s, so no bundled or installed provider can serve it; select an executable you obtained and verified yourself through the provider manifest: %s",
-				entry.DisplayName, platform, entry.SetupURL),
+	record, executable, err := providerinstall.ReadRecord(r.StoreRoot, entry.ProviderID, platform)
+	if errors.Is(err, os.ErrNotExist) {
+		return Installation{}, "", providercatalog.Missing(entry)
+	}
+	if err != nil {
+		return Installation{}, "", storeInvalid(entry, err)
+	}
+	engines, err := recordEngines(entry, record)
+	if err != nil {
+		return Installation{}, "", storeInvalid(entry, err)
+	}
+	host := r.Host
+	if host == (providerrelease.Contract{}) {
+		host = providerrelease.HostContract()
+	}
+	stored := Installation{
+		Spec:    providerhost.Spec{ProviderID: entry.ProviderID, Executable: executable, SHA256: record.SHA256},
+		Engines: engines,
+		origin:  originStore,
+	}
+	if !providerrelease.Meets(host, record.MinContract) {
+		return Installation{}, "", stored.Diagnostic(entry.EngineID, "provider_incompatible", fmt.Sprintf(
+			"The installed %s provider %s needs contract %s; this Ptah speaks contract %s. Run `ptah providers install %s` to install a release this Ptah can run.",
+			entry.DisplayName, record.Version, record.MinContract.Requirement(), host, entry.EngineID))
+	}
+	return stored, entry.EngineID, nil
+}
+
+// recordEngines returns the engines an installation declares, with their
+// aliases, from the catalog entries of the engines the record names. The
+// started process must declare exactly these.
+func recordEngines(entry providercatalog.Entry, record providerinstall.Record) ([]Engine, error) {
+	if !slices.Contains(record.Engines, entry.EngineID) {
+		return nil, fmt.Errorf("the install record names engines %q, not %q", record.Engines, entry.EngineID)
+	}
+	engines := make([]Engine, 0, len(record.Engines))
+	for _, name := range record.Engines {
+		owner, official := providercatalog.Lookup(name)
+		if !official || owner.EngineID != name || owner.ProviderID != entry.ProviderID {
+			return nil, fmt.Errorf("the install record names %q, which is not an official engine of %s", name, entry.ProviderID)
 		}
+		engines = append(engines, Engine{ID: owner.EngineID, Aliases: owner.Aliases})
 	}
-	candidates := []struct {
-		path   string
-		origin origin
-	}{
-		{bundledCandidate(r.BundledRoot, entry, pin, artifact), originBundled},
-		{storeCandidate(r.StoreRoot, entry, pin, platform, artifact), originStore},
-	}
-	for _, candidate := range candidates {
-		if candidate.path == "" || !exists(candidate.path) {
-			continue
-		}
-		return Installation{
-			Spec:    providerhost.Spec{ProviderID: entry.ProviderID, Executable: candidate.path, SHA256: artifact.ExecutableSHA256},
-			Engines: []Engine{{ID: entry.EngineID, Aliases: entry.Aliases}},
-			origin:  candidate.origin,
-		}, entry.EngineID, nil
-	}
-	return Installation{}, "", providercatalog.MissingInstallable(entry)
+	return engines, nil
 }
 
-func bundledCandidate(root string, entry providercatalog.Entry, pin providercatalog.Pin, artifact providercatalog.Artifact) string {
-	if root == "" {
-		return ""
+func storeInvalid(entry providercatalog.Entry, cause error) *providerdiagnostic.Diagnostic {
+	return &providerdiagnostic.Diagnostic{
+		Code: CodeStoreInvalid, EngineID: entry.EngineID, ProviderID: entry.ProviderID,
+		RepositoryURL: entry.RepositoryURL, SetupURL: entry.SetupURL, Cause: cause,
+		Message: fmt.Sprintf("The install record of the %s provider cannot be used: %v. Run `ptah providers install %s` to replace it. No other provider is tried.",
+			entry.DisplayName, cause, entry.EngineID),
 	}
-	return BundledPath(root, entry.ProviderID, pin.Version, artifact.Executable)
-}
-
-func storeCandidate(root string, entry providercatalog.Entry, pin providercatalog.Pin, platform providercatalog.Platform, artifact providercatalog.Artifact) string {
-	if root == "" {
-		return ""
-	}
-	return filepath.Join(providerinstall.Dir(root, entry.ProviderID, pin.Version, platform), artifact.Executable)
-}
-
-// exists reports whether something is at path. Any failure other than absence
-// counts as presence, so an unreadable or malformed candidate is refused by
-// verification instead of being skipped.
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return !errors.Is(err, fs.ErrNotExist)
 }
