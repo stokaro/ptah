@@ -335,6 +335,17 @@ func TestIndependentProviderEmbeddingStoreKeepsASetTogether(t *testing.T) {
 	found, err := client.SearchEmbeddings(c.Context(), &protocol.SearchEmbeddingsRequest{SessionId: session, Spec: spec, Vector: []float32{0, 0.1, 1}, Depth: 5})
 	c.Assert(err, qt.IsNil)
 	c.Assert(keyComponents(found.GetExact()), qt.DeepEquals, []string{"1", "2"})
+
+	// A tombstone in a table the generation owns removes the key's set: the
+	// source row is gone, and no foreign key takes its rows with it.
+	state, keys = batch(c, client, session, spec, "1")
+	tombstone := &protocol.EmbeddingTargetWrite{Key: embeddingKey("1"), Generation: spec.GetGeneration(), Version: "2",
+		Kind: protocol.EmbeddingWriteKind_EMBEDDING_WRITE_KIND_TOMBSTONE}
+	_, err = client.CommitEmbeddingBatch(c.Context(), commitRequest(session, spec, state, keys, "1", tombstone))
+	c.Assert(err, qt.IsNil)
+	held, _ := batch(c, client, session, spec, "1", "2")
+	c.Assert(keyComponents([]*protocol.EmbeddingKey{held.GetHeld()[0].GetKey()}), qt.DeepEquals, []string{"2"})
+	c.Assert(held.GetHeld(), qt.HasLen, 1)
 }
 
 // TestIndependentProviderEmbeddingStoreDropsOnlyWhatItOwns refuses to drop a
