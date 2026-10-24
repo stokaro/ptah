@@ -130,5 +130,11 @@
     "check": "page-length",
     "target": "page",
     "reason": "The page keeps checksum, replay, and assertion gates together because they establish one pre-apply trust boundary."
+  },
+  {
+    "route": "/extend/executable-providers/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page is the one contract between Ptah and an executable provider. Source claims, ordering markers and the feature list are read together by a provider author, and a split would separate each rule from the rules it depends on."
   }
 ]
