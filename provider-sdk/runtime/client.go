@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,11 @@ type Options struct {
 	// Environment is an explicit allowlist of name=value entries. It must not
 	// include credentials; connection credentials belong to Open requests.
 	Environment []string
+	// HostFeatures are the two-way features the host acts on, from
+	// provider.TwoWayFeatures. The provider uses an addition to an existing
+	// message only when its feature is listed here and in its description.
+	// Empty asks for the messages of contract 25.0.
+	HostFeatures []string
 	// StartupTimeout defaults to ten seconds. Negative values are invalid.
 	StartupTimeout time.Duration
 }
@@ -104,12 +110,14 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		return nil, fmt.Errorf("%w: invalid provider service", provider.ErrProtocol)
 	}
 	client.rpc = rpc
-	description, err := rpc.Describe(startup, &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: options.RequiredFeatures})
+	description, err := rpc.Describe(startup, &protocol.DescribeRequest{Revision: provider.Revision, RequiredFeatures: options.RequiredFeatures,
+		HostContract: provider.Contract(), HostFeatures: options.HostFeatures})
 	if err != nil {
 		client.Close()
 		return nil, remoteError(startup, "negotiate", err)
 	}
-	if err := provider.ValidateDescription(description, options.RequiredFeatures); err != nil {
+	description, err = negotiate(description, options)
+	if err != nil {
 		client.Close()
 		return nil, err
 	}
@@ -123,6 +131,21 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		return nil, startupError(startup)
 	}
 	return client, nil
+}
+
+// negotiate checks a provider's description against this host: the contract
+// version first, so an incompatible provider is named by version, then the
+// description itself. It returns the description without the two-way
+// features the host did not list.
+func negotiate(description *protocol.Description, options Options) (*protocol.Description, error) {
+	if err := provider.CheckContract(provider.Contract(), provider.MinimumContract(description)); err != nil {
+		return nil, err
+	}
+	negotiated := provider.NegotiatedDescription(description, options.HostFeatures)
+	if err := provider.ValidateDescription(negotiated, options.RequiredFeatures); err != nil {
+		return nil, err
+	}
+	return negotiated, nil
 }
 
 func startupError(ctx context.Context) error {
@@ -202,6 +225,12 @@ func (c *Client) Render(ctx context.Context, request *protocol.RenderRequest) (*
 // Execute sends a validated batch once. Any lost or invalid reply is an unknown
 // outcome. A request canceled before dispatch sends nothing. Request IDs do not
 // enable replay, and this method performs no application-level retries.
+//
+// A request with a statement timeout extends the call's bound by that timeout
+// for each unit, so the provider's stop at the timeout reaches the caller as a
+// confirmed outcome rather than a lost reply. A caller's earlier deadline
+// still applies. A stop at the timeout returns an error matching
+// provider.ErrStatementTimeout.
 func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
 	request = proto.CloneOf(request)
 	if request.GetTransactionId() != "" {
@@ -212,24 +241,33 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if request.GetSessionId() == "" || request.GetRequestId() == "" || len(request.GetUnits()) == 0 {
-		return nil, fmt.Errorf("%w: session ID, request ID, and units are required", provider.ErrProtocol)
+	if err := provider.ValidateExecuteRequest(c.description, request); err != nil {
+		return nil, err
 	}
-	for _, unit := range request.GetUnits() {
-		if err := provider.ValidateUnit(unit); err != nil {
-			return nil, err
-		}
-	}
-	call, cancel := context.WithTimeout(ctx, CallTimeout)
+	call, cancel := context.WithTimeout(ctx, executeTimeout(request))
 	defer cancel()
 	result, err := c.rpc.Execute(call, request)
 	if err != nil {
 		return nil, errors.Join(&provider.ExecutionError{Outcome: protocol.Execution_UNKNOWN}, remoteError(call, "execute", err))
 	}
-	if err := provider.CheckExecution(len(request.GetUnits()), result); err != nil {
+	if err := provider.CheckExecuted(request, result); err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+// executeTimeout is CallTimeout, plus the statement timeout of every unit of a
+// request that sets one, saturating rather than wrapping.
+func executeTimeout(request *protocol.ExecuteRequest) time.Duration {
+	limit := time.Duration(request.GetStatementTimeoutNanoseconds())
+	units := time.Duration(len(request.GetUnits()))
+	if limit <= 0 {
+		return CallTimeout
+	}
+	if limit > (math.MaxInt64-CallTimeout)/units {
+		return math.MaxInt64
+	}
+	return CallTimeout + limit*units
 }
 
 func remoteError(ctx context.Context, operation string, err error) error {
@@ -259,6 +297,9 @@ func validateOptions(options Options) ([]byte, error) {
 			return nil, fmt.Errorf("%w: invalid or reserved provider environment entry", provider.ErrProtocol)
 		}
 		names[name] = true
+	}
+	if err := provider.ValidateHostFeatures(options.HostFeatures); err != nil {
+		return nil, err
 	}
 	checksum, err := hex.DecodeString(options.SHA256)
 	if err != nil || len(checksum) != sha256.Size {

@@ -90,7 +90,7 @@ func (s *serverAdapter) ReadHistory(ctx context.Context, request *protocol.ReadH
 	if err := provider.ValidateReadHistoryRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := s.server.History.ReadHistory(ctx, proto.CloneOf(request))
+	result, err := s.server.History.ReadHistory(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (s *serverAdapter) PrepareHistory(ctx context.Context, request *protocol.Pr
 	if err := provider.ValidatePrepareHistoryRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := s.server.History.PrepareHistory(ctx, proto.CloneOf(request))
+	result, err := s.server.History.PrepareHistory(s.owner(ctx), proto.CloneOf(request))
 	return historyServerResult(request.GetScope(), request.GetRequestId(), result, err)
 }
 
@@ -164,6 +164,6 @@ func (s *serverAdapter) MutateHistory(ctx context.Context, request *protocol.Mut
 	if err := provider.ValidateMutateHistoryRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := s.server.History.MutateHistory(ctx, proto.CloneOf(request))
+	result, err := s.server.History.MutateHistory(s.owner(ctx), proto.CloneOf(request))
 	return historyServerResult(request.GetScope(), request.GetRequestId(), result, err)
 }

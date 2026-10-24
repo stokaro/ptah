@@ -19,5 +19,5 @@ func (s *serverAdapter) DecodeSource(ctx context.Context, request *protocol.Deco
 	if s.server.SourceDecoder == nil {
 		return nil, status.Error(codes.Unimplemented, "decode source is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateSourceRequest, provider.ValidateDecodedSource, s.server.SourceDecoder.DecodeSource)
+	return serveOffline(ctx, s, request, provider.ValidateSourceRequest, provider.ValidateDecodedSource, s.server.SourceDecoder.DecodeSource)
 }

@@ -27,9 +27,9 @@ func (s *serverAdapter) ProvisionDevDatabase(ctx context.Context, request *proto
 		return nil, status.Error(codes.Unimplemented, "dev database provisioning is unavailable")
 	}
 	var created *protocol.DevDatabase
-	result, err := serveOffline(ctx, s.server.Description, request, provider.ValidateProvisionDevRequest, provider.ValidateDevDatabase,
+	result, err := serveOffline(ctx, s, request, provider.ValidateProvisionDevRequest, provider.ValidateDevDatabase,
 		func(ctx context.Context, request *protocol.ProvisionDevRequest) (*protocol.DevDatabase, error) {
-			reply, err := s.server.DevProvisioner.ProvisionDevDatabase(ctx, request)
+			reply, err := s.server.DevProvisioner.ProvisionDevDatabase(s.owner(ctx), request)
 			created = reply
 			return reply, err
 		})
@@ -47,5 +47,5 @@ func (s *serverAdapter) ReleaseDevDatabase(ctx context.Context, request *protoco
 	if s.server.DevProvisioner == nil {
 		return nil, status.Error(codes.Unimplemented, "dev database provisioning is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateReleaseDevRequest, provider.ValidateReleasedDev, s.server.DevProvisioner.ReleaseDevDatabase)
+	return serveOffline(ctx, s, request, provider.ValidateReleaseDevRequest, provider.ValidateReleasedDev, s.server.DevProvisioner.ReleaseDevDatabase)
 }

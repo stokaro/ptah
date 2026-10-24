@@ -63,7 +63,7 @@ func metadataServerCall[Q proto.Message, R proto.Message](ctx context.Context, s
 	if err := validate(request); err != nil {
 		return zero, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := invoke(ctx, proto.CloneOf(request))
+	result, err := invoke(s.owner(ctx), proto.CloneOf(request))
 	if err == nil {
 		if failure := check(request, result); failure != nil {
 			err = status.Error(codes.Internal, "provider returned an invalid metadata receipt")
@@ -87,7 +87,7 @@ func metadataReadCleanup(request *protocol.MetadataReadRequest) *protocol.Metada
 }
 func (s *serverAdapter) closeMetadataReader(ctx context.Context, request *protocol.MetadataReadRequest) error {
 	fence := metadataReadCleanup(request)
-	result, err := s.server.Metadata.CloseMetadataRead(ctx, proto.CloneOf(fence))
+	result, err := s.server.Metadata.CloseMetadataRead(s.owner(ctx), proto.CloneOf(fence))
 	if err != nil {
 		return err
 	}

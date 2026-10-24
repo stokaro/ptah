@@ -20,5 +20,5 @@ func (s *serverAdapter) ProjectTableCreations(ctx context.Context, request *prot
 	if s.server.TableCreations == nil {
 		return nil, status.Error(codes.Unimplemented, "project table creations is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateCreationRequest, provider.ValidateProjectedCreations, s.server.TableCreations.ProjectTableCreations)
+	return serveOffline(ctx, s, request, provider.ValidateCreationRequest, provider.ValidateProjectedCreations, s.server.TableCreations.ProjectTableCreations)
 }

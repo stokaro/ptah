@@ -5,8 +5,11 @@ package ptah.provider.experimental;
 option go_package = "github.com/stokaro/ptah/provider-sdk/protocol/experimental;protocol";
 
 // Provider is the experimental, local subprocess boundary. Each request is a
-// whole semantic batch. This revision makes no cross-revision compatibility
-// promise and does not serialize host ASTs or Go interface values.
+// whole semantic batch. The contract has a major and a minor version. A
+// major changes only with an incompatible change and is matched exactly; a
+// minor adds compatible RPCs, messages, fields, enum values and features.
+// Anything a minor adds is used only when both sides advertise its feature.
+// The contract does not serialize host ASTs or Go interface values.
 service Provider {
   rpc Describe(DescribeRequest) returns (Description);
   rpc Open(OpenRequest) returns (Session);
@@ -28,6 +31,18 @@ service Provider {
   rpc CheckLintMigrations(CheckLintRequest) returns (CheckedLint);
   rpc ProvisionDevDatabase(ProvisionDevRequest) returns (DevDatabase);
   rpc ReleaseDevDatabase(ReleaseDevRequest) returns (Empty);
+  // Contract 25.1. A host calls each of these only when the provider
+  // advertises its feature.
+  rpc ListDevObjects(ListDevObjectsRequest) returns (DevObjects);
+  rpc CleanDevDatabase(CleanDevRequest) returns (DevCleanup);
+  rpc GuardReplay(GuardReplayRequest) returns (GuardedReplay);
+  rpc TypeRows(TypeRowsRequest) returns (TypedRows);
+  rpc ReadRows(ReadRowsRequest) returns (RowPage);
+  rpc RenderRowWrites(RenderRowWritesRequest) returns (RenderResult);
+  rpc ListSeedTables(ListSeedTablesRequest) returns (SeedTables);
+  rpc ApplySeed(ApplySeedRequest) returns (SeedResult);
+  rpc RecordSeed(RecordSeedRequest) returns (SeedResult);
+  rpc ReadSeedLedger(ReadSeedLedgerRequest) returns (SeedLedger);
   rpc Execute(ExecuteRequest) returns (Execution);
   rpc BeginTransaction(BeginTransactionRequest) returns (Transaction);
   rpc FinishTransaction(FinishTransactionRequest) returns (TransactionResult);
@@ -46,17 +61,36 @@ service Provider {
 }
 
 message Empty {}
+// ContractVersion is a version of this contract. major is the revision both
+// sides must share; minor counts the compatible additions within it.
+message ContractVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
 message DescribeRequest {
+  // The host's contract major. It equals host_contract.major when that is set.
   uint32 revision = 1;
   repeated string required_features = 2;
+  // The host's contract version. Absent means the host speaks minor 0 of
+  // revision.
+  ContractVersion host_contract = 3;
+  // The features the host understands. A provider uses an addition to an
+  // existing message, such as a new enum value, reply field or request field,
+  // only when the host lists its feature. Absent means none.
+  repeated string host_features = 4;
 }
 message Description {
+  // The provider's contract major.
   uint32 revision = 1;
   string provider_id = 2;
   string version = 3;
   string semantic_identity = 4;
   repeated Engine engines = 5;
   repeated string features = 6;
+  // The oldest host contract the provider works with. Absent means minor 0
+  // of revision. Its major is revision, and its minor is at most the minor of
+  // the SDK the provider is built with.
+  ContractVersion min_contract = 7;
 }
 // Engine contains transport-neutral registration data. An alias grants no
 // implementation fallback and a feature is an explicit semantic promise.
@@ -76,6 +110,43 @@ message Engine {
   // Absent means FRAGMENTS: the host reads SQL documents with the shared
   // grammar and sends the statements it does not model to DecodeSource.
   SQLSchemaDeclaration sql_schema = 13;
+  // Absent means the engine declares no spelling for the host's query builder.
+  // Sent only to a host that lists the feature query.dialect. Contract 25.1.
+  QueryDialect query_dialect = 14;
+}
+// QueryDialect is the spelling the host's query builder reads for an engine,
+// as data: the builder renders statements offline and never calls the
+// provider. Each field carries the host dialect descriptor's JSON tag with the
+// same meaning and the same values. The SDK checks the shape; the host checks
+// the vocabulary and refuses a value it does not know.
+message QueryDialect {
+  // How a statement marks a bound parameter, such as "dollar-named".
+  string placeholder = 1;
+  QueryQuoting quoting = 2;
+  QuerySpelling query = 3;
+  // The capability facts the builder assumes when its caller names the engine
+  // without a target's capabilities. A present false is an established
+  // answer; an absent key is unknown, and a clause it gates is refused.
+  map<string, bool> default_capabilities = 4;
+}
+// QueryQuoting is the descriptor's quoting section.
+message QueryQuoting {
+  string style = 1;
+  string bare = 2;
+  repeated string keywords = 3;
+  bool paths = 4;
+}
+// QuerySpelling is the descriptor's query section.
+message QuerySpelling {
+  bool checks_capabilities = 1;
+  repeated string unsupported_joins = 2;
+  bool offset_fetch = 3;
+  string fetch_order_by = 4;
+  string offset_only_limit = 5;
+  bool unsigned_bounds = 6;
+  string upsert = 7;
+  string upsert_refusal = 8;
+  string update_refusal = 9;
 }
 // SQLSchemaDeclaration says how an engine takes part in SQL schema documents.
 // A target has exactly one mode. In FRAGMENTS mode the host lexes and parses
@@ -291,6 +362,9 @@ message Unit {
 message RenderResult {
   bool complete = 1;
   repeated Unit units = 2;
+  // Set only by RenderRowWrites when it refuses the batch: complete is false
+  // and there is no unit. Render never sets it. Contract 25.1.
+  RenderRefusal refusal = 3;
 }
 message ExecuteRequest {
   string session_id = 1;
@@ -301,6 +375,11 @@ message ExecuteRequest {
   // belong to session_id and remain active. APPLIED confirms execution within
   // that transaction, not a commit.
   string transaction_id = 4;
+  // Zero sets no limit. Otherwise the provider stops a unit that runs longer
+  // than this and reports the stop in Execution.statement_timed_out, so the
+  // caller can tell its own limit from a canceled call. Negative is refused.
+  // Sent only when both sides list units.statement-timeout. Contract 25.1.
+  int64 statement_timeout_nanoseconds = 5;
 }
 
 // Isolation is explicit. Providers refuse levels they cannot establish; they
@@ -364,6 +443,11 @@ message Execution {
   string diagnostic_code = 3;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
   string message = 4;
+  // The unit after the confirmed prefix stopped at the request's statement
+  // timeout. Only a request with a timeout can set it, and only with
+  // NOT_APPLIED, PARTIAL or UNKNOWN: UNKNOWN when the server may still run
+  // the unit after the provider stopped waiting. Contract 25.1.
+  bool statement_timed_out = 5;
 }
 
 // AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
@@ -1788,6 +1872,38 @@ enum LintFact {
   LINT_FACT_REBUILD_DROP = 3;
   LINT_FACT_REBUILD_RENAME = 4;
   LINT_FACT_SAFETY_EFFECT = 5;
+  // The facts from here on are contract 25.1. A provider judges or reports
+  // them only for an engine that lists lint.statement-facts, to a host that
+  // lists it too.
+  //
+  // What a statement is. Where it is judged, every statement carries exactly
+  // one: statement_class says what the statement does to the schema, kind
+  // names it in the dialect's words for a message, such as "CREATE TABLE",
+  // "UPSERT" or "named expression", and object is what it acts on, when it
+  // names one.
+  LINT_FACT_STATEMENT_KIND = 6;
+  // A table the statement creates without a primary key, named in table. A
+  // statement it is judged for and that does not carry it creates no such
+  // table.
+  LINT_FACT_MISSING_PRIMARY_KEY = 7;
+  // A capability the statement needs from its target, named in capability.
+  // object, kind, table and clause name the part of the statement that needs
+  // it, such as an index and the clause that adds it. The host compares the
+  // key with the target's capabilities; the owner does not.
+  LINT_FACT_REQUIRED_CAPABILITY = 8;
+}
+
+// LintStatementClass is what a statement does to the schema, so a host rule
+// can choose the statements it examines without reading the dialect.
+enum LintStatementClass {
+  LINT_STATEMENT_CLASS_UNSPECIFIED = 0;
+  LINT_STATEMENT_CLASS_CREATE_TABLE = 1;
+  LINT_STATEMENT_CLASS_ALTER_TABLE = 2;
+  // Another statement that creates, alters or drops a schema object.
+  LINT_STATEMENT_CLASS_SCHEMA = 3;
+  // A statement that changes no schema object: a data change, a query, a
+  // setting or a named expression.
+  LINT_STATEMENT_CLASS_OTHER = 4;
 }
 
 enum LintImpact {
@@ -1808,6 +1924,10 @@ message LintEffect {
   // impact and reason belong to LINT_FACT_SAFETY_EFFECT alone.
   LintImpact impact = 8;
   string reason = 9;
+  // statement_class belongs to LINT_FACT_STATEMENT_KIND alone.
+  LintStatementClass statement_class = 10;
+  // capability belongs to LINT_FACT_REQUIRED_CAPABILITY alone.
+  string capability = 11;
 }
 
 // LintStatement is one statement of a file. Start and end are byte offsets
@@ -1907,11 +2027,20 @@ message CheckedLint {
   repeated LintFinding findings = 2;
 }
 // ProvisionDevRequest asks the owner for a throwaway database. spec is the
-// operator's request as typed (for example "docker://ydb/24.3"), or empty for
-// the owner's default. The host never names an image.
+// operator's image request as typed, such as "docker://ydb/24.3" or
+// "docker+ydb://_/ydbplatform/local-ydb:24.3/local", or empty for the owner's
+// default. The host never names an image.
+//
+// address instead names a database the operator owns, in which an engine
+// that declares database.dev-realms creates a realm of its own for the run:
+// an empty namespace the reply's address selects and the release removes.
+// It can contain credentials, as OpenRequest.address can. A request carries
+// spec or address, never both. address is contract 25.1 and is sent only
+// when both sides list database.dev-realms.
 message ProvisionDevRequest {
   string engine = 1;
   string spec = 2;
+  string address = 3;
 }
 // DevDatabaseRefusal is a typed answer from an owner that will not provision.
 message DevDatabaseRefusal {
@@ -1927,7 +2056,10 @@ message DevDatabaseRefusal {
   string reason = 2;
 }
 // DevDatabase carries either a lease and the address to open, or a refusal.
-// The lease names what the owner created and must be released.
+// The lease names what the owner created and must be released. The address
+// of a provisioned database carries no credentials. The address of a realm
+// keeps the scheme and host of the request's address and may carry its
+// credentials, so a host treats it as it treats that address.
 message DevDatabase {
   string lease = 1;
   string url = 2;
@@ -1936,4 +2068,329 @@ message DevDatabase {
 message ReleaseDevRequest {
   string engine = 1;
   string lease = 2;
+}
+
+// ListDevObjectsRequest asks what CleanDevDatabase would remove from the dev
+// database a session selected. Empty schemas select the whole realm the
+// session treats as its database; otherwise only the named schemas.
+message ListDevObjectsRequest {
+  string session_id = 1;
+  repeated string schemas = 2;
+}
+// DevObject is one object a cleanup finds. refusal is empty for an object the
+// cleanup removes, and says in one line why it cannot remove one it would
+// stop at.
+message DevObject {
+  Reference object = 1;
+  string refusal = 2;
+}
+// DevObjects is every object in scope, the server's own objects and storage
+// the provider keeps for the session left out. The list and the cleanup read
+// the same set, so a host judges a dev database clean when the list is empty.
+message DevObjects {
+  bool complete = 1;
+  repeated DevObject objects = 2;
+}
+// CleanDevRequest empties the scope ListDevObjectsRequest names. The host
+// decides that the database is a dev database; the provider cannot.
+message CleanDevRequest {
+  string session_id = 1;
+  string request_id = 2;
+  repeated string schemas = 3;
+}
+// DevCleanup is the outcome of one cleanup. CLEANED leaves the scope empty.
+// REFUSED removed nothing and names the objects that stopped it. UNKNOWN is a
+// cleanup that stopped part way, or whose effect is not known; the host
+// treats the database as not clean.
+message DevCleanup {
+  enum Outcome { UNKNOWN = 0; CLEANED = 1; REFUSED = 2; }
+  string request_id = 1;
+  Outcome outcome = 2;
+  repeated DevObject blocking = 3;
+  // Provider-authored, redacted text. Never include credentials or raw URLs.
+  string message = 4;
+}
+
+// ReplayScope is how much of the dev server one replayed statement may
+// change. The zero value confines it to the dev database the session selected.
+message ReplayScope {
+  // The database the dev session selected, empty when it selected none.
+  string database = 1;
+  // The run owns the whole server: the operator declared it disposable, or
+  // the run provisioned it.
+  bool server = 2;
+  // The run provisioned the server and removes it afterwards. Requires server.
+  bool provisioned = 3;
+  // The run may change every user database of a server the operator named
+  // as a whole, and nothing beyond them. Excludes server.
+  bool databases = 4;
+  // The replay owns one pinned session and discards it after every outcome.
+  bool session = 5;
+}
+// GuardReplayRequest asks the owner, offline, which statements of a
+// migration replay have effects it cannot confine to the scope: a change
+// outside the dev database, to something the whole server shares, or to the
+// replay session's own settings. The host runs no statement of a file that
+// has a refused one.
+message GuardReplayRequest {
+  string engine = 1;
+  ReplayScope scope = 2;
+  repeated string statements = 3;
+}
+// ReplayVerdict answers one statement. A refused statement names, in one
+// line, what it does that cannot be confined, without quoting the statement.
+message ReplayVerdict {
+  bool refused = 1;
+  string operation = 2;
+}
+// GuardedReplay holds one verdict per requested statement, in request order.
+message GuardedReplay {
+  repeated ReplayVerdict verdicts = 1;
+}
+
+// DataKind names the case of DataValue the values of a column take.
+enum DataKind {
+  DATA_KIND_UNSPECIFIED = 0;
+  DATA_KIND_BOOL = 1;
+  DATA_KIND_INT64 = 2;
+  DATA_KIND_UINT64 = 3;
+  DATA_KIND_DOUBLE = 4;
+  DATA_KIND_STRING = 5;
+  DATA_KIND_BYTES = 6;
+  DATA_KIND_DECIMAL = 7;
+  DATA_KIND_TIMESTAMP = 8;
+  DATA_KIND_DATE = 9;
+  DATA_KIND_INTERVAL = 10;
+  DATA_KIND_JSON = 11;
+  DATA_KIND_NATIVE = 12;
+}
+// DataValue is one value of a row, never SQL text. A value with no case set
+// is a column the row does not carry, which differs from null.
+message DataValue {
+  oneof value {
+    Empty null = 1;
+    bool bool_value = 2;
+    int64 int64_value = 3;
+    uint64 uint64_value = 4;
+    double double_value = 5;
+    string string_value = 6;
+    bytes bytes_value = 7;
+    DecimalValue decimal_value = 8;
+    TimestampValue timestamp_value = 9;
+    // Days since 1970-01-01 in the proleptic Gregorian calendar.
+    int64 date_value = 10;
+    IntervalValue interval_value = 11;
+    // JSON text.
+    string json_value = 12;
+    NativeValue native_value = 13;
+  }
+}
+// DecimalValue is the unscaled integer as decimal digits with an optional
+// leading minus, and the scale that places the point: digits 1250 with scale
+// 2 is 12.50. precision is the column's, zero when its type states none.
+message DecimalValue {
+  string digits = 1;
+  uint32 precision = 2;
+  uint32 scale = 3;
+}
+// TimestampValue is a moment in UTC. nanos is in [0, 999999999].
+message TimestampValue {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+// IntervalValue keeps months, days and nanoseconds apart, because a month and
+// a day have no fixed length.
+message IntervalValue {
+  int64 months = 1;
+  int64 days = 2;
+  int64 nanoseconds = 3;
+}
+// NativeValue is a value the common cases cannot hold. The host does not read
+// it; it compares the canonical form the provider returns.
+message NativeValue {
+  string type = 1;
+  bytes payload = 2;
+}
+// Row is one row, its values aligned with the column list of its message.
+message Row {
+  repeated DataValue values = 1;
+}
+// DataColumn is a column of a row set with its engine type and the case its
+// values take. A column with no type keeps the values it was given and has no
+// kind. native_type names the NativeValue type of a NATIVE column.
+message DataColumn {
+  string name = 1;
+  string type = 2;
+  DataKind kind = 3;
+  string native_type = 4;
+}
+// RowColumn is a column the rows of a TypeRows request carry, with the type
+// its declaration gives, empty when no declaration types it.
+message RowColumn {
+  string name = 1;
+  string declared_type = 2;
+}
+// LiveTable is the table the database holds: its columns and engine types.
+message LiveTable {
+  repeated Column columns = 1;
+}
+// TypeRowsRequest types the declared and the live rows of one table offline,
+// so a comparison pairs values in the form the engine compares them in. The
+// host reads the live rows first.
+message TypeRowsRequest {
+  string engine = 1;
+  // Established false and absent capability facts remain distinct.
+  map<string, bool> capabilities = 2;
+  repeated string target_features = 3;
+  Reference table = 4;
+  // Absent when the table does not exist yet.
+  LiveTable live_table = 5;
+  // Every column the rows carry, in the order their values align with.
+  repeated RowColumn columns = 6;
+  repeated Row declared = 7;
+  repeated Row live = 8;
+}
+// TypedRows holds the engine type of each request column, in request order,
+// and both row sets in one canonical form. Rows keep their order and the
+// columns each carries.
+message TypedRows {
+  repeated DataColumn columns = 1;
+  repeated Row declared = 2;
+  repeated Row live = 3;
+}
+// ReadRowsRequest reads one page of a table on a live session, in key order.
+// A page token resumes the read where the page that returned it stopped.
+message ReadRowsRequest {
+  string session_id = 1;
+  // Empty reads outside a transaction. Otherwise the handle must belong to
+  // session_id, and the read sees what the transaction sees.
+  string transaction_id = 2;
+  Reference table = 3;
+  repeated string columns = 4;
+  // The key the rows are ordered by. Every key column is also in columns.
+  repeated string key_columns = 5;
+  string page_token = 6;
+  // From 1 to 10,000. A page also stays within the message limit.
+  uint32 max_rows = 7;
+}
+// RowPage is one page of a read. A missing table is exists=false,
+// complete=true and no rows; an empty table is exists=true, complete=true and
+// no rows. A read that cannot finish is an error and no page.
+message RowPage {
+  Reference table = 1;
+  bool exists = 2;
+  bool complete = 3;
+  // The requested columns, in request order, with their types. Empty for a
+  // missing table.
+  repeated DataColumn columns = 4;
+  // Every value is set; null is a value.
+  repeated Row rows = 5;
+  // Empty exactly when complete.
+  string next_page_token = 6;
+}
+// RenderRowWritesRequest renders typed row writes offline. The reply is a
+// RenderResult with one unit per write, in input order, or a refusal and no
+// unit. Ordering across tables is the caller's; the owner orders rows only
+// inside one write when its engine needs it.
+message RenderRowWritesRequest {
+  string engine = 1;
+  map<string, bool> capabilities = 2;
+  repeated string target_features = 3;
+  repeated RowWrite writes = 4;
+}
+// RowWrite is one row operation. UPSERT is a mode of the operation, not a
+// word of one dialect: an owner whose engine has none refuses it.
+message RowWrite {
+  enum Mode { MODE_UNSPECIFIED = 0; INSERT = 1; UPSERT = 2; UPDATE_BY_KEY = 3; DELETE_BY_KEY = 4; }
+  string change_id = 1;
+  Mode mode = 2;
+  Reference table = 3;
+  // The columns written, key columns included.
+  repeated string columns = 4;
+  repeated string key_columns = 5;
+  // One row, aligned with columns. Every value is set; null is a value.
+  repeated DataValue values = 6;
+  // The engine type of a column, from TypeRows.
+  map<string, string> column_types = 7;
+}
+// RenderRefusal names the write a refused batch stopped at and why, in one
+// line that names no value.
+message RenderRefusal {
+  enum Reason { REASON_UNSPECIFIED = 0; UNSUPPORTED_MODE = 1; UNSUPPORTED_VALUE = 2; }
+  string change_id = 1;
+  Reason reason = 2;
+  string message = 3;
+}
+
+// ListSeedTablesRequest lists the tables of one schema, which the host's
+// protected-table check compares a seed run against.
+message ListSeedTablesRequest {
+  string session_id = 1;
+  // Empty selects the session's default schema.
+  string schema = 2;
+}
+message SeedTables {
+  repeated Reference tables = 1;
+}
+// Seed is one seed file. Its text and its values never appear in a
+// diagnostic: a diagnostic carries the path, a position and a reason.
+message Seed {
+  // The file's path in the seed directory, which the ledger keys it by.
+  string path = 1;
+  string filename = 2;
+  // The lowercase hex SHA-256 of the file's bytes.
+  string checksum = 3;
+  string text = 4;
+  string env = 5;
+}
+// ApplySeedRequest runs one file and records it in the provider's ledger
+// atomically, replacing an entry for the same path. The provider creates a
+// missing ledger, refuses one whose layout it does not own, and never adopts
+// another layout.
+message ApplySeedRequest {
+  string session_id = 1;
+  string request_id = 2;
+  Seed seed = 3;
+}
+// RecordSeedRequest records a file in the ledger without running it, as an
+// idempotent run does after KEY_CONFLICT. The text is not sent.
+message RecordSeedRequest {
+  string session_id = 1;
+  string request_id = 2;
+  Seed seed = 3;
+}
+// SeedResult is the outcome of one seed request. APPLIED confirms the file
+// and its entry together. KEY_CONFLICT, from ApplySeed only, is a statement
+// that hit an existing key; nothing of the file stayed. REFUSED ran nothing.
+// NOT_APPLIED stopped and proved that nothing committed, as after a bounded
+// number of retries. UNKNOWN is any case the provider cannot prove that.
+message SeedResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; KEY_CONFLICT = 2; REFUSED = 3; NOT_APPLIED = 4; }
+  string request_id = 1;
+  string path = 2;
+  Outcome outcome = 3;
+  // Where the statement a REFUSED ApplySeed would not run starts in the text.
+  SourcePosition position = 4;
+  // One line of at most 512 bytes. Required for REFUSED and NOT_APPLIED.
+  string reason = 5;
+}
+// ReadSeedLedgerRequest reads the whole ledger. A ledger with more than
+// max_entries entries is an error, never a truncated reply.
+message ReadSeedLedgerRequest {
+  string session_id = 1;
+  uint32 max_entries = 2;
+}
+// SeedLedger distinguishes a missing ledger from an empty one. Reading never
+// creates it.
+message SeedLedger {
+  bool exists = 1;
+  bool complete = 2;
+  repeated SeedLedgerEntry entries = 3;
+}
+message SeedLedgerEntry {
+  string path = 1;
+  string checksum = 2;
+  string env = 3;
+  int64 applied_at_seconds = 4;
+  int32 applied_at_nanos = 5;
 }

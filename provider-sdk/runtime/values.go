@@ -19,5 +19,5 @@ func (s *serverAdapter) NormalizeValues(ctx context.Context, request *protocol.N
 	if s.server.ValueNormalizer == nil {
 		return nil, status.Error(codes.Unimplemented, "normalize values is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateValueInputs, provider.ValidateNormalizedValues, s.server.ValueNormalizer.NormalizeValues)
+	return serveOffline(ctx, s, request, provider.ValidateValueInputs, provider.ValidateNormalizedValues, s.server.ValueNormalizer.NormalizeValues)
 }

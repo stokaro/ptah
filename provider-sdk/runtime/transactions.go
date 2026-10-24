@@ -98,7 +98,7 @@ func (s *serverAdapter) BeginTransaction(ctx context.Context, request *protocol.
 	if err := provider.ValidateBeginTransactionRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := s.server.Transactions.BeginTransaction(ctx, proto.CloneOf(request))
+	result, err := s.server.Transactions.BeginTransaction(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (s *serverAdapter) FinishTransaction(ctx context.Context, request *protocol
 	if err := validateFinishRequest(request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	result, err := s.server.Transactions.FinishTransaction(ctx, request)
+	result, err := s.server.Transactions.FinishTransaction(s.owner(ctx), request)
 	if err != nil {
 		return nil, err
 	}
