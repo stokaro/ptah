@@ -68,8 +68,8 @@ local desired-schema sources and save it as a fingerprinted local plan file
 database still matches the plan's source fingerprint, so a reviewed plan is
 exactly what runs — a drifted target refuses to execute. When an executable
 provider returns native operations, the plan file records them in the
-provider's own encoding beside the provider's identity, and apply runs them
-through that provider. The desired schema
+provider's own encoding beside the provider release, and apply runs them
+through that release of the provider. The desired schema
 comes from native schema files or OCI artifacts (--schema-file, repeatable),
 or Go annotations (--root-dir, repeatable). Sources merge into one composite
 schema. Pass --save or

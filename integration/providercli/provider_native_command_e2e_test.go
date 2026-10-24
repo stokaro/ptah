@@ -14,14 +14,30 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
 )
 
 func nativeCommandFixture(c *qt.C) providerCLI {
 	c.Helper()
-	spec := migrationProviderCommandSpec(c, "operation-models")
+	return nativeCommandFixtureFor(c, nativeCommandSpec(c, testutils.FixtureRelease{}))
+}
+
+// nativeCommandSpec builds the operation-models fixture as release selects, in
+// the mode that plans a new column as one native operation.
+func nativeCommandSpec(c *qt.C, release testutils.FixtureRelease) providerhost.Spec {
+	c.Helper()
+	spec := fixtureReleaseSpec(c, "operation-models", release)
 	spec.Environment = []string{"FIXTURE_RENDER_MODE=native-cli"}
+	return spec
+}
+
+// nativeCommandFixtureFor creates the table through spec and leaves a desired
+// schema that adds one column to it.
+func nativeCommandFixtureFor(c *qt.C, spec providerhost.Spec) providerCLI {
+	c.Helper()
 	f := newProviderCLI(c, spec)
 	c.Assert(os.WriteFile(f.schemaPath, []byte("tables:\n  items:\n    columns:\n      id: {type: INTEGER, not_null: true}\n"), 0o600), qt.IsNil)
 	f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")

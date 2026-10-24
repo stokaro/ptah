@@ -87,6 +87,9 @@ func connectBoundProvider(c *qt.C, provider *boundProvider) *dbschema.DatabaseCo
 	return conn
 }
 
+// newPlanAdvice ends each refusal that names a selected provider.
+const newPlanAdvice = "create and approve a new plan with the selected provider"
+
 func prepareBoundPlan(c *qt.C) (*boundProvider, *dbschema.DatabaseConnection, atlasschema.PlanFile) {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "provider.db")
@@ -115,7 +118,9 @@ func TestSavedPlanPreservesAndVerifiesProviderBinding(t *testing.T) {
 	c := qt.New(t)
 	provider, conn, plan := prepareBoundPlan(c)
 	c.Assert(plan.Provider, qt.IsNotNil)
-	c.Assert(plan.Provider.Identity, qt.Equals, provider.info.Provider)
+	c.Assert(plan.Provider.ID, qt.Equals, "example.provider")
+	c.Assert(plan.Provider.Version, qt.Equals, "experiment")
+	c.Assert(plan.Provider.ContractMajor, qt.Equals, uint32(2))
 	c.Assert(plan.Provider.TargetSHA256, qt.Matches, "[0-9a-f]{64}")
 	encoded, err := atlasschema.MarshalPlanFile(plan)
 	c.Assert(err, qt.IsNil)
@@ -129,27 +134,55 @@ func TestSavedPlanPreservesAndVerifiesProviderBinding(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, ".*cannot preserve provider identity.*")
 	c.Assert(string(encoded), qt.Not(qt.Contains), "opaque-address")
 	c.Assert(string(encoded), qt.Not(qt.Contains), provider.address)
+	c.Assert(string(encoded), qt.Not(qt.Contains), provider.info.Provider.ArtifactSHA256)
+}
+
+// The same release installed again, or built for another platform, has
+// another executable digest; a host that negotiates another contract minor
+// records another contract digest. Neither is the release the plan names, so
+// both apply the plan.
+func TestSavedPlanAcceptsAnotherBuildOfTheSameRelease(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(*catalog.ProviderIdentity)
+	}{
+		{"executable digest", func(identity *catalog.ProviderIdentity) { identity.ArtifactSHA256 = strings.Repeat("c", 64) }},
+		{"negotiated contract digest", func(identity *catalog.ProviderIdentity) { identity.ContractSHA256 = strings.Repeat("d", 64) }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider, _, plan := prepareBoundPlan(c)
+			rebuilt := &boundProvider{base: c.Context(), info: provider.info, address: provider.address}
+			test.change(&rebuilt.info.Provider)
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			c.Assert(atlasschema.VerifyPlanTarget(c.Context(), connectBoundProvider(c, rebuilt), plan, runtime), qt.IsNil)
+		})
+	}
 }
 
 func TestSavedPlanRefusesChangedProviderBeforeReadingTheTarget(t *testing.T) {
+	const targetChanged = `plan provider target facts changed: the server version, schema scope, capabilities or identifier rules differ from planning; ` + newPlanAdvice
 	cases := []struct {
 		name   string
 		change func(*catalog.ServerInfo)
+		want   string
 	}{
-		{"provider", func(info *catalog.ServerInfo) { info.Provider.ID = "another.provider" }},
-		{"artifact", func(info *catalog.ServerInfo) { info.Provider.ArtifactSHA256 = strings.Repeat("c", 64) }},
-		{"version", func(info *catalog.ServerInfo) { info.Provider.Version = "another" }},
-		{"semantics", func(info *catalog.ServerInfo) { info.Provider.SemanticIdentity = "tables-2" }},
-		{"protocol", func(info *catalog.ServerInfo) { info.Provider.ProtocolRevision++ }},
-		{"negotiation", func(info *catalog.ServerInfo) { info.Provider.ContractSHA256 = strings.Repeat("d", 64) }},
+		{"provider", func(info *catalog.ServerInfo) { info.Provider.ID = "another.provider" },
+			`plan was computed with provider "example\.provider", but provider "another\.provider" serves the connection; ` + newPlanAdvice},
+		{"release version", func(info *catalog.ServerInfo) { info.Provider.Version = "another" },
+			`plan was computed with provider "example\.provider" version "experiment", but the selected provider is version "another"; ` + newPlanAdvice},
+		{"contract major", func(info *catalog.ServerInfo) { info.Provider.ProtocolRevision++ },
+			`plan was computed with provider "example\.provider" version "experiment" under provider contract major version 2, but the selected provider uses major version 3; ` + newPlanAdvice},
 		{"capabilities", func(info *catalog.ServerInfo) {
 			info.Capabilities = info.Capabilities.With(capability.ObjectExistenceGuards, false)
-		}},
-		{"identifiers", func(info *catalog.ServerInfo) { info.IdentifierSemantics.DefaultSchema = "another" }},
-		{"scope", func(info *catalog.ServerInfo) { info.Schema = "another" }},
-		{"server", func(info *catalog.ServerInfo) { info.Version = "another" }},
-		{"whole server", func(info *catalog.ServerInfo) { info.WholeServer = true }},
-		{"integer size", func(info *catalog.ServerInfo) { info.DefaultIntSize = 8 }},
+		}, targetChanged},
+		{"identifiers", func(info *catalog.ServerInfo) { info.IdentifierSemantics.DefaultSchema = "another" }, targetChanged},
+		{"scope", func(info *catalog.ServerInfo) { info.Schema = "another" }, targetChanged},
+		{"server", func(info *catalog.ServerInfo) { info.Version = "another" }, targetChanged},
+		{"whole server", func(info *catalog.ServerInfo) { info.WholeServer = true }, targetChanged},
+		{"integer size", func(info *catalog.ServerInfo) { info.DefaultIntSize = 8 }, targetChanged},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -160,7 +193,7 @@ func TestSavedPlanRefusesChangedProviderBeforeReadingTheTarget(t *testing.T) {
 			conn := connectBoundProvider(c, changed)
 			runtime, err := builtin.New()
 			c.Assert(err, qt.IsNil)
-			c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, plan, runtime), qt.ErrorMatches, "plan provider binding changed; create and approve a new plan")
+			c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, plan, runtime), qt.ErrorMatches, test.want)
 			c.Assert(changed.reads.Load(), qt.Equals, int64(0))
 		})
 	}
@@ -174,12 +207,14 @@ func TestSavedPlanRefusesMissingProviderAndEmbeddedSubstitution(t *testing.T) {
 	missing := plan
 	missing.Provider = nil
 	reads := provider.reads.Load()
-	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, missing, runtime), qt.ErrorMatches, "plan provider binding changed; create and approve a new plan")
+	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, missing, runtime), qt.ErrorMatches,
+		`plan was computed without an executable provider, but provider "example\.provider" version "experiment" serves the connection; `+newPlanAdvice)
 	c.Assert(provider.reads.Load(), qt.Equals, reads)
 	embedded, err := dbschema.ConnectToDatabase(c.Context(), provider.address)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(embedded.Close(), qt.IsNil) })
-	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), embedded, plan, runtime), qt.ErrorMatches, "plan provider binding changed; create and approve a new plan")
+	c.Assert(atlasschema.VerifyPlanTarget(c.Context(), embedded, plan, runtime), qt.ErrorMatches,
+		`plan was computed with provider "example\.provider" version "experiment", but no executable provider serves the connection; create and approve a new plan`)
 }
 
 func TestProviderTargetProjectionIgnoresIdentifierFactOrder(t *testing.T) {
@@ -219,7 +254,11 @@ func TestSavedPlanRefusesMalformedProviderBinding(t *testing.T) {
 	_, err := atlasschema.MarshalPlanFile(plan)
 	c.Assert(err, qt.ErrorMatches, ".*plan provider target requires a lowercase SHA-256 digest.*")
 	plan.Provider.TargetSHA256 = strings.Repeat("a", 64)
-	plan.Provider.Identity.ProtocolRevision = 0
+	plan.Provider.ContractMajor = 0
 	_, err = atlasschema.MarshalPlanFile(plan)
-	c.Assert(err, qt.ErrorMatches, ".*provider identity requires a protocol revision.*")
+	c.Assert(err, qt.ErrorMatches, "plan provider binding requires a contract major version")
+	plan.Provider.ContractMajor = 2
+	plan.Provider.Version = " experiment"
+	_, err = atlasschema.MarshalPlanFile(plan)
+	c.Assert(err, qt.ErrorMatches, "plan provider binding requires a provider ID and a release version")
 }

@@ -45,9 +45,14 @@ type session struct {
 	fault           string
 }
 
+// version is the release version the fixture declares. A test that needs two
+// releases of one provider replaces it at link time:
+// -ldflags=-X=example.com/ptah-fixture-provider/backend.version=<version>.
+var version = "0.0.1"
+
 // Description declares the fixture's intentionally narrow service contract.
 func Description() *protocol.Description {
-	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: "0.0.1", SemanticIdentity: "fixture-schema-10",
+	return &protocol.Description{Revision: provider.Revision, ProviderId: "example.org/fixture", Version: version, SemanticIdentity: "fixture-schema-10",
 		Engines: []*protocol.Engine{{Id: "fixture", DefaultSchema: "main", Features: []string{"tables", "columns", provider.CommonTableIdentityFeature},
 			Identifiers: identifierRules(), ValueModels: valueModels(), YamlSourceKeys: yamlSourceKeys(), GoSourceDirectives: goSourceDirectives()}},
 		Features: []string{provider.InspectFeature, provider.RenderFeature, provider.ExecuteFeature, provider.AnalyzeSQLFeature, provider.NormalizeValuesFeature, provider.DecodeSourceFeature, provider.ConvertValuesFeature}}

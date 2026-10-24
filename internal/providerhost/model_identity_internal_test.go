@@ -1,8 +1,8 @@
 package providerhost
 
-// White-box testing required: the negotiated contract digest is assembled by
-// private target state. A pure fixture isolates changes in that digest from
-// database sessions and process artifact changes that also invalidate plans.
+// White-box testing required: the negotiated contract digest and the model
+// definitions are assembled from private host state. A pure fixture isolates
+// changes in them from database sessions and from the executable's digest.
 
 import (
 	"testing"
@@ -139,6 +139,44 @@ func TestModelDisplayNameChangesFrozenDefinitions(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(after.ContractSHA256, qt.Not(qt.Equals), before.ContractSHA256)
 	c.Assert(string(changed), qt.Not(qt.Equals), string(definition))
+}
+
+// A saved plan binds to the provider release, not to its executable. The
+// definitions its native operations carry must therefore read the same under
+// another build of the release, or the plan could not be decoded there.
+func TestModelDefinitionDoesNotBindTheExecutableDigest(t *testing.T) {
+	c := qt.New(t)
+	target := yamlIdentityTarget()
+	contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
+	definition, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	target.host.artifact = "another build of the same release"
+	rebuilt, err := target.host.modelDefinition(contract)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rebuilt), qt.Equals, string(definition))
+}
+
+func TestModelDefinitionBindsTheProviderRelease(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*protocol.Description)
+	}{
+		{"provider", func(d *protocol.Description) { d.ProviderId = "example.org/other" }},
+		{"release version", func(d *protocol.Description) { d.Version = "2" }},
+		{"contract major", func(d *protocol.Description) { d.Revision++ }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := yamlIdentityTarget()
+			contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
+			definition, err := target.host.modelDefinition(contract)
+			c.Assert(err, qt.IsNil)
+			test.change(target.host.description)
+			changed, err := target.host.modelDefinition(contract)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(changed), qt.Not(qt.Equals), string(definition))
+		})
+	}
 }
 
 func TestModelsRefuseEngineDependentOmissionLabels(t *testing.T) {

@@ -137,8 +137,8 @@ A target served by an [executable provider](../../extend/executable-providers/)
 can plan native operations that have no SQL. The file then records such a
 statement with a `native` object in place of `sql`: the operation kind, its
 subject, and the provider's own encoding of the operation. The plan binds the
-provider's identity, and `ptah schema apply --plan` runs the operation only
-through that provider.
+provider release, and `ptah schema apply --plan` runs the operation only
+through that release of the provider.
 
 An `--edit` that leaves the statements as they were, comments and whitespace
 aside, keeps every recorded verdict. After any other edit, a statement whose
@@ -176,14 +176,24 @@ into the plan file. A plan that declares no rows carries neither field, and the
 Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
 
 When an embedding application selects an executable provider, the native JSON
-plan also records `provider`: the executable and negotiated contract identity,
-plus a digest of the server version, schema scope, capabilities, and identifier
-rules used during planning. Apply checks that binding before reading the target.
-A changed or missing provider binding requires a new plan and approval, even if
-the schema has not changed. Addresses and credentials are excluded. The Atlas
-`.plan.hcl` format cannot preserve this binding and refuses such plans.
-Use the same explicit [provider configuration](../../extend/executable-providers/)
-for planning and application.
+plan also records `provider`: the provider ID, its release version and the
+major version of the provider contract, plus a digest of the server version,
+schema scope, capabilities, and identifier rules used during planning. Apply
+checks that binding before reading the target.
+
+The binding names a release, not an executable. The same release of the
+provider applies the plan after it is installed again or on another platform,
+where the executable has another digest. Another provider, another release or
+another major contract version refuses the plan, and the message names the
+version the plan was computed with and the version selected now. Changed target
+facts and a missing binding refuse it too. Each refusal requires a new plan and
+approval, even if the schema has not changed. The digest of the installed
+executable is still checked each time the provider starts.
+
+Addresses and credentials are excluded. The Atlas `.plan.hcl` format cannot
+preserve this binding and refuses such plans. Use the same explicit
+[provider configuration](../../extend/executable-providers/) for planning and
+application.
 
 When the database already matches the desired schema, the command prints
 `Schema is synced, no changes to be made.` and writes no file at all. A script

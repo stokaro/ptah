@@ -125,16 +125,20 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 			GoDirective: goDirectiveIdentities(declared.GetGoSourceDirectives()),
 			Comparisons: comparisonContracts(declared.GetComparisons()), Planning: planningContracts(declared.GetPlanning())}
 	}
+	// The definition names the release that interprets the model, never the
+	// executable's digest. A saved plan binds to the provider release, so the
+	// same release installed again or built for another platform must decode
+	// the envelopes it wrote; another release changes the version and refuses
+	// them. The installation's checksum is verified when the provider starts.
 	definition := struct {
 		Format           string                 `json:"format"`
 		Provider         string                 `json:"provider"`
 		Version          string                 `json:"version"`
 		SemanticIdentity string                 `json:"semantic_identity"`
-		ArtifactSHA256   string                 `json:"artifact_sha256"`
 		ProtocolRevision uint32                 `json:"protocol_revision"`
 		ProviderFeatures []string               `json:"provider_features"`
 		Engines          map[string]engineModel `json:"engines"`
-	}{"ptah.provider.resolved-model.v1", h.description.GetProviderId(), h.description.GetVersion(), h.description.GetSemanticIdentity(), h.artifact, h.description.GetRevision(), featureSet(h.description.GetFeatures()), engines}
+	}{"ptah.provider.resolved-model.v2", h.description.GetProviderId(), h.description.GetVersion(), h.description.GetSemanticIdentity(), h.description.GetRevision(), featureSet(h.description.GetFeatures()), engines}
 	data, err := json.Marshal(definition)
 	if err != nil {
 		return nil, err

@@ -5456,7 +5456,7 @@ remain required under #4204.
 selected session or transaction. `ValidateUnits` checks the complete batch
 without writes or transaction creation. `ExecuteUnits` repeats validation
 before dispatch; a local refusal sends no prefix. Native values must retain
-the selected provider's captured executable identity and model binding.
+the selected provider's captured model binding.
 Dry runs validate but do not dispatch.
 
 Callers own target verification, approval, lock acquisition, and transaction
