@@ -11,30 +11,30 @@ a new record that names it, and its own status line is updated to point there.
 | Number | Title | Status |
 | --- | --- | --- |
 | [0001](0001-canonical-schema-state-and-pipeline-boundaries.md) | Canonical schema state and pipeline boundaries | Proposed |
-| [0002](0002-read-only-agent-mvp-scope-and-transport.md) | Read-only agent MVP scope, operation ownership, and transport | Proposed |
-| [0003](0003-agent-surface-trust-boundaries.md) | Agent-surface trust boundaries and threat model | Proposed |
-| [0004](0004-constrained-artifact-mutation.md) | Capability broker, artifact digests, and constrained mutation | Proposed |
-| [0005](0005-agent-surface-inventory.md) | The agent-exposure inventory is generated, and classified by what a verb does to a database | Proposed |
-| [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Proposed |
-| [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
-| [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Proposed |
+| [0002](0002-read-only-agent-mvp-scope-and-transport.md) | Read-only agent MVP scope, operation ownership, and transport | Accepted |
+| [0003](0003-agent-surface-trust-boundaries.md) | Agent-surface trust boundaries and threat model | Accepted |
+| [0004](0004-constrained-artifact-mutation.md) | Capability broker, artifact digests, and constrained mutation | Accepted |
+| [0005](0005-agent-surface-inventory.md) | The agent-exposure inventory is generated, and classified by what a verb does to a database | Accepted |
+| [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Accepted |
+| [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Accepted |
+| [0008](0008-agent-surface-promotion.md) | The agent surfaces are experimental, and these are the criteria that end that | Accepted |
 | [0009](0009-remote-transport-authentication.md) | What a remote MCP transport would have to decide before it could exist | Superseded by 0018 |
 | [0010](0010-retrieval-quality-is-not-a-schema-property.md) | Retrieval quality is not a property of the schema, and what follows for verification | Superseded by 0013 |
 | [0011](0011-database-code-analysis-starts-from-what-the-tree-already-derives.md) | Database-code analysis starts from what the tree already derives | Proposed |
-| [0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) | The canonical core is removed, and the shipping pipeline migrates in place | Proposed |
-| [0013](0013-inference-state-transitions-answer-with-their-provenance.md) | An inference-state transition answers with its provenance, and its approval binds to exact content | Proposed |
-| [0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) | The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself | Proposed |
-| [0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md) | A declared fact carries a disposition, and a physical object has one emitter | Proposed |
-| [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every usable live feeder has passed it | Proposed |
-| [0017](0017-a-chunked-corpus-is-a-set-per-source-row.md) | A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement | Proposed |
-| [0018](0018-the-session-is-the-unit-of-shared-agent-state.md) | The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it | Proposed |
-| [0019](0019-a-declared-row-set-is-artifact-content.md) | A declared row set is artifact content, and a checkpoint carries the rows its successors read | Proposed |
+| [0012](0012-the-canonical-core-is-removed-and-the-shipping-pipeline-migrates-in-place.md) | The canonical core is removed, and the shipping pipeline migrates in place | Accepted |
+| [0013](0013-inference-state-transitions-answer-with-their-provenance.md) | An inference-state transition answers with its provenance, and its approval binds to exact content | Accepted |
+| [0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) | The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself | Accepted |
+| [0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md) | A declared fact carries a disposition, and a physical object has one emitter | Accepted |
+| [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every usable live feeder has passed it | Accepted |
+| [0017](0017-a-chunked-corpus-is-a-set-per-source-row.md) | A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement | Accepted |
+| [0018](0018-the-session-is-the-unit-of-shared-agent-state.md) | The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it | Accepted |
+| [0019](0019-a-declared-row-set-is-artifact-content.md) | A declared row set is artifact content, and a checkpoint carries the rows its successors read | Accepted |
 | [0020](0020-row-access-policies-keep-their-engine-semantics.md) | Row-access policies keep their engine semantics | Proposed |
-| [0021](0021-provider-recognition-does-not-authorize-execution.md) | Provider recognition does not authorize execution | Proposed |
-| [0022](0022-provider-values-are-resolved-in-semantic-batches.md) | Provider values are resolved in semantic batches | Proposed |
+| [0021](0021-provider-recognition-does-not-authorize-execution.md) | Provider recognition does not authorize execution | Accepted |
+| [0022](0022-provider-values-are-resolved-in-semantic-batches.md) | Provider values are resolved in semantic batches | Accepted |
 | [0023](0023-engine-knowledge-moves-with-the-provider.md) | Engine knowledge moves with the provider | Proposed |
-| [0024](0024-the-provider-owns-table-changes-through-one-lifecycle-service.md) | The provider owns table changes through one lifecycle service | Proposed |
-| [0025](0025-a-provider-declares-the-source-syntax-it-owns.md) | A provider declares the source syntax it owns | Proposed |
+| [0024](0024-the-provider-owns-table-changes-through-one-lifecycle-service.md) | The provider owns table changes through one lifecycle service | Accepted |
+| [0025](0025-a-provider-declares-the-source-syntax-it-owns.md) | A provider declares the source syntax it owns | Accepted |
 | [0026](0026-official-providers-are-pinned-in-the-release-installed-explicitly-and-bundled-by-the-distribution.md) | Official providers are pinned in the release, installed explicitly, and bundled by the distribution | Superseded by 0031 |
 | [0027](0027-a-provider-reads-the-sql-schema-documents-of-its-own-dialect.md) | A provider reads the SQL schema documents of its own dialect | Accepted |
 | [0028](0028-a-provider-owns-how-rows-are-read-written-and-seeded.md) | A provider owns how rows are read, written and seeded | Accepted |

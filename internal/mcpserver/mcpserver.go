@@ -115,26 +115,36 @@ func Run(ctx context.Context, cfg Config) error {
 // otherwise have to discover by calling a tool. It does not try to instruct the
 // model into safety: the enforcement is the broker's, and a paragraph that asked
 // politely would be the thing #1483 says not to build.
+//
+// The boundary is the one ADR 0006 decides: a declared schema resolves inside
+// the directories the operator configured, and read_database takes the name of
+// a target the operator configured rather than an address.
 func instructions(cfg Config) string {
 	if !cfg.Session.HasWorkspace() {
 		return fmt.Sprintf(
 			"Ptah agent contract %s. Every tool here reads: none of them writes a file, "+
-				"changes a database, or applies a migration. Schema sources and database "+
-				"URLs are supplied by you and read with this process's own permissions, "+
-				"and each operation is subject to this session's capability policy -- "+
-				"reading a database the operator has not permitted is refused.",
-			agentapi.Version)
+				"changes a database, or applies a migration. %s Each operation asks this "+
+				"session's capability policy before it reads anything, and describe_session "+
+				"reports what the policy permits and what the operator configured.",
+			agentapi.Version, operatorScope)
 	}
 	return fmt.Sprintf(
 		"Ptah agent contract %s. This server reads and, within one configured workspace, "+
 			"proposes and applies constrained patches to migration, schema and test files. "+
-			"Start with describe_session: it reports which artifact directories exist, "+
+			"%s Start with describe_session: it reports which artifact directories exist, "+
 			"their content digests, and which capabilities this session has. A patch is "+
 			"previewed first and applied with the token the preview returns; Ptah runs its own "+
 			"verification after every write and undoes the patch if the write introduced an "+
 			"error. Nothing here applies anything to a database.",
-		agentapi.Version)
+		agentapi.Version, operatorScope)
 }
+
+// operatorScope says what a caller may name. Both variants of the instructions
+// carry it, because a workspace adds artifact directories and changes neither
+// rule.
+const operatorScope = "A declared schema is read only from the directories the operator " +
+	"configured. A database is read only if the operator configured it: you name it, and " +
+	"no URL is accepted."
 
 // register adds every tool. It is separate from New so a test can build the
 // server and read its tool list without running a transport.

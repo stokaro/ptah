@@ -1,6 +1,6 @@
 # ADR 0014: The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#2068](https://github.com/stokaro/ptah/issues/2068)
 - Answers the epic's "the exact PostgreSQL transaction sequence requires ADR-level design and testing"

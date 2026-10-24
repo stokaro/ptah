@@ -1,6 +1,6 @@
 # ADR 0007: A closed agent error taxonomy, assigned at the sentinel and carried in `_meta`
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1484](https://github.com/stokaro/ptah/issues/1484), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Answers the Phase 0 checklist item *"Define structured diagnostics and stable agent error taxonomy."*

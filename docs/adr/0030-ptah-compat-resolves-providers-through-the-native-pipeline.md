@@ -280,7 +280,13 @@ These are for the future implementation. None holds today.
   the same way: `PTAH_PROVIDER_CONFIG` serves a provider build other than the
   installed one, and a disabled entry is not replaced by the user-store
   installation.
-- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
-  record decides whether the YDB provider is one, and so whether `ptah-compat`
-  runs its YDB integration tests with a provider in Ptah's pipelines, as the
-  acceptance criteria require.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. The
+  maintainers decided how that applies to YDB (stokaro/ptah#4204). The YDB
+  tests that need the provider live in the CI of `stokaro/ptah-ydb-plugin` and
+  run against a current Ptah: end-to-end tests through the `ptah` binary, live
+  tests and parity corpora. Ptah's own CI proves the provider contract on the
+  in-tree fixture provider only. So the plugin's CI runs the `ptah-compat` YDB
+  integration tests with a provider, against a `ptah-compat` built from a
+  current Ptah, and it runs the dev-database provisioning criterion as well.
+  The criteria about provider selection, process lifetime and strict mode are
+  host behavior, and Ptah's CI proves them on the fixture provider.

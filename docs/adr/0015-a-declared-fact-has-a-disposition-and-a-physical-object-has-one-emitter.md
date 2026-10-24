@@ -1,6 +1,6 @@
 # ADR 0015: A declared fact carries a disposition, and a physical object has one emitter
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#2606](https://github.com/stokaro/ptah/issues/2606)
 - Builds on:

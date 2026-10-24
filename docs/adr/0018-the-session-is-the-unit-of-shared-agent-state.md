@@ -1,6 +1,6 @@
 # ADR 0018: The session is the unit of shared agent state, and Phase 9's deferred items are evaluated against it
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1492](https://github.com/stokaro/ptah/issues/1492), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes [ADR 0009](0009-remote-transport-authentication.md)

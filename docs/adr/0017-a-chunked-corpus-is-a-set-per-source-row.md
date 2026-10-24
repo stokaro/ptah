@@ -1,6 +1,6 @@
 # ADR 0017: A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#2625](https://github.com/stokaro/ptah/issues/2625)
 - Builds on [ADR 0013](0013-inference-state-transitions-answer-with-their-provenance.md), whose row rules this record restates over a set

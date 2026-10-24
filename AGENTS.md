@@ -224,6 +224,12 @@ rather than trusting the literal. The generated support matrix is the only
 release-line census; authored pages must not repeat its counts
 (`check-support-matrix.mjs`).
 
+An engine an external provider serves declares its release lines and support
+levels in the provider: each plugin release publishes them as
+`release-lines.json`. Ptah's support matrix shows such an engine as served
+through the plugin, with a link, and states no level of its own (ADR 0023). The
+YDB lines in `cells.go` describe the embedded engine and are removed with it.
+
 ### Lint rules
 
 Every rule identifier is enumerated on one generated page. Adding a rule is
@@ -815,6 +821,20 @@ which one it misses, in a sentence.
 `internal/testcontour` runs the result, and a skip there is a failure: an engine
 a new test needs joins `.github/workflows/go-integration-tests.yml` in the same
 change.
+
+**An engine an external provider serves is tested in the provider's
+repository.** Ptah's CI proves the provider contract on the in-tree fixture
+provider only: `provider-sdk/testdata/fixture`, built by
+`testutils.BuildFixtureProvider` and driven by `provider-sdk/integration` and
+`integration/providercli`. Once `stokaro/ptah-ydb-plugin` serves `ydb://`, the
+YDB end-to-end tests through the `ptah` binary, the YDB live tests and the
+parity corpora live in that repository's CI and run against a current Ptah.
+Such an engine never joins `go-integration-tests.yml`.
+
+So a Ptah change that alters what a provider receives carries a test against
+the fixture provider here, and the engine-level test for YDB belongs to the
+plugin. The embedded YDB engine runs in process, so the rules above cover it
+until the plugin serves `ydb://` (ADR 0031).
 
 ### Declarative tests only
 

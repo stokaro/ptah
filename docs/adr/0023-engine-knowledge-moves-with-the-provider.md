@@ -95,3 +95,26 @@ ADR 0021 covers that case.
 Environment authentication makes the provider's behavior depend on the process
 environment. The session records which method was selected, without the
 credential, so a failure is diagnosable.
+
+## Amendments
+
+- The maintainers decided who owns the YDB release lines
+  (stokaro/ptah#4204). The provider owns its release lines and their support
+  levels, and each plugin release publishes them as the `release-lines.json`
+  asset. Ptah's support matrix shows YDB as served through the plugin, with a
+  link to it, and states no support level of its own for YDB. That replaces
+  what "Release lines and probes" says the host does with a provider's lines:
+  the host builds no capability-matrix cell from them, and
+  `internal/capabilityprobe/cells.go` gains no entry per installed provider.
+  `cells.go` keeps the lines of the engines that stay in process. It also
+  replaces the consequence that the matrix reads installed providers: the YDB
+  row and its link do not depend on what is installed. The rule that a line may
+  claim a level only if something runs against it binds the plugin's CI, which
+  runs those lines.
+- "The v1 freeze" and "before v1" mean the Ptah 1.0 release: the lint and
+  provisioning services and the release-line declaration are added to the
+  protocol before that release. The provider contract is versioned
+  MAJOR.MINOR, 25.1 today
+  ([ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)),
+  and its major version is stable from Ptah 1.0 on. Before that release an
+  incompatible change may still raise it.

@@ -1,6 +1,6 @@
 # ADR 0022: Provider values are resolved in semantic batches
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#4204](https://github.com/stokaro/ptah/issues/4204)
 
@@ -1159,3 +1159,19 @@ establishes inspection coverage, a migration plan, or an execution outcome.
   Consequences that an experimental revision refuses every other revision, and
   the practice in the later sections of raising the revision for each added
   service.
+- "v1" in this record means the Ptah 1.0 release. "Stable v1" in Consequences
+  and each "pre-v1" refer to that release, not to a contract numbered 1. The
+  provider contract is versioned MAJOR.MINOR, 25.1 today
+  ([ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)),
+  and its major version is stable from Ptah 1.0 on. Before that release an
+  incompatible change may still raise it. Feature names that end in `.v1`, such
+  as `schema.common-table-identity.v1`, are identifiers and keep their meaning.
+- A saved plan that holds native provider operations binds to the provider
+  identity, the provider release version and the major contract version. The
+  maintainers decided this for saved plans (stokaro/ptah#4204). Applying the
+  plan with the same release of the provider is accepted, including after that
+  release is installed again or on another platform. Applying it with another
+  release of the provider is refused, and the refusal tells the operator to
+  plan again. The executable digest that "Host model resolution" lists among
+  the codec bindings does not bind a saved plan. Execution still verifies the
+  captured base facts against the selected connection.

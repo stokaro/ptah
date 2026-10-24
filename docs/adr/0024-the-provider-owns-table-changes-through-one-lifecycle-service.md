@@ -1,6 +1,6 @@
 # ADR 0024: The provider owns table changes through one lifecycle service
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -111,3 +111,10 @@ coverage table in the working notes tracks which files remain.
 - [ADR 0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md)
   tracks the table-rebuild policy input as a flip blocker, so the lifecycle service
   must accept that input before the embedded planner is deleted.
+- "The v1 freeze" and "before v1" mean the Ptah 1.0 release: the facet models
+  this record asks for are added to the protocol before that release. The
+  provider contract is versioned MAJOR.MINOR, 25.1 today
+  ([ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)),
+  and its major version is stable from Ptah 1.0 on. Before that release an
+  incompatible change may still raise it. A facet model added later is a
+  compatible addition and raises the minor version.

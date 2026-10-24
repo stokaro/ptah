@@ -293,7 +293,12 @@ These are for the future implementation. None holds today.
 - ADR 0031 also replaces "Versioning": an additive change such as a new RPC
   raises the minor contract version, not `provider.Revision`, which is the major
   version.
-- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
-  record decides whether the YDB provider is one, and so whether the
-  differential corpus and the host end-to-end test in the acceptance criteria
-  run in Ptah's pipelines.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. The
+  maintainers decided how that applies to YDB (stokaro/ptah#4204). The YDB
+  tests that need the provider live in the CI of `stokaro/ptah-ydb-plugin` and
+  run against a current Ptah: end-to-end tests through the `ptah` binary, live
+  tests and parity corpora. Ptah's own CI proves the provider contract on the
+  in-tree fixture provider only. Of the acceptance criteria, the differential
+  corpus, the mutation test and the host end-to-end test therefore run in the
+  plugin's CI. The SDK conformance tests in `provider-sdk/integration` stay in
+  Ptah's CI, on the fixture provider.

@@ -1,6 +1,6 @@
 # ADR 0016: An outbox event lives until every usable live feeder has passed it
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issues: [#2690](https://github.com/stokaro/ptah/issues/2690),
   [#2723](https://github.com/stokaro/ptah/issues/2723)
