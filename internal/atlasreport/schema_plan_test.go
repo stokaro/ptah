@@ -117,7 +117,7 @@ func TestWriteSchemaPlanSQLHelper(t *testing.T) {
 		{
 			name:   "indented",
 			format: `{{ sql . "  " }}`,
-			want:   "  CREATE TABLE \"users\" (id INT);\n  DROP TABLE \"old\";\n",
+			want:   "CREATE TABLE \"users\" (id INT);\nDROP TABLE \"old\";\n",
 		},
 	}
 

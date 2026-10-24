@@ -909,12 +909,22 @@ reference into the evaluated `atlas.hcl` environment. With `--env`, Ptah can
 read `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and
 supported `diff` policy from `atlas.hcl`.
 
-The `sql` template helper indents SQL outside quoted tokens. It preserves
-line breaks and whitespace inside string literals, quoted identifiers, and
-dollar-quoted routine bodies, so formatting does not change stored values. It
-reads the statements by the quoting rules of the dev database's engine: a
-bracketed name is quoted on SQL Server and SQLite, and `@@...@@` is a string
-on YDB.
+The `sql` template helper reads its indent argument as the pinned community
+binary does: as the unit a statement's inner lines are indented by, not as a
+prefix. Statements and the comments above them start at the first column, and
+the columns of a `CREATE TABLE` sit one indent in, so the default
+`{{ sql . "  " }}`, which an `atlas.hcl` `format.migrate.diff` often names,
+writes files laid out like the ones Atlas writes. Another indent, such as
+`"\t"`, replaces each two-space level of Ptah's layout. With no indent, or an
+empty one, Ptah keeps its own layout, where the community binary writes each
+statement on one line.
+
+Indentation never moves a line that starts inside a quoted token. Line breaks
+and whitespace inside string literals, quoted identifiers, and dollar-quoted
+routine bodies stay as they are, so formatting does not change stored values.
+The helper reads the statements by the quoting rules of the dev database's
+engine: a bracketed name is quoted on SQL Server and SQLite, and `@@...@@` is a
+string on YDB.
 
 Ptah snapshots the desired schema first, cleans the dev database, and replays
 the migration directory into it. It compares the replayed state to the
@@ -1063,17 +1073,17 @@ Use `--lock-timeout` to bound waiting for both the migration-directory lock and
 the exclusive dev-database lock. It defaults to `10s`, and zero or a negative
 value tries each lock once without waiting, as on Atlas. The migration-directory
 lock is a file beside the directory, such as `.migrations.ptah-migrate-diff.lock`
-next to `migrations/`, and the run removes it when it releases the lock. The default migration-file format matches
-Atlas's two-space SQL indentation template. Use `--format` to render the
-generated migration SQL through Atlas-style Go templates with `sql` and
-`.MarshalSQL`, for example to disable indentation:
+next to `migrations/`, and the run removes it when it releases the lock. The default migration-file format is
+Atlas's `{{ sql . "  " }}`. Use `--format` to render the generated migration
+SQL through Atlas-style Go templates with `sql` and `.MarshalSQL`, for example
+to indent the columns of a `CREATE TABLE` with a tab:
 
 ```bash
 ptah-compat migrate diff add_users \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "sqlite://dev.db" \
-  --format '{{ sql . "" }}'
+  --format '{{ sql . "\t" }}'
 ```
 
 With `--edit`, the generated migration files open in `$VISUAL` or `$EDITOR`

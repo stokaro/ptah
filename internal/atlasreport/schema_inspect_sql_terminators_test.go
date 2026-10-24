@@ -60,14 +60,24 @@ func TestRenderSchemaInspect_SQLKeepsRenderedTerminatorsAndIndentation(t *testin
 				"CREATE INDEX IF NOT EXISTS \"idx_users_email\" ON \"users\" (\"email\");\n",
 		},
 		{
-			name:   "every line stays indented",
+			// The pinned community binary reads the indent as the unit
+			// inside a statement; the statements stay at the first column.
+			name:   "the default indent keeps the layout",
 			format: `{{ sql . "  " }}`,
-			want: "  CREATE TABLE \"users\" (\n" +
-				"    \"id\" INTEGER NOT NULL PRIMARY KEY,\n" +
-				"    \"email\" TEXT\n" +
-				"  );\n" +
-				"  CREATE INDEX IF NOT EXISTS \"idx_users_email\" ON \"users\" (\"email\");\n" +
-				"  ",
+			want: "CREATE TABLE \"users\" (\n" +
+				"  \"id\" INTEGER NOT NULL PRIMARY KEY,\n" +
+				"  \"email\" TEXT\n" +
+				");\n" +
+				"CREATE INDEX IF NOT EXISTS \"idx_users_email\" ON \"users\" (\"email\");\n",
+		},
+		{
+			name:   "another indent replaces the columns' indent",
+			format: `{{ sql . "\t" }}`,
+			want: "CREATE TABLE \"users\" (\n" +
+				"\t\"id\" INTEGER NOT NULL PRIMARY KEY,\n" +
+				"\t\"email\" TEXT\n" +
+				");\n" +
+				"CREATE INDEX IF NOT EXISTS \"idx_users_email\" ON \"users\" (\"email\");\n",
 		},
 	}
 
