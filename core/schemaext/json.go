@@ -82,7 +82,7 @@ func escapedCodePoint(data []byte, offset int) (uint64, bool) {
 }
 
 func jsonValue(decoder *json.Decoder, depth int) (any, error) {
-	if depth > 256 {
+	if depth > maxJSONDepth {
 		return nil, fmt.Errorf("nesting exceeds 256 levels")
 	}
 	token, err := decoder.Token()

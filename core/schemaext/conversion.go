@@ -90,7 +90,7 @@ func (r Registry) ConvertCoverage(ctx context.Context, from, to Representation, 
 		if codec.owner != record.Model.Owner {
 			return Coverage{}, fmt.Errorf("%w: conversion changes model owner", ErrIncompatibleCodec)
 		}
-		document.Kinds[i].Model = CodecIdentity{Owner: codec.owner, Kind: record.Model.Kind, Representation: to, Version: codec.version, Definition: codec.definition}
+		document.Kinds[i].Model = CodecIdentity{Owner: codec.owner, Kind: record.Model.Kind, Representation: to, Version: codec.version, Definition: codec.definition.digest()}
 	}
 	if to == Observed {
 		for i, record := range document.Subjects {

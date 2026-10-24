@@ -64,7 +64,7 @@ func (r Registry) requireModel(model CodecIdentity) error {
 	if !found {
 		return &UnknownCodecError{Kind: model.Kind, Representation: model.Representation}
 	}
-	if codec.owner != model.Owner || codec.version != model.Version || codec.definition != model.Definition {
+	if codec.owner != model.Owner || codec.version != model.Version || codec.definition.digest() != model.Definition {
 		return fmt.Errorf("%w: coverage model %q/%s", ErrIncompatibleCodec, model.Kind, model.Representation)
 	}
 	return nil

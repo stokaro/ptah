@@ -187,8 +187,8 @@ func (r *Runtime) validateReversals(ctx context.Context, inputs []schemaext.Chan
 // or, for a reverse without a statement, leaves out.
 func (r *Runtime) snapshotReversalState(ctx context.Context, input schemaext.ChangeRecord, subject objectidentity.ID, projections []schemaext.ProjectedValue) ([]schemaext.ProjectedValue, error) {
 	owner := ""
-	if definition, found := r.codecs.Identity(input.Value.Kind(), schemaext.Change); found {
-		owner = definition.Owner
+	if codecOwner, found := r.codecs.Owner(input.Value.Kind(), schemaext.Change); found {
+		owner = codecOwner
 	}
 	result := make([]schemaext.ProjectedValue, len(projections))
 	type projectionKey struct {

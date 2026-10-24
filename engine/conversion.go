@@ -30,8 +30,8 @@ func (r *Runtime) registerConversion(owner string, declaration Conversion) error
 	index := len(r.conversionServices)
 	for _, kind := range declaration.Kinds {
 		for _, representation := range []schemaext.Representation{schemaext.Desired, schemaext.Observed} {
-			model, found := r.codecs.Identity(kind, representation)
-			if !found || model.Owner != owner {
+			codecOwner, found := r.codecs.Owner(kind, representation)
+			if !found || codecOwner != owner {
 				return fmt.Errorf("%w: %q does not own %q/%s", ErrInvalidRegistration, owner, kind, representation)
 			}
 		}
