@@ -123,8 +123,9 @@ func TestInventory_NilDiff(t *testing.T) {
 // inventoryKinds are the category stems the inventory reports. Each counts a
 // kind of object the comparison pairs one by one.
 var inventoryKinds = []string{
-	"columns", "constraints", "enum_values", "enums", "functions", "indexes",
-	"rls_enabled_tables", "rls_policies", "roles", "schemas", "tables",
+	"columns", "constraints", "enum_values", "enums", "functions", "grants", "indexes",
+	"materialized_views", "rls_enabled_tables", "rls_policies", "role_memberships", "roles",
+	"schemas", "sequences", "tables", "triggers", "views",
 }
 
 // notInventoryKinds are the category stems the inventory does not report,
@@ -133,6 +134,9 @@ var notInventoryKinds = map[string]string{
 	"unique_protections": "counts index removals a UNIQUE constraint enforces, each one of the indexes_removed already",
 	"rls_force":          "counts a table's FORCE ROW LEVEL SECURITY flag turning on or off, a setting of a table rather than an object",
 	"vector_dimension":   "counts column modifications, which columns_modified counts as well",
+	"index_visibility":   "counts an index's visibility to the optimizer changing, a setting of an index both sides hold",
+	"grant_options":      "counts a grant's WITH GRANT OPTION turning on or off, a setting of a grant both sides hold",
+	"comments":           "counts comments a plan writes in place, each on an object counted under its own kind",
 	"table_constraints":  "counts a table's own constraint lists, which the comparison never fills; it reports every constraint it compares under constraints",
 	"feature_changes":    "counts the changes a feature owner reported; the owner pairs its objects and reports only the ones that differ",
 }
@@ -268,11 +272,13 @@ func fillLists(value reflect.Value) {
 // findingStem is the kind a category names: the category without its
 // direction, and the generic feature category for every feature category,
 // which names an owner's change kind rather than a kind the inventory counts.
+// A rename and a validation are directions too: each changes a pair of its
+// kind in place.
 func findingStem(category string) string {
 	if strings.HasPrefix(category, "feature_") {
 		return "feature_changes"
 	}
-	for _, suffix := range []string{"_added", "_removed", "_modified", "_changed"} {
+	for _, suffix := range []string{"_added", "_removed", "_modified", "_changed", "_renamed", "_validated"} {
 		if stem, found := strings.CutSuffix(category, suffix); found {
 			return stem
 		}

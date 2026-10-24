@@ -26,7 +26,9 @@ func (v *classifiedChange) CloneChange() schemaext.ChangeValue {
 func (v *classifiedChange) Effect() schemaext.Effect { return v.effect }
 
 // Standalone, table-bound and view-bound changes must appear in pre-plan reports.
-// Unknown effects cannot make a nonempty diff read as safe.
+// Unknown effects cannot make a nonempty diff read as safe. The view whose
+// only change is the owner's is kept in place, so its own modification is a
+// warning beside the owner's change.
 func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 	values := []schemaext.ChangeValue{&unknownChange{}, &classifiedChange{},
 		&classifiedChange{effect: schemaext.Effect{Impact: schemaext.Additive}},
@@ -42,7 +44,10 @@ func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 			MaterializedViewsModified: []difftypes.MaterializedViewDiff{{FeatureChanges: []schemaext.ChangeRecord{record}}},
 		}
 		findings := safety.ClassifySchemaDiff(diff)
-		c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:" + string(value.Kind()), Count: 3, Severity: safety.Destructive}})
+		c.Assert(findings, qt.DeepEquals, []safety.Finding{
+			{Category: "feature_changes:" + string(value.Kind()), Count: 3, Severity: safety.Destructive},
+			{Category: "materialized_views_modified", Count: 1, Severity: safety.Warning},
+		})
 	}
 }
 
@@ -50,7 +55,8 @@ func TestClassifySchemaDiffKeepsUnknownFeatureRisk(t *testing.T) {
 // destructive as the replacement whatever its own effect says: a schedule
 // changed in place keeps the rows, and changed beside the view's body it does
 // not (stokaro/ptah#4278). The control is the same change on a view the plan
-// keeps, which reports its own effect.
+// keeps, which reports its own effect. The view's own modification is rated
+// the same way: a replacement loses the rows.
 func TestClassifySchemaDiffReportsAChangeOnAReplacedViewAsDestructive(t *testing.T) {
 	ref := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "daily")
 	record := schemaext.ChangeRecord{Subject: ref, Value: &classifiedChange{effect: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "rows are kept"}}}
@@ -70,7 +76,10 @@ func TestClassifySchemaDiffReportsAChangeOnAReplacedViewAsDestructive(t *testing
 
 			findings := safety.ClassifySchemaDiff(diff)
 
-			c.Assert(findings, qt.DeepEquals, []safety.Finding{{Category: "feature_changes:example.org/classified-change", Count: 1, Severity: test.want}})
+			c.Assert(findings, qt.DeepEquals, []safety.Finding{
+				{Category: "feature_changes:example.org/classified-change", Count: 1, Severity: test.want},
+				{Category: "materialized_views_modified", Count: 1, Severity: test.want},
+			})
 		})
 	}
 }
@@ -78,19 +87,35 @@ func TestClassifySchemaDiffReportsAChangeOnAReplacedViewAsDestructive(t *testing
 // Replacing a view raises the lifecycle severity of its setting changes and
 // leaves their access assessment alone: an owner that says a change widens
 // access is reported as widening on a view the plan keeps and on one it
-// replaces.
+// replaces. The view's own modification is a warning where the plan keeps it.
 func TestClassifySchemaDiffKeepsTheAccessEffectOfAChangeOnAReplacedView(t *testing.T) {
 	ref := objectidentity.NewBuilder(identifier.ForDialect("clickhouse")).SchemaScopedParts(objectidentity.KindMatView, "", "daily")
 	record := schemaext.ChangeRecord{Subject: ref, Value: &accessChange{
 		effect: addsObject, access: schemaext.AccessEffect{Access: schemaext.AccessWidens, Reason: "admits more rows"},
 	}}
 	for _, test := range []struct {
-		name      string
-		changes   map[string]string
-		lifecycle safety.Severity
+		name    string
+		changes map[string]string
+		want    []safety.Finding
 	}{
-		{"a view the plan keeps", make(map[string]string), safety.Safe},
-		{"a view the plan replaces", map[string]string{"body": "SELECT 1 -> SELECT 2"}, safety.Destructive},
+		{
+			name:    "a view the plan keeps",
+			changes: make(map[string]string),
+			want: []safety.Finding{
+				{Category: "feature_access_widened:example.org/access-change", Count: 1, Severity: safety.Destructive},
+				{Category: "materialized_views_modified", Count: 1, Severity: safety.Warning},
+				{Category: "feature_changes:example.org/access-change", Count: 1, Severity: safety.Safe},
+			},
+		},
+		{
+			name:    "a view the plan replaces",
+			changes: map[string]string{"body": "SELECT 1 -> SELECT 2"},
+			want: []safety.Finding{
+				{Category: "feature_access_widened:example.org/access-change", Count: 1, Severity: safety.Destructive},
+				{Category: "feature_changes:example.org/access-change", Count: 1, Severity: safety.Destructive},
+				{Category: "materialized_views_modified", Count: 1, Severity: safety.Destructive},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -100,10 +125,7 @@ func TestClassifySchemaDiffKeepsTheAccessEffectOfAChangeOnAReplacedView(t *testi
 
 			findings := safety.ClassifySchemaDiff(diff)
 
-			c.Assert(findings, qt.DeepEquals, []safety.Finding{
-				{Category: "feature_access_widened:example.org/access-change", Count: 1, Severity: safety.Destructive},
-				{Category: "feature_changes:example.org/access-change", Count: 1, Severity: test.lifecycle},
-			})
+			c.Assert(findings, qt.DeepEquals, test.want)
 		})
 	}
 }

@@ -246,6 +246,7 @@ func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 type driftReport struct {
 	Drift     bool                    `json:"drift"`
 	Error     string                  `json:"error"`
+	Findings  []safety.Finding        `json:"findings"`
 	Inventory []safety.InventoryEntry `json:"inventory"`
 }
 

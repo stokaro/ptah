@@ -258,3 +258,162 @@ func TestServerSchemas_CountsTheDatabasesBothSidesHold(t *testing.T) {
 	c.Assert(diff.SchemasAdded, qt.HasLen, 1)
 	c.Assert(diff.SchemasRemoved, qt.HasLen, 1)
 }
+
+// TestSequences_CountsTheSequencesBothSidesHold pairs a sequence each side
+// holds, whether or not its options differ, and leaves the ones one side holds
+// to their additions and removals.
+func TestSequences_CountsTheSequencesBothSidesHold(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{
+		{Name: "kept"}, {Name: "changed", Increment: new(int64(2))}, {Name: "fresh"},
+	}}
+	database := &catalog.Database{Sequences: []catalog.Sequence{
+		{Name: "kept"}, {Name: "changed", Increment: new(int64(1))}, {Name: "stale"},
+	}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Sequences(desired, database, diff, compare.CoverageOf(desired, database))
+
+	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Sequences: 2})
+	c.Assert(diff.SequencesModified, qt.HasLen, 1)
+	c.Assert(diff.SequencesAdded.Names(), qt.DeepEquals, []string{"fresh"})
+	c.Assert(diff.SequencesRemoved.Names(), qt.DeepEquals, []string{"stale"})
+}
+
+// TestViewLikes_CountsTheViewsBothSidesHold covers both walks a view and a
+// materialized view are paired by: by name, where the target has no default
+// schema, and by identity under the target's default schema. A view whose
+// body differs is a pair as well as a modification.
+func TestViewLikes_CountsTheViewsBothSidesHold(t *testing.T) {
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{
+			{Name: "kept", Body: "SELECT 1"}, {Name: "changed", Body: "SELECT 2"}, {Name: "fresh", Body: "SELECT 3"},
+		},
+		MaterializedViews: []schemamodel.MaterializedView{
+			{Name: "daily", Body: "SELECT 1"}, {Name: "weekly", Body: "SELECT 2"},
+		},
+	}
+	database := &catalog.Database{
+		Views: []catalog.View{
+			{Schema: "public", Name: "kept", Body: "SELECT 1"},
+			{Schema: "public", Name: "changed", Body: "SELECT 4"},
+			{Schema: "public", Name: "stale", Body: "SELECT 5"},
+		},
+		MatViews: []catalog.MaterializedView{
+			{Schema: "public", Name: "daily", Body: "SELECT 1"},
+			{Schema: "public", Name: "monthly", Body: "SELECT 3"},
+		},
+	}
+	tests := []struct {
+		name    string
+		compare func(*difftypes.SchemaDiff)
+	}{
+		{
+			name: "by name",
+			compare: func(diff *difftypes.SchemaDiff) {
+				compare.ViewsWithDialect(desired, database, diff, "postgres")
+				compare.MaterializedViewsWithDialect(desired, database, diff, "postgres")
+			},
+		},
+		{
+			name: "by identity",
+			compare: func(diff *difftypes.SchemaDiff) {
+				semantics := identifier.ForDialect("postgres")
+				compare.ViewsWithSemantics(desired, database, diff, "postgres", semantics, nil, nil)
+				compare.MaterializedViewsWithSemantics(desired, database, diff, "postgres", semantics, nil, nil)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+
+			test.compare(diff)
+
+			c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Views: 2, MaterializedViews: 1})
+			c.Assert(diff.ViewsModified, qt.HasLen, 1)
+			c.Assert(diff.ViewsAdded, qt.HasLen, 1)
+			c.Assert(diff.ViewsRemoved, qt.HasLen, 1)
+			c.Assert(diff.MaterializedViewsAdded, qt.HasLen, 1)
+			c.Assert(diff.MaterializedViewsRemoved, qt.HasLen, 1)
+		})
+	}
+}
+
+// TestTriggers_CountsTheTriggersBothSidesHold pairs the trigger each side
+// holds and leaves the ones one side holds to their additions and removals.
+func TestTriggers_CountsTheTriggersBothSidesHold(t *testing.T) {
+	c := qt.New(t)
+	desired := declaringTrigger("orders")
+	desired.Triggers = append(desired.Triggers, schemamodel.Trigger{
+		StructName: "Order", Name: "fresh", Table: "orders",
+		Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SET @x = 1;",
+	})
+	database := holdingTrigger("", "orders")
+	database.Triggers = append(database.Triggers, catalog.Trigger{
+		Name: "stale", Table: "orders", Timing: "AFTER", Event: "DELETE", ForEach: "ROW", Body: "SET @x = 1;",
+	})
+	diff := &difftypes.SchemaDiff{}
+
+	compare.TriggersWithDialect(desired, database, diff, "mysql")
+
+	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Triggers: 1})
+	c.Assert(diff.TriggersAdded, qt.HasLen, 1)
+	c.Assert(diff.TriggersRemoved, qt.HasLen, 1)
+}
+
+// TestGrants_CountsTheGrantsBothSidesHold pairs a declared privilege the
+// database holds, and one whose grant option differs: the option is a setting
+// of the grant, so the grant is still one both sides hold. A declared ALL the
+// database reports as one row per privilege is one pair.
+func TestGrants_CountsTheGrantsBothSidesHold(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Roles: []schemamodel.Role{{Name: "reader"}},
+		Grants: []schemamodel.Grant{
+			{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
+			{Role: "reader", Privileges: []string{"UPDATE"}, OnTable: "users", WithOption: true},
+			{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "users"},
+			{Role: "reader", Privileges: []string{"USAGE"}, OnSequence: "order_seq"},
+		},
+	}
+	database := &catalog.Database{
+		Roles: []catalog.Role{{Name: "reader"}},
+		Grants: []catalog.Grant{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+			{Role: "reader", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"},
+			{Role: "reader", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
+			{Role: "reader", Privilege: "USAGE", ObjectType: "SEQUENCE", ObjectName: "order_seq"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Grants(desired, database, diff)
+
+	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Grants: 3})
+	c.Assert(diff.GrantOptionsAdded, qt.HasLen, 1)
+	c.Assert(diff.GrantsAdded, qt.HasLen, 1)
+	c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
+}
+
+// TestRoleMemberships_CountsTheMembershipsBothSidesHold pairs a declared
+// membership the database holds, on the target that compares memberships.
+func TestRoleMemberships_CountsTheMembershipsBothSidesHold(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{Roles: []schemamodel.Role{
+		{Name: "readers"}, {Name: "writers"}, {Name: "app", MemberOf: []string{"readers"}},
+		{Name: "batch", MemberOf: []string{"writers"}},
+	}}
+	database := &catalog.Database{RoleMemberships: []catalog.RoleMembership{
+		{Role: "readers", Member: "app"}, {Role: "readers", Member: "batch"},
+	}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.RoleMemberships(desired, database, diff, capability.YDB262())
+
+	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{RoleMemberships: 1})
+	c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "writers", Member: "batch"}})
+	c.Assert(diff.RoleMembershipsRemoved, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "readers", Member: "batch"}})
+}

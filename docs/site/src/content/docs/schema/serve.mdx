@@ -264,10 +264,6 @@ Three inputs stop the command before it listens, each with exit code `2`:
   (4 objects) and `tables_removed` (2 objects). No schema section is drawn, and
   the sidebar carries the title and the database address alone. Nothing on the
   page says the desired side was empty.
-- **The drift panel counts only the categories the safety classification
-  names.** A view declared in the models and missing from the database renders
-  `0 differing categories` here, while `ptah schema compare` reports
-  `views_added (1)` for the same pair.
 - **The schema section draws tables, columns, indexes, enums and foreign-key
   relations.** Views, functions, triggers, sequences, row-level security (RLS)
   policies, roles and grants are not drawn.

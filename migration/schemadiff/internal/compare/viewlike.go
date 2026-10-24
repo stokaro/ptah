@@ -35,6 +35,9 @@ type viewLikeFamily[LA ~[]D, LM ~[]M, D, C, M any] struct {
 	Added    func(*difftypes.SchemaDiff) *LA
 	Modified func(*difftypes.SchemaDiff) *LM
 	Removed  func(*difftypes.SchemaDiff) *LA
+	// Matched is the pair count the walks add to; see
+	// [difftypes.MatchedCounts].
+	Matched func(*difftypes.SchemaDiff) *int
 
 	DesiredName          func(D) string
 	CurrentName          func(C) string
@@ -62,6 +65,7 @@ var plainViewFamily = viewLikeFamily[
 	Added:        func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsAdded },
 	Modified:     func(diff *difftypes.SchemaDiff) *[]difftypes.ViewDiff { return &diff.ViewsModified },
 	Removed:      func(diff *difftypes.SchemaDiff) *difftypes.ViewChanges { return &diff.ViewsRemoved },
+	Matched:      func(diff *difftypes.SchemaDiff) *int { return &diff.Matched.Views },
 
 	DesiredName:          func(view schemamodel.View) string { return view.Name },
 	CurrentName:          func(view catalog.View) string { return view.Name },
@@ -90,6 +94,7 @@ var materializedViewFamily = viewLikeFamily[
 	Removed: func(diff *difftypes.SchemaDiff) *difftypes.MaterializedViewChanges {
 		return &diff.MaterializedViewsRemoved
 	},
+	Matched: func(diff *difftypes.SchemaDiff) *int { return &diff.Matched.MaterializedViews },
 
 	DesiredName:          func(view schemamodel.MaterializedView) string { return view.Name },
 	CurrentName:          func(view catalog.MaterializedView) string { return view.Name },
@@ -324,7 +329,8 @@ func compareViewLikesByIdentity[LA ~[]D, LM ~[]M, D, C, M any](
 	sortViewLikeAnswers(family, diff)
 }
 
-// appendIfChanged records a pair's comparison only when it found something.
+// appendIfChanged counts a pair, and records its comparison only when it
+// found something: a pair both sides hold alike is still held by both.
 func appendIfChanged[LA ~[]D, LM ~[]M, D, C, M any](
 	family viewLikeFamily[LA, LM, D, C, M],
 	diff *difftypes.SchemaDiff,
@@ -332,6 +338,7 @@ func appendIfChanged[LA ~[]D, LM ~[]M, D, C, M any](
 	row C,
 	dialect string,
 ) {
+	*family.Matched(diff)++
 	if result := family.Compare(declaration, row, dialect); family.Changed(result) {
 		*family.Modified(diff) = append(*family.Modified(diff), result)
 	}

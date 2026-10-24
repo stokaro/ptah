@@ -54,4 +54,30 @@ type MatchedCounts struct {
 	// Constraints counts the table constraints both sides hold with a
 	// definition the plan keeps.
 	Constraints int
+	// Sequences counts the standalone sequences both sides hold.
+	Sequences int
+	// Views counts the views both sides hold.
+	Views int
+	// MaterializedViews counts the materialized views both sides hold,
+	// including one the plan drops and creates again because its definition
+	// changed: the diff reports that as a modification of the view, not as a
+	// removal and an addition.
+	MaterializedViews int
+	// Triggers counts the triggers both sides hold.
+	Triggers int
+	// Grants counts the privileges the desired schema grants and the database
+	// holds, one per role, privilege and object, or column of an object. A
+	// declared ALL that the database holds as one row per privilege is one
+	// pair, and so is a grant whose WITH GRANT OPTION differs: the option is a
+	// setting of the grant.
+	//
+	// A grant is the one kind whose removals can name an object the database
+	// does not hold. A REVOKE the declaration states for an object the plan
+	// creates is planned with the creation, because PostgreSQL grants some
+	// privileges the moment the object exists, so the database side counts it
+	// as well.
+	Grants int
+	// RoleMemberships counts the memberships of a role in another that the
+	// desired schema declares and the database holds.
+	RoleMemberships int
 }

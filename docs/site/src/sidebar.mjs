@@ -327,6 +327,7 @@ export const sidebar = [
         items: [
           { slug: 'reference/capabilities' },
           { slug: 'reference/lint-rules' },
+          { slug: 'reference/drift-findings' },
           { slug: 'reference/exit-codes' },
           { slug: 'reference/mcp-tools' },
         ],

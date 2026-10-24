@@ -128,7 +128,8 @@ func GrantsWithSemantics(
 // planGrantAdditions plans each declared grant the database does not hold,
 // and the grant options a declaration and the database disagree on. An option
 // the database has and the declaration lacks is taken back only from a role
-// the schema manages.
+// the schema manages. A declared grant the database holds is a pair, whether
+// or not its option differs.
 func planGrantAdditions(
 	declared, database map[grantIdentity]difftypes.GrantRef,
 	managedRoles map[string]bool,
@@ -140,6 +141,7 @@ func planGrantAdditions(
 			diff.GrantsAdded = append(diff.GrantsAdded, ref)
 			continue
 		}
+		diff.Matched.Grants++
 		if ref.WithOption && slices.ContainsFunc(held, func(held difftypes.GrantRef) bool { return !held.WithOption }) {
 			diff.GrantOptionsAdded = append(diff.GrantOptionsAdded, ref)
 		}
