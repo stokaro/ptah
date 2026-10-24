@@ -1,6 +1,8 @@
 # ADR 0010: Retrieval quality is not a property of the schema, and what follows for verification
 
-- Status: proposed
+- Status: Superseded by [ADR 0013](0013-inference-state-transitions-answer-with-their-provenance.md),
+  which answers the four questions this record states and keeps its frame:
+  completeness and retrieval quality are separate claims with separate owners.
 - Deciders: Ptah maintainers
 - Issue: [#2068](https://github.com/stokaro/ptah/issues/2068)
 - Records the decisions the research phase measured its way up to and declined to make

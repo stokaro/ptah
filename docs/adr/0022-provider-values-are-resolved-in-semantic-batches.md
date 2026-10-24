@@ -1148,3 +1148,14 @@ A completed result carries typed schema diagnostics. Incomplete replies and
 provider failures return no diagnostic prefix. Both process boundaries validate
 the request and result, and owner code receives a clone. No validation receipt
 establishes inspection coverage, a migration plan, or an execution outcome.
+
+## Amendments
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  versions the provider contract as MAJOR.MINOR. The host and a provider share
+  the major version, which is the SDK's `Revision`. A provider declares the
+  minimum minor version it needs, and an additive change, such as a new RPC,
+  field or enum value, raises the minor version. That replaces the rule in
+  Consequences that an experimental revision refuses every other revision, and
+  the practice in the later sections of raising the revision for each added
+  service.

@@ -121,3 +121,12 @@ is the property the parallel core did not have:
 
 Nothing here requires a second model to exist first, and each step is visible to
 a user the day it lands.
+
+## Amendments
+
+- [ADR 0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md)
+  rejects one universal schema struct (its section 4) and keeps
+  `schemamodel.Database` and `catalog.Database` separate (its section 5).
+  Section 4 here changes the route of ADR 0001 and not its destination, and that
+  destination includes invariant 1 of ADR 0001: one state type describes both
+  sides. No record decides which of the two holds.

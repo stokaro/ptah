@@ -218,3 +218,14 @@ with decision 3's transport change, where the reader may not be the operator.
   stdio.
 - Every new tool costs four sentences in its pull request, which is the price of
   not discovering the boundary later.
+
+## Amendments
+
+The header names section 3.4, and this record has no section 3.4. The parts that
+[ADR 0006](0006-one-authorized-agent-runtime.md) replaces are these:
+
+- Section 3.1 and decision 2 of section 5. Schema sources resolve only inside
+  directories the operator configured (ADR 0006 section 2.6), so the read
+  surface has a path allowlist.
+- Section 3.3. `read_database` takes the name of a database target the operator
+  configured, not a URL from the caller (ADR 0006 section 2.3).

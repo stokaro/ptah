@@ -269,3 +269,18 @@ These are for the future implementation. None holds today.
 - `PTAH_PROVIDER_CONFIG` is accepted with the exception in the amendment table.
 - The missing-provider message names `ptah providers install <engine>` only.
 - Default selection is additive; an explicit `--provider-engine` stays exclusive.
+
+## Amendments
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  supersedes ADR 0026, and its table rewrites three passages here. Its
+  selection order also replaces the order listed under "One resolver, two thin
+  callers": the manifest entry, then the user-store installation, then
+  `provider_missing`. Read the other passages that name the bundled provider
+  the same way: `PTAH_PROVIDER_CONFIG` serves a provider build other than the
+  installed one, and a disabled entry is not replaced by the user-store
+  installation.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
+  record decides whether the YDB provider is one, and so whether `ptah-compat`
+  runs its YDB integration tests with a provider in Ptah's pipelines, as the
+  acceptance criteria require.

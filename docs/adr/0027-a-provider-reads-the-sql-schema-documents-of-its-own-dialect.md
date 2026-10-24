@@ -280,3 +280,20 @@ These are for the future implementation. None holds today.
   reuses the claim pattern of ADR 0025. The field audit also lists every YDB HCL
   input. If one has no YQL or Go equivalent, HCL support becomes a flip
   precondition.
+
+## Amendments by later records
+
+- [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
+  supersedes ADR 0026, which "Host responsibilities" follows for selection. The
+  order is the manifest entry, then the user-store installation, then
+  `provider_missing`. No distribution carries a provider: ADR 0031's table
+  rewrites the sentence of "Trust and authorization" that names one, and the
+  host end-to-end criterion runs through an installed provider rather than a
+  bundled one.
+- ADR 0031 also replaces "Versioning": an additive change such as a new RPC
+  raises the minor contract version, not `provider.Revision`, which is the major
+  version.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
+  record decides whether the YDB provider is one, and so whether the
+  differential corpus and the host end-to-end test in the acceptance criteria
+  run in Ptah's pipelines.
