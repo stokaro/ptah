@@ -923,6 +923,16 @@ snapshot, cleans the dev database again, and only then writes Atlas-style
 also runs after replay, introspection, comparison, or context-cancellation
 failures.
 
+The dev database is where the migration directory is replayed: the current
+state of a history exists only as what its files build, so `migrate diff`
+always needs one. The desired state is not built there. A schema file, or the
+SQL that a `data "external_schema"` program writes, is read by Ptah's own
+reader, which stores a long PostgreSQL name the way the server would; see
+[SQL schema files](../../schema/sql/). The dev database is only asked how its
+server spells the declaration's CHECK, default and index expressions, so the
+two sides compare like with like. A desired state that is itself a database URL
+is read from that database.
+
 If the replayed state does not establish whether a declared object exists,
 Ptah reports the missing evidence and exits with an error. It does not report
 the schemas as synchronized or publish migration files or a checksum.

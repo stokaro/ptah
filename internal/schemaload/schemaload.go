@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -117,6 +118,25 @@ func (o Options) logf(format string, args ...any) {
 	if o.Logf != nil {
 		o.Logf(format, args...)
 	}
+}
+
+// notices is where a reader's warnings go: the same messages a load reports
+// its progress to, or nowhere when it reports none.
+func (o Options) notices() io.Writer {
+	if o.Logf == nil {
+		return nil
+	}
+	return logfWriter(o.Logf)
+}
+
+// logfWriter writes each line it is given as one message.
+type logfWriter func(format string, args ...any)
+
+func (w logfWriter) Write(p []byte) (int, error) {
+	for line := range strings.SplitSeq(strings.TrimRight(string(p), "\n"), "\n") {
+		w("%s", line)
+	}
+	return len(p), nil
 }
 
 // Sources returns a human-readable, comma-separated list of the configured
@@ -341,7 +361,9 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if o.Owners == nil {
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
-	return schemasource.Run(ctx, sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations()), command)
+	formats := sourceformats.New(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations(),
+		sourceformats.WithNotices(o.notices(), "schema command "+commandDisplay(command)))
+	return schemasource.Run(ctx, formats, command)
 }
 
 func commandDisplay(command schemasource.Command) string {
@@ -513,6 +535,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		Relations:          o.relations(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
+		Notices:            o.notices(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)

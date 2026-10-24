@@ -442,10 +442,23 @@ differs from it only in case. A read with no dialect compares exactly.
 
 **A name past the limit is cut where the server cuts it.** PostgreSQL and
 YugabyteDB keep the first 63 bytes of a longer name, quoted or not, ending on a
-character boundary, and print a notice. The reader records the name the same
-way, so a foreign key that Ent's schema export names in 64 bytes is the key the
-server holds, and an `ALTER TABLE` that names it by its first 63 bytes reaches
-it. CockroachDB keeps a long name whole, and so does the reader there.
+character boundary, and print a notice. The reader records the object under the
+same name, so render, compare and planning all use the name the database holds:
+a foreign key that Ent's schema export names in 64 bytes is the key the server
+holds, and an `ALTER TABLE` that names it by its first 63 bytes reaches it. The
+read prints a warning for each name it cuts, such as `warning: schema file
+schema.sql: foreign key "…" in table "public.orders" is 69 bytes; the server
+keeps its first 63: "…"`. CockroachDB keeps a long name whole, and so does the
+reader there.
+
+Two different names cut to one are refused where the server refuses the second,
+and accepted where it accepts it. PostgreSQL keeps one namespace per schema for
+tables, views, materialized views, sequences and indexes, including the index
+that a `PRIMARY KEY`, `UNIQUE` or `EXCLUDE` constraint builds under its own
+name. Constraint and column names are unique per table, so two tables may each
+hold a foreign key of the same cut name. A `CREATE INDEX IF NOT EXISTS` that
+lands on a name already in use is skipped, as the server skips it. The refusal
+names both declarations and the name they share.
 
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
