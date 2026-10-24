@@ -31,7 +31,7 @@ type guard struct {
 func (g guard) Validate(stmt string, scope replay.Scope) error {
 	tokens := replay.Tokens(stmt, lexerOptions())
 	if scope.Server && postgresServerWideOperation(tokens, scope) != "" {
-		return validatePostgresServerWideStatement(g.dialect, tokens)
+		return validatePostgresServerWideStatement(g.dialect, tokens, scope)
 	}
 	return validatePostgresReplayStatement(g.dialect, tokens, scope)
 }

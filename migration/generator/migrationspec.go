@@ -118,13 +118,18 @@ func planGeneratedMigrationSpecs(
 		bidirectional.Forward.ConcurrentIndexRefs,
 		bidirectional.Forward.ConcurrentIndexDropRefs,
 	)
+	// A validation of a constraint the database already holds NOT VALID comes
+	// out of what is left and goes last, in a file of its own: its scan then
+	// commits apart from every other statement.
+	validationGroups := splitConstraintValidationDiff(indexGroups.transactional)
 	ordered := []struct {
 		diff   *difftypes.SchemaDiff
 		suffix string
 	}{
 		{enumGroups.noTransaction, "_enum_values"},
-		{indexGroups.transactional, "_transactional"},
+		{validationGroups.transactional, "_transactional"},
 		{indexGroups.noTransaction, "_concurrent_indexes"},
+		{validationGroups.noTransaction, "_constraint_validations"},
 	}
 
 	specs := make([]generatedMigrationSpec, 0, len(ordered))

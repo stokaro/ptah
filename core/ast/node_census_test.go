@@ -100,6 +100,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.ModifyColumnOperation{Column: &ast.ColumnNode{Name: "id"}}},
 	{node: &ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{Name: "pk"}}},
 	{node: &ast.ValidateConstraintOperation{ConstraintName: "pk"}},
+	{node: &ast.AlterConstraintOperation{ConstraintName: "fk"}},
 
 	// The routines, whose body is preserved verbatim. The node carries the
 	// dialect and the kind that selected it, and the visitor is handed both.

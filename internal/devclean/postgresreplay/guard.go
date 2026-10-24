@@ -45,7 +45,11 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if operation := postgresDialectGlobalOperation(dialect, tokens); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
-	if operation := postgresSessionOrControlOperation(tokens); operation != "" {
+	if first == "LOCK" {
+		if operation := policy.transactionScopedLockRefusal(tokens); operation != "" {
+			return replay.Refuse(dialect, operation)
+		}
+	} else if operation := postgresSessionOrControlOperation(tokens); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
 	if selectsIntoPostgresTemporaryObject(tokens) {

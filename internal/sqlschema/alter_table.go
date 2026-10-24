@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -859,6 +861,97 @@ func applyValidateConstraint(target alterTarget, operation *ast.ValidateConstrai
 	return fmt.Errorf(
 		"ALTER TABLE %s VALIDATE CONSTRAINT %s names no CHECK or foreign key this schema declares by that name",
 		target.written, operation.ConstraintName)
+}
+
+// applyAlterConstraint changes when a foreign key the schema declares by name is
+// checked. A property the statement leaves out keeps its value, and a key made
+// not deferrable loses its timing, as the server records it. A name the table
+// holds no foreign key under is refused, as the server refuses it.
+func applyAlterConstraint(target alterTarget, operation *ast.AlterConstraintOperation) error {
+	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
+	if target.alterForeignKeyDeferral(name, operation) {
+		return nil
+	}
+	return fmt.Errorf(
+		"ALTER TABLE %s ALTER CONSTRAINT %s names no foreign key this schema declares by that name",
+		target.written, operation.ConstraintName)
+}
+
+// alterForeignKeyDeferral applies the deferral change to the foreign key named
+// name, and reports whether the table has one.
+func (t alterTarget) alterForeignKeyDeferral(name string, operation *ast.AlterConstraintOperation) bool {
+	for _, database := range t.databases {
+		for i := range database.Constraints {
+			constraint := &database.Constraints[i]
+			if constraint.StructName == t.structName && t.sameStoredName(constraint.Name, name) &&
+				strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+				after := changedDeferral(deferralState{constraint.Deferrable, constraint.Initially}, operation)
+				constraint.Deferrable, constraint.Initially = after.deferrable, after.initially
+				return true
+			}
+		}
+		for i := range database.Fields {
+			field := &database.Fields[i]
+			if field.StructName == t.structName && field.Foreign != "" && t.sameStoredName(field.ForeignKeyName, name) {
+				after := changedDeferral(deferralState{field.Deferrable, field.Initially}, operation)
+				field.Deferrable, field.Initially = after.deferrable, after.initially
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// deferralState is when a foreign key is checked: whether the check may be put
+// off, and the default timing of a key that may.
+type deferralState struct {
+	deferrable bool
+	initially  string
+}
+
+// sameStoredName reports whether two spellings name one constraint. A server
+// that counts identifier limits in bytes keeps a longer name cut to the limit,
+// so a file that adds a constraint under the long name and alters it under the
+// stored one (as Ent's export does) names one constraint.
+func (t alterTarget) sameStoredName(declared, written string) bool {
+	if declared == written {
+		return true
+	}
+	limit := factsOf(t.sourcePlatform).identifierLimit
+	if limit.Unit != string(capability.IdentifierBytes) || limit.Max <= 0 {
+		return false
+	}
+	return storedIdentifier(declared, limit.Max) == storedIdentifier(written, limit.Max)
+}
+
+// storedIdentifier cuts name to the bytes the server keeps, on a character
+// boundary as the server does.
+func storedIdentifier(name string, limit int) string {
+	if len(name) <= limit {
+		return name
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
+}
+
+// changedDeferral returns the state a key has after the operation, given the one
+// it had. A property the operation leaves out keeps its value, and a key that is
+// not deferrable has no timing.
+func changedDeferral(before deferralState, operation *ast.AlterConstraintOperation) deferralState {
+	after := before
+	if operation.Deferrable != nil {
+		after.deferrable = *operation.Deferrable
+	}
+	if operation.Initially != "" {
+		after.initially = operation.Initially
+	}
+	if !after.deferrable {
+		after.initially = ""
+	}
+	return after
 }
 
 // validateNamedConstraint marks the CHECK or foreign key named name validated,

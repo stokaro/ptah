@@ -28,6 +28,9 @@ type ReplayGuard struct {
 	baseline bool
 	// session is set only by a caller that discards its pinned replay session.
 	session bool
+	// ownTransactions is set only by a caller that replays an existing history
+	// outside an enclosing transaction; see [ReplayGuard.WithOwnTransactions].
+	ownTransactions bool
 }
 
 // ReplayRealm is how much of the dev server a replay may change.
@@ -94,6 +97,37 @@ func (g *ReplayGuard) WithSessionScope() *ReplayGuard {
 	guard := *g
 	guard.session = true
 	return &guard
+}
+
+// WithOwnTransactions returns a guard that accepts the transaction a migration
+// file opens and closes itself, when the file's whole transaction structure
+// is one the dialect's guard accounts for (see [replay.TransactionGuard]).
+//
+// The caller must run such a file outside any transaction of its own and roll
+// the session back when the file fails. A BEGIN inside an enclosing
+// transaction is a warning, and the COMMIT after it ends the enclosing one,
+// so the file would not run the way its author wrote it. Without this option
+// every BEGIN, COMMIT and ROLLBACK stays refused.
+func (g *ReplayGuard) WithOwnTransactions() *ReplayGuard {
+	guard := *g
+	guard.ownTransactions = true
+	return &guard
+}
+
+// TransactionBoundaries returns the indexes of the statements of one migration
+// file that are its own transaction boundaries, or nil when the guard was not
+// given [ReplayGuard.WithOwnTransactions] or the dialect's guard reads none.
+// A file whose transaction control the dialect's guard does not accept is
+// refused as a whole.
+func (g *ReplayGuard) TransactionBoundaries(statements []string) ([]int, error) {
+	if !g.ownTransactions || g.guard == nil {
+		return nil, nil
+	}
+	reader, ok := g.guard.(replay.TransactionGuard)
+	if !ok {
+		return nil, nil
+	}
+	return reader.TransactionBoundaries(statements)
 }
 
 // DevReplayRealm is how much of the dev server reached through info a run may

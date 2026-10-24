@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
@@ -124,18 +125,21 @@ func BuildMigrationFileContents(
 	// `ALTER TYPE ... ADD VALUE` leads, because PostgreSQL answers 55P04 to a
 	// statement that uses the value before the ADD VALUE has committed. The
 	// concurrent indexes follow, because an index is built after the table it
-	// indexes. A plan with no enum additions produces exactly the two files it
-	// produced before (stokaro/ptah#1714).
-	enumNodes, concurrentNodes := partitionNoTransactionNodes(noTransaction)
-	contents := make([]MigrationFileContent, 0, 3)
+	// indexes. A validation of a constraint already in the database comes last,
+	// in a file of its own, so its scan commits apart from everything else. A
+	// plan with none of these produces exactly the files it produced before
+	// (stokaro/ptah#1714).
+	ordered := partitionNoTransactionNodes(noTransaction)
+	contents := make([]MigrationFileContent, 0, 4)
 	for _, group := range []struct {
 		nodes         []ast.Node
 		suffix        string
 		noTransaction bool
 	}{
-		{enumNodes, "_enum_values", true},
+		{ordered.enumValues, "_enum_values", true},
 		{transactional, "_transactional", false},
-		{concurrentNodes, "_concurrent_indexes", true},
+		{ordered.concurrentIndexes, "_concurrent_indexes", true},
+		{ordered.validations, validationSuffix, true},
 	} {
 		if len(group.nodes) == 0 {
 			continue
@@ -153,18 +157,34 @@ func BuildMigrationFileContents(
 	return contents, nil
 }
 
+// validationSuffix names the file that validates constraints already in the
+// database. A golang-migrate run numbers its files after it.
+const validationSuffix = "_constraint_validations"
+
+// noTransactionGroups are the statements that leave the transactional file,
+// grouped by where their file belongs.
+type noTransactionGroups struct {
+	enumValues        []ast.Node
+	concurrentIndexes []ast.Node
+	validations       []ast.Node
+}
+
 // partitionNoTransactionNodes splits the statements that must leave the
-// transactional file into the two kinds this package can order, preserving
-// input order within each.
-func partitionNoTransactionNodes(nodes []ast.Node) (enumValues, concurrentIndexes []ast.Node) {
+// transactional file into the kinds this package can order, preserving input
+// order within each. A statement of any other kind has been refused already.
+func partitionNoTransactionNodes(nodes []ast.Node) noTransactionGroups {
+	var groups noTransactionGroups
 	for _, node := range nodes {
-		if txrequire.Kind(node) == txrequire.KindEnumValue {
-			enumValues = append(enumValues, node)
-			continue
+		switch txrequire.Kind(node) {
+		case txrequire.KindEnumValue:
+			groups.enumValues = append(groups.enumValues, node)
+		case txrequire.KindConstraintValidation:
+			groups.validations = append(groups.validations, node)
+		default:
+			groups.concurrentIndexes = append(groups.concurrentIndexes, node)
 		}
-		concurrentIndexes = append(concurrentIndexes, node)
 	}
-	return enumValues, concurrentIndexes
+	return groups
 }
 
 // unsplittableNoTransactionNodes returns the statements this package has no
@@ -199,7 +219,7 @@ func renderMigrationFileContent(
 }
 
 // attachReversePlan records the reverse of the whole plan on the LAST file of
-// it, and renders that reverse the same way the forward half was rendered.
+// it that has a rollback to give (see [reverseOwner]), and renders that reverse the same way the forward half was rendered.
 //
 // The last file, and not each file, because a rollback runs newest-first: the
 // files of one diff run are staged at consecutive versions, so the last one is
@@ -225,11 +245,25 @@ func attachReversePlan(
 	if err != nil {
 		return nil, err
 	}
-	last := len(contents) - 1
+	last := reverseOwner(contents)
 	contents[last].DownSQL = sql
 	contents[last].ReverseStatements = reverse
 	contents[last].ReverseNoTransaction = requiresNoTransaction
 	return contents, nil
+}
+
+// reverseOwner picks the file that carries the rollback of the run.
+//
+// It is the last file, except for the validations that end a run: they have no
+// rollback of their own, and a rollback of one step that ran the whole reverse
+// would undo statements from files the migrator still records as applied.
+func reverseOwner(contents []MigrationFileContent) int {
+	for i := range slices.Backward(contents) {
+		if !strings.HasPrefix(contents[i].NameSuffix, validationSuffix) {
+			return i
+		}
+	}
+	return len(contents) - 1
 }
 
 // validateForeignTransactionMode refuses a foreign artifact unless its source
@@ -295,6 +329,34 @@ func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
 		)
 	}
 	return nil
+}
+
+// splitNoTransactionStatements writes each statement of a file that must run
+// outside a transaction as a migration of its own.
+//
+// golang-migrate has no directive for it. A migration runs unwrapped only when
+// it holds one statement (see [validateGolangMigrateTransactionMode]), so a
+// group of concurrent index builds or constraint validations becomes one
+// migration per statement, at consecutive versions, in the order the group
+// listed them. The file that ends the run keeps the rollback.
+func splitNoTransactionStatements(contents []MigrationFileContent, dialect, format string) ([]MigrationFileContent, error) {
+	split := make([]MigrationFileContent, 0, len(contents))
+	for _, content := range contents {
+		if !content.NoTransaction || len(content.Statements) < 2 {
+			split = append(split, content)
+			continue
+		}
+		for i, statement := range content.Statements {
+			sql, err := renderMigrationDiffSQL(dialect, []string{statement}, format)
+			if err != nil {
+				return nil, err
+			}
+			one := withTxModeNoneDirective(MigrationFileContent{SQL: sql, Statements: []string{statement}})
+			one.NameSuffix = fmt.Sprintf("%s_%d", content.NameSuffix, i+1)
+			split = append(split, one)
+		}
+	}
+	return split, nil
 }
 
 func validateForeignTransactionMode(

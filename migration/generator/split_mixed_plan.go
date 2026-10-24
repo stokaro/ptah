@@ -1,6 +1,8 @@
 package generator
 
 import (
+	"slices"
+
 	"ptah.run/core/difftypes"
 )
 
@@ -36,5 +38,23 @@ func splitEnumValueAdditionDiff(diff *difftypes.SchemaDiff) splitSchemaDiffs {
 	}
 	txDiff.EnumsModified = txEnums
 	noTxDiff.EnumsModified = noTxEnums
+	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
+}
+
+// splitConstraintValidationDiff separates the validations of constraints the
+// database holds NOT VALID from the rest of the diff.
+//
+// A validation depends on nothing else in the plan: the constraint is already
+// there, and VALIDATE CONSTRAINT only scans rows. It scans under a weaker lock
+// than the one that added the constraint, which is worth having only when it
+// commits apart from the other statements, so it moves to a file of its own.
+func splitConstraintValidationDiff(diff *difftypes.SchemaDiff) splitSchemaDiffs {
+	txDiff := cloneSchemaDiff(diff)
+	txDiff.ConstraintsValidated = nil
+	noTxDiff := &difftypes.SchemaDiff{
+		IdentifierSemantics:  cloneIdentifierSemantics(diff.IdentifierSemantics),
+		TablePreparation:     cloneTablePreparation(diff.TablePreparation),
+		ConstraintsValidated: slices.Clone(diff.ConstraintsValidated),
+	}
 	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
 }

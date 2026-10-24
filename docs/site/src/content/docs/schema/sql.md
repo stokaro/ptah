@@ -174,6 +174,12 @@ beside `NOT DEFERRABLE`, two timings, `INITIALLY DEFERRED` beside `NOT
 DEFERRABLE`, a clause after a `CHECK`, and a clause after a column that
 declares no key, as in `a integer NOT NULL DEFERRABLE`.
 
+`ALTER TABLE ... ALTER CONSTRAINT name [NOT] DEFERRABLE [INITIALLY DEFERRED |
+IMMEDIATE]` changes the timing of a foreign key declared earlier in the same
+file, as Ent's schema export writes it. A property the statement does not name
+keeps its value, and `NOT DEFERRABLE` clears the timing. The name has to belong
+to a foreign key; the reader refuses any other constraint, as PostgreSQL does.
+
 A deferrable key on a column is read as the table's key over the column, as
 PostgreSQL reports it. A key that defers is a different key from one that
 does not, so changing the clause plans a drop and an add. A foreign key

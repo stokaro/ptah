@@ -830,6 +830,77 @@ func TestParser_ParseCreateView(t *testing.T) {
 	c.Assert(createView.Body, qt.Equals, "SELECT id, name FROM users WHERE active = true")
 }
 
+func TestParser_ParseCreateViewColumnList(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{
+			name: "plain names",
+			sql:  `CREATE VIEW v (x, y) AS SELECT a, b FROM t;`,
+			want: `SELECT a AS x, b AS y FROM t`,
+		},
+		{
+			name: "quoted names",
+			sql:  `CREATE VIEW "v" ("type", "id") AS SELECT "id", 'flat' FROM "t";`,
+			want: `SELECT "id" AS "type", 'flat' AS "id" FROM "t"`,
+		},
+		{
+			name: "union names the columns by its first select",
+			sql:  `CREATE VIEW v (x) AS SELECT a FROM t UNION ALL SELECT b FROM u;`,
+			want: `SELECT a AS x FROM t UNION ALL SELECT b FROM u`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			createView, ok := statements.Statements[0].(*ast.CreateViewNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(createView.Body, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestParser_ParseCreateViewColumnList_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name:    "more names than select items",
+			sql:     `CREATE VIEW v (x, y) AS SELECT a FROM t;`,
+			wantErr: `view v: .*1 select items for 2 declared columns`,
+		},
+		{
+			name:    "star select list",
+			sql:     `CREATE VIEW v (x) AS SELECT * FROM t;`,
+			wantErr: `view v: .*`,
+		},
+		{
+			name:    "unterminated name list",
+			sql:     `CREATE VIEW v (x, y AS SELECT a, b FROM t;`,
+			wantErr: `expected ',' or '\)' in view column list at position \d+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(test.sql).Parse()
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
 func TestParser_ParseCreateOrReplaceView(t *testing.T) {
 	c := qt.New(t)
 

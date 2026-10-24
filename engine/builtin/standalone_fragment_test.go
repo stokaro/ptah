@@ -298,6 +298,9 @@ func alterOperationFixtures() map[string]func() ast.Node {
 			return &ast.SetConstraintCommentOperation{Constraint: "ck_c", Comment: "positive"}
 		},
 
+		"AlterConstraintOperation": func() ast.Node {
+			return &ast.AlterConstraintOperation{ConstraintName: "fk_c", Initially: "deferred"}
+		},
 		"ValidateConstraintOperation": func() ast.Node {
 			return &ast.ValidateConstraintOperation{ConstraintName: "ck_c"}
 		},

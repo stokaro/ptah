@@ -52,6 +52,10 @@ func WithAliases(body string, names []string) (string, error) {
 		if name == "" {
 			return "", fmt.Errorf("%w: column %d has no name", ErrUnreadableSelectList, i+1)
 		}
+		if isStarItem(item) {
+			return "", fmt.Errorf("%w: column %d is a star, which expands to a number of columns the declaration cannot count",
+				ErrUnreadableSelectList, i+1)
+		}
 		aliased = append(aliased, aliasItem(item, name))
 	}
 	return joinRewritten(parts, strings.Join(aliased, ", ")), nil
@@ -68,6 +72,11 @@ func joinRewritten(parts selectParts, list string) string {
 		return rewritten + " " + suffix
 	}
 	return rewritten
+}
+
+// isStarItem reports whether item is `*` or `t.*`.
+func isStarItem(item string) bool {
+	return strings.HasSuffix(strings.TrimSpace(item), "*")
 }
 
 // aliasItem gives one select item its alias, leaving an item that already

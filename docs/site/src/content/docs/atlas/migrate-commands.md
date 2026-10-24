@@ -1105,8 +1105,16 @@ Because those statements must not silently strip transaction safety from
 ordinary DDL, a mixed plan is split the same way Ptah's native generator
 splits it: a `<name>_transactional` file with the transactional statements
 followed by a `<name>_concurrent_indexes` file tagged `-- atlas:txmode none`;
-mixes that cannot be split automatically (for example enum value additions
-alongside table changes) are refused.
+a plan that validates constraints the database holds `NOT VALID` writes them
+last, in a `<name>_constraint_validations` file with the same tag, so the scan
+commits apart from every other statement. An `ALTER TABLE` that adds a
+constraint `NOT VALID` and validates it in one statement list is refused, as
+are other mixes that cannot be split automatically.
+
+golang-migrate has no file directive and runs a migration outside a transaction
+only when it holds one statement. In that layout each statement of such a group
+is written as a migration of its own, at consecutive versions, in the order the
+group listed them. The rollback stays on the last file of the run.
 
 On MySQL and MariaDB, a file `migrate apply` would refuse to run inside a
 transaction is tagged the same way: one that defines a trigger, view or
