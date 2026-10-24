@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"slices"
+	"time"
 
 	"ptah.run/migration/migrationfile"
 )
@@ -76,8 +77,28 @@ type MigrationRecord struct {
 	// "file", "none", or empty where the file declares none and the migrator's
 	// own mode decides.
 	TransactionMode string `json:"transaction_mode,omitempty"`
+	// AppliedAt is when the revision row was written, in UTC, and ExecutionMs
+	// how long its migration ran in whole milliseconds, as the row recorded
+	// them. Both are present only for a row that exists, so a pending
+	// migration carries neither. ExecutionMs is also absent on a revision
+	// table too old to record a duration, where zero would be a claim.
+	AppliedAt   *time.Time `json:"applied_at,omitempty"`
+	ExecutionMs *int64     `json:"execution_time_ms,omitempty"`
 	// State is one of the MigrationState constants.
 	State string `json:"state"`
+}
+
+// rowTiming is when a revision row was written and how long its migration
+// ran, for [MigrationRecord]. Every row records its write time; a legacy table
+// records no duration and reports none rather than zero.
+func (m *Migrator) rowTiming(revision MigrationRevision) (*time.Time, *int64) {
+	appliedAt := revision.AppliedAt.UTC()
+	var executionMs *int64
+	if !m.legacyRevisionTable {
+		milliseconds := revision.ExecutionTime.Milliseconds()
+		executionMs = &milliseconds
+	}
+	return &appliedAt, executionMs
 }
 
 // missingMigrationRecords projects the applied revisions no file accounts for
@@ -85,14 +106,17 @@ type MigrationRecord struct {
 //
 // Checksum stays empty: there is no file to hash, and that emptiness beside a
 // non-empty AppliedChecksum is the whole finding.
-func missingMigrationRecords(revisions []MigrationRevision) []MigrationRecord {
+func (m *Migrator) missingMigrationRecords(revisions []MigrationRevision) []MigrationRecord {
 	records := make([]MigrationRecord, 0, len(revisions))
 	for _, revision := range revisions {
+		appliedAt, executionMs := m.rowTiming(revision)
 		records = append(records, MigrationRecord{
 			Version:         revision.Version,
 			VersionKey:      revision.RevisionVersion(),
 			Description:     revision.Description,
 			AppliedChecksum: revision.Checksum,
+			AppliedAt:       appliedAt,
+			ExecutionMs:     executionMs,
 			State:           MigrationStateMissing,
 		})
 	}
@@ -134,6 +158,9 @@ func (m *Migrator) migrationRecords(
 		}
 		if revision, applied := revisionsByKey[key]; applied {
 			record.AppliedChecksum = revision.Checksum
+			record.AppliedAt, record.ExecutionMs = m.rowTiming(revision)
+		} else if dirty != nil && dirty.RevisionVersion() == key {
+			record.AppliedAt, record.ExecutionMs = m.rowTiming(*dirty)
 		}
 		record.State = migrationState(migration, key, migrationStateSets{
 			revisionsByKey: revisionsByKey,

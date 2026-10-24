@@ -883,7 +883,7 @@ jobs:
 
   documentation-gate:
     name: Documentation gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs:
       - changes
       - style

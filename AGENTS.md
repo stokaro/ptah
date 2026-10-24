@@ -185,10 +185,14 @@ workflow-level `paths:` filter is not a substitute, because a filtered workflow
 leaves no check on the pull request at all, and an absent check reads exactly
 like a passing one. Each scoped workflow keeps an always-visible `scope` job and
 a `*-gate` job that fails when the decision and the job conclusions disagree.
-Every gate job carries `if: always()`, and
+Every contour runs on a push to `master`.
+
+Every gate job carries `if: ${{ !cancelled() }}`, and
 `scripts/check-ci-scope-gate.sh --check-workflows` refuses one that does not: a
 gate skipped because a dependency failed reports success about the failure it
-exists to surface. Every contour runs on a push to `master`.
+exists to surface. `always()` is refused too: it also runs the gate in a run a
+newer one canceled, where every job it judges reads `cancelled`, and leaves
+that failure on the pull request beside the newer run's verdict.
 
 ### The version matrix
 

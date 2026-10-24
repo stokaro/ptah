@@ -116,7 +116,7 @@ jobs:
 
   export-acceptance-gate:
     name: Export acceptance gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, export-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5

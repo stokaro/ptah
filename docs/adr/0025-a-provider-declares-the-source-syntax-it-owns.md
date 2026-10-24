@@ -91,11 +91,3 @@ they disagree. Rejected.
 - The host holds the generic part of the work and no engine knowledge: lexing,
   ownership of names, attaching facets. Each engine's attribute list lives with
   its provider.
-
-## Amendments
-
-- [ADR 0027](0027-a-provider-reads-the-sql-schema-documents-of-its-own-dialect.md)
-  limits "the host does the lexing" to dialects that share the host's grammar. A
-  dialect with its own grammar declares `DOCUMENT` mode and owns the whole SQL
-  document.
-- HCL claims remain open; a later record applies this ADR's claim pattern to them.

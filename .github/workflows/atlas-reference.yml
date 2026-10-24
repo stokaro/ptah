@@ -238,7 +238,7 @@ jobs:
 
   atlas-reference-gate:
     name: Atlas reference gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, differential-and-corpus]
     runs-on: ubuntu-latest
     timeout-minutes: 5

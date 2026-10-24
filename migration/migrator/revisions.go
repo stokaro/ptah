@@ -1836,7 +1836,7 @@ func (m *Migrator) restartMigrationRevisionOn(
 		conn,
 		query,
 		migration.Description,
-		startedAt,
+		nativeRevisionTimestamp(startedAt),
 		migrationStatePending,
 		alreadyApplied,
 		m.migrationStatementCount(migration.UpSQL),
@@ -1893,7 +1893,7 @@ func (m *Migrator) beginMigrationRevisionOn(
 		query,
 		migration.Version,
 		migration.Description,
-		startedAt,
+		nativeRevisionTimestamp(startedAt),
 		migrationStatePending,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
@@ -1958,7 +1958,7 @@ func (m *Migrator) completeMigrationRevisionOn(
 		m.migrationStatementCount(migration.UpSQL),
 		m.migrationStatementCount(migration.UpSQL),
 		time.Since(startedAt).Milliseconds(),
-		time.Now(),
+		nativeRevisionTimestamp(time.Now()),
 		migrationRevisionHash(migration),
 		migration.Version,
 	)
@@ -2574,7 +2574,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 			query,
 			migration.Version,
 			migration.Description,
-			time.Now(),
+			nativeRevisionTimestamp(time.Now()),
 			migrationStateApplied,
 			m.migrationStatementCount(migration.UpSQL),
 			m.migrationStatementCount(migration.UpSQL),
@@ -3186,7 +3186,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 			insertSQL,
 			migration.Version,
 			migration.Description,
-			time.Now(),
+			nativeRevisionTimestamp(time.Now()),
 			migrationStateApplied,
 			total,
 			total,
@@ -3619,7 +3619,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 		query,
 		migration.Version,
 		migration.Description,
-		time.Now(),
+		nativeRevisionTimestamp(time.Now()),
 		migrationStateApplied,
 		m.migrationStatementCount(migration.UpSQL),
 		m.migrationStatementCount(migration.UpSQL),
@@ -3673,6 +3673,14 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 	return nil
 }
 
+// nativeRevisionTimestamp is the instant a native revision row records, in
+// UTC as the Atlas and provider-owned histories already record theirs. The
+// column has no zone on PostgreSQL, so a driver that binds the wall clock
+// stored the writer's local time, and every reader took it as UTC.
+func nativeRevisionTimestamp(at time.Time) time.Time {
+	return at.UTC().Round(0)
+}
+
 func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
 	now := at.UTC().Round(0)
 	if m.revisionTable().TimeAsText {
@@ -3705,7 +3713,7 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 		m.conn,
 		query,
 		migration.Description,
-		time.Now(),
+		nativeRevisionTimestamp(time.Now()),
 		migrationStateApplied,
 		m.migrationStatementCount(migration.UpSQL),
 		m.migrationStatementCount(migration.UpSQL),

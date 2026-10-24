@@ -358,6 +358,8 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
       "description": "Create users",
       "checksum": "h1:Ow4bDq9rLuGUoQxXSbCJn/y4Q1oZbLvBg9wEQ8B4V0M=",
       "applied_checksum": "h1:Ow4bDq9rLuGUoQxXSbCJn/y4Q1oZbLvBg9wEQ8B4V0M=",
+      "applied_at": "2026-07-28T16:25:53.104771Z",
+      "execution_time_ms": 4,
       "state": "applied"
     }
   ]
@@ -373,7 +375,11 @@ The `migrations` array is what a caller plans from. Each entry carries the
 migration's version and exact revision identity, its description, the checksum
 of the file as it stands, the checksum the revision row recorded, whether the
 file is a checkpoint, the transaction mode the file declares resolved for this
-dialect, and one state:
+dialect, and one state. An entry whose revision row exists also carries
+`applied_at`, when the row was written, in UTC, and `execution_time_ms`, how
+long the migration ran as the row recorded it. A pending entry carries neither,
+and a revision table from before Ptah recorded durations has no
+`execution_time_ms`.
 
 | State | Meaning |
 | --- | --- |
