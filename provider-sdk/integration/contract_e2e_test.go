@@ -151,6 +151,12 @@ func TestContract25HostWithAProviderOfThisSDK(t *testing.T) {
 	lines := runContractHost(c, host, buildFixture(c, "provider"), "session", address)
 	c.Assert(lines[0], qt.Matches, `features=.*units\.execute.*`)
 	c.Assert(lines[1:], qt.DeepEquals, []string{"outcome=APPLIED", "table=items"})
+	// A provider that offers the services of contract 25.1 lists them, and
+	// the older host, which calls none of them, works with it all the same.
+	database = "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "data.db")), "/")
+	lines = runContractHost(c, host, buildFixture(c, "data"), "session", (&url.URL{Scheme: "fixture", Path: database}).String())
+	c.Assert(lines[0], qt.Matches, `features=.*data\.read-rows.*`)
+	c.Assert(lines[1:], qt.DeepEquals, []string{"outcome=APPLIED", "table=items"})
 	lines = runContractHost(c, host, buildFixture(c, "lint"), "lint", "")
 	c.Assert(lines[0], qt.Matches, `features=.*lint\.migrations.*`)
 	c.Assert(lines[0], qt.Not(qt.Matches), `.*lint\.statement-facts.*`)

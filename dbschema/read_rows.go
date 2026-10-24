@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/internal/connector"
@@ -40,15 +41,66 @@ import (
 //
 // The context governs query execution and row iteration; canceling it aborts
 // the read with the context error wrapped in the returned error.
+//
+// A connection whose owner reads rows itself, an executable provider's
+// session, needs the columns that identify a row: [ReadKeyedTableRows] reads
+// it, and ReadTableRows refuses it.
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, columns []string) ([]map[string]any, error) {
+	if err := checkRowRead(conn, table, columns); err != nil {
+		return nil, err
+	}
+	if _, owned := conn.native.(nativeRowReader); owned {
+		return nil, errors.New("dbschema: the owner of this connection reads rows in key order; read them with ReadKeyedTableRows")
+	}
+	return readTableRows(ctx, conn, schema, table, columns)
+}
+
+// nativeRowReader is a native session whose owner reads table rows itself,
+// in the order of the key columns, which are among columns. A table the
+// database does not hold is an error that names it.
+type nativeRowReader interface {
+	ReadTableRows(ctx context.Context, schema, table string, columns, keys []string) ([]map[string]any, error)
+}
+
+// ReadKeyedTableRows reads the rows of table as [ReadTableRows] does, where
+// keys are the columns that identify a row; each of them must be among
+// columns, in the same spelling.
+//
+// On a connection whose owner reads rows itself, an executable provider's
+// session, the owner reads them, in key order and page by page, each value in
+// the form the owner returns it. On any other connection it is ReadTableRows,
+// and the keys are only checked.
+func ReadKeyedTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, columns, keys []string) ([]map[string]any, error) {
+	if err := checkRowRead(conn, table, columns); err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		return nil, errors.New("dbschema: ReadKeyedTableRows requires at least one key column")
+	}
+	for _, key := range keys {
+		if !slices.Contains(columns, key) {
+			return nil, fmt.Errorf("dbschema: key column %q is not among the columns read", key)
+		}
+	}
+	if reader, owned := conn.native.(nativeRowReader); owned {
+		rows, err := reader.ReadTableRows(ctx, schema, table, slices.Clone(columns), slices.Clone(keys))
+		if err != nil {
+			return nil, fmt.Errorf("dbschema: read rows of table %q: %w", table, err)
+		}
+		return rows, nil
+	}
+	return readTableRows(ctx, conn, schema, table, columns)
+}
+
+func checkRowRead(conn *DatabaseConnection, table string, columns []string) error {
 	if conn == nil {
-		return nil, errors.New("dbschema: ReadTableRows requires a non-nil connection")
+		return errors.New("dbschema: ReadTableRows requires a non-nil connection")
 	}
 	if strings.TrimSpace(table) == "" {
-		return nil, errors.New("dbschema: ReadTableRows requires a table name")
+		return errors.New("dbschema: ReadTableRows requires a table name")
 	}
 	if len(columns) == 0 {
-		return nil, errors.New("dbschema: ReadTableRows requires at least one column")
+		return errors.New("dbschema: ReadTableRows requires at least one column")
 	}
 	// Duplicate column names would collapse into a single map key while the
 	// column-count guard below still passed, silently dropping a column, so
@@ -56,11 +108,14 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	seen := make(map[string]struct{}, len(columns))
 	for _, col := range columns {
 		if _, dup := seen[col]; dup {
-			return nil, fmt.Errorf("dbschema: ReadTableRows got duplicate column %q", col)
+			return fmt.Errorf("dbschema: ReadTableRows got duplicate column %q", col)
 		}
 		seen[col] = struct{}{}
 	}
+	return nil
+}
 
+func readTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, columns []string) ([]map[string]any, error) {
 	dialect := conn.Info().Dialect
 
 	quoted := make([]string, len(columns))

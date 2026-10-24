@@ -864,3 +864,10 @@ v0.13.0 ptah.run/core/objectidentity
 # directly. Pre-v1, so compatibility with older Ptah is not owed.
 v0.14.0 ptah.run/core/renderer
 v0.14.0 ptah.run/migration/planner
+
+# Rows.TypeRows takes a context and one request that names the table its rows
+# belong to, because an owner in another process needs both: the call can be
+# canceled, and the provider's request names the table even when the database
+# does not hold it yet. Implementations and callers update directly. Pre-v1,
+# so no compatibility is owed.
+v0.15.0 ptah.run/core/dataext

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 )
@@ -44,7 +43,7 @@ import (
 // table, an empty column list, an empty row list, or a row whose length does not
 // match the column count.
 func RenderInsert(stmt *InsertStatement, dialect string) (string, []any, error) {
-	return RenderInsertWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+	return RenderInsertWithCapabilities(stmt, dialect, defaultCapabilities(dialect))
 }
 
 // RenderInsertWithCapabilities renders an INSERT statement as [RenderInsert]
@@ -85,7 +84,7 @@ func RenderInsertWithCapabilities(
 // list, an assignment with an empty column or nil value, or a RETURNING clause on
 // a dialect that cannot execute one.
 func RenderUpdate(stmt *UpdateStatement, dialect string) (string, []any, error) {
-	return RenderUpdateWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+	return RenderUpdateWithCapabilities(stmt, dialect, defaultCapabilities(dialect))
 }
 
 // RenderUpdateWithCapabilities renders an UPDATE statement as [RenderUpdate]
@@ -124,7 +123,7 @@ func RenderUpdateWithCapabilities(
 // nil statement, an unsupported dialect, a missing table, or a RETURNING clause
 // on a dialect that cannot execute one.
 func RenderDelete(stmt *DeleteStatement, dialect string) (string, []any, error) {
-	return RenderDeleteWithCapabilities(stmt, dialect, capability.ForDialect(dialect))
+	return RenderDeleteWithCapabilities(stmt, dialect, defaultCapabilities(dialect))
 }
 
 // RenderDeleteWithCapabilities renders a DELETE statement as [RenderDelete]
@@ -154,14 +153,14 @@ func RenderDeleteWithCapabilities(
 // expression rendering (renderExpr). kind names the statement in the
 // unsupported-dialect error.
 func newWriteRenderer(dialect, kind string, caps capability.Capabilities) (*selectRenderer, error) {
-	described, ok := platform.Lookup(dialect)
+	described, quoting, ok := lookupDialect(dialect)
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
 	}
 	if err := refuseUnportableWrite(described.Query, kind); err != nil {
 		return nil, err
 	}
-	return newDescribedRenderer(described, caps), nil
+	return newDescribedRenderer(described, quoting, caps), nil
 }
 
 // refuseUnportableWrite refuses a verb whose portable spelling the dialect does

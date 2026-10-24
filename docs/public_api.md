@@ -3421,7 +3421,10 @@ expression tree, the fluent builders that produce it, and `RenderSelect`,
 SQL plus its arguments for a named dialect. Each has a `WithCapabilities`
 variant that renders for the release line whose capabilities the caller
 passes; on YDB the arguments are `sql.NamedArg` values named after the
-placeholders.
+placeholders. `RegisterDialect` adds an engine Ptah does not describe, from a
+`Spelling` with the descriptor's fields, such as the query dialect an
+executable provider declares; the registration reaches the query builder
+alone.
 
 `core/astbuilder` builds `core/ast` nodes by method chaining instead of by
 nested struct literals. `NewTable` and `NewIndex` return one statement node;
@@ -5198,18 +5201,24 @@ descriptor cannot state:
 - `Columns` names the declared types that hold a moment.
 - `Rows` types the rows a managed-data comparison pairs, and the rows a
   checkpoint bootstraps.
+- `Writes` spells whole row writes, for an owner that writes every statement
+  itself, as an executable provider does.
 - `Seeds` runs a seed file, records one, and lists the tables a seed run
-  guards.
+  guards. A service that also implements `SeedLedger` keeps the record of
+  applied files in its own ledger, and a key conflict wraps `ErrKeyConflict`.
 
-The first three link no database driver. An owner registers them on its target
+The first four link no database driver. An owner registers them on its target
 as `engine.Target.Data`, and `engine.Runtime.DataServices` returns them for a
 dialect: the zero `Services` when the owner registered none, and
 `ptaherr.ErrUnsupportedDialect` for a target the runtime does not know. They
 belong to the runtime that loaded the owner, never to the process.
 `migration/datadiff.Render` and the managed-data comparison take them from the
-caller. A seed runs through the driver, which the rendering runtime does not
-link, so `dbschema.DatabaseConnection.Seeds` hands out the seed service of the
-engine a connection reaches. The descriptor says which engines need which
+caller; a diff whose owner spells its writes renders through
+`datadiff.RenderStatementsContext`, which sends them to the owner.
+
+A seed runs through the driver, which the rendering runtime does not link, so
+`dbschema.DatabaseConnection.Seeds` hands out the seed service of the engine a
+connection reaches. The descriptor says which engines need which
 service (`Literals.ByOwner`, `ManagedData.TypedRows`, `Seeds.ByOwner`), and each
 package refuses such an engine when it is given none, rather than write its
 rows the generic way.

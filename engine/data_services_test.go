@@ -1,11 +1,11 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/catalog"
 	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -25,10 +25,15 @@ func (noMoments) HoldsMoment(string) bool { return false }
 // unchangedRows hands every row back as it came.
 type unchangedRows struct{}
 
-func (unchangedRows) TypeRows(
-	_ capability.Capabilities, _ *catalog.Table, _ map[string]string, _, _ []map[string]any,
-) (dataext.TypedRows, error) {
+func (unchangedRows) TypeRows(context.Context, dataext.RowsRequest) (dataext.TypedRows, error) {
 	return dataext.TypedRows{}, nil
+}
+
+// noWrites renders no statement.
+type noWrites struct{}
+
+func (noWrites) RenderWrites(context.Context, capability.Capabilities, []dataext.RowWrite) ([]string, error) {
+	return nil, nil
 }
 
 func dataProvider(services dataext.Services) engine.Provider {
@@ -72,6 +77,7 @@ func TestNew_RefusesTypedNilDataServices(t *testing.T) {
 	var literals *quotedLiterals
 	var columns *noMoments
 	var rows *unchangedRows
+	var writes *noWrites
 	tests := []struct {
 		name     string
 		services dataext.Services
@@ -80,6 +86,7 @@ func TestNew_RefusesTypedNilDataServices(t *testing.T) {
 		{name: "literals", services: dataext.Services{Literals: literals}, message: `.*typed-nil data literal service`},
 		{name: "columns", services: dataext.Services{Columns: columns}, message: `.*typed-nil data column service`},
 		{name: "rows", services: dataext.Services{Rows: rows}, message: `.*typed-nil data row service`},
+		{name: "writes", services: dataext.Services{Writes: writes}, message: `.*typed-nil data write service`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

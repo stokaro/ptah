@@ -79,7 +79,7 @@ func renderBootstrapTable(
 	if err != nil {
 		return "", err
 	}
-	rows, err := dbschema.ReadTableRows(ctx, conn, tableSchema, table, columns)
+	rows, err := dbschema.ReadKeyedTableRows(ctx, conn, tableSchema, table, columns, keys)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
@@ -88,13 +88,13 @@ func renderBootstrapTable(
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
 	sortBootstrapRows(rows, columns)
-	up, _, err := datadiff.Render(&datadiff.DataDiff{
+	up, _, err := datadiff.RenderContext(ctx, &datadiff.DataDiff{
 		Schema:      tableSchema,
 		Table:       table,
 		Keys:        keys,
 		ColumnTypes: columnTypes,
 		Inserts:     rows,
-	}, conn.Info().Dialect, services)
+	}, conn.Info().Dialect, services, conn.Info().Capabilities)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: render bootstrap rows for %s: %w", name, err)
 	}
@@ -141,7 +141,9 @@ func bootstrapColumnTypes(
 	}
 	// The rows are the shadow's own, so they are the live side, and the live
 	// table names every column: nothing is declared that the table lacks.
-	typed, err := typer.TypeRows(conn.Info().Capabilities, &live.Tables[index], nil, nil, rows)
+	typed, err := typer.TypeRows(ctx, dataext.RowsRequest{
+		Capabilities: conn.Info().Capabilities, Schema: tableSchema, Table: table, LiveTable: &live.Tables[index], Live: rows,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

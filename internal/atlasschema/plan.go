@@ -855,7 +855,7 @@ func managedRowsFingerprint(ctx context.Context, conn *dbschema.DatabaseConnecti
 	read := make([]readSet, 0, len(sets))
 	for _, set := range sets {
 		qualified := schemamodel.QualifyTableName(set.Schema, set.Table)
-		rows, err := dbschema.ReadTableRows(ctx, conn, set.Schema, set.Table, set.Columns)
+		rows, err := dbschema.ReadKeyedTableRows(ctx, conn, set.Schema, set.Table, set.Columns, set.Keys)
 		if err != nil {
 			return "", fmt.Errorf("fingerprint declared rows of %s: %w", qualified, err)
 		}

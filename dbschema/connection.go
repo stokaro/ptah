@@ -407,10 +407,24 @@ func (dc *DatabaseConnection) readerScopedTo(schemas []string) (catalog.SchemaRe
 // engine whose seed files do not run as split statements in one transaction.
 // It is nil for every other engine. A seed runs through the database driver,
 // so the service comes with the connection rather than with the rendering
-// runtime, which links no driver. migration/seeder refuses an engine whose
-// descriptor asks for one (descriptor.Seeds.ByOwner) when this is nil.
+// runtime, which links no driver. On an executable provider's session it is
+// the provider's seed service, which keeps a ledger of its own. migration/seeder
+// refuses an engine whose descriptor asks for one (descriptor.Seeds.ByOwner)
+// when this is nil.
 func (dc *DatabaseConnection) Seeds() dataext.Seeds {
+	if dc.native != nil {
+		owner, ok := dc.native.(nativeSeeds)
+		if !ok {
+			return nil
+		}
+		return owner.Seeds()
+	}
 	return dc.engine().Seeds()
+}
+
+// nativeSeeds is a native session whose owner runs seed files itself.
+type nativeSeeds interface {
+	Seeds() dataext.Seeds
 }
 
 // engine returns the connector of the connection's dialect.

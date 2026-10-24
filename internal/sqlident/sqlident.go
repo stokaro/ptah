@@ -47,7 +47,12 @@ func spellingOf(dialect string) spelling {
 	if !found {
 		return spelling{}
 	}
-	quoting := described.Quoting
+	written := spellingFrom(described.Quoting)
+	spellings.Store(dialect, written)
+	return written
+}
+
+func spellingFrom(quoting descriptor.Quoting) spelling {
 	written := spelling{style: quoting.Style, bare: quoting.Bare, paths: quoting.Paths}
 	if len(quoting.Keywords) > 0 {
 		written.keywords = make(map[string]bool, len(quoting.Keywords))
@@ -55,8 +60,14 @@ func spellingOf(dialect string) spelling {
 			written.keywords[strings.ToUpper(keyword)] = true
 		}
 	}
-	spellings.Store(dialect, written)
 	return written
+}
+
+// IdentWith is [Ident] for a name written with quoting, for a caller that
+// holds the quoting of a dialect the process registry does not describe, such
+// as the query builder rendering a provider's declared spelling.
+func IdentWith(quoting descriptor.Quoting, name string) string {
+	return spellingFrom(quoting).ident(name)
 }
 
 // Quote returns name as a safely-quoted identifier for dialect. The quote
@@ -70,7 +81,11 @@ func spellingOf(dialect string) spelling {
 // `tsql`, `sql-server`, `sql_server`; `ch`) picks the same quote style as its
 // canonical name. name itself is quoted verbatim (it is not trimmed).
 func Quote(dialect, name string) string {
-	switch spellingOf(dialect).style {
+	return spellingOf(dialect).quote(name)
+}
+
+func (w spelling) quote(name string) string {
+	switch w.style {
 	case descriptor.QuoteYQL:
 		return sqlutil.QuoteYQLIdentifier(name)
 	case descriptor.QuoteBacktick:
@@ -106,10 +121,14 @@ func quoteDouble(name string) string {
 // chose: a CHECK or a generated expression is author text this repository does
 // not rewrite, and only the bare form agrees with it.
 func Ident(dialect, name string) string {
-	if spellingOf(dialect).bare == descriptor.BareEverywhere {
-		return BareOrQuoted(dialect, name)
+	return spellingOf(dialect).ident(name)
+}
+
+func (w spelling) ident(name string) string {
+	if w.bare == descriptor.BareEverywhere {
+		return w.bareOrQuoted(name)
 	}
-	return Quote(dialect, name)
+	return w.quote(name)
 }
 
 // BareOrQuoted returns name unquoted when it is a plain, nonreserved identifier
@@ -134,12 +153,15 @@ func Ident(dialect, name string) string {
 // names case-sensitively either way, so nothing is gained by the bare form,
 // and a keyword list would only have to be kept up to date.
 func BareOrQuoted(dialect, name string) string {
-	written := spellingOf(dialect)
-	if written.bare == descriptor.BareNever {
-		return Quote(dialect, name)
+	return spellingOf(dialect).bareOrQuoted(name)
+}
+
+func (w spelling) bareOrQuoted(name string) string {
+	if w.bare == descriptor.BareNever {
+		return w.quote(name)
 	}
-	if !isPlainIdentifier(name) || written.keywords[strings.ToUpper(name)] {
-		return Quote(dialect, name)
+	if !isPlainIdentifier(name) || w.keywords[strings.ToUpper(name)] {
+		return w.quote(name)
 	}
 	return name
 }

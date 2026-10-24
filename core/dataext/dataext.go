@@ -14,6 +14,10 @@
 // descriptor.Seeds.ByOwner), and a shared package refuses such an engine when
 // it is given no service rather than fall back to the generic spelling.
 //
+// An engine whose owner spells every row write itself, as an executable
+// provider does, gives a [Writes] service instead of literals, and its seed
+// service may keep its own ledger ([SeedLedger]).
+//
 // The package holds contracts only. It links no engine, so a provider in
 // another module implements it without linking Ptah's engines.
 package dataext
@@ -21,6 +25,7 @@ package dataext
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
@@ -40,6 +45,58 @@ type Services struct {
 	// Rows types managed rows before they are compared, and the rows a
 	// checkpoint bootstraps before they are written.
 	Rows Rows
+	// Writes renders whole row writes, for an engine whose owner spells
+	// every statement that writes a row. With it the caller writes no
+	// statement text of its own, and Literals and Columns are not consulted.
+	Writes Writes
+}
+
+// WriteMode is the operation a [RowWrite] performs.
+type WriteMode int
+
+const (
+	// WriteInsert inserts a row.
+	WriteInsert WriteMode = iota + 1
+	// WriteUpsert inserts a row, or writes it over the row with the same key.
+	// An engine that has no such statement refuses it.
+	WriteUpsert
+	// WriteUpdateByKey sets the columns outside the key on the row the key
+	// columns identify.
+	WriteUpdateByKey
+	// WriteDeleteByKey deletes the row the key columns identify.
+	WriteDeleteByKey
+)
+
+// RowWrite is one row operation a [Writes] service renders.
+type RowWrite struct {
+	// Mode is the operation.
+	Mode WriteMode
+	// Schema and Table name the table; Schema is empty for the connection's
+	// own schema.
+	Schema, Table string
+	// Columns are the columns written, key columns included, in the order
+	// Values follows. A delete writes its key columns alone.
+	Columns []string
+	// Keys are the columns that identify the row.
+	Keys []string
+	// Values holds one value per column, in the form [Rows.TypeRows] gives
+	// it: nil is null.
+	Values []any
+	// ColumnTypes is the engine type of each column, as [Rows.TypeRows]
+	// names it. A column it does not name has no type the owner gave.
+	ColumnTypes map[string]string
+}
+
+// Writes renders row writes for an engine whose owner spells every
+// statement that writes a row.
+type Writes interface {
+	// RenderWrites returns one complete statement per write, in input order,
+	// for a target with caps. The same writes give the same statements, so
+	// a saved plan and a migration file cannot disagree about a row. An
+	// error, and no statement, refuses the whole batch: a write in a mode or
+	// with a value the engine cannot take, or a write the owner can perform
+	// only as something other than statement text.
+	RenderWrites(ctx context.Context, caps capability.Capabilities, writes []RowWrite) ([]string, error)
 }
 
 // Literals writes a value as a literal for a column, for an engine whose
@@ -69,17 +126,27 @@ type Columns interface {
 // engine that compares and writes each value in its column's own type.
 type Rows interface {
 	// TypeRows returns the engine type of each column and the declared and
-	// live rows with every value in the form the engine compares it in.
-	// liveTable is the table as the database holds it, nil when it does not
-	// exist yet; declaredTypes is each column's declared type; caps are the
-	// target's capabilities, which decide the type a declared column lands
-	// on. The returned rows are new; desired and live are not modified.
-	TypeRows(
-		caps capability.Capabilities,
-		liveTable *catalog.Table,
-		declaredTypes map[string]string,
-		desired, live []map[string]any,
-	) (TypedRows, error)
+	// live rows with every value in the form the engine compares it in. ctx
+	// bounds an owner that types the rows in another process. The returned
+	// rows are new; the request's rows are not modified.
+	TypeRows(ctx context.Context, request RowsRequest) (TypedRows, error)
+}
+
+// RowsRequest is one table's rows for [Rows.TypeRows].
+type RowsRequest struct {
+	// Capabilities are the target's capabilities, which decide the type a
+	// declared column lands on.
+	Capabilities capability.Capabilities
+	// Schema and Table name the table the rows belong to; Schema is empty for
+	// the connection's own schema.
+	Schema, Table string
+	// LiveTable is the table as the database holds it, nil when it does not
+	// exist yet.
+	LiveTable *catalog.Table
+	// DeclaredTypes is each column's declared type.
+	DeclaredTypes map[string]string
+	// Desired are the declared rows, and Live the rows the database holds.
+	Desired, Live []map[string]any
 }
 
 // TypedRows is a table's column types and its declared and live rows in the
@@ -119,22 +186,37 @@ type Seed struct {
 	Env string
 }
 
+// ErrKeyConflict marks a seed file that hit an existing key and left nothing
+// of itself applied. A [Seeds] service wraps it into the error Apply returns
+// for that case, which is the failure an idempotent run tolerates.
+var ErrKeyConflict = errors.New("the seed file hit an existing key")
+
 // Seeds runs seed files for an engine whose seeds do not run as split
 // statements in one transaction with savepoints. The caller decides what a
-// failure means: an idempotent run records a file that hit a duplicate key
-// with Record.
+// failure means: an idempotent run records a file whose Apply error wraps
+// [ErrKeyConflict] with Record.
 type Seeds interface {
 	// TableNames lists the tables of schema, the schema the connection reads
 	// as current.
 	TableNames(ctx context.Context, db Database, schema string) ([]string, error)
 	// Apply runs one seed file and records it in the tracker table,
-	// schema_seeds, which exists when Apply is called. The file and its
-	// record commit together or not at all, so a file that fails leaves
-	// nothing of itself applied.
+	// schema_seeds, which exists when Apply is called, or in the service's
+	// own ledger ([SeedLedger]). The file and its record commit together or
+	// not at all, so a file that fails leaves nothing of itself applied.
 	Apply(ctx context.Context, db Database, seed Seed) error
 	// Record records a seed without running it, as an idempotent run does
 	// for a file whose rows already exist.
 	Record(ctx context.Context, db Database, seed Seed) error
+}
+
+// SeedLedger is a [Seeds] service that keeps the record of applied seeds in a
+// ledger whose layout is its own rather than in the schema_seeds table. Apply
+// and Record create a missing ledger, so the caller creates no table.
+type SeedLedger interface {
+	// Ledger returns the checksum recorded for each applied seed path. A
+	// ledger that does not exist yet holds no entry; a ledger the service
+	// cannot read whole is an error.
+	Ledger(ctx context.Context, db Database) (map[string]string, error)
 }
 
 // Runtime gives the data services a dialect's owner registered.

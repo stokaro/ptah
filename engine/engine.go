@@ -458,6 +458,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"data literal", declared.Data.Literals},
 		{"data column", declared.Data.Columns},
 		{"data row", declared.Data.Rows},
+		{"data write", declared.Data.Writes},
 	} {
 		if service.value != nil && nilService(service.value) {
 			return fmt.Errorf("%w: target %q has a typed-nil %s service", ErrInvalidRegistration, declared.Name, service.name)
