@@ -73,10 +73,13 @@ func (r readers) ReadYAML(ctx context.Context, data []byte) (*schemamodel.Databa
 // ReadSQL reads SQL DDL with an optional dialect hint.
 func (r readers) ReadSQL(ctx context.Context, data []byte, dialect string) (*schemamodel.Database, error) {
 	// The command deadline includes interpretation by selected owners.
-	opts := sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary, Relations: r.relations}
+	opts := sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary, Relations: r.relations, Source: r.source}
 	if r.notices != nil {
 		opts.StoredNames = func(name sqlschema.StoredName) {
 			_ = rundiag.Warn(ctx, r.notices, rundiag.TruncatedNames, sqlschema.StoredNameRecord(r.source, name))
+		}
+		opts.Redeclared = func(redeclared sqlschema.Redeclaration) {
+			_ = rundiag.Warn(ctx, r.notices, rundiag.RedeclaredConstraints, sqlschema.RedeclarationRecord(r.source, redeclared))
 		}
 	}
 	db, _, err := sqlschema.ReadWith(ctx, data, dialect, nil, opts)

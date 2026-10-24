@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/sqlschema"
 	"ptah.run/sourceformats"
 )
 
@@ -181,8 +182,15 @@ func LoadResult(ctx context.Context, opts Options) (*Result, error) {
 	if raw, ok := singleOCIReference(opts); ok {
 		return opts.loadOCIResult(ctx, raw)
 	}
+	// The sources are read under one collector of `ptah:allow-not-valid`
+	// directives, and they are applied once every source is merged, so a
+	// directive can reach the constraint another source declares.
+	ctx, allowances := sqlschema.WithNotValidAllowances(ctx)
 	database, err := loadContext(ctx, opts)
 	if err != nil {
+		return nil, err
+	}
+	if err := allowances.Apply(database); err != nil {
 		return nil, err
 	}
 	return &Result{Database: database}, nil

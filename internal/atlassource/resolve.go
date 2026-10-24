@@ -44,6 +44,7 @@ import (
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/sqlschema"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/sourceformats"
 )
@@ -332,7 +333,14 @@ func (s Set) ResolveHolding(ctx context.Context, opts ResolveOptions, hold HoldF
 		return err
 	}
 	var holdErr error
+	// The set is read under one collector of `ptah:allow-not-valid`
+	// directives, applied once every part of a composite source is merged, so
+	// a directive can reach the constraint another part declares.
+	ctx, allowances := sqlschema.WithNotValidAllowances(ctx)
 	err := s.resolve(ctx, opts, func(state State, conn *dbschema.DatabaseConnection) error {
+		if err := allowances.Apply(state.Schema); err != nil {
+			return err
+		}
 		validateSchema := opts.ValidateSchema
 		if state.DB != nil && opts.ValidateInspectedSchema != nil {
 			validateSchema = opts.ValidateInspectedSchema

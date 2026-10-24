@@ -893,6 +893,8 @@ func readSQLFile(
 	db, statements, err := sqlschema.ReadWith(ctx, data, opts.Dialect, earlier, sqlschema.Options{
 		Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations,
 		StoredNames: storedNameReporter(ctx, opts.Notices, "schema file "+path),
+		Redeclared:  redeclarationReporter(ctx, opts.Notices, "schema file "+path),
+		Source:      "schema file " + path,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
@@ -1012,6 +1014,18 @@ func rootReaderOf(dialect string) (dburlext.RootReader, error) {
 		return nil, fmt.Errorf("dialect %q names no database root a schema document can be read against", dialect)
 	}
 	return reader, err
+}
+
+// redeclarationReporter turns the writer into the callback the SQL reader
+// takes for a constraint dropped and added again differently, or nil when
+// there is nowhere to write. source names what was read.
+func redeclarationReporter(ctx context.Context, out io.Writer, source string) func(sqlschema.Redeclaration) {
+	if out == nil {
+		return nil
+	}
+	return func(redeclared sqlschema.Redeclaration) {
+		_ = rundiag.Warn(ctx, out, rundiag.RedeclaredConstraints, sqlschema.RedeclarationRecord(source, redeclared))
+	}
 }
 
 // storedNameReporter turns the writer into the callback the SQL reader takes,
