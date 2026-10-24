@@ -1,6 +1,6 @@
 # ADR 0027: A provider reads the SQL schema documents of its own dialect
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -265,15 +265,18 @@ These are for the future implementation. None holds today.
 - A guard reports any non-test importer of `internal/yqlparse` outside the plugin
   after the flip, using `go list`, and fails if the package list it checks falls
   below a floor.
+- A field audit test lists every `schemamodel.Database` field that YQL conversion
+  fills, and fails when a field has neither a wire home in `SQLSchema` nor a named
+  refusal.
 - `docs/site/src/content/docs/extend/executable-providers.md` documents
   `schema.read-sql`, the two modes and the diagnostics.
 
-## Open questions
+## Decided questions
 
-- Which common objects beyond tables need new declared messages? The list comes
-  from the field audit described above, not from this ADR.
-- HCL desired-schema documents for a provider engine need the same treatment as
-  SQL and Go. Does the owner want an HCL claim in the same revision, or a later
-  one?
-- Should `ReadSQLSchema` also serve `ptah sql` verbs that read a SQL file without
-  a database (formatting, explaining), or only schema loading?
+- The field audit of `schemamodel.Database` against `SQLSchema` is part of the
+  implementation, and the acceptance criteria below name it. Views and any other
+  common object without a wire home get a declared SDK message or a named refusal.
+- HCL desired-schema documents for a provider engine follow in a later record that
+  reuses the claim pattern of ADR 0025. The field audit also lists every YDB HCL
+  input. If one has no YQL or Go equivalent, HCL support becomes a flip
+  precondition.

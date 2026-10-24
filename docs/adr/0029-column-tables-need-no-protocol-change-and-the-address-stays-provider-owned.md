@@ -1,6 +1,6 @@
 # ADR 0029: Column tables need no protocol change, and the connection address stays provider-owned
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -240,10 +240,9 @@ These are for the future implementation. None holds today.
   that only the built-in engine passes. The census is read by `git ls-files`, with
   a floor.
 
-## Open questions
+## Decided questions
 
-- Does the owner want the optional parameter list (second alternative) for
-  diagnostics, even though column tables do not need it?
-- The CI service must publish the monitoring port. Is a host-side change to
-  `.github/workflows/go-integration-tests.yml` enough, or does the plugin's own CI
-  also need it? The plugin README says its CI does not.
+- No declared address-parameter list. A refusal at `Open` names the parameter.
+- The CI services in both the host workflow
+  (`.github/workflows/go-integration-tests.yml`) and the plugin's own CI publish the
+  monitoring port. Both are acceptance work for step 3 and step 6 above.

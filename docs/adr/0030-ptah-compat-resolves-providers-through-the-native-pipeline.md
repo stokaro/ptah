@@ -1,6 +1,6 @@
 # ADR 0030: ptah-compat resolves providers through the native pipeline
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -129,7 +129,7 @@ This is an amendment, and it names the text it changes:
 | Text | Change |
 | ---- | ------ |
 | ADR 0021: "An explicit native selection owns its connection scope. Unregistered schemes are refused even when a bundled driver exists." | Kept for an explicit selection. A default selection is additive. |
-| ADR 0021: "No working-directory, PATH, environment, or implicit project-file discovery authorizes a binary. The operator supplies the manifest path explicitly." | The variable `PTAH_PROVIDER_CONFIG` carries an explicit operator-supplied path. It is not discovery: nothing is searched, and the manifest, with its absolute executable path and digest, authorizes the binary. The sentence needs this exception stated. See the open questions. |
+| ADR 0021: "No working-directory, PATH, environment, or implicit project-file discovery authorizes a binary. The operator supplies the manifest path explicitly." | Narrow exception: `PTAH_PROVIDER_CONFIG` identifies an explicit manifest file, as `--provider-config` does. It authorizes nothing by itself. The manifest entry (absolute executable path, SHA-256, provider ID, engines) and the checks of ADR 0026 authorize the binary: pinned digests, identity and integrity verification before every start, protocol and feature checks. Nothing is searched. No implicit fallback exists: a named manifest that fails to load, or an entry that fails verification, ends the search. |
 
 `dbschema.WithNativeConnections` gains an additive mode. The engine runtime gains
 a way to extend the built-in runtime with a provider's targets. Both keep the
@@ -199,7 +199,7 @@ turn out to be SQLite, or miss one. The lazy path avoids both. Rejected.
 store and a second process manager. It is the "second plugin system" the brief
 rules out. Rejected.
 
-**Bundle only; no manifest for compat.** Compat uses rules 2 and 3 only, and
+**Bundle only; no manifest for compat (rejected by the owner).** Compat uses rules 2 and 3 only, and
 anyone who needs another build uses native `ptah`. It avoids the environment-variable
 question. The cost is that an Atlas-shaped pipeline cannot take a hotfixed
 provider, and an offline host cannot select a verified executable by path. It
@@ -245,16 +245,19 @@ These are for the future implementation. None holds today.
 - `go list -deps` for the three binaries contains no YDB package, held by a guard
   with a floor on the checked package count, and `ptah-compat` passes its existing
   YDB integration tests with a provider and no embedded engine.
+- Four YDB behaviors in shared CLI packages are tracked here because they block
+  the flip and belong to no other record: the table-rebuild policy input
+  (`tablerebuild`, `PTAH_ALLOW_TABLE_REBUILD`), secret rotation (`secretrotation`),
+  the migrate timeout (`migratetimeout`) and the dev snapshot realm (`devsnapshot`).
+  Each moves behind a provider-declared planning or session option, or into the
+  plugin, with a test through the shipped binary. The flip does not happen while
+  `go list -deps` of any binary still reaches `ydbsecret` or another YDB package.
 - The pull request that adds the lazy resolver says `GENERAL CAPABILITY`
   (`internal/providerselect`, consumed by native commands) and the compat hook says
   `COMPATIBILITY ADAPTER`, naming the Atlas flag and output contract it preserves.
 
-## Open questions
+## Decided questions
 
-- Is a variable that names a manifest path acceptable under ADR 0021, or should
-  compat use bundled and stored providers only?
-- Which record carries the YDB behavior in shared CLI packages (table rebuild
-  input, secret rotation, migrate timeout, dev snapshot realm)? They block the
-  flip, and they are not column-table or data work.
-- Should the missing-provider message in compat name `ptah providers install`
-  only, or also print the bundled path it looked in?
+- `PTAH_PROVIDER_CONFIG` is accepted with the exception in the amendment table.
+- The missing-provider message names `ptah providers install <engine>` only.
+- Default selection is additive; an explicit `--provider-engine` stays exclusive.

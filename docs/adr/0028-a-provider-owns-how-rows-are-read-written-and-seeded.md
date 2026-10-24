@@ -1,6 +1,6 @@
 # ADR 0028: A provider owns how rows are read, written and seeded
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -150,9 +150,9 @@ units are what a saved plan records for review, what a data migration file
 contains (`.up.sql` and `.down.sql`), and what `Execute` runs. Rendering is
 deterministic: the same request gives the same bytes, so the `schema apply` and
 migration paths cannot disagree about a row. A provider that writes rows with a
-native call instead of text returns a `native` unit, and the migration file
-writer refuses it with a message that names the engine; that is the same rule
-that governs native schema units.
+native call instead of text returns a `native` unit for plan application. The
+migration file writer accepts text units only and refuses a `native` unit with a
+message that names the engine.
 
 `UPSERT` is a mode of the operation, not a YDB word. A provider that has no upsert
 refuses the mode with a typed reason. The YDB plugin renders `UPSERT INTO` and
@@ -297,9 +297,16 @@ ledger together" guarantee, or force the host to know the ledger's table. Reject
   `ydb` dialect when the embedded descriptor goes. That is a deliberate break
   (pre-v1, so no compatibility is owed) and the Stable Embedder API ledger
   records it through the `apidiff` approval list.
-- Embeddings keep their current YDB code in the host until their own decision.
-  The flip in ADR 0026 deletes the embedded YDB engine as a whole, so that
-  decision blocks the flip unless it lands first. The owner has to order them.
+- Embeddings (`ptah inference`) keep working on YDB until the flip. Their YDB code
+  moves into the plugin as part of the flip program. It is neither dropped nor left
+  in the host after the embedded engine is deleted. This ADR does not design it.
+  It is a flip precondition (ADR 0026): the embedded YDB engine is not deleted
+  until a follow-up record, "YDB embeddings leave the host before the embedded
+  engine is deleted", is accepted and implemented. That record is required work.
+- Migration files accept text units only. A `native` unit is not portable in a
+  versioned migration, so the writer refuses it with a message that names the
+  engine. A provider that writes rows through a native call must also render text
+  for migration use, or the engine's declared rows are refused in migrations.
 
 ## Acceptance criteria
 
@@ -337,12 +344,9 @@ These are for the future implementation. None holds today.
 - `docs/site/src/content/docs/extend/executable-providers.md` documents the
   features, and `docs/capabilities.md` shows the provider-declared rows.
 
-## Open questions
+## Decided questions
 
-- Embeddings: the owner decides whether the inference outbox for YDB lands before
-  the flip or moves with it.
-- Does the migration file writer accept a `native` unit for engines that write
-  rows with a native call, or is text the only portable form? This ADR chooses
-  refusal and asks for confirmation.
-- The idempotent seed policy treats `KEY_CONFLICT` as "already applied". Should the
-  provider be able to say which key conflicted, for the report?
+- Migration files accept text units only.
+- The ledger report names the seed file that conflicted. The provider need not say
+  which key conflicted.
+- Embeddings ordering is stated in Consequences as a flip precondition.
