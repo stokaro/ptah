@@ -503,6 +503,18 @@ before a database is contacted, and again where the program starts. A run that
 reaches a program by a path that skipped classification is refused at the
 start.
 
+**Upgrading from 0.15.** Native ptah 0.15 and earlier ran a `ptah.yaml`
+`migration.pre_up_hook` or `migration.pre_down_hook`, and an `atlas.hcl`
+`data "external"`, without asking. From 0.16.0 they are refused until you pass
+`--allow-config-exec` or set `PTAH_ALLOW_CONFIG_EXEC=1`. A deploy job whose
+`ptah.yaml` names a hook, often a backup, now stops before it connects to the
+database, with nothing applied and the hook not run, until the job adds one of
+the two. `--allow-external-schema` does not cover it: `migrations up` and
+`migrations down` do not register that flag, and `PTAH_ALLOW_EXTERNAL_SCHEMA`
+is read only by the commands that do. The same hook passed as `--pre-up-hook`
+or `PTAH_PRE_UP_HOOK` runs without the permission, as before. `ptah-compat` is
+unchanged.
+
 Permission is not a sandbox. An allowed program runs with your user's
 permissions. Ptah runs it without a shell (except a hook, which is shell by
 definition), with an explicit argument vector, a timeout, bounded output,

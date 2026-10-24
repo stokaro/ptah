@@ -4758,13 +4758,14 @@ parses SQL, HCL, or YAML stdout into Ptah's schema IR. Empty output is rejected
 to prevent an accidentally broken provider from becoming an empty desired
 schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
 and terminal-safe. Embedders can use the same external desired-schema contract
-as the CLI without depending on Cobra or any command-tree package. `Run` takes
-a `schemasource.Formats`, the readers of each output format, because the SQL
-and HCL readers decode owner syntax and the package links no owner:
-`sourceformats.New` returns the bundled readers, with YAML, SQL and HCL read by
-the owners it is given. `sourceformats.NewWithNotices` returns the same readers
-and also writes a warning line for each SQL name longer than the identifier
-limit of a server that cuts it, such as PostgreSQL's 63 bytes.
+as the CLI without depending on Cobra or any command-tree package.
+
+`schemasource.Run` takes a `schemasource.Formats`, the readers of each output
+format, because the SQL and HCL readers decode owner syntax and the package
+links no owner. `sourceformats.New` returns the bundled readers, with YAML, SQL
+and HCL read by the owners it is given. `sourceformats.NewWithNotices` returns
+the same readers and also writes a warning line for each SQL name longer than
+the identifier limit of a server that cuts it, such as PostgreSQL's 63 bytes.
 
 `Formats.ReadYAML`, `ReadSQL`, and `ReadHCL` receive the caller context first.
 The schema command deadline covers both execution and output interpretation.

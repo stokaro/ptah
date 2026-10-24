@@ -907,7 +907,12 @@ scripts. `ptah migrations up` supports:
   An engine the revision table cannot be is refused before any statement runs.
 
 All of these can live in `ptah.yaml` instead of the command line; see
-[Configuration](../../reference/configuration/).
+[Configuration](../../reference/configuration/). A hook written in `ptah.yaml`
+is a program the project file names, so it runs only with
+`--allow-config-exec` or `PTAH_ALLOW_CONFIG_EXEC=1`; without either,
+`migrations up` refuses it before it connects to the database. The same hook
+passed as `--pre-up-hook` needs no permission. See
+[Programs a project file names](../../reference/configuration/#programs-a-project-file-names).
 
 ## Apply from an OCI registry
 
