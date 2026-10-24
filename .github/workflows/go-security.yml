@@ -164,7 +164,7 @@ jobs:
 
   security-gate:
     name: Security gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, govulncheck, gosec, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5

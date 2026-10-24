@@ -74,11 +74,12 @@ jobs:
       # These checks are intentionally cheap and unconditional. They inspect
       # non-Go files, and a repository-local path can be introduced in any
       # tracked text file, including a documentation-only pull request.
-      # A gate job aggregates others through `needs`, so without `if: always()`
-      # it is skipped the moment one of them fails -- and a skipped job reports
-      # success. The gate would stay green about the failure it exists to
-      # surface. This lives here rather than in the gate jobs because a gate
-      # cannot be the thing that checks gates.
+      # A gate job aggregates others through `needs`, so without a status
+      # function it is skipped the moment one of them fails -- and a skipped job
+      # reports success. The gate would stay green about the failure it exists
+      # to surface. `!cancelled()` runs it either way and gives a run a newer
+      # one canceled no verdict. This lives here rather than in the gate jobs
+      # because a gate cannot be the thing that checks gates.
       - name: Check no aggregate gate can be skipped
         run: scripts/check-ci-scope-gate.sh --check-workflows
 
@@ -434,7 +435,7 @@ jobs:
 
   go-lint-gate:
     name: Go lint gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs:
       - scope
       - repository-policy

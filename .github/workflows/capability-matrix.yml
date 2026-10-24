@@ -569,7 +569,7 @@ jobs:
 
   capability-gate:
     name: Capability gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [cells, presets, documentation, probe, report]
     runs-on: ubuntu-latest
     timeout-minutes: 5

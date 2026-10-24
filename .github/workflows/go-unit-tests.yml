@@ -321,7 +321,7 @@ jobs:
 
   unit-test-gate:
     name: Unit test gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, unit-tests, schema-census, windows-publication, windows-unit-tests, js-wasm-build, build-tags]
     runs-on: ubuntu-latest
     timeout-minutes: 5
