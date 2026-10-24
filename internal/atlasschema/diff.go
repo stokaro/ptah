@@ -609,12 +609,21 @@ func validateDiffSystemSchemaState(state atlassource.State, dialect, flag string
 // A docker:// dev server the replay provisioned serves the comparison too,
 // because the comparison runs inside the replay.
 //
+// It is also when both sides are databases. Each then holds a server's
+// spelling, but not necessarily the same one: PostgreSQL does not print a
+// CHECK back in a form that reads back to itself. A history that wrote
+// `x::text = ANY ((ARRAY['a'::varchar])::text[])`, which is how the server
+// prints `x IN ('a')`, stores `x::text = ANY (ARRAY[('a'::varchar)::text])`,
+// so the database the history built and the one the declaration built
+// disagree as text about one constraint. Asked on the --from server, the --to
+// spelling is rewritten the way the --from one was, which is what schema
+// apply already does for the same two databases.
+//
 // --to is resolved inside that scope, after --from, which is the order
-// [resolveDiffSources] keeps. It cannot need the held server: a --to that is a
-// database or a directory takes the other branch. When both sides are
-// databases or directories, both hold the server's spelling and nothing is
-// held; when --from is a file, there is no server behind it to ask
-// (stokaro/ptah#3658).
+// [resolveDiffSources] keeps. It cannot need the held server: a --to
+// directory takes the other branch, and so does a --from directory, whose
+// replay resets the dev database a --to database may name. When --from is a
+// file, there is no server behind it to ask (stokaro/ptah#3658).
 func withResolvedDiffSources(
 	ctx context.Context,
 	service renderer.SchemaService,
@@ -778,8 +787,12 @@ func resetsDevDatabase(fromSet, toSet atlassource.Set, devURL string) bool {
 }
 
 // holdsServerForComparison reports whether --from has a server behind it and
-// --to does not; see [withResolvedDiffSources].
+// --to does not, or whether both sides are databases; see
+// [withResolvedDiffSources].
 func holdsServerForComparison(fromSet, toSet atlassource.Set) bool {
+	if fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase {
+		return true
+	}
 	return readsServer(fromSet.Kind) && !readsServer(toSet.Kind)
 }
 
