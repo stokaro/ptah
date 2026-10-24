@@ -109,9 +109,12 @@ func hasOwnerTransactions(requirements [][]plangraph.Transaction) bool {
 	return slices.ContainsFunc(requirements, func(statement []plangraph.Transaction) bool { return len(statement) > 0 })
 }
 
-// Execute runs a saved plan's exact statements after checking owner transaction
+// Execute runs a saved plan's exact SQL statements after checking owner transaction
 // requirements. The caller must verify the target and approve the plan first.
 func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode) error {
+	if err := p.requireSQL(); err != nil {
+		return err
+	}
 	if err := p.PreflightTransaction(mode, conn); err != nil {
 		return err
 	}

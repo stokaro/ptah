@@ -133,6 +133,13 @@ statement also carries `access` -- `widens`, `narrows`, `unchanged` or
 statement destructive. Each owner operation is planned on its own, so its
 verdict reaches the statements it rendered and no others.
 
+A target served by an [executable provider](../../extend/executable-providers/)
+can plan native operations that have no SQL. The file then records such a
+statement with a `native` object in place of `sql`: the operation kind, its
+subject, and the provider's own encoding of the operation. The plan binds the
+provider's identity, and `ptah schema apply --plan` runs the operation only
+through that provider.
+
 An `--edit` that leaves the statements as they were, comments and whitespace
 aside, keeps every recorded verdict. After any other edit, a statement whose
 text the plan recorded keeps the strongest verdict recorded for that text, so a

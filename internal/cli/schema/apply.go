@@ -165,12 +165,15 @@ typed --lock-timeout against a dialect that takes no such lock rather than
 applying unlocked with it); when --dev-url is set the exact ordered plan is
 rehearsed on the dev database first and a failed rehearsal refuses the apply
 with the target unchanged; the plan must be confirmed interactively unless
---auto-approve is set; --dry-run prints the plan without applying, and asks
-for the same lock, so it is refused on the same targets. With --edit the
+--auto-approve is set; --dry-run prints the plan without applying, and takes
+a lock only where taking it writes nothing, so a target served by an
+executable provider is previewed without one. With --edit the
 planned SQL opens in $VISUAL or $EDITOR before confirmation, and the edited
 SQL is what gets applied. With --plan <path>, a pre-approved plan file saved
 by "ptah schema plan" is executed instead of re-planning, after verifying the
-database still matches the plan's source fingerprint. --plan refuses
+database still matches the plan's source fingerprint. A plan for an
+executable provider carries the provider's native operations and is applied
+only through the same provider. --plan refuses
 --protected-table, typed or set in the environment: the fence is read when the
 plan is computed, so pass it to "ptah schema plan", which refuses to save a
 plan that would change a fenced table. --schemas and --include
@@ -722,8 +725,11 @@ func runSchemaApplyPlanFileOnLockedSession(
 		return "", err
 	}
 
-	printSchemaApplyPlan(run.human, plan.SQL())
-	run.evidence.Units = atlasschema.SQLApplyUnitReports(plan.StatementSQL())
+	printPlan(run.human, plan)
+	run.evidence.Units = plan.UnitReports()
+	if plan.HasNative() {
+		return runSchemaApplyNativePlanFile(ctx, cmd, opts, conn, plan, txMode, run)
+	}
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
