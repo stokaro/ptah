@@ -191,6 +191,16 @@ func runAtlasMigrateDiff(
 			opts.dirURL,
 			projectCfg.StringValue(projectconfig.StringMigrationDir),
 		)
+		// migration.format names the layout as --dir-format does, and the flag
+		// wins. Without it, a golang-migrate directory named by its env was
+		// hashed as an Atlas one, and the checksum gate refused every
+		// `.down.sql` as added; hash, validate and new already read it.
+		opts.dirFormat = dbcli.EffectiveString(
+			cmd,
+			"dir-format",
+			opts.dirFormat,
+			projectCfg.StringValue(projectconfig.StringMigrationFormat),
+		)
 		opts.schemas = effectiveAtlasSchemas(cmd, opts.schemas, projectCfg)
 		opts.exclude = effectiveAtlasExclude(cmd, nil, projectCfg)
 		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateDiff)
