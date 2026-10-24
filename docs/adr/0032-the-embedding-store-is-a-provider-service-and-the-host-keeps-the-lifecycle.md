@@ -416,9 +416,9 @@ features. The engine-neutral packages and `internal/embedpg` do not change.
 - `internal/embedydb` moves into the plugin and is deleted from the host, with
   the YDB branch of `embedconnect` and its `float` rule.
 - The three YDB test files under `integration/` move into the plugin's pipeline.
-  The owner decided that the YDB parity tests of this service run there, which
-  settles for embeddings the question ADR 0028's amendments leave open. Ptah's
-  pipelines test the service on the fixture provider.
+  The maintainers decided that every YDB test that needs the provider runs
+  there (ADR 0028, Amendments). Ptah's pipelines test the service on the fixture
+  provider.
 - The plugin keeps the table names, columns, keys and vector encoding the host
   writes today: `ptah_embedding_generation`, `ptah_embedding_run`,
   `ptah_embedding_event` and `ptah_embedding_pointer` with their keys, the five
