@@ -260,8 +260,9 @@ func TablesAndColumnsWithTableContext(
 			// difference is its comment has to arrive here or the schema
 			// reports synced while the declaration and the database say
 			// different things about what the table is for -- on every run,
-			// with nothing able to fix it (stokaro/ptah#2168).
-			tableDiff.CommentChange = commentChange(genTable.Comment, dbTable.Comment)
+			// with nothing able to fix it (stokaro/ptah#2168). A target that
+			// stores no table comment has nothing to compare.
+			tableDiff.CommentChange = storedCommentChange(dialect, genTable.Comment, dbTable.Comment)
 			if tableChanged(tableDiff) {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}

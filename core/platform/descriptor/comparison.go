@@ -114,6 +114,12 @@ type Comparison struct {
 	// changed. Such a comparison requires the declaration to state its
 	// databases.
 	ServerDatabases bool `json:"server_databases,omitempty"`
+	// NoTableComments reports that the server stores no comment on a table or
+	// on a column, as SQLite's CREATE TABLE has no place for one. A declared
+	// comment is lost when the table is created and the catalog reports none,
+	// so the comparison does not compare it: it would be a difference on every
+	// run that no plan can close.
+	NoTableComments bool `json:"no_table_comments,omitempty"`
 	// RespelledIndexReplaced reports that an index whose catalog name the
 	// name rules read as the declared name, but which is spelled otherwise,
 	// such as in another case, is dropped and created under the declared
