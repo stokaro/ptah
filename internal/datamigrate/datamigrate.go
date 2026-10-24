@@ -618,10 +618,30 @@ func checkDestructive(changes []tableChange, opts Options) error {
 // another list needs the order to be the same on every run, which this is.
 func rowFindings(inserts, updates, deletes int) []safety.Finding {
 	var findings []safety.Finding
-	addFinding(&findings, "data_rows_inserted", inserts, safety.Safe)
-	addFinding(&findings, "data_rows_updated", updates, managedrows.ReportUpdateSeverity)
-	addFinding(&findings, "data_rows_deleted", deletes, managedrows.ReportUpdateSeverity)
+	for i, count := range []int{inserts, updates, deletes} {
+		addFinding(&findings, rowCategories[i].Category, count, rowCategories[i].Severities[0])
+	}
 	return findings
+}
+
+// rowCategories are the categories [rowFindings] reports, in its order: an
+// insert, an update and a delete.
+var rowCategories = []safety.FindingCategory{
+	{Category: "data_rows_inserted", Severities: []safety.Severity{safety.Safe}, Bare: true},
+	{Category: "data_rows_updated", Severities: []safety.Severity{managedrows.ReportUpdateSeverity}, Bare: true},
+	{Category: "data_rows_deleted", Severities: []safety.Severity{managedrows.ReportUpdateSeverity}, Bare: true},
+}
+
+// FindingCategories returns the categories a summary's findings can carry,
+// in the shape [safety.FindingCategories] lists the schema's. Each call
+// returns a new slice.
+func FindingCategories() []safety.FindingCategory {
+	categories := make([]safety.FindingCategory, 0, len(rowCategories))
+	for _, category := range rowCategories {
+		category.Severities = slices.Clone(category.Severities)
+		categories = append(categories, category)
+	}
+	return categories
 }
 
 // destructiveFindings is the volume the generate-time gate decides on: the

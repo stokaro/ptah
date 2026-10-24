@@ -98,7 +98,7 @@ type Report struct {
 //
 // Every change a comparison reports is counted under at least one category,
 // so a diff that has changes ([difftypes.SchemaDiff.HasChanges]) has
-// findings. A modified table or enum type is counted by what changed in it:
+// findings, and every category is one [FindingCategories] lists. A modified table or enum type is counted by what changed in it:
 // its columns, its values, its comment, or a change its feature owner reports.
 //
 // The categories are deliberately not disjoint: a change severe enough to
@@ -121,71 +121,17 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	}
 
 	var findings []Finding
+	// A feature owner's changes are classified by what the owner reports,
+	// under its change kind; see [featureCategories].
 	appendFeatureFindings(&findings, diff.FeatureChanges)
-	// The additions and the removals of each kind of object, counted the way
-	// the inventory counts them; see [Inventory].
-	for _, kind := range objectKinds {
-		add(&findings, kind.stem+"_added", kind.added(diff), kind.addedSeverity)
-		add(&findings, kind.stem+"_removed", kind.removed(diff), kind.removedSeverity)
-	}
-	// A changed character set or collation changes what a table created later
-	// in the database defaults to.
-	add(&findings, "schemas_modified", len(diff.SchemasModified), Warning)
-	// A removal whose object a UNIQUE constraint enforces takes the uniqueness
-	// with it, whichever statement the engine spells it as, so it is counted
-	// again under its own destructive category rather than folded into the
-	// indexes_removed warning. Losing a uniqueness protection is not a
-	// query-plan change and must not pass a destructive gate or a drift
-	// threshold as one.
-	add(&findings, "unique_protections_removed", len(diff.ConstraintBackedIndexRemovals), Destructive)
-	add(&findings, "functions_modified", len(diff.FunctionsModified), Warning)
-	add(&findings, "rls_policies_modified", len(diff.RLSPoliciesModified), Warning)
-	// NO FORCE counts as destructive for the reason a DISABLE does: afterwards
-	// the table's owner, often the role the application connects as, reads and
-	// writes past every policy the table keeps.
-	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
-	add(&findings, "rls_force_added", forced, Safe)
-	add(&findings, "rls_force_removed", unforced, Destructive)
-	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
-	// An index renamed in place keeps its rows and its definition, but a
-	// reader that names it, as a YDB query does with VIEW, stops finding it,
-	// which is how a renamed column or table reads.
-	add(&findings, "indexes_renamed", len(diff.IndexesRenamed), Warning)
-	// Visibility decides which index the optimizer can use, and so query
-	// plans, as the plan's ALTER INDEX is rated.
-	add(&findings, "index_visibility_changed", len(diff.IndexVisibilityChanged), Warning)
-	// VALIDATE CONSTRAINT reads every row and fails on the first one the
-	// constraint refuses, as ADD CONSTRAINT does.
-	add(&findings, "constraints_validated", len(diff.ConstraintsValidated), Warning)
-	// ALTER SEQUENCE can move the next value onto a key a row already holds.
-	add(&findings, "sequences_modified", len(diff.SequencesModified), Warning)
-	// A changed view or trigger changes what its readers get or what every
-	// write does, as a changed function does.
-	add(&findings, "views_modified", len(diff.ViewsModified), Warning)
-	add(&findings, "triggers_modified", len(diff.TriggersModified), Warning)
-	// A grant option lets the grantee pass the privilege on, and it is a
-	// setting of a grant both sides hold, judged as the grant is.
-	add(&findings, "grant_options_added", len(diff.GrantOptionsAdded), Safe)
-	add(&findings, "grant_options_removed", len(diff.GrantOptionsRevoked), Warning)
-	// A comment is the one change an object takes in place without changing
-	// what it holds or does. A column's comment is a modification of the
-	// column, which columns_modified counts.
-	add(&findings, "comments_changed", commentChanges(diff), Safe)
-
 	for _, view := range diff.MaterializedViewsModified {
 		appendViewFeatureFindings(&findings, view)
-		add(&findings, "materialized_views_modified", 1, materializedViewModification(view))
 	}
 	for _, table := range diff.TablesModified {
 		appendFeatureFindings(&findings, table.FeatureChanges)
-		add(&findings, "columns_modified", len(table.ColumnsModified), Warning)
-		// Counted separately from columns_modified, and Destructive rather than
-		// Warning, because it is the one column modification the server refuses
-		// outright while any row holds a value (stokaro/ptah#2068). A reader
-		// who sees "columns_modified: 1 (warning)" is told a cast is planned.
-		add(&findings, "vector_dimension_changed", vectorDimensionChanges(table.ColumnsModified), Destructive)
-		add(&findings, "table_constraints_added", len(table.ConstraintsAdded), Warning)
-		add(&findings, "table_constraints_removed", len(table.ConstraintsRemoved), Destructive)
+	}
+	for _, category := range countedCategories {
+		add(&findings, category.name, category.count(diff), category.severity)
 	}
 
 	findings = aggregate(findings)
@@ -1108,29 +1054,6 @@ func add(findings *[]Finding, category string, count int, severity Severity) {
 		Count:    count,
 		Severity: severity,
 	})
-}
-
-// commentChanges counts the comment transitions a plan writes in place on
-// tables, indexes, constraints and the objects that take a comment through a
-// statement of their own.
-func commentChanges(diff *difftypes.SchemaDiff) int {
-	total := len(diff.ObjectCommentsChanged) + len(diff.IndexCommentsChanged) + len(diff.ConstraintCommentsChanged)
-	for _, table := range diff.TablesModified {
-		if table.CommentChange != nil {
-			total++
-		}
-	}
-	return total
-}
-
-// materializedViewModification is the severity of one modified materialized
-// view. A view the plan replaces loses its rows, as one it drops does, and
-// one whose owner changes an attached setting in place keeps them.
-func materializedViewModification(view difftypes.MaterializedViewDiff) Severity {
-	if view.Replaces() {
-		return Destructive
-	}
-	return Warning
 }
 
 func aggregate(findings []Finding) []Finding {

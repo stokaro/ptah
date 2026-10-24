@@ -24,7 +24,7 @@ func appendFeatureFindings(findings *[]Finding, changes []schemaext.ChangeRecord
 			if schemaext.ValidatePayload(change.Value) == nil {
 				suffix = ":" + string(change.Value.Kind())
 			}
-			add(findings, "feature_changes"+suffix, 1, Destructive)
+			add(findings, featureChangesCategory+suffix, 1, Destructive)
 			if _, declares := change.Value.(schemaext.AccessEffectSource); declares {
 				add(findings, accessCategory(schemaext.AccessUnknown)+suffix, 1, Destructive)
 			}
@@ -35,13 +35,50 @@ func appendFeatureFindings(findings *[]Finding, changes []schemaext.ChangeRecord
 		if source, ok := snapshot.Value.(schemaext.EffectSource); ok {
 			severity, _ = classifyFeatureEffect(source.Effect())
 		}
-		add(findings, "feature_changes:"+kind, 1, severity)
+		add(findings, featureChangesCategory+":"+kind, 1, severity)
 		if source, ok := snapshot.Value.(schemaext.AccessEffectSource); ok {
 			// Clone refused an invalid assessment above, so this one is valid.
 			access := source.AccessEffect().Access
 			add(findings, accessCategory(access)+":"+kind, 1, AccessSeverity(access))
 		}
 	}
+}
+
+// featureChangesCategory is the category a feature owner's change is
+// counted under, followed by the change's kind.
+const featureChangesCategory = "feature_changes"
+
+// accessAssessments are the assessments [accessCategory] names a category for.
+var accessAssessments = []schemaext.Access{
+	schemaext.AccessUnchanged, schemaext.AccessNarrows, schemaext.AccessWidens, schemaext.AccessUnknown,
+}
+
+// featureCategories are the categories [appendFeatureFindings] reports a
+// feature owner's changes under, each followed by the change's kind. A change
+// that cannot be snapshotted and names no valid kind is reported under the
+// bare category, Destructive, with an unknown access assessment when it makes
+// an access claim.
+//
+// feature_changes carries the severity the owner's effect gives, which a
+// change on a materialized view the plan replaces raises to Destructive, so it
+// can carry all three. An access category carries the severity
+// [AccessSeverity] gives its assessment.
+func featureCategories() []FindingCategory {
+	categories := []FindingCategory{{
+		Category:   featureChangesCategory,
+		Severities: []Severity{Safe, Warning, Destructive},
+		Bare:       true,
+		Qualified:  true,
+	}}
+	for _, access := range accessAssessments {
+		categories = append(categories, FindingCategory{
+			Category:   accessCategory(access),
+			Severities: []Severity{AccessSeverity(access)},
+			Bare:       access == schemaext.AccessUnknown,
+			Qualified:  true,
+		})
+	}
+	return categories
 }
 
 // accessCategory names the finding that counts changes with one assessment.
@@ -70,7 +107,7 @@ func appendViewFeatureFindings(findings *[]Finding, view difftypes.MaterializedV
 	appendFeatureFindings(&own, view.FeatureChanges)
 	replaced := view.Replaces()
 	for _, finding := range own {
-		if replaced && (finding.Category == "feature_changes" || strings.HasPrefix(finding.Category, "feature_changes:")) {
+		if replaced && (finding.Category == featureChangesCategory || strings.HasPrefix(finding.Category, featureChangesCategory+":")) {
 			finding.Severity = Destructive
 		}
 		add(findings, finding.Category, finding.Count, finding.Severity)

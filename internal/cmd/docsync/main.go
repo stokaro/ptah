@@ -21,6 +21,7 @@ import (
 
 	"ptah.run/internal/agentsurface"
 	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/cli/drift"
 	"ptah.run/internal/cli/root"
 	"ptah.run/internal/cmdrefviews"
 	"ptah.run/internal/docsync"
@@ -106,6 +107,14 @@ func targets() []docsync.Target {
 			Begin: "<!-- BEGIN GENERATED STRICT COMPAT CLASSIFICATION -->", End: "<!-- END GENERATED STRICT COMPAT CLASSIFICATION -->",
 			Source: "PTAH_ATLAS_STRICT_COMPAT=1",
 			Render: view("strict"),
+		},
+		{
+			// A whole generated document, read by tools that do not build
+			// Ptah: Ptah Operator keeps its closed vocabulary of drift
+			// findings from it.
+			Name: "the drift finding vocabulary", Path: drift.VocabularyPath,
+			Source: "internal/cli/drift.FindingCategories",
+			Render: drift.WriteFindingVocabulary,
 		},
 		{
 			// A whole generated page: no markers, because there is no

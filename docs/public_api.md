@@ -2840,6 +2840,15 @@ modified table or enum type is counted by what changed in it. The categories
 and their severities are listed on the drift findings reference page,
 `docs/site/src/content/docs/reference/drift-findings.md`.
 
+`migration/safety.FindingCategories` returns every category
+`ClassifySchemaDiff` can report, sorted by name, as `FindingCategory` values:
+the severities a finding of the category can carry, from the lowest rank to
+the highest, and whether it is written alone (`Bare`) or followed by a colon
+and a feature owner's change kind (`Qualified`). It reads the declarations the
+classifier counts from, and each call returns a new slice. The drift command
+writes it, with the reference rows' and the undecided objects' categories, to
+`docs/drift-findings.json`.
+
 `migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
 once and returns a `RenderedPlan`: the rendering request, which holds the
 planned nodes, and one fragment per node. `Units()` returns SQL or native
