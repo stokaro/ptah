@@ -1596,7 +1596,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 			dirtyRevision,
 			classified.mismatchedKeys(),
 		),
-		MissingMigrations: missingMigrationRecords(classified.missing),
+		MissingMigrations: m.missingMigrationRecords(classified.missing),
 	}
 	span.SetAttributes(
 		attr("migration.current_version", status.CurrentVersion),

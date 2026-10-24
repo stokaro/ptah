@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -209,4 +210,138 @@ func checkpointBoundaryFS() fstest.MapFS {
 		"0000000003_third.up.sql":   {Data: []byte("CREATE TABLE third (id INTEGER PRIMARY KEY);\n")},
 		"0000000003_third.down.sql": {Data: []byte("DROP TABLE third;\n")},
 	}
+}
+
+// TestMigrationStatusRecordsWhenEachRowWasWritten reads the time and duration
+// from the revision row itself: the values written into the table are the
+// values the document reports.
+func TestMigrationStatusRecordsWhenEachRowWasWritten(t *testing.T) {
+	c := qt.New(t)
+	conn := sqliteConnection(c, "status-timing.sqlite")
+	mig, err := migrator.NewFSMigrator(conn, twoMigrationDirectory())
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	_, err = conn.ExecContext(c.Context(),
+		"UPDATE schema_migrations SET applied_at = '2026-10-24 07:42:30', execution_time_ms = 1840 WHERE version = 1")
+	c.Assert(err, qt.IsNil)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.Migrations[0].AppliedAt, qt.IsNotNil)
+	c.Assert(status.Migrations[0].AppliedAt.Equal(time.Date(2026, 10, 24, 7, 42, 30, 0, time.UTC)), qt.IsTrue,
+		qt.Commentf("applied_at %s", status.Migrations[0].AppliedAt))
+	c.Assert(status.Migrations[0].AppliedAt.Location(), qt.Equals, time.UTC)
+	c.Assert(status.Migrations[0].ExecutionMs, qt.DeepEquals, new(int64(1840)))
+	c.Assert(status.Migrations[1].AppliedAt, qt.IsNotNil)
+	c.Assert(status.Migrations[1].ExecutionMs, qt.IsNotNil)
+}
+
+// TestMigrationStatusLeavesTimingOutWhereNoRowExists keeps a pending
+// migration's time and duration absent rather than zero, in the document as
+// well as in the record.
+func TestMigrationStatusLeavesTimingOutWhereNoRowExists(t *testing.T) {
+	c := qt.New(t)
+	conn := sqliteConnection(c, "status-timing-pending.sqlite")
+	mig, err := migrator.NewFSMigrator(conn, twoMigrationDirectory())
+	c.Assert(err, qt.IsNil)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.Migrations[0].State, qt.Equals, migrator.MigrationStatePending)
+	c.Assert(status.Migrations[0].AppliedAt, qt.IsNil)
+	c.Assert(status.Migrations[0].ExecutionMs, qt.IsNil)
+	document, err := json.Marshal(status.Migrations[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(document), qt.Not(qt.Contains), `"applied_at"`)
+	c.Assert(string(document), qt.Not(qt.Contains), `"execution_time_ms"`)
+}
+
+// TestMigrationStatusReportsNoDurationALegacyTableNeverRecorded reads a
+// revision table from before Ptah recorded durations: the row's time is
+// there, and a duration of zero would be invented.
+func TestMigrationStatusReportsNoDurationALegacyTableNeverRecorded(t *testing.T) {
+	c := qt.New(t)
+	conn := sqliteConnection(c, "status-timing-legacy.sqlite")
+	_, err := conn.ExecContext(c.Context(), `CREATE TABLE schema_migrations (
+		version BIGINT PRIMARY KEY,
+		description TEXT NOT NULL,
+		applied_at TIMESTAMP NOT NULL
+	)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(c.Context(),
+		"INSERT INTO schema_migrations (version, description, applied_at) VALUES (1, 'First', '2026-10-24 07:42:30')")
+	c.Assert(err, qt.IsNil)
+	conn.SchemaWriter().SetDryRun(true)
+	mig, err := migrator.NewFSMigrator(conn, twoMigrationDirectory())
+	c.Assert(err, qt.IsNil)
+
+	status, err := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.Migrations[0].State, qt.Equals, migrator.MigrationStateApplied)
+	c.Assert(status.Migrations[0].AppliedAt, qt.IsNotNil)
+	c.Assert(status.Migrations[0].AppliedAt.Equal(time.Date(2026, 10, 24, 7, 42, 30, 0, time.UTC)), qt.IsTrue)
+	c.Assert(status.Migrations[0].ExecutionMs, qt.IsNil)
+}
+
+// TestMigrationStatusTimesADirtyAndAMissingRow reports the rows that are not
+// a clean applied migration with the time and duration they recorded.
+func TestMigrationStatusTimesADirtyAndAMissingRow(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "status-timing-dirty.sqlite")
+	failing := twoMigrationDirectory()
+	failing["0000000002_second.up.sql"] = &fstest.MapFile{
+		Data: []byte("CREATE TABLE second (id INTEGER PRIMARY KEY);\nINSERT INTO absent VALUES (1);\n"),
+	}
+	mig, err := migrator.NewFSMigrator(sqliteConnectionAt(c, path), failing)
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
+
+	dirty, err := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(dirty.Migrations[1].State, qt.Equals, migrator.MigrationStateDirty)
+	c.Assert(dirty.Migrations[1].AppliedAt, qt.IsNotNil)
+	c.Assert(dirty.Migrations[1].ExecutionMs, qt.IsNotNil)
+
+	conn := sqliteConnection(c, "status-timing-missing.sqlite")
+	applied, err := migrator.NewFSMigrator(conn, twoMigrationDirectory())
+	c.Assert(err, qt.IsNil)
+	c.Assert(applied.MigrateUp(c.Context()), qt.IsNil)
+	shortened := twoMigrationDirectory()
+	delete(shortened, "0000000002_second.up.sql")
+	delete(shortened, "0000000002_second.down.sql")
+	reread, err := migrator.NewFSMigrator(conn, shortened)
+	c.Assert(err, qt.IsNil)
+
+	missing, err := reread.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(missing.MissingMigrations, qt.HasLen, 1)
+	c.Assert(missing.MissingMigrations[0].AppliedAt, qt.IsNotNil)
+	c.Assert(missing.MissingMigrations[0].ExecutionMs, qt.IsNotNil)
+}
+
+// TestMigrationStatusTimesAnAtlasHistory reads an Atlas revision table, which
+// records its time as executed_at and its duration as execution_time.
+func TestMigrationStatusTimesAnAtlasHistory(t *testing.T) {
+	c := qt.New(t)
+	dir := writeAtlasDirectory(c)
+	conn := sqliteConnection(c, "status-timing-atlas.db")
+	mig := atlasMigratorOver(c, dir, conn)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	_, err := conn.ExecContext(c.Context(),
+		"UPDATE atlas_schema_revisions SET executed_at = '2026-10-24 07:42:30', execution_time = 1840000000 WHERE version = '20240101000000'")
+	c.Assert(err, qt.IsNil)
+
+	status, err := atlasMigratorOver(c, dir, conn).GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.Migrations, qt.HasLen, 2)
+	c.Assert(status.Migrations[0].AppliedAt, qt.IsNotNil)
+	c.Assert(status.Migrations[0].AppliedAt.Equal(time.Date(2026, 10, 24, 7, 42, 30, 0, time.UTC)), qt.IsTrue,
+		qt.Commentf("applied_at %s", status.Migrations[0].AppliedAt))
+	c.Assert(status.Migrations[0].ExecutionMs, qt.DeepEquals, new(int64(1840)))
 }
