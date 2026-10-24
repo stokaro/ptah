@@ -102,3 +102,12 @@ covers each.
 Host deletion happens after the default flips, in dependency order, and some
 host code (`ydbfamily` and its source readers) lives until the sources step. The
 coverage table in the working notes tracks which files remain.
+
+## Amendments
+
+- [ADR 0029](0029-column-tables-need-no-protocol-change-and-the-address-stays-provider-owned.md)
+  adds column storage as a facet of this lifecycle service: creation by the native
+  call with read-back, and comparison where only the tiered TTL changes in place.
+- [ADR 0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md)
+  tracks the table-rebuild policy input as a flip blocker, so the lifecycle service
+  must accept that input before the embedded planner is deleted.
