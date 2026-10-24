@@ -1,7 +1,7 @@
-// Package main is a host that uses only the API of the SDK release this module
-// requires. Built from that release, it stands in for a host of an older
-// contract minor: the SDK's process tests start a provider built from the
-// SDK in the tree with it and check that every exchange still works.
+// Package main is a host that uses only the API of contract 25.0. The SDK's
+// process tests build it against provider-sdk v0.2.0, so it stands in for a
+// host of an older contract minor: they start a provider built from the SDK in
+// the tree with it and check that every exchange still works.
 package main
 
 import (

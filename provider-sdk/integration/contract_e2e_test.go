@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -21,22 +22,39 @@ import (
 	transport "github.com/stokaro/ptah/provider-sdk/runtime"
 )
 
-// buildPinnedFixture builds a fixture program from the SDK release the
-// fixture module requires, with no workspace. Such a program speaks contract
-// 25.0 and knows none of the features this SDK adds, which is what the
-// mixed-version tests need on one side of the exchange.
-func buildPinnedFixture(c *qt.C, program string) string {
+// contract25SDK is the newest SDK release of contract 25.0. The
+// mixed-version tests build fixture programs against it, so that one side of
+// the exchange is a peer of an older contract minor.
+const contract25SDK = "v0.2.0"
+
+// buildContract25Fixture builds a fixture program against [contract25SDK],
+// from a copy of the fixture module, with no workspace. Such a program speaks
+// contract 25.0 and knows none of the features a later minor adds. Only a
+// program whose packages use nothing of a later minor builds this way:
+// provider, lint and contract-host.
+func buildContract25Fixture(c *qt.C, program string) string {
 	c.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	c.Assert(ok, qt.IsTrue)
-	dir := filepath.Join(filepath.Dir(source), "..", "testdata", "fixture")
-	binary := filepath.Join(c.TempDir(), program+"-pinned.exe")
-	command := exec.CommandContext(c.Context(), "go", "build", "-o", binary, "./cmd/"+program)
+	dir := c.TempDir()
+	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(filepath.Dir(source), "..", "testdata", "fixture"))), qt.IsNil)
+	runGo(c, dir, "get", "github.com/stokaro/ptah/provider-sdk@"+contract25SDK)
+	binary := filepath.Join(c.TempDir(), program+"-contract25.exe")
+	runGo(c, dir, "build", "-o", binary, "./cmd/"+program)
+	// The build records the module versions it linked, which is what shows
+	// that this side of the exchange is the older peer.
+	c.Assert(runGo(c, dir, "version", "-m", binary), qt.Matches, `(?s).*\sgithub\.com/stokaro/ptah/provider-sdk\s+`+regexp.QuoteMeta(contract25SDK)+`\s.*`)
+	return binary
+}
+
+func runGo(c *qt.C, dir string, args ...string) string {
+	c.Helper()
+	command := exec.CommandContext(c.Context(), "go", args...)
 	command.Dir = dir
 	command.Env = append(os.Environ(), "GOWORK=off")
 	output, err := command.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("pinned fixture build: %s", output))
-	return binary
+	c.Assert(err, qt.IsNil, qt.Commentf("go %v: %s", args, output))
+	return string(output)
 }
 
 // newHostOptions start a provider as a host of this SDK does: it announces
@@ -58,13 +76,13 @@ func offered(description *protocol.Description) []string {
 	return features
 }
 
-// A host of this SDK starts a provider built from the release the fixture
-// requires. The provider declares no minimum, so it needs contract 25.0, and
-// offers none of the additions. What contract 25.0 had works; an addition is
+// A host of this SDK starts a provider built from the SDK of contract 25.0.
+// The provider declares no minimum, so it needs contract 25.0, and offers none
+// of the additions. What contract 25.0 had works; an addition is
 // refused before anything is sent.
 func TestNewHostWithAContract25Provider(t *testing.T) {
 	c := qt.New(t)
-	client := start(c, newHostOptions(c, buildPinnedFixture(c, "provider")))
+	client := start(c, newHostOptions(c, buildContract25Fixture(c, "provider")))
 	description := client.Description()
 	c.Assert(provider.ContractString(provider.MinimumContract(description)), qt.Equals, "25.0")
 	added := append(provider.TwoWayFeatures(), provider.TypeRowsFeature, provider.ReadRowsFeature, provider.RenderRowWritesFeature,
@@ -91,12 +109,12 @@ func TestNewHostWithAContract25Provider(t *testing.T) {
 	c.Assert(after.GetTables(), qt.HasLen, 2)
 }
 
-// The pinned lint provider splits and annotates with the facts of contract
-// 25.0. A host of this SDK does not ask it for a statement fact it does not
+// A lint provider built from the SDK of contract 25.0 splits and annotates
+// with the facts of that contract. A host of this SDK does not ask it for a statement fact it does not
 // offer.
 func TestNewHostWithAContract25Linter(t *testing.T) {
 	c := qt.New(t)
-	client := start(c, newHostOptions(c, buildPinnedFixture(c, "lint")))
+	client := start(c, newHostOptions(c, buildContract25Fixture(c, "lint")))
 	sources := []*protocol.LintSource{{Name: "1.sql", Sql: "CREATE TABLE a (id INTEGER);\nDROP TABLE a;", Up: true}}
 	split, err := client.SplitLintStatements(c.Context(), &protocol.SplitLintRequest{Engine: "fixture", Sources: sources})
 	c.Assert(err, qt.IsNil)
@@ -111,7 +129,7 @@ func TestNewHostWithAContract25Linter(t *testing.T) {
 	c.Assert(annotated.Files[0].Statements[1].Effects[0].Fact, qt.Equals, protocol.LintFact_LINT_FACT_STATEFUL_DROP)
 }
 
-// runContractHost runs the pinned host against a provider and returns the
+// runContractHost runs the contract-25.0 host against a provider and returns the
 // lines it printed.
 func runContractHost(c *qt.C, host, executable, mode, address string) []string {
 	c.Helper()
@@ -121,13 +139,13 @@ func runContractHost(c *qt.C, host, executable, mode, address string) []string {
 	return strings.Split(strings.TrimSpace(strings.ReplaceAll(string(output), "\r\n", "\n")), "\n")
 }
 
-// A host built from the release the fixture requires speaks contract 25.0: it
-// announces no version and lists no feature. A provider built from this SDK
+// A host built from the SDK of contract 25.0 announces no version and lists
+// no feature. A provider built from this SDK
 // serves it everything contract 25.0 had, and its replies pass that host's
 // own checks.
 func TestContract25HostWithAProviderOfThisSDK(t *testing.T) {
 	c := qt.New(t)
-	host := buildPinnedFixture(c, "contract-host")
+	host := buildContract25Fixture(c, "contract-host")
 	database := "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "database.db")), "/")
 	address := (&url.URL{Scheme: "fixture", Path: database}).String()
 	lines := runContractHost(c, host, buildFixture(c, "provider"), "session", address)
