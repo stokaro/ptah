@@ -1,6 +1,6 @@
 # ADR 0025: A provider declares the source syntax it owns
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -100,6 +100,15 @@ they disagree. Rejected.
   document.
 - HCL claims remain open; a later record applies this ADR's claim pattern to them.
 - [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
-  says Ptah's own pipelines do not run against optional plugins. No record
-  decides whether the YDB provider is one, and so whether the corpus decoded
-  through both paths runs in Ptah's pipelines.
+  says Ptah's own pipelines do not run against optional plugins. The
+  maintainers decided how that applies to YDB (stokaro/ptah#4204). The YDB
+  tests that need the provider live in the CI of `stokaro/ptah-ydb-plugin` and
+  run against a current Ptah: end-to-end tests through the `ptah` binary, live
+  tests and parity corpora. Ptah's own CI proves the provider contract on the
+  in-tree fixture provider only. The corpus decoded through both paths is
+  therefore a plugin test.
+- "The v1 freeze" means the Ptah 1.0 release: the Go source claim and its decode
+  request are added to the protocol before that release. The provider contract
+  is versioned MAJOR.MINOR, 25.1 today (ADR 0031), and its major version is
+  stable from Ptah 1.0 on. Before that release an incompatible change may still
+  raise it.

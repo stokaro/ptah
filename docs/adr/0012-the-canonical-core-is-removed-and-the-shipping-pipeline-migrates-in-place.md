@@ -1,6 +1,6 @@
 # ADR 0012: The canonical core is removed, and the shipping pipeline migrates in place
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#2315](https://github.com/stokaro/ptah/issues/2315)
 - Supersedes in part: sections 8 and 9 of
@@ -129,4 +129,6 @@ a user the day it lands.
   `schemamodel.Database` and `catalog.Database` separate (its section 5).
   Section 4 here changes the route of ADR 0001 and not its destination, and that
   destination includes invariant 1 of ADR 0001: one state type describes both
-  sides. No record decides which of the two holds.
+  sides. The maintainers decided that ADR 0015 holds, and the amendment to
+  ADR 0001 records invariant 1 as superseded by it. The destination that
+  section 4 keeps does not include one state type for both sides.

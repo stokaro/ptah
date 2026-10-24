@@ -1,12 +1,13 @@
 # ADR 0006: One policy-bearing agent runtime, and an operator-bound database target
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1491](https://github.com/stokaro/ptah/issues/1491), under [#1483](https://github.com/stokaro/ptah/issues/1483)
-- Supersedes: section 2.3 of
-  [ADR 0002](0002-read-only-agent-mvp-scope-and-transport.md), the arrangement
-  that made the four read operations free functions reachable without a
-  session; section 3.4 of
+- Supersedes: the arrangement under
+  [ADR 0002](0002-read-only-agent-mvp-scope-and-transport.md) that made the four
+  read operations free functions reachable without a session, which no section
+  of ADR 0002 states and section 1.1 here measures; sections 3.1 and 3.3 and
+  decision 2 of section 5 of
   [ADR 0003](0003-agent-surface-trust-boundaries.md), which recorded the read
   operations as reading what the caller names with the process's own
   permissions; and section 2.1 of

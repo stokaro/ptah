@@ -26,11 +26,13 @@ compatibility collector `modelast.CollectDatabase`.
 
 The same change moved shared table lookup from
 `internal/planner/tablelookup` to the leaf package `internal/tablelookup` and
-removed every planner construction of `schemamodel.Database`. The recorded
-boundary debt is therefore two `model-imports-pipeline` edges and zero
-`pipeline-builds-source-description` sites. Issue
-[#2725](https://github.com/stokaro/ptah/issues/2725) owns the remaining SQL
-schema-source conversion through `internal/convert/toschema`.
+removed every planner construction of `schemamodel.Database`. SQL schema
+sources reach the model through `sqlschema.Read` in `internal/sqlschema`.
+`internal/convert/toschema` does not exist, and
+[#2725](https://github.com/stokaro/ptah/issues/2725), which owned that
+conversion, is closed. The recorded boundary debt is zero
+`model-imports-pipeline` edges and zero `pipeline-builds-source-description`
+sites (`docs/architecture_boundaries.json`).
 
 Sections 1 through 3 retain the measurements taken when this ADR landed, and
 section 8 retains the superseded staged plan. They are historical evidence,
@@ -742,6 +744,8 @@ the rest of this ADR does not depend on their internals.
   one and a differential test between the two, and neither exists.
 - [ADR 0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md)
   rejects one universal schema struct (its section 4) and keeps
-  `schemamodel.Database` and `catalog.Database` separate (its section 5). That
-  contradicts invariant 1 and decisions D1 and D6 here, which ADR 0012 section 4
-  leaves standing. No record decides which of the two holds.
+  `schemamodel.Database` and `catalog.Database` separate (its section 5). The
+  maintainers decided that ADR 0015 holds. Invariant 1 here, one state type for
+  both sides, is superseded by ADR 0015. So are decisions D1 and D6 where they
+  require that one type. ADR 0012 section 4 keeps the rest of the destination
+  this record describes.

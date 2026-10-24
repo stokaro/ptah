@@ -1,6 +1,6 @@
 # ADR 0021: Provider recognition does not authorize execution
 
-Status: Proposed
+Status: Accepted
 
 Deciders: Ptah maintainers
 
@@ -99,3 +99,9 @@ of YDB, DuckDB, and Spanner.
   exclusive connection scope stated here. It also accepts `PTAH_PROVIDER_CONFIG`
   as an explicit manifest named by an environment variable, a narrow exception
   to the rule that no environment discovery authorizes a binary.
+- "v1" in this record means the Ptah 1.0 release. "Stable protocol version 1"
+  in Consequences and "pre-v1" in the alternatives refer to that release, not to
+  a contract numbered 1. The provider contract is versioned MAJOR.MINOR, 25.1
+  today (ADR 0031), and its major version is stable from Ptah 1.0 on. Before
+  that release an incompatible change may still raise it. Manifest versions 1
+  and 2 are versions of the manifest file format and keep that meaning.

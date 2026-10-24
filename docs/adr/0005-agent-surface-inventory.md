@@ -1,6 +1,6 @@
 # ADR 0005: The agent-exposure inventory is generated, and classified by what a verb does to a database
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1484](https://github.com/stokaro/ptah/issues/1484), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: sections 1.1 and 1.2 of

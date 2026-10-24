@@ -255,7 +255,13 @@ These are for the future implementation. None holds today.
   needs a newer contract. No distribution carries a provider, so the host
   end-to-end criterion runs through an installed provider rather than a bundled
   one.
-- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
-  record decides whether the YDB provider is one, and so whether that host
-  end-to-end test, and the host CI service in "Decided questions", run in Ptah's
-  pipelines.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. The
+  maintainers decided how that applies to YDB (stokaro/ptah#4204). The YDB
+  tests that need the provider live in the CI of `stokaro/ptah-ydb-plugin` and
+  run against a current Ptah: end-to-end tests through the `ptah` binary, live
+  tests and parity corpora. Ptah's own CI proves the provider contract on the
+  in-tree fixture provider only. The host end-to-end test in the acceptance
+  criteria therefore runs in the plugin's CI, beside the plugin's live tests,
+  its differential corpus, the flag-capability test and the mutation check.
+  The YDB service of the host workflow named in "Decided questions" serves the
+  embedded engine, and the provider's tests use the plugin's own CI service.

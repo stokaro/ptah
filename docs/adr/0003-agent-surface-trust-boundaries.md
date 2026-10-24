@@ -1,6 +1,6 @@
 # ADR 0003: Agent-surface trust boundaries and threat model
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1484](https://github.com/stokaro/ptah/issues/1484), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: nothing

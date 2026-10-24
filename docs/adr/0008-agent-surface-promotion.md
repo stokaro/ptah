@@ -1,6 +1,6 @@
 # ADR 0008: The agent surfaces are experimental, and these are the criteria that end that
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1490](https://github.com/stokaro/ptah/issues/1490), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Answers the Phase 7 checklist item *"Define experimental-to-stable promotion criteria."*

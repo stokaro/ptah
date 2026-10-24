@@ -360,9 +360,16 @@ These are for the future implementation. None holds today.
   provision.
 - ADR 0031 replaces "Versioning": an additive change raises the minor contract
   version, not `provider.Revision`, which is the major version.
-- ADR 0031 says Ptah's own pipelines do not run against optional plugins. No
-  record decides whether the YDB provider is one, and so whether the live tests
-  under `integration/` in the acceptance criteria run in Ptah's pipelines.
+- ADR 0031 says Ptah's own pipelines do not run against optional plugins. The
+  maintainers decided how that applies to YDB (stokaro/ptah#4204). The YDB
+  tests that need the provider live in the CI of `stokaro/ptah-ydb-plugin` and
+  run against a current Ptah: end-to-end tests through the `ptah` binary, live
+  tests and parity corpora. Ptah's own CI proves the provider contract on the
+  in-tree fixture provider only. Of the acceptance criteria, the differential
+  corpus, the live tests and the Decimal mutation check therefore run in the
+  plugin's CI, and the live tests belong to the plugin's integration suite
+  rather than to `integration/` here. The SDK conformance on the fixture
+  provider, the `core/query` tests and the import guard stay in Ptah's CI.
 - [ADR 0032](0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md)
   is the follow-up record that Consequences requires. Embeddings get a provider
   service of their own, `embeddings.store`, and the embedded YDB engine is deleted

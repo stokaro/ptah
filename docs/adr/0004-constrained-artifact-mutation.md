@@ -1,6 +1,6 @@
 # ADR 0004: Capability broker, artifact digests, and constrained mutation
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#1487](https://github.com/stokaro/ptah/issues/1487), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: nothing

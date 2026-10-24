@@ -1,6 +1,6 @@
 # ADR 0013: An inference-state transition answers with its provenance, and its approval binds to exact content
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#2068](https://github.com/stokaro/ptah/issues/2068)
 - Answers the four questions [ADR 0010](0010-retrieval-quality-is-not-a-schema-property.md) stated and declined to decide

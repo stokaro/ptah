@@ -1,6 +1,6 @@
 # ADR 0019: A declared row set is artifact content, and a checkpoint carries the rows its successors read
 
-- Status: proposed
+- Status: Accepted
 - Deciders: Ptah maintainers
 - Issue: [#3233](https://github.com/stokaro/ptah/issues/3233)
 - Answers the open questions of [stokaro/ptah-operator#41](https://github.com/stokaro/ptah-operator/issues/41) and [#3232](https://github.com/stokaro/ptah/issues/3232)
