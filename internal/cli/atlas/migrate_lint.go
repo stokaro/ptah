@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasreport"
@@ -332,7 +331,7 @@ func runAtlasMigrateLint(
 	if err := devsnapshot.Refuse(cmd.Context(), opts.devURL, devsnapshot.Lint); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	runtime, err := builtin.New()
+	runtime, err := atlasRuntime(cmd.Context(), nil, opts.devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

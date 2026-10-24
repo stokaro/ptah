@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/engine/builtin"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerconfig"
@@ -125,6 +126,21 @@ func claimed(config providerconfig.Configuration, selector string) bool {
 	return false
 }
 
+// Mode says how a started provider combines with the built-in engines.
+type Mode int
+
+const (
+	// Exclusive gives the invocation the provider's targets and nothing else.
+	// A URL scheme the provider does not register is refused, including the
+	// schemes of bundled drivers. An operator who names a provider explicitly
+	// asked for exactly that provider.
+	Exclusive Mode = iota
+	// Additive adds the provider's targets to the built-in runtime and leaves
+	// the built-in drivers reachable. A registration that collides with a
+	// built-in target is an error, never a precedence rule.
+	Additive
+)
+
 // Started is a running provider and what an invocation needs from it. Close
 // ends the provider process; it is safe to call more than once.
 type Started struct {
@@ -136,29 +152,31 @@ type Started struct {
 	// provider declares none.
 	Dev devdocker.External
 
-	host *providerhost.Host
+	host     *providerhost.Host
+	provider engine.Provider
 }
 
 // Close stops the provider process.
 func (s *Started) Close() { s.host.Close() }
 
-// Start verifies the chosen installation, starts it, and builds the runtime it
-// owns. A selected executable owns that runtime completely: it holds the
-// provider's targets and no built-in one, and a URL scheme the provider does not
-// register is refused, including the schemes of bundled drivers. An operator who
-// names a provider explicitly asked for exactly that provider. Every failure
-// closes any process it started.
-func (c *Choice) Start(ctx context.Context) (*Started, error) {
+// Start verifies the chosen installation, starts it, and builds the runtime for
+// mode. Every failure closes any process it started.
+func (c *Choice) Start(ctx context.Context, mode Mode) (*Started, error) {
 	host, err := providerconfig.Start(ctx, c.Installation, c.Target)
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := engine.New(host.Provider())
+	var runtime *engine.Runtime
+	if mode == Additive {
+		runtime, err = builtin.New(host.Provider())
+	} else {
+		runtime, err = engine.New(host.Provider())
+	}
 	if err != nil {
 		host.Close()
 		return nil, err
 	}
-	started := &Started{Runtime: runtime, Connections: host.Connections(), host: host}
+	started := &Started{Runtime: runtime, Connections: host.Connections(), host: host, provider: host.Provider()}
 	if owner := host.DevDatabases(); owner != nil {
 		started.Dev = owner
 	}

@@ -787,6 +787,12 @@ var gatedPresenceEnvVars = []string{
 	// would create metadata the pinned oracle never would
 	// (stokaro/ptah#2234).
 	"PTAH_MIGRATIONS_ENGINE",
+	// Names the manifest an executable provider is selected from. The
+	// community binary has no provider concept, so a strict run that consumed
+	// it would reach an engine the oracle never reaches. The variable
+	// identifies a file and authorizes nothing by itself; strict mode refuses
+	// it by name and never starts a provider.
+	"PTAH_PROVIDER_CONFIG",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

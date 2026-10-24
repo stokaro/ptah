@@ -175,6 +175,7 @@ existing Ptah equivalent forward to that native command.`, policy)
 	// answer with the same prefix, instead of it depending on which file
 	// happened to override a printer.
 	cmdutil.SetErrorPrefixPolicy(cmd, atlasErrorPrefix)
+	installAtlasProviderSession(cmd, policy)
 	// Last, so its pre-run wraps every other one and runs first.
 	installAtlasStrictConnectGate(cmd, policy)
 	return cmd

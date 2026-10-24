@@ -252,7 +252,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	if err := ValidateInspectOptions(opts); err != nil {
 		return InspectResult{}, err
 	}
-	set, err := atlassource.ClassifySet(opts.sourceFlag(), opts.URLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
+	set, err := atlassource.ClassifySet(opts.sourceFlag(), opts.URLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return InspectResult{}, err
 	}

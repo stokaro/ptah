@@ -772,7 +772,7 @@ func loadDesiredApplySchema(
 		set = *opts.PreparedTo
 	} else {
 		var err error
-		set, err = atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
+		set, err = atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -928,7 +928,7 @@ func desiredApplySet(ctx context.Context, opts ApplyRuntimeOptions) atlassource.
 	if opts.Desired != nil {
 		return atlassource.Set{}
 	}
-	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
+	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return atlassource.Set{}
 	}

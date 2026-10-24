@@ -78,7 +78,9 @@ func prepare(cmd *cobra.Command, path, selectedEngine string) (context.Context, 
 	if choice == nil {
 		return cmd.Context(), nil, nil
 	}
-	started, err := choice.Start(cmd.Context())
+	// A selected executable owns this runtime completely. In particular an
+	// official provider never inherits a built-in implementation on failure.
+	started, err := choice.Start(cmd.Context(), providerselect.Exclusive)
 	if err != nil {
 		return nil, nil, err
 	}

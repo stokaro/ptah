@@ -413,8 +413,8 @@ func withAtlasSchemaApplyPolicy(
 
 // checkAtlasSchemaApplyDevURL refuses a --dev-url naming no driver before
 // anything is contacted.
-func checkAtlasSchemaApplyDevURL(devURL string) error {
-	return atlasDevURLDriverDiagnostic(devURL)
+func checkAtlasSchemaApplyDevURL(ctx context.Context, devURL string) error {
+	return atlasDevURLDriverDiagnostic(ctx, devURL)
 }
 
 // classifiedAtlasApplyTo classifies --to for a refusal decided before the dev
@@ -437,7 +437,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.runtime, err = builtin.New()
+	opts.runtime, err = atlasRuntime(cmd.Context(), append([]string{opts.url}, opts.toURLs...), opts.devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -570,7 +570,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// measured on 2026-08-13, `--to` a database and `--dev-url notadriver://x`
 	// answers `sql/sqlclient: unknown driver "notadriver"` there, on the argv
 	// where ensureAtlasSchemaApplyDevURL below deliberately exempts the source.
-	if err := checkAtlasSchemaApplyDevURL(opts.devURL); err != nil {
+	if err := checkAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
@@ -1184,7 +1184,7 @@ func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApp
 	if strings.TrimSpace(opts.url) == "" {
 		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return err
 	}
 	conflicts := []struct {
@@ -1368,7 +1368,7 @@ func validateAtlasSchemaApplyOptions(
 	// before anything is opened, because that is the measured order: with a
 	// bad --url and no --to the pinned binary names the missing desired state,
 	// and with both present it names the driver.
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return err
 	}
 	// Malformed or unsupported --include selectors fail before the target

@@ -54,6 +54,11 @@ Strict mode does not reserve every `PTAH_*` name. An `atlas.hcl` file may use
 available. The classified extension variables and their strict behavior are in
 [Extension environment variables](../../reference/extension-variables/).
 
+`PTAH_PROVIDER_CONFIG` names a provider manifest for engines the pinned binary
+has no driver for. It is not a boolean, so it is refused by presence and by
+name, and a strict run starts no provider. See
+[Executable providers](../../extend/executable-providers/#use-a-provider-from-ptah-compat).
+
 ## Content strict mode refuses
 
 Strict mode rejects content Atlas CE cannot represent safely instead of

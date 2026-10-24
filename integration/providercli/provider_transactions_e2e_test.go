@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
 )
 
@@ -154,7 +155,7 @@ func TestProviderTransactionsRefuseCommitAfterFailureAndPreserveUnknownCommit(t 
 
 func TestProviderTransactionsThroughNativeCLI(t *testing.T) {
 	c := qt.New(t)
-	executable := independentCLIProviderCommand(c, "transactions")
+	executable := testutils.BuildFixtureProvider(c, "transactions")
 	data, err := os.ReadFile(executable)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

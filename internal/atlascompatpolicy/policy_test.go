@@ -116,6 +116,48 @@ func TestResolveStrictCERejectsTheRegistryNamespace(t *testing.T) {
 		`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ATLAS_REGISTRY`)
 }
 
+func TestResolveStrictCERejectsTheProviderManifestVariable_FailurePath(t *testing.T) {
+	for _, value := range []string{"", "providers.json"} {
+		t.Run("value "+value, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+			// The community binary has no provider concept. Presence alone is
+			// the refusal; the value is not read and no file is opened.
+			t.Setenv("PTAH_PROVIDER_CONFIG", value)
+
+			_, err := atlascompatpolicy.Resolve()
+
+			c.Assert(err, qt.ErrorMatches,
+				`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_PROVIDER_CONFIG`)
+		})
+	}
+}
+
+// TestResolveStrictCEDoesNotRefuseTheProviderNamespaceByPrefix is the control
+// for the refusal above: the variable is refused by its name, so another
+// PTAH_PROVIDER_* name, which an atlas.hcl getenv may read, still resolves.
+func TestResolveStrictCEDoesNotRefuseTheProviderNamespaceByPrefix_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	t.Setenv("PTAH_PROVIDER_CONFIGURED_BY_USER", "x")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsTrue)
+}
+
+func TestResolveFullCompatibilityAcceptsTheProviderManifestVariable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")
+	t.Setenv("PTAH_PROVIDER_CONFIG", "providers.json")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsFalse)
+}
+
 func TestResolveFullCompatibilityDoesNotInspectExtensionEnvironment(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")

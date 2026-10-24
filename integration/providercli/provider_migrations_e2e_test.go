@@ -16,6 +16,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
 )
 
@@ -26,7 +27,7 @@ func migrationProviderSpec(c *qt.C) providerhost.Spec {
 
 func migrationProviderCommandSpec(c *qt.C, name string) providerhost.Spec {
 	c.Helper()
-	binary := independentCLIProviderCommand(c, name)
+	binary := testutils.BuildFixtureProvider(c, name)
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

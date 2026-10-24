@@ -120,7 +120,7 @@ func runAtlasMigrateSet(
 	}
 	sourceVersions := linearity.sourceVersions
 
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)

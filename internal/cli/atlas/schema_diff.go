@@ -1,14 +1,16 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/selectext"
-	"ptah.run/engine/builtin"
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -213,11 +215,11 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		}
 		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", projectToURLs)
 	}
-	runtime, err := builtin.New()
+	runtime, err := atlasRuntime(cmd.Context(), append(slices.Clone(opts.fromURLs), opts.toURLs...), opts.devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaDiffOptions(opts, projectEnv, withoutDevURL, runtime.Selections()); err != nil {
+	if err := validateAtlasSchemaDiffOptions(cmd.Context(), opts, projectEnv, withoutDevURL, runtime.Selections()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	schemaVars, err := atlasVarFlagValues(cmd)
@@ -294,6 +296,7 @@ func needsAtlasSchemaDiffConfig(cmd *cobra.Command) bool {
 }
 
 func validateAtlasSchemaDiffOptions(
+	ctx context.Context,
 	opts atlasSchemaDiffOptions,
 	projectEnv atlassource.ProjectEnv,
 	withoutDevURL bool,
@@ -313,7 +316,7 @@ func validateAtlasSchemaDiffOptions(
 	// empty value is left to [atlassource.Set.EnsureDevDatabase] below, whose
 	// own refusal is scoped to the sources that need a dev database -- both
 	// binaries exit 0 on two database sources with no `--dev-url` at all.
-	if err := atlasDevURLDriverDiagnostic(opts.devURL); err != nil {
+	if err := atlasDevURLDriverDiagnostic(ctx, opts.devURL); err != nil {
 		return err
 	}
 	// Malformed or unsupported --include selectors fail before any database
@@ -326,14 +329,14 @@ func validateAtlasSchemaDiffOptions(
 	// database is contacted. --from is validated first, then --to, so the
 	// first side that needs one names the refusal.
 	devRule := atlasDiffDevURLRule{devURL: opts.devURL, withoutDevURL: withoutDevURL}
-	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv, nil)
+	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return err
 	}
 	if err := devRule.ensure(fromSet); err != nil {
 		return err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return err
 	}

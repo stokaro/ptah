@@ -132,7 +132,7 @@ func TestStart_FailurePath(t *testing.T) {
 		Resolver: emptyResolver(),
 	})
 	c.Assert(err, qt.IsNil)
-	started, err := choice.Start(c.Context())
+	started, err := choice.Start(c.Context(), providerselect.Exclusive)
 	c.Assert(err, qt.ErrorMatches, `(?s).*executable was not found.*`)
 	c.Assert(started, qt.IsNil)
 }

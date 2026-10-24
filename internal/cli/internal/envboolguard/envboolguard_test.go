@@ -87,6 +87,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_OCI_TOKEN",            // registry identity token, used on its own
 	"PTAH_OCI_USERNAME",         // registry username
 	"PTAH_PLAN",                 // plan name, an Atlas capability Ptah refuses
+	"PTAH_PROVIDER_CONFIG",      // provider manifest path read by the compatibility surface only
 	"PTAH_PROVIDER_",            // reserved bootstrap namespace checked against explicit environment entries
 	"PTAH_PROVIDER_BOOTSTRAP",   // experimental protocol bootstrap cookie
 	"PTAH_PROVIDER_PARENT_PID",  // parent process identity for provider lifetime monitoring

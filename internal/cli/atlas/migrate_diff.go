@@ -13,7 +13,6 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
@@ -291,7 +290,7 @@ func runAtlasMigrateDiff(
 		(len(projectCfg.SchemaSources) > 0 || atlasExternalSchemaConfigured(projectCfg)) {
 		opts.toURLs = []string{"env://src"}
 	}
-	desired, err := prepareAtlasMigrateDiffSource(opts, dirFormat, projectEnv)
+	desired, err := prepareAtlasMigrateDiffSource(contextOrBackground(cmd), opts, dirFormat, projectEnv)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -350,7 +349,7 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	runtime, err := builtin.New()
+	runtime, err := atlasRuntime(cmd.Context(), opts.toURLs, opts.devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -589,6 +588,7 @@ func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
 // pinned v1.3.0, an unhashed directory with `--dir-format goose` prints the
 // checksum error, not a format complaint.
 func prepareAtlasMigrateDiffSource(
+	ctx context.Context,
 	opts atlasMigrateDiffOptions,
 	dirFormat atlasmigrateimport.Format,
 	projectEnv atlassource.ProjectEnv,
@@ -602,7 +602,7 @@ func prepareAtlasMigrateDiffSource(
 	// driver`, and a scheme naming no driver is named. Measured on the pinned
 	// binary v1.3.0 on 2026-08-13.
 	devURL := atlasDevURLInput{value: opts.devURL, given: opts.devURLGiven}
-	if err := devURL.refuse(); err != nil {
+	if err := devURL.refuse(ctx); err != nil {
 		return atlassource.Set{}, err
 	}
 	if opts.edit && !atlasmigrate.ReadsNativeAtlasDir(dirFormat) {
@@ -623,7 +623,7 @@ func prepareAtlasMigrateDiffSource(
 	// whether the dev database and `--to` are the same database -- answers the
 	// same way for it as for the URL it will be provisioned into. The container
 	// itself is started later, next to the connection that uses it.
-	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return atlassource.Set{}, err
 	}

@@ -309,3 +309,99 @@ func TestSelectedNativeProviderRefusesUnregisteredSchemes(t *testing.T) {
 		})
 	}
 }
+
+// lookupFixture serves the schemes it was given, counting its consultations.
+type lookupFixture struct {
+	registrations map[string]dbschema.NativeRegistration
+	failure       error
+	calls         atomic.Int64
+}
+
+func (l *lookupFixture) NativeRegistration(_ context.Context, scheme string) (dbschema.NativeRegistration, bool, error) {
+	l.calls.Add(1)
+	registration, found := l.registrations[scheme]
+	return registration, found, l.failure
+}
+
+func (l *lookupFixture) NativeSchemes() map[string]string {
+	schemes := make(map[string]string)
+	for scheme, registration := range l.registrations {
+		schemes[scheme] = registration.Target
+	}
+	return schemes
+}
+
+func TestNativeLookup_HappyPath(t *testing.T) {
+	t.Run("a scheme the lookup serves opens through its connector", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := &nativeFixture{}
+		lookup := &lookupFixture{registrations: map[string]dbschema.NativeRegistration{"example": {Target: "example", Connector: fixture}}}
+
+		conn, err := dbschema.ConnectToDatabase(dbschema.WithNativeLookup(c.Context(), lookup), "example://database")
+
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+		c.Assert(fixture.opens.Load(), qt.Equals, int64(1))
+		c.Assert(lookup.calls.Load(), qt.Equals, int64(1))
+	})
+	t.Run("a scheme the lookup does not serve keeps its bundled driver", func(t *testing.T) {
+		c := qt.New(t)
+		lookup := &lookupFixture{}
+
+		conn, err := dbschema.ConnectToDatabase(dbschema.WithNativeLookup(c.Context(), lookup), "sqlite:///:memory:")
+
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+		c.Assert(conn.Info().Dialect, qt.Equals, "sqlite")
+		c.Assert(lookup.calls.Load(), qt.Equals, int64(1))
+	})
+	t.Run("sources are the exclusive selection, or else what the lookup serves", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := &nativeFixture{}
+		lookup := &lookupFixture{registrations: map[string]dbschema.NativeRegistration{"lazy": {Target: "lazy", Connector: fixture}}}
+		withLookup := dbschema.WithNativeLookup(c.Context(), lookup)
+		exclusive, err := dbschema.WithNativeConnections(withLookup, map[string]dbschema.NativeRegistration{"example": {Target: "example", Connector: fixture}})
+		c.Assert(err, qt.IsNil)
+
+		c.Assert(dbschema.NativeSources(withLookup), qt.DeepEquals, map[string]string{"lazy": "lazy"})
+		c.Assert(dbschema.NativeSources(exclusive), qt.DeepEquals, map[string]string{"example": "example"})
+		c.Assert(dbschema.NativeSources(c.Context()), qt.HasLen, 0)
+		c.Assert(dbschema.NativeTargets(withLookup), qt.HasLen, 0)
+	})
+}
+
+func TestNativeLookup_FailurePath(t *testing.T) {
+	t.Run("a lookup failure refuses the connection and opens no bundled database", func(t *testing.T) {
+		c := qt.New(t)
+		refusal := errors.New("provider missing")
+		lookup := &lookupFixture{failure: refusal}
+
+		conn, err := dbschema.ConnectToDatabase(dbschema.WithNativeLookup(c.Context(), lookup), "sqlite:///:memory:")
+
+		c.Assert(err, qt.ErrorIs, refusal)
+		c.Assert(conn, qt.IsNil)
+	})
+	t.Run("an exclusive selection is never extended by the lookup", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := &nativeFixture{}
+		lookup := &lookupFixture{registrations: map[string]dbschema.NativeRegistration{"lazy": {Target: "lazy", Connector: fixture}}}
+		exclusive, err := dbschema.WithNativeConnections(dbschema.WithNativeLookup(c.Context(), lookup), map[string]dbschema.NativeRegistration{"example": {Target: "example", Connector: fixture}})
+		c.Assert(err, qt.IsNil)
+
+		conn, err := dbschema.ConnectToDatabase(exclusive, "lazy://database")
+
+		c.Assert(err, qt.ErrorMatches, `the selected provider does not own the database URL scheme`)
+		c.Assert(conn, qt.IsNil)
+		c.Assert(lookup.calls.Load(), qt.Equals, int64(0))
+		c.Assert(fixture.opens.Load(), qt.Equals, int64(0))
+	})
+	t.Run("an invalid registration from the lookup is refused", func(t *testing.T) {
+		c := qt.New(t)
+		lookup := &lookupFixture{registrations: map[string]dbschema.NativeRegistration{"example": {Target: " "}}}
+
+		conn, err := dbschema.ConnectToDatabase(dbschema.WithNativeLookup(c.Context(), lookup), "example://database")
+
+		c.Assert(err, qt.ErrorMatches, `invalid native connection registration`)
+		c.Assert(conn, qt.IsNil)
+	})
+}

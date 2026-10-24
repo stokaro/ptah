@@ -853,11 +853,11 @@ type preparedDiffSources struct {
 }
 
 func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSources, error) {
-	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
+	fromSet, err := atlassource.ClassifySet("--from", opts.FromURLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
-	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeTargets(ctx))
+	toSet, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return preparedDiffSources{}, err
 	}
