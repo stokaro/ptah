@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -138,11 +139,11 @@ func atlasEmptyDevURLError(set atlassource.Set) error {
 // [atlasDatabaseURLDiagnostic] with the `--url` boundary instead of restating
 // the two verdicts, so the two flags cannot drift apart on a scheme one of them
 // learns to open later.
-func atlasDevURLOpenDiagnostic(rawURL string) error {
+func atlasDevURLOpenDiagnostic(ctx context.Context, rawURL string) error {
 	if atlasDevURLAnsweredElsewhere(rawURL) {
 		return nil
 	}
-	return atlasDatabaseURLDiagnostic(rawURL)
+	return atlasDatabaseURLDiagnostic(ctx, rawURL)
 }
 
 // atlasDevURLDriverDiagnostic reports the verdict the client layer gives a
@@ -161,11 +162,11 @@ func atlasDevURLOpenDiagnostic(rawURL string) error {
 // dev database for an absent flag. Trimmed first, the value would let those
 // two verbs, and `migrate validate`, run as though no dev database had been
 // named (stokaro/ptah#3680).
-func atlasDevURLDriverDiagnostic(rawURL string) error {
+func atlasDevURLDriverDiagnostic(ctx context.Context, rawURL string) error {
 	if rawURL == "" {
 		return nil
 	}
-	return atlasDevURLOpenDiagnostic(rawURL)
+	return atlasDevURLOpenDiagnostic(ctx, rawURL)
 }
 
 // atlasInspectDevURLDiagnostic is `schema inspect`'s whole verdict on a
@@ -174,11 +175,11 @@ func atlasDevURLDriverDiagnostic(rawURL string) error {
 // layer's verdict on anything else. Measured on 2026-09-26, a SQL file, a
 // directory of them and a migration directory print the linked sentence, and
 // an HCL file or directory prints the bare one (stokaro/ptah#3680).
-func atlasInspectDevURLDiagnostic(devURL string, source atlassource.Set) error {
+func atlasInspectDevURLDiagnostic(ctx context.Context, devURL string, source atlassource.Set) error {
 	if devURL == "" {
 		return atlasEmptyDevURLError(source)
 	}
-	return atlasDevURLDriverDiagnostic(devURL)
+	return atlasDevURLDriverDiagnostic(ctx, devURL)
 }
 
 // atlasDevURLGiven reports whether the operator supplied a dev database URL at
@@ -215,17 +216,17 @@ func atlasDevURLFrom(cmd *cobra.Command, mergedDevURL string) atlasDevURLInput {
 // refuse is the whole refusal for the two verbs that mark the flag required:
 // the cobra wording when it was never given, and the client layer's verdict on
 // the value when it was.
-func (in atlasDevURLInput) refuse() error {
+func (in atlasDevURLInput) refuse(ctx context.Context) error {
 	if !in.given {
 		return atlasRequiredDevURLError()
 	}
-	return atlasDevURLOpenDiagnostic(in.value)
+	return atlasDevURLOpenDiagnostic(ctx, in.value)
 }
 
 // requireAtlasDevURL is [atlasDevURLInput.refuse] for the verbs that still hold
 // the command when they refuse.
 func requireAtlasDevURL(cmd *cobra.Command, mergedDevURL string) error {
-	return atlasDevURLFrom(cmd, mergedDevURL).refuse()
+	return atlasDevURLFrom(cmd, mergedDevURL).refuse(contextOrBackground(cmd))
 }
 
 // atlasDevURLAnsweredElsewhere reports whether rawURL carries a scheme this

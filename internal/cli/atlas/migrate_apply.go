@@ -352,7 +352,7 @@ func runAtlasMigrateApplyTarget(
 		return formatOutput, err
 	}
 
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return formatOutput, err
 	}
 	conn, err := dbschema.ConnectToServer(cmd.Context(), opts.url)

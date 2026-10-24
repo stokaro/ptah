@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -121,12 +122,12 @@ func atlasUnknownDriverError(scheme string) error {
 // the URLs with no scheme and the schemes [platform.NormalizeDialect] does not
 // name, which are exactly the two branches below. Anything it would accept is
 // passed through untouched, so a live connection failure still reports itself.
-func atlasDatabaseURLDiagnostic(rawURL string) error {
+func atlasDatabaseURLDiagnostic(ctx context.Context, rawURL string) error {
 	scheme, ok := atlasURLScheme(rawURL)
 	if !ok {
 		return errors.New(atlasMissingDriverMessage)
 	}
-	if platform.NormalizeDialect(scheme) != "" {
+	if platform.NormalizeDialect(scheme) != "" || providerServesScheme(ctx, scheme) {
 		return nil
 	}
 	return atlasUnknownDriverError(scheme)
@@ -147,12 +148,12 @@ func atlasDatabaseURLDiagnostic(rawURL string) error {
 // `missing scheme`; Ptah resolves it as a schema file, and refusing it would
 // delete a capability rather than match one (AGENTS.md compatibility rule (c)).
 // That retained divergence is named in docs/conformance.md.
-func atlasDesiredStateURLDiagnostic(rawURL string) error {
+func atlasDesiredStateURLDiagnostic(ctx context.Context, rawURL string) error {
 	if strings.TrimSpace(rawURL) == "" {
 		return errors.New(atlasMissingSchemeMessage)
 	}
 	_, err := atlassource.Classify(rawURL, nil)
-	if unsupported, ok := errors.AsType[*atlassource.UnsupportedSchemeError](err); ok {
+	if unsupported, ok := errors.AsType[*atlassource.UnsupportedSchemeError](err); ok && !providerServesScheme(ctx, unsupported.Scheme) {
 		return atlasUnknownDriverError(unsupported.Scheme)
 	}
 	return nil

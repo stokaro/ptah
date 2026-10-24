@@ -250,6 +250,34 @@ provider. It never selects an embedded implementation. A manifest with multiple
 engines requires an unambiguous URL or `--provider-engine`. The declared engine
 IDs and aliases must match the executable's negotiated description.
 
+## Use a provider from ptah-compat
+
+`ptah-compat` has no provider flag, because the pinned Atlas CLI has none. It
+reads the manifest path from `PTAH_PROVIDER_CONFIG`:
+
+```bash
+PTAH_PROVIDER_CONFIG=providers.json ptah-compat schema inspect --url fixture:///tmp/fixture.db
+```
+
+The variable names one manifest file and authorizes nothing. The manifest entry
+and the checks described above authorize the executable, exactly as for
+`--provider-config`. A blank value is an error, and a manifest that fails to
+load ends the search. Native `ptah` never reads the variable.
+
+The provider starts when a connection, a dev database or a planning runtime
+first needs it, and it ends when the command returns, fails or is interrupted. A
+command that names only built-in engines starts no process.
+
+On this surface a provider adds to the built-in engines. A URL scheme the
+provider serves goes to the provider, and every other scheme keeps its built-in
+driver. This differs from native `--provider-engine`, which asks for exactly one
+provider and refuses every other scheme. Without the variable, an official
+engine without a built-in implementation resolves through rules 2 and 3 above,
+and a missing provider reports `ptah providers install <engine>`.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses `PTAH_PROVIDER_CONFIG` by name and starts no
+provider. See [Strict CE mode](../../atlas/strict-ce-mode/).
+
 ## Check the installation
 
 List catalog records and configured installations without starting a process:

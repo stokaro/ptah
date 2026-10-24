@@ -130,7 +130,7 @@ func runAtlasMigrateValidate(
 	// the directory. `--dev-url notadriver://x` answers `sql/sqlclient: unknown
 	// driver "notadriver"` there, where Ptah wrapped a connector error into a
 	// 130-byte sentence naming an internal replay step.
-	if err := atlasDevURLDriverDiagnostic(source.devURL); err != nil {
+	if err := atlasDevURLDriverDiagnostic(contextOrBackground(cmd), source.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// In the same place, for a dev URL whose driver Ptah has and the strict

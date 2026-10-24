@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,7 +27,7 @@ import (
 func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(testutils.ProcessRunning(os.Getpid()), qt.IsTrue)
-	binary := independentCLIProvider(c)
+	binary := testutils.BuildFixtureProvider(c, "provider")
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)
@@ -224,51 +223,4 @@ func awaitProviderCLI(ctx context.Context, ready func() bool) error {
 		case <-ticker.C:
 		}
 	}
-}
-
-// Build outside the checkout against the host's published SDK dependency.
-// No local replacement or workspace can satisfy the independent build.
-func independentCLIProvider(c *qt.C) string {
-	c.Helper()
-	return independentCLIProviderCommand(c, "provider")
-}
-
-func independentCLIProviderCommand(c *qt.C, name string) string {
-	c.Helper()
-	repo, err := filepath.Abs("../..")
-	c.Assert(err, qt.IsNil)
-	dir := c.TempDir()
-	copyRoot, err := os.OpenRoot(dir)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { c.Check(copyRoot.Close(), qt.IsNil) })
-	const prefix = "provider-sdk/testdata/fixture/"
-	paths := strings.Split(strings.TrimSpace(string(providerBuildCommand(c, repo, "git", "ls-files", prefix))), "\n")
-	c.Assert(len(paths) >= 5, qt.IsTrue)
-	for _, path := range paths {
-		relative, ok := strings.CutPrefix(path, prefix)
-		c.Assert(ok, qt.IsTrue)
-		data, err := os.ReadFile(filepath.Join(repo, path))
-		c.Assert(err, qt.IsNil)
-		c.Assert(copyRoot.MkdirAll(filepath.Dir(relative), 0o700), qt.IsNil)
-		c.Assert(copyRoot.WriteFile(relative, data, 0o600), qt.IsNil)
-	}
-	const sdk = "github.com/stokaro/ptah/provider-sdk"
-	version := strings.TrimSpace(string(providerBuildCommand(c, repo, "go", "list", "-m", "-f", "{{.Version}}", sdk)))
-	c.Assert(version, qt.Not(qt.Equals), "")
-	providerBuildCommand(c, dir, "go", "mod", "edit", "-dropreplace="+sdk, "-require="+sdk+"@"+version)
-	providerBuildCommand(c, dir, "go", "mod", "tidy")
-	dependencies := string(providerBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/"+name))
-	c.Assert(dependencies, qt.Not(qt.Contains), "ptah.run/")
-	binary := filepath.Join(c.TempDir(), "provider.exe")
-	providerBuildCommand(c, dir, "go", "build", "-o", binary, "./cmd/"+name)
-	return binary
-}
-func providerBuildCommand(c *qt.C, dir, program string, args ...string) []byte {
-	c.Helper()
-	command := exec.CommandContext(c.Context(), program, args...)
-	command.Dir = dir
-	command.Env = append(os.Environ(), "GOWORK=off")
-	output, err := command.CombinedOutput()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s %v: %s", program, args, output))
-	return output
 }

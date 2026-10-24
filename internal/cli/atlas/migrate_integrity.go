@@ -143,7 +143,7 @@ func newAtlasMigrateIntegrityCommand(
 		// The forwarded native command owns its own, clearer wording for the same
 		// value, which is why this cannot simply be left to it.
 		directRefusedDevURL := verb.use == atlasMigrateValidateVerb().use &&
-			atlasDevURLDriverDiagnostic(source.devURL) != nil
+			atlasDevURLDriverDiagnostic(contextOrBackground(cmd), source.devURL) != nil
 		virtualSource := source.project.isVirtualMigrationDir(source.localDir)
 		if atlasmigrate.ReadsNativeAtlasDir(source.format) &&
 			!directStrictReplay &&

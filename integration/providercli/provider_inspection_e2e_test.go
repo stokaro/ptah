@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/tableidentity"
+	"ptah.run/internal/testutils"
 )
 
 func observedConnection(c *qt.C, host *providerhost.Host, table string) *dbschema.DatabaseConnection {
@@ -136,7 +137,7 @@ func TestProviderInspectionCancellationDiscardsWholeCatalog(t *testing.T) {
 
 func TestNativeCLIInspectPreservesProviderModelsAndCoverage(t *testing.T) {
 	c := qt.New(t)
-	executable := independentCLIProviderCommand(c, "observed-models")
+	executable := testutils.BuildFixtureProvider(c, "observed-models")
 	data, err := os.ReadFile(executable)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

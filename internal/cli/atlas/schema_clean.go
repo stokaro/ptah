@@ -16,7 +16,6 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
@@ -122,7 +121,7 @@ func runAtlasSchemaClean(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	opts.runtime, err = builtin.New()
+	opts.runtime, err = atlasRuntime(cmd.Context(), []string{opts.url}, "")
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -176,7 +175,7 @@ func runAtlasSchemaClean(
 	if !cmd.Flags().Changed("url") && strings.TrimSpace(opts.url) == "" {
 		return cmdutil.Fail(cmd, atlasRequiredURLError(atlasRequiredURLPlural))
 	}
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 

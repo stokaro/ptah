@@ -1252,6 +1252,15 @@
   },
   {
     "area": "Database engines",
+    "feature": "Executable providers on the compatibility surface",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "ptah-compat serves an engine an executable provider owns when PTAH_PROVIDER_CONFIG names a manifest. Built-in engines keep their drivers. Strict mode refuses the variable.",
+    "evidence": "integration/atlascmd/compat_provider_e2e_test.go drives the built ptah-compat against the fixture provider: schema inspect, schema diff, migrate apply and migrate status through the manifest, the same URL refused as an unknown driver without it, strict mode refusing the variable by name, and the provider process ended with each command. docs/adr/0030-ptah-compat-resolves-providers-through-the-native-pipeline.md. Atlas side: no edition loads an external driver (ariga/atlas#3682)."
+  },
+  {
+    "area": "Database engines",
     "feature": "Declared support level per database release line",
     "ptah": "yes",
     "atlas_oss": "unknown",

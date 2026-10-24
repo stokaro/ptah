@@ -10,7 +10,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/config/projectconfig"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/atlasschema"
@@ -229,7 +228,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	runtime, err := builtin.New()
+	runtime, err := atlasRuntime(cmd.Context(), []string{opts.url}, opts.devURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -265,8 +264,10 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateRenderedVirtualTables: opts.policy.ValidateRenderedVirtualTables,
 		OmitAtlasRefusedBlocks:        omitRefusedBlocks,
 		CompatibilityHCLFraming:       true,
-		DevURLDiagnostic:              atlasInspectDevURLDiagnostic,
-		Vars:                          schemaVars,
+		DevURLDiagnostic: func(devURL string, source atlassource.Set) error {
+			return atlasInspectDevURLDiagnostic(cmd.Context(), devURL, source)
+		},
+		Vars: schemaVars,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, atlasInspectDevRefusal(opts, projectEnv, err))
@@ -345,5 +346,5 @@ func validateAtlasSchemaInspectOptions(cmd *cobra.Command, opts atlasSchemaInspe
 	if !cmd.Flags().Changed("url") && strings.TrimSpace(opts.url) == "" {
 		return atlasRequiredURLError(atlasRequiredURLPlural)
 	}
-	return atlasDesiredStateURLDiagnostic(opts.url)
+	return atlasDesiredStateURLDiagnostic(contextOrBackground(cmd), opts.url)
 }

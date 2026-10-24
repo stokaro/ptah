@@ -55,7 +55,37 @@ type NativeRegistration struct {
 	Connector NativeConnector
 }
 
+// NativeLookup resolves a URL scheme to a native registration when a connection
+// needs it, for a caller that cannot name its providers before the command runs.
+// A lookup is additive: a scheme it does not serve keeps the bundled driver, and
+// it is consulted only when no exclusive selection (see
+// [WithNativeConnections]) is on the context.
+type NativeLookup interface {
+	// NativeRegistration returns the registration serving scheme, which is
+	// lower-case. It reports false when no provider serves the scheme. An error
+	// refuses the connection; it never selects a bundled driver instead.
+	NativeRegistration(ctx context.Context, scheme string) (NativeRegistration, bool, error)
+}
+
+// NativeSchemeLister is implemented by a [NativeLookup] that can name the URL
+// schemes it serves without starting anything, so a caller can tell a database
+// URL from another source before any connection opens.
+type NativeSchemeLister interface {
+	// NativeSchemes returns each served lower-case scheme and the canonical
+	// target it binds to.
+	NativeSchemes() map[string]string
+}
+
 type nativeConnectionsKey struct{}
+
+type nativeLookupKey struct{}
+
+// WithNativeLookup returns a context under which connections consult lookup for
+// a scheme no exclusive selection registered. A later call replaces the lookup;
+// the context owns selection, not process lifetime.
+func WithNativeLookup(ctx context.Context, lookup NativeLookup) context.Context {
+	return context.WithValue(ctx, nativeLookupKey{}, lookup)
+}
 
 // WithNativeConnections freezes the selected scheme bindings for this request.
 // The context owns selection, not process lifetime; the application closes its
@@ -65,7 +95,7 @@ type nativeConnectionsKey struct{}
 func WithNativeConnections(ctx context.Context, registrations map[string]NativeRegistration) (context.Context, error) {
 	selected := make(map[string]NativeRegistration, len(registrations))
 	for scheme, registration := range registrations {
-		if scheme == "" || scheme != strings.ToLower(strings.TrimSpace(scheme)) || strings.TrimSpace(registration.Target) == "" || nilNativeService(registration.Connector) {
+		if !validRegistration(scheme, registration) {
 			return nil, fmt.Errorf("invalid native connection registration")
 		}
 		selected[scheme] = registration
@@ -85,6 +115,25 @@ func NativeTargets(ctx context.Context) map[string]string {
 	return targets
 }
 
+func validRegistration(scheme string, registration NativeRegistration) bool {
+	return scheme != "" && scheme == strings.ToLower(strings.TrimSpace(scheme)) && strings.TrimSpace(registration.Target) != "" && !nilNativeService(registration.Connector)
+}
+
+// NativeSources returns the URL schemes a source classifier should treat as
+// database URLs: the exclusive selection of [NativeTargets], or, when there is
+// none, the schemes the context's [NativeLookup] serves. Unlike NativeTargets it
+// is not a statement that built-in schemes are refused.
+func NativeSources(ctx context.Context) map[string]string {
+	if selected := NativeTargets(ctx); len(selected) != 0 {
+		return selected
+	}
+	lister, installed := ctx.Value(nativeLookupKey{}).(NativeSchemeLister)
+	if !installed || nilNativeService(lister) {
+		return nil
+	}
+	return lister.NativeSchemes()
+}
+
 func nilNativeService(value any) bool {
 	if value == nil {
 		return true
@@ -101,10 +150,17 @@ func nilNativeService(value any) bool {
 func nativeConnection(ctx context.Context, scheme, address string, scope ConnectionScope) (*DatabaseConnection, bool, error) {
 	selected, configured := ctx.Value(nativeConnectionsKey{}).(map[string]NativeRegistration)
 	registration, found := selected[scheme]
+	if !found && configured {
+		return nil, true, fmt.Errorf("the selected provider does not own the database URL scheme")
+	}
 	if !found {
-		if configured {
-			return nil, true, fmt.Errorf("the selected provider does not own the database URL scheme")
+		var err error
+		registration, found, err = lookedUp(ctx, scheme)
+		if err != nil {
+			return nil, true, err
 		}
+	}
+	if !found {
 		return nil, false, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -122,6 +178,22 @@ func nativeConnection(ctx context.Context, scheme, address string, scope Connect
 		err = errors.Join(err, session.Close())
 	}
 	return result, true, err
+}
+
+// lookedUp asks the context's [NativeLookup], if any, who serves scheme.
+func lookedUp(ctx context.Context, scheme string) (NativeRegistration, bool, error) {
+	lookup, installed := ctx.Value(nativeLookupKey{}).(NativeLookup)
+	if !installed || nilNativeService(lookup) {
+		return NativeRegistration{}, false, nil
+	}
+	registration, found, err := lookup.NativeRegistration(ctx, scheme)
+	if err != nil || !found {
+		return NativeRegistration{}, false, err
+	}
+	if !validRegistration(scheme, registration) {
+		return NativeRegistration{}, false, fmt.Errorf("invalid native connection registration")
+	}
+	return registration, true, nil
 }
 
 func newNativeConnection(session NativeSession, target, address string, scope ConnectionScope) (*DatabaseConnection, error) {

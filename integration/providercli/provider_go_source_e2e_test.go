@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 )
 
 const retentionKind = schemaext.Kind("example.org/fixture/retention")
@@ -126,7 +127,7 @@ func TestProviderGoAnnotations_FailurePath(t *testing.T) {
 
 func TestProviderGoDirectiveOnAnUnhostedFrontendDirective_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	executable := independentCLIProviderCommand(c, "go-unhosted-directive")
+	executable := testutils.BuildFixtureProvider(c, "go-unhosted-directive")
 	data, err := os.ReadFile(executable)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

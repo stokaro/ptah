@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/yamlschema"
 	"ptah.run/engine"
 	"ptah.run/internal/providerhost"
+	"ptah.run/internal/testutils"
 )
 
 func TestProviderInterpretsNativeYAML(t *testing.T) {
@@ -53,7 +54,7 @@ func yamlProviderCommand(c *qt.C, name string) (*providerhost.Host, *engine.Runt
 
 func yamlProviderEnvironment(c *qt.C, name string, environment []string) (*providerhost.Host, *engine.Runtime) {
 	c.Helper()
-	executable := independentCLIProviderCommand(c, name)
+	executable := testutils.BuildFixtureProvider(c, name)
 	data, err := os.ReadFile(executable)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

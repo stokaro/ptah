@@ -107,17 +107,17 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 196 capabilities below:
+Across the 197 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 182 |
+| Ptah supports it fully | 183 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 64 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
-| Ptah has it and neither Atlas edition does | 27 |
+| Ptah has it and neither Atlas edition does | 28 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
@@ -343,6 +343,7 @@ seven of them as open capabilities regardless.
 | Declared support level per database release line | ✅ | ❔ | ❔ | Every declared release line carries a support level, counted in the generated table the evidence names. End-of-life lowers the level, not the behavior; an undeclared line resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
 | Enum types | ✅ | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server carry them in the column type or a check constraint. |
+| Executable providers on the compatibility surface | ✅ | ❌ | ❌ | ptah-compat serves an engine an executable provider owns when PTAH_PROVIDER_CONFIG names a manifest. Built-in engines keep their drivers. Strict mode refuses the variable. |
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
 | Functions | ✅ | ❌ | ✅ | Functions and procedures render, read and plan on the PostgreSQL and MySQL families and SQL Server. ClickHouse and SQLite host neither. |
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |

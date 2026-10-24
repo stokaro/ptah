@@ -188,7 +188,7 @@ func runAtlasMigrateStatus(
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))
 	}
-	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
+	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	tokens, err := captured.versionTokens()

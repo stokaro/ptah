@@ -262,7 +262,7 @@ func assembleSchemaServices(providers, additional []engine.Provider) (*engine.Ru
 	selected := slices.Concat(providers, additional)
 	declarations := make([]engine.Provider, len(selected))
 	for i, provider := range selected {
-		declarations[i] = engine.Provider{ID: provider.ID, Codecs: provider.Codecs, Declarations: provider.Declarations}
+		declarations[i] = engine.Provider{ID: provider.ID, Codecs: provider.Codecs, ModelDecoder: provider.ModelDecoder, Declarations: provider.Declarations}
 		for _, target := range provider.Targets {
 			declarations[i].Targets = append(declarations[i].Targets, engine.Target{Name: target.Name, Aliases: target.Aliases})
 		}
