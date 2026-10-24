@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlext"
+	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/providerhost"
@@ -76,10 +77,15 @@ func TestNativeCLIRefusesASQLSchemaTheProviderRefuses(t *testing.T) {
 	schema := filepath.Join(filepath.Dir(f.schemaPath), "schema.sql")
 	writeSQLSchema(c, filepath.Dir(schema), map[string]string{"schema.sql": "CREATE TABLE items (id INTEGER NOT NULL);\nGRANT SELECT ON items TO reader;\n"})
 
+	// The loader names a file by its resolved path, which differs from the
+	// temporary directory's spelling where that directory is a link.
+	resolved, err := pathguard.ResolveCLIPath(schema)
+	c.Assert(err, qt.IsNil)
+
 	out, diagnostics, code := f.run(c, c.Context(), "plan", "--schema-file", schema, "--output", f.planPath, "--json")
 
 	c.Assert(code, qt.Equals, 2)
-	c.Assert(diagnostics, qt.Contains, "read SQL schema file "+schema+": unsupported statement GRANT at position 42 (line 2, column 1)")
+	c.Assert(diagnostics, qt.Contains, "read SQL schema file "+resolved+": unsupported statement GRANT at position 42 (line 2, column 1)")
 	var report struct {
 		Outcome           string                                `json:"outcome"`
 		SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics"`
@@ -87,10 +93,10 @@ func TestNativeCLIRefusesASQLSchemaTheProviderRefuses(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(report.Outcome, qt.Equals, "failed")
 	c.Assert(report.SchemaDiagnostics, qt.DeepEquals, []providerdiagnostic.SchemaDiagnostic{{
-		Code: "unsupported", Severity: "error", Path: schema, Message: "unsupported statement GRANT",
+		Code: "unsupported", Severity: "error", Path: resolved, Message: "unsupported statement GRANT",
 		Start: providerdiagnostic.SchemaPosition{Offset: 42, Line: 2, Column: 1}, End: providerdiagnostic.SchemaPosition{Offset: 47, Line: 2, Column: 6},
 	}})
-	_, err := os.Stat(f.planPath)
+	_, err = os.Stat(f.planPath)
 	c.Assert(os.IsNotExist(err), qt.IsTrue)
 	c.Assert(f.success(c, "inspect", "--format", "json"), qt.Not(qt.Contains), "items")
 }
