@@ -58,6 +58,26 @@ service Provider {
   rpc TryLock(LockRequest) returns (LockResult);
   rpc CheckLock(LockRequest) returns (LockResult);
   rpc ReleaseLock(LockRequest) returns (LockResult);
+  // Contract 25.2: the embedding store. Each call is used only when both
+  // sides list the feature embeddings.store.
+  rpc PrepareEmbeddingStore(PrepareEmbeddingStoreRequest) returns (EmbeddingWriteResult);
+  rpc ReadEmbeddingState(ReadEmbeddingStateRequest) returns (EmbeddingState);
+  rpc MutateEmbeddingState(MutateEmbeddingStateRequest) returns (EmbeddingWriteResult);
+  rpc AppendEmbeddingEvent(AppendEmbeddingEventRequest) returns (EmbeddingWriteResult);
+  rpc ReadEmbeddingEvents(ReadEmbeddingEventsRequest) returns (EmbeddingEventPage);
+  rpc DescribeEmbeddingTarget(DescribeEmbeddingTargetRequest) returns (EmbeddingTargetObjects);
+  rpc ResolveEmbeddingRelations(ResolveEmbeddingRelationsRequest) returns (EmbeddingRelations);
+  rpc MeasureEmbedding(MeasureEmbeddingRequest) returns (EmbeddingMeasurement);
+  rpc PrepareEmbeddingTarget(PrepareEmbeddingTargetRequest) returns (EmbeddingWriteResult);
+  rpc BuildEmbeddingIndex(BuildEmbeddingIndexRequest) returns (EmbeddingWriteResult);
+  rpc ReadEmbeddingStructure(ReadEmbeddingStructureRequest) returns (EmbeddingStructure);
+  rpc DropEmbeddingGeneration(DropEmbeddingGenerationRequest) returns (EmbeddingWriteResult);
+  rpc ScanEmbeddingSource(ScanEmbeddingSourceRequest) returns (EmbeddingSourcePage);
+  rpc ReadEmbeddingSourceRows(ReadEmbeddingSourceRowsRequest) returns (EmbeddingSourceRows);
+  rpc ReadEmbeddingBatchState(ReadEmbeddingBatchStateRequest) returns (EmbeddingBatchState);
+  rpc CommitEmbeddingBatch(CommitEmbeddingBatchRequest) returns (EmbeddingWriteResult);
+  rpc ReadEmbeddingVerification(ReadEmbeddingVerificationRequest) returns (EmbeddingVerificationPage);
+  rpc SearchEmbeddings(SearchEmbeddingsRequest) returns (EmbeddingSearchResult);
 }
 
 message Empty {}
@@ -113,6 +133,10 @@ message Engine {
   // Absent means the engine declares no spelling for the host's query builder.
   // Sent only to a host that lists the feature query.dialect. Contract 25.1.
   QueryDialect query_dialect = 14;
+  // Absent means the engine keeps no embedding store. Present exactly when the
+  // engine lists embeddings.store, and sent only to a host that lists it.
+  // Contract 25.2.
+  EmbeddingEngine embeddings = 15;
 }
 // QueryDialect is the spelling the host's query builder reads for an engine,
 // as data: the builder renders statements offline and never calls the
@@ -2393,4 +2417,610 @@ message SeedLedgerEntry {
   string env = 3;
   int64 applied_at_seconds = 4;
   int32 applied_at_nanos = 5;
+}
+
+// The embedding store, contract 25.2. The host keeps the lifecycle of an
+// embedding generation: the loops, the batch bounds, leases and fencing, every
+// lifecycle rule and verification. The provider stores what the host decided,
+// owns the layout of that storage, and reads and writes a generation's rows
+// and vectors. It refuses nothing for a lifecycle reason.
+
+// EmbeddingEngine is what an engine declares about its embedding store.
+message EmbeddingEngine {
+  // The consistency modes a generation on this engine can be built with, by
+  // the host's names, such as "immutable". The host owns the vocabulary.
+  repeated string consistency_modes = 1;
+}
+
+// EmbeddingKey is one source key: its components as text, in the key order
+// the specification names. Text is the one form every key type has; the
+// provider converts each component back to its column's type.
+message EmbeddingKey {
+  repeated string components = 1;
+}
+
+// EmbeddingSource is the relation a generation reads.
+message EmbeddingSource {
+  Reference table = 1;
+  repeated string key_fields = 2;
+  // The columns the provider input is built from, in order.
+  repeated string input_fields = 3;
+  // Empty when the version strategy reads no column.
+  string version_field = 4;
+  // The specification's own boolean expression in the engine's dialect.
+  // Empty selects every row. Only the provider reads it.
+  string filter = 5;
+}
+
+// EmbeddingTarget is where a generation's vectors live and how they compare.
+message EmbeddingTarget {
+  enum Layout { LAYOUT_UNSPECIFIED = 0; SOURCE_COLUMNS = 1; OWN_TABLE = 2; }
+  enum Metric { METRIC_UNSPECIFIED = 0; COSINE = 1; L2 = 2; INNER_PRODUCT = 3; }
+  Reference table = 1;
+  string column = 2;
+  Layout layout = 3;
+  // The engine's name for the stored element type, such as "float".
+  string representation = 4;
+  Metric metric = 5;
+  uint32 dimension = 6;
+  // Empty when the specification declares no index.
+  string index_method = 7;
+  map<string, string> index_options = 8;
+}
+
+// EmbeddingNames are the names of a generation's objects. The host derives
+// them, so a name that is created and a name that is dropped come from one
+// derivation.
+message EmbeddingNames {
+  string index = 1;
+  // What marks a table the generation owns, and is read back before the
+  // table is dropped.
+  string ownership_mark = 2;
+  string column_comment = 3;
+}
+
+// EmbeddingSpec is what the engine needs of a specification, never the
+// specification document.
+message EmbeddingSpec {
+  // The generation identity.
+  string generation = 1;
+  EmbeddingSource source = 2;
+  EmbeddingTarget target = 3;
+  // A source key holds a set of rows, one per chunk.
+  bool chunked = 4;
+  EmbeddingNames names = 5;
+}
+
+// EmbeddingLocation is where a registered generation's vectors are, as its
+// registry record says. A retirement has the record and no specification.
+message EmbeddingLocation {
+  string generation = 1;
+  Reference table = 2;
+  string column = 3;
+  uint32 dimension = 4;
+  EmbeddingNames names = 5;
+}
+
+// EmbeddingRefusal says why a request cannot be met at all.
+message EmbeddingRefusal {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    // The engine or this server line cannot do what the request asks.
+    UNSUPPORTED = 1;
+    // The engine refuses a value the request names as written.
+    INVALID = 2;
+    // An object the request needs does not exist.
+    ABSENT = 3;
+    // Storage exists and the provider cannot prove it is the generation's or
+    // its own.
+    NOT_OWNED = 4;
+  }
+  Reason reason = 1;
+  // One line of at most 512 bytes, provider-authored and redacted.
+  string message = 2;
+}
+
+// EmbeddingWriteResult answers every embedding write. APPLIED means
+// committed. CONFLICT, REFUSED and NOT_APPLIED confirm that nothing was
+// written. UNKNOWN leaves the effect unresolved, and nothing resends it.
+message EmbeddingWriteResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; CONFLICT = 2; REFUSED = 3; NOT_APPLIED = 4; }
+  enum IndexOutcome { INDEX_OUTCOME_UNSPECIFIED = 0; NOT_DECLARED = 1; ALREADY_VALID = 2; BUILT = 3; REBUILT = 4; }
+  string request_id = 1;
+  Outcome outcome = 2;
+  // Set with REFUSED, and only then.
+  EmbeddingRefusal refusal = 3;
+  // One line of at most 512 bytes. Required with NOT_APPLIED.
+  string message = 4;
+  // With APPLIED from MutateEmbeddingState and CommitEmbeddingBatch: each
+  // written record as a later read returns it, in key order.
+  EmbeddingRecords written = 5;
+  // With APPLIED from AppendEmbeddingEvent: the sequence the event took.
+  int64 sequence = 6;
+  // With APPLIED from BuildEmbeddingIndex.
+  IndexOutcome index_outcome = 7;
+}
+
+// The run-state records. Their fields are the host's run state, so a provider
+// can keep each in a column of its own. Phase, status, kind and failure class
+// are text the host defines; the provider stores it and does not read it. An
+// absent time is the zero time.
+
+message EmbeddingGeneration {
+  string identity = 1;
+  string spec_digest = 2;
+  string spec_document = 3;
+  string name = 4;
+  string reproducibility = 5;
+  string reproducibility_reason = 6;
+  string resolved_model = 7;
+  uint32 dimension = 8;
+  string target_schema = 9;
+  string target_table = 10;
+  string target_column = 11;
+  string source_schema = 12;
+  string source_table = 13;
+  string consistency_mode = 14;
+  TimestampValue created_at = 15;
+  TimestampValue retired_at = 16;
+  TimestampValue verified_at = 17;
+  TimestampValue maintained_until = 18;
+}
+
+message EmbeddingProgress {
+  int64 rows_scanned = 1;
+  int64 rows_embedded = 2;
+  int64 rows_skipped = 3;
+  int64 rows_deleted = 4;
+  int64 batches_committed = 5;
+  int64 provider_prompt_tokens = 6;
+  int64 provider_total_tokens = 7;
+  int64 provider_usage_batches = 8;
+  uint32 retry_count = 9;
+}
+
+message EmbeddingRun {
+  string id = 1;
+  string spec_digest = 2;
+  string generation_identity = 3;
+  string environment = 4;
+  string source = 5;
+  string target = 6;
+  string provider_profile = 7;
+  string resolved_model = 8;
+  string ptah_version = 9;
+  string policy_digest = 10;
+  string phase = 11;
+  string status = 12;
+  string lease_owner = 13;
+  TimestampValue lease_expires = 14;
+  int64 fencing_token = 15;
+  bool snapshot_done = 16;
+  string snapshot_watermark = 17;
+  string catch_up_watermark = 18;
+  // The keyset position the backfill resumes after.
+  repeated string cursor = 19;
+  EmbeddingProgress progress = 20;
+  string verification_ref = 21;
+  string cutover_plan_ref = 22;
+  string approval_ref = 23;
+  string active_pointer = 24;
+  bool rollback_eligible = 25;
+  string failure_class = 26;
+  string failure_detail = 27;
+  TimestampValue created_at = 28;
+  TimestampValue updated_at = 29;
+}
+
+// EmbeddingRecords lists records in key order: generations by identity, runs
+// by ID, pointers by schema and then table.
+message EmbeddingRecords {
+  repeated EmbeddingGeneration generations = 1;
+  repeated EmbeddingRun runs = 2;
+  repeated EmbeddingPointer pointers = 3;
+}
+
+message EmbeddingPointerKey {
+  string target_schema = 1;
+  string target_table = 2;
+}
+
+message EmbeddingPointer {
+  string target_schema = 1;
+  string target_table = 2;
+  string active_generation = 3;
+  string previous_generation = 4;
+  TimestampValue cut_over_at = 5;
+  string cut_over_by = 6;
+  string plan_digest = 7;
+}
+
+// EmbeddingEventCounts are a run's counts when an event happened.
+message EmbeddingEventCounts {
+  int64 rows_scanned = 1;
+  int64 rows_embedded = 2;
+  int64 rows_skipped = 3;
+  int64 rows_deleted = 4;
+  int64 batches_committed = 5;
+}
+
+// EmbeddingEvent is one entry of a run's audit trail. It has no field for row
+// content or a vector.
+message EmbeddingEvent {
+  string run_id = 1;
+  // Assigned by the provider: the run's previous sequence plus one, from 1.
+  int64 sequence = 2;
+  string kind = 3;
+  TimestampValue at = 4;
+  string actor = 5;
+  int64 fencing_token = 6;
+  string from_phase = 7;
+  string to_phase = 8;
+  string detail = 9;
+  EmbeddingEventCounts counts = 10;
+}
+
+// EmbeddingStateScope selects the records one lifecycle decision reads.
+message EmbeddingStateScope {
+  message AllRecords {}
+  oneof scope {
+    // Every generation, run and pointer.
+    AllRecords everything = 1;
+    // One run, by ID.
+    string run = 2;
+    // One generation, by identity.
+    string generation = 3;
+    // Every run of one generation, by its identity.
+    string runs_of_generation = 4;
+    EmbeddingPointerKey pointer = 5;
+  }
+}
+
+// PrepareEmbeddingStoreRequest creates a missing store and verifies an
+// existing one. A layout the provider does not recognize as its own is
+// REFUSED with NOT_OWNED, and is never upgraded.
+message PrepareEmbeddingStoreRequest {
+  string session_id = 1;
+  string request_id = 2;
+}
+
+// ReadEmbeddingStateRequest reads one scope as one consistent snapshot. A
+// scope holding more than max_records records is an error, never a partial
+// snapshot.
+message ReadEmbeddingStateRequest {
+  string session_id = 1;
+  EmbeddingStateScope scope = 2;
+  uint32 max_records = 3;
+}
+
+// EmbeddingState is a snapshot of one scope. A store that does not exist is
+// exists=false with no record.
+message EmbeddingState {
+  EmbeddingStateScope scope = 1;
+  bool exists = 2;
+  EmbeddingRecords records = 3;
+  // A digest of exactly these records. Equal records give an equal token
+  // within one provider build; any change to a record of the scope, including
+  // one that appears, gives another.
+  string token = 4;
+}
+
+// MutateEmbeddingStateRequest is one atomic compare-and-write. The provider
+// reads the scope again, and only when its token equals expected_token writes
+// each record whole. A mutation writes only records its scope covers and
+// never deletes one.
+message MutateEmbeddingStateRequest {
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingStateScope scope = 3;
+  string expected_token = 4;
+  // The records the decision changed, each whole.
+  EmbeddingRecords records = 5;
+}
+
+// AppendEmbeddingEventRequest records one event of an existing run. The
+// event's sequence is zero; the provider assigns it.
+message AppendEmbeddingEventRequest {
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingEvent event = 3;
+}
+
+// ReadEmbeddingEventsRequest pages a run's events after a sequence.
+message ReadEmbeddingEventsRequest {
+  string session_id = 1;
+  string run_id = 2;
+  int64 after_sequence = 3;
+  uint32 max_events = 4;
+}
+
+// EmbeddingEventPage holds events in sequence order. exists is false for a
+// run that is not there. complete says no event follows the last one.
+message EmbeddingEventPage {
+  string run_id = 1;
+  bool exists = 2;
+  repeated EmbeddingEvent events = 3;
+  bool complete = 4;
+}
+
+// DescribeEmbeddingTargetRequest asks offline whether an engine can hold a
+// specification, and what a generation needs on it.
+message DescribeEmbeddingTargetRequest {
+  string engine = 1;
+  EmbeddingSpec spec = 2;
+}
+
+// EmbeddingTargetObjects is a refusal, or what a generation needs.
+message EmbeddingTargetObjects {
+  EmbeddingRefusal refusal = 1;
+  string column_type = 2;
+  // The generation creates the target table and drops it at retirement.
+  bool owns_table = 3;
+  // An owned table references the source rows its keys name.
+  bool references_source = 4;
+  bool has_index = 5;
+  string index_method = 6;
+  string index_operator = 7;
+  repeated string required_extensions = 8;
+}
+
+// ResolveEmbeddingRelationsRequest asks which relation each spelling names on
+// this server. A spelling that names no relation comes back as written.
+message ResolveEmbeddingRelationsRequest {
+  string session_id = 1;
+  repeated Reference relations = 2;
+}
+
+// EmbeddingRelations answers each relation of the request, in order.
+message EmbeddingRelations {
+  repeated Reference relations = 1;
+}
+
+message MeasureEmbeddingRequest {
+  string session_id = 1;
+  EmbeddingSpec spec = 2;
+}
+
+// EmbeddingMeasurement is what a plan reports about the database.
+message EmbeddingMeasurement {
+  bool source_exists = 1;
+  bool target_table_exists = 2;
+  bool target_column_exists = 3;
+  // rows is the number of source rows in scope, and is zero when they were
+  // not counted.
+  bool rows_counted = 4;
+  int64 rows = 5;
+  // What the database can do with vectors, by the names the host's plan
+  // holds a database to. A present false is an answer; an absent key is
+  // unknown.
+  map<string, bool> capabilities = 6;
+  bool index_buildable = 7;
+  // Reasons the database cannot run the specification, one line each.
+  repeated string refusals = 8;
+}
+
+// PrepareEmbeddingTargetRequest creates a generation's storage, or verifies
+// that a prepared one is still complete. Both are idempotent.
+message PrepareEmbeddingTargetRequest {
+  enum Mode { MODE_UNSPECIFIED = 0; CREATE = 1; VERIFY = 2; }
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingSpec spec = 3;
+  Mode mode = 4;
+}
+
+// BuildEmbeddingIndexRequest builds the declared index, or rebuilds one whose
+// build did not finish.
+message BuildEmbeddingIndexRequest {
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingSpec spec = 3;
+}
+
+message ReadEmbeddingStructureRequest {
+  string session_id = 1;
+  EmbeddingLocation location = 2;
+  // Count the rows the generation holds.
+  bool count_rows = 3;
+}
+
+// EmbeddingStructure is a generation's storage as the engine reports it.
+message EmbeddingStructure {
+  bool table_exists = 1;
+  bool column_exists = 2;
+  string column_type = 3;
+  uint32 dimension = 4;
+  bool index_exists = 5;
+  // The index finished building and serves queries.
+  bool index_valid = 6;
+  string index_method = 7;
+  string index_operator = 8;
+  // What the engine needs to store and compare vectors is present.
+  bool vector_support = 9;
+  // Set exactly when the request asked for a count.
+  bool rows_counted = 10;
+  int64 rows = 11;
+  // The session settings a search runs under, as name=value pairs joined by
+  // commas.
+  string search_settings = 12;
+}
+
+// DropEmbeddingGenerationRequest drops a retired generation's index, and the
+// columns or the table the approval names. Ownership is checked before
+// anything is dropped, so a refusal drops nothing.
+message DropEmbeddingGenerationRequest {
+  enum Storage { STORAGE_UNSPECIFIED = 0; INDEX_ONLY = 1; COLUMNS = 2; TABLE = 3; }
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingLocation location = 3;
+  Storage storage = 4;
+}
+
+// EmbeddingSourceRow is one source row: each input field is null or text.
+message EmbeddingSourceRow {
+  EmbeddingKey key = 1;
+  repeated DataValue fields = 2;
+  string version = 3;
+}
+
+// ScanEmbeddingSourceRequest reads one keyset page after a key, in key
+// order, under the filter. An absent key starts at the beginning.
+message ScanEmbeddingSourceRequest {
+  string session_id = 1;
+  EmbeddingSource source = 2;
+  EmbeddingKey after = 3;
+  uint32 max_rows = 4;
+}
+
+// EmbeddingSourcePage is one keyset page. cursor is where the next page
+// starts after; done says the scan reached the end. A page may be empty and
+// not done, when the filter matched nothing for a stretch.
+message EmbeddingSourcePage {
+  repeated EmbeddingSourceRow rows = 1;
+  EmbeddingKey cursor = 2;
+  bool done = 3;
+}
+
+// ReadEmbeddingSourceRowsRequest rereads rows by key, under the filter.
+message ReadEmbeddingSourceRowsRequest {
+  string session_id = 1;
+  EmbeddingSource source = 2;
+  repeated EmbeddingKey keys = 3;
+}
+
+// EmbeddingSourceRows holds the rows still present. A requested key missing
+// from it is a row that is gone.
+message EmbeddingSourceRows {
+  repeated EmbeddingSourceRow rows = 1;
+}
+
+// EmbeddingWriteKind is what a target write did to a row.
+enum EmbeddingWriteKind {
+  EMBEDDING_WRITE_KIND_UNSPECIFIED = 0;
+  EMBEDDING_WRITE_KIND_UPSERT = 1;
+  EMBEDDING_WRITE_KIND_SKIP = 2;
+  EMBEDDING_WRITE_KIND_TOMBSTONE = 3;
+}
+
+// EmbeddingHeldTarget is what the target holds at one key: the generation,
+// input hash, version and kind of the key's first stored row. A key nothing
+// wrote is absent.
+message EmbeddingHeldTarget {
+  EmbeddingKey key = 1;
+  string generation = 2;
+  string input_hash = 3;
+  string version = 4;
+  EmbeddingWriteKind kind = 5;
+}
+
+// ReadEmbeddingBatchStateRequest reads what a batch commit compares: the run
+// and what the target holds at the batch's keys.
+message ReadEmbeddingBatchStateRequest {
+  string session_id = 1;
+  EmbeddingSpec spec = 2;
+  string run_id = 3;
+  repeated EmbeddingKey keys = 4;
+}
+
+// EmbeddingBatchState is the run, or no run when it is not there, the held
+// state of the requested keys, and a token over both.
+message EmbeddingBatchState {
+  string run_id = 1;
+  EmbeddingRun run = 2;
+  repeated EmbeddingHeldTarget held = 3;
+  string token = 4;
+}
+
+// EmbeddingTargetWrite is one member of a key's set.
+message EmbeddingTargetWrite {
+  EmbeddingKey key = 1;
+  uint32 ordinal = 2;
+  string generation = 3;
+  string input_hash = 4;
+  string version = 5;
+  EmbeddingWriteKind kind = 6;
+  // The vector of an UPSERT, of the target's dimension. Empty otherwise.
+  repeated float vector = 7;
+}
+
+// CommitEmbeddingBatchRequest is one atomic compare-and-write over the run
+// and the batch's keys. The provider rereads both, compares the token, makes
+// each written key's stored rows equal to its set, writes the run, and
+// commits. A set is ordered by ordinal from 0; a skip or a tombstone is a set
+// of one at ordinal 0.
+message CommitEmbeddingBatchRequest {
+  string session_id = 1;
+  string request_id = 2;
+  EmbeddingSpec spec = 3;
+  string run_id = 4;
+  // The keys the token was read over. Every write names one of them.
+  repeated EmbeddingKey keys = 5;
+  string expected_token = 6;
+  EmbeddingRun run = 7;
+  repeated EmbeddingTargetWrite writes = 8;
+}
+
+// EmbeddingStoredRow is what a target row holds. A row nothing wrote has no
+// generation and no kind. It never carries the vector, only its width.
+message EmbeddingStoredRow {
+  string generation = 1;
+  string input_hash = 2;
+  string version = 3;
+  EmbeddingWriteKind kind = 4;
+  // The number of elements of the stored vector, zero for none.
+  uint32 dimension = 5;
+  uint32 ordinal = 6;
+}
+
+// EmbeddingVerificationSource is the source side of a row in scope.
+message EmbeddingVerificationSource {
+  repeated DataValue fields = 1;
+  string version = 2;
+}
+
+// EmbeddingVerificationRow is one position of the verification walk. source
+// is absent when the key is out of scope; stored is absent when no row stands
+// at the key. One of them is present.
+message EmbeddingVerificationRow {
+  EmbeddingKey key = 1;
+  EmbeddingVerificationSource source = 2;
+  EmbeddingStoredRow stored = 3;
+}
+
+// ReadEmbeddingVerificationRequest pages the walk verification folds over.
+message ReadEmbeddingVerificationRequest {
+  string session_id = 1;
+  EmbeddingSpec spec = 2;
+  string page_token = 3;
+  uint32 max_rows = 4;
+}
+
+// EmbeddingVerificationPage holds rows of one key adjacent, and never splits
+// them across pages. Each page reads both sides of its keys in one read.
+message EmbeddingVerificationPage {
+  repeated EmbeddingVerificationRow rows = 1;
+  string next_page_token = 2;
+  bool complete = 3;
+}
+
+// SearchEmbeddingsRequest asks for the keys nearest to one vector.
+message SearchEmbeddingsRequest {
+  string session_id = 1;
+  EmbeddingSpec spec = 2;
+  repeated float vector = 3;
+  uint32 depth = 4;
+}
+
+// EmbeddingSearchResult lists the nearest keys through the index, as an
+// application's query would, and by exhaustive scan. A FAILED search carries
+// a reason and no keys; the host records it against its case.
+message EmbeddingSearchResult {
+  enum Outcome { OUTCOME_UNSPECIFIED = 0; COMPLETED = 1; FAILED = 2; }
+  Outcome outcome = 1;
+  // One line of at most 512 bytes. Required with FAILED.
+  string message = 2;
+  repeated EmbeddingKey indexed = 3;
+  repeated EmbeddingKey exact = 4;
+  // An index served the first list.
+  bool index_used = 5;
 }

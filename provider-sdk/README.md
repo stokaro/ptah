@@ -51,7 +51,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.1; `provider-sdk/v0.3.0` is its first release.
+speaks contract 25.2. `provider-sdk/v0.3.0` speaks contract 25.1, and
+`provider-sdk/v0.2.0` speaks 25.0.
 
 **What changes which number.** The minor counts compatible additions within a
 major. The major changes only with an incompatible change, and the minor then
@@ -61,7 +62,8 @@ returns to 0.
   message, field, enum value or feature. It raises the minor by one. Contract
   25.1 adds, for example, the RPC `ReadRows`, the field
   `ExecuteRequest.statement_timeout_nanoseconds`, the enum value
-  `LINT_FACT_STATEMENT_KIND` and the feature `database.dev-cleanup`.
+  `LINT_FACT_STATEMENT_KIND` and the feature `database.dev-cleanup`. Contract
+  25.2 adds the [embedding store](#embedding-store).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -80,8 +82,10 @@ does not oblige a peer to use it.
   addition to an existing message, such as a new enum value, a new reply field,
   or a request field the provider would have to honor, is used only when both
   sides list its feature. `provider.TwoWayFeatures()` returns those features:
-  `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms` and
-  `query.dialect`.
+  `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
+  `query.dialect` and `embeddings.store`. The embedding store's calls are new,
+  and its engine declaration is an addition to `Engine`, so a host lists the
+  feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
   `provider.NegotiatedDescription`, so neither side sends an addition the other
   did not ask for. A service reads what the host listed with
@@ -152,6 +156,24 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ApplySeed` | A seed file and its ledger entry committed together, a key conflict, a refusal that ran nothing, or an explicit unknown outcome. |
 | `RecordSeed` | A ledger entry written without running the file. |
 | `ReadSeedLedger` | The complete ledger, distinguishing a missing ledger from an empty one. |
+| `PrepareEmbeddingStore` | A created or verified run-state store, or a refusal of a layout the owner does not recognize. |
+| `ReadEmbeddingState` | One consistent snapshot of a scope of run-state records, in key order, with a token over them, or an error and no record. |
+| `MutateEmbeddingState` | The records a host decision changed, written whole when the scope still has the token it was read with, or a confirmed conflict that wrote nothing. |
+| `AppendEmbeddingEvent` | One audit event of an existing run, with the next sequence of that run. |
+| `ReadEmbeddingEvents` | One bounded page of a run's events in sequence order. |
+| `DescribeEmbeddingTarget` | Offline: the column type, table ownership, index and extensions a generation needs on an engine, or a refusal. |
+| `ResolveEmbeddingRelations` | The relation each schema and table spelling names on the session's server. |
+| `MeasureEmbedding` | What a plan reports: existence, a source count, vector capabilities, and refusals. |
+| `PrepareEmbeddingTarget` | A generation's storage created or verified, idempotently. |
+| `BuildEmbeddingIndex` | The declared index built, rebuilt or found valid, or `NOT_DECLARED`. |
+| `ReadEmbeddingStructure` | A generation's column and index as the engine reports them, the search settings, and on request its row count. |
+| `DropEmbeddingGeneration` | A retired generation's index and columns or table removed, or a refusal that removed nothing. |
+| `ScanEmbeddingSource` | One keyset page of the source in key order, with the cursor to resume after. |
+| `ReadEmbeddingSourceRows` | The rows still present among a set of keys. |
+| `ReadEmbeddingBatchState` | A run and what the target holds at a batch's keys, with a token over both. |
+| `CommitEmbeddingBatch` | A batch's sets and its checkpointed run committed together when the token holds, or a confirmed conflict that wrote nothing. |
+| `ReadEmbeddingVerification` | One bounded page of the verification walk, never splitting a key's rows. |
+| `SearchEmbeddings` | The keys nearest to one vector through the index and by exhaustive scan, or a failed search with a reason. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
 | `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
@@ -1105,3 +1127,114 @@ Rule identifiers stay with the host. `statement_class` and `capability` belong
 to their fact alone, and a statement with two kinds is refused. An engine offers
 these facts with `lint.statement-facts`, beside `lint.migrations`, and a split
 or an annotation uses them only when the host lists the same feature.
+
+## Embedding store
+
+[ADR 0032](../docs/adr/0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md)
+puts the storage half of `ptah inference` behind the provider. The host keeps
+the lifecycle: the specification, the embedding endpoint, the backfill and
+catch-up loops, the batch bounds, leases and fencing, every lifecycle rule,
+verification, and the names of a generation's objects. The provider keeps the
+run state the host decides, in a layout of its own, and owns a generation's
+storage, rows, vectors, index and searches. It stores records whole, compares
+them whole, and refuses nothing for a lifecycle reason.
+
+`embeddings.store` switches the service on, and it is a two-way feature. The
+provider lists it, and each supporting engine lists it beside
+`Engine.embeddings`, which names the consistency modes a generation on that
+engine can be built with. The host lists it in its host features. Otherwise
+the SDK drops the declaration and refuses every call, at the client before it
+sends one and at the server. A host that does not list the feature keeps
+everything else the provider serves.
+
+**Run state.** The records are `EmbeddingGeneration`, `EmbeddingRun`,
+`EmbeddingPointer` and `EmbeddingEvent`. Their fields are the host's run state,
+so an owner can keep each field in a column of its own. Phase, status, kind and
+failure class are text the owner stores without reading it.
+
+- `ReadEmbeddingState` reads one scope as one snapshot: every generation, run
+  and pointer; one run; one generation; the runs of one generation; or one
+  pointer. Records come in key order with a token, a digest of exactly those
+  records, which `provider.EmbeddingStateToken` computes. A scope larger than
+  the bound, at most 10,000 records, or than the message limit is an error.
+- `MutateEmbeddingState` carries the token and the records a decision changed.
+  The owner reads the scope again and writes the records only when its token is
+  the same. It writes only records the scope covers and deletes none. `APPLIED`
+  returns each written record as a later read returns it.
+- `AppendEmbeddingEvent` gives an event of an existing run that run's next
+  sequence, from 1. `PrepareEmbeddingStore` creates a missing store, verifies an
+  existing one, and refuses a layout it does not recognize.
+
+**Batches.** `ReadEmbeddingBatchState` returns the run and the first stored row
+at each of a batch's keys, with a token over both. The host decides the fencing
+and which sets win. `CommitEmbeddingBatch` then makes each written key's rows
+equal to its set and writes the checkpointed run, in one atomic operation, when
+the token holds. The SDK refuses a batch whose sets break these rules:
+
+- a key's writes are adjacent, in ordinal order from 0, and share one input
+  hash, version and kind;
+- a skip or a tombstone is a set of one, and so is every set of a generation
+  that does not chunk;
+- every write carries the request's generation and names a key the state was
+  read over;
+- an upsert carries a vector of the target's dimension, and no other write
+  carries one. A NaN or an infinity is refused, here and in a search.
+
+**Outcomes.** A write answers one of these:
+
+- `APPLIED`: committed.
+- `CONFLICT`: the token differed and nothing was written. Only the two
+  compare-and-writes can answer it.
+- `REFUSED`, with a reason (`UNSUPPORTED`, `INVALID`, `ABSENT`, `NOT_OWNED`) and
+  one line of text: nothing was written.
+- `NOT_APPLIED`: the engine refused in a way that proves nothing committed. It
+  carries one line of reason.
+- `UNKNOWN`: the owner cannot prove whether it committed.
+
+The client returns a confirmed outcome other than `APPLIED` with a
+`provider.EmbeddingWriteError`, and a `CONFLICT` also matches
+`provider.ErrEmbeddingConflict`: the host reads again and decides again. A lost
+or invalid reply is `UNKNOWN` and is never sent again. No call joins a host
+transaction. An owner may run an operation again after its engine aborted it in
+a way that proves nothing committed, a bounded number of times, rereading what
+it compares each time.
+
+**Storage.** A request about a generation carries an `EmbeddingSpec`, or an
+`EmbeddingLocation` for a registered generation:
+
+- the source relation, its key and input fields, its version field and filter;
+- the target relation, column, layout, representation, metric, dimension and
+  index;
+- whether the specification chunks, the generation identity, and the names the
+  host derives for the index, the ownership mark and the column comment.
+
+The filter is the specification's own text in the engine's dialect, and only
+the owner reads it. Every other name travels as a separate component.
+`DescribeEmbeddingTarget` is offline. `PrepareEmbeddingTarget` is idempotent,
+and adopts a table without the ownership mark only when the table is empty and
+has the shape a generation creates. `DropEmbeddingGeneration` checks ownership
+before it drops anything, so a refusal drops nothing.
+
+**Reads.** `ScanEmbeddingSource` and `ReadEmbeddingVerification` page at most
+10,000 rows. A verification page keeps a key's rows together and never splits
+them across pages. Its stored side carries the width of a vector, never the
+vector, and the SDK refuses no state of stored data, because verification
+exists to report it. `SearchEmbeddings` answers the nearest keys through the
+index and by exhaustive scan. A failed search is a reply with a reason, not a
+failed call.
+
+**Bounds.** A call with no earlier deadline is bounded by
+`runtime.EmbeddingWriteTimeout` (2 minutes) for a mutation or a batch commit,
+`runtime.EmbeddingStorageTimeout` (10 minutes) for a call that can read or
+change a whole table, `runtime.EmbeddingIndexTimeout` (12 hours) for an index
+build, and `runtime.CallTimeout` otherwise. A batch is one message, so a host
+bounds it by the 4 MiB limit.
+
+The SDK conformance tests in `runtime` negotiate the store in both directions,
+write state on the token it was read with and refuse a second writer with an
+old one, commit a batch with its checkpoint, refuse a malformed batch before
+sending it, report a lost write as unknown without sending it again, assign
+event sequences, page the source and the verification walk, and answer the
+storage calls. The fixture provider does not serve the store;
+[issue #4204](https://github.com/stokaro/ptah/issues/4204) owns its SQLite
+implementation and the process tests.

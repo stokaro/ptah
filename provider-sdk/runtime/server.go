@@ -73,6 +73,7 @@ type Server struct {
 	RowReader       provider.RowReader
 	RowWriter       provider.RowWriteRenderer
 	Seeds           provider.Seeds
+	EmbeddingStore  provider.EmbeddingStore
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -112,6 +113,7 @@ func (s Server) Validate() error {
 		{provider.ReadRowsFeature, !nilService(s.RowReader)},
 		{provider.RenderRowWritesFeature, !nilService(s.RowWriter)},
 		{provider.SeedsFeature, !nilService(s.Seeds)},
+		{provider.EmbeddingStoreFeature, !nilService(s.EmbeddingStore)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

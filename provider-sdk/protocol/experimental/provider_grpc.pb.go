@@ -19,51 +19,69 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Provider_Describe_FullMethodName               = "/ptah.provider.experimental.Provider/Describe"
-	Provider_Open_FullMethodName                   = "/ptah.provider.experimental.Provider/Open"
-	Provider_Close_FullMethodName                  = "/ptah.provider.experimental.Provider/Close"
-	Provider_Inspect_FullMethodName                = "/ptah.provider.experimental.Provider/Inspect"
-	Provider_Render_FullMethodName                 = "/ptah.provider.experimental.Provider/Render"
-	Provider_AnalyzeSQL_FullMethodName             = "/ptah.provider.experimental.Provider/AnalyzeSQL"
-	Provider_DecodeSource_FullMethodName           = "/ptah.provider.experimental.Provider/DecodeSource"
-	Provider_ReadSQLSchema_FullMethodName          = "/ptah.provider.experimental.Provider/ReadSQLSchema"
-	Provider_NormalizeValues_FullMethodName        = "/ptah.provider.experimental.Provider/NormalizeValues"
-	Provider_ConvertValues_FullMethodName          = "/ptah.provider.experimental.Provider/ConvertValues"
-	Provider_CompareModels_FullMethodName          = "/ptah.provider.experimental.Provider/CompareModels"
-	Provider_PlanFeatures_FullMethodName           = "/ptah.provider.experimental.Provider/PlanFeatures"
-	Provider_PrepareTables_FullMethodName          = "/ptah.provider.experimental.Provider/PrepareTables"
-	Provider_ProjectTableCreations_FullMethodName  = "/ptah.provider.experimental.Provider/ProjectTableCreations"
-	Provider_ValidateSchema_FullMethodName         = "/ptah.provider.experimental.Provider/ValidateSchema"
-	Provider_SplitLintStatements_FullMethodName    = "/ptah.provider.experimental.Provider/SplitLintStatements"
-	Provider_AnnotateLintStatements_FullMethodName = "/ptah.provider.experimental.Provider/AnnotateLintStatements"
-	Provider_CheckLintMigrations_FullMethodName    = "/ptah.provider.experimental.Provider/CheckLintMigrations"
-	Provider_ProvisionDevDatabase_FullMethodName   = "/ptah.provider.experimental.Provider/ProvisionDevDatabase"
-	Provider_ReleaseDevDatabase_FullMethodName     = "/ptah.provider.experimental.Provider/ReleaseDevDatabase"
-	Provider_ListDevObjects_FullMethodName         = "/ptah.provider.experimental.Provider/ListDevObjects"
-	Provider_CleanDevDatabase_FullMethodName       = "/ptah.provider.experimental.Provider/CleanDevDatabase"
-	Provider_GuardReplay_FullMethodName            = "/ptah.provider.experimental.Provider/GuardReplay"
-	Provider_TypeRows_FullMethodName               = "/ptah.provider.experimental.Provider/TypeRows"
-	Provider_ReadRows_FullMethodName               = "/ptah.provider.experimental.Provider/ReadRows"
-	Provider_RenderRowWrites_FullMethodName        = "/ptah.provider.experimental.Provider/RenderRowWrites"
-	Provider_ListSeedTables_FullMethodName         = "/ptah.provider.experimental.Provider/ListSeedTables"
-	Provider_ApplySeed_FullMethodName              = "/ptah.provider.experimental.Provider/ApplySeed"
-	Provider_RecordSeed_FullMethodName             = "/ptah.provider.experimental.Provider/RecordSeed"
-	Provider_ReadSeedLedger_FullMethodName         = "/ptah.provider.experimental.Provider/ReadSeedLedger"
-	Provider_Execute_FullMethodName                = "/ptah.provider.experimental.Provider/Execute"
-	Provider_BeginTransaction_FullMethodName       = "/ptah.provider.experimental.Provider/BeginTransaction"
-	Provider_FinishTransaction_FullMethodName      = "/ptah.provider.experimental.Provider/FinishTransaction"
-	Provider_ReadHistory_FullMethodName            = "/ptah.provider.experimental.Provider/ReadHistory"
-	Provider_PrepareHistory_FullMethodName         = "/ptah.provider.experimental.Provider/PrepareHistory"
-	Provider_MutateHistory_FullMethodName          = "/ptah.provider.experimental.Provider/MutateHistory"
-	Provider_PrepareMetadata_FullMethodName        = "/ptah.provider.experimental.Provider/PrepareMetadata"
-	Provider_MutateMetadata_FullMethodName         = "/ptah.provider.experimental.Provider/MutateMetadata"
-	Provider_LookupMetadataTag_FullMethodName      = "/ptah.provider.experimental.Provider/LookupMetadataTag"
-	Provider_OpenMetadataRead_FullMethodName       = "/ptah.provider.experimental.Provider/OpenMetadataRead"
-	Provider_ReadMetadataPage_FullMethodName       = "/ptah.provider.experimental.Provider/ReadMetadataPage"
-	Provider_CloseMetadataRead_FullMethodName      = "/ptah.provider.experimental.Provider/CloseMetadataRead"
-	Provider_TryLock_FullMethodName                = "/ptah.provider.experimental.Provider/TryLock"
-	Provider_CheckLock_FullMethodName              = "/ptah.provider.experimental.Provider/CheckLock"
-	Provider_ReleaseLock_FullMethodName            = "/ptah.provider.experimental.Provider/ReleaseLock"
+	Provider_Describe_FullMethodName                  = "/ptah.provider.experimental.Provider/Describe"
+	Provider_Open_FullMethodName                      = "/ptah.provider.experimental.Provider/Open"
+	Provider_Close_FullMethodName                     = "/ptah.provider.experimental.Provider/Close"
+	Provider_Inspect_FullMethodName                   = "/ptah.provider.experimental.Provider/Inspect"
+	Provider_Render_FullMethodName                    = "/ptah.provider.experimental.Provider/Render"
+	Provider_AnalyzeSQL_FullMethodName                = "/ptah.provider.experimental.Provider/AnalyzeSQL"
+	Provider_DecodeSource_FullMethodName              = "/ptah.provider.experimental.Provider/DecodeSource"
+	Provider_ReadSQLSchema_FullMethodName             = "/ptah.provider.experimental.Provider/ReadSQLSchema"
+	Provider_NormalizeValues_FullMethodName           = "/ptah.provider.experimental.Provider/NormalizeValues"
+	Provider_ConvertValues_FullMethodName             = "/ptah.provider.experimental.Provider/ConvertValues"
+	Provider_CompareModels_FullMethodName             = "/ptah.provider.experimental.Provider/CompareModels"
+	Provider_PlanFeatures_FullMethodName              = "/ptah.provider.experimental.Provider/PlanFeatures"
+	Provider_PrepareTables_FullMethodName             = "/ptah.provider.experimental.Provider/PrepareTables"
+	Provider_ProjectTableCreations_FullMethodName     = "/ptah.provider.experimental.Provider/ProjectTableCreations"
+	Provider_ValidateSchema_FullMethodName            = "/ptah.provider.experimental.Provider/ValidateSchema"
+	Provider_SplitLintStatements_FullMethodName       = "/ptah.provider.experimental.Provider/SplitLintStatements"
+	Provider_AnnotateLintStatements_FullMethodName    = "/ptah.provider.experimental.Provider/AnnotateLintStatements"
+	Provider_CheckLintMigrations_FullMethodName       = "/ptah.provider.experimental.Provider/CheckLintMigrations"
+	Provider_ProvisionDevDatabase_FullMethodName      = "/ptah.provider.experimental.Provider/ProvisionDevDatabase"
+	Provider_ReleaseDevDatabase_FullMethodName        = "/ptah.provider.experimental.Provider/ReleaseDevDatabase"
+	Provider_ListDevObjects_FullMethodName            = "/ptah.provider.experimental.Provider/ListDevObjects"
+	Provider_CleanDevDatabase_FullMethodName          = "/ptah.provider.experimental.Provider/CleanDevDatabase"
+	Provider_GuardReplay_FullMethodName               = "/ptah.provider.experimental.Provider/GuardReplay"
+	Provider_TypeRows_FullMethodName                  = "/ptah.provider.experimental.Provider/TypeRows"
+	Provider_ReadRows_FullMethodName                  = "/ptah.provider.experimental.Provider/ReadRows"
+	Provider_RenderRowWrites_FullMethodName           = "/ptah.provider.experimental.Provider/RenderRowWrites"
+	Provider_ListSeedTables_FullMethodName            = "/ptah.provider.experimental.Provider/ListSeedTables"
+	Provider_ApplySeed_FullMethodName                 = "/ptah.provider.experimental.Provider/ApplySeed"
+	Provider_RecordSeed_FullMethodName                = "/ptah.provider.experimental.Provider/RecordSeed"
+	Provider_ReadSeedLedger_FullMethodName            = "/ptah.provider.experimental.Provider/ReadSeedLedger"
+	Provider_Execute_FullMethodName                   = "/ptah.provider.experimental.Provider/Execute"
+	Provider_BeginTransaction_FullMethodName          = "/ptah.provider.experimental.Provider/BeginTransaction"
+	Provider_FinishTransaction_FullMethodName         = "/ptah.provider.experimental.Provider/FinishTransaction"
+	Provider_ReadHistory_FullMethodName               = "/ptah.provider.experimental.Provider/ReadHistory"
+	Provider_PrepareHistory_FullMethodName            = "/ptah.provider.experimental.Provider/PrepareHistory"
+	Provider_MutateHistory_FullMethodName             = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_PrepareMetadata_FullMethodName           = "/ptah.provider.experimental.Provider/PrepareMetadata"
+	Provider_MutateMetadata_FullMethodName            = "/ptah.provider.experimental.Provider/MutateMetadata"
+	Provider_LookupMetadataTag_FullMethodName         = "/ptah.provider.experimental.Provider/LookupMetadataTag"
+	Provider_OpenMetadataRead_FullMethodName          = "/ptah.provider.experimental.Provider/OpenMetadataRead"
+	Provider_ReadMetadataPage_FullMethodName          = "/ptah.provider.experimental.Provider/ReadMetadataPage"
+	Provider_CloseMetadataRead_FullMethodName         = "/ptah.provider.experimental.Provider/CloseMetadataRead"
+	Provider_TryLock_FullMethodName                   = "/ptah.provider.experimental.Provider/TryLock"
+	Provider_CheckLock_FullMethodName                 = "/ptah.provider.experimental.Provider/CheckLock"
+	Provider_ReleaseLock_FullMethodName               = "/ptah.provider.experimental.Provider/ReleaseLock"
+	Provider_PrepareEmbeddingStore_FullMethodName     = "/ptah.provider.experimental.Provider/PrepareEmbeddingStore"
+	Provider_ReadEmbeddingState_FullMethodName        = "/ptah.provider.experimental.Provider/ReadEmbeddingState"
+	Provider_MutateEmbeddingState_FullMethodName      = "/ptah.provider.experimental.Provider/MutateEmbeddingState"
+	Provider_AppendEmbeddingEvent_FullMethodName      = "/ptah.provider.experimental.Provider/AppendEmbeddingEvent"
+	Provider_ReadEmbeddingEvents_FullMethodName       = "/ptah.provider.experimental.Provider/ReadEmbeddingEvents"
+	Provider_DescribeEmbeddingTarget_FullMethodName   = "/ptah.provider.experimental.Provider/DescribeEmbeddingTarget"
+	Provider_ResolveEmbeddingRelations_FullMethodName = "/ptah.provider.experimental.Provider/ResolveEmbeddingRelations"
+	Provider_MeasureEmbedding_FullMethodName          = "/ptah.provider.experimental.Provider/MeasureEmbedding"
+	Provider_PrepareEmbeddingTarget_FullMethodName    = "/ptah.provider.experimental.Provider/PrepareEmbeddingTarget"
+	Provider_BuildEmbeddingIndex_FullMethodName       = "/ptah.provider.experimental.Provider/BuildEmbeddingIndex"
+	Provider_ReadEmbeddingStructure_FullMethodName    = "/ptah.provider.experimental.Provider/ReadEmbeddingStructure"
+	Provider_DropEmbeddingGeneration_FullMethodName   = "/ptah.provider.experimental.Provider/DropEmbeddingGeneration"
+	Provider_ScanEmbeddingSource_FullMethodName       = "/ptah.provider.experimental.Provider/ScanEmbeddingSource"
+	Provider_ReadEmbeddingSourceRows_FullMethodName   = "/ptah.provider.experimental.Provider/ReadEmbeddingSourceRows"
+	Provider_ReadEmbeddingBatchState_FullMethodName   = "/ptah.provider.experimental.Provider/ReadEmbeddingBatchState"
+	Provider_CommitEmbeddingBatch_FullMethodName      = "/ptah.provider.experimental.Provider/CommitEmbeddingBatch"
+	Provider_ReadEmbeddingVerification_FullMethodName = "/ptah.provider.experimental.Provider/ReadEmbeddingVerification"
+	Provider_SearchEmbeddings_FullMethodName          = "/ptah.provider.experimental.Provider/SearchEmbeddings"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -124,6 +142,26 @@ type ProviderClient interface {
 	TryLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 	CheckLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
 	ReleaseLock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResult, error)
+	// Contract 25.2: the embedding store. Each call is used only when both
+	// sides list the feature embeddings.store.
+	PrepareEmbeddingStore(ctx context.Context, in *PrepareEmbeddingStoreRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	ReadEmbeddingState(ctx context.Context, in *ReadEmbeddingStateRequest, opts ...grpc.CallOption) (*EmbeddingState, error)
+	MutateEmbeddingState(ctx context.Context, in *MutateEmbeddingStateRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	AppendEmbeddingEvent(ctx context.Context, in *AppendEmbeddingEventRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	ReadEmbeddingEvents(ctx context.Context, in *ReadEmbeddingEventsRequest, opts ...grpc.CallOption) (*EmbeddingEventPage, error)
+	DescribeEmbeddingTarget(ctx context.Context, in *DescribeEmbeddingTargetRequest, opts ...grpc.CallOption) (*EmbeddingTargetObjects, error)
+	ResolveEmbeddingRelations(ctx context.Context, in *ResolveEmbeddingRelationsRequest, opts ...grpc.CallOption) (*EmbeddingRelations, error)
+	MeasureEmbedding(ctx context.Context, in *MeasureEmbeddingRequest, opts ...grpc.CallOption) (*EmbeddingMeasurement, error)
+	PrepareEmbeddingTarget(ctx context.Context, in *PrepareEmbeddingTargetRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	BuildEmbeddingIndex(ctx context.Context, in *BuildEmbeddingIndexRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	ReadEmbeddingStructure(ctx context.Context, in *ReadEmbeddingStructureRequest, opts ...grpc.CallOption) (*EmbeddingStructure, error)
+	DropEmbeddingGeneration(ctx context.Context, in *DropEmbeddingGenerationRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	ScanEmbeddingSource(ctx context.Context, in *ScanEmbeddingSourceRequest, opts ...grpc.CallOption) (*EmbeddingSourcePage, error)
+	ReadEmbeddingSourceRows(ctx context.Context, in *ReadEmbeddingSourceRowsRequest, opts ...grpc.CallOption) (*EmbeddingSourceRows, error)
+	ReadEmbeddingBatchState(ctx context.Context, in *ReadEmbeddingBatchStateRequest, opts ...grpc.CallOption) (*EmbeddingBatchState, error)
+	CommitEmbeddingBatch(ctx context.Context, in *CommitEmbeddingBatchRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
+	ReadEmbeddingVerification(ctx context.Context, in *ReadEmbeddingVerificationRequest, opts ...grpc.CallOption) (*EmbeddingVerificationPage, error)
+	SearchEmbeddings(ctx context.Context, in *SearchEmbeddingsRequest, opts ...grpc.CallOption) (*EmbeddingSearchResult, error)
 }
 
 type providerClient struct {
@@ -584,6 +622,186 @@ func (c *providerClient) ReleaseLock(ctx context.Context, in *LockRequest, opts 
 	return out, nil
 }
 
+func (c *providerClient) PrepareEmbeddingStore(ctx context.Context, in *PrepareEmbeddingStoreRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareEmbeddingStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingState(ctx context.Context, in *ReadEmbeddingStateRequest, opts ...grpc.CallOption) (*EmbeddingState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingState)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateEmbeddingState(ctx context.Context, in *MutateEmbeddingStateRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_MutateEmbeddingState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) AppendEmbeddingEvent(ctx context.Context, in *AppendEmbeddingEventRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_AppendEmbeddingEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingEvents(ctx context.Context, in *ReadEmbeddingEventsRequest, opts ...grpc.CallOption) (*EmbeddingEventPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingEventPage)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) DescribeEmbeddingTarget(ctx context.Context, in *DescribeEmbeddingTargetRequest, opts ...grpc.CallOption) (*EmbeddingTargetObjects, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingTargetObjects)
+	err := c.cc.Invoke(ctx, Provider_DescribeEmbeddingTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ResolveEmbeddingRelations(ctx context.Context, in *ResolveEmbeddingRelationsRequest, opts ...grpc.CallOption) (*EmbeddingRelations, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingRelations)
+	err := c.cc.Invoke(ctx, Provider_ResolveEmbeddingRelations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MeasureEmbedding(ctx context.Context, in *MeasureEmbeddingRequest, opts ...grpc.CallOption) (*EmbeddingMeasurement, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingMeasurement)
+	err := c.cc.Invoke(ctx, Provider_MeasureEmbedding_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareEmbeddingTarget(ctx context.Context, in *PrepareEmbeddingTargetRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareEmbeddingTarget_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) BuildEmbeddingIndex(ctx context.Context, in *BuildEmbeddingIndexRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_BuildEmbeddingIndex_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingStructure(ctx context.Context, in *ReadEmbeddingStructureRequest, opts ...grpc.CallOption) (*EmbeddingStructure, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingStructure)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingStructure_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) DropEmbeddingGeneration(ctx context.Context, in *DropEmbeddingGenerationRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_DropEmbeddingGeneration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ScanEmbeddingSource(ctx context.Context, in *ScanEmbeddingSourceRequest, opts ...grpc.CallOption) (*EmbeddingSourcePage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingSourcePage)
+	err := c.cc.Invoke(ctx, Provider_ScanEmbeddingSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingSourceRows(ctx context.Context, in *ReadEmbeddingSourceRowsRequest, opts ...grpc.CallOption) (*EmbeddingSourceRows, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingSourceRows)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingSourceRows_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingBatchState(ctx context.Context, in *ReadEmbeddingBatchStateRequest, opts ...grpc.CallOption) (*EmbeddingBatchState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingBatchState)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingBatchState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CommitEmbeddingBatch(ctx context.Context, in *CommitEmbeddingBatchRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingWriteResult)
+	err := c.cc.Invoke(ctx, Provider_CommitEmbeddingBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadEmbeddingVerification(ctx context.Context, in *ReadEmbeddingVerificationRequest, opts ...grpc.CallOption) (*EmbeddingVerificationPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingVerificationPage)
+	err := c.cc.Invoke(ctx, Provider_ReadEmbeddingVerification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) SearchEmbeddings(ctx context.Context, in *SearchEmbeddingsRequest, opts ...grpc.CallOption) (*EmbeddingSearchResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EmbeddingSearchResult)
+	err := c.cc.Invoke(ctx, Provider_SearchEmbeddings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -642,6 +860,26 @@ type ProviderServer interface {
 	TryLock(context.Context, *LockRequest) (*LockResult, error)
 	CheckLock(context.Context, *LockRequest) (*LockResult, error)
 	ReleaseLock(context.Context, *LockRequest) (*LockResult, error)
+	// Contract 25.2: the embedding store. Each call is used only when both
+	// sides list the feature embeddings.store.
+	PrepareEmbeddingStore(context.Context, *PrepareEmbeddingStoreRequest) (*EmbeddingWriteResult, error)
+	ReadEmbeddingState(context.Context, *ReadEmbeddingStateRequest) (*EmbeddingState, error)
+	MutateEmbeddingState(context.Context, *MutateEmbeddingStateRequest) (*EmbeddingWriteResult, error)
+	AppendEmbeddingEvent(context.Context, *AppendEmbeddingEventRequest) (*EmbeddingWriteResult, error)
+	ReadEmbeddingEvents(context.Context, *ReadEmbeddingEventsRequest) (*EmbeddingEventPage, error)
+	DescribeEmbeddingTarget(context.Context, *DescribeEmbeddingTargetRequest) (*EmbeddingTargetObjects, error)
+	ResolveEmbeddingRelations(context.Context, *ResolveEmbeddingRelationsRequest) (*EmbeddingRelations, error)
+	MeasureEmbedding(context.Context, *MeasureEmbeddingRequest) (*EmbeddingMeasurement, error)
+	PrepareEmbeddingTarget(context.Context, *PrepareEmbeddingTargetRequest) (*EmbeddingWriteResult, error)
+	BuildEmbeddingIndex(context.Context, *BuildEmbeddingIndexRequest) (*EmbeddingWriteResult, error)
+	ReadEmbeddingStructure(context.Context, *ReadEmbeddingStructureRequest) (*EmbeddingStructure, error)
+	DropEmbeddingGeneration(context.Context, *DropEmbeddingGenerationRequest) (*EmbeddingWriteResult, error)
+	ScanEmbeddingSource(context.Context, *ScanEmbeddingSourceRequest) (*EmbeddingSourcePage, error)
+	ReadEmbeddingSourceRows(context.Context, *ReadEmbeddingSourceRowsRequest) (*EmbeddingSourceRows, error)
+	ReadEmbeddingBatchState(context.Context, *ReadEmbeddingBatchStateRequest) (*EmbeddingBatchState, error)
+	CommitEmbeddingBatch(context.Context, *CommitEmbeddingBatchRequest) (*EmbeddingWriteResult, error)
+	ReadEmbeddingVerification(context.Context, *ReadEmbeddingVerificationRequest) (*EmbeddingVerificationPage, error)
+	SearchEmbeddings(context.Context, *SearchEmbeddingsRequest) (*EmbeddingSearchResult, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -786,6 +1024,60 @@ func (UnimplementedProviderServer) CheckLock(context.Context, *LockRequest) (*Lo
 }
 func (UnimplementedProviderServer) ReleaseLock(context.Context, *LockRequest) (*LockResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReleaseLock not implemented")
+}
+func (UnimplementedProviderServer) PrepareEmbeddingStore(context.Context, *PrepareEmbeddingStoreRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareEmbeddingStore not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingState(context.Context, *ReadEmbeddingStateRequest) (*EmbeddingState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingState not implemented")
+}
+func (UnimplementedProviderServer) MutateEmbeddingState(context.Context, *MutateEmbeddingStateRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateEmbeddingState not implemented")
+}
+func (UnimplementedProviderServer) AppendEmbeddingEvent(context.Context, *AppendEmbeddingEventRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendEmbeddingEvent not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingEvents(context.Context, *ReadEmbeddingEventsRequest) (*EmbeddingEventPage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingEvents not implemented")
+}
+func (UnimplementedProviderServer) DescribeEmbeddingTarget(context.Context, *DescribeEmbeddingTargetRequest) (*EmbeddingTargetObjects, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeEmbeddingTarget not implemented")
+}
+func (UnimplementedProviderServer) ResolveEmbeddingRelations(context.Context, *ResolveEmbeddingRelationsRequest) (*EmbeddingRelations, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveEmbeddingRelations not implemented")
+}
+func (UnimplementedProviderServer) MeasureEmbedding(context.Context, *MeasureEmbeddingRequest) (*EmbeddingMeasurement, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MeasureEmbedding not implemented")
+}
+func (UnimplementedProviderServer) PrepareEmbeddingTarget(context.Context, *PrepareEmbeddingTargetRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareEmbeddingTarget not implemented")
+}
+func (UnimplementedProviderServer) BuildEmbeddingIndex(context.Context, *BuildEmbeddingIndexRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BuildEmbeddingIndex not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingStructure(context.Context, *ReadEmbeddingStructureRequest) (*EmbeddingStructure, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingStructure not implemented")
+}
+func (UnimplementedProviderServer) DropEmbeddingGeneration(context.Context, *DropEmbeddingGenerationRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DropEmbeddingGeneration not implemented")
+}
+func (UnimplementedProviderServer) ScanEmbeddingSource(context.Context, *ScanEmbeddingSourceRequest) (*EmbeddingSourcePage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScanEmbeddingSource not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingSourceRows(context.Context, *ReadEmbeddingSourceRowsRequest) (*EmbeddingSourceRows, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingSourceRows not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingBatchState(context.Context, *ReadEmbeddingBatchStateRequest) (*EmbeddingBatchState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingBatchState not implemented")
+}
+func (UnimplementedProviderServer) CommitEmbeddingBatch(context.Context, *CommitEmbeddingBatchRequest) (*EmbeddingWriteResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CommitEmbeddingBatch not implemented")
+}
+func (UnimplementedProviderServer) ReadEmbeddingVerification(context.Context, *ReadEmbeddingVerificationRequest) (*EmbeddingVerificationPage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadEmbeddingVerification not implemented")
+}
+func (UnimplementedProviderServer) SearchEmbeddings(context.Context, *SearchEmbeddingsRequest) (*EmbeddingSearchResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchEmbeddings not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -1618,6 +1910,330 @@ func _Provider_ReleaseLock_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_PrepareEmbeddingStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareEmbeddingStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareEmbeddingStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareEmbeddingStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareEmbeddingStore(ctx, req.(*PrepareEmbeddingStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingState(ctx, req.(*ReadEmbeddingStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateEmbeddingState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateEmbeddingStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateEmbeddingState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateEmbeddingState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateEmbeddingState(ctx, req.(*MutateEmbeddingStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_AppendEmbeddingEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendEmbeddingEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).AppendEmbeddingEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_AppendEmbeddingEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).AppendEmbeddingEvent(ctx, req.(*AppendEmbeddingEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingEvents(ctx, req.(*ReadEmbeddingEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_DescribeEmbeddingTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeEmbeddingTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).DescribeEmbeddingTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_DescribeEmbeddingTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).DescribeEmbeddingTarget(ctx, req.(*DescribeEmbeddingTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ResolveEmbeddingRelations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveEmbeddingRelationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ResolveEmbeddingRelations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ResolveEmbeddingRelations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ResolveEmbeddingRelations(ctx, req.(*ResolveEmbeddingRelationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MeasureEmbedding_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MeasureEmbeddingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MeasureEmbedding(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MeasureEmbedding_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MeasureEmbedding(ctx, req.(*MeasureEmbeddingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareEmbeddingTarget_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareEmbeddingTargetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareEmbeddingTarget(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareEmbeddingTarget_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareEmbeddingTarget(ctx, req.(*PrepareEmbeddingTargetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_BuildEmbeddingIndex_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BuildEmbeddingIndexRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).BuildEmbeddingIndex(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_BuildEmbeddingIndex_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).BuildEmbeddingIndex(ctx, req.(*BuildEmbeddingIndexRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingStructure_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingStructureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingStructure(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingStructure_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingStructure(ctx, req.(*ReadEmbeddingStructureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_DropEmbeddingGeneration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DropEmbeddingGenerationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).DropEmbeddingGeneration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_DropEmbeddingGeneration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).DropEmbeddingGeneration(ctx, req.(*DropEmbeddingGenerationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ScanEmbeddingSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScanEmbeddingSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ScanEmbeddingSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ScanEmbeddingSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ScanEmbeddingSource(ctx, req.(*ScanEmbeddingSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingSourceRows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingSourceRowsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingSourceRows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingSourceRows_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingSourceRows(ctx, req.(*ReadEmbeddingSourceRowsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingBatchState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingBatchStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingBatchState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingBatchState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingBatchState(ctx, req.(*ReadEmbeddingBatchStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CommitEmbeddingBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitEmbeddingBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CommitEmbeddingBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CommitEmbeddingBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CommitEmbeddingBatch(ctx, req.(*CommitEmbeddingBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadEmbeddingVerification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadEmbeddingVerificationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadEmbeddingVerification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadEmbeddingVerification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadEmbeddingVerification(ctx, req.(*ReadEmbeddingVerificationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_SearchEmbeddings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchEmbeddingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).SearchEmbeddings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_SearchEmbeddings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).SearchEmbeddings(ctx, req.(*SearchEmbeddingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1804,6 +2420,78 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseLock",
 			Handler:    _Provider_ReleaseLock_Handler,
+		},
+		{
+			MethodName: "PrepareEmbeddingStore",
+			Handler:    _Provider_PrepareEmbeddingStore_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingState",
+			Handler:    _Provider_ReadEmbeddingState_Handler,
+		},
+		{
+			MethodName: "MutateEmbeddingState",
+			Handler:    _Provider_MutateEmbeddingState_Handler,
+		},
+		{
+			MethodName: "AppendEmbeddingEvent",
+			Handler:    _Provider_AppendEmbeddingEvent_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingEvents",
+			Handler:    _Provider_ReadEmbeddingEvents_Handler,
+		},
+		{
+			MethodName: "DescribeEmbeddingTarget",
+			Handler:    _Provider_DescribeEmbeddingTarget_Handler,
+		},
+		{
+			MethodName: "ResolveEmbeddingRelations",
+			Handler:    _Provider_ResolveEmbeddingRelations_Handler,
+		},
+		{
+			MethodName: "MeasureEmbedding",
+			Handler:    _Provider_MeasureEmbedding_Handler,
+		},
+		{
+			MethodName: "PrepareEmbeddingTarget",
+			Handler:    _Provider_PrepareEmbeddingTarget_Handler,
+		},
+		{
+			MethodName: "BuildEmbeddingIndex",
+			Handler:    _Provider_BuildEmbeddingIndex_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingStructure",
+			Handler:    _Provider_ReadEmbeddingStructure_Handler,
+		},
+		{
+			MethodName: "DropEmbeddingGeneration",
+			Handler:    _Provider_DropEmbeddingGeneration_Handler,
+		},
+		{
+			MethodName: "ScanEmbeddingSource",
+			Handler:    _Provider_ScanEmbeddingSource_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingSourceRows",
+			Handler:    _Provider_ReadEmbeddingSourceRows_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingBatchState",
+			Handler:    _Provider_ReadEmbeddingBatchState_Handler,
+		},
+		{
+			MethodName: "CommitEmbeddingBatch",
+			Handler:    _Provider_CommitEmbeddingBatch_Handler,
+		},
+		{
+			MethodName: "ReadEmbeddingVerification",
+			Handler:    _Provider_ReadEmbeddingVerification_Handler,
+		},
+		{
+			MethodName: "SearchEmbeddings",
+			Handler:    _Provider_SearchEmbeddings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -69,11 +69,15 @@ func (s sessionCall[Q, R]) join(err error) error {
 }
 
 // serve is the server half: the same checks, with the owner given its own
-// copy of the request. The caller has already refused a missing service.
+// copy of the request. The caller has already refused a missing service. A
+// call whose feature is two-way is refused unless the host listed it.
 func (s sessionCall[Q, R]) serve(ctx context.Context, server *serverAdapter, request Q, invoke func(context.Context, Q) (R, error)) (R, error) {
 	var zero R
 	if err := ctx.Err(); err != nil {
 		return zero, status.FromContextError(err).Err()
+	}
+	if slices.Contains(provider.TwoWayFeatures(), s.feature) && !slices.Contains(server.negotiated().GetFeatures(), s.feature) {
+		return zero, status.Error(codes.FailedPrecondition, s.feature+" was not negotiated")
 	}
 	if s.transaction != "" && nilService(server.server.Transactions) {
 		return zero, status.Error(codes.Unimplemented, "transactions are unavailable")
