@@ -154,5 +154,5 @@ func WriteRecord(root string, platform providerrelease.Platform, record Record) 
 	if err != nil {
 		return err
 	}
-	return os.Rename(temp.Name(), RecordPath(root, record.ProviderID, platform))
+	return replaceRecord(temp.Name(), RecordPath(root, record.ProviderID, platform))
 }
