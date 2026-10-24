@@ -1,0 +1,520 @@
+{
+  "comment": "Every finding category `ptah schema drift` can report, with the severities a finding of it can carry and whether it is written alone (bare) or followed by a colon and a feature owner's change kind (qualified). Generated from internal/cli/drift.FindingCategories by `scripts/check-docsync.sh --write`; do not edit.",
+  "categories": [
+    {
+      "category": "columns_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "columns_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "columns_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "comments_changed",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "constraints_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "constraints_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "constraints_validated",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "data_rows_deleted",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "data_rows_inserted",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "data_rows_updated",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "enum_values_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "enum_values_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "enums_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "enums_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "feature_access_narrowed",
+      "severities": [
+        "warning"
+      ],
+      "bare": false,
+      "qualified": true
+    },
+    {
+      "category": "feature_access_unchanged",
+      "severities": [
+        "safe"
+      ],
+      "bare": false,
+      "qualified": true
+    },
+    {
+      "category": "feature_access_unknown",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": true
+    },
+    {
+      "category": "feature_access_widened",
+      "severities": [
+        "destructive"
+      ],
+      "bare": false,
+      "qualified": true
+    },
+    {
+      "category": "feature_changes",
+      "severities": [
+        "safe",
+        "warning",
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": true
+    },
+    {
+      "category": "functions_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "functions_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "functions_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "grant_options_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "grant_options_removed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "grants_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "grants_removed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "index_visibility_changed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "indexes_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "indexes_removed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "indexes_renamed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "materialized_views_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "materialized_views_modified",
+      "severities": [
+        "warning",
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "materialized_views_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_enabled_tables_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_enabled_tables_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_force_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_force_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_policies_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_policies_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "rls_policies_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "role_memberships_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "role_memberships_removed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "roles_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "roles_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "roles_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "schemas_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "schemas_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "schemas_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "sequences_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "sequences_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "sequences_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "table_constraints_added",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "table_constraints_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "tables_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "tables_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "triggers_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "triggers_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "triggers_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "undecided",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "unique_protections_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "vector_dimension_changed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "views_added",
+      "severities": [
+        "safe"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "views_modified",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
+      "category": "views_removed",
+      "severities": [
+        "destructive"
+      ],
+      "bare": true,
+      "qualified": false
+    }
+  ]
+}

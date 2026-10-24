@@ -274,6 +274,9 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 // The declared objects the read could not check join the list the same way. A
 // comparison that did not look is not a database that matches, so the check
 // does not pass on one at the default threshold.
+//
+// [FindingCategories] lists the categories of the same three producers, so a
+// producer added here belongs there too.
 func assessDrift(
 	result *schemaops.CompareResult,
 	severity string,

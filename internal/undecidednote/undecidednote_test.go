@@ -165,3 +165,17 @@ func TestSummaryCountsTheObjects(t *testing.T) {
 		})
 	}
 }
+
+// TestFindingCategories_IsWhatFindingsReports holds the listed category to the
+// finding an undecided object produces.
+func TestFindingCategories_IsWhatFindingsReports(t *testing.T) {
+	c := qt.New(t)
+	undecided := schemadiff.Diagnostics{Common: []coverage.Object{{Kind: coverage.Role, Name: "app"}}}
+
+	findings := undecidednote.Findings(undecided)
+
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(undecidednote.FindingCategories(), qt.DeepEquals, []safety.FindingCategory{
+		{Category: findings[0].Category, Severities: []safety.Severity{findings[0].Severity}, Bare: true},
+	})
+}

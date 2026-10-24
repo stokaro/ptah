@@ -9,6 +9,7 @@ readerQuestion: "Which finding categories can a drift report name, and how sever
 goal: "Look up every category a drift report can name and the severity it carries."
 sourceOfTruth:
   - "migration/safety"
+  - "internal/cli/drift"
 generated: false
 searchAliases:
   - "drift categories"
@@ -102,3 +103,33 @@ finding at `warning` severity; see
 [Drift: the difference as a check](../../direct/compare-and-drift/#drift-the-difference-as-a-check).
 Reference rows have
 [findings of their own](../../direct/compare-and-drift/#reference-rows-are-part-of-the-check).
+
+## The categories as data
+
+`docs/drift-findings.json` in the Ptah repository lists every category a drift
+report can carry: the categories above, `undecided`, and the reference rows'
+`data_rows_inserted`, `data_rows_updated` and `data_rows_deleted`. The file is
+generated, and a test fails when it falls behind the code, so a tool that keeps
+its own list of categories can read it at the commit it pins rather than read
+Ptah's source:
+
+```bash illustration
+git show <commit>:docs/drift-findings.json
+```
+
+Each entry names a category, the severities a finding of it can carry from the
+lowest to the highest, and the forms it is written in: `bare` for the category
+alone, and `qualified` for the category followed by a colon and a feature
+owner's change kind.
+
+```json
+{
+  "category": "feature_access_unknown",
+  "severities": ["destructive"],
+  "bare": true,
+  "qualified": true
+}
+```
+
+In Go, `migration/safety.FindingCategories` returns the schema comparison's
+share of the list in the same shape.

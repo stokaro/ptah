@@ -29,6 +29,15 @@ import (
 // FindingCategory is the category [Findings] reports undecided objects under.
 const FindingCategory = "undecided"
 
+// findingSeverity is the severity [Findings] reports them at.
+const findingSeverity = safety.Warning
+
+// FindingCategories returns the category [Findings] reports, in the shape
+// [safety.FindingCategories] lists the schema's.
+func FindingCategories() []safety.FindingCategory {
+	return []safety.FindingCategory{{Category: FindingCategory, Severities: []safety.Severity{findingSeverity}, Bare: true}}
+}
+
 // Findings grades the undecided objects the way drift grades a difference: one
 // finding, counting them, at [safety.Warning]. It is empty when nothing was
 // withheld.
@@ -40,7 +49,7 @@ func Findings(undecided schemadiff.Diagnostics) []safety.Finding {
 	if undecided.Empty() {
 		return nil
 	}
-	return []safety.Finding{{Category: FindingCategory, Count: undecided.Count(), Severity: safety.Warning}}
+	return []safety.Finding{{Category: FindingCategory, Count: undecided.Count(), Severity: findingSeverity}}
 }
 
 // Summary says how many declared objects could not be decided, as a clause a
