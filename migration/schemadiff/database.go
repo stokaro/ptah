@@ -614,10 +614,14 @@ func resolveCheckExpressions(
 	if desired == nil || database == nil {
 		return nil, nil
 	}
-	held := make(map[string]struct{}, len(database.Constraints))
+	held := make(map[string]string, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		if strings.EqualFold(constraint.Type, "CHECK") {
-			held[exprkey.CheckParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)] = struct{}{}
+			key := exprkey.CheckParts(semantics, constraint.Schema, constraint.TableName, constraint.Name)
+			held[key] = ""
+			if constraint.CheckClause != nil {
+				held[key] = strings.TrimSpace(*constraint.CheckClause)
+			}
 		}
 	}
 	columns := liveTableColumns(database, semantics)
@@ -651,7 +655,68 @@ func resolveCheckExpressions(
 	if err != nil {
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
+	if err := reconcileCheckSpellings(ctx, conn, probes, held, checks); err != nil {
+		return nil, err
+	}
 	return checks, nil
+}
+
+// The second pass asks about two expressions per constraint, under the
+// constraint's key and one of these. A key is never sent to the server.
+const (
+	checkDeclaredSuffix = "\x00declared"
+	checkStoredSuffix   = "\x00stored"
+)
+
+// reconcileCheckSpellings asks the server a second time about each resolved
+// CHECK that still differs from the one the database holds, and records the
+// held spelling where the two are one expression.
+//
+// One pass through the server is not always enough, because PostgreSQL does not
+// print a CHECK in a form that reads back to itself. Measured on 15.19:
+//
+//	declared  kind IN ('a', 'b')
+//	stored    ((kind)::text = ANY ((ARRAY['a'::character varying, 'b'::character varying])::text[]))
+//	that text written back is stored as
+//	          ((kind)::text = ANY (ARRAY[('a'::character varying)::text, ('b'::character varying)::text]))
+//
+// A history whose migrations were written from an inspected database holds the
+// last form, and the declaration resolves to the middle one, so the check was
+// dropped and added on every run. Put through the server once more, both
+// spellings print the same text; a check whose values changed still does not.
+func reconcileCheckSpellings(
+	ctx context.Context,
+	conn Connection,
+	probes []dbexprprobe.CheckExpressionProbe,
+	held map[string]string,
+	checks map[string]config.CheckExpression,
+) error {
+	var again []dbexprprobe.CheckExpressionProbe
+	for _, probe := range probes {
+		resolved, live := checks[probe.Key], held[probe.Key]
+		if !resolved.Resolved || live == "" || resolved.Expression == live {
+			continue
+		}
+		declared, stored := probe, probe
+		declared.Key, declared.Expression = probe.Key+checkDeclaredSuffix, resolved.Expression
+		stored.Key, stored.Expression = probe.Key+checkStoredSuffix, live
+		again = append(again, declared, stored)
+	}
+	if len(again) == 0 {
+		return nil
+	}
+	answers, err := dbexprprobe.ResolveCheckExpressions(ctx, conn, again)
+	if err != nil {
+		return fmt.Errorf("compare schemas: %w", err)
+	}
+	for i := 0; i < len(again); i += 2 {
+		key := strings.TrimSuffix(again[i].Key, checkDeclaredSuffix)
+		declared, stored := answers[again[i].Key], answers[again[i+1].Key]
+		if declared.Resolved && stored.Resolved && declared.Expression == stored.Expression {
+			checks[key] = config.CheckExpression{Expression: held[key], Resolved: true}
+		}
+	}
+	return nil
 }
 
 // resolveIndexExpressions normalizes the declared expression and predicate of

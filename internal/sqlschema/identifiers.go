@@ -4,7 +4,9 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/sqlident"
@@ -35,7 +37,18 @@ import (
 //
 // A dialect with quoting of its own, as YQL's backslash escapes are YDB's, is
 // read by internal/sqlident first; see [sqlident.ReadName].
+//
+// A name longer than the limit of a server that cuts it, quoted or not, is cut
+// the way that server's lexer cuts it; see [descriptor.IdentifierLimit]. Ent's
+// schema export writes foreign keys such as
+// `ledger_breakage_records_ledger_breakage_records_planned_releases`, 64 bytes,
+// and PostgreSQL creates them under the first 63. Read whole, the name was
+// refused as over the limit, although the server accepts the file.
 func identifierPart(sourcePlatform, part string) string {
+	return storedIdentifier(sourcePlatform, foldedIdentifierPart(sourcePlatform, part))
+}
+
+func foldedIdentifierPart(sourcePlatform, part string) string {
 	part = strings.TrimSpace(part)
 	if name, ok := sqlident.ReadName(sourcePlatform, part); ok {
 		return name
@@ -47,6 +60,20 @@ func identifierPart(sourcePlatform, part string) string {
 		return identifier.Comparison(fold).IdentityKey(part)
 	}
 	return part
+}
+
+// storedIdentifier is name as a server that cuts long identifiers stores it: at
+// most the limit's bytes, ending on a character boundary.
+func storedIdentifier(sourcePlatform, name string) string {
+	limit := factsOf(sourcePlatform).identifierLimit
+	if !limit.Truncates || limit.Unit != string(capability.IdentifierBytes) || len(name) <= limit.Max {
+		return name
+	}
+	cut := limit.Max
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
 }
 
 // resolveDeclaredName returns the index in declared of the name that written

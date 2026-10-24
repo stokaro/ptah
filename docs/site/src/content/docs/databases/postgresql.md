@@ -163,6 +163,15 @@ The server stores that qualifier unqualified. The probe searches `pg_temp` last,
 so every other name in the expression, `public.clients` included, still reads
 the real table.
 
+One pass through the server does not always reach the database's spelling.
+PostgreSQL prints `kind IN ('a', 'b')` as `kind::text = ANY ((ARRAY['a'::character
+varying, 'b'::character varying])::text[])`, and stores that text, written back,
+as `kind::text = ANY (ARRAY[('a'::character varying)::text, ...])`. A history
+written from an inspected database holds the last form. When the declaration's
+answer differs from the stored CHECK, Ptah asks the same server about both
+texts once more and compares the two answers. A check whose values changed is
+still a change.
+
 The server asked is the one the other side was read from. `schema apply` asks
 the target. `migrate diff` and `migrations generate --replay` ask the dev
 database the migration directory was replayed on. Both compare on a session

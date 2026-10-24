@@ -440,6 +440,13 @@ server's `lower_case_table_names`, which a schema file does not carry, so a
 spelling reaches a table that matches it exactly, or else the one table that
 differs from it only in case. A read with no dialect compares exactly.
 
+**A name past the limit is cut where the server cuts it.** PostgreSQL and
+YugabyteDB keep the first 63 bytes of a longer name, quoted or not, ending on a
+character boundary, and print a notice. The reader records the name the same
+way, so a foreign key that Ent's schema export names in 64 bytes is the key the
+server holds, and an `ALTER TABLE` that names it by its first 63 bytes reaches
+it. CockroachDB keeps a long name whole, and so does the reader there.
+
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,
 and `"PUBLIC"` is the `PUBLIC` keyword.

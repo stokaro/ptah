@@ -44,7 +44,7 @@ func yugabyteDB() descriptor.Dialect {
 				},
 			},
 		},
-		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes"},
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes", Truncates: true},
 
 		// How a connection reaches the server.
 		Driver:     "pgx",
