@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/rundiag"
 )
 
 // RunContext runs cmd under ctx and reports the status a process would exit
@@ -21,9 +22,14 @@ import (
 // watch for something that cannot arrive; a host that wants to stop a command
 // cancels the context it passed in. On the native surface runCommand still
 // derives that context from the signal, so the CLI's behavior is unchanged.
+//
+// The run collects the warnings that concern many objects and writes one line
+// per kind when the command ends, whether it succeeded or not; see [rundiag].
 func RunContext(ctx context.Context, cmd *cobra.Command, args ...string) int {
+	report := rundiag.New()
+	defer report.Flush()
 	cmd.SetArgs(args)
-	cmd.SetContext(ctx)
+	cmd.SetContext(rundiag.With(ctx, report))
 
 	if err := executeWithRecovery(cmd); err != nil {
 		return exitcode.Code(err, 2)

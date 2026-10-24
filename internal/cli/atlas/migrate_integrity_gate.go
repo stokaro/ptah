@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"path"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/migratevalidate"
 	"ptah.run/internal/migratesum"
+	"ptah.run/internal/rundiag"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -312,8 +314,9 @@ func warnDeclinedAtlasFiles(cmd *cobra.Command, fsys fs.FS) {
 	}
 	out := cmd.ErrOrStderr()
 	for _, name := range declined {
-		fmt.Fprintf(out, "warning: %s is not covered by atlas.sum and will not run; "+
-			"Atlas migrations are top-level files named *.sql\n", name)
+		line := name + " is not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql"
+		_ = rundiag.Warn(cmd.Context(), out, rundiag.UncoveredMigrationFiles,
+			rundiag.Record{Key: name, Line: line, Attrs: []slog.Attr{slog.String("file", name)}})
 	}
 }
 

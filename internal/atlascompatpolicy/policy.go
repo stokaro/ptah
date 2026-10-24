@@ -778,6 +778,9 @@ func Resolve() (Policy, error) {
 // non-boolean, and a name in both classifications fails there.
 var gatedPresenceEnvVars = []string{
 	"PTAH_LOG_FORMAT",
+	// Sets the level of the default logger, which lists the objects a run's
+	// aggregated warnings count. The community binary has no such setting.
+	"PTAH_LOG_LEVEL",
 	// Names the OCI namespace `atlas://` references resolve against. The
 	// community binary has no such setting, so a strict run that consumed it
 	// would fetch from a backend the oracle never reaches.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/rundiag"
 )
 
 const (
@@ -231,7 +233,7 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
-	if err := ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), config); err != nil {
+	if err := ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), config); err != nil {
 		return projectconfig.Config{}, err
 	}
 	bindProjectMigrationDirectory(cmd, config)
@@ -250,20 +252,24 @@ func bindProjectMigrationDirectory(cmd *cobra.Command, config projectconfig.Conf
 	cmd.SetContext(migrationsource.WithVirtual(cmd.Context(), dir.Value, fsys, dir.Value))
 }
 
-// ReportIgnoredAtlasConstructs writes one warning for every atlas.hcl name
-// that Atlas CE accepts without acting on. Ptah preserves this compatibility
+// ReportIgnoredAtlasConstructs raises a warning for every atlas.hcl name that
+// Atlas CE accepts without acting on. Ptah preserves this compatibility
 // behavior, but makes the resulting no-op visible instead of silently hiding
-// a likely typo or unsupported policy.
-func ReportIgnoredAtlasConstructs(out io.Writer, config projectconfig.Config) error {
+// a likely typo or unsupported policy. A run reports them together; see
+// [rundiag.IgnoredProjectSettings].
+func ReportIgnoredAtlasConstructs(ctx context.Context, out io.Writer, config projectconfig.Config) error {
 	for _, construct := range config.IgnoredConstructs {
-		if _, err := fmt.Fprintf(
-			out,
-			"warning: atlas.hcl %s %q at %s:%d is ignored for Atlas compatibility and has no effect\n",
+		line := fmt.Sprintf(
+			"atlas.hcl %s %q at %s:%d is ignored for Atlas compatibility and has no effect",
 			construct.Kind,
 			construct.Name,
 			construct.Filename,
 			construct.Line,
-		); err != nil {
+		)
+		if err := rundiag.Warn(ctx, out, rundiag.IgnoredProjectSettings, rundiag.Record{Key: line, Line: line, Attrs: []slog.Attr{
+			slog.String("kind", construct.Kind), slog.String("name", construct.Name),
+			slog.String("file", construct.Filename), slog.Int("line", construct.Line),
+		}}); err != nil {
 			return fmt.Errorf("write ignored atlas.hcl construct warning: %w", err)
 		}
 	}

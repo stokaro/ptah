@@ -1083,11 +1083,18 @@ Ptah gives each project-config name one of three outcomes:
 | Ignored by Atlas CE | Accepted for compatibility and reported on stderr as having no effect. |
 
 The ignored category contains only names that Atlas CE itself accepts without
-acting on. Ptah does not silently discard them. A successful command reports
-each ignored source location once:
+acting on. Ptah does not silently discard them. A command reports one ignored
+name with its source location:
 
 ```text
 warning: atlas.hcl attribute "project" at atlas.hcl:2 is ignored for Atlas compatibility and has no effect
+```
+
+Several are one line with how many, and `PTAH_LOG_LEVEL=debug` lists each with
+its location:
+
+```text
+warning: 3 atlas.hcl settings are ignored for Atlas compatibility and have no effect; PTAH_LOG_LEVEL=debug lists them
 ```
 
 ### Structured settings must be written as blocks
