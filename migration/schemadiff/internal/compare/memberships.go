@@ -53,7 +53,9 @@ func RoleMemberships(
 	for membership := range declared {
 		if !held[membership] {
 			diff.RoleMembershipsAdded = append(diff.RoleMembershipsAdded, membership)
+			continue
 		}
+		diff.Matched.RoleMemberships++
 	}
 	for membership := range held {
 		if !declared[membership] && managed[membership.Role] && managed[membership.Member] {

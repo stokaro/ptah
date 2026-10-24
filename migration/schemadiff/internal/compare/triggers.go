@@ -103,6 +103,7 @@ func TriggersWithSemanticsAndConditions(
 			})
 			continue
 		}
+		diff.Matched.Triggers++
 		if resolved := conditions[exprkey.Trigger(semantics, declared.Table, declared.Name)]; resolved.Resolved {
 			canonical.When = resolved.Condition
 		}

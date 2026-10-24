@@ -230,6 +230,7 @@ func functionsWithDialect(
 		// qualified name, and a match on one would otherwise mark the other as
 		// matched and silently keep it (stokaro/ptah#1722).
 		matchedDatabaseFunctions[routineKeyWithKind(databaseFunction.Kind, databaseFunction.QualifiedName())] = struct{}{}
+		diff.Matched.Functions++
 		functionComparison := functionDefinitions(generatedFunction, databaseFunction, dialect, arguments, routines)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
@@ -294,6 +295,7 @@ func FunctionsWithSemantics(
 			diff.FunctionsAdded = append(diff.FunctionsAdded,
 				declaredRoutineNamed(declaration, generatedNames[identity]))
 		}
+		diff.Matched.Functions += len(pairs)
 		for _, pair := range pairs {
 			functionComparison := functionDefinitions(pair.declared, pair.recorded, dialect, arguments, routines)
 			if len(functionComparison.Changes) > 0 {

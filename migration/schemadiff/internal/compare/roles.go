@@ -132,6 +132,7 @@ func Roles(
 	// Detect role attribute modifications
 	for roleName, generatedRole := range generatedRoleMap {
 		if databaseRole, roleExists := databaseRoleMap[roleName]; roleExists {
+			diff.Matched.Roles++
 			roleComparison := RoleDefinitions(generatedRole, databaseRole)
 			if len(roleComparison.Changes) > 0 {
 				diff.RolesModified = append(diff.RolesModified, roleComparison)

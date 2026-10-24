@@ -1224,6 +1224,13 @@ type SchemaDiff struct {
 	// NOT VALID against a validated constraint, is no change: the rows already
 	// passed the check the declaration lets the server skip.
 	ConstraintsValidated []ConstraintValidation `json:"constraints_validated"`
+
+	// Matched is how many objects of each kind the comparison paired; see
+	// [MatchedCounts]. With the additions and the removals above it says how
+	// many objects of a kind either side holds within the comparison's scope.
+	// It is not a change, and no planner reads it, so [SchemaDiff.HasChanges]
+	// ignores it and the wire does not carry it.
+	Matched MatchedCounts `json:"-"`
 }
 
 // ConstraintValidation names one constraint to validate.

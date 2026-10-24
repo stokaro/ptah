@@ -124,6 +124,7 @@ func ConstraintsWithSemantics(
 				diff.ConstraintsAdded = appendConstraintAddition(diff.ConstraintsAdded, genConstraint, semantics)
 				continue
 			}
+			diff.Matched.Constraints++
 			if needsValidation(genConstraint, dbConstraint) {
 				diff.ConstraintsValidated = append(diff.ConstraintsValidated, difftypes.ConstraintValidation{
 					TableName: dbConstraint.QualifiedTableName(),

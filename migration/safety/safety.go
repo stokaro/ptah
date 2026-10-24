@@ -93,6 +93,13 @@ type Report struct {
 // Each category appears at most once, with counts summed across all modified
 // tables and enums, and findings are sorted by severity (most severe first),
 // then by category name, so the output is deterministic and diffable.
+// functions_removed counts the procedures a diff removes with the functions,
+// as functions_added and functions_modified count both.
+//
+// Every change a comparison reports is counted under at least one category,
+// so a diff that has changes ([difftypes.SchemaDiff.HasChanges]) has
+// findings. A modified table or enum type is counted by what changed in it:
+// its columns, its values, its comment, or a change its feature owner reports.
 //
 // The categories are deliberately not disjoint: a change severe enough to
 // deserve its own category is counted there as well as under the generic
@@ -115,50 +122,62 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 
 	var findings []Finding
 	appendFeatureFindings(&findings, diff.FeatureChanges)
-	// A dropped database takes every object in it; a changed character set or
-	// collation changes what a table created later in the database defaults to.
-	add(&findings, "schemas_added", len(diff.SchemasAdded), Safe)
-	add(&findings, "schemas_removed", len(diff.SchemasRemoved), Destructive)
+	// The additions and the removals of each kind of object, counted the way
+	// the inventory counts them; see [Inventory].
+	for _, kind := range objectKinds {
+		add(&findings, kind.stem+"_added", kind.added(diff), kind.addedSeverity)
+		add(&findings, kind.stem+"_removed", kind.removed(diff), kind.removedSeverity)
+	}
+	// A changed character set or collation changes what a table created later
+	// in the database defaults to.
 	add(&findings, "schemas_modified", len(diff.SchemasModified), Warning)
-	add(&findings, "tables_added", len(diff.TablesAdded), Safe)
-	add(&findings, "tables_removed", len(diff.TablesRemoved), Destructive)
-	add(&findings, "enums_added", len(diff.EnumsAdded), Safe)
-	add(&findings, "enums_removed", len(diff.EnumsRemoved), Destructive)
-	add(&findings, "indexes_added", len(diff.IndexesAdded), Warning)
-	add(&findings, "indexes_removed", len(diff.IndexesRemoved), Warning)
 	// A removal whose object a UNIQUE constraint enforces takes the uniqueness
 	// with it, whichever statement the engine spells it as, so it is counted
 	// again under its own destructive category rather than folded into the
-	// warning above. Losing a uniqueness protection is not a query-plan change
-	// and must not pass a destructive gate or a drift threshold as one.
+	// indexes_removed warning. Losing a uniqueness protection is not a
+	// query-plan change and must not pass a destructive gate or a drift
+	// threshold as one.
 	add(&findings, "unique_protections_removed", len(diff.ConstraintBackedIndexRemovals), Destructive)
-	add(&findings, "functions_added", len(diff.FunctionsAdded), Safe)
-	add(&findings, "functions_removed", len(diff.FunctionsRemoved), Destructive)
 	add(&findings, "functions_modified", len(diff.FunctionsModified), Warning)
-	add(&findings, "rls_policies_added", len(diff.RLSPoliciesAdded), Safe)
-	add(&findings, "rls_policies_removed", len(diff.RLSPoliciesRemoved), Destructive)
 	add(&findings, "rls_policies_modified", len(diff.RLSPoliciesModified), Warning)
-	add(&findings, "rls_enabled_tables_added", len(diff.RLSEnabledTablesAdded), Safe)
-	add(&findings, "rls_enabled_tables_removed", len(diff.RLSEnabledTablesRemoved), Destructive)
 	// NO FORCE counts as destructive for the reason a DISABLE does: afterwards
 	// the table's owner, often the role the application connects as, reads and
 	// writes past every policy the table keeps.
 	forced, unforced := rlsForceDirections(diff.RLSForceChanged)
 	add(&findings, "rls_force_added", forced, Safe)
 	add(&findings, "rls_force_removed", unforced, Destructive)
-	add(&findings, "roles_added", len(diff.RolesAdded), Safe)
-	add(&findings, "roles_removed", len(diff.RolesRemoved), Destructive)
 	add(&findings, "roles_modified", len(diff.RolesModified), Warning)
-	add(&findings, "constraints_added", len(diff.ConstraintsAdded), Warning)
-	add(&findings, "constraints_removed", len(diff.ConstraintsRemoved), Destructive)
+	// An index renamed in place keeps its rows and its definition, but a
+	// reader that names it, as a YDB query does with VIEW, stops finding it,
+	// which is how a renamed column or table reads.
+	add(&findings, "indexes_renamed", len(diff.IndexesRenamed), Warning)
+	// Visibility decides which index the optimizer can use, and so query
+	// plans, as the plan's ALTER INDEX is rated.
+	add(&findings, "index_visibility_changed", len(diff.IndexVisibilityChanged), Warning)
+	// VALIDATE CONSTRAINT reads every row and fails on the first one the
+	// constraint refuses, as ADD CONSTRAINT does.
+	add(&findings, "constraints_validated", len(diff.ConstraintsValidated), Warning)
+	// ALTER SEQUENCE can move the next value onto a key a row already holds.
+	add(&findings, "sequences_modified", len(diff.SequencesModified), Warning)
+	// A changed view or trigger changes what its readers get or what every
+	// write does, as a changed function does.
+	add(&findings, "views_modified", len(diff.ViewsModified), Warning)
+	add(&findings, "triggers_modified", len(diff.TriggersModified), Warning)
+	// A grant option lets the grantee pass the privilege on, and it is a
+	// setting of a grant both sides hold, judged as the grant is.
+	add(&findings, "grant_options_added", len(diff.GrantOptionsAdded), Safe)
+	add(&findings, "grant_options_removed", len(diff.GrantOptionsRevoked), Warning)
+	// A comment is the one change an object takes in place without changing
+	// what it holds or does. A column's comment is a modification of the
+	// column, which columns_modified counts.
+	add(&findings, "comments_changed", commentChanges(diff), Safe)
 
 	for _, view := range diff.MaterializedViewsModified {
 		appendViewFeatureFindings(&findings, view)
+		add(&findings, "materialized_views_modified", 1, materializedViewModification(view))
 	}
 	for _, table := range diff.TablesModified {
 		appendFeatureFindings(&findings, table.FeatureChanges)
-		add(&findings, "columns_added", len(table.ColumnsAdded), Warning)
-		add(&findings, "columns_removed", len(table.ColumnsRemoved), Destructive)
 		add(&findings, "columns_modified", len(table.ColumnsModified), Warning)
 		// Counted separately from columns_modified, and Destructive rather than
 		// Warning, because it is the one column modification the server refuses
@@ -167,10 +186,6 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 		add(&findings, "vector_dimension_changed", vectorDimensionChanges(table.ColumnsModified), Destructive)
 		add(&findings, "table_constraints_added", len(table.ConstraintsAdded), Warning)
 		add(&findings, "table_constraints_removed", len(table.ConstraintsRemoved), Destructive)
-	}
-	for _, enum := range diff.EnumsModified {
-		add(&findings, "enum_values_added", len(enum.ValuesAdded), Warning)
-		add(&findings, "enum_values_removed", len(enum.ValuesRemoved), Destructive)
 	}
 
 	findings = aggregate(findings)
@@ -1093,6 +1108,29 @@ func add(findings *[]Finding, category string, count int, severity Severity) {
 		Count:    count,
 		Severity: severity,
 	})
+}
+
+// commentChanges counts the comment transitions a plan writes in place on
+// tables, indexes, constraints and the objects that take a comment through a
+// statement of their own.
+func commentChanges(diff *difftypes.SchemaDiff) int {
+	total := len(diff.ObjectCommentsChanged) + len(diff.IndexCommentsChanged) + len(diff.ConstraintCommentsChanged)
+	for _, table := range diff.TablesModified {
+		if table.CommentChange != nil {
+			total++
+		}
+	}
+	return total
+}
+
+// materializedViewModification is the severity of one modified materialized
+// view. A view the plan replaces loses its rows, as one it drops does, and
+// one whose owner changes an attached setting in place keeps them.
+func materializedViewModification(view difftypes.MaterializedViewDiff) Severity {
+	if view.Replaces() {
+		return Destructive
+	}
+	return Warning
 }
 
 func aggregate(findings []Finding) []Finding {
