@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -27,8 +28,9 @@ const (
 	MaxMessageBytes = 4 << 20
 	// CallTimeout bounds calls whose caller supplied no earlier deadline.
 	CallTimeout = 30 * time.Second
-	// ProvisionTimeout bounds a dev database call that has no earlier deadline;
-	// starting a container may pull an image.
+	// ProvisionTimeout bounds a dev database call that has no earlier deadline:
+	// starting a container may pull an image, and a cleanup drops every object
+	// a run left.
 	ProvisionTimeout  = 10 * time.Minute
 	transportName     = "ptah-provider"
 	parentEnvironment = "PTAH_PROVIDER_PARENT_PID"
@@ -63,8 +65,14 @@ type Server struct {
 	TableCreations  provider.TableCreationProjector
 	Linter          provider.Linter
 	DevProvisioner  provider.DevProvisioner
+	DevCleaner      provider.DevCleaner
+	ReplayGuard     provider.ReplayGuard
 	SchemaValidator provider.SchemaValidator
 	SQLSchemaReader provider.SQLSchemaReader
+	RowTyper        provider.RowTyper
+	RowReader       provider.RowReader
+	RowWriter       provider.RowWriteRenderer
+	Seeds           provider.Seeds
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -97,7 +105,13 @@ func (s Server) Validate() error {
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
 		{provider.LintFeature, !nilService(s.Linter)},
 		{provider.DevDatabaseFeature, !nilService(s.DevProvisioner)},
+		{provider.DevCleanupFeature, !nilService(s.DevCleaner)},
+		{provider.ReplayGuardFeature, !nilService(s.ReplayGuard)},
 		{provider.ReadSQLSchemaFeature, !nilService(s.SQLSchemaReader)},
+		{provider.TypeRowsFeature, !nilService(s.RowTyper)},
+		{provider.ReadRowsFeature, !nilService(s.RowReader)},
+		{provider.RenderRowWritesFeature, !nilService(s.RowWriter)},
+		{provider.SeedsFeature, !nilService(s.Seeds)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -141,7 +155,7 @@ type transport struct {
 }
 
 func (t *transport) GRPCServer(_ *plugin.GRPCBroker, server *grpc.Server) error {
-	protocol.RegisterProviderServer(server, &serverAdapter{server: t.server})
+	protocol.RegisterProviderServer(server, newServerAdapter(t.server))
 	return nil
 }
 
@@ -152,8 +166,53 @@ func (*transport) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, conn *grpc
 type serverAdapter struct {
 	protocol.UnimplementedProviderServer
 	server Server
+	// negotiation holds what the host announced in Describe. Without one, or
+	// before Describe, the host is taken to list no feature.
+	negotiation *negotiation
 }
 
+// negotiation is the outcome of the host's Describe: the features it listed
+// and the description negotiated with them.
+type negotiation struct {
+	mu          sync.RWMutex
+	features    []string
+	description *protocol.Description
+}
+
+func newServerAdapter(server Server) *serverAdapter {
+	return &serverAdapter{server: server, negotiation: &negotiation{}}
+}
+
+// negotiated returns the description both sides validate with: the
+// provider's own, without the two-way features the host did not list.
+func (s *serverAdapter) negotiated() *protocol.Description {
+	if s.negotiation != nil {
+		s.negotiation.mu.RLock()
+		description := s.negotiation.description
+		s.negotiation.mu.RUnlock()
+		if description != nil {
+			return description
+		}
+	}
+	return provider.NegotiatedDescription(s.server.Description, nil)
+}
+
+// owner returns the context a service is called with, which carries the
+// features the host listed.
+func (s *serverAdapter) owner(ctx context.Context) context.Context {
+	var features []string
+	if s.negotiation != nil {
+		s.negotiation.mu.RLock()
+		features = s.negotiation.features
+		s.negotiation.mu.RUnlock()
+	}
+	return provider.ContextWithHostFeatures(ctx, features)
+}
+
+// Describe negotiates with the host. A host of another major is refused. A
+// host that announces no contract version speaks minor 0 and cannot compare
+// versions, so the provider refuses it here when its own minimum is higher; a
+// host that announces one receives the description and decides itself.
 func (s *serverAdapter) Describe(ctx context.Context, request *protocol.DescribeRequest) (*protocol.Description, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
@@ -161,10 +220,29 @@ func (s *serverAdapter) Describe(ctx context.Context, request *protocol.Describe
 	if request.GetRevision() != provider.Revision {
 		return nil, status.Error(codes.FailedPrecondition, "incompatible provider protocol revision")
 	}
-	if err := provider.ValidateDescription(s.server.Description, request.GetRequiredFeatures()); err != nil {
+	host := provider.HostContract(request)
+	if host.GetMajor() != request.GetRevision() {
+		return nil, status.Error(codes.InvalidArgument, "host contract major differs from its revision")
+	}
+	if err := provider.ValidateHostFeatures(request.GetHostFeatures()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	description := provider.NegotiatedDescription(s.server.Description, request.GetHostFeatures())
+	if err := provider.ValidateDescription(description, request.GetRequiredFeatures()); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	return proto.CloneOf(s.server.Description), nil
+	if request.GetHostContract() == nil {
+		if err := provider.CheckContract(host, provider.MinimumContract(description)); err != nil {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+	}
+	if s.negotiation != nil {
+		s.negotiation.mu.Lock()
+		s.negotiation.features = slices.Clone(request.GetHostFeatures())
+		s.negotiation.description = description
+		s.negotiation.mu.Unlock()
+	}
+	return proto.CloneOf(description), nil
 }
 
 func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
@@ -174,7 +252,7 @@ func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest)
 	if !s.hasEngine(request.GetEngine()) {
 		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
 	}
-	result, err := s.server.Sessions.Open(ctx, proto.CloneOf(request))
+	result, err := s.server.Sessions.Open(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +280,7 @@ func (s *serverAdapter) Close(ctx context.Context, request *protocol.CloseReques
 	if request.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "session ID is required")
 	}
-	if err := s.server.Sessions.Close(ctx, request); err != nil {
+	if err := s.server.Sessions.Close(s.owner(ctx), request); err != nil {
 		return nil, err
 	}
 	return &protocol.Empty{}, nil
@@ -215,14 +293,14 @@ func (s *serverAdapter) Inspect(ctx context.Context, request *protocol.InspectRe
 	if request.GetSessionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "session ID is required")
 	}
-	result, err := s.server.Inspector.Inspect(ctx, proto.CloneOf(request))
+	result, err := s.server.Inspector.Inspect(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
-	if _, err := provider.InspectionValues(s.server.Description, request, result); err != nil {
+	if _, err := provider.InspectionValues(s.negotiated(), request, result); err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return result, nil
@@ -232,7 +310,7 @@ func (s *serverAdapter) Render(ctx context.Context, request *protocol.RenderRequ
 	if s.server.Renderer == nil {
 		return nil, status.Error(codes.Unimplemented, "rendering is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatch, s.server.Renderer.Render)
+	return serveOffline(ctx, s, request, provider.ValidateRenderRequest, provider.ValidateRenderedBatch, s.server.Renderer.Render)
 }
 
 func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
@@ -243,15 +321,15 @@ func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRe
 	if s.server.Executor == nil {
 		return nil, status.Error(codes.Unimplemented, "execution is unavailable")
 	}
-	if request.GetSessionId() == "" || request.GetRequestId() == "" || len(request.GetUnits()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "session ID, request ID, and units are required")
+	if err := provider.ValidateExecuteRequest(s.negotiated(), request); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	for _, unit := range request.GetUnits() {
-		if err := provider.ValidateUnit(unit); err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
+	result, err := s.server.Executor.Execute(s.owner(ctx), request)
+	if err == nil && result.GetStatementTimedOut() && request.GetStatementTimeoutNanoseconds() <= 0 {
+		// The flag answers a timeout only a host that negotiated it sends.
+		return nil, status.Error(codes.Internal, "provider reported a statement timeout the request did not set")
 	}
-	return s.server.Executor.Execute(ctx, request)
+	return result, err
 }
 
 // nilService refuses typed-nil implementations before the server starts.
@@ -275,7 +353,7 @@ func (s *serverAdapter) AnalyzeSQL(ctx context.Context, request *protocol.Analyz
 	if !s.hasEngine(request.GetEngine()) {
 		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
 	}
-	result, err := s.server.SQLAnalyzer.AnalyzeSQL(ctx, request)
+	result, err := s.server.SQLAnalyzer.AnalyzeSQL(s.owner(ctx), request)
 	if err != nil {
 		return nil, err
 	}

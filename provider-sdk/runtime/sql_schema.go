@@ -22,5 +22,5 @@ func (s *serverAdapter) ReadSQLSchema(ctx context.Context, request *protocol.Rea
 	if s.server.SQLSchemaReader == nil {
 		return nil, status.Error(codes.Unimplemented, "SQL schema reading is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateReadSQLSchemaRequest, provider.ValidateSQLSchema, s.server.SQLSchemaReader.ReadSQLSchema)
+	return serveOffline(ctx, s, request, provider.ValidateReadSQLSchemaRequest, provider.ValidateSQLSchema, s.server.SQLSchemaReader.ReadSQLSchema)
 }

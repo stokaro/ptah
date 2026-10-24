@@ -13,8 +13,10 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 )
 
-// Revision identifies this experimental contract. A different revision is
-// refused before a session opens; it is not a stable protocol major version.
+// Revision is the major version of this experimental contract. It changes only
+// with an incompatible change, and a host and a provider of different majors
+// are refused before a session opens. Compatible additions raise
+// ContractMinor instead.
 const Revision uint32 = 25
 
 const (
@@ -41,6 +43,10 @@ var (
 	ErrOutcomeUnknown = errors.New("provider execution outcome is unknown")
 	// ErrExecution identifies a confirmed refusal or partial execution.
 	ErrExecution = errors.New("provider execution did not complete")
+	// ErrStatementTimeout identifies execution that a unit stopped at the
+	// request's statement timeout. It accompanies ErrExecution or
+	// ErrOutcomeUnknown, never replaces them.
+	ErrStatementTimeout = errors.New("provider statement exceeded its timeout")
 )
 
 // Sessions owns live connections and handles. Handles are scoped to one server
@@ -79,6 +85,9 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 	}
 	if strings.TrimSpace(value.GetProviderId()) == "" || value.GetVersion() == "" || value.GetSemanticIdentity() == "" {
 		return fmt.Errorf("%w: provider identity, version, and semantic identity are required", ErrProtocol)
+	}
+	if err := validateMinimumContract(value); err != nil {
+		return err
 	}
 	if err := validateSemanticServices(value); err != nil {
 		return err
@@ -143,8 +152,8 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if err := validateReleaseLines(engine); err != nil {
 		return err
 	}
-	if slices.Contains(engine.GetFeatures(), DevDatabaseFeature) && !slices.Contains(description.GetFeatures(), DevDatabaseFeature) {
-		return fmt.Errorf("%w: engine dev database provisioning requires the service", ErrProtocol)
+	if err := validateDevServices(description, engine); err != nil {
+		return err
 	}
 	if err := validateYAMLSourceKeys(description, engine); err != nil {
 		return err
@@ -152,7 +161,22 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	if err := validateGoSourceDirectives(description, engine); err != nil {
 		return err
 	}
+	if err := validateEngineAdditions(description, engine); err != nil {
+		return err
+	}
 	return validateSQLSchemaDeclaration(description, engine)
+}
+
+// validateEngineAdditions checks what contract 25.1 adds to an engine: the
+// data services it names, its statement facts, and its query dialect.
+func validateEngineAdditions(description *protocol.Description, engine *protocol.Engine) error {
+	if err := validateDataServices(description, engine); err != nil {
+		return err
+	}
+	if slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
+		return fmt.Errorf("%w: lint statement facts require engine lint", ErrProtocol)
+	}
+	return ValidateQueryDialect(engine.GetQueryDialect())
 }
 
 func validateSemanticServices(value *protocol.Description) error {
@@ -171,6 +195,9 @@ func validateSemanticServices(value *protocol.Description) error {
 
 	if slices.Contains(value.GetFeatures(), TransactionsFeature) && !slices.Contains(value.GetFeatures(), ExecuteFeature) {
 		return fmt.Errorf("%w: transactions require execution", ErrProtocol)
+	}
+	if slices.Contains(value.GetFeatures(), StatementTimeoutFeature) && !slices.Contains(value.GetFeatures(), ExecuteFeature) {
+		return fmt.Errorf("%w: statement timeouts require execution", ErrProtocol)
 	}
 	if slices.Contains(value.GetFeatures(), PlanFeaturesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: feature planning requires value normalization", ErrProtocol)
@@ -274,6 +301,9 @@ func ValidateRender(request *protocol.RenderRequest, result *protocol.RenderResu
 	if request == nil || result == nil || !result.GetComplete() || len(result.GetUnits()) != len(request.GetChanges()) {
 		return fmt.Errorf("%w: incomplete render", ErrProtocol)
 	}
+	if result.GetRefusal() != nil {
+		return fmt.Errorf("%w: a schema render carries a row-write refusal", ErrProtocol)
+	}
 	seen := make(map[string]bool)
 	for i, change := range request.GetChanges() {
 		unit := result.GetUnits()[i]
@@ -311,14 +341,25 @@ func ValidateUnit(unit *protocol.Unit) error {
 
 // ExecutionError records the last confirmed prefix and terminal outcome. Its
 // text excludes provider messages, which may contain connection secrets.
+// TimedOut reports that the unit after the prefix stopped at the request's
+// statement timeout; such an error also matches ErrStatementTimeout.
 type ExecutionError struct {
-	Outcome protocol.Execution_Outcome
-	Applied uint32
+	Outcome  protocol.Execution_Outcome
+	Applied  uint32
+	TimedOut bool
 }
 
 // Error returns an outcome summary without provider-authored text.
 func (e *ExecutionError) Error() string {
+	if e.TimedOut {
+		return fmt.Sprintf("provider execution: %s at the statement timeout (%d units confirmed applied)", e.Outcome, e.Applied)
+	}
 	return fmt.Sprintf("provider execution: %s (%d units confirmed applied)", e.Outcome, e.Applied)
+}
+
+// Is reports a stop at the statement timeout as ErrStatementTimeout.
+func (e *ExecutionError) Is(target error) bool {
+	return e.TimedOut && target == ErrStatementTimeout
 }
 
 // Unwrap distinguishes an unknown outcome from a confirmed execution failure.
@@ -357,6 +398,52 @@ func CheckExecution(units int, result *protocol.Execution) error {
 		return unknown
 	}
 	return &ExecutionError{Outcome: result.GetOutcome(), Applied: count}
+}
+
+// ValidateExecuteRequest refuses a request without a session, a request ID or
+// units, an invalid unit, a negative statement timeout, and a timeout the
+// negotiated description does not list StatementTimeoutFeature for. It grants
+// no authorization to execute the units.
+func ValidateExecuteRequest(description *protocol.Description, request *protocol.ExecuteRequest) error {
+	if request.GetSessionId() == "" || request.GetRequestId() == "" || len(request.GetUnits()) == 0 {
+		return fmt.Errorf("%w: session ID, request ID, and units are required", ErrProtocol)
+	}
+	if request.GetStatementTimeoutNanoseconds() < 0 {
+		return fmt.Errorf("%w: a statement timeout cannot be negative", ErrProtocol)
+	}
+	if request.GetStatementTimeoutNanoseconds() > 0 && !slices.Contains(description.GetFeatures(), StatementTimeoutFeature) {
+		return fmt.Errorf("%w: statement timeouts were not negotiated", ErrProtocol)
+	}
+	for _, unit := range request.GetUnits() {
+		if err := ValidateUnit(unit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CheckExecuted is CheckExecution for the request that produced result. A stop
+// at the statement timeout is valid only when the request set a timeout and
+// the outcome confirms no completion: NOT_APPLIED, PARTIAL or UNKNOWN. The
+// returned ExecutionError then records TimedOut. Any other use of the flag is
+// a malformed reply and an unknown outcome.
+func CheckExecuted(request *protocol.ExecuteRequest, result *protocol.Execution) error {
+	err := CheckExecution(len(request.GetUnits()), result)
+	if !result.GetStatementTimedOut() {
+		return err
+	}
+	outcome := result.GetOutcome()
+	if request.GetStatementTimeoutNanoseconds() <= 0 ||
+		outcome != protocol.Execution_NOT_APPLIED && outcome != protocol.Execution_PARTIAL && outcome != protocol.Execution_UNKNOWN {
+		return &ExecutionError{Outcome: protocol.Execution_UNKNOWN}
+	}
+	// A malformed reply is reported as an unknown outcome with no confirmed
+	// prefix, which is not the reply's own outcome and count.
+	var failed *ExecutionError
+	if errors.As(err, &failed) && failed.Outcome == outcome && failed.Applied == result.GetAppliedCount() {
+		failed.TimedOut = true
+	}
+	return err
 }
 
 // The common identity policy supplies these services as a single contract.

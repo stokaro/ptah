@@ -107,11 +107,11 @@ func (s *serverAdapter) lockCall(ctx context.Context, request *protocol.LockRequ
 	var err error
 	switch operation {
 	case provider.LockTry:
-		result, err = s.server.Locks.TryLock(ctx, proto.CloneOf(request))
+		result, err = s.server.Locks.TryLock(s.owner(ctx), proto.CloneOf(request))
 	case provider.LockCheck:
-		result, err = s.server.Locks.CheckLock(ctx, proto.CloneOf(request))
+		result, err = s.server.Locks.CheckLock(s.owner(ctx), proto.CloneOf(request))
 	case provider.LockRelease:
-		result, err = s.server.Locks.ReleaseLock(ctx, proto.CloneOf(request))
+		result, err = s.server.Locks.ReleaseLock(s.owner(ctx), proto.CloneOf(request))
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown lock operation")
 	}

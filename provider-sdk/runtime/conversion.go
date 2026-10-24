@@ -20,5 +20,5 @@ func (s *serverAdapter) ConvertValues(ctx context.Context, request *protocol.Con
 	if s.server.ValueConverter == nil {
 		return nil, status.Error(codes.Unimplemented, "convert values is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateConversionRequest, provider.ValidateConvertedValues, s.server.ValueConverter.ConvertValues)
+	return serveOffline(ctx, s, request, provider.ValidateConversionRequest, provider.ValidateConvertedValues, s.server.ValueConverter.ConvertValues)
 }

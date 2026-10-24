@@ -31,19 +31,19 @@ func (s *serverAdapter) SplitLintStatements(ctx context.Context, request *protoc
 	if s.server.Linter == nil {
 		return nil, status.Error(codes.Unimplemented, "lint is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateSplitLintRequest, provider.ValidateSplitLint, s.server.Linter.SplitLintStatements)
+	return serveOffline(ctx, s, request, provider.ValidateSplitLintRequest, provider.ValidateSplitLint, s.server.Linter.SplitLintStatements)
 }
 
 func (s *serverAdapter) AnnotateLintStatements(ctx context.Context, request *protocol.AnnotateLintRequest) (*protocol.AnnotatedLint, error) {
 	if s.server.Linter == nil {
 		return nil, status.Error(codes.Unimplemented, "lint is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateAnnotateLintRequest, provider.ValidateAnnotatedLint, s.server.Linter.AnnotateLintStatements)
+	return serveOffline(ctx, s, request, provider.ValidateAnnotateLintRequest, provider.ValidateAnnotatedLint, s.server.Linter.AnnotateLintStatements)
 }
 
 func (s *serverAdapter) CheckLintMigrations(ctx context.Context, request *protocol.CheckLintRequest) (*protocol.CheckedLint, error) {
 	if s.server.Linter == nil {
 		return nil, status.Error(codes.Unimplemented, "lint is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateCheckLintRequest, provider.ValidateCheckedLint, s.server.Linter.CheckLintMigrations)
+	return serveOffline(ctx, s, request, provider.ValidateCheckLintRequest, provider.ValidateCheckedLint, s.server.Linter.CheckLintMigrations)
 }

@@ -19,5 +19,5 @@ func (s *serverAdapter) PrepareTables(ctx context.Context, request *protocol.Pre
 	if s.server.TablePreparer == nil {
 		return nil, status.Error(codes.Unimplemented, "prepare tables is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidatePreparationRequest, provider.ValidatePreparedTables, s.server.TablePreparer.PrepareTables)
+	return serveOffline(ctx, s, request, provider.ValidatePreparationRequest, provider.ValidatePreparedTables, s.server.TablePreparer.PrepareTables)
 }

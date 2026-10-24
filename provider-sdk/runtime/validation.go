@@ -19,5 +19,5 @@ func (s *serverAdapter) ValidateSchema(ctx context.Context, request *protocol.Va
 	if s.server.SchemaValidator == nil {
 		return nil, status.Error(codes.Unimplemented, "schema validation is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateSchemaRequest, provider.ValidateSchemaResult, s.server.SchemaValidator.ValidateSchema)
+	return serveOffline(ctx, s, request, provider.ValidateSchemaRequest, provider.ValidateSchemaResult, s.server.SchemaValidator.ValidateSchema)
 }

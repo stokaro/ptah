@@ -20,5 +20,5 @@ func (s *serverAdapter) PlanFeatures(ctx context.Context, request *protocol.Plan
 	if nilService(s.server.FeaturePlanner) {
 		return nil, status.Error(codes.Unimplemented, "feature planning is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidatePlanningRequest, provider.ValidatePlannedFeatures, s.server.FeaturePlanner.PlanFeatures)
+	return serveOffline(ctx, s, request, provider.ValidatePlanningRequest, provider.ValidatePlannedFeatures, s.server.FeaturePlanner.PlanFeatures)
 }

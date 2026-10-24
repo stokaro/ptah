@@ -4,10 +4,12 @@ This module is for developers implementing Ptah subprocess providers. It defines
 explicit protocol messages, service interfaces, and authenticated local transport.
 Its Go module path is `github.com/stokaro/ptah/provider-sdk`.
 
-The contract is experimental. A different protocol revision is refused before a
-session opens. No stable SDK release or compatibility with earlier experimental
-revisions is promised. [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
-owns integration with the application and extraction of the official providers.
+The contract is experimental. It has a major and a minor version: a host and a
+provider of different majors are refused before a session opens, and so is a
+host older than the minimum a provider declares. Within a major, additions are
+negotiated; see [Contract versions](#contract-versions).
+[Issue #4204](https://github.com/stokaro/ptah/issues/4204) owns integration
+with the application and extraction of the official providers.
 
 ## Module boundary
 
@@ -17,8 +19,10 @@ The independent fixture module under `testdata/fixture` uses SQLite through its
 own driver and a pinned published SDK version. It has no local `replace`. The
 host's process acceptance builds it with `GOWORK=off`, from the pinned version.
 The SDK's own process tests build it against the in-tree SDK through a workspace
-file in a temporary directory, because a client and a provider negotiate only
-at the same protocol revision and the client under test is the in-tree one.
+file in a temporary directory, because the client under test is the in-tree one
+and the tests exercise what the in-tree SDK adds. The mixed-version tests build
+it from the pinned release instead, so that a host and a provider of different
+contract minors meet.
 
 `protocol/experimental` contains generated Protobuf messages and the gRPC service.
 `provider` defines service contracts and validates complete results.
@@ -27,23 +31,97 @@ compare schemas, order migration dependencies, or maintain migration history.
 
 ## Versions
 
-The SDK is its own Go module, so it has its own tags: `provider-sdk/v0.N.0`.
-The host, the fixture and every provider repository pin a tag in `go.mod`, not a
-pseudo-version. The tag name has the module path as its prefix, which is why
-release automation that matches `v*` does not see it.
+The SDK is its own Go module, so it has its own tags: `provider-sdk/vX.Y.Z`.
+The host, the fixture and every provider repository require a tag in `go.mod`,
+not a pseudo-version. The tag name has the module path as its prefix, which is
+why release automation that matches `v*` does not see it.
 
 A maintainer tags the SDK when a change to the SDK has to reach a module that
-consumes it, and bumps the pins in the same pull request that uses the change.
-The SDK is experimental, so a change to the protocol or the Go API raises the
-minor number and may break consumers. Local work across the host and the SDK does
-not need a bump: use an uncommitted `go.work` file, and build with `GOWORK=off`
-before you push.
+consumes it, and the requirement moves in the pull request that uses the change.
+A release that changes the protocol or the Go API raises the tag's minor number,
+and a Go API change may break consumers. The tag says nothing about
+compatibility between a host and a provider: the contract version below does.
+Local work across the host and the SDK does not need a release: use an
+uncommitted `go.work` file, and build with `GOWORK=off` before you push.
+
+## Contract versions
+
+The contract between a host and a provider has a version, major.minor.
+`provider.Revision` is the major, sent as `revision` in both directions of
+`Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
+speaks contract 25.1; `provider-sdk/v0.3.0` is its first release.
+
+**What changes which number.** The minor counts compatible additions within a
+major. The major changes only with an incompatible change, and the minor then
+returns to 0.
+
+- A compatible change adds something an older peer can ignore: a new RPC,
+  message, field, enum value or feature. It raises the minor by one. Contract
+  25.1 adds, for example, the RPC `ReadRows`, the field
+  `ExecuteRequest.statement_timeout_nanoseconds`, the enum value
+  `LINT_FACT_STATEMENT_KIND` and the feature `database.dev-cleanup`.
+- An incompatible change alters what an existing peer relies on: a field
+  removed, renumbered, retyped or given another meaning, a field a request
+  must now carry, a validator that refuses what an older peer sends, or
+  another outcome for the same reply. It raises the major. Making
+  `Execution.applied_count` count something else would be one; so would
+  refusing a reply that contract 25.0 accepts.
+- A release that changes only Go API keeps the contract version.
+
+**Additions are negotiated in both directions.** A minor adds vocabulary; it
+does not oblige a peer to use it.
+
+- A provider lists each service and behavior it offers in
+  `Description.features`, and each engine lists its own. A host calls a new
+  RPC only when the provider offers its feature.
+- A host lists the features it acts on in `DescribeRequest.host_features`. An
+  addition to an existing message, such as a new enum value, a new reply field,
+  or a request field the provider would have to honor, is used only when both
+  sides list its feature. `provider.TwoWayFeatures()` returns those features:
+  `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms` and
+  `query.dialect`.
+- Both transport boundaries validate with the description negotiated this way,
+  `provider.NegotiatedDescription`, so neither side sends an addition the other
+  did not ask for. A service reads what the host listed with
+  `provider.HostFeatures(ctx)`; the SDK server refuses a reply that uses an
+  addition the host did not list.
+- A peer that sends nothing new, such as one built from an SDK of minor 0,
+  exchanges exactly the messages of contract 25.0.
+
+**How a provider chooses its minimum.** `Description.min_contract` is the oldest
+host contract the provider works with. Leave it unset, which means 25.0, when
+the provider works with any host of its major: what it uses beyond that sits
+behind a feature, and a host that does not list the feature does not get it.
+Raise it only when the provider cannot work at all with an older host, such as
+one that serves no useful operation unless the host calls an RPC of a later
+minor. The SDK refuses a minimum of another major, and one above the minor of
+the SDK the provider is built with.
+
+**How the host decides.** A host announces its version in
+`DescribeRequest.host_contract`. It starts a provider when the majors are equal
+and its minor is at least the provider's minimum. Otherwise it refuses with a
+`provider.ContractError` that names both versions, such as `provider requires
+contract 25.2 or a later minor of it; this host speaks 25.1`. A host that
+announces no version speaks 25.0 and cannot compare versions, so the SDK server
+refuses it in `Describe` when the provider's minimum is higher.
+
+**Release manifests.** A plugin release states the same minimum in its
+`ptah-provider.json` manifest as `min_contract: {major, minor}`
+([stokaro/ptah-ydb-plugin#37](https://github.com/stokaro/ptah-ydb-plugin/issues/37)),
+so a host can choose a compatible release before it downloads or starts one.
+
+**Features and minors.** A minor introduces messages and the feature names that
+switch them on; a feature decides whether a given host and provider use them.
+A provider built from a newer SDK keeps working with an older host of the same
+major, and an older provider with a newer host, for everything both offer. The
+SDK's process tests check both: a host of contract 25.0 against a provider of
+this SDK, and a host of this SDK against a provider of contract 25.0.
 
 ## Service contract
 
 | Operation | Required result |
 | --- | --- |
-| `Describe` | Exact revision, provider identity, semantic identity, engines, identifier comparison rules, and advertised features. |
+| `Describe` | The contract major and the provider's minimum minor, provider identity, semantic identity, engines, identifier comparison rules, and advertised features, negotiated with the host's version and features. |
 | `Open` | A session handle for the requested engine, identifier rules, and established server capabilities. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
@@ -60,8 +138,18 @@ before you push.
 | `SplitLintStatements` | Complete statement boundaries for migration sources under the engine's own lexing, with the facts the split judges. |
 | `AnnotateLintStatements` | One annotation per statement a dialect-blind scanner split. The owner declines a statement its lexing would split differently. |
 | `CheckLintMigrations` | A complete set of findings for the enabled rule codes over every file of a run, or an error and no finding. |
-| `ProvisionDevDatabase` | A lease and an address for a throwaway database, or a typed refusal (unsupported spec, unavailable runtime). The owner removes what it created. |
+| `ProvisionDevDatabase` | A lease and an address for a throwaway database or for a realm in a database the operator names, or a typed refusal (unsupported spec, unavailable runtime). The owner removes what it created. |
 | `ReleaseDevDatabase` | Removal of what a lease names. A lease that is already gone succeeds. |
+| `ListDevObjects` | Every object a dev database cleanup would remove or stop at, or an error and no list. |
+| `CleanDevDatabase` | An emptied dev database scope, a refusal that removed nothing and names what stopped it, or an explicit unknown outcome. |
+| `GuardReplay` | One verdict per replay statement: accepted, or refused with what cannot be confined to the scope. |
+| `TypeRows` | The engine type of each column and the declared and live rows in one canonical form, offline. |
+| `ReadRows` | One bounded page of a table in key order, with the existence of the table, or an error and no rows. |
+| `RenderRowWrites` | One executable unit for every typed row write, in input order, or a typed refusal and no unit. |
+| `ListSeedTables` | The tables of one schema, for the host's protected-table check. |
+| `ApplySeed` | A seed file and its ledger entry committed together, a key conflict, a refusal that ran nothing, or an explicit unknown outcome. |
+| `RecordSeed` | A ledger entry written without running the file. |
+| `ReadSeedLedger` | The complete ledger, distinguishing a missing ledger from an empty one. |
 | `NormalizeValues` | A complete offline batch of owner-validated values, structured normalized subjects, and versioned canonical projections. |
 | `BeginTransaction` | A caller-selected handle bound to its live session. Failed opens reserve the handle against another begin. |
 | `FinishTransaction` | A confirmed commit, rollback, fenced absence, or an explicit unknown outcome. |
@@ -99,6 +187,18 @@ provider crash reports `ErrOutcomeUnknown`. The SDK does not reconnect or replay
 the request. The caller must inspect actual state before deciding how to proceed.
 Cancellation before dispatch sends nothing. Killing a provider does not prove
 that a database transaction rolled back.
+
+`ExecuteRequest.statement_timeout_nanoseconds` sets a limit for each unit. The
+provider stops a unit that runs longer and sets `statement_timed_out` on the
+reply, with `NOT_APPLIED`, `PARTIAL` or `UNKNOWN`: `UNKNOWN` when the server may
+still run the unit after the provider stopped waiting. The client widens the
+call's bound by the timeout of each unit, so the stop arrives as a confirmed
+outcome rather than a lost reply, and returns an error that matches both
+`ErrStatementTimeout` and the outcome's own sentinel. A caller can therefore
+tell its own limit from a canceled call. The flag on a request without a
+timeout, or on an outcome that confirms completion, is a malformed reply. A
+timeout travels only when both sides list `units.statement-timeout`: otherwise
+the client sends none and the server refuses one.
 
 ## Session transactions
 
@@ -172,8 +272,8 @@ history and live state before another attempt.
 
 The independent SQLite fixture exercises these storage primitives. Native
 migration commands connect history to the same selected runtime as SQL safety
-analysis and execution. The host and fixture pin a published SDK revision without
-local replacements. Official-engine qualification remains required under #4204.
+analysis and execution. The host and fixture require a published SDK release
+without local replacements. Official-engine qualification remains required under #4204.
 
 ## Session-owned locks
 
@@ -346,8 +446,9 @@ explicit reasons. `UNKNOWN` remains destructive for approval policy. Unknown
 numeric dispositions, incomplete batches, gaps, and overlapping spans are errors.
 
 A failed process launch or transport bootstrap wraps `runtime.ErrStartup`.
-A rejected protocol revision, service contract, or provider identity wraps
-`provider.ErrProtocol`. Cancellation and deadline errors preserve their context
+A rejected contract version, service contract, or provider identity wraps
+`provider.ErrProtocol`; a contract version a host cannot work with is a
+`*provider.ContractError`. Cancellation and deadline errors preserve their context
 sentinels. A caller can distinguish these failures from a missing installation.
 
 ## Owner-defined value normalization
@@ -526,9 +627,9 @@ owner's namespace declarations.
 
 ## Captured extension sources
 
-Experimental revision 25 carries `source.decode`, complete `ValueModel` definitions,
+Contract major 25 carries `source.decode`, complete `ValueModel` definitions,
 and explicit YAML key ownership.
-It refuses earlier revisions. The SDK has no compatibility decoder or built-in
+A provider of an earlier major is refused. The SDK has no compatibility decoder or built-in
 fallback. A `SourceDecoder` receives complete captured documents without a
 session, connection address, host AST, or callback. The host evaluates frontend
 expressions and enforces file access policy before capture.
@@ -842,3 +943,163 @@ check. Diagnostics use `INVALID_SCHEMA`, `UNSUPPORTED_FEATURE`, or
 `OMITTED_DECLARATION`, with a kind and message. Malformed replies, cancellation,
 and RPC errors discard all diagnostics. Empty schemas still require a completed
 reply. Validation does not authorize execution or establish object existence.
+
+## Rows, row writes and seeds
+
+[ADR 0028](../docs/adr/0028-a-provider-owns-how-rows-are-read-written-and-seeded.md)
+gives the provider what depends on the engine when rows are compared, written
+and seeded. The host keeps the generic algorithm: which rows are declared, the
+row diff, ordering by foreign keys, protected tables, saved plans and the
+idempotent-seed policy. Each service has a feature of its own, and each
+supporting engine also declares it. A host refuses a declared row set for an
+engine whose provider lacks `data.type-rows` and `data.read-rows`, and a write
+for one that lacks `data.render-writes`; it does not substitute common
+`INSERT` text.
+
+A row is a list of `DataValue` aligned with a column list, never SQL text. A
+value is null, a boolean, a signed or unsigned 64-bit integer, a double, text,
+bytes, a decimal (unscaled digits, precision and scale), a UTC timestamp, a
+date as days since 1970-01-01, an interval of months, days and nanoseconds,
+JSON text, or a `native` value with a provider-defined type name. A value with
+no case set is a column the row does not carry, which differs from null. The
+SDK refuses text that is not UTF-8, JSON that does not parse, a decimal that is
+not digits or exceeds its precision, and a timestamp whose nanoseconds leave
+their range.
+
+`TypeRows` is offline. It receives the capabilities, the live table or its
+absence, the declared type of each column, and the declared and live rows. It
+returns the engine type and the value kind of each column, in request order,
+and both row sets in one canonical form, so that a decimal read back as 1.5
+pairs with a declared 1.50. Rows keep their order and the columns each carries.
+Both transport boundaries refuse a reply with a different row count, a value
+whose kind disagrees with its column type, and a row that gains or loses a
+column.
+
+`ReadRows` acts on a live session and can name a transaction. It reads the
+requested columns of a table named by `Reference`, in the order of the key
+columns, at most 10,000 rows a page and within the message limit. A page token
+resumes the read; the caller never repeats a request whose reply it did not
+get. A missing table is a complete page with `exists=false`; an empty table is a
+complete page with `exists=true` and no rows. A read that cannot finish is an
+error and no page. The SDK refuses a page of another table, more rows than the
+bound, an unset value, a value of the wrong kind, and a completion that
+disagrees with the next page token.
+
+`RenderRowWrites` is offline. The host sends `RowWrite` operations with a mode
+(`INSERT`, `UPSERT`, `UPDATE_BY_KEY`, `DELETE_BY_KEY`), the table, the columns
+written, the key columns, one value per column and the column types from
+`TypeRows`. The reply is a `RenderResult` with one unit per write, in input
+order, or a `RenderRefusal` that names the write and its reason
+(`UNSUPPORTED_MODE`, `UNSUPPORTED_VALUE`) and carries no unit. `UPSERT` is a
+mode, not a word of one dialect: an engine without one refuses it. Rendering is
+deterministic, so a saved plan and a migration file cannot disagree about a
+row. A native unit must name the write's table as its owner; text units are
+the owner's promise. Execution uses `Execute` and the transaction service as
+for any other unit. A migration file accepts text units only.
+
+The seed service acts on live sessions. The host discovers files, computes the
+checksum, selects them by environment and applies the protected-table check
+against `ListSeedTables`. `ApplySeed` runs a file and records it in the
+provider's ledger atomically, and answers with one outcome:
+
+- `APPLIED`: the file and its entry committed together.
+- `KEY_CONFLICT`: a statement hit an existing key and nothing of the file
+  stayed. An idempotent run then calls `RecordSeed`, which writes the entry
+  without sending the text.
+- `REFUSED`: nothing ran, such as for a statement the engine runs only outside
+  a transaction. The reply carries the position of that statement and a reason.
+- `NOT_APPLIED`: the provider stopped and proved that nothing committed, as
+  after running the file again a bounded number of times following aborts.
+- `UNKNOWN`: the provider cannot prove that nothing committed. The host does not
+  retry it.
+
+`ReadSeedLedger` returns path, checksum, environment and time for each entry,
+so the host can detect a changed file. The ledger layout is the provider's: it
+creates a missing ledger, refuses one it does not recognize, never adopts
+another layout, and replaces the entry of a path that runs again. Diagnostics
+carry the path, a position and one line of reason, never the statement or a
+value.
+
+### Query-builder spelling
+
+`Engine.query_dialect` declares, as data, what the host's query builder reads
+from a dialect descriptor: the placeholder style, the quoting section, the
+query section and the capability facts the builder assumes when its caller
+names the engine without a target's capabilities. The field names are the
+descriptor's JSON tags, with the same meaning and values. The builder renders
+statements offline and never calls the provider. The SDK checks the shape:
+a placeholder style, words without spaces where the descriptor holds a single
+value, one line of text in every spelling and refusal, no repeated keyword or
+join, and capability names a host can read. The host owns the vocabulary and
+refuses a value it does not know. A host lists `query.dialect` to receive the
+declaration; otherwise the SDK server leaves it out of the description.
+
+The SDK conformance tests in `runtime` read pages and resume them, separate an
+empty table from a missing one, type two spellings into one form, render each
+write mode, refuse a batch with no prefix, keep a ledger entry only with the
+file it ran, detect a changed checksum, refuse a file before it runs, and
+report a lost seed reply as unknown without sending it again.
+
+## Dev database cleanup and the replay guard
+
+`database.dev-cleanup` lets a host clean a dev database a provider serves before
+a replay and between runs, as it does with its own engines. `ListDevObjects`
+returns every object in scope; empty schemas select the whole realm the session
+treats as its database. The server's own objects and storage the provider keeps
+for the session are left out. `CleanDevDatabase` reads the same set: it removes
+everything, or removes nothing and names each object it has no statement for,
+with the reason. A cleanup that stopped part way is `UNKNOWN`, and the host
+treats the database as not clean. The host decides that the database is a dev
+database; the provider cannot. An incomplete list is an error, never an empty
+database.
+
+`database.dev-replay-guard` is the offline check the host runs before it
+replays migrations into a dev database. The request carries the statements and
+the scope the run may change: the dev database alone, the whole server the run
+owns, a server the run provisioned, or every user database of a server named as
+a whole. The owner refuses each statement whose effects it cannot confine to
+that scope, such as a change to another database, to something the whole
+server shares, or to the replay session's own settings, and names the operation
+in one line. A cleanup removes what a replay created inside the dev database
+and nothing outside it, so a host that cannot read the dialect needs this
+answer; without it, the host refuses the replay. A reply that does not answer
+every statement exposes no verdict.
+
+`database.dev-realms` is an engine feature beside `database.dev`. A
+`ProvisionDevRequest` then carries the operator's `address` instead of a `spec`:
+the owner creates a realm of its own for the run in that database, such as a
+directory in a database only an administrator creates, and the release removes
+it. The address can contain credentials, as an `Open` address can. The realm's
+address keeps the scheme and host of the operator's address, and either the
+same credentials or none; a host treats it as it treats that address. A
+provisioned database's address never carries credentials. A `spec` names an
+image in either form the operator types, such as `docker://ydb/24.3` or
+`docker+ydb://_/ydbplatform/local-ydb:24.3/local`, and the owner chooses the
+image; the host takes the engine from either form. An address travels only when
+the engine and the host both list `database.dev-realms`.
+
+A scratch database for a test case is another realm: the host provisions one per
+case. The protocol therefore has no separate scratch-database operation.
+
+## Statement facts for SQL lint
+
+`LintFact` carries what a host's statement rules need from an owner whose
+dialect the host cannot read:
+
+- `LINT_FACT_STATEMENT_KIND` says what each statement is. Where a split judges
+  it, every statement carries exactly one, and an annotation carries one on
+  every statement it does not decline. `statement_class` is `CREATE_TABLE`,
+  `ALTER_TABLE`, another schema statement (`SCHEMA`) or a statement that
+  changes no schema object (`OTHER`); `kind` names it in the dialect's words for
+  a message, and `object` names what it acts on.
+- `LINT_FACT_MISSING_PRIMARY_KEY` names, in `table`, a table the statement
+  creates without a primary key. It belongs to a `CREATE_TABLE` statement.
+- `LINT_FACT_REQUIRED_CAPABILITY` names, in `capability`, a capability the
+  statement needs from its target, and the part of the statement that needs it
+  in `object`, `kind`, `table` and `clause`. The host compares the key with the
+  target's capabilities.
+
+Rule identifiers stay with the host. `statement_class` and `capability` belong
+to their fact alone, and a statement with two kinds is refused. An engine offers
+these facts with `lint.statement-facts`, beside `lint.migrations`, and a split
+or an annotation uses them only when the host lists the same feature.

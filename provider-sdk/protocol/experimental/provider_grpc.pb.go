@@ -39,6 +39,16 @@ const (
 	Provider_CheckLintMigrations_FullMethodName    = "/ptah.provider.experimental.Provider/CheckLintMigrations"
 	Provider_ProvisionDevDatabase_FullMethodName   = "/ptah.provider.experimental.Provider/ProvisionDevDatabase"
 	Provider_ReleaseDevDatabase_FullMethodName     = "/ptah.provider.experimental.Provider/ReleaseDevDatabase"
+	Provider_ListDevObjects_FullMethodName         = "/ptah.provider.experimental.Provider/ListDevObjects"
+	Provider_CleanDevDatabase_FullMethodName       = "/ptah.provider.experimental.Provider/CleanDevDatabase"
+	Provider_GuardReplay_FullMethodName            = "/ptah.provider.experimental.Provider/GuardReplay"
+	Provider_TypeRows_FullMethodName               = "/ptah.provider.experimental.Provider/TypeRows"
+	Provider_ReadRows_FullMethodName               = "/ptah.provider.experimental.Provider/ReadRows"
+	Provider_RenderRowWrites_FullMethodName        = "/ptah.provider.experimental.Provider/RenderRowWrites"
+	Provider_ListSeedTables_FullMethodName         = "/ptah.provider.experimental.Provider/ListSeedTables"
+	Provider_ApplySeed_FullMethodName              = "/ptah.provider.experimental.Provider/ApplySeed"
+	Provider_RecordSeed_FullMethodName             = "/ptah.provider.experimental.Provider/RecordSeed"
+	Provider_ReadSeedLedger_FullMethodName         = "/ptah.provider.experimental.Provider/ReadSeedLedger"
 	Provider_Execute_FullMethodName                = "/ptah.provider.experimental.Provider/Execute"
 	Provider_BeginTransaction_FullMethodName       = "/ptah.provider.experimental.Provider/BeginTransaction"
 	Provider_FinishTransaction_FullMethodName      = "/ptah.provider.experimental.Provider/FinishTransaction"
@@ -61,8 +71,11 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Provider is the experimental, local subprocess boundary. Each request is a
-// whole semantic batch. This revision makes no cross-revision compatibility
-// promise and does not serialize host ASTs or Go interface values.
+// whole semantic batch. The contract has a major and a minor version. A
+// major changes only with an incompatible change and is matched exactly; a
+// minor adds compatible RPCs, messages, fields, enum values and features.
+// Anything a minor adds is used only when both sides advertise its feature.
+// The contract does not serialize host ASTs or Go interface values.
 type ProviderClient interface {
 	Describe(ctx context.Context, in *DescribeRequest, opts ...grpc.CallOption) (*Description, error)
 	Open(ctx context.Context, in *OpenRequest, opts ...grpc.CallOption) (*Session, error)
@@ -84,6 +97,18 @@ type ProviderClient interface {
 	CheckLintMigrations(ctx context.Context, in *CheckLintRequest, opts ...grpc.CallOption) (*CheckedLint, error)
 	ProvisionDevDatabase(ctx context.Context, in *ProvisionDevRequest, opts ...grpc.CallOption) (*DevDatabase, error)
 	ReleaseDevDatabase(ctx context.Context, in *ReleaseDevRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Contract 25.1. A host calls each of these only when the provider
+	// advertises its feature.
+	ListDevObjects(ctx context.Context, in *ListDevObjectsRequest, opts ...grpc.CallOption) (*DevObjects, error)
+	CleanDevDatabase(ctx context.Context, in *CleanDevRequest, opts ...grpc.CallOption) (*DevCleanup, error)
+	GuardReplay(ctx context.Context, in *GuardReplayRequest, opts ...grpc.CallOption) (*GuardedReplay, error)
+	TypeRows(ctx context.Context, in *TypeRowsRequest, opts ...grpc.CallOption) (*TypedRows, error)
+	ReadRows(ctx context.Context, in *ReadRowsRequest, opts ...grpc.CallOption) (*RowPage, error)
+	RenderRowWrites(ctx context.Context, in *RenderRowWritesRequest, opts ...grpc.CallOption) (*RenderResult, error)
+	ListSeedTables(ctx context.Context, in *ListSeedTablesRequest, opts ...grpc.CallOption) (*SeedTables, error)
+	ApplySeed(ctx context.Context, in *ApplySeedRequest, opts ...grpc.CallOption) (*SeedResult, error)
+	RecordSeed(ctx context.Context, in *RecordSeedRequest, opts ...grpc.CallOption) (*SeedResult, error)
+	ReadSeedLedger(ctx context.Context, in *ReadSeedLedgerRequest, opts ...grpc.CallOption) (*SeedLedger, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error)
 	BeginTransaction(ctx context.Context, in *BeginTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 	FinishTransaction(ctx context.Context, in *FinishTransactionRequest, opts ...grpc.CallOption) (*TransactionResult, error)
@@ -309,6 +334,106 @@ func (c *providerClient) ReleaseDevDatabase(ctx context.Context, in *ReleaseDevR
 	return out, nil
 }
 
+func (c *providerClient) ListDevObjects(ctx context.Context, in *ListDevObjectsRequest, opts ...grpc.CallOption) (*DevObjects, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DevObjects)
+	err := c.cc.Invoke(ctx, Provider_ListDevObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CleanDevDatabase(ctx context.Context, in *CleanDevRequest, opts ...grpc.CallOption) (*DevCleanup, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DevCleanup)
+	err := c.cc.Invoke(ctx, Provider_CleanDevDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) GuardReplay(ctx context.Context, in *GuardReplayRequest, opts ...grpc.CallOption) (*GuardedReplay, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GuardedReplay)
+	err := c.cc.Invoke(ctx, Provider_GuardReplay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) TypeRows(ctx context.Context, in *TypeRowsRequest, opts ...grpc.CallOption) (*TypedRows, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TypedRows)
+	err := c.cc.Invoke(ctx, Provider_TypeRows_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadRows(ctx context.Context, in *ReadRowsRequest, opts ...grpc.CallOption) (*RowPage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RowPage)
+	err := c.cc.Invoke(ctx, Provider_ReadRows_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) RenderRowWrites(ctx context.Context, in *RenderRowWritesRequest, opts ...grpc.CallOption) (*RenderResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenderResult)
+	err := c.cc.Invoke(ctx, Provider_RenderRowWrites_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ListSeedTables(ctx context.Context, in *ListSeedTablesRequest, opts ...grpc.CallOption) (*SeedTables, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SeedTables)
+	err := c.cc.Invoke(ctx, Provider_ListSeedTables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ApplySeed(ctx context.Context, in *ApplySeedRequest, opts ...grpc.CallOption) (*SeedResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SeedResult)
+	err := c.cc.Invoke(ctx, Provider_ApplySeed_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) RecordSeed(ctx context.Context, in *RecordSeedRequest, opts ...grpc.CallOption) (*SeedResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SeedResult)
+	err := c.cc.Invoke(ctx, Provider_RecordSeed_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadSeedLedger(ctx context.Context, in *ReadSeedLedgerRequest, opts ...grpc.CallOption) (*SeedLedger, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SeedLedger)
+	err := c.cc.Invoke(ctx, Provider_ReadSeedLedger_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*Execution, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Execution)
@@ -464,8 +589,11 @@ func (c *providerClient) ReleaseLock(ctx context.Context, in *LockRequest, opts 
 // for forward compatibility.
 //
 // Provider is the experimental, local subprocess boundary. Each request is a
-// whole semantic batch. This revision makes no cross-revision compatibility
-// promise and does not serialize host ASTs or Go interface values.
+// whole semantic batch. The contract has a major and a minor version. A
+// major changes only with an incompatible change and is matched exactly; a
+// minor adds compatible RPCs, messages, fields, enum values and features.
+// Anything a minor adds is used only when both sides advertise its feature.
+// The contract does not serialize host ASTs or Go interface values.
 type ProviderServer interface {
 	Describe(context.Context, *DescribeRequest) (*Description, error)
 	Open(context.Context, *OpenRequest) (*Session, error)
@@ -487,6 +615,18 @@ type ProviderServer interface {
 	CheckLintMigrations(context.Context, *CheckLintRequest) (*CheckedLint, error)
 	ProvisionDevDatabase(context.Context, *ProvisionDevRequest) (*DevDatabase, error)
 	ReleaseDevDatabase(context.Context, *ReleaseDevRequest) (*Empty, error)
+	// Contract 25.1. A host calls each of these only when the provider
+	// advertises its feature.
+	ListDevObjects(context.Context, *ListDevObjectsRequest) (*DevObjects, error)
+	CleanDevDatabase(context.Context, *CleanDevRequest) (*DevCleanup, error)
+	GuardReplay(context.Context, *GuardReplayRequest) (*GuardedReplay, error)
+	TypeRows(context.Context, *TypeRowsRequest) (*TypedRows, error)
+	ReadRows(context.Context, *ReadRowsRequest) (*RowPage, error)
+	RenderRowWrites(context.Context, *RenderRowWritesRequest) (*RenderResult, error)
+	ListSeedTables(context.Context, *ListSeedTablesRequest) (*SeedTables, error)
+	ApplySeed(context.Context, *ApplySeedRequest) (*SeedResult, error)
+	RecordSeed(context.Context, *RecordSeedRequest) (*SeedResult, error)
+	ReadSeedLedger(context.Context, *ReadSeedLedgerRequest) (*SeedLedger, error)
 	Execute(context.Context, *ExecuteRequest) (*Execution, error)
 	BeginTransaction(context.Context, *BeginTransactionRequest) (*Transaction, error)
 	FinishTransaction(context.Context, *FinishTransactionRequest) (*TransactionResult, error)
@@ -571,6 +711,36 @@ func (UnimplementedProviderServer) ProvisionDevDatabase(context.Context, *Provis
 }
 func (UnimplementedProviderServer) ReleaseDevDatabase(context.Context, *ReleaseDevRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReleaseDevDatabase not implemented")
+}
+func (UnimplementedProviderServer) ListDevObjects(context.Context, *ListDevObjectsRequest) (*DevObjects, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDevObjects not implemented")
+}
+func (UnimplementedProviderServer) CleanDevDatabase(context.Context, *CleanDevRequest) (*DevCleanup, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CleanDevDatabase not implemented")
+}
+func (UnimplementedProviderServer) GuardReplay(context.Context, *GuardReplayRequest) (*GuardedReplay, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GuardReplay not implemented")
+}
+func (UnimplementedProviderServer) TypeRows(context.Context, *TypeRowsRequest) (*TypedRows, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TypeRows not implemented")
+}
+func (UnimplementedProviderServer) ReadRows(context.Context, *ReadRowsRequest) (*RowPage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadRows not implemented")
+}
+func (UnimplementedProviderServer) RenderRowWrites(context.Context, *RenderRowWritesRequest) (*RenderResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenderRowWrites not implemented")
+}
+func (UnimplementedProviderServer) ListSeedTables(context.Context, *ListSeedTablesRequest) (*SeedTables, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSeedTables not implemented")
+}
+func (UnimplementedProviderServer) ApplySeed(context.Context, *ApplySeedRequest) (*SeedResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplySeed not implemented")
+}
+func (UnimplementedProviderServer) RecordSeed(context.Context, *RecordSeedRequest) (*SeedResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordSeed not implemented")
+}
+func (UnimplementedProviderServer) ReadSeedLedger(context.Context, *ReadSeedLedgerRequest) (*SeedLedger, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadSeedLedger not implemented")
 }
 func (UnimplementedProviderServer) Execute(context.Context, *ExecuteRequest) (*Execution, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
@@ -998,6 +1168,186 @@ func _Provider_ReleaseDevDatabase_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ListDevObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDevObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ListDevObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ListDevObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ListDevObjects(ctx, req.(*ListDevObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CleanDevDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CleanDevRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CleanDevDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CleanDevDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CleanDevDatabase(ctx, req.(*CleanDevRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_GuardReplay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GuardReplayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).GuardReplay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_GuardReplay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).GuardReplay(ctx, req.(*GuardReplayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_TypeRows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TypeRowsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).TypeRows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_TypeRows_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).TypeRows(ctx, req.(*TypeRowsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadRows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadRowsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadRows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadRows_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadRows(ctx, req.(*ReadRowsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_RenderRowWrites_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenderRowWritesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).RenderRowWrites(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_RenderRowWrites_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).RenderRowWrites(ctx, req.(*RenderRowWritesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ListSeedTables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSeedTablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ListSeedTables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ListSeedTables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ListSeedTables(ctx, req.(*ListSeedTablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ApplySeed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplySeedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ApplySeed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ApplySeed_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ApplySeed(ctx, req.(*ApplySeedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_RecordSeed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordSeedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).RecordSeed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_RecordSeed_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).RecordSeed(ctx, req.(*RecordSeedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadSeedLedger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadSeedLedgerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadSeedLedger(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadSeedLedger_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadSeedLedger(ctx, req.(*ReadSeedLedgerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExecuteRequest)
 	if err := dec(in); err != nil {
@@ -1354,6 +1704,46 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseDevDatabase",
 			Handler:    _Provider_ReleaseDevDatabase_Handler,
+		},
+		{
+			MethodName: "ListDevObjects",
+			Handler:    _Provider_ListDevObjects_Handler,
+		},
+		{
+			MethodName: "CleanDevDatabase",
+			Handler:    _Provider_CleanDevDatabase_Handler,
+		},
+		{
+			MethodName: "GuardReplay",
+			Handler:    _Provider_GuardReplay_Handler,
+		},
+		{
+			MethodName: "TypeRows",
+			Handler:    _Provider_TypeRows_Handler,
+		},
+		{
+			MethodName: "ReadRows",
+			Handler:    _Provider_ReadRows_Handler,
+		},
+		{
+			MethodName: "RenderRowWrites",
+			Handler:    _Provider_RenderRowWrites_Handler,
+		},
+		{
+			MethodName: "ListSeedTables",
+			Handler:    _Provider_ListSeedTables_Handler,
+		},
+		{
+			MethodName: "ApplySeed",
+			Handler:    _Provider_ApplySeed_Handler,
+		},
+		{
+			MethodName: "RecordSeed",
+			Handler:    _Provider_RecordSeed_Handler,
+		},
+		{
+			MethodName: "ReadSeedLedger",
+			Handler:    _Provider_ReadSeedLedger_Handler,
 		},
 		{
 			MethodName: "Execute",

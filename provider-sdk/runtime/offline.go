@@ -13,20 +13,22 @@ import (
 
 // Offline services share atomic batch validation. The caller retains the
 // original input while the owner receives a clone, so owner mutation cannot
-// rewrite the provenance used to validate its response.
+// rewrite the provenance used to validate its response. Both sides validate
+// with the description negotiated with the host.
 func serveOffline[Q proto.Message, R proto.Message](
-	ctx context.Context, description *protocol.Description, request Q,
+	ctx context.Context, s *serverAdapter, request Q,
 	validateInput func(*protocol.Description, Q) error, validateOutput func(*protocol.Description, Q, R) error,
 	invoke func(context.Context, Q) (R, error),
 ) (R, error) {
 	var zero R
+	description := s.negotiated()
 	if err := validateInput(description, request); err != nil {
 		return zero, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if err := ctx.Err(); err != nil {
 		return zero, status.FromContextError(err).Err()
 	}
-	result, err := invoke(ctx, proto.CloneOf(request))
+	result, err := invoke(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return zero, err
 	}

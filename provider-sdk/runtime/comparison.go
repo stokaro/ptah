@@ -19,5 +19,5 @@ func (s *serverAdapter) CompareModels(ctx context.Context, request *protocol.Com
 	if s.server.ModelComparer == nil {
 		return nil, status.Error(codes.Unimplemented, "compare models is unavailable")
 	}
-	return serveOffline(ctx, s.server.Description, request, provider.ValidateComparisonRequest, provider.ValidateComparedModels, s.server.ModelComparer.CompareModels)
+	return serveOffline(ctx, s, request, provider.ValidateComparisonRequest, provider.ValidateComparedModels, s.server.ModelComparer.CompareModels)
 }

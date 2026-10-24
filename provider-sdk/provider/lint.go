@@ -98,15 +98,24 @@ func lintEngine(description *protocol.Description, name string) (*protocol.Engin
 	return engine, nil
 }
 
-func validLintFact(fact protocol.LintFact) bool {
+// statementFacts are the lint facts of contract 25.1. An engine judges them
+// only when its negotiated features list LintStatementFactsFeature.
+var statementFacts = []protocol.LintFact{
+	protocol.LintFact_LINT_FACT_STATEMENT_KIND, protocol.LintFact_LINT_FACT_MISSING_PRIMARY_KEY, protocol.LintFact_LINT_FACT_REQUIRED_CAPABILITY,
+}
+
+func validLintFact(engine *protocol.Engine, fact protocol.LintFact) bool {
 	_, known := protocol.LintFact_name[int32(fact)]
+	if slices.Contains(statementFacts, fact) && !slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) {
+		return false
+	}
 	return known && fact != protocol.LintFact_LINT_FACT_UNSPECIFIED
 }
 
-func validateLintFacts(facts []protocol.LintFact) error {
+func validateLintFacts(engine *protocol.Engine, facts []protocol.LintFact) error {
 	for i, fact := range facts {
-		if !validLintFact(fact) || slices.Contains(facts[:i], fact) {
-			return fmt.Errorf("%w: invalid or repeated lint fact", ErrProtocol)
+		if !validLintFact(engine, fact) || slices.Contains(facts[:i], fact) {
+			return fmt.Errorf("%w: invalid, unnegotiated, or repeated lint fact", ErrProtocol)
 		}
 	}
 	return nil
@@ -142,7 +151,11 @@ func ValidateSplitLint(description *protocol.Description, request *protocol.Spli
 	if result == nil || len(result.Files) != len(request.Sources) {
 		return fmt.Errorf("%w: lint split does not answer every source", ErrProtocol)
 	}
-	if err := validateLintFacts(result.Judged); err != nil {
+	engine, err := lintEngine(description, request.Engine)
+	if err != nil {
+		return err
+	}
+	if err := validateLintFacts(engine, result.Judged); err != nil {
 		return err
 	}
 	if slices.Contains(result.Judged, protocol.LintFact_LINT_FACT_REBUILD_DROP) != slices.Contains(result.Judged, protocol.LintFact_LINT_FACT_REBUILD_RENAME) {
@@ -159,28 +172,89 @@ func ValidateSplitLint(description *protocol.Description, request *protocol.Spli
 			if err := validateLintEffects(statement.Effects, result.Judged); err != nil {
 				return err
 			}
+			if err := requireStatementKind(statement.Effects, result.Judged); err != nil {
+				return err
+			}
 			end = statement.End
 		}
 	}
 	return nil
 }
 
+// validateLintEffects checks one statement's effects against the facts that
+// were judged: fields that belong to another fact, a second kind, and a
+// missing primary key on a statement whose kind creates no table.
 func validateLintEffects(effects []*protocol.LintEffect, allowed []protocol.LintFact) error {
 	safety := 0
+	var kind *protocol.LintEffect
 	for _, effect := range effects {
 		if !slices.Contains(allowed, effect.GetFact()) {
 			return fmt.Errorf("%w: lint effect of a fact that was not judged", ErrProtocol)
 		}
-		if effect.Fact != protocol.LintFact_LINT_FACT_SAFETY_EFFECT {
-			if effect.Impact != protocol.LintImpact_LINT_IMPACT_UNSPECIFIED || effect.Reason != "" {
-				return fmt.Errorf("%w: only a safety effect carries an impact or a reason", ErrProtocol)
-			}
-			continue
+		if err := validateLintEffectFields(effect); err != nil {
+			return err
 		}
-		safety++
-		if (effect.Impact != protocol.LintImpact_LINT_IMPACT_BEHAVIORAL && effect.Impact != protocol.LintImpact_LINT_IMPACT_DESTRUCTIVE) ||
-			strings.TrimSpace(effect.Reason) == "" || safety > 1 {
-			return fmt.Errorf("%w: invalid safety effect", ErrProtocol)
+		switch effect.Fact {
+		case protocol.LintFact_LINT_FACT_STATEMENT_KIND:
+			if kind != nil {
+				return fmt.Errorf("%w: a lint statement has two kinds", ErrProtocol)
+			}
+			kind = effect
+		case protocol.LintFact_LINT_FACT_SAFETY_EFFECT:
+			safety++
+			if (effect.Impact != protocol.LintImpact_LINT_IMPACT_BEHAVIORAL && effect.Impact != protocol.LintImpact_LINT_IMPACT_DESTRUCTIVE) ||
+				strings.TrimSpace(effect.Reason) == "" || safety > 1 {
+				return fmt.Errorf("%w: invalid safety effect", ErrProtocol)
+			}
+		}
+	}
+	for _, effect := range effects {
+		if effect.Fact == protocol.LintFact_LINT_FACT_MISSING_PRIMARY_KEY && kind != nil &&
+			kind.StatementClass != protocol.LintStatementClass_LINT_STATEMENT_CLASS_CREATE_TABLE {
+			return fmt.Errorf("%w: a missing primary key on a statement that creates no table", ErrProtocol)
+		}
+	}
+	return nil
+}
+
+// requireStatementKind refuses a judged statement with no kind where the
+// statement kind is among the judged facts. A declined statement carries no
+// effect and is not asked.
+func requireStatementKind(effects []*protocol.LintEffect, judged []protocol.LintFact) error {
+	if !slices.Contains(judged, protocol.LintFact_LINT_FACT_STATEMENT_KIND) {
+		return nil
+	}
+	if !slices.ContainsFunc(effects, func(effect *protocol.LintEffect) bool {
+		return effect.Fact == protocol.LintFact_LINT_FACT_STATEMENT_KIND
+	}) {
+		return fmt.Errorf("%w: a judged lint statement has no kind", ErrProtocol)
+	}
+	return nil
+}
+
+// validateLintEffectFields checks the fields that belong to one fact alone.
+func validateLintEffectFields(effect *protocol.LintEffect) error {
+	if effect.Fact != protocol.LintFact_LINT_FACT_SAFETY_EFFECT && (effect.Impact != protocol.LintImpact_LINT_IMPACT_UNSPECIFIED || effect.Reason != "") {
+		return fmt.Errorf("%w: only a safety effect carries an impact or a reason", ErrProtocol)
+	}
+	if (effect.Fact == protocol.LintFact_LINT_FACT_STATEMENT_KIND) != (effect.StatementClass != protocol.LintStatementClass_LINT_STATEMENT_CLASS_UNSPECIFIED) {
+		return fmt.Errorf("%w: a statement kind and only a statement kind carries a statement class", ErrProtocol)
+	}
+	if (effect.Fact == protocol.LintFact_LINT_FACT_REQUIRED_CAPABILITY) != (effect.Capability != "") {
+		return fmt.Errorf("%w: a required capability and only a required capability names a capability", ErrProtocol)
+	}
+	switch effect.Fact {
+	case protocol.LintFact_LINT_FACT_STATEMENT_KIND:
+		if _, known := protocol.LintStatementClass_name[int32(effect.StatementClass)]; !known || !diagnosticLine(effect.Kind) {
+			return fmt.Errorf("%w: a statement kind needs a known class and a one-line name", ErrProtocol)
+		}
+	case protocol.LintFact_LINT_FACT_MISSING_PRIMARY_KEY:
+		if strings.TrimSpace(effect.Table) == "" {
+			return fmt.Errorf("%w: a missing primary key names no table", ErrProtocol)
+		}
+	case protocol.LintFact_LINT_FACT_REQUIRED_CAPABILITY:
+		if !comparisonReason(effect.Capability) {
+			return fmt.Errorf("%w: invalid required capability name", ErrProtocol)
 		}
 	}
 	return nil
@@ -191,13 +265,14 @@ func ValidateAnnotateLintRequest(description *protocol.Description, request *pro
 	if request == nil {
 		return fmt.Errorf("%w: lint annotation request is missing", ErrProtocol)
 	}
-	if _, err := lintEngine(description, request.Engine); err != nil {
+	engine, err := lintEngine(description, request.Engine)
+	if err != nil {
 		return err
 	}
 	if len(request.Facts) == 0 || len(request.Sources) != len(request.Files) {
 		return fmt.Errorf("%w: lint annotation needs facts and one statement list per source", ErrProtocol)
 	}
-	if err := validateLintFacts(request.Facts); err != nil {
+	if err := validateLintFacts(engine, request.Facts); err != nil {
 		return err
 	}
 	return validateLintSources(request.Sources)
@@ -222,6 +297,12 @@ func ValidateAnnotatedLint(description *protocol.Description, request *protocol.
 				return fmt.Errorf("%w: a declined lint statement carries effects", ErrProtocol)
 			}
 			if err := validateLintEffects(annotation.Effects, request.Facts); err != nil {
+				return err
+			}
+			if annotation.Declined {
+				continue
+			}
+			if err := requireStatementKind(annotation.Effects, request.Facts); err != nil {
 				return err
 			}
 		}
