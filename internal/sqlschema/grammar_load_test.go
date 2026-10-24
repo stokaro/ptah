@@ -257,3 +257,41 @@ func TestReadLoad_CoverageUsesTheWholeLoadsDeclarations(t *testing.T) {
 		})
 	}
 }
+
+// loadClaim is a claim for the widget kind, made for a whole load.
+func loadClaim(c *qt.C) schemaext.Coverage {
+	claim, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{{
+		Model:     schemaext.CodecIdentity{Owner: "example.org/custom", Kind: "example.org/custom/widget", Representation: schemaext.Desired, Version: 1, Definition: "sha256:widget"},
+		Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete}),
+	}}, nil)
+	c.Assert(err, qt.IsNil)
+	return claim
+}
+
+// claimingGrammar reads every document of a load and claims its coverage for
+// the whole load with the reading, as an owner served by another process
+// does.
+type claimingGrammar struct{ claim schemaext.Coverage }
+
+func (g claimingGrammar) ReadSQL(_ context.Context, request sqlext.GrammarRequest) (sqlext.GrammarResult, error) {
+	return sqlext.GrammarResult{Files: echoFiles(request), Coverage: g.claim}, nil
+}
+
+// TestReadLoad_KeepsTheClaimTheOwnerReadWithTheLoad keeps the coverage an
+// owner returns with its reading of the whole load, for an owner that makes
+// no claim per document, and still adds what each header leaves undescribed.
+func TestReadLoad_KeepsTheClaimTheOwnerReadWithTheLoad(t *testing.T) {
+	c := qt.New(t)
+	claim := loadClaim(c)
+	runtime := must.Must(engine.New(engine.Provider{
+		ID: "example.org/custom", Targets: []engine.Target{{Name: "custom"}},
+		SQL: []sqlext.Extension{{Owner: "example.org/custom", Targets: []string{"custom"}, Grammar: claimingGrammar{claim: claim}, Header: []coverage.Kind{"widget"}}},
+	}))
+	files := []sqlext.SourceFile{{Path: "a.sql", Text: "-- ptah:not-described widget \"w1\"\n-- ptah:not-described view\nanything"}, {Path: "b.sql", Text: "anything else"}}
+
+	load, err := sqlschema.ReadLoad(t.Context(), sqlext.GrammarRequest{Target: "custom", Files: files}, sqlschema.Options{Owners: runtime.SQL()})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(load.Database.FeatureCoverage.Equal(claim), qt.IsTrue)
+	c.Assert(load.Database.NotDescribed.Describes(coverage.View), qt.IsFalse)
+}

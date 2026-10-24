@@ -463,7 +463,10 @@ refused by name:
 The SDK conformance tests in `runtime` read a small table dialect through both
 transport boundaries: load order, a later document that alters an earlier one,
 per-document declarations, positioned refusals, a refused load that exposes no
-prefix, and cancellation. The fixture provider does not implement the operation.
+prefix, and cancellation. The fixture's `sql-document` command declares the
+`DOCUMENT` mode for its narrow table dialect, with a retention object of its own
+and the header kind `retention`. The process tests in `integration` read through
+it, and so does the host's adapter, which maps a reading into its common model.
 
 ## Contextual model comparison
 

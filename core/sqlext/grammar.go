@@ -3,6 +3,7 @@ package sqlext
 import (
 	"context"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
@@ -47,6 +48,12 @@ type GrammarResult struct {
 	// the request's order, for the reader's check that a later file of a
 	// schema directory does not declare again what an earlier one did.
 	Files []FileDeclarations
+	// Coverage is the owner's claim about its models for the whole load,
+	// made by the same reading that produced Database, as an owner served by
+	// another process returns it. The reader combines it with what the
+	// extension's Coverage claims for each document. The zero value adds
+	// nothing.
+	Coverage schemaext.Coverage
 }
 
 // FileDeclarations is what one file of a load declares, in the reader's
