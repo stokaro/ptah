@@ -75,6 +75,10 @@ type Options struct {
 	// registered per target, so a document that names no target detaches
 	// nothing and is never refused for it.
 	Relations featureselect.RelationRuntime
+	// StoredNames receives each name the document writes longer than the
+	// limit of a server that cuts it, with the name that server keeps, which
+	// is the name the read records. Nil discards them; the read is the same.
+	StoredNames func(StoredName)
 }
 
 // ReadWith is [ReadOnto] with the owners and the coverage vocabulary the
@@ -108,7 +112,7 @@ func ReadWith(
 		}
 		return loaded.Database, nil, nil
 	}
-	database, statements, err := convert(ctx, data, dialect, document, opts.Owners, opts.Relations)
+	database, statements, err := convert(ctx, data, dialect, document, opts)
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
@@ -135,9 +139,9 @@ func refuseFeatureCoverageHeader(data []byte) error {
 // convert parses data in the shared grammar, with the owners' syntax, and
 // converts its statements onto document, a fresh one for a file read alone.
 func convert(
-	ctx context.Context, data []byte, dialect string, document *Document, owners sqlext.Set,
-	relations featureselect.RelationRuntime,
+	ctx context.Context, data []byte, dialect string, document *Document, opts Options,
 ) (schemamodel.Database, *ast.StatementList, error) {
+	owners, relations := opts.Owners, opts.Relations
 	if document == nil {
 		document = NewDocument(nil)
 	}
@@ -148,6 +152,9 @@ func convert(
 	parsed := parser.NewParser(string(data), options...)
 	statements, err := parsed.ParseContext(ctx)
 	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
+	if err := document.followStoredNames(statements, dialect, opts.StoredNames); err != nil {
 		return schemamodel.Database{}, nil, err
 	}
 	database, err := convertStatements(ctx, statements, parsed, dialect, document, owners, relations)

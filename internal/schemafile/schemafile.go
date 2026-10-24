@@ -103,6 +103,12 @@ type Options struct {
 	// in two different sentences.
 	ReportIgnored io.Writer
 
+	// Notices receives one warning line per name a SQL file writes longer than
+	// the identifier limit of a server that cuts it, such as a 64-byte foreign
+	// key name on PostgreSQL. The read records the object under the name the
+	// server keeps either way; nil only leaves the reader unaware of it.
+	Notices io.Writer
+
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
 	// `--var` spells them. See [atlashcl.Options.Vars].
 	//
@@ -881,8 +887,10 @@ func readSQLFile(
 ) (*schemamodel.Database, *ast.StatementList, error) {
 	// The loaders take no context yet. The owners read their syntax in
 	// process, so the parse bounds the read.
-	db, statements, err := sqlschema.ReadWith(ctx, data, opts.Dialect, earlier,
-		sqlschema.Options{Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations})
+	db, statements, err := sqlschema.ReadWith(ctx, data, opts.Dialect, earlier, sqlschema.Options{
+		Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations,
+		StoredNames: storedNameReporter(opts.Notices, "schema file "+path),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}
@@ -998,4 +1006,15 @@ func rootReaderOf(dialect string) (dburlext.RootReader, error) {
 		return nil, fmt.Errorf("dialect %q names no database root a schema document can be read against", dialect)
 	}
 	return reader, err
+}
+
+// storedNameReporter turns the writer into the callback the SQL reader takes,
+// or nil when there is nowhere to write. source names what was read.
+func storedNameReporter(out io.Writer, source string) func(sqlschema.StoredName) {
+	if out == nil {
+		return nil
+	}
+	return func(name sqlschema.StoredName) {
+		fmt.Fprintf(out, "warning: %s: %s\n", source, name)
+	}
 }
