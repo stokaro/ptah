@@ -1,6 +1,6 @@
 # ADR 0026: Official providers are pinned in the release, installed explicitly, and bundled by the distribution
 
-Status: Accepted
+Status: Superseded by [ADR 0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md)
 
 Deciders: Ptah maintainers
 

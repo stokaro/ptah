@@ -35,11 +35,12 @@ a new record that names it, and its own status line is updated to point there.
 | [0023](0023-engine-knowledge-moves-with-the-provider.md) | Engine knowledge moves with the provider | Proposed |
 | [0024](0024-the-provider-owns-table-changes-through-one-lifecycle-service.md) | The provider owns table changes through one lifecycle service | Proposed |
 | [0025](0025-a-provider-declares-the-source-syntax-it-owns.md) | A provider declares the source syntax it owns | Proposed |
-| [0026](0026-official-providers-are-pinned-in-the-release-installed-explicitly-and-bundled-by-the-distribution.md) | Official providers are pinned in the release, installed explicitly, and bundled by the distribution | Accepted |
+| [0026](0026-official-providers-are-pinned-in-the-release-installed-explicitly-and-bundled-by-the-distribution.md) | Official providers are pinned in the release, installed explicitly, and bundled by the distribution | Superseded by 0031 |
 | [0027](0027-a-provider-reads-the-sql-schema-documents-of-its-own-dialect.md) | A provider reads the SQL schema documents of its own dialect | Accepted |
 | [0028](0028-a-provider-owns-how-rows-are-read-written-and-seeded.md) | A provider owns how rows are read, written and seeded | Accepted |
 | [0029](0029-column-tables-need-no-protocol-change-and-the-address-stays-provider-owned.md) | Column tables need no protocol change, and the connection address stays provider-owned | Accepted |
 | [0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md) | ptah-compat resolves providers through the native pipeline | Accepted |
+| [0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md) | Official providers are installed separately, and Ptah pins no provider release | Accepted |
 
 ## Writing one
 
