@@ -26,6 +26,7 @@ const (
 	Provider_Render_FullMethodName                 = "/ptah.provider.experimental.Provider/Render"
 	Provider_AnalyzeSQL_FullMethodName             = "/ptah.provider.experimental.Provider/AnalyzeSQL"
 	Provider_DecodeSource_FullMethodName           = "/ptah.provider.experimental.Provider/DecodeSource"
+	Provider_ReadSQLSchema_FullMethodName          = "/ptah.provider.experimental.Provider/ReadSQLSchema"
 	Provider_NormalizeValues_FullMethodName        = "/ptah.provider.experimental.Provider/NormalizeValues"
 	Provider_ConvertValues_FullMethodName          = "/ptah.provider.experimental.Provider/ConvertValues"
 	Provider_CompareModels_FullMethodName          = "/ptah.provider.experimental.Provider/CompareModels"
@@ -70,6 +71,7 @@ type ProviderClient interface {
 	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResult, error)
 	AnalyzeSQL(ctx context.Context, in *AnalyzeSQLRequest, opts ...grpc.CallOption) (*SQLAnalysis, error)
 	DecodeSource(ctx context.Context, in *DecodeSourceRequest, opts ...grpc.CallOption) (*DecodedSource, error)
+	ReadSQLSchema(ctx context.Context, in *ReadSQLSchemaRequest, opts ...grpc.CallOption) (*SQLSchema, error)
 	NormalizeValues(ctx context.Context, in *NormalizeValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	ConvertValues(ctx context.Context, in *ConvertValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
@@ -171,6 +173,16 @@ func (c *providerClient) DecodeSource(ctx context.Context, in *DecodeSourceReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DecodedSource)
 	err := c.cc.Invoke(ctx, Provider_DecodeSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadSQLSchema(ctx context.Context, in *ReadSQLSchemaRequest, opts ...grpc.CallOption) (*SQLSchema, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SQLSchema)
+	err := c.cc.Invoke(ctx, Provider_ReadSQLSchema_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -462,6 +474,7 @@ type ProviderServer interface {
 	Render(context.Context, *RenderRequest) (*RenderResult, error)
 	AnalyzeSQL(context.Context, *AnalyzeSQLRequest) (*SQLAnalysis, error)
 	DecodeSource(context.Context, *DecodeSourceRequest) (*DecodedSource, error)
+	ReadSQLSchema(context.Context, *ReadSQLSchemaRequest) (*SQLSchema, error)
 	NormalizeValues(context.Context, *NormalizeValuesRequest) (*NormalizedValues, error)
 	ConvertValues(context.Context, *ConvertValuesRequest) (*NormalizedValues, error)
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
@@ -519,6 +532,9 @@ func (UnimplementedProviderServer) AnalyzeSQL(context.Context, *AnalyzeSQLReques
 }
 func (UnimplementedProviderServer) DecodeSource(context.Context, *DecodeSourceRequest) (*DecodedSource, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DecodeSource not implemented")
+}
+func (UnimplementedProviderServer) ReadSQLSchema(context.Context, *ReadSQLSchemaRequest) (*SQLSchema, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadSQLSchema not implemented")
 }
 func (UnimplementedProviderServer) NormalizeValues(context.Context, *NormalizeValuesRequest) (*NormalizedValues, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NormalizeValues not implemented")
@@ -744,6 +760,24 @@ func _Provider_DecodeSource_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).DecodeSource(ctx, req.(*DecodeSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadSQLSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadSQLSchemaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadSQLSchema(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadSQLSchema_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadSQLSchema(ctx, req.(*ReadSQLSchemaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1268,6 +1302,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DecodeSource",
 			Handler:    _Provider_DecodeSource_Handler,
+		},
+		{
+			MethodName: "ReadSQLSchema",
+			Handler:    _Provider_ReadSQLSchema_Handler,
 		},
 		{
 			MethodName: "NormalizeValues",

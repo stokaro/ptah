@@ -15,6 +15,7 @@ service Provider {
   rpc Render(RenderRequest) returns (RenderResult);
   rpc AnalyzeSQL(AnalyzeSQLRequest) returns (SQLAnalysis);
   rpc DecodeSource(DecodeSourceRequest) returns (DecodedSource);
+  rpc ReadSQLSchema(ReadSQLSchemaRequest) returns (SQLSchema);
   rpc NormalizeValues(NormalizeValuesRequest) returns (NormalizedValues);
   rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
@@ -72,6 +73,22 @@ message Engine {
   repeated LintRule lint_rules = 10;
   repeated ReleaseLine release_lines = 11;
   repeated GoSourceDirective go_source_directives = 12;
+  // Absent means FRAGMENTS: the host reads SQL documents with the shared
+  // grammar and sends the statements it does not model to DecodeSource.
+  SQLSchemaDeclaration sql_schema = 13;
+}
+// SQLSchemaDeclaration says how an engine takes part in SQL schema documents.
+// A target has exactly one mode. In FRAGMENTS mode the host lexes and parses
+// the document with the shared grammar. In DOCUMENT mode the engine's own
+// grammar reads every SQL document of the engine in full through
+// ReadSQLSchema, and the host does not lex the text.
+message SQLSchemaDeclaration {
+  enum Mode { MODE_UNSPECIFIED = 0; FRAGMENTS = 1; DOCUMENT = 2; }
+  Mode mode = 1;
+  // Kinds a ptah:not-described header of a DOCUMENT engine may name. The host
+  // parses the header and sends the entries of these kinds as limits. Empty
+  // for FRAGMENTS.
+  repeated string header_kinds = 2;
 }
 // ReleaseLine is one release line of an engine and how much testing stands
 // behind it. A level of CERTIFIED or LEGACY_TESTED claims that something runs
@@ -545,6 +562,9 @@ message SourceTrace {
   repeated SourcePathStep path = 3;
   enum Root { ROOT_UNSPECIFIED = 0; CONTENT = 1; INHERITED_ATTRIBUTES = 2; }
   Root root = 4;
+  // Set only for a document that ReadSQLSchema read whole: the span of the
+  // declaring text in that document. fragment_id, path and root are then empty.
+  SourceSpan span = 5;
 }
 
 
@@ -651,6 +671,160 @@ message SourceModelValue {
   // Provenance resolves against the original captured fragment, never output
   // synthesized by the provider. Even an inherited default has a trace.
   SourceTrace source = 3;
+}
+
+// ReadSQLSchema reads the SQL schema documents of a DOCUMENT engine offline.
+// The host reads the files and sends text; the owner is given no path to open
+// and no connection. The call is a pure function of its request: it has no
+// session, no address and no credential, and a canceled call returns nothing.
+// The reply is the result of running all documents in order, because a later
+// document can alter what an earlier one declared.
+message ReadSQLSchemaRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  ComparisonIdentifiers identifiers = 3;
+  // Database root that absolute object paths in the documents resolve against.
+  string database_path = 4;
+  // Documents in the order the load runs them.
+  repeated SQLDocument documents = 5;
+  // Entries of the documents' ptah:not-described headers whose kind the engine
+  // declared in sql_schema.header_kinds, in written order.
+  repeated SchemaCoverageLimit limits = 6;
+}
+message SQLDocument {
+  string id = 1;
+  // For diagnostics only. The owner never opens it.
+  string path = 2;
+  string text = 3;
+}
+// SQLSchema is the owner's reading of a load. Every common object has a home
+// in a declared field; an object with none is refused by name with an
+// UNSUPPORTED diagnostic, never skipped. With complete false the reply holds
+// error diagnostics and no schema: every other field is empty.
+message SQLSchema {
+  bool complete = 1;
+  repeated DeclaredTable tables = 2;
+  // DESIRED values of provider-owned models whose source formats include SQL.
+  repeated Envelope native_objects = 3;
+  // One entry per requested document, in request order.
+  repeated SQLDocumentDeclarations declarations = 4;
+  // DESIRED coverage the load claims, from the same call that read it.
+  ModelCoverage coverage = 5;
+  repeated SQLDiagnostic diagnostics = 6;
+  repeated DeclaredNamespace namespaces = 7;
+  repeated DeclaredEnum enums = 8;
+  repeated SQLView views = 9;
+  repeated SQLSequence sequences = 10;
+  repeated SQLRole roles = 11;
+  repeated SQLGrant grants = 12;
+  // Exactly one trace for every object of the collections above.
+  repeated SQLObjectTrace traces = 13;
+}
+message SQLView {
+  string schema = 1;
+  string name = 2;
+  // The SELECT text that defines the view.
+  string body = 3;
+  bool materialized = 4;
+  bool with_check = 5;
+  string comment = 6;
+  repeated string attributes = 7;
+  repeated string depends_on = 8;
+}
+message SQLSequence {
+  string schema = 1;
+  string name = 2;
+  string as_type = 3;
+  optional int64 start = 4;
+  optional int64 increment = 5;
+  optional int64 min_value = 6;
+  optional int64 max_value = 7;
+  optional int64 cache = 8;
+  bool cycle = 9;
+  string owned_by = 10;
+  string comment = 11;
+}
+// SQLRole carries no password: a secret in a schema file is not a declared
+// value the host compares.
+message SQLRole {
+  string name = 1;
+  bool login = 2;
+  bool superuser = 3;
+  bool create_db = 4;
+  bool create_role = 5;
+  bool inherit = 6;
+  bool replication = 7;
+  string comment = 8;
+  // A principal of its own kind that never logs in and has members.
+  bool group = 9;
+  repeated string member_of = 10;
+}
+// SQLGrant is one GRANT or REVOKE. A REVOKE asserts the privilege absent, which
+// is a statement of its own and not the absence of a grant.
+message SQLGrant {
+  string role = 1;
+  repeated string privileges = 2;
+  // The object the privilege applies to. Its kind names what it is, such as
+  // "table", "schema", "database" or "routine"; overload holds the argument
+  // types of a routine.
+  Reference target = 3;
+  bool with_grant_option = 4;
+  bool revoked = 5;
+  string comment = 6;
+}
+// SQLObjectTrace points one declared object at its text. The collection and
+// index select the object, so objects without a unique name are addressable.
+message SQLObjectTrace {
+  enum Collection {
+    COLLECTION_UNSPECIFIED = 0;
+    TABLES = 1;
+    NATIVE_OBJECTS = 2;
+    NAMESPACES = 3;
+    ENUMS = 4;
+    VIEWS = 5;
+    SEQUENCES = 6;
+    ROLES = 7;
+    GRANTS = 8;
+  }
+  Collection collection = 1;
+  uint32 index = 2;
+  SourceTrace source = 3;
+}
+// SQLDocumentDeclarations mirrors what the host's directory check reads. The
+// host uses it only to refuse a later file of a schema directory that declares
+// again what an earlier one did; the owner decides what a statement means.
+message SQLDocumentDeclarations {
+  string document_id = 1;
+  // Objects the document leaves declared once it has run.
+  repeated SQLDeclaration objects = 2;
+  // Objects the document declares under a clause that admits an existing one.
+  repeated SQLDeclaration guards = 3;
+  // CREATE TABLE and DROP TABLE statements in the order the document runs them.
+  repeated SQLTableStatement tables = 4;
+}
+message SQLDeclaration {
+  // The object's kind, such as "table", "view" or "index".
+  string kind = 1;
+  // The name as the document writes it, qualified where it qualifies it.
+  string name = 2;
+}
+message SQLTableStatement {
+  string name = 1;
+  bool drop = 2;
+  // A CREATE TABLE under IF NOT EXISTS.
+  bool guarded = 3;
+}
+// SQLDiagnostic is positioned in the document text. A message names a span and
+// a bounded token, never the statement, because a schema file can carry a
+// secret value.
+message SQLDiagnostic {
+  enum Code { CODE_UNSPECIFIED = 0; SYNTAX = 1; UNSUPPORTED = 2; INVALID = 3; INCOMPLETE = 4; }
+  enum Severity { SEVERITY_UNSPECIFIED = 0; ERROR = 1; WARNING = 2; }
+  Code code = 1;
+  Severity severity = 2;
+  string document_id = 3;
+  SourceSpan span = 4;
+  string message = 5;
 }
 
 // ConvertValues interprets a complete captured batch in the other schema

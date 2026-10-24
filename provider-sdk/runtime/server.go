@@ -64,6 +64,7 @@ type Server struct {
 	Linter          provider.Linter
 	DevProvisioner  provider.DevProvisioner
 	SchemaValidator provider.SchemaValidator
+	SQLSchemaReader provider.SQLSchemaReader
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -96,6 +97,7 @@ func (s Server) Validate() error {
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
 		{provider.LintFeature, !nilService(s.Linter)},
 		{provider.DevDatabaseFeature, !nilService(s.DevProvisioner)},
+		{provider.ReadSQLSchemaFeature, !nilService(s.SQLSchemaReader)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
