@@ -276,7 +276,7 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 		return err
 	}
 
-	allowExternal, err := testexternal.Allowed()
+	allowExternal, err := testexternal.Allowed(ctx)
 	if err != nil {
 		return err
 	}

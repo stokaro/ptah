@@ -80,7 +80,7 @@ walkthrough unchanged.
 | DBML file | `--schema-file ./schema.dbml` | DBML covers its supported table, key, index, relationship, and note subset. |
 | Go annotations | `--root-dir ./models` | Uses the native Go annotation model and therefore requires Go source. |
 | External program | `--schema-cmd "./load-schema --tenant acme" --schema-format sql` | Ptah starts the program directly, without a shell. Its stdout must be SQL, HCL, or YAML. |
-| Configured external source | `--config ./ptah.yaml --allow-external-schema` | The opt-in is mandatory; the selected block emits SQL, HCL, or YAML. |
+| Configured external source | `--config ./ptah.yaml --allow-config-exec` | The permission is mandatory; the selected block emits SQL, HCL, or YAML. |
 | OCI artifact | `--schema-file oci://registry.example/acme/app-schema:v1` | The artifact contains canonical HCL; registry credentials come from the Docker credential store. |
 | Composite source | `--schema-file ./schema.sql --schema-file ./shared.yaml --schema-file ./vendor.hcl` | Repeat inputs; compatible objects merge and conflicting definitions fail. |
 

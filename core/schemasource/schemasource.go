@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/processcapture"
 	"ptah.run/internal/secretdisplay"
 )
@@ -46,6 +47,13 @@ type Command struct {
 	// Timeout bounds execution and output interpretation. Zero uses
 	// DefaultTimeout; a negative value disables the timeout.
 	Timeout time.Duration
+	// Origin names the project file construct that supplied the program, such
+	// as `ptah.yaml external_schema` or `atlas.hcl data "external_schema"
+	// "app"`. Such a program runs only when the context Run is given allows
+	// it; see config/projectconfig.AtlasCompatible and
+	// config/projectconfig.AllowConfiguredPrograms. Empty is a program the
+	// caller names itself, as --schema-cmd does, and runs without asking.
+	Origin string
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
 	// A malformed entry — no equals sign, or an empty key — is refused before
 	// the program starts. PATH and PWD cannot be overridden (matched
@@ -171,12 +179,16 @@ func run(ctx context.Context, cmd Command) ([]byte, error) {
 	}
 
 	result, err := processcapture.Run(ctx, processcapture.Command{
-		Args: cmd.Args,
-		Dir:  cmd.Dir,
-		Env:  cmd.Env,
+		Origin: cmd.Origin,
+		Args:   cmd.Args,
+		Dir:    cmd.Dir,
+		Env:    cmd.Env,
 	})
 	if err == nil {
 		return result.Stdout, nil
+	}
+	if errors.Is(err, execpolicy.ErrRefused) {
+		return nil, err
 	}
 	var failure *processcapture.Failure
 	if !errors.As(err, &failure) {

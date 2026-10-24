@@ -189,7 +189,7 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	}
 	defer releaseDev()
 
-	allowExternal, err := testexternal.Allowed()
+	allowExternal, err := testexternal.Allowed(ctx)
 	if err != nil {
 		return err
 	}

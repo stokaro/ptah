@@ -87,7 +87,7 @@ env "local" {
 `, hclStringList(helperProgram("echo", literal)))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -110,7 +110,7 @@ env "local" {
 `, hclStringList(helperProgram("echo", `{"url":"sqlite://decoded.db"}`)))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -134,7 +134,7 @@ env "local" {
 `, hclStringList(helperProgram("pwd")))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -157,7 +157,7 @@ env "local" {
 `, hclStringList(helperProgram("fail")))
 
 	_, err = projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -179,7 +179,7 @@ env "local" {
 	defer cancel()
 
 	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: ctx,
+		Context: projectconfig.AtlasCompatible(ctx),
 		EnvName: "local",
 	})
 
@@ -208,7 +208,7 @@ env "local" {
 `, strconv.Quote(dbURL))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -237,7 +237,7 @@ env "local" {
 `, strconv.Quote(dbURL))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -261,7 +261,7 @@ env "local" {
 `, strconv.Quote(databaseURL))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -284,7 +284,7 @@ env "local" {
 `, strconv.Quote(databaseURL))
 
 	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -307,7 +307,7 @@ env "local" {
 `, strconv.Quote(databaseURL))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -348,7 +348,7 @@ env "local" {
 `, strconv.Quote(databaseURL), strconv.Quote(test.query))
 
 			_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-				Context: context.Background(),
+				Context: projectconfig.AtlasCompatible(context.Background()),
 				EnvName: "local",
 			})
 
@@ -384,7 +384,7 @@ env "local" {
 	)
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -418,7 +418,7 @@ env "local" {
 	)
 
 	_, err = projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -443,7 +443,7 @@ env "local" {
 `, strconv.Quote((&url.URL{Scheme: "file", Path: valuePath}).String()))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -466,7 +466,7 @@ env "local" {
 `, strconv.Quote((&url.URL{Scheme: "constant", RawQuery: query.Encode()}).String()))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -497,7 +497,7 @@ env "local" {
 `, strconv.Quote(missingURL))
 
 	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -544,7 +544,7 @@ env "local" {
 
 	start := time.Now()
 	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 	elapsed := time.Since(start)
@@ -570,7 +570,7 @@ env "local" {
 `, strconv.Quote(server.URL+"?timeout=2s"))
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -610,7 +610,7 @@ env "local" {
 `)
 
 	cfg, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 
@@ -739,7 +739,7 @@ env "local" {
 	return projectconfig.ParseAtlasWithOptions(
 		raw,
 		filepath.Join(dir, "atlas.hcl"),
-		projectconfig.AtlasLoadOptions{Context: context.Background(), EnvName: "local"},
+		projectconfig.AtlasLoadOptions{Context: projectconfig.AtlasCompatible(context.Background()), EnvName: "local"},
 	)
 }
 
@@ -766,7 +766,7 @@ env "local" {
 `)
 
 	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
-		Context: context.Background(),
+		Context: projectconfig.AtlasCompatible(context.Background()),
 		EnvName: "local",
 	})
 

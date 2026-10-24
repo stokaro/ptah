@@ -79,6 +79,7 @@ type options struct {
 	lockTimeout          string
 	statementTimeout     string
 	preDownHook          string
+	preDownHookOrigin    string
 	pgDumpTo             string
 	mySQLDumpTo          string
 	webhook              string
@@ -180,7 +181,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
-func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) options {
+// resolveProjectOptions merges the project config under the flags. A command
+// hook the config supplies is checked against the program policy here, before
+// the command opens the database.
+func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, error) {
 	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
 		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
 	}
@@ -202,6 +206,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		projectconfig.StringMigrationStatementTimeout,
 	)
 	opts.preDownHook = effectiveString(preDownHookFlag, opts.preDownHook, projectconfig.StringMigrationPreDownHook)
+	opts.preDownHookOrigin = dbcli.ConfiguredHookOrigin(cmd, preDownHookFlag, "ptah.yaml migration.pre_down_hook", projectCfg.StringValue(projectconfig.StringMigrationPreDownHook))
 	opts.pgDumpTo = effectiveString(pgDumpToFlag, opts.pgDumpTo, projectconfig.StringMigrationPostgresDumpTo)
 	opts.mySQLDumpTo = effectiveString(mySQLDumpToFlag, opts.mySQLDumpTo, projectconfig.StringMigrationMySQLDumpTo)
 	opts.webhook = effectiveString(webhookFlag, opts.webhook, projectconfig.StringMigrationWebhook)
@@ -225,7 +230,12 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
-	return opts
+	if !opts.dryRun {
+		if err := dbcli.AuthorizeConfiguredHook(cmd.Context(), opts.preDownHookOrigin); err != nil {
+			return opts, err
+		}
+	}
+	return opts, nil
 }
 
 // rollbackSettingValues carries the flag strings one rollback parses, so the
@@ -287,15 +297,15 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	resolvedOpts := resolveProjectOptions(cmd, *opts, projectCfg)
+	resolvedOpts, err := resolveProjectOptions(cmd, *opts, projectCfg)
+	if err != nil {
+		return err
+	}
 	dbURL := resolvedOpts.dbURL
 	migrationsDir := resolvedOpts.migrationsDir
 	targetVersionValue := resolvedOpts.target
-	dirFormatValue := resolvedOpts.dirFormat
-	atlasEnv := resolvedOpts.atlasEnv
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
-	revisionFormatValue := resolvedOpts.revisionTableFormat
 
 	runtime, err := startObservability(cmd, opts)
 	if err != nil {
@@ -329,7 +339,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("target version must be >= 0")
 	}
 
-	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
+	dirFormat, err := migrationfile.ParseDirFormat(resolvedOpts.dirFormat)
 	if err != nil {
 		return err
 	}
@@ -369,7 +379,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(resolvedOpts.revisionTableFormat)
 	if err != nil {
 		return err
 	}
@@ -439,7 +449,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		migrationsFS,
 		migrator.WithStatementInterceptor(interceptor),
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: resolvedOpts.atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -503,7 +513,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		currentVersion:   status.CurrentVersion,
 		targetVersion:    targetVersion,
 		dirFormat:        dirFormat,
-		atlasEnv:         atlasEnv,
+		atlasEnv:         resolvedOpts.atlasEnv,
 		connectTimeout:   settings.connectTimeout,
 		skipChecks:       resolvedOpts.skipChecks,
 	}, emit); err != nil {
@@ -525,7 +535,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	if err = executeRollback(cmd, buildRollbackExecution(
 		resolvedOpts, opts, mig, preflightHook, conn, rollbackInputs{
 			migrationsFS: migrationsFS, migrationsDir: migrationsDir,
-			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: atlasEnv,
+			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
 			connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
 			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
 		}), emit); err != nil {
@@ -1039,6 +1049,7 @@ func downPreflightHook(
 		DisplayDatabaseURL: dburldisplay.Format(dbURL),
 		Dialect:            conn.Info().Dialect,
 		Command:            resolved.preDownHook,
+		CommandOrigin:      resolved.preDownHookOrigin,
 		PostgresDumpDir:    resolved.pgDumpTo,
 		MySQLDumpDir:       resolved.mySQLDumpTo,
 		WebhookURL:         resolved.webhook,

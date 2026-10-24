@@ -243,7 +243,12 @@ func TestParseAtlasHCLSchemaVarsFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
+			// No env reads the data source, and Atlas checks its variables
+			// anyway, as ptah-compat does.
+			_, err := projectconfig.ParseAtlasWithOptions([]byte(test.raw), "atlas.hcl", projectconfig.AtlasLoadOptions{
+				Context: projectconfig.AtlasCompatible(t.Context()),
+				EnvName: "local",
+			})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

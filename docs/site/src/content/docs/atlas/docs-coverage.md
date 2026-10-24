@@ -230,11 +230,12 @@ a synced schema.
 The native OCI source is available to `schema compare` and `drift` through
 `--schema-file`; it is not Atlas Registry parity or an `atlas://` source for
 Atlas-compatible commands. Atlas HCL `data "external_schema"` is implemented
-for both binaries, gated behind `--allow-external-schema` (native) or
-`PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`). The native `ptah.yaml
-external_schema` block carries the same gate rather than running unguarded:
-without the flag a render refuses with `ptah.yaml external_schema is disabled by
-default; pass --allow-external-schema to execute it`. The Atlas OSS `data "sql"`,
+for both binaries: `ptah-compat` runs the program as Atlas does, and native
+`ptah` runs it only with `--allow-config-exec`. The native `ptah.yaml
+external_schema` block, `data "external"` and the configured migration hooks
+meet the same permission; without it a render refuses with `ptah.yaml
+external_schema runs <program>: a program named in a project file does not run
+without permission; pass --allow-config-exec to run it`. The Atlas OSS `data "sql"`,
 `data "external"`, `data "runtimevar"`, and `data "template_dir"` project
 sources are also implemented. Registry-backed desired-state sources remain
 outside the supported compatibility subset.

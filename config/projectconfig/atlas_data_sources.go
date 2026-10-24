@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasruntimevar"
 	"ptah.run/internal/cloudtoken"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationartifact"
 	"ptah.run/internal/migrationsnapshot"
@@ -70,6 +71,9 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 }
 
 func (p atlasParser) resolveExternalSchemaDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	if p.rejectExternalSchema {
+		return cty.NilVal, errors.New("data.external_schema is not supported by the community version of Atlas")
+	}
 	source, err := p.externalSchemaDataSource(block)
 	if err != nil {
 		return cty.NilVal, err
@@ -263,6 +267,7 @@ func (p atlasParser) externalDataSource(block *hclsyntax.Block) (cty.Value, erro
 		workingDir = p.resolveExternalSchemaWorkingDir(workingDir)
 	}
 	result, err := processcapture.Run(p.runContext, processcapture.Command{
+		Origin:  fmt.Sprintf("atlas.hcl data \"external\" %q", block.Labels[1]),
 		Args:    program,
 		Dir:     workingDir,
 		Timeout: atlasExternalDataSourceTimeout,
@@ -278,6 +283,11 @@ func (p atlasParser) externalDataSourceError(
 	program []string,
 	err error,
 ) error {
+	if errors.Is(err, execpolicy.ErrRefused) {
+		// The refusal already names the block and the program; wrapping it in
+		// "running program" would claim it started.
+		return err
+	}
 	var failure *processcapture.Failure
 	if !errors.As(err, &failure) {
 		return p.dataSourceError(block, "running program "+program[0], err, program...)

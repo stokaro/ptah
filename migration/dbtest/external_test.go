@@ -45,7 +45,7 @@ func TestRunTest_AnExternalStepIsRefusedWithoutAuthorization(t *testing.T) {
 	// meant to run that program.
 	c.Assert(err.Error(), qt.Contains, `test case "runs a program"`)
 	c.Assert(err.Error(), qt.Contains, "/bin/echo")
-	c.Assert(err.Error(), qt.Contains, "PTAH_ALLOW_EXTERNAL_TEST_COMMAND")
+	c.Assert(err.Error(), qt.Contains, "pass --allow-config-exec to authorize it")
 }
 
 // TestRunTest_AnInvalidExternalStepIsRefusedBeforeAnyDatabase keeps a

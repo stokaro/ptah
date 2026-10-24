@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
 )
 
@@ -116,15 +117,16 @@ func RegisterProjectVarFlag(flags *pflag.FlagSet) {
 	)
 }
 
-// RegisterExternalSchemaOptInFlag registers the safety gate for executing an
-// external_schema program loaded from ptah.yaml or atlas.hcl. An explicit
-// --schema-cmd does not require this flag because supplying the command is
-// already an opt-in.
+// RegisterExternalSchemaOptInFlag registers --allow-external-schema, the older
+// spelling of the root's --allow-config-exec, on a command that reads an
+// external_schema program. The root reads it into the same program policy, and
+// it allows no more than --allow-config-exec does. An explicit --schema-cmd
+// needs neither, because supplying the command is already the permission.
 func RegisterExternalSchemaOptInFlag(flags *pflag.FlagSet) {
 	flags.Bool(
 		AllowExternalSchemaFlagName,
 		false,
-		"Allow executing the external_schema program configured in ptah.yaml or atlas.hcl",
+		"Older spelling of --allow-config-exec",
 	)
 }
 
@@ -356,18 +358,14 @@ func ResolveExternalSchemaCommands(
 	if len(cfg.ExternalSchema.Program) == 0 {
 		return nil, nil
 	}
-	allowed, err := cmd.Flags().GetBool(AllowExternalSchemaFlagName)
-	if err != nil {
+	// Asked here, before any database is contacted, and asked again where the
+	// program starts; both ask the binary's one program policy.
+	origin := externalSchemaSourceLabel(cfg.ExternalSchema.Origin)
+	if err := execpolicy.Authorize(cmd.Context(), origin, cfg.ExternalSchema.Program); err != nil {
 		return nil, err
 	}
-	if !allowed {
-		return nil, fmt.Errorf(
-			"%s is disabled by default; pass --%s to execute it",
-			externalSchemaSourceLabel(cfg.ExternalSchema.Origin),
-			AllowExternalSchemaFlagName,
-		)
-	}
 	return externalSchemaCommandsFromConfig(
+		origin,
 		cfg.ExternalSchema.Program,
 		cfg.ExternalSchema.Format,
 		cfg.ExternalSchema.WorkingDir,
@@ -380,7 +378,7 @@ func ResolveExternalSchemaCommands(
 // file they need to review before opting in.
 func externalSchemaSourceLabel(origin string) string {
 	if origin == projectconfig.AtlasFileName {
-		return "atlas.hcl data.external_schema"
+		return `atlas.hcl data "external_schema"`
 	}
 	return "ptah.yaml external_schema"
 }
@@ -396,6 +394,7 @@ func externalSchemaCommandsFromCLI(commandLine, format string) []schemasource.Co
 }
 
 func externalSchemaCommandsFromConfig(
+	origin string,
 	program []string,
 	format,
 	dir string,
@@ -424,6 +423,7 @@ func externalSchemaCommandsFromConfig(
 		dir = resolvedDir
 	}
 	return []schemasource.Command{{
+		Origin: origin,
 		Args:   slices.Clone(program),
 		Format: format,
 		Dir:    dir,
@@ -483,9 +483,10 @@ func SchemaSourceProjectEnv(
 		atlasPath = projectconfig.AtlasFileName
 	}
 	return atlassource.ProjectEnv{
-		Loaded:  true,
-		Config:  config,
-		BaseDir: filepath.Dir(atlasPath),
+		Loaded:   true,
+		Config:   config,
+		BaseDir:  filepath.Dir(atlasPath),
+		Programs: execpolicy.From(cmd.Context()),
 	}, nil
 }
 

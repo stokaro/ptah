@@ -524,8 +524,8 @@ env "dev" {
 
 A part is a schema file or directory, or the value of an `hcl_schema`,
 `external_schema` or `remote_schema` data source. An `hcl_schema` part keeps
-that block's `vars`. An `external_schema` part needs
-`PTAH_ALLOW_EXTERNAL_SCHEMA=1`, as an env-level program does. A database URL or
+that block's `vars`. An `external_schema` part runs under the same program
+policy as an env-level program does. A database URL or
 a migration directory is refused as a part, because reading either needs a
 connection that the composition cannot scope to one part.
 
@@ -792,17 +792,22 @@ The data source follows strict placement rules:
   replaces a `ptah.yaml` `external_schema` block wholesale, so the two config
   files never mix into one hybrid program configuration.
 
-Executing repository-controlled code from an auto-discovered config file
-requires an explicit opt-in, in both binaries:
+The two binaries treat the program differently:
 
+- `ptah-compat` runs it as Atlas does, with no opt-in of its own, so an
+  `atlas.hcl` written for Atlas keeps working. The strict profile,
+  `PTAH_ATLAS_STRICT_COMPAT=1`, refuses the data source as the community
+  binary does.
 - Native `ptah` commands that consume project config (for example
-  `ptah schema render --env dev`) require `--allow-external-schema` or its
-  `PTAH_ALLOW_EXTERNAL_SCHEMA` environment twin. Without it, the command fails
-  with `atlas.hcl data.external_schema is disabled by default; pass
-  --allow-external-schema to execute it`.
-- `ptah-compat` keeps the Atlas-identical flag surface, so the opt-in is the
-  `PTAH_ALLOW_EXTERNAL_SCHEMA=1` environment variable. Without it, commands
-  fail during source classification, before the program could run.
+  `ptah schema render --env dev`) run it only with `--allow-config-exec` or
+  `PTAH_ALLOW_CONFIG_EXEC=1`. Without either, the command fails before any
+  database is contacted with `atlas.hcl data "external_schema" runs <program>:
+  a program named in a project file does not run without permission; pass
+  --allow-config-exec to run it`.
+
+The same rules cover `data "external"` and the other programs a project file
+can name; see
+[Programs a project file names](../../reference/configuration/#programs-a-project-file-names).
 
 `ptah-compat schema diff`, `schema apply`, `schema inspect` (spelled
 `--url env://src`), and `migrate diff` consume the source. `schema plan` and

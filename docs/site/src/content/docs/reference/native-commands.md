@@ -809,5 +809,5 @@ The native desired-schema consumers — `schema render`, `schema compare`,
 `schema drift`, `migrations plan`, and `migrations generate` — accept external
 commands that emit SQL, HCL, or YAML. Each command also reads
 `ptah.yaml external_schema` when `--schema-cmd` is not set and
-`--allow-external-schema` explicitly permits config-sourced execution. See
-[Configuration](../configuration/) for the `external_schema` block.
+`--allow-config-exec` explicitly permits config-sourced execution. See
+[Programs a project file names](../configuration/#programs-a-project-file-names).

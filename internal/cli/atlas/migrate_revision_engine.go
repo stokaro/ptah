@@ -14,7 +14,7 @@ import (
 // `cli-surface` tier, which asserts flag parity against that binary. An
 // environment variable is invisible to the help surface, which is why it is the
 // sanctioned spelling for a capability the community binary has no spelling for
-// at all (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA, PTAH_STRICT_DIR_QUERY).
+// at all (precedent: PTAH_STRICT_DIR_QUERY).
 //
 // WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah names the engine the revision
 // table is created with, and on ClickHouse that decides whether the statement

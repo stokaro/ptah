@@ -11,7 +11,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/testutils"
 )
 
@@ -65,12 +65,15 @@ func externalSchemaProjectEnv(mode string) atlassource.ProjectEnv {
 				Origin: projectconfig.AtlasFileName,
 			},
 		},
+		// ptah-compat's policy, which runs the program as Atlas does.
+		Programs: execpolicy.Policy{Mode: execpolicy.RunAsAtlas},
 	}
 }
 
-func TestClassifySetExternalSchema_HappyPath(t *testing.T) {
-	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
+// refusingPolicy is native ptah's policy without --allow-config-exec.
+var refusingPolicy = execpolicy.Policy{OptIn: "pass --allow-config-exec"}
 
+func TestClassifySetExternalSchema_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		rawURL string
@@ -93,97 +96,29 @@ func TestClassifySetExternalSchema_HappyPath(t *testing.T) {
 			c.Assert(set.Sources[0].Command.Args, qt.DeepEquals, env.Config.ExternalSchema.Program)
 			c.Assert(set.Sources[0].Command.Format, qt.Equals, "sql")
 			c.Assert(set.Sources[0].Command.Env, qt.DeepEquals, env.Config.ExternalSchema.Env)
+			c.Assert(set.Sources[0].Command.Origin, qt.Equals, `atlas.hcl data "external_schema"`)
 		})
 	}
 }
 
+// TestClassifySetExternalSchema_GateFailurePath refuses the program during
+// classification, before any database is contacted, when the binary's program
+// policy does not allow it.
 func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		env     func(testing.TB)
-		wantErr string
-	}{
-		{
-			name: "unset",
-			env:  envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar),
-			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
-				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
-		},
-		{
-			name: "zero",
-			env:  envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "0"),
-			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
-				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
-		},
-		{
-			name: "false",
-			env:  envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "false"),
-			wantErr: `--to "env://src": atlas\.hcl data\.external_schema executes a repository-controlled` +
-				` program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`,
-		},
-		{
-			// The refusal has a different shape here: a value that is not a
-			// boolean is a configuration error, not a denial, and
-			// telling the operator "disabled by default" when they had in fact
-			// enabled it sends them looking in the wrong place.
-			name:    "garbage",
-			env:     envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please"),
-			wantErr: `--to "env://src": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`,
-		},
-		{
-			name:    "an exported empty value",
-			env:     envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, ""),
-			wantErr: `--to "env://src": invalid boolean value "" for PTAH_ALLOW_EXTERNAL_SCHEMA`,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			test.env(c)
-
-			_, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
-
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-		})
-	}
-}
-
-// TestClassifySetExternalSchemaGateRefusesAMalformedValueWithNoProgram is the
-// discriminating case: the selected env declares ordinary schema sources, so
-// nothing on this run could ever execute a program. Resolving the opt-in only
-// inside the external-schema branch left the typo dormant on every such
-// configuration, which is most of them.
-func TestClassifySetExternalSchemaGateRefusesAMalformedValueWithNoProgram(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please")(t)
 	env := externalSchemaProjectEnv("sql")
-	env.Config.SchemaSources = []string{"file://schema.hcl"}
+	env.Programs = refusingPolicy
 
 	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
-	c.Assert(err, qt.ErrorMatches, `--to "env://src": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
-}
-
-// TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute widens the same
-// point one step: `env://url` expands a database URL and has no relationship to
-// external schema programs at all, and it still refuses. Env expansion is the
-// subsystem that owns the variable, so every expansion reads it.
-func TestClassifySetRefusesAMalformedValueOnAnUnrelatedEnvAttribute(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Set(atlassource.AllowExternalSchemaEnvVar, "yes-please")(t)
-	env := externalSchemaProjectEnv("sql")
-	env.Config.DatabaseURL = "sqlite://target.db"
-
-	_, err := atlassource.ClassifySet("--to", []string{"env://url"}, env, nil)
-
-	c.Assert(err, qt.ErrorMatches, `--to "env://url": invalid boolean value "yes-please" for PTAH_ALLOW_EXTERNAL_SCHEMA`)
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	c.Assert(err, qt.ErrorMatches, `--to "env://src": atlas\.hcl data "external_schema" runs .*: a program named in a `+
+		`project file does not run without permission; pass --allow-config-exec to run it`)
 }
 
 func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
-	envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar)(t)
 	dir := t.TempDir()
 	sentinel := filepath.Join(dir, "executed.sentinel")
 	script := filepath.Join(dir, "gen.sh")
@@ -197,22 +132,50 @@ func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 				Origin:  projectconfig.AtlasFileName,
 			},
 		},
+		Programs: refusingPolicy,
 	}
 
 	_, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
-	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	_, statErr := os.Stat(sentinel)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+// TestResolveExternalSchemaAsksThePolicyWhereTheProgramStarts covers a source
+// that classification let through and a run whose context refuses it: the
+// program start itself asks the policy, so a path that reached execution
+// without classifying first cannot run the program either.
+func TestResolveExternalSchemaAsksThePolicyWhereTheProgramStarts(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
+	c := qt.New(t)
+	dir := t.TempDir()
+	sentinel := filepath.Join(dir, "executed.sentinel")
+	script := filepath.Join(dir, "gen.sh")
+	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\ntouch "+sentinel+"\n"), 0o700), qt.IsNil) // #nosec G306 -- executable test fixture in a private temp dir
+	env := atlassource.ProjectEnv{
+		Loaded: true,
+		Config: projectconfig.Config{
+			ExternalSchema: projectconfig.ExternalSchemaConfig{Program: []string{script}, Origin: projectconfig.AtlasFileName},
+		},
+		Programs: execpolicy.Policy{Mode: execpolicy.RunAsAtlas},
+	}
+	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
+	c.Assert(err, qt.IsNil)
+
+	_, err = set.Resolve(execpolicy.With(t.Context(), refusingPolicy), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
+
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
 	_, statErr := os.Stat(sentinel)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 func TestResolveExternalSchema_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
 	c.Assert(err, qt.IsNil)
 
-	state, err := set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
+	state, err := set.Resolve(projectconfig.AtlasCompatible(t.Context()), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
 		Dialect:     "sqlite",
 		DialectFlag: "--dev-url",
 	})
@@ -225,14 +188,12 @@ func TestResolveExternalSchema_HappyPath(t *testing.T) {
 }
 
 func TestResolveExternalSchema_FailurePath(t *testing.T) {
-	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
-
 	t.Run("program exiting non-zero surfaces stderr", func(t *testing.T) {
 		c := qt.New(t)
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("fail"), nil)
 		c.Assert(err, qt.IsNil)
 
-		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
+		_, err = set.Resolve(projectconfig.AtlasCompatible(t.Context()), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Contains, `--to "env://src"`)
@@ -244,7 +205,7 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("empty"), nil)
 		c.Assert(err, qt.IsNil)
 
-		_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
+		_, err = set.Resolve(projectconfig.AtlasCompatible(t.Context()), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Contains, "produced empty output")
@@ -256,14 +217,14 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 // copy of the command, so one classified set can be resolved repeatedly.
 func TestResolveExternalSchemaCommandIsIsolatedPerResolve(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
 	set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"), nil)
 	c.Assert(err, qt.IsNil)
 
-	_, err = set.Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
+	_, err = set.Resolve(projectconfig.AtlasCompatible(t.Context()), atlassource.ResolveOptions{Runtime: sourceRuntime(c), Dialect: "sqlite"})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(set.Sources[0].Command, qt.DeepEquals, schemasource.Command{
+		Origin: `atlas.hcl data "external_schema"`,
 		Args:   set.Sources[0].Command.Args,
 		Format: "sql",
 		Env:    set.Sources[0].Command.Env,

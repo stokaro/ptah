@@ -196,7 +196,7 @@ function commandName(invocation, manifest) {
 
 function selectedSourceID(command, invocation) {
   if (/--schema-cmd\b/.test(invocation)) return 'external-program';
-  if (/--config\b/.test(invocation) && /--allow-external-schema\b/.test(invocation)) return 'configured-external';
+  if (/--config\b/.test(invocation) && /--allow-(?:config-exec|external-schema)\b/.test(invocation)) return 'configured-external';
   if (command === 'ptah schema test' && /--source-db-url\b/.test(invocation)) return 'live-database';
   if (/--schema-file\b/.test(invocation)) {
     if (/oci:\/\//i.test(invocation)) return 'oci-artifact';

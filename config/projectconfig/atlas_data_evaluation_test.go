@@ -114,7 +114,12 @@ env "local" {
 }
 `)
 
-	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+	// Atlas checks an hcl_schema variable no selected env reads; so does
+	// ptah-compat. Native ptah does not evaluate it at all.
+	_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		Context: projectconfig.AtlasCompatible(t.Context()),
+		EnvName: "local",
+	})
 
 	c.Assert(err, qt.ErrorMatches, `atlas.hcl "vars" at atlas.hcl:4 must be a map of values`)
 }

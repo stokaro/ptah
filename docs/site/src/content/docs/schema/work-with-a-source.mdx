@@ -86,7 +86,7 @@ ptah schema render --schema-cmd "go run ./loader" --schema-format sql --dialect 
 `--schema-file` and `--root-dir` repeat, and they mix: two files and one Go
 root become one composite desired schema. An explicit external loader uses
 `--schema-cmd ... --schema-format sql|hcl|yaml`. A configured loader uses
-`--config ptah.yaml --allow-external-schema`; the opt-in is mandatory because
+`--config ptah.yaml --allow-config-exec`; the permission is mandatory because
 Ptah executes the configured program.
 
 ## Render the SQL a source produces

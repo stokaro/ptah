@@ -51,7 +51,6 @@ community CLI does on the same input.
 | [`PTAH_ALLOW_RESERVED_ROLE_NAMES`](#ptah_allow_reserved_role_names) | Plan a reserved role name |
 | [`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`](#ptah_sqlite_allow_virtual_table_drop) | Plan a virtual-table drop |
 | [`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`](#ptah_sqlite_allow_unregistered_virtual_module) | Compare an unregistered module's storage |
-| [`PTAH_ALLOW_EXTERNAL_SCHEMA`](#ptah_allow_external_schema) | Evaluate `data "external_schema"` |
 | [`PTAH_ALLOW_TABLE_REBUILD`](#ptah_allow_table_rebuild) | Plan a YDB key, type or NOT NULL change as a table rebuild |
 | [`PTAH_ALLOW_SERVER_CLEAN`](#ptah_allow_server_clean) | Clean a whole MySQL or MariaDB server |
 | [`PTAH_ATLAS_LINT_WITHOUT_DEV_URL`](#ptah_atlas_lint_without_dev_url) | Lint with no dev database |
@@ -186,13 +185,6 @@ prints them. Set it to `1` and the cleanup runs as the pinned community binary
 runs it, with the confirmation and `--dry-run` as usual. A URL that names a
 database is not affected. See
 [Compatibility differences](../../atlas/retained-divergences/#a-whole-server-cleaned-without-an-opt-in).
-
-## `PTAH_ALLOW_EXTERNAL_SCHEMA`
-
-By default, `atlas.hcl`
-`data "external_schema"` is not evaluated, because it runs a
-repository-controlled program. Set it to `1` and the data source is evaluated,
-matching the native `--allow-external-schema` flag.
 
 ## `PTAH_ALLOW_TABLE_REBUILD`
 

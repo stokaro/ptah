@@ -162,7 +162,7 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 		return cmdutil.Fail(cmd, err)
 	}
 
-	allowExternal, err := testexternal.Allowed()
+	allowExternal, err := testexternal.Allowed(cmd.Context())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

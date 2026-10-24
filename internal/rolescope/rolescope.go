@@ -35,7 +35,7 @@ import (
 // exactly the flags the pinned Atlas community binary registers, so a flag
 // that binary does not have would break the promise the surface exists to
 // keep. Spelling and precedent:
-// [ptah.run/internal/atlassource.AllowExternalSchemaEnvVar].
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 //
 // It changes the description only. Both reads are still performed, so the set
 // the comparator takes existence from is identical either way, and turning

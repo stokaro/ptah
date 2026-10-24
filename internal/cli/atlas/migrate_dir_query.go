@@ -100,8 +100,7 @@ func atlasDirFormatSpelling(query url.Values) string {
 // conformance `cli-surface` tier, which asserts flag parity against that
 // binary. An environment variable is invisible to the help surface, which is
 // why it is the sanctioned spelling for a capability the community binary has
-// no spelling for at all (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA,
-// PTAH_SKIP_CHECKS).
+// no spelling for at all (precedent: PTAH_SKIP_CHECKS).
 //
 // WHY THE CAPABILITY IS EXPOSED AT ALL. Ptah accepts a `--dir` query on the
 // eight verbs that read it, to match the community binary — `checkpoint`,

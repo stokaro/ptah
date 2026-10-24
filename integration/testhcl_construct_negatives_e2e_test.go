@@ -114,7 +114,7 @@ func TestSchemaTest_EveryConstructHasANegativeEndToEndFixture(t *testing.T) {
 		{
 			name:       "an external step without the authorization",
 			document:   "test \"schema\" \"a\" {\n  external {\n    program = [\"/bin/echo\", \"hi\"]\n  }\n}\n",
-			wantDetail: "PTAH_ALLOW_EXTERNAL_TEST_COMMAND",
+			wantDetail: "pass --allow-config-exec to authorize it",
 		},
 		{
 			name:       "an unknown case attribute",

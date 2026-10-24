@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/internal/cli/generate"
+	"ptah.run/internal/cli/root"
 )
 
 // writeExternalSchemaAtlasConfig writes an atlas.hcl declaring a
@@ -37,10 +37,11 @@ func TestGenerateCommand_UsesExternalSchemaFromAtlasConfigEnv(t *testing.T) {
 	writeExternalSchemaAtlasConfig(t, dir)
 	t.Chdir(dir)
 
-	cmd := generate.NewGenerateCommand()
+	cmd := root.NewRootCommand()
 	cmd.SetArgs([]string{
+		"schema", "render",
 		"--env", "verified",
-		"--allow-external-schema",
+		"--allow-config-exec",
 		"--dialect", "postgres",
 	})
 
@@ -58,10 +59,10 @@ func TestGenerateCommand_RejectsImplicitExternalSchemaFromAtlasConfig(t *testing
 	writeExternalSchemaAtlasConfig(t, dir)
 	t.Chdir(dir)
 
-	cmd := generate.NewGenerateCommand()
-	cmd.SetArgs([]string{"--env", "verified", "--dialect", "postgres"})
+	cmd := root.NewRootCommand()
+	cmd.SetArgs([]string{"schema", "render", "--env", "verified", "--dialect", "postgres"})
 
-	err := cmd.Execute()
+	_, _, err := executeGenerate(c, cmd)
 
-	c.Assert(err, qt.ErrorMatches, "atlas.hcl data.external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(err, qt.ErrorMatches, `atlas.hcl data "external_schema" runs .*: a program named in a project file does not run without permission; pass --allow-config-exec to run it`)
 }

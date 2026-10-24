@@ -845,7 +845,7 @@ const applySkipChecksEnvVar = "PTAH_SKIP_CHECKS"
 // asserts flag parity against the pinned CE binary. An environment variable is
 // invisible to the help surface, which is exactly why it is the sanctioned gate
 // for capabilities with no Atlas spelling (precedent:
-// PTAH_ALLOW_EXTERNAL_SCHEMA).
+// PTAH_STRICT_DIR_QUERY).
 //
 // WHY THE CAPABILITY IS EXPOSED AT ALL. The checks this bypasses are not only
 // Atlas txtar checks.sql sections; they are also `-- +ptah check` directives, a

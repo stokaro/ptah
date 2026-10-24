@@ -79,7 +79,7 @@
     {
       "id": "configured-external",
       "label": "Configured external source",
-      "spelling": "--config ptah.yaml --allow-external-schema",
+      "spelling": "--config ptah.yaml --allow-config-exec",
       "transport": "opt-in configured child process",
       "expressiveness": "Exactly the SQL, HCL, or YAML format declared by the selected external_schema block.",
       "exportMetadata": {
@@ -221,7 +221,7 @@
       "command": "ptah schema render",
       "source": "configured-external",
       "status": "verified",
-      "invocation": "ptah schema render --config ptah.yaml --allow-external-schema --dialect sqlite",
+      "invocation": "ptah schema render --config ptah.yaml --allow-config-exec --dialect sqlite",
       "implementationOwner": "internal/cli/generate",
       "evidence": [
         "internal/cli/generate/generate_test.go",
@@ -512,7 +512,7 @@
       "command": "ptah schema compare",
       "source": "configured-external",
       "status": "supported-missing-command-test",
-      "invocation": "ptah schema compare --config ptah.yaml --allow-external-schema --db-url sqlite://current.db",
+      "invocation": "ptah schema compare --config ptah.yaml --allow-config-exec --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/compare",
       "evidence": [
         "internal/cli/compare/compare_test.go"
@@ -655,7 +655,7 @@
       "command": "ptah schema drift",
       "source": "configured-external",
       "status": "supported-missing-command-test",
-      "invocation": "ptah schema drift --config ptah.yaml --allow-external-schema --db-url sqlite://current.db --exit-code=false",
+      "invocation": "ptah schema drift --config ptah.yaml --allow-config-exec --db-url sqlite://current.db --exit-code=false",
       "implementationOwner": "internal/cli/drift",
       "evidence": [
         "internal/cli/drift/drift_test.go"
@@ -946,7 +946,7 @@
       "evidence": [
         "internal/cli/schema/plan_test.go"
       ],
-      "limitations": "The command registers no --allow-external-schema.",
+      "limitations": "The command does not read a configured external_schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -1089,7 +1089,7 @@
       "evidence": [
         "internal/cli/schema/apply_test.go"
       ],
-      "limitations": "The command registers no --allow-external-schema.",
+      "limitations": "The command does not read a configured external_schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2585,7 +2585,7 @@
       "evidence": [
         "internal/cli/schema/lineage_test.go"
       ],
-      "limitations": "The command registers no --allow-external-schema.",
+      "limitations": "The command does not read a configured external_schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2728,7 +2728,7 @@
       "evidence": [
         "internal/cli/schemapush/schemapush_test.go"
       ],
-      "limitations": "The command registers no --allow-external-schema.",
+      "limitations": "The command does not read a configured external_schema.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2872,7 +2872,7 @@
       "command": "ptah migrations plan",
       "source": "configured-external",
       "status": "verified",
-      "invocation": "ptah migrations plan --config ptah.yaml --allow-external-schema --db-url sqlite://current.db",
+      "invocation": "ptah migrations plan --config ptah.yaml --allow-config-exec --db-url sqlite://current.db",
       "implementationOwner": "internal/cli/migrate",
       "evidence": [
         "scripts/check-source-workflows.sh",
@@ -3026,7 +3026,7 @@
       "command": "ptah migrations generate",
       "source": "configured-external",
       "status": "verified",
-      "invocation": "ptah migrations generate --config ptah.yaml --allow-external-schema --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "invocation": "ptah migrations generate --config ptah.yaml --allow-config-exec --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "internal/cli/migrate",
       "evidence": [
         "scripts/check-source-workflows.sh",
