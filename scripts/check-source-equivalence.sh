@@ -115,7 +115,7 @@ render_and_inspect external --schema-cmd "$fixture/external-schema.sh" --schema-
 	cd "$fixture"
 	render_and_inspect configured-external \
 		--config ptah.yaml \
-		--allow-external-schema
+		--allow-config-exec
 )
 
 viz_diagram sql --schema-file "$fixture/schema.sql"

@@ -19,6 +19,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/execpolicy"
 )
 
 const defaultWebhookTimeout = 30 * time.Second
@@ -42,9 +43,13 @@ type Options struct {
 	CurrentVersion     int64
 	TargetVersion      int64
 	Command            string
-	PostgresDumpDir    string
-	MySQLDumpDir       string
-	WebhookURL         string
+	// CommandOrigin names the project file construct that supplied Command,
+	// such as `ptah.yaml migration.pre_up_hook`, so the binary's program
+	// policy can refuse it; empty is a command the operator passed.
+	CommandOrigin   string
+	PostgresDumpDir string
+	MySQLDumpDir    string
+	WebhookURL      string
 }
 
 // Enabled reports whether any hook is configured.
@@ -158,6 +163,9 @@ func (o Options) env() []string {
 
 func (r Runner) runCommandHook(ctx context.Context, opts Options, env []string) (Result, error) {
 	name, args := shellCommand(opts.Command)
+	if err := execpolicy.Authorize(ctx, opts.CommandOrigin, append([]string{name}, args...)); err != nil {
+		return Result{}, err
+	}
 	output, err := r.CommandRunner.Run(ctx, name, args, env)
 	output = sanitizeHookOutput(output, opts)
 	if err != nil {
@@ -257,6 +265,13 @@ func (r Runner) runWebhook(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("%s pre-flight webhook failed: expected HTTP 200, got %d", opts.Direction, resp.StatusCode)
 	}
 	return Result{Name: "webhook"}, nil
+}
+
+// Shell is the program a command hook runs under, named in a refusal before
+// the hook would start.
+func Shell() string {
+	name, _ := shellCommand("")
+	return name
 }
 
 func shellCommand(command string) (string, []string) {

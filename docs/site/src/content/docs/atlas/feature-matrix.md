@@ -146,11 +146,11 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Annotated Go models from a live database | ✅ | ❌ | ❌ | Writes Ptah annotation source from introspection, with optional db/json tags. No Go-model generator in the CE inventory or Pro list. |
 | Atlas CE inspect HCL parses back into Ptah | ✅ | ✅ | ✅ | 30 differential observations parse Atlas `schema inspect` HCL on PostgreSQL, MySQL and SQLite with zero schema-fact mismatches. |
-| Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`. |
+| Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah runs the program: `ptah-compat` as Atlas does, native `ptah` with `--allow-config-exec`. Community Atlas and the strict profile reject `data.external_schema`. |
 | Composite multi-source desired schema | ✅ | ❌ | ✅ | Repeatable `--root-dir`/`--schema-file` merge into one schema natively; ptah-compat evaluates `data "composite_schema"` through the same merge. Conflicts error. |
 | Desired-schema artifacts in an OCI registry | ✅ | ❌ | ✅ | `ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2. |
 | Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order as an ordered script: mixed formats, an empty directory, a subdirectory and a redeclaration refuse. |
-| External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
+| External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-config-exec`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ✅ | ❌ | ❌ | `deferrable` and `initially` are carried through HCL, the IR, the renderer and the PostgreSQL catalog read. The community binary plans no DEFERRABLE for the same file. |
 | HCL function calls in schema files | ✅ | 🟡 | 🟡 | sql() reduces to its SQL everywhere, and all 67 names the schema evaluator registers evaluate. uuid is a type, not a function. sql() inside check.expr and index.where is a retained divergence. |

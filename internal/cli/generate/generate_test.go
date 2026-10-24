@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/root"
 )
 
 func runGenerateHelperProcess() {
@@ -67,20 +68,28 @@ func TestGenerateCommand_UsesExternalSchemaFromPtahConfigEnv(t *testing.T) {
 	// configPath is rooted in t.TempDir and is not influenced by production input.
 	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) // #nosec G703 -- controlled test-only path
 
-	cmd := generate.NewGenerateCommand()
-	cmd.SetArgs([]string{
-		"--config", configPath,
-		"--env", "verified",
-		"--allow-external-schema",
-		"--dialect", "postgres",
-	})
+	// --allow-external-schema is the older spelling of --allow-config-exec;
+	// both give the program policy the native root attaches.
+	for _, optIn := range []string{"--allow-config-exec", "--allow-external-schema"} {
+		t.Run(optIn, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := root.NewRootCommand()
+			cmd.SetArgs([]string{
+				"schema", "render",
+				"--config", configPath,
+				"--env", "verified",
+				optIn,
+				"--dialect", "postgres",
+			})
 
-	stdout, stderr, err := executeGenerate(c, cmd)
+			stdout, stderr, err := executeGenerate(c, cmd)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)
-	c.Assert(stdout, qt.Not(qt.Contains), "Found 1 tables")
-	c.Assert(stderr, qt.Contains, "Found 1 tables")
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)
+			c.Assert(stdout, qt.Not(qt.Contains), "Found 1 tables")
+			c.Assert(stderr, qt.Contains, "Found 1 tables")
+		})
+	}
 }
 
 func TestGenerateCommand_RejectsImplicitExternalSchemaFromConfig(t *testing.T) {
@@ -97,12 +106,12 @@ func TestGenerateCommand_RejectsImplicitExternalSchemaFromConfig(t *testing.T) {
 		qt.IsNil,
 	)
 
-	cmd := generate.NewGenerateCommand()
-	cmd.SetArgs([]string{"--config", configPath, "--dialect", "postgres"})
+	cmd := root.NewRootCommand()
+	cmd.SetArgs([]string{"schema", "render", "--config", configPath, "--dialect", "postgres"})
 
-	err := cmd.Execute()
+	_, _, err := executeGenerate(c, cmd)
 
-	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema runs .*: a program named in a project file does not run without permission; pass --allow-config-exec to run it")
 }
 
 func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) {

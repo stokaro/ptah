@@ -162,19 +162,19 @@ func refuseExternalIn(caseName, noun string, steps []Step) error {
 			continue
 		}
 		return fmt.Errorf(
-			"%w: test case %q, %s %d runs %v; set %s to authorize it",
+			"%w: test case %q, %s %d runs %v; pass --allow-config-exec to authorize it",
 			ErrExternalNotAuthorized,
 			caseName,
 			noun,
 			stepIndex+1,
 			steps[stepIndex].External.Program,
-			AllowExternalCommandsEnvVar,
 		)
 	}
 	return nil
 }
 
-// AllowExternalCommandsEnvVar names the environment variable the native test
-// commands read to authorize external steps. The refusal names it so an
-// operator reading a report knows what to set.
+// AllowExternalCommandsEnvVar names the older environment variable that
+// authorizes external steps in the native test commands. They now ask the
+// program policy that --allow-config-exec grants, and keep reading this name
+// so a suite that sets it keeps working.
 const AllowExternalCommandsEnvVar = "PTAH_ALLOW_EXTERNAL_TEST_COMMAND"

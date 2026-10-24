@@ -90,14 +90,14 @@ external_schema:
 `ptah migrations plan`, and `ptah migrations generate` read this block when
 `--schema-cmd` is not passed (the flag always wins). Auto-discovered config is
 not permission to execute repository-controlled code, so a config-sourced
-loader also requires `--allow-external-schema`. Those commands read the other
+loader also requires `--allow-config-exec`. Those commands read the other
 settings they consume, such as `url` and `schemas`, and honor `--env` to
 select an env block:
 
 ```bash
 ptah schema drift \
   --config ptah.yaml \
-  --allow-external-schema
+  --allow-config-exec
 ```
 
 Set `--schema-cmd=` explicitly to disable the configured source for one
@@ -136,7 +136,7 @@ cd examples/orm-loaders/gorm
 go mod download
 ptah schema render \
   --config ptah.yaml \
-  --allow-external-schema \
+  --allow-config-exec \
   --dialect postgres
 ```
 
@@ -159,7 +159,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock.txt
 ptah schema render \
   --config ptah.yaml \
-  --allow-external-schema \
+  --allow-config-exec \
   --dialect postgres
 ```
 

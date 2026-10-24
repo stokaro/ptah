@@ -48,7 +48,7 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
-	"ptah.run/internal/envbool"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemafile"
@@ -87,13 +87,6 @@ const (
 	// a selected env whose desired-state source names the block.
 	KindCompositeSchema Kind = "composite schema"
 )
-
-// AllowExternalSchemaEnvVar gates executing an atlas.hcl
-// data.external_schema program resolved through env expansion. The
-// Atlas-identical `ptah-compat` flag surface cannot grow a new flag, so the
-// opt-in is this environment variable — the same variable that drives the
-// native --allow-external-schema flag through Ptah's env twin machinery.
-const AllowExternalSchemaEnvVar = "PTAH_ALLOW_EXTERNAL_SCHEMA"
 
 // Source is one classified desired-state URL.
 type Source struct {
@@ -154,6 +147,12 @@ type ProjectEnv struct {
 	// URL reaches classification it is a string like any other, and the same
 	// file can be named both ways in one run.
 	ProjectSourceURLs map[string][]string
+	// Programs decides whether a program the project file names may run. It
+	// is the policy of the binary that loaded the file, taken from its
+	// command context; classification asks it before any database is
+	// contacted, and the run asks the same policy again where the program
+	// starts. The zero value refuses.
+	Programs execpolicy.Policy
 }
 
 // SuppliedSource reports whether this run took rawURL for flag from the
@@ -705,23 +704,8 @@ func expandEnv(source Source, env ProjectEnv, databaseTargets map[string]string)
 	if err := ValidateEnvAttr(source.EnvAttr); err != nil {
 		return nil, err
 	}
-	// Env expansion is the subsystem that recognizes the external-schema opt-in,
-	// so the value is resolved on every expansion -- including the ones that
-	// reference `url` or `migration`, and the ones whose selected env declares no
-	// external schema program at all. Resolving it only inside
-	// [expandEnvExternalSchema] would let PTAH_ALLOW_EXTERNAL_SCHEMA=tru pass in
-	// silence on every configuration that does not use the feature, which is
-	// exactly the pipeline that exports it and never sees it work.
-	// See stokaro/ptah#1334.
-	allowExternal, err := externalSchemaAllowed()
-	if err != nil {
-		return nil, err
-	}
 	switch source.EnvAttr {
 	case "src", "schema.src":
-		if !allowExternal && envSelectsExternalSchema(env) {
-			return nil, errExternalSchemaDisabled()
-		}
 		return expandEnvSchemaSources(source, env, databaseTargets)
 	case "url":
 		return expandEnvDatabaseURL(source.EnvAttr, env.Config.DatabaseURL, databaseTargets)
@@ -767,17 +751,25 @@ func expandEnvSchemaSources(source Source, env ProjectEnv, databaseTargets map[s
 	return sources, nil
 }
 
+// externalSchemaOrigin names an atlas.hcl external schema program for the
+// program policy and for its refusal.
+const externalSchemaOrigin = `atlas.hcl data "external_schema"`
+
 // expandEnvExternalSchema turns the selected env's external schema program
 // into a desired-state source. The program is repository-controlled code
-// reached through an auto-discovered config file, so expansion is gated on an
-// explicit environment opt-in; the gate fails during classification, before
-// any database is contacted and before the program could run.
+// reached through a project file, so the binary's program policy is asked here,
+// during classification, before any database is contacted; the run asks it
+// again where the program starts.
 func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
 	external := env.Config.ExternalSchema
+	if err := env.Programs.Authorize(externalSchemaOrigin, external.Program); err != nil {
+		return nil, err
+	}
 	return []Source{{
 		Raw:  source.Raw,
 		Kind: KindExternalSchema,
 		Command: schemasource.Command{
+			Origin: externalSchemaOrigin,
 			Args:   slices.Clone(external.Program),
 			Format: external.Format,
 			Dir:    external.WorkingDir,
@@ -794,41 +786,6 @@ func expandEnvExternalSchema(source Source, env ProjectEnv) ([]Source, error) {
 // program or let one run unguarded.
 func envSelectsExternalSchema(env ProjectEnv) bool {
 	return len(env.Config.SchemaSources) == 0 && len(env.Config.ExternalSchema.Program) > 0
-}
-
-// errExternalSchemaDisabled is the refusal an env expansion returns when the
-// selected env's desired state is a repository-controlled program and the
-// opt-in was not given. It names the way back, because a refusal that does not
-// is a dead end.
-func errExternalSchemaDisabled() error {
-	return fmt.Errorf(
-		"atlas.hcl data.external_schema executes a repository-controlled program and is disabled by default; set %s=1 to allow it",
-		AllowExternalSchemaEnvVar,
-	)
-}
-
-// allowExternalSchema is the declaration of the variable, made once, in the
-// package that owns it. See [ptah.run/internal/envbool].
-//
-// The same name reaches the native surface as the --allow-external-schema
-// flag's environment twin, which internal/cli/internal/cmdflags already parses under the
-// same grammar and the same error, so one name means one thing on both
-// binaries.
-// It is [ptah.run/internal/envbool.Gated]: evaluating
-// `data "external_schema"` runs a repository-controlled program, which the
-// pinned community binary reaches only behind its own opt-in flag that the
-// strict command tree does not register.
-var allowExternalSchema = envbool.New(AllowExternalSchemaEnvVar, false, envbool.Gated)
-
-// externalSchemaAllowed reports whether executing an atlas.hcl
-// data.external_schema program is allowed.
-//
-// Unset denies and a valid false spelling denies too; an empty or unparsable
-// value is a configuration error. Denying on a typo is the safe direction, but
-// silence is not: an operator who exported the opt-in and is refused anyway has
-// to be told why (stokaro/ptah#1334).
-func externalSchemaAllowed() (bool, error) {
-	return allowExternalSchema.Resolve()
 }
 
 // classifyEnvValue classifies one env-provided source value. Relative local

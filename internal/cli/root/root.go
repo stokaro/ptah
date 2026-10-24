@@ -102,6 +102,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())
 
+	installProgramPolicy(cmd)
 	cmdflags.InstallEnvBinding(envPrefix, cmd)
 
 	return cmd

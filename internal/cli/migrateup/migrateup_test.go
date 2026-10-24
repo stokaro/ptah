@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,11 +14,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
+	"ptah.run/config/projectconfig"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/lint"
@@ -186,10 +189,67 @@ migration:
 	resetMigrateUpCommandForTest(c, cmd)
 	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
 	cmd.SetArgs([]string{"--config", configPath})
+	// The native root attaches this policy for --allow-config-exec.
+	cmd.SetContext(projectconfig.AllowConfiguredPrograms(t.Context()))
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "(?s).*up pre-flight custom command hook failed: exit status 9\nconfig backup refused")
+}
+
+// migrateUpHookFixture writes one migration and a ptah.yaml naming its
+// database and directory, with extra appended under `migration:`, and returns
+// the config and database paths.
+func migrateUpHookFixture(c *qt.C, extra string) (configPath, dbPath string) {
+	c.Helper()
+	dir := c.TempDir()
+	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.up.sql", "CREATE TABLE config_guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.down.sql", "DROP TABLE config_guarded;\n")
+	dbPath = filepath.Join(c.TempDir(), "ptah.db")
+	configPath = filepath.Join(c.TempDir(), "ptah.yaml")
+	config := fmt.Sprintf("url: %s\nmigration:\n  dir: %s\n%s", atlasurl.SQLiteURLFromPath(dbPath), dir, extra)
+	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil)
+	return configPath, dbPath
+}
+
+// TestMigrateUpCommandRefusesAConfiguredHookWithoutPermission pins that a
+// pre_up_hook in ptah.yaml is repository-controlled shell: without the program
+// policy's permission the command refuses it before it opens the database, so
+// the hook never starts.
+func TestMigrateUpCommandRefusesAConfiguredHookWithoutPermission(t *testing.T) {
+	c := qt.New(t)
+	configPath, dbPath := migrateUpHookFixture(c,
+		fmt.Sprintf("  pre_up_hook: %q\n", testutils.FailingHookCommand("config backup refused", 9)))
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath})
+	cmd.SetContext(execpolicy.With(t.Context(), execpolicy.Policy{OptIn: "pass --allow-config-exec"}))
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml migration.pre_up_hook runs .*: a program named in a project file does not run without permission; pass --allow-config-exec to run it")
+	// SQLite creates the file when the database is opened.
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// TestMigrateUpCommandRunsAFlagHookWithoutPermission is the other side: a hook
+// the operator passes is a command of their own and needs no second
+// permission.
+func TestMigrateUpCommandRunsAFlagHookWithoutPermission(t *testing.T) {
+	c := qt.New(t)
+	configPath, _ := migrateUpHookFixture(c, "")
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath, "--" + preUpHookFlag, testutils.FailingHookCommand("flag backup refused", 9)})
+	cmd.SetContext(execpolicy.With(t.Context(), execpolicy.Policy{OptIn: "pass --allow-config-exec"}))
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "(?s).*up pre-flight custom command hook failed: exit status 9\nflag backup refused")
 }
 
 func TestMigrateUpCommandReadsTxModeFromConfig(t *testing.T) {

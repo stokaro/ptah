@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/migratedown"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrator"
 )
@@ -70,6 +72,44 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 	err = conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'guarded_down'").Scan(&count)
 	c.Assert(err, qt.IsNil)
 	c.Assert(count, qt.Equals, 1)
+}
+
+// TestMigrateDownCommandRefusesAConfiguredHookWithoutPermission pins that a
+// pre_down_hook in ptah.yaml does not run without the program policy's
+// permission: the command refuses it and nothing is rolled back.
+func TestMigrateDownCommandRefusesAConfiguredHookWithoutPermission(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.up.sql"), []byte("CREATE TABLE guarded_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE guarded_down;"), 0o600), qt.IsNil)
+
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := "migration:\n  pre_down_hook: " + strconv.Quote(testutils.FailingHookCommand("rollback backup refused", 8)) + "\n"
+	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateDownCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath, "--db-url", dbURL, "--migrations-dir", tempDir, "--target", "0", "--confirm"})
+	cmd.SetContext(execpolicy.With(t.Context(), execpolicy.Policy{OptIn: "pass --allow-config-exec"}))
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml migration.pre_down_hook runs .*: a program named in a project file does not run without permission; pass --allow-config-exec to run it")
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 }
 
 func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {

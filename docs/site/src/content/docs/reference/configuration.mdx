@@ -179,15 +179,15 @@ Atlas capability: `PTAH_ALLOW_EXTERNAL_TEST_COMMAND`,
 `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
 
-`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` authorizes an `external` step in a
-`.test.hcl` case, which runs a program on the machine executing the suite.
+`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` is the older spelling of the permission to
+run an `external` step in a `.test.hcl` case. `ptah-compat` runs the step as
+the pinned community binary does and needs no variable. Native ptah runs it
+with `--allow-config-exec`, or with this variable, which still authorizes
+external steps and nothing else. See
+[Programs a project file names](#programs-a-project-file-names).
 
-Ptah refuses one by default and this variable restores it, so it adds no
-capability the pinned community binary does not already have; gating it would
-leave a conformance run unable to exercise the step at all.
-
-The program is executed as an argument vector with no shell, and the run is
-refused before any database is provisioned when the variable is absent.
+The program is executed as an argument vector with no shell, and a refused
+run stops before any database is provisioned.
 
 `PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
 process; it does not add an editor or migration capability.
@@ -442,9 +442,9 @@ environment-scoped block. Empty command output is rejected. `PATH` and `PWD`
 cannot be overridden through `external_schema.env`; use an explicit executable
 path and `working_dir`.
 
-Auto-discovered configuration never executes a program implicitly. Pass
-`--allow-external-schema` to use the configured block. An explicit
-`--schema-cmd` is already an opt-in and does not require that additional flag.
+Native ptah runs the configured block only with `--allow-config-exec`; see
+[Programs a project file names](#programs-a-project-file-names). An explicit
+`--schema-cmd` names the program itself and needs no further permission.
 Relative `working_dir` values are constrained to the current working directory
 after symlink resolution. Ptah bounds output, redacts secrets and terminal
 control characters from stderr and parser diagnostics, and cleans up descendant
@@ -460,3 +460,58 @@ A name earns that exception only by measurement, never by not having been implem
 
 The exception is also spelling-sensitive. A name the community binary decodes into a structured setting — `lint`, `diff`, `migration`, `schema`, `format`, `test` and their nested settings — takes a **block** body. Written as an **attribute** with an object value it reaches the binary's object decoder, which refuses every member name, including the members the block spelling accepts. `lint { latest = 1 }` is a policy; `lint = { latest = 1 }` is an error on the community binary and is now an error in Ptah too. The only attribute values accepted are an empty object and `null`, because those carry no configuration. Which names are affected was measured one at a time and does not follow from the block names: `lint { git = { … } }` is refused while `lint { condrop = { … } }` is tolerated, and `format`, `migration` and `schema` are refused under `env` but tolerated at the top level.
 :::
+
+## Programs a project file names
+
+A project file can name a program that Ptah would start on your machine:
+
+- an `atlas.hcl` `data "external"` or `data "external_schema"`, including one
+  that a `data "composite_schema"` part or a `local` reaches;
+- a `ptah.yaml` `external_schema` block;
+- a `ptah.yaml` `migration.pre_up_hook` or `migration.pre_down_hook`, which
+  runs through the shell;
+- an `external` step in a `.test.hcl` case.
+
+The two binaries treat these differently.
+
+**`ptah-compat` runs them as Atlas does.** A project that switched from Atlas
+keeps its `atlas.hcl` working without a Ptah variable. Every `local` is
+evaluated, as Atlas evaluates it, so a `data "external"` that a local reads
+runs whichever env is selected. A data source that nothing reads never runs.
+`PTAH_ATLAS_STRICT_COMPAT=1` keeps the community binary's behavior: it refuses
+`data "external_schema"` with `data.external_schema is not supported by the
+community version of Atlas` and runs `data "external"` and `external` steps.
+
+**Native ptah refuses them unless you pass `--allow-config-exec`**, or set
+`PTAH_ALLOW_CONFIG_EXEC=1`. Reading a project file is not permission to run
+code from it. The refusal names the construct and the executable, for example
+`atlas.hcl data "external" "probe" runs sh: a program named in a project file
+does not run without permission; pass --allow-config-exec to run it`. Native
+ptah reads `atlas.hcl` lazily: it evaluates only what the selected env, the
+top-level attributes and the `diff`, `lint` and `exporter` blocks reach. A
+program that only another env needs does not run, even with the permission.
+
+A program you name on the command line, `--schema-cmd`, `--pre-up-hook` or
+`--pre-down-hook` and their environment twins, is your own command and runs
+without the permission. The older spellings `--allow-external-schema` and
+`PTAH_ALLOW_EXTERNAL_SCHEMA` grant the same permission as
+`--allow-config-exec` on the commands that register them.
+`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` grants it for `external` steps only.
+
+The permission is checked twice with one policy: while sources are classified,
+before a database is contacted, and again where the program starts. A run that
+reaches a program by a path that skipped classification is refused at the
+start.
+
+Permission is not a sandbox. An allowed program runs with your user's
+permissions. Ptah runs it without a shell (except a hook, which is shell by
+definition), with an explicit argument vector, a timeout, bounded output,
+redacted secrets in what it reports, and cleanup of the process tree.
+
+Two other things a project file selects are deliberately outside this policy.
+A `docker://` dev URL or an `atlas.hcl` `docker` block starts a container image
+on your Docker daemon, with no host mounts or privileges; review the image
+name as you would in a compose file. A provider manifest is read only from a
+path you pass with `--provider-config` or `PTAH_PROVIDER_CONFIG`, never
+discovered, and each executable in it is checked against its pinned digest.
+

@@ -18,7 +18,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege/privilegeselect"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/execpolicy"
 )
 
 // authHCL declares the `auth` schema and one table in it, in Atlas's HCL.
@@ -134,8 +134,7 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
 		c.Assert(set.Sources, qt.IsNil)
 	})
 
-	t.Run("an external schema part without the opt-in", func(t *testing.T) {
-		envbooltest.Unset(atlassource.AllowExternalSchemaEnvVar)(t)
+	t.Run("an external schema part the policy refuses", func(t *testing.T) {
 		c := qt.New(t)
 		env := compositeProject(c, `data "external_schema" "orm" {
   program = ["./export.sh"]
@@ -145,11 +144,13 @@ func TestClassifySetCompositeSchema_FailurePath(t *testing.T) {
     url = data.external_schema.orm.url
   }
 `), nil)
+		env.Programs = execpolicy.Policy{OptIn: "pass --allow-config-exec"}
 
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, env, nil)
 
-		c.Assert(err, qt.ErrorMatches, `.*schema "public" at .*: atlas\.hcl data\.external_schema executes a `+
-			`repository-controlled program and is disabled by default; set PTAH_ALLOW_EXTERNAL_SCHEMA=1 to allow it`)
+		c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+		c.Assert(err, qt.ErrorMatches, `.*schema "public" at .*: atlas\.hcl data "external_schema" runs export\.sh: `+
+			`a program named in a project file does not run without permission; pass --allow-config-exec to run it`)
 		c.Assert(set.Sources, qt.IsNil)
 	})
 

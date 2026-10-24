@@ -50,8 +50,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "`--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML.",
-    "evidence": "ptah schema render --help (--schema-cmd, --schema-format, --allow-external-schema); docs/site/src/content/docs/schema/orm-and-external.md; examples/orm-loaders/gorm; examples/orm-loaders/sqlalchemy; orm-and-external.md records this as the open counterpart of Atlas's external_schema source and its ORM providers"
+    "note": "`--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-config-exec`) runs a program without a shell emitting SQL, HCL, or YAML.",
+    "evidence": "ptah schema render --help (--schema-cmd, --schema-format, --allow-config-exec); docs/site/src/content/docs/schema/orm-and-external.md; examples/orm-loaders/gorm; examples/orm-loaders/sqlalchemy; orm-and-external.md records this as the open counterpart of Atlas's external_schema source and its ORM providers"
   },
   {
     "area": "Schema sources",
@@ -59,8 +59,8 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`.",
-    "evidence": "config/projectconfig/atlas.go (configureDataSources external_schema branch); repro: PTAH_ALLOW_EXTERNAL_SCHEMA=1 ptah-compat schema apply --url sqlite://app.db --env dev --dry-run --auto-approve emits the program's CREATE TABLE; ptah schema render --env dev --allow-external-schema renders it natively; go test ./internal/cli/atlas -run TestSchemaDiffExternalSchemaSource. Measured 2026-08-01, Atlas CE v1.2.0: atlas.hcl data \"external_schema\" -> exit 1 'Error: data.external_schema is not supported by the community version of Atlas.'"
+    "note": "Ptah runs the program: `ptah-compat` as Atlas does, native `ptah` with `--allow-config-exec`. Community Atlas and the strict profile reject `data.external_schema`.",
+    "evidence": "config/projectconfig/atlas.go (configureDataSources external_schema branch); repro: ptah-compat schema apply --url sqlite://app.db --env dev --dry-run --auto-approve emits the program's CREATE TABLE; ptah schema render --env dev --allow-config-exec renders it natively; go test ./internal/cli/atlas -run 'TestSchemaDiffExternalSchemaSource|TestSchemaDiffRunsAnExternalSchemaAsAtlasDoes|TestSchemaDiffStrictCompatRefusesAnExternalSchema'. Measured 2026-08-01, Atlas CE v1.2.0: atlas.hcl data \"external_schema\" -> exit 1 'Error: data.external_schema is not supported by the community version of Atlas.'"
   },
   {
     "area": "Schema sources",

@@ -25,7 +25,7 @@ import (
 // `cli-surface` tier, which asserts flag parity against that binary. Native
 // `ptah` takes the same manifest through `--provider-config`, and that flag has
 // no environment binding, so the variable is read by this surface only
-// (precedent: PTAH_ALLOW_EXTERNAL_SCHEMA, PTAH_MIGRATIONS_ENGINE).
+// (precedent: PTAH_MIGRATIONS_ENGINE).
 //
 // WHAT IT AUTHORIZES. Nothing. It identifies one explicit manifest file, as
 // `--provider-config` does. The manifest entry (absolute executable path,

@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/remotemigrationdir"
 	"ptah.run/internal/schemafile"
@@ -416,6 +417,10 @@ func atlasProjectLoadOptions(
 		// The pinned community binary has no handler for this data source and
 		// refuses a project that declares one, referenced or not.
 		RejectCompositeSchema: policy.IsStrictCE(),
+		// The community binary refuses this data source when an env it
+		// selects evaluates one; the default surface runs its program, as
+		// Atlas does.
+		RejectExternalSchema: policy.IsStrictCE(),
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),
@@ -1486,7 +1491,12 @@ func atlasSourceProjectEnv(
 	if err != nil {
 		return atlassource.ProjectEnv{}, err
 	}
-	return atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: baseDir}, nil
+	return atlassource.ProjectEnv{
+		Loaded:   true,
+		Config:   cfg,
+		BaseDir:  baseDir,
+		Programs: execpolicy.From(cmd.Context()),
+	}, nil
 }
 
 // atlasProjectSourceURLs records the desired-state URLs a run took from the

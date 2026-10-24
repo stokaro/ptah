@@ -90,7 +90,7 @@ verify_generated_source go "$repo_root" --root-dir "$fixture/models"
 verify_generated_source external "$repo_root" \
 	--schema-cmd "$fixture/external-schema.sh" --schema-format sql
 verify_generated_source configured "$fixture" \
-	--config ptah.yaml --allow-external-schema
+	--config ptah.yaml --allow-config-exec
 verify_generated_source composite "$repo_root" \
 	--schema-file "$fixture/composite/schema.sql" \
 	--schema-file "$fixture/composite/shared.yaml" \

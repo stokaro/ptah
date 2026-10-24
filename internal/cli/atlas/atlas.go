@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/migrateshow"
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
+	"ptah.run/internal/execpolicy"
 )
 
 type atlasVerb struct {
@@ -255,12 +256,22 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 	}
 	if policy.IsStrictCE() {
 		cmd.Annotations = map[string]string{atlasStrictCompatAnnotation: "true"}
-		cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-			if err := validateAtlasStrictCompatURLFlags(cmd, policy); err != nil {
-				return failAtlasCommand(cmd, err)
-			}
+	}
+	// Atlas runs a program its project file names, a data "external" or a
+	// data "external_schema" among them, without asking, and so does a
+	// .test.hcl external step; ptah-compat keeps those semantics. The strict
+	// profile refuses data "external_schema" itself while it reads the project
+	// file, as the community binary does. This is the only persistent pre-run
+	// in the tree, so it is the one every compat command reaches.
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		cmd.SetContext(execpolicy.With(cmd.Context(), execpolicy.Policy{Mode: execpolicy.RunAsAtlas}))
+		if !policy.IsStrictCE() {
 			return nil
 		}
+		if err := validateAtlasStrictCompatURLFlags(cmd, policy); err != nil {
+			return failAtlasCommand(cmd, err)
+		}
+		return nil
 	}
 	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
 	schemaCommand := newAtlasSchemaCommand(policy)
@@ -1788,9 +1799,10 @@ func atlasEnvAwareSourceFlags(
 		return nil, err
 	}
 	projectEnv := atlassource.ProjectEnv{
-		Loaded:  true,
-		Config:  project.project.Config,
-		BaseDir: baseDir,
+		Loaded:   true,
+		Config:   project.project.Config,
+		BaseDir:  baseDir,
+		Programs: execpolicy.From(project.context),
 	}
 	out := slices.Clone(verb.flags)
 	for i := range out {

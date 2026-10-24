@@ -6,6 +6,8 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
+
+	"ptah.run/internal/execpolicy"
 )
 
 var atlasLazyDataSourceTypes = map[string]struct{}{
@@ -71,13 +73,21 @@ func (p atlasParser) configureEvalContext(
 	if err != nil {
 		return err
 	}
-	for _, name := range sortedAttributeNames(evaluator.localAttrs) {
-		if err := evaluator.resolveLocal(name); err != nil {
+	// Atlas evaluates every local, so a data source a local reads is evaluated
+	// whichever env is selected, and a `data "external"` program runs. That is
+	// what ptah-compat keeps. Native ptah evaluates only what the selection
+	// reaches from the roots, so a program no selected value needs never runs,
+	// and a local or an hcl_schema variable nothing selected reads is not
+	// checked either.
+	if execpolicy.From(p.runContext).EvaluatesEveryLocal() {
+		for _, name := range sortedAttributeNames(evaluator.localAttrs) {
+			if err := evaluator.resolveLocal(name); err != nil {
+				return err
+			}
+		}
+		if err := evaluator.validateHCLSchemaVariables(); err != nil {
 			return err
 		}
-	}
-	if err := evaluator.validateHCLSchemaVariables(); err != nil {
-		return err
 	}
 	for _, expr := range roots {
 		if err := evaluator.resolveExpressionDependencies(expr); err != nil {
@@ -354,14 +364,17 @@ func atlasBodyExpressions(body *hclsyntax.Body) []hclsyntax.Expression {
 func atlasEvaluationRoots(
 	topAttrs hclsyntax.Attributes,
 	globalDiff,
-	globalLint []*hclsyntax.Block,
+	globalLint,
+	exporters []*hclsyntax.Block,
 	selected []atlasEnvBlock,
 ) []hclsyntax.Expression {
 	roots := make([]hclsyntax.Expression, 0, len(topAttrs))
 	for _, name := range sortedAttributeNames(topAttrs) {
 		roots = append(roots, topAttrs[name].Expr)
 	}
-	for _, block := range append(append(make([]*hclsyntax.Block, 0), globalDiff...), globalLint...) {
+	blocks := make([]*hclsyntax.Block, 0, len(globalDiff)+len(globalLint)+len(exporters))
+	blocks = append(append(append(blocks, globalDiff...), globalLint...), exporters...)
+	for _, block := range blocks {
 		roots = append(roots, atlasBodyExpressions(block.Body)...)
 	}
 	for _, env := range selected {

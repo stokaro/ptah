@@ -64,19 +64,17 @@ func compositePartName(schema string) string {
 // needs a connection the composition has no way to scope to one part.
 func classifyCompositePart(part projectconfig.CompositeSchemaPart, env ProjectEnv, databaseTargets map[string]string) (Source, error) {
 	if external := part.ExternalSchema; external != nil {
-		// The same gate an env-level external schema meets: the program is
-		// repository-controlled code reached through a project file.
-		allowed, err := externalSchemaAllowed()
-		if err != nil {
+		// The same policy an env-level external schema meets: the program is
+		// repository-controlled code reached through a project file, and a
+		// composition is not a way around asking.
+		if err := env.Programs.Authorize(externalSchemaOrigin, external.Program); err != nil {
 			return Source{}, err
-		}
-		if !allowed {
-			return Source{}, errExternalSchemaDisabled()
 		}
 		return Source{
 			Raw:  part.URL,
 			Kind: KindExternalSchema,
 			Command: schemasource.Command{
+				Origin: externalSchemaOrigin,
 				Args:   slices.Clone(external.Program),
 				Format: external.Format,
 				Dir:    external.WorkingDir,

@@ -43,8 +43,7 @@ const (
 // It is an environment variable and not a flag on purpose. The conformance
 // cli-surface tier asserts that `ptah-compat` registers exactly the flags the
 // pinned binary registers, so a flag that binary does not have would break the
-// very promise this surface exists to keep. Precedent and spelling:
-// [ptah.run/internal/atlassource.AllowExternalSchemaEnvVar].
+// very promise this surface exists to keep.
 //
 // The variable exists because compatibility must not delete a capability
 // (AGENTS.md, "Compatibility never removes a capability"). Ptah models

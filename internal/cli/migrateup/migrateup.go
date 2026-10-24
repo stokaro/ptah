@@ -89,6 +89,7 @@ type options struct {
 	toVersion            string
 	skipChecks           bool
 	preUpHook            string
+	preUpHookOrigin      string
 	pgDumpTo             string
 	mySQLDumpTo          string
 	webhook              string
@@ -340,7 +341,10 @@ func parseToVersion(value string) (int64, error) {
 	return version, nil
 }
 
-func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) options {
+// resolveProjectOptions merges the project config under the flags. A command
+// hook the config supplies is checked against the program policy here, before
+// the command opens the database.
+func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectconfig.Config) (options, error) {
 	effectiveString := func(flagName, flagValue string, field projectconfig.StringField) string {
 		return dbcli.EffectiveString(cmd, flagName, flagValue, projectCfg.StringValue(field))
 	}
@@ -362,6 +366,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		projectconfig.StringMigrationStatementTimeout,
 	)
 	opts.preUpHook = effectiveString(preUpHookFlag, opts.preUpHook, projectconfig.StringMigrationPreUpHook)
+	opts.preUpHookOrigin = dbcli.ConfiguredHookOrigin(cmd, preUpHookFlag, "ptah.yaml migration.pre_up_hook", projectCfg.StringValue(projectconfig.StringMigrationPreUpHook))
 	opts.pgDumpTo = effectiveString(pgDumpToFlag, opts.pgDumpTo, projectconfig.StringMigrationPostgresDumpTo)
 	opts.mySQLDumpTo = effectiveString(mySQLDumpToFlag, opts.mySQLDumpTo, projectconfig.StringMigrationMySQLDumpTo)
 	opts.webhook = effectiveString(webhookFlag, opts.webhook, projectconfig.StringMigrationWebhook)
@@ -385,7 +390,12 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.connectTimeout,
 		projectconfig.StringMigrationConnectTimeout,
 	)
-	return opts
+	if !opts.dryRun {
+		if err := dbcli.AuthorizeConfiguredHook(cmd.Context(), opts.preUpHookOrigin); err != nil {
+			return opts, err
+		}
+	}
+	return opts, nil
 }
 
 // commandLogWriter is the stream structured logs go to.
@@ -427,7 +437,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	resolvedOpts := resolveProjectOptions(cmd, *opts, projectCfg)
+	resolvedOpts, err := resolveProjectOptions(cmd, *opts, projectCfg)
+	if err != nil {
+		return err
+	}
 	dbURL := resolvedOpts.dbURL
 	migrationsDir := resolvedOpts.migrationsDir
 	dirFormatValue := resolvedOpts.dirFormat
@@ -437,10 +450,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
 	lockTimeout := resolvedOpts.lockTimeout
 	statementTimeout := resolvedOpts.statementTimeout
-	preUpHook := resolvedOpts.preUpHook
-	pgDumpTo := resolvedOpts.pgDumpTo
-	mySQLDumpTo := resolvedOpts.mySQLDumpTo
-	webhook := resolvedOpts.webhook
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
 	revisionFormatValue := resolvedOpts.revisionTableFormat
@@ -638,10 +647,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		DatabaseURL:        dbURL,
 		DisplayDatabaseURL: dburldisplay.Format(dbURL),
 		Dialect:            conn.Info().Dialect,
-		Command:            preUpHook,
-		PostgresDumpDir:    pgDumpTo,
-		MySQLDumpDir:       mySQLDumpTo,
-		WebhookURL:         webhook,
+		Command:            resolvedOpts.preUpHook,
+		CommandOrigin:      resolvedOpts.preUpHookOrigin,
+		PostgresDumpDir:    resolvedOpts.pgDumpTo,
+		MySQLDumpDir:       resolvedOpts.mySQLDumpTo,
+		WebhookURL:         resolvedOpts.webhook,
 	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(

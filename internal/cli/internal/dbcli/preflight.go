@@ -6,7 +6,12 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 
+	"github.com/spf13/cobra"
+
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/preflight"
 	"ptah.run/migration/migrator"
 )
@@ -117,4 +122,27 @@ func (stdoutReporter) Println(args ...any) {
 
 func (stdoutReporter) Printf(format string, args ...any) {
 	fmt.Printf(format, args...)
+}
+
+// ConfiguredHookOrigin names the project file construct a pre-flight command
+// hook came from, or is empty when the operator passed it with flagName or the
+// flag's environment twin. A hook from ptah.yaml is repository-controlled
+// shell, so the binary's program policy decides whether it runs; one the
+// operator passed needs no second permission.
+func ConfiguredHookOrigin(cmd *cobra.Command, flagName, construct string, value projectconfig.Value[string]) string {
+	if flag := cmd.Flags().Lookup(flagName); flag != nil && flag.Changed {
+		return ""
+	}
+	if !value.Present || strings.TrimSpace(value.Value) == "" {
+		return ""
+	}
+	return construct
+}
+
+// AuthorizeConfiguredHook refuses a command hook from a project file that the
+// binary's program policy does not allow, before the command connects to a
+// database. The hook asks the same policy again where it starts. A dry run,
+// which runs no hook, does not ask.
+func AuthorizeConfiguredHook(ctx context.Context, origin string) error {
+	return execpolicy.Authorize(ctx, origin, []string{preflight.Shell()})
 }

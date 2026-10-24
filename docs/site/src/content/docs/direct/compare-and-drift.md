@@ -548,7 +548,7 @@ database (`ptah schema apply --dry-run` is its plan-only form).
 All three commands resolve the desired schema the same way: `--schema-file`
 adds SQL, YAML, HCL, DBML, or OCI sources; `--root-dir` scans Go annotations;
 and `--schema-cmd` runs an explicit external loader. A configured
-`external_schema` needs `--config ... --allow-external-schema`. Repeated
+`external_schema` needs `--config ... --allow-config-exec`. Repeated
 sources merge into one composite desired schema. See
 [Composite desired schema](../../schema/composite/) for the merge rules.
 

@@ -1,36 +1,46 @@
-// Package testexternal owns the authorization the native test commands need
-// before a `.test.hcl` case may run a program. It declares the environment
-// variable once and resolves it, so `ptah schema test` and
-// `ptah migrations test` cannot answer the question differently.
+// Package testexternal answers whether a `.test.hcl` case may run its
+// `external` step, so `ptah schema test`, `ptah migrations test` and the
+// compatibility test verbs cannot answer the question differently.
 package testexternal
 
 import (
+	"context"
+
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/migration/dbtest"
 )
 
+// externalStepOrigin names an external step for the program policy.
+const externalStepOrigin = "a .test.hcl external step"
+
 // Allowed reports whether this invocation authorizes an external test step.
+//
+// The binary's program policy answers it, the one ctx carries: ptah-compat
+// runs the step as the pinned community binary does, and native ptah runs it
+// with --allow-config-exec. PTAH_ALLOW_EXTERNAL_TEST_COMMAND is the older
+// spelling, kept so a suite that sets it keeps working; it authorizes
+// external steps and nothing else.
 //
 // Resolve it before the command does any work: a malformed value is a
 // configuration error the operator already knows they changed, and letting it
 // stay dormant until a run happens to reach an external step means every
 // healthy run hides it.
-func Allowed() (bool, error) {
-	return allowExternal.Resolve()
+func Allowed(ctx context.Context) (bool, error) {
+	legacy, err := allowExternal.Resolve()
+	if err != nil {
+		return false, err
+	}
+	if legacy {
+		return true, nil
+	}
+	return execpolicy.Authorize(ctx, externalStepOrigin, nil) == nil, nil
 }
 
-// allowExternal is the declaration of the variable, made once, on the surface
-// that owns it. See [ptah.run/internal/envbool].
+// allowExternal is the declaration of the older variable, made once, on the
+// surface that owns it. See [ptah.run/internal/envbool].
 //
-// It is [ptah.run/internal/envbool.Retained]. The pinned community binary
-// runs an `external` step's program with no authorization at all, so refusing
-// one by default takes nothing away from Atlas compatibility and this variable
-// adds no capability beyond it -- it restores what that binary already does.
-// Strict compatibility therefore keeps it reachable, which is what a
-// conformance run exercising `external` needs.
-//
-// The default is false because the step names a program on the machine running
-// the suite, which is a larger authority than the rest of a test file has, and
-// a boolean feature toggle opts in to the more permissive side so a typo lands
-// on the safe answer.
+// It is [ptah.run/internal/envbool.Retained]: it adds no capability the
+// pinned community binary lacks, since that binary runs an `external` step
+// with no authorization at all.
 var allowExternal = envbool.New(dbtest.AllowExternalCommandsEnvVar, false, envbool.Retained)

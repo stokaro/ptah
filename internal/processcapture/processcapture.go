@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"ptah.run/internal/execpolicy"
 )
 
 const (
@@ -62,6 +64,11 @@ func (e *Failure) Unwrap() error {
 
 // Command describes one directly executed process.
 type Command struct {
+	// Origin names the project or test file construct that supplied Args, such
+	// as `atlas.hcl data "external" "probe"`. Run asks [execpolicy.Authorize]
+	// with it before the process starts. Empty is a program the operator named,
+	// which runs without asking.
+	Origin    string
 	Args      []string
 	Dir       string
 	Env       []string
@@ -85,6 +92,9 @@ func Run(ctx context.Context, cmd Command) (Result, error) {
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := execpolicy.Authorize(ctx, cmd.Origin, cmd.Args); err != nil {
+		return Result{}, err
 	}
 	runCtx := ctx
 	if cmd.Timeout > 0 {

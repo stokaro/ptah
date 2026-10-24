@@ -47,6 +47,12 @@ type AtlasLoadOptions struct {
 	// has no handler for the data source; a compatibility adapter selects this
 	// option for its strict policy. The zero value evaluates the block.
 	RejectCompositeSchema bool
+	// RejectExternalSchema refuses a `data "external_schema"` block a selected
+	// value reaches, in the pinned community binary's own words, and runs no
+	// program. That binary refuses the data source when it evaluates one, and a
+	// compatibility adapter selects this option for its strict policy. The
+	// zero value evaluates the block.
+	RejectExternalSchema bool
 	// IgnoreDockerBlocks leaves every top-level docker block unread, as Atlas
 	// Community Edition leaves it: the block is reported as ignored, and a
 	// reference to its url fails with `Unsupported attribute`. The default
@@ -229,6 +235,7 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 	p.source = data
 	p.rejectCompositeSchema = opts.RejectCompositeSchema
+	p.rejectExternalSchema = opts.RejectExternalSchema
 	p.ignoreDockerBlocks = opts.IgnoreDockerBlocks
 	return p.parseCollection(body, opts.EnvName)
 }
@@ -339,6 +346,8 @@ type atlasParser struct {
 	compositeSchemas map[string]CompositeSchema
 	// rejectCompositeSchema is [AtlasLoadOptions.RejectCompositeSchema].
 	rejectCompositeSchema bool
+	// rejectExternalSchema is [AtlasLoadOptions.RejectExternalSchema].
+	rejectExternalSchema bool
 }
 
 // hclSchemaVarScope is one data "hcl_schema" block's contribution to the
@@ -444,7 +453,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		blocks.locals,
 		blocks.data,
 		blocks.docker,
-		atlasEvaluationRoots(body.Attributes, blocks.globalDiff, blocks.globalLint, selected),
+		atlasEvaluationRoots(body.Attributes, blocks.globalDiff, blocks.globalLint, blocks.exporters, selected),
 	); err != nil {
 		return nil, err
 	}

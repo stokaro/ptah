@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
 )
 
@@ -353,7 +354,8 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
-	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	// The native root attaches this policy for --allow-config-exec.
+	cmd.SetContext(projectconfig.AllowConfiguredPrograms(t.Context()))
 	// Derived the way the code under test derives it, not re-computed. Both
 	// answers are absolute and they differ wherever a symlink is in the way:
 	// ResolveCLIPath resolves one and filepath.Abs does not, so on macOS -- where
@@ -379,6 +381,8 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	c.Assert(commands[0].Format, qt.Equals, "hcl")
 	c.Assert(commands[0].Dir, qt.Equals, workingDir)
 	c.Assert(commands[0].Env, qt.DeepEquals, []string{"K=V"})
+	// The run asks the policy again by this name where the program starts.
+	c.Assert(commands[0].Origin, qt.Equals, "ptah.yaml external_schema")
 }
 
 // TestExternalSchemaCommandsResolvesAWorkingDirectoryThatLeavesTheProject
@@ -394,7 +398,8 @@ func TestExternalSchemaCommandsResolvesAWorkingDirectoryThatLeavesTheProject(t *
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
-	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	// The native root attaches this policy for --allow-config-exec.
+	cmd.SetContext(projectconfig.AllowConfiguredPrograms(t.Context()))
 	cfg := projectconfig.Config{
 		ExternalSchema: projectconfig.ExternalSchemaConfig{
 			Program:    []string{"config-loader"},
@@ -421,9 +426,12 @@ func TestExternalSchemaCommandsRejectsImplicitConfigExecution(t *testing.T) {
 		},
 	}
 
+	cmd.SetContext(execpolicy.With(t.Context(), execpolicy.Policy{OptIn: "pass --allow-config-exec"}))
+
 	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
 
-	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema runs config-loader: a program named in a project file does not run without permission; pass --allow-config-exec to run it")
 	c.Assert(commands, qt.IsNil)
 }
 
@@ -438,9 +446,12 @@ func TestExternalSchemaCommandsRejectsImplicitAtlasConfigExecution(t *testing.T)
 		},
 	}
 
+	cmd.SetContext(execpolicy.With(t.Context(), execpolicy.Policy{OptIn: "pass --allow-config-exec"}))
+
 	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
 
-	c.Assert(err, qt.ErrorMatches, "atlas.hcl data.external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(err, qt.ErrorIs, execpolicy.ErrRefused)
+	c.Assert(err, qt.ErrorMatches, `atlas.hcl data "external_schema" runs config-loader: a program named in a project file does not run without permission; pass --allow-config-exec to run it`)
 	c.Assert(commands, qt.IsNil)
 }
 
@@ -448,7 +459,8 @@ func TestExternalSchemaCommandsAllowsAtlasConfigWithOptIn(t *testing.T) {
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
-	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	// The native root attaches this policy for --allow-config-exec.
+	cmd.SetContext(projectconfig.AllowConfiguredPrograms(t.Context()))
 	cfg := projectconfig.Config{
 		ExternalSchema: projectconfig.ExternalSchemaConfig{
 			Program: []string{"config-loader", "--dialect", "sqlite"},

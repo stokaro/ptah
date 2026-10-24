@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -72,7 +73,6 @@ env "dev" {
 
 func TestSchemaDiffExternalSchemaSource(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
@@ -91,7 +91,6 @@ func TestSchemaDiffExternalSchemaSource(t *testing.T) {
 
 func TestSchemaDiffRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 	configPath := writeExternalSchemaAtlasHCL(t, "fail")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
@@ -109,29 +108,50 @@ func TestSchemaDiffRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(t
 	c.Assert(out, qt.Not(qt.Contains), "external loader blew up")
 }
 
-func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
+// TestSchemaDiffRunsAnExternalSchemaAsAtlasDoes pins that ptah-compat runs an
+// atlas.hcl data "external_schema" program without an opt-in of its own, as
+// Atlas runs it: a project that switched from Atlas does not need to learn a
+// Ptah variable to keep its config working.
+func TestSchemaDiffRunsAnExternalSchemaAsAtlasDoes(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset("PTAH_ALLOW_EXTERNAL_SCHEMA")(t)
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
 
-	_, err := atlastest.RunCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "diff",
 		"--from", "sqlite://"+targetPath,
 		"--config", "file://"+configPath,
 		"--env", "dev",
 	)
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "atlas.hcl data.external_schema executes a repository-controlled program and is disabled by default")
-	c.Assert(err.Error(), qt.Contains, "PTAH_ALLOW_EXTERNAL_SCHEMA=1")
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "ext_users")
+}
+
+// TestSchemaDiffStrictCompatRefusesAnExternalSchema keeps the strict profile
+// where the community binary is: it refuses the data source, and no program
+// runs.
+func TestSchemaDiffStrictCompatRefusesAnExternalSchema(t *testing.T) {
+	c := qt.New(t)
+	configPath := writeExternalSchemaAtlasHCL(t, "sql")
+	targetPath := filepath.Join(t.TempDir(), "target.db")
+	atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
+
+	_, _, err := runCompatWithPolicy(atlascompatpolicy.StrictCE(),
+		"schema", "diff",
+		"--from", "sqlite://"+targetPath,
+		"--config", "file://"+configPath,
+		"--env", "dev",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `.*data\.external_schema is not supported by the community version of Atlas.*`)
 }
 
 func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 
@@ -154,7 +174,6 @@ func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
 
 func TestSchemaApplyRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
 	configPath := writeExternalSchemaAtlasHCL(t, "fail")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
@@ -175,7 +194,6 @@ func TestSchemaApplyRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(
 func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {
 	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 
@@ -194,7 +212,6 @@ func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {
 
 func TestSchemaInspectExternalSchemaSource(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
@@ -212,7 +229,6 @@ func TestSchemaInspectExternalSchemaSource(t *testing.T) {
 
 func TestMigrateDiffExternalSchemaSource(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
@@ -233,7 +249,6 @@ func TestMigrateDiffExternalSchemaSource(t *testing.T) {
 
 func TestSchemaPlanExternalSchemaSource_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 
 	_, err := atlastest.RunCompatCommand(t,
@@ -248,7 +263,6 @@ func TestSchemaPlanExternalSchemaSource_FailurePath(t *testing.T) {
 
 func TestSchemaTestExternalSchemaSource_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
 
 	_, err := atlastest.RunCompatCommand(t,
@@ -263,7 +277,6 @@ func TestSchemaTestExternalSchemaSource_FailurePath(t *testing.T) {
 
 func TestSchemaDiffExternalSchemaProgramFailure(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "fail")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
@@ -281,7 +294,6 @@ func TestSchemaDiffExternalSchemaProgramFailure(t *testing.T) {
 
 func TestSchemaDiffExternalSchemaEmptyOutput(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "empty")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE existing (id INTEGER PRIMARY KEY)")
