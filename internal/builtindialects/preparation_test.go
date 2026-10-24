@@ -75,14 +75,16 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 // identifier limits internal/schemaprep now reads to name a foreign key
 // against the limits it wrote out before: 63 bytes on the PostgreSQL family
 // but Spanner, 128 characters on SQL Server and Spanner, 64 characters on
-// MySQL and MariaDB, and none elsewhere.
+// MySQL and MariaDB, and none elsewhere. PostgreSQL and YugabyteDB cut a
+// longer name to the limit; CockroachDB keeps it whole.
 func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 	bytes63 := descriptor.IdentifierLimit{Max: 63, Unit: "bytes"}
+	cut63 := descriptor.IdentifierLimit{Max: 63, Unit: "bytes", Truncates: true}
 	characters := func(limit int) descriptor.IdentifierLimit {
 		return descriptor.IdentifierLimit{Max: limit, Unit: "characters"}
 	}
 	want := map[string]descriptor.IdentifierLimit{
-		platform.Postgres: bytes63, platform.CockroachDB: bytes63, platform.YugabyteDB: bytes63,
+		platform.Postgres: cut63, platform.CockroachDB: bytes63, platform.YugabyteDB: cut63,
 		platform.Spanner: characters(128), platform.SQLServer: characters(128),
 		platform.MySQL: characters(64), platform.MariaDB: characters(64),
 		platform.ClickHouse: {}, platform.SQLite: {}, platform.Oracle: {}, platform.YDB: {},

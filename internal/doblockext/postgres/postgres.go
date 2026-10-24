@@ -271,10 +271,22 @@ func (p *roleBootstrap) createRole() (*schemamodel.Role, error) {
 		return nil, p.unsupported("expected CREATE ROLE")
 	}
 	role := p.record(node)
-	if role.Name == "" || len(role.Name) > 63 || pgreservedrole.Is(role.Name) {
+	// The length is the written name's: the reader records a longer name cut
+	// as the server cuts it, and a role bootstrap refuses a name the server
+	// would not keep as written.
+	if role.Name == "" || len(writtenRoleName(name.Value)) > 63 || pgreservedrole.Is(role.Name) {
 		return nil, p.unsupported("CREATE ROLE must name an application role of 1 to 63 bytes")
 	}
 	return &role, nil
+}
+
+// writtenRoleName is a role name token without its double quotes, with each
+// doubled quote inside read as one.
+func writtenRoleName(token string) string {
+	if len(token) >= 2 && strings.HasPrefix(token, `"`) && strings.HasSuffix(token, `"`) {
+		return strings.ReplaceAll(token[1:len(token)-1], `""`, `"`)
+	}
+	return token
 }
 
 // roleOptions refuses option repetitions that the general DDL parser reduces

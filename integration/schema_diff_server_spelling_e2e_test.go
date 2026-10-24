@@ -119,19 +119,26 @@ func TestSchemaDiffFromADirectoryPlansAServerRewrittenDeclarationThatChangedE2E(
 }
 
 // TestSchemaDiffBetweenDatabasesBuiltFromTwoSpellingsIsSyncedE2E diffs two
-// databases that hold one CHECK, built from two spellings of it. PostgreSQL
-// prints `kind IN ('a', 'b')` as `= ANY ((ARRAY[...])::text[])`, and that text,
-// written back by a migration, is stored as `= ANY (ARRAY[(...)::text, ...])`.
-// Both sides are the server's own description, but not the same one, so the
-// --to side is asked on the --from server, as schema apply asks it.
+// databases that hold one CHECK, built from two spellings of it, in both
+// directions. PostgreSQL prints `kind IN ('a', 'b')` as
+// `= ANY ((ARRAY[...])::text[])`, and that text, written back by a migration,
+// is stored as `= ANY (ARRAY[(...)::text, ...])`. Both sides are the server's
+// own description, but not the same one, so the --to side is asked on the
+// --from server, as schema apply asks it.
 func TestSchemaDiffBetweenDatabasesBuiltFromTwoSpellingsIsSyncedE2E(t *testing.T) {
-	c := qt.New(t)
-	source := databaseBuiltFrom(c, `CREATE TABLE notes (id bigint PRIMARY KEY, kind varchar,
-  CONSTRAINT notes_kind_check CHECK ((kind IS NULL) OR ((kind)::text = ANY ((ARRAY['a'::character varying, 'b'::character varying])::text[]))));`)
-	target := databaseBuiltFrom(c, `CREATE TABLE notes (id bigint PRIMARY KEY, kind varchar,
-  CONSTRAINT notes_kind_check CHECK (kind IS NULL OR kind IN ('a', 'b')));`)
+	tests := []struct{ name, from, to string }{
+		{name: "from the printed form", from: printedMembership, to: declaredMembership},
+		{name: "to the printed form", from: declaredMembership, to: printedMembership},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := databaseBuiltFrom(c, test.from)
+			target := databaseBuiltFrom(c, test.to)
 
-	out := runPtahNative(c, "schema", "diff", "--from", source, "--to", target)
+			out := runPtahNative(c, "schema", "diff", "--from", source, "--to", target)
 
-	c.Assert(out, qt.Contains, "Schemas are synced")
+			c.Assert(out, qt.Contains, "Schemas are synced")
+		})
+	}
 }

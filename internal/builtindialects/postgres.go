@@ -41,7 +41,7 @@ func postgres() descriptor.Dialect {
 				Newest:      "18",
 			},
 		},
-		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes"},
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 63, Unit: "bytes", Truncates: true},
 
 		// How a connection reaches the server.
 		Driver: "pgx",

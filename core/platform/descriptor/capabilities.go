@@ -112,4 +112,12 @@ type IdentifierLimit struct {
 	Max int `json:"max,omitempty"`
 	// Unit is what Max counts, empty exactly when Max is zero.
 	Unit string `json:"unit,omitempty"`
+	// Truncates reports that the server keeps a longer identifier cut to Max
+	// on a character boundary, with a notice, where another engine refuses it
+	// or keeps it whole. Every later use of the long spelling is cut the same
+	// way, so the two spellings name one object. PostgreSQL 15.19 and
+	// YugabyteDB 2026.1.2 do this for every identifier they read
+	// (`identifier ... will be truncated to ...`); CockroachDB v26.1.8 keeps a
+	// 70-byte table, constraint and index name whole.
+	Truncates bool `json:"truncates,omitempty"`
 }
