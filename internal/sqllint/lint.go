@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -104,6 +105,14 @@ type Options struct {
 	// otherwise report nothing, and a routine that composes SQL would read as
 	// one that does not.
 	Bodies Bodies
+
+	// Owner splits and judges every source in place of this package's own
+	// reading, when an executable provider serves the dialect: the provider
+	// owns its engine's SQL, as it owns every other service of that engine.
+	// The rules then read the statement facts of its split (see
+	// [lintext.FactStatementKind]), and SQL and Bodies are not read. A split
+	// that does not judge statement kinds is refused.
+	Owner lintext.Splitter
 }
 
 // Bodies reads routine bodies through the owner of the target's routine body
@@ -158,9 +167,10 @@ func DefaultRules() []Rule {
 }
 
 // LintSource lints every statement of one file. The routine bodies the file
-// defines are read in one call to opts.Bodies, before any rule runs.
+// defines are read in one call to opts.Bodies, before any rule runs, and a
+// source opts.Owner splits is read from its split alone.
 func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, error) {
-	if !opts.SQL.Selected() {
+	if opts.Owner == nil && !opts.SQL.Selected() {
 		return nil, sqlext.ErrUnselected
 	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
@@ -172,6 +182,13 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	caps, err := effectiveCapabilities(opts)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Owner != nil {
+		findings, err := lintOwned(ctx, source, opts, caps)
+		if err != nil {
+			return nil, err
+		}
+		return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
 	}
 	if platform.NormalizeDialect(opts.Dialect) == platform.YDB {
 		return applySeverities(keepEnabled(lintYQL(source, opts, caps), opts.DisabledRules), opts.Severities), nil

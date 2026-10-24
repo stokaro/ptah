@@ -18,6 +18,7 @@ sourceOfTruth:
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
+  - "integration/providercli/provider_sql_lint_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -39,7 +40,7 @@ Provider selection is available on these native commands:
   `migrations status`, and `migrations log`.
 - Migration metadata: `migrations tag`, `migrations baseline`, `migrations set`,
   and `migrations repair`.
-- Migration lint: `migrations lint`.
+- Lint: `migrations lint` and `sql lint`.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -101,6 +102,17 @@ cannot tell the provider that the SQL may be another engine's. The provider
 still annotates that split. A lint run cannot replay migrations on a provider's
 dev database yet: lint does not take an engine that only a provider serves as
 its dialect.
+
+`lint.statement-facts` lets `sql lint` read a provider's SQL. To a host that
+lists the feature, the provider's split says what each statement is, which
+table a statement creates without a primary key, and which capability keys a
+statement needs. `sql lint` reads those facts instead of parsing the file:
+DDL001 for a missing primary key, CAP001 for a key the target's capabilities
+answer false, SQL002 for a statement that changes no schema object, and SQL004
+for a schema statement no fact examines. Ptah declares capabilities only for
+the release lines of its own engines, so on another engine SQL004 lists each
+requirement as unexamined. A provider whose split does not say what each
+statement is is refused.
 
 `database.dev` lets a provider create throwaway databases for its engine. The host
 sends the operator's request as typed and never names an image, in either form:

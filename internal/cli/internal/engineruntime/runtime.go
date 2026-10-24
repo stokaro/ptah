@@ -25,8 +25,17 @@ func With(ctx context.Context, runtime *engine.Runtime) (context.Context, error)
 // Resolve returns the explicit command selection or the bundled default when
 // no selection was made. An explicitly empty runtime remains empty.
 func Resolve(ctx context.Context) (*engine.Runtime, error) {
-	if runtime, selected := ctx.Value(selectionKey{}).(*engine.Runtime); selected {
+	if runtime, selected := Selected(ctx); selected {
 		return runtime, nil
 	}
 	return builtin.Bundled()
+}
+
+// Selected returns the explicit command selection, and false when none was
+// made and [Resolve] returns the bundled default. A command whose own reading
+// of a dialect is built in asks here, because a selected provider owns its
+// engines and the built-in reading must not stand in for it.
+func Selected(ctx context.Context) (*engine.Runtime, bool) {
+	runtime, selected := ctx.Value(selectionKey{}).(*engine.Runtime)
+	return runtime, selected
 }

@@ -9,13 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/platform"
+	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
@@ -32,12 +36,13 @@ const (
 // about what this command takes.
 //
 // It is deliberately NOT capability.DefaultDialects, which "ptah schema render"
-// uses. validateSQLLintOptions accepts whatever platform.NormalizeDialect
+// uses. builtInDialect accepts whatever platform.NormalizeDialect
 // resolves, so `--dialect oracle` is accepted here and exits 0, while nothing
 // in internal/sqllint has been measured to analyze Oracle. Naming Oracle would
 // claim coverage nobody established, and refusing it is a behavior change this
 // help-text change does not get to make. YDB is named: its sources are read as
-// YQL, by the rules internal/sqllint says answer it.
+// YQL, by the rules internal/sqllint says answer it. An engine of a selected
+// provider is accepted beside them; see providedDialect.
 const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, spanner, or ydb"
 
 var errSQLLintFindings = errors.New("sql lint findings found")
@@ -69,6 +74,11 @@ func newSQLLintCommand() *cobra.Command {
 		Long: `Lint standalone SQL files using Ptah's SQL parser, AST, and
 target capability presets.
 
+With --provider-config or --provider-engine, the selected executable provider
+splits each file and reports what every statement is, and the rules read that
+report instead of parsing the SQL. --dialect then names one of the provider's
+engines, and may be left out when it serves only one.
+
 This command is intentionally separate from ptah migrations lint, which is
 migration directory specific.`,
 		Args:          cobra.ArbitraryArgs,
@@ -92,7 +102,9 @@ migration directory specific.`,
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
 	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
 	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
-	return cmd
+	return providercommand.Configure(cmd, func(cmd *cobra.Command, err error) error {
+		return writeSQLLintError(cmd.ErrOrStderr(), format, err.Error())
+	})
 }
 
 type sqlLintOptions struct {
@@ -126,11 +138,21 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 	if err := validateSQLLintOptions(opts); err != nil {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
+	provider, provided := engineruntime.Selected(cmd.Context())
+	var normalizedDialect string
+	var err error
+	if provided {
+		normalizedDialect, err = providedDialect(provider, opts.dialect)
+	} else {
+		normalizedDialect, err = builtInDialect(opts.dialect)
+	}
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
 
 	// Resolved before the SQL is read so an unusable --server-version is reported as
 	// the usage error it is, rather than behind whatever the first file has
 	// to say for itself.
-	normalizedDialect := platform.NormalizeDialect(opts.dialect)
 	target, err := servertarget.Resolve(normalizedDialect, opts.version)
 	if err != nil {
 		// The resolver's own sentence names the value, the dialect and the
@@ -154,21 +176,25 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	runtime, err := builtin.New()
-	if err != nil {
-		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	lintOpts := sqllint.Options{
+		Dialect:       normalizedDialect,
+		Version:       opts.version,
+		Capabilities:  target.Capabilities,
+		DisabledRules: opts.disabled,
+		Severities:    severities,
+	}
+	if provided {
+		lintOpts.Owner = provider
+	} else {
+		runtime, err := builtin.New()
+		if err != nil {
+			return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+		}
+		lintOpts.SQL, lintOpts.Bodies = runtime.SQL(), runtime
 	}
 	var findings []sqllint.Finding
 	for _, source := range sources {
-		sourceFindings, err := sqllint.LintSource(cmd.Context(), source, sqllint.Options{
-			Dialect:       normalizedDialect,
-			Version:       opts.version,
-			Capabilities:  target.Capabilities,
-			DisabledRules: opts.disabled,
-			Severities:    severities,
-			SQL:           runtime.SQL(),
-			Bodies:        runtime,
-		})
+		sourceFindings, err := sqllint.LintSource(cmd.Context(), source, lintOpts)
 		if err != nil {
 			return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 		}
@@ -208,12 +234,12 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 	return nil
 }
 
+// validateSQLLintOptions refuses flags that cannot describe a run. The
+// dialect is read afterwards, by builtInDialect or, when a provider serves the
+// run, by providedDialect.
 func validateSQLLintOptions(opts sqlLintOptions) error {
 	if opts.format != formatText && opts.format != formatJSON {
 		return fmt.Errorf("invalid --format value %q: expected text or json", opts.format)
-	}
-	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
-		return fmt.Errorf("invalid --dialect value %q: expected %s", opts.dialect, sqlLintDialects)
 	}
 	if opts.version != "" && opts.dialect == "" {
 		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)
@@ -225,6 +251,33 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 		return fmt.Errorf("at least one SQL file is required unless --stdin is set")
 	}
 	return nil
+}
+
+// builtInDialect is the canonical name of a dialect Ptah reads itself, empty
+// when the run names none.
+func builtInDialect(dialect string) (string, error) {
+	normalized := platform.NormalizeDialect(dialect)
+	if dialect != "" && normalized == "" {
+		return "", fmt.Errorf("invalid --dialect value %q: expected %s", dialect, sqlLintDialects)
+	}
+	return normalized, nil
+}
+
+// providedDialect is the engine of the selected provider a run lints: the one
+// --dialect names, by its name or an alias, or the provider's only engine when
+// it names none. The built-in reading of a dialect never stands in for the
+// provider's, so a name the provider does not serve is refused even where Ptah
+// reads that dialect itself.
+func providedDialect(provider *engine.Runtime, dialect string) (string, error) {
+	targets := provider.Targets()
+	if dialect == "" && len(targets) == 1 {
+		dialect = targets[0]
+	}
+	selected, err := provider.ResolveTarget(dialect)
+	if err != nil {
+		return "", fmt.Errorf("--dialect must name an engine of the selected provider: %s", strings.Join(targets, ", "))
+	}
+	return selected.Name(), nil
 }
 
 func readSQLLintSources(stdin io.Reader, opts sqlLintOptions) ([]sqllint.Source, error) {

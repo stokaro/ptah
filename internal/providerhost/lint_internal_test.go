@@ -14,6 +14,8 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydblint"
 )
 
@@ -84,4 +86,25 @@ func TestPublishedRuleCatalogCarriesTheYDBFamily(t *testing.T) {
 	published := &target{host: &Host{}, engine: &protocol.Engine{Id: "ydb", Features: []string{provider.LintFeature}, LintRules: wire}}
 	c.Assert(len(bundled) > 20, qt.IsTrue, qt.Commentf("the YD family shrank to %d rules", len(bundled)))
 	c.Assert(published.lint().Rules, qt.DeepEquals, bundled)
+}
+
+// An effect crosses the wire and comes back as it was, the statement facts'
+// class and capability key included: the host sends a split's effects back
+// to the owner with a check.
+func TestLintEffectsRoundTrip(t *testing.T) {
+	for _, effect := range []lintext.Effect{
+		{Fact: lintext.FactStatefulDrop, Object: "t", Kind: "TOPIC"},
+		{Fact: lintext.FactSafetyEffect, Impact: schemaext.Destructive, Reason: "drops a topic"},
+		{Fact: lintext.FactStatementKind, Class: lintext.ClassCreateTable, Kind: "CREATE TABLE", Object: "a"},
+		{Fact: lintext.FactStatementKind, Class: lintext.ClassAlterTable, Kind: "ALTER TABLE", Object: "a"},
+		{Fact: lintext.FactStatementKind, Class: lintext.ClassSchema, Kind: "DROP TABLE", Object: "a"},
+		{Fact: lintext.FactStatementKind, Class: lintext.ClassOther, Kind: "UPSERT"},
+		{Fact: lintext.FactMissingPrimaryKey, Table: "a"},
+		{Fact: lintext.FactRequiredCapability, Capability: capability.ParameterizedDecimal, Kind: "COLUMN", Object: "price", Table: "a", Clause: "ADD COLUMN"},
+	} {
+		t.Run(string(effect.Fact)+" "+string(effect.Class), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lintEffects([]*protocol.LintEffect{lintEffect(effect)}), qt.DeepEquals, []lintext.Effect{effect})
+		})
+	}
 }

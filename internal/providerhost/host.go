@@ -61,6 +61,9 @@ var hostFeatures = []string{
 	// A dev URL of an engine whose provider creates dev realms enters a
 	// realm; see DevDatabaseOwner.EnterRealm.
 	provider.DevRealmsFeature,
+	// `ptah sql lint` reads a provider's statement facts; see
+	// sqllint.Options.Owner.
+	provider.LintStatementFactsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

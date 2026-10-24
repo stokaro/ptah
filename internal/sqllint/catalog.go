@@ -51,6 +51,22 @@ func YQLCatalogIDs() []string {
 	return slices.Clone(yqlCatalogIDs)
 }
 
+// ownerCatalogIDs are the identifiers a source an owner splits can draw, in
+// catalog order. Such a source is read from the owner's statement facts (see
+// lintOwned), and no statement reaches the parser.
+var ownerCatalogIDs = []string{
+	RuleUnsupportedStatement,
+	RuleTableWithoutPrimaryKey,
+	RuleUnsupportedCapability,
+	RuleStatementsNotAnalyzed,
+}
+
+// OwnerCatalogIDs returns the identifiers `ptah sql lint` can report on a
+// source an executable provider splits, in the order of [Catalog].
+func OwnerCatalogIDs() []string {
+	return slices.Clone(ownerCatalogIDs)
+}
+
 // Catalog returns every identifier `ptah sql lint` can report.
 func Catalog() []CatalogRule {
 	out := make([]CatalogRule, len(catalogRules))
