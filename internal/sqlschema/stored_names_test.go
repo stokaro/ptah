@@ -197,3 +197,59 @@ func TestReadStoredNames_LeavesAServerThatKeepsLongNamesAlone(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(cut, qt.HasLen, 0)
 }
+
+// TestReadStoredNames_RefusesANameDeclaredAgain holds each redeclaration
+// PostgreSQL 15.19 refuses with `already exists` or `specified more than once`,
+// which the reader used to merge into one object (stokaro/ptah#4914).
+func TestReadStoredNames_RefusesANameDeclaredAgain(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "a table created twice", sql: "CREATE TABLE t (a int);\nCREATE TABLE t (b int);", want: `.*table "t" in schema "public" takes the name of table "t".*`},
+		{name: "an index created twice", sql: "CREATE TABLE t (a int, b int);\nCREATE INDEX ix ON t (a);\nCREATE INDEX ix ON t (b);", want: `.*index "ix" in schema "public" takes the name of index "ix".*`},
+		{name: "an index named like a table", sql: "CREATE TABLE t (a int);\nCREATE INDEX t ON t (a);", want: `.*index "t" in schema "public" takes the name of table "t".*`},
+		{name: "a view named like a table", sql: "CREATE TABLE t (a int);\nCREATE VIEW t AS SELECT 1 AS x;", want: `.*view "t" in schema "public" takes the name of table "t".*`},
+		{name: "a sequence named like a table", sql: "CREATE TABLE t (a int);\nCREATE SEQUENCE t;", want: `.*sequence "t" in schema "public" takes the name of table "t".*`},
+		{name: "an index named like a unique constraint", sql: "CREATE TABLE t (a int, b int, CONSTRAINT u UNIQUE (a));\nCREATE INDEX u ON t (b);", want: `.*index "u" in schema "public" takes the name of index of unique constraint "u".*`},
+		{name: "a table named like a primary key's index", sql: "CREATE TABLE t (a int, CONSTRAINT t_pk PRIMARY KEY (a));\nCREATE TABLE t_pk (x int);", want: `.*table "t_pk" in schema "public" takes the name of index of primary key "t_pk".*`},
+		{name: "a constraint added under a name in use", sql: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, a int, CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (id));\nALTER TABLE c ADD CONSTRAINT fk CHECK (a > 0);", want: `.*check "fk" in table "public.c" takes the name of foreign key "fk".*`},
+		{name: "a column written twice", sql: "CREATE TABLE t (a int, a int);", want: `.*column "a" in table "public.t" takes the name of column "a".*`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := readNotices(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrNameInUse)
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// TestReadStoredNames_AcceptsWhatTheServerAccepts is the other side of the
+// redeclaration rule, each file measured on PostgreSQL 15.19 to succeed.
+func TestReadStoredNames_AcceptsWhatTheServerAccepts(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "a table guarded by IF NOT EXISTS", sql: "CREATE TABLE t (a int);\nCREATE TABLE IF NOT EXISTS t (b int);"},
+		{name: "an index guarded by IF NOT EXISTS", sql: "CREATE TABLE t (a int, b int);\nCREATE INDEX ix ON t (a);\nCREATE INDEX IF NOT EXISTS ix ON t (b);"},
+		{name: "a unique constraint written twice the same way", sql: "CREATE TABLE r3 (a int, CONSTRAINT r3_k UNIQUE (a), CONSTRAINT r3_k UNIQUE (a));"},
+		{name: "a quoted name beside its folded spelling", sql: `CREATE TABLE "Docs" (id int);` + "\nCREATE TABLE docs (id int);"},
+		{name: "an index dropped and created again", sql: "CREATE TABLE t (a int);\nCREATE INDEX ix ON t (a);\nDROP INDEX ix;\nCREATE INDEX ix ON t (a);"},
+		{name: "a view replaced", sql: "CREATE TABLE t (a int);\nCREATE VIEW v AS SELECT a FROM t;\nCREATE OR REPLACE VIEW v AS SELECT a FROM t;"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := readNotices(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
