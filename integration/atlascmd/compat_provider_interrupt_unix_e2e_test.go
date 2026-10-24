@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -26,7 +27,8 @@ func TestCompatProviderInterrupt_FailurePath(t *testing.T) {
 	cmd := exec.Command(f.binaries.compat, "migrate", "apply", "--dir", f.migrationsURL, "--url", f.address+"?fault=delay-after") // #nosec G204 -- the test runs the ptah-compat binary it built
 	cmd.Dir = f.dir
 	cmd.Env = append(environmentWithoutPtahVariables(), f.withManifest()...)
-	var output bytes.Buffer
+	// The command writes while the test may read the output for a message.
+	var output syncBuffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	c.Assert(cmd.Start(), qt.IsNil)
 	finished := make(chan error, 1)
@@ -47,6 +49,24 @@ func TestCompatProviderInterrupt_FailurePath(t *testing.T) {
 		c.Fatalf("the command did not end after the interrupt: %s", output.String())
 	}
 	f.assertStopped(c)
+}
+
+// syncBuffer is a buffer a running command writes to while the test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func fileExists(path string) bool {
