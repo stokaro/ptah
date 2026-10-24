@@ -79,6 +79,16 @@ type Options struct {
 	// limit of a server that cuts it, with the name that server keeps, which
 	// is the name the read records. Nil discards them; the read is the same.
 	StoredNames func(StoredName)
+	// Redeclared receives each constraint the document drops and then adds
+	// again under its name with another definition, such as a supplemental
+	// file that replaces the foreign key an ORM's export declares. Nil
+	// leaves them unreported; the constraint is read as the later statement
+	// declares it either way.
+	Redeclared func(Redeclaration)
+	// Source names the document, such as a file path, for a refusal of one of
+	// its `ptah:allow-not-valid` directives to point at; see
+	// [NotValidAllowances].
+	Source string
 }
 
 // ReadWith is [ReadOnto] with the owners and the coverage vocabulary the
@@ -98,6 +108,10 @@ func ReadWith(
 	if err := refuseFeatureCoverageHeader(data); err != nil {
 		return schemamodel.Database{}, nil, err
 	}
+	allowances, err := readNotValidAllowances(data, dialect, opts.Source)
+	if err != nil {
+		return schemamodel.Database{}, nil, err
+	}
 	if ReadsAsLoad(dialect, opts.Owners) {
 		if document != nil {
 			return schemamodel.Database{}, nil, fmt.Errorf(
@@ -110,6 +124,9 @@ func ReadWith(
 		if err != nil {
 			return schemamodel.Database{}, nil, err
 		}
+		if err := takeNotValidAllowances(ctx, &loaded.Database, allowances); err != nil {
+			return schemamodel.Database{}, nil, err
+		}
 		return loaded.Database, nil, nil
 	}
 	database, statements, err := convert(ctx, data, dialect, document, opts)
@@ -120,7 +137,21 @@ func ReadWith(
 		return schemamodel.Database{}, nil, err
 	}
 	schemamodel.Finalize(&database)
+	if err := takeNotValidAllowances(ctx, &database, allowances); err != nil {
+		return schemamodel.Database{}, nil, err
+	}
 	return database, statements, nil
+}
+
+// takeNotValidAllowances hands the document's directives to the collector ctx
+// carries, for its loader to apply once its sources are merged, or applies them
+// to the document itself when there is no collector.
+func takeNotValidAllowances(ctx context.Context, database *schemamodel.Database, allowances []notValidAllowance) error {
+	if collector := notValidAllowancesFrom(ctx); collector != nil {
+		collector.add(allowances)
+		return nil
+	}
+	return applyNotValidAllowances(database, allowances)
 }
 
 // refuseFeatureCoverageHeader refuses a document whose header carries an HCL
@@ -158,7 +189,9 @@ func convert(
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}
+	document.redeclared = opts.Redeclared
 	database, err := convertStatements(ctx, statements, parsed, dialect, document, owners, relations)
+	document.redeclared = nil
 	if err != nil {
 		return schemamodel.Database{}, nil, err
 	}

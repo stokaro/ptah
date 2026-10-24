@@ -1186,6 +1186,7 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 	if isForeignKey(constraintSchema) {
 		target.buildKeyIndex(constraintSchema.Name, derived, constraintSchema.Columns)
 	}
+	target.noteRedeclaration(constraintSchema)
 	return nil
 }
 

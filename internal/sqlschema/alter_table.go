@@ -547,6 +547,7 @@ func applyDropConstraint(target alterTarget, operation *ast.DropConstraintOperat
 		return nil
 	}
 	name := normalizeSQLIdentifier(target.sourcePlatform, operation.ConstraintName)
+	target.rememberDropped(name)
 	if operation.ForeignKey {
 		if target.removeForeignKey(name) {
 			target.keepKeyIndexes(name)

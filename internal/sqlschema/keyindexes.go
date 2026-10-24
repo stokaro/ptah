@@ -46,6 +46,13 @@ type Document struct {
 	// server that cuts long names, so a later file's name cut to an earlier
 	// one's is found; nil until a file of such a dialect is read.
 	names *storedNames
+	// dropped is each constraint a file dropped by name, keyed by table and
+	// name, so one a later statement adds again under the name is compared
+	// with what it replaces; see [Redeclaration].
+	dropped map[string]schemamodel.Constraint
+	// redeclared receives each such constraint added with another
+	// definition, and is [Options.Redeclared] while a file is converted.
+	redeclared func(Redeclaration)
 }
 
 // parseNotes is what a parse of one file found about the AST it returned that

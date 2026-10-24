@@ -498,6 +498,53 @@ The Atlas HCL and Go annotation exports refuse a `NOT VALID` constraint,
 because neither format can write one. A rollback leaves a validated constraint
 validated: nothing can mark it `NOT VALID` again short of dropping it.
 
+### Allow a key another source declares to stay NOT VALID
+
+An ORM's schema export, such as Ent's, writes every foreign key without
+`NOT VALID`, because it has no way to say it. When the migration history added
+a key `NOT VALID` on purpose, to validate it later after a data check, that
+export asks for the key validated, and the first diff plans
+`VALIDATE CONSTRAINT`. A line comment in another SQL file of the desired schema
+records the history's choice without declaring the key again:
+
+```sql
+-- ptah:allow-not-valid CONSTRAINT items_owner_fk ON items
+```
+
+It is the same permission the `NOT VALID` clause gives, added to the key the
+export declares. The rest of the key stays the export's: a change to its
+columns, its target or its `ON DELETE` action is still planned, and the key is
+then added again `NOT VALID`. A database that holds the key validated satisfies
+it too, so a directive left behind after a manual `VALIDATE CONSTRAINT` changes
+nothing. Remove the line to require the key validated again.
+
+- The names are read the way the server reads them: quoted or folded, and cut
+  to 63 bytes where it cuts a longer name.
+- The table is named the way the documents name it, as
+  `COMMENT ON CONSTRAINT ... ON` would name it in the same file: unqualified
+  where they write it unqualified, qualified where they qualify it.
+- The directive is read after every source of the desired schema is merged, so
+  the key can come from another file, an `external_schema` program or another
+  part of a `composite_schema`. `ptah` and `ptah-compat` read it the same way.
+- A directive that reaches no CHECK or FOREIGN KEY of the merged schema is
+  refused and names where it was written. So is a misspelled word of the
+  `ptah:allow` family, such as `ptah:allow-not-vaild`, and a directive in a
+  document of a dialect without `NOT VALID`.
+- Only a comment that begins its line is a directive. The same text inside a
+  string or a routine body is not one.
+- A migration directory used as the desired schema is replayed, and a key its
+  history adds `NOT VALID` is read back `NOT VALID`, which allows it already. A
+  directive in a migration file is not read.
+
+A file that drops a key and adds it again under its name with another
+definition is read as the later statement says, and the run warns about it:
+the copy goes on deciding the key after the export changes it. Where only
+`NOT VALID` differs, the warning names the directive that allows it instead.
+
+The directive is a Ptah addition. Atlas reads it as a SQL comment: the pinned
+community binary v1.3.0 accepts a file that carries it, and has no equivalent
+setting.
+
 ## Object comments
 
 Ptah writes the comment of a view, a materialized view, a sequence, a domain, a

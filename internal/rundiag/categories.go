@@ -24,6 +24,17 @@ var (
 		},
 	}
 
+	// RedeclaredConstraints is a constraint a SQL document drops and adds
+	// again under its name with another definition, such as a supplemental
+	// file that copies an ORM's foreign key to change it: the copy goes on
+	// deciding the key after the ORM changes it.
+	RedeclaredConstraints = &Category{
+		Name: "redeclared-constraint",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d constraints are dropped and added again with another definition; the later declarations decide them", len(records))
+		},
+	}
+
 	// IgnoredProjectSettings is an atlas.hcl name the community binary
 	// accepts without acting on.
 	IgnoredProjectSettings = &Category{

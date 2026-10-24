@@ -94,3 +94,23 @@ func TestRunContext_RefusesCutNamesThatCollide(t *testing.T) {
 	c.Assert(code, qt.Not(qt.Equals), 0)
 	c.Assert(output, qt.Contains, `are both stored as "`+shared+`", and the server refuses the second`)
 }
+
+// A key a schema file drops and adds again only to make it NOT VALID is
+// reported, pointing at the directive that allows it without a second
+// declaration.
+func TestRunContext_ReportsAKeyDeclaredAgainForNotValid(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE owners (id bigint PRIMARY KEY);
+CREATE TABLE items (id bigint PRIMARY KEY, owner_id bigint,
+  CONSTRAINT items_owner_fk FOREIGN KEY (owner_id) REFERENCES owners (id));
+ALTER TABLE items DROP CONSTRAINT items_owner_fk;
+ALTER TABLE items ADD CONSTRAINT items_owner_fk FOREIGN KEY (owner_id) REFERENCES owners (id) NOT VALID;
+`), 0o600), qt.IsNil)
+
+	warnings := renderWarnings(c, path)
+
+	c.Assert(warnings, qt.HasLen, 1)
+	c.Assert(warnings[0], qt.Matches, `warning: schema file .*schema\.sql: foreign key "items_owner_fk" on table "items" is dropped and added again `+
+		`only to allow NOT VALID; -- ptah:allow-not-valid CONSTRAINT "items_owner_fk" ON "items" allows it without declaring the key a second time`)
+}
