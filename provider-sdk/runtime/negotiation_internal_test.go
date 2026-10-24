@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -194,7 +195,10 @@ func TestDescribeRefusesAnInvalidHandshake(t *testing.T) {
 			c.Assert(status.Code(err), qt.Equals, test.want)
 		})
 	}
-	_, err := validateOptions(Options{Executable: "/bin/provider", ProviderID: "x", SHA256: strings.Repeat("0", 64), HostFeatures: []string{""}})
+	// An executable path absolute on every platform: "/bin/provider" is not
+	// absolute on Windows, where the check refused it before the features.
+	executable := filepath.Join(c.TempDir(), "provider")
+	_, err := validateOptions(Options{Executable: executable, ProviderID: "x", SHA256: strings.Repeat("0", 64), HostFeatures: []string{""}})
 	c.Assert(err, qt.ErrorMatches, `.*invalid or repeated host feature`)
 }
 
