@@ -127,7 +127,7 @@ jobs:
 
   release-check-gate:
     name: Release check gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, goreleaser-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5

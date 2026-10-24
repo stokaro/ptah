@@ -770,7 +770,7 @@ jobs:
 
   integration-gate:
     name: Integration gate
-    if: always() && github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     needs: [scope, integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 5
