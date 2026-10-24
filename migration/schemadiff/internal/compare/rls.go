@@ -159,6 +159,7 @@ func RLSPoliciesWithSemantics(
 	// Detect policy definition modifications
 	for key, generatedPolicy := range generatedPolicyMap {
 		if databasePolicy, policyExists := databasePolicyMap[key]; policyExists {
+			diff.Matched.RLSPolicies++
 			policyComparison := RLSPolicyDefinitionsWithDialect(generatedPolicy, databasePolicy, dialect)
 			if len(policyComparison.Changes) > 0 {
 				policyComparison.Desired = generatedPolicy
@@ -355,6 +356,8 @@ func RLSEnabledTablesWithSemantics(
 		_, enabled := dbRLSTables[identity]
 		if !enabled {
 			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, declared)
+		} else {
+			diff.Matched.RLSEnabledTables++
 		}
 		// A table this diff enables is enabled with the FORCE its declaration
 		// asks for, so only the other direction is left for it: a flag the

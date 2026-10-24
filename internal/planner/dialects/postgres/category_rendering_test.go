@@ -50,6 +50,7 @@ var supplementalDiffCategories = map[string]string{
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
+	"Matched":                         "how many objects of each kind the comparison paired, which a drift report counts each side's objects with. It is not a change and no planner reads it, so a fixture here would assert that a count plans nothing",
 }
 
 // refusedDiffCategories are the categories the planner answers with an error

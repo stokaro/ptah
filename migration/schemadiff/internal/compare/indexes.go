@@ -528,10 +528,13 @@ func appendIndexDifferences(
 		case partitionAttachedIndexIsNotPlannable(databaseEntry):
 			continue
 		case comparison.replacementRequired(generatedEntry, databaseEntry):
+			// Not a pair: the plan drops the index and creates it again, and it
+			// is counted as the removal and the addition.
 			appendIndexAddition(diff, generatedEntry)
 			appendIndexRemoval(diff, databaseEntry)
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 		case generatedEntry.index.Invisible != databaseEntry.index.Invisible:
+			diff.Matched.Indexes++
 			diff.IndexVisibilityChanged = append(diff.IndexVisibilityChanged, difftypes.IndexVisibilityChange{
 				TableName: databaseEntry.ref.TableName,
 				Name:      databaseEntry.ref.Name,
@@ -540,6 +543,7 @@ func appendIndexDifferences(
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 			appendKeptIndexCommentChange(diff, comparison, databaseEntry.ref, generatedEntry.index.Comment, databaseEntry.index.Comment)
 		default:
+			diff.Matched.Indexes++
 			appendIndexCommentChange(diff, comparison, databaseEntry.ref, "", generatedEntry.index.Comment, databaseEntry.index.Comment)
 			appendKeptIndexCommentChange(diff, comparison, databaseEntry.ref, generatedEntry.index.Comment, databaseEntry.index.Comment)
 		}
@@ -695,6 +699,9 @@ func pairIndexRenames(
 			continue
 		}
 		paired[match] = true
+		// One index under two names is a pair, as an index both sides name
+		// alike is.
+		diff.Matched.Indexes++
 		removal := removals[match]
 		diff.IndexesRenamed = append(diff.IndexesRenamed, difftypes.IndexRename{
 			TableName: removal.ref.TableName,

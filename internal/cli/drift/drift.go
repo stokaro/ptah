@@ -135,6 +135,12 @@ type driftReport struct {
 	DatabaseURL      string           `json:"database_url,omitempty"`
 	IgnoredTables    []string         `json:"ignored_tables,omitempty"`
 	Findings         []safety.Finding `json:"findings,omitempty"`
+	// Inventory counts each kind of object the comparison pairs on both sides,
+	// within its scope, so a reader can tell three tables of forty differing
+	// from three of three. It is present, possibly empty, on every report that
+	// compared, and absent from an error report. It carries counts and no
+	// names; see [safety.Inventory].
+	Inventory []safety.InventoryEntry `json:"inventory,omitzero"`
 	// Undecided names the declared objects the comparison withheld: the read
 	// of the database did not describe their kind, so nothing checked whether
 	// they exist. They count as one finding at warning severity, so a
@@ -289,6 +295,7 @@ func assessDrift(
 		DatabaseURL:      result.DatabaseURL,
 		IgnoredTables:    ignoredTables,
 		Findings:         findings,
+		Inventory:        safety.Inventory(result.Diff),
 		Undecided:        result.Undecided,
 		ManagedData:      driftedManagedData(result.DataDrift),
 		Diff:             result.Diff,

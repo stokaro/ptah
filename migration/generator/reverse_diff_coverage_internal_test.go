@@ -89,6 +89,13 @@ func assertReverseCoverageField(
 		// Signature is what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "Matched" {
+		// A count of the pairs the forward comparison made, which a drift
+		// report reads to count each side's objects. It is not a change, and a
+		// rollback plans statements and reports no inventory, so nothing on
+		// the down direction reads it and zeroing it cannot change the plan.
+		return
+	}
 	if field.Name == "ConstraintsValidated" {
 		// A validation has no reverse statement, so the field is read and
 		// deliberately answered with nothing. Zeroing it cannot change the

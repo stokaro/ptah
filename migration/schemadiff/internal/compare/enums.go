@@ -157,7 +157,9 @@ func EnumsWithSemantics(
 			continue
 		}
 		matched[dbEnum.QualifiedName()] = struct{}{}
-		enumDiff := EnumValues(genEnum, dbEnum)
+		diff.Matched.Enums++
+		enumDiff, matchedValues := enumValues(genEnum, dbEnum)
+		diff.Matched.EnumValues += matchedValues
 		if len(enumDiff.ValuesRemoved) > 0 {
 			// Only a removal needs them: that is the change PostgreSQL cannot
 			// express as an ALTER, so the type is recreated and every column
@@ -295,6 +297,12 @@ func enumParts(schema, name string) (enumSchema, enumName string) {
 // Value lists are sorted alphabetically to ensure deterministic migration
 // generation and reliable testing across multiple runs.
 func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDiff {
+	enumDiff, _ := enumValues(genEnum, dbEnum)
+	return enumDiff
+}
+
+// enumValues is [EnumValues] with the number of values both enums hold.
+func enumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) (difftypes.EnumDiff, int) {
 	// The qualified name, so the planner can name the type it has to alter.
 	// It is the bare name for every enum that names no schema, which is every
 	// enum a Go annotation can declare (stokaro/ptah#1276).
@@ -312,10 +320,13 @@ func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDif
 	}
 
 	// Find added and removed values
+	matched := 0
 	for value := range genValues {
 		if !dbValues[value] {
 			enumDiff.ValuesAdded = append(enumDiff.ValuesAdded, value)
+			continue
 		}
+		matched++
 	}
 
 	for value := range dbValues {
@@ -328,7 +339,7 @@ func EnumValues(genEnum schemamodel.Enum, dbEnum catalog.Enum) difftypes.EnumDif
 	sort.Strings(enumDiff.ValuesAdded)
 	sort.Strings(enumDiff.ValuesRemoved)
 
-	return enumDiff
+	return enumDiff, matched
 }
 
 // enumFromCatalog carries an enum the database reported into the shape the diff

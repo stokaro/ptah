@@ -61,6 +61,7 @@ func ServerSchemas(
 			diff.SchemasAdded = append(diff.SchemasAdded, schema)
 			continue
 		}
+		diff.Matched.Schemas++
 		if change, changed := schemaAttributeChange(schema, existing); changed {
 			diff.SchemasModified = append(diff.SchemasModified, change)
 		}

@@ -193,8 +193,9 @@ Three more flags shape the check:
 - `--ignore-extension` names a database extension the comparison leaves alone,
   and is repeatable. See [An extension the schema does not
   describe](#an-extension-the-schema-does-not-describe).
-- `--format` selects `text`, `json` (the findings plus the full structured
-  diff, for tooling), or `github-actions` (workflow annotations).
+- `--format` selects `text`, `json` (the findings, the
+  [inventory](#how-much-each-side-holds) and the full structured diff, for
+  tooling), or `github-actions` (workflow annotations).
 
 A declared object the read could not check is graded as well. It is not a
 difference, so the report opens with `No schema drift found, but 1 declared
@@ -210,6 +211,71 @@ Feature limits retain a structured subject and the provider's reason; they can
 concern a whole namespace. Text summaries count these as comparison limits.
 `github-actions` annotates every limit. `ptah schema serve` counts and lists them
 the same way.
+
+### How much each side holds
+
+The findings say what differs. The JSON report's `inventory` says how much of
+each kind of object either side holds, so a reader can tell three tables of
+forty differing from three of three. Against the schema of a database that
+lacks one declared table, holds one index the schema does not declare, and has
+one column in a shared table that the schema does not declare:
+
+```json
+{
+  "drift": true,
+  "findings": [
+    { "category": "columns_removed", "count": 1, "severity": "destructive" },
+    { "category": "indexes_removed", "count": 1, "severity": "warning" },
+    { "category": "tables_added", "count": 1, "severity": "safe" }
+  ],
+  "inventory": [
+    { "kind": "columns", "desired": 2, "observed": 3 },
+    { "kind": "indexes", "desired": 1, "observed": 2 },
+    { "kind": "tables", "desired": 2, "observed": 1 }
+  ]
+}
+```
+
+`desired` is how many objects of the kind the desired schema declares and
+`observed` how many the database holds. `kind` is the stem of the kind's
+findings, so `tables` joins `tables_added` and `tables_removed` without a second
+vocabulary. The entries carry counts and no names, and they are sorted by kind.
+A kind neither side holds has no entry; a kind only one side holds has a zero on
+the other side. A report that compared carries the field, empty when no kind has
+an entry, and an error report carries none.
+
+The counts come from the comparison, so they describe the same objects the
+findings do:
+
+- an object `--ignore` excludes, or one the comparison withholds as undecided,
+  is counted on neither side;
+- with no difference, each kind counts the same on both sides;
+- columns are counted in the tables both sides hold, and enum values in the enum
+  types both sides hold, so a table only one side holds counts under `tables`
+  and its columns are not counted;
+- an index or a constraint whose definition changed is dropped and created
+  again, so it counts once on each side and not as one object both hold.
+
+| Kind | What it counts |
+| --- | --- |
+| `tables` | Tables. |
+| `columns` | Columns of the tables both sides hold. |
+| `indexes` | Indexes the comparison compares, which leaves out an index a PRIMARY KEY, a UNIQUE constraint or a foreign key owns. An index renamed in place is one object. |
+| `constraints` | CHECK, UNIQUE, PRIMARY KEY and FOREIGN KEY constraints. A primary key declared on its column is compared as part of the column and is not counted here. |
+| `enums` | Enum types. |
+| `enum_values` | Values of the enum types both sides hold. |
+| `functions` | Functions and procedures, one per overload. |
+| `roles` | The roles the desired schema declares. A role it does not declare is not compared, so the database side counts only the declared roles it holds. |
+| `schemas` | Databases, on a comparison of a whole MySQL or MariaDB server. |
+
+`rls_policies` and `rls_enabled_tables` count the policies and the enablements
+the shared comparison pairs. Against PostgreSQL, policies and row-level security
+belong to their feature owner, so a PostgreSQL report has neither kind.
+
+An object a feature owner compares, such as a PostgreSQL extension, policy or
+domain, has no inventory entry. Its findings are named
+`feature_changes:<change kind>`, and the owner reports the objects that differ
+and not how many match.
 
 ### An extension the schema does not describe
 

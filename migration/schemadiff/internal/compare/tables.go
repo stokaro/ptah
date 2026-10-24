@@ -220,6 +220,10 @@ func TablesAndColumnsWithTableContext(
 	// Find modified tables (compare columns)
 	for identity, genTable := range genTables {
 		if dbTable, exists := dbTables[identity]; exists {
+			// A pair whether or not it differs, and whether or not its owner
+			// rather than this comparison answers for its columns: both sides
+			// hold the table.
+			diff.Matched.Tables++
 			// A table a facet defines on either side has no column list of its
 			// own. A SQLite virtual table's columns are the module's answer,
 			// and when the module is not registered in this build the catalog
@@ -239,7 +243,7 @@ func TablesAndColumnsWithTableContext(
 			if _, defined := schemaext.DefiningKind(genTable.Facets); defined {
 				continue
 			}
-			tableDiff := tableColumnsWithSemantics(
+			tableDiff, matchedColumns := tableColumnsWithSemantics(
 				genTable,
 				dbTable,
 				desired,
@@ -249,6 +253,7 @@ func TablesAndColumnsWithTableContext(
 				spellings,
 				caps,
 			)
+			diff.Matched.Columns += matchedColumns
 			// A comment is compared here rather than inside
 			// tableColumnsWithSemantics, and reaches TablesModified: it belongs
 			// to the table rather than to any column, and a table whose only

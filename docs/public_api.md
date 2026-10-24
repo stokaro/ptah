@@ -2823,6 +2823,17 @@ names no valid one. Encoding the same diff through the owners' codecs refuses
 that change instead. Comparison snapshots every change through its owner's
 codec, so only a diff assembled by hand carries one.
 
+`migration/safety.Inventory` counts each kind of object the comparison pairs
+one by one on both sides: the desired side is the pairs in
+`difftypes.SchemaDiff.Matched` and the additions, and the database side the
+pairs and the removals, with the additions and the removals counted as
+`ClassifySchemaDiff` counts them, so a kind with no finding counts the same on
+both sides. `Kind` is the stem of the kind's findings. A kind neither side holds
+is left out and the entries are sorted by kind. `difftypes.MatchedCounts`
+documents what each pair count holds; a diff assembled by hand carries zero
+pairs. A feature owner's objects are not counted. `functions_removed` counts the
+procedures a diff removes beside the functions.
+
 `migration/planner.GenerateSchemaDiffRenderedPlan` plans and renders a diff
 once and returns a `RenderedPlan`: the rendering request, which holds the
 planned nodes, and one fragment per node. `Units()` returns SQL or native

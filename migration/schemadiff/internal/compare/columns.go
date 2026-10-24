@@ -129,7 +129,7 @@ func TableColumnsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 ) difftypes.TableDiff {
-	return tableColumnsWithSemantics(
+	tableDiff, _ := tableColumnsWithSemantics(
 		genTable,
 		dbTable,
 		desired,
@@ -139,8 +139,12 @@ func TableColumnsWithSemantics(
 		TableContext{},
 		capability.Capabilities{},
 	)
+	return tableDiff
 }
 
+// tableColumnsWithSemantics compares one table's columns and returns the
+// table's changes with the number of columns it paired: the columns both sides
+// hold, whether or not they differ.
 func tableColumnsWithSemantics(
 	genTable schemamodel.Table,
 	dbTable catalog.Table,
@@ -150,7 +154,7 @@ func tableColumnsWithSemantics(
 	uniqueness columnUniqueness,
 	spellings TableContext,
 	caps capability.Capabilities,
-) difftypes.TableDiff {
+) (difftypes.TableDiff, int) {
 	tableDiff := difftypes.TableDiff{
 		TableName: genTable.QualifiedName(),
 		// Everything the declaration says about this table, for the rebuild a
@@ -192,8 +196,10 @@ func tableColumnsWithSemantics(
 	}
 
 	// Find modified columns
+	matched := 0
 	for identity, genCol := range genColumns {
 		if dbCol, exists := dbColumns[identity]; exists {
+			matched++
 			switch {
 			case prepared.ColumnPrimaryKeysPrepared:
 				genCol.Primary = preparedKeys[identity]
@@ -237,7 +243,7 @@ func tableColumnsWithSemantics(
 	})
 	tableDiff.ColumnKeyNames = gainedKeyNames(tableDiff, genTable, desired, dialect)
 
-	return tableDiff
+	return tableDiff, matched
 }
 
 // commentChange reports a comment transition, or nil when there is none.
