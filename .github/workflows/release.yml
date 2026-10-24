@@ -254,6 +254,21 @@ jobs:
 
       - uses: anchore/sbom-action/download-syft@v0.24.3
 
+      # GoReleaser writes the changelog from the tag `git describe` finds
+      # before this one, whatever its name. provider-sdk/vX.Y.Z tags sit on
+      # master as well, so the nearest tag is often an SDK tag: measured with
+      # GoReleaser v2.19.0 and a local v0.16.0 on d22c5bfd8, the previous tag
+      # was provider-sdk/v0.3.0 and the changelog held two of the 71 commits
+      # since v0.15.0. The previous release is the nearest v* tag, named
+      # explicitly.
+      - name: Find the previous release tag
+        id: previous-release
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${GITHUB_REF_NAME}^")"
+          echo "tag=${previous}" >>"${GITHUB_OUTPUT}"
+          echo "the changelog runs from ${previous} to ${GITHUB_REF_NAME}"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -262,6 +277,8 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.previous-release.outputs.tag }}
           # The name is .goreleaser.yaml's; what it carries is now whichever
           # credential the step above resolved.
           HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.value }}
