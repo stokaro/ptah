@@ -271,7 +271,7 @@ func replayOnLockedConnection(
 			// outside a transaction of its own and rolls a failed one back on this
 			// pinned session, which it then cleans.
 			migrator.WithStatementValidator(
-				devclean.NewDevReplayGuard(replayConn.Info()).WithSessionScope().WithOwnTransactions()),
+				devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions()),
 		)
 		if err != nil {
 			return fmt.Errorf("load migration directory: %w", err)

@@ -23,7 +23,6 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/devclean"
@@ -945,7 +944,7 @@ func PrepareApply(
 	if conn == nil {
 		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
 	}
-	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 	if err := RefuseServerDevDatabase(ctx, conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {

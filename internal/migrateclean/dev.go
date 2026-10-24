@@ -1,6 +1,7 @@
 package migrateclean
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -54,10 +55,13 @@ func (e *NotCleanError) Error() string {
 //
 // An engine whose descriptor states CleanCheck.ResetListing, YDB's, has no
 // catalog query: its dev database is clean when its writer's reset would drop
-// nothing; see [listedDevRefusal].
+// nothing; see [listedDevRefusal]. So is an engine an executable provider
+// serves, whose provider lists what its cleanup removes; the host has no
+// catalog query for it either.
 func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if conn != nil {
-		if engine := described(conn.Info().Dialect); engine.CleanCheck.ResetListing {
+		engine := described(conn.Info().Dialect)
+		if engine.CleanCheck.ResetListing || !conn.Info().Provider.IsZero() {
 			return listedDevRefusal(ctx, conn, engine)
 		}
 	}
@@ -94,7 +98,7 @@ func DevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 func listedDevRefusal(ctx context.Context, conn *dbschema.DatabaseConnection, engine descriptor.Dialect) error {
 	lister, ok := conn.SchemaWriter().(resetObjectLister)
 	if !ok {
-		return fmt.Errorf("the %s writer cannot list what its reset drops", engine.Name)
+		return fmt.Errorf("the %s writer cannot list what its reset drops", cmp.Or(engine.Name, conn.Info().Dialect))
 	}
 	objects, err := lister.ResetObjects(ctx, dbreset.Scope{})
 	if err != nil {

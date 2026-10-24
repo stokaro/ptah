@@ -37,7 +37,7 @@ func withoutPlanLint(c *qt.C) {
 	c.Helper()
 	lint, guard := checkPlanStatements, guardPlanRehearsal
 	checkPlanStatements = func([]string, string) error { return nil }
-	guardPlanRehearsal = func([]string, catalog.ServerInfo) error { return nil }
+	guardPlanRehearsal = func([]string, *devclean.ReplayGuard, catalog.ServerInfo) error { return nil }
 	c.Cleanup(func() { checkPlanStatements, guardPlanRehearsal = lint, guard })
 }
 

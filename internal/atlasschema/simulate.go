@@ -196,7 +196,7 @@ func connectSimulationDev(
 	// The dialect check reads the URL as written: a `docker://` value names its
 	// engine in the text, so a mismatch is answerable before a container is
 	// started and a refused run pays for none.
-	if err := atlasurl.ValidateDialectMatch(devURL, targetInfo.Dialect); err != nil {
+	if err := validateDevDialect(ctx, devURL, targetInfo.Dialect); err != nil {
 		return simulationDev{}, err
 	}
 	// The alias checks below ask whether the dev database IS the target or the
@@ -215,7 +215,7 @@ func connectSimulationDev(
 	// a dev realm Resolve creates, so the URL that names the target names a
 	// realm beside it, and only the connection can say which.
 	serverDev := isDevServer(devURL)
-	if err := refuseDevURLAliases(devURL, targetURL, desiredURLs); err != nil {
+	if err := refuseDevURLAliases(ctx, devURL, targetURL, desiredURLs); err != nil {
 		return simulationDev{}, err
 	}
 	protected := []devlock.Protected{{Conn: targetConn, Refusal: errDevURLIsTarget}}
@@ -298,8 +298,10 @@ func connectSimulationDev(
 // desired-state database; see [connectSimulationDev] for the URLs it does not
 // read. Every pair it skips is compared live once the dev database is
 // connected.
-func refuseDevURLAliases(devURL, targetURL string, desiredURLs []string) error {
-	if devdocker.ResolvedPerRun(devURL) {
+func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredURLs []string) error {
+	// A provider owns the grammar of its addresses, so two of them are
+	// compared by the databases their sessions select, once connected.
+	if _, served := providerDevTarget(ctx, devURL); served || devdocker.ResolvedPerRun(devURL) {
 		return nil
 	}
 	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {
@@ -437,7 +439,7 @@ func rehearseStatementsOnDev(
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
-	if err := guardPlanRehearsal(statements, devConn.Info()); err != nil {
+	if err := guardPlanRehearsal(statements, devclean.NewDevReplayGuardFor(devConn), devConn.Info()); err != nil {
 		return err
 	}
 	// The dev database executes these statements for real, and they came from
@@ -557,7 +559,7 @@ func recreateCurrentSchema(
 		if err != nil {
 			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 		}
-		if err := guardRehearsalBaseline(statements, info); err != nil {
+		if err := guardRehearsalBaseline(statements, devclean.NewBaselineGuardFor(devConn), info.Dialect); err != nil {
 			return err
 		}
 		if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {
@@ -574,11 +576,10 @@ func recreateCurrentSchema(
 // database observes outside its realm, so that an equal environment plans
 // nothing. That grants no permission to write it, and neither does deriving a
 // statement from the target.
-func guardRehearsalBaseline(statements []string, info catalog.ServerInfo) error {
-	guard := devclean.NewBaselineGuard(info)
+func guardRehearsalBaseline(statements []string, guard *devclean.BaselineGuard, dialect string) error {
 	for i, statement := range statements {
 		if err := guard.ValidateStatement(statement); err != nil {
-			return fmt.Errorf("baseline statement %d (%s) cannot be rehearsed: %w", i+1, statementExcerpt(statement, info.Dialect), err)
+			return fmt.Errorf("baseline statement %d (%s) cannot be rehearsed: %w", i+1, statementExcerpt(statement, dialect), err)
 		}
 	}
 	return nil

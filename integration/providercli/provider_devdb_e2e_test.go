@@ -24,7 +24,7 @@ func TestProviderProvisionsAndReleasesADevDatabase(t *testing.T) {
 	second, releaseSecond, err := devdocker.Resolve(ctx, "docker://fixture", devdocker.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(first, qt.Not(qt.Equals), second)
-	c.Assert(first, qt.Matches, `fixture://localhost/lease-\d+`)
+	c.Assert(first, qt.Matches, `fixture:///.*lease-\d+\.db`)
 	c.Assert(devdocker.Provisioned(first), qt.IsTrue)
 
 	releaseFirst()

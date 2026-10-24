@@ -8,6 +8,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/statementtimeout"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -56,6 +57,11 @@ func (m *Migrator) applyTimeoutsWithRestore(
 	if timeouts.IsZero() {
 		return noopRestoreTimeouts, nil
 	}
+	if ownerBoundsStatements(conn) {
+		// The owner stops each statement itself, from the timeout the
+		// statements' context carries; see [withStatementBound].
+		return noopRestoreTimeouts, refuseLockTimeoutForOwner(conn.Info().Dialect, timeouts)
+	}
 
 	setupStatements, restoreStatements, err := timeoutStatements(
 		conn.Info().Dialect, conn.Info().Capabilities, timeouts, scope)
@@ -90,10 +96,52 @@ func (m *Migrator) refuseTimeoutsTheTargetCannotCarry(migration *Migration, time
 		return nil
 	}
 	info := m.conn.Info()
+	if ownerBoundsStatements(m.conn) {
+		if err := refuseLockTimeoutForOwner(info.Dialect, timeouts); err != nil {
+			return fmt.Errorf("migration %d declares timeouts: %w", migration.Version, err)
+		}
+		return nil
+	}
 	if _, _, err := timeoutStatements(info.Dialect, info.Capabilities, timeouts, timeoutScopeSession); err != nil {
 		return fmt.Errorf("migration %d declares timeouts: %w", migration.Version, err)
 	}
 	return nil
+}
+
+// statementBounder is a schema writer whose owner stops a statement at a
+// timeout the executor hands it with the statement, rather than through a
+// setting the migrator sends first: an executable provider that offers
+// units.statement-timeout.
+type statementBounder interface {
+	BoundsStatements() bool
+}
+
+// ownerBoundsStatements reports whether the owner of conn stops each
+// statement at the migration's statement timeout itself.
+func ownerBoundsStatements(conn *dbschema.DatabaseConnection) bool {
+	bounder, ok := conn.SchemaWriter().(statementBounder)
+	return ok && bounder.BoundsStatements()
+}
+
+// refuseLockTimeoutForOwner refuses a lock timeout on a target whose owner
+// stops statements itself: the owner is handed a statement timeout and
+// nothing that bounds a lock wait.
+func refuseLockTimeoutForOwner(dialect string, timeouts migrationfile.Timeouts) error {
+	if !timeouts.HasLockTimeout {
+		return nil
+	}
+	return fmt.Errorf("migration timeouts are not supported for dialect %q: its provider stops a statement at its "+
+		"timeout and has no lock wait Ptah bounds, so a lock timeout cannot be honored; remove it", dialect)
+}
+
+// withStatementBound returns the context a migration's statements run under
+// on conn: ctx with the migration's statement timeout for an owner that stops
+// each statement itself, and ctx otherwise.
+func withStatementBound(ctx context.Context, conn *dbschema.DatabaseConnection, timeouts migrationfile.Timeouts) context.Context {
+	if !timeouts.HasStatementTimeout || !ownerBoundsStatements(conn) {
+		return ctx
+	}
+	return statementtimeout.With(ctx, timeouts.StatementTimeout)
 }
 
 // applySessionTimeouts bounds the statements of a migration that runs outside
@@ -123,7 +171,7 @@ func (m *Migrator) applySessionTimeouts(
 	if boundsEachQuery(m.connectionDialect()) {
 		ctx = withQueryTimeout(ctx, timeouts)
 	}
-	return ctx, restore, nil
+	return withStatementBound(ctx, m.noTransactionConnection(), timeouts), restore, nil
 }
 
 func noopRestoreTimeouts(_ context.Context) error {

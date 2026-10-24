@@ -157,3 +157,23 @@ func TestLazyProvisionDev_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, providerselect.ErrClosed)
 	})
 }
+
+func TestLazyListsRealmSchemesWithoutStartingAnything(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(newLazy(c).RealmSchemes(), qt.DeepEquals, []string{"fix", "fixture"})
+}
+
+func TestLazyEnterRealm_FailurePath(t *testing.T) {
+	t.Run("a provider that cannot start is reported", func(t *testing.T) {
+		c := qt.New(t)
+		_, _, err := newLazy(c).EnterRealm(c.Context(), "fixture://host/db")
+		c.Assert(err, qt.ErrorMatches, `(?s).*executable was not found.*`)
+	})
+	t.Run("a closed session starts nothing", func(t *testing.T) {
+		c := qt.New(t)
+		lazy := newLazy(c)
+		lazy.Close()
+		_, _, err := lazy.EnterRealm(c.Context(), "fixture://host/db")
+		c.Assert(err, qt.ErrorIs, providerselect.ErrClosed)
+	})
+}

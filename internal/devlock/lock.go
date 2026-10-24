@@ -113,7 +113,9 @@ func Acquire(
 		return nil, err
 	}
 	lockName := fmt.Sprintf("ptah-dev-replay:%s:%s", dialect, identity)
-	if dblock.Supported(dialect) {
+	// An executable provider's session takes the lock through the provider's
+	// session locks, which dblock reaches for any provider engine.
+	if dblock.Supported(dialect) || !conn.Info().Provider.IsZero() {
 		advisory, err := dblock.Acquire(ctx, conn, lockName, timeout)
 		if err != nil {
 			return nil, fmt.Errorf("acquire dev database realm lock: %w", err)
@@ -270,6 +272,11 @@ func realmIdentity(
 ) (string, error) {
 	if realm.ServerQuery != "" && conn.Info().WholeServer {
 		return serverIdentity(ctx, conn, dialect, realm)
+	}
+	// An engine an executable provider serves has no descriptor here, and
+	// its session names the database it selected.
+	if realm.Identity == "" && !conn.Info().Provider.IsZero() {
+		return writerIdentity(ctx, conn, dialect)
 	}
 	switch realm.Identity {
 	case identityQuery:

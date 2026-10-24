@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/dbschema"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/devclean/replayguards"
 	"ptah.run/internal/devdocker"
@@ -88,6 +89,25 @@ func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 // the two ways to that realm.
 func NewDevReplayGuard(info catalog.ServerInfo) *ReplayGuard {
 	return NewReplayGuard(info, DevReplayRealm(info)).WithServerRealmRemedy(devdocker.OwnedServerRemedy)
+}
+
+// replayGuardOwner is a schema writer whose owner judges the statements a run
+// replays on it, because the host cannot read the dialect: an executable
+// provider's session. A nil guard is an owner that offers none.
+type replayGuardOwner interface {
+	ReplayGuard() replay.Guard
+}
+
+// NewDevReplayGuardFor is [NewDevReplayGuard] for the dev database conn
+// reaches. On a connection whose owner judges its own replays, the owner's
+// guard reads every statement; an owner that offers no guard leaves every
+// statement refused, as a dialect no engine guards is.
+func NewDevReplayGuardFor(conn *dbschema.DatabaseConnection) *ReplayGuard {
+	guard := NewDevReplayGuard(conn.Info())
+	if owner, ok := conn.SchemaWriter().(replayGuardOwner); ok {
+		guard.guard = owner.ReplayGuard()
+	}
+	return guard
 }
 
 // WithSessionScope returns a guard for a replay that owns one pinned physical

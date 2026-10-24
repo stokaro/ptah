@@ -27,7 +27,7 @@ func TestIndependentProviderProvisionsDevDatabaseWithoutSession(t *testing.T) {
 	second, err := client.ProvisionDevDatabase(c.Context(), &protocol.ProvisionDevRequest{Engine: "fixture"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(first.Lease, qt.Not(qt.Equals), second.Lease)
-	c.Assert(first.Url, qt.Equals, "fixture://localhost/"+first.Lease)
+	c.Assert(first.Url, qt.Matches, `fixture:///.*-`+first.Lease+`\.db`)
 
 	refused, err := client.ProvisionDevDatabase(c.Context(), &protocol.ProvisionDevRequest{Engine: "fixture", Spec: "docker://none"})
 	c.Assert(err, qt.IsNil)

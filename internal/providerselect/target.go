@@ -40,17 +40,25 @@ func Selector(targets []Target) string {
 	return ""
 }
 
-// dockerEngine reads the engine a `docker://<engine>/...` dev URL names. Only
-// the dev URL carries one: the URL asks its owner for a database, so the owner
-// is the provider of that engine.
+// dockerEngine reads the engine a `docker://<engine>/...` or
+// `docker+<engine>://...` dev URL names. Only the dev URL carries one: the
+// URL asks its owner for a database, so the owner is the provider of that
+// engine.
 func dockerEngine(flag, value string) (string, bool) {
-	rest, found := strings.CutPrefix(value, "docker://")
-	if !found || flag != FlagDevURL {
+	if flag != FlagDevURL {
 		return "", false
 	}
-	name, _, _ := strings.Cut(rest, "/")
-	name, _, _ = strings.Cut(name, "?")
-	return strings.ToLower(name), name != ""
+	if rest, found := strings.CutPrefix(value, "docker://"); found {
+		name, _, _ := strings.Cut(rest, "/")
+		name, _, _ = strings.Cut(name, "?")
+		return strings.ToLower(name), name != ""
+	}
+	scheme, _, found := strings.Cut(value, "://")
+	if !found {
+		return "", false
+	}
+	name, found := strings.CutPrefix(strings.ToLower(scheme), "docker+")
+	return name, found && name != ""
 }
 
 // validateTargets checks every explicit target against the chosen provider

@@ -48,7 +48,7 @@ func TestGuardRehearsedPlan_DevDatabase_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := guardRehearsedPlan([]string{"CREATE TABLE items (id bigint PRIMARY KEY)", test.statement}, namedPostgresDev)
+			err := guardRehearsedPlan([]string{"CREATE TABLE items (id bigint PRIMARY KEY)", test.statement}, devclean.NewDevReplayGuard(namedPostgresDev), namedPostgresDev)
 
 			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on the dev database: `+
 				`postgres migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
@@ -73,8 +73,8 @@ func TestGuardRehearsedPlan_DevDatabase_KeptComment(t *testing.T) {
 		`postgres migration replay rejects COMMENT ON global metadata because its effects cannot be confined to the disposable database realm; ` +
 		`use a docker:// or docker\+<driver>:// dev URL, since a server declared disposable keeps this after the run`
 
-	c.Assert(guardRehearsedPlan([]string{"COMMENT ON SCHEMA public IS 'kept'"}, namedPostgresDev), qt.ErrorMatches, want)
-	c.Assert(guardRehearsedPlan([]string{"COMMENT ON SCHEMA public IS 'kept'"}, disposable), qt.ErrorMatches, want)
+	c.Assert(guardRehearsedPlan([]string{"COMMENT ON SCHEMA public IS 'kept'"}, devclean.NewDevReplayGuard(namedPostgresDev), namedPostgresDev), qt.ErrorMatches, want)
+	c.Assert(guardRehearsedPlan([]string{"COMMENT ON SCHEMA public IS 'kept'"}, devclean.NewDevReplayGuard(disposable), disposable), qt.ErrorMatches, want)
 }
 
 // TestGuardRehearsedPlan_DevDatabase_HappyPath is the control: what stays in
@@ -83,7 +83,7 @@ func TestGuardRehearsedPlan_DevDatabase_KeptComment(t *testing.T) {
 func TestGuardRehearsedPlan_DevDatabase_HappyPath(t *testing.T) {
 	t.Run("a table on a named server", func(t *testing.T) {
 		c := qt.New(t)
-		c.Assert(guardRehearsedPlan([]string{"CREATE TABLE items (id bigint PRIMARY KEY)"}, namedPostgresDev), qt.IsNil)
+		c.Assert(guardRehearsedPlan([]string{"CREATE TABLE items (id bigint PRIMARY KEY)"}, devclean.NewDevReplayGuard(namedPostgresDev), namedPostgresDev), qt.IsNil)
 	})
 	for _, test := range devDatabaseEscapes {
 		t.Run(test.name+" on an owned server", func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestGuardRehearsedPlan_DevDatabase_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(release)
 
-			c.Assert(guardRehearsedPlan([]string{test.statement}, owned), qt.IsNil)
+			c.Assert(guardRehearsedPlan([]string{test.statement}, devclean.NewDevReplayGuard(owned), owned), qt.IsNil)
 		})
 	}
 }

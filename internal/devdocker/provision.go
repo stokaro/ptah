@@ -496,9 +496,21 @@ func ResolvedPerRun(rawURL string) bool {
 // ptah.run/internal/ydbrealm). A YDB server the operator declared disposable
 // is the run's whole, as a `docker://ydb` one is, and gets no realm: its
 // database is the dev database.
+//
+// An executable provider selected in ctx ([WithExternal]) takes the URLs of
+// its engines: a docker URL in either form, `docker://<engine>/...` or
+// `docker+<engine>://...`, is the provider's to provision, and a URL of an
+// engine whose provider creates dev realms ([ExternalRealms]) is entered as a
+// realm the provider creates and removes.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
+	if owner, _ := externalFor(ctx, rawURL); owner != nil {
+		return resolveExternal(ctx, owner, rawURL)
+	}
 	if !IsURL(rawURL) {
 		if !opts.DeclaredDisposable {
+			if owner := externalRealmFor(ctx, rawURL); owner != nil {
+				return enterExternalRealm(ctx, owner, rawURL)
+			}
 			if ydbrealm.Applies(rawURL) {
 				return ydbrealm.Enter(ctx, rawURL)
 			}
@@ -507,9 +519,6 @@ func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), 
 		declared := strings.TrimSpace(rawURL)
 		recordRunOwned(declared)
 		return rawURL, sync.OnceFunc(func() { forgetRunOwned(declared) }), nil
-	}
-	if owner := externalFor(ctx, rawURL); owner != nil {
-		return resolveExternal(ctx, owner, rawURL)
 	}
 	instance, err := Provision(ctx, rawURL, opts)
 	if err != nil {

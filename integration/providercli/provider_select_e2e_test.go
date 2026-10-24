@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,10 +159,27 @@ func TestLazyProviderSession_HappyPath(t *testing.T) {
 		resolved, release, err := devdocker.Resolve(ctx, "docker://fixture/1", devdocker.Options{})
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(resolved, qt.Matches, `fixture://localhost/lease-\d+`)
+		c.Assert(resolved, qt.Matches, `fixture:///.*lease-\d+\.db`)
 		c.Assert(devdocker.Provisioned(resolved), qt.IsTrue)
 		release()
 		c.Assert(devdocker.Provisioned(resolved), qt.IsFalse)
+	})
+	t.Run("a dev URL of an engine that creates realms enters one", func(t *testing.T) {
+		c := qt.New(t)
+		f := newProviderCLI(c, devSpec)
+		lazy, ctx := lazySession(c, f)
+		c.Assert(lazy.RealmSchemes(), qt.Contains, "fixture")
+		operator := (&url.URL{Scheme: "fixture", Host: "localhost", Path: "/" + strings.TrimPrefix(filepath.ToSlash(f.databasePath), "/")}).String()
+
+		resolved, release, err := devdocker.Resolve(ctx, operator, devdocker.Options{})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(resolved, qt.Matches, `fixture://localhost/.*database\.db\.lease-\d+`)
+		release()
+		hostless, release, err := devdocker.Resolve(ctx, f.address, devdocker.Options{})
+		c.Assert(err, qt.IsNil)
+		c.Assert(hostless, qt.Equals, f.address)
+		release()
 	})
 	t.Run("the runtime holds the provider and the built-in engines", func(t *testing.T) {
 		c := qt.New(t)

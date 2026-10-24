@@ -231,7 +231,7 @@ func PreparePlanFileReportingUndecided(
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
-	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
