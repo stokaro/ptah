@@ -66,7 +66,10 @@ local desired-schema sources and save it as a fingerprinted local plan file
 
 "ptah schema apply --plan <path>" executes the saved plan after verifying the
 database still matches the plan's source fingerprint, so a reviewed plan is
-exactly what runs — a drifted target refuses to execute. The desired schema
+exactly what runs — a drifted target refuses to execute. When an executable
+provider returns native operations, the plan file records them in the
+provider's own encoding beside the provider's identity, and apply runs them
+through that provider. The desired schema
 comes from native schema files or OCI artifacts (--schema-file, repeatable),
 or Go annotations (--root-dir, repeatable). Sources merge into one composite
 schema. Pass --save or
@@ -298,7 +301,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		return evidence, nil
 	}
 
-	printSchemaApplyPlan(human, plan.SQL())
+	printPlan(human, plan)
 	path := strings.TrimSpace(opts.output)
 	if path == "" {
 		path = plan.Name + atlasschema.PlanFileSuffix
@@ -309,4 +312,15 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	fmt.Fprintf(human, "Plan saved to file://%s\n", path)
 	evidence.Path = path
 	return evidence, nil
+}
+
+// printPlan lists the plan's statements for a person. A plan holding native
+// operations lists them by summary beside its SQL; see [printApplyUnits].
+func printPlan(out io.Writer, plan atlasschema.PlanFile) {
+	if !plan.HasNative() {
+		printSchemaApplyPlan(out, plan.SQL())
+		return
+	}
+	fmt.Fprintln(out, "Planned changes:")
+	printApplyUnits(out, plan.UnitReports())
 }

@@ -136,11 +136,17 @@ func TestProviderLockSessionUsesTheGuardedConnection(t *testing.T) {
 	c.Assert(releaseErr, qt.IsNil)
 	c.Assert(providerTablePresent(c, conn, "guarded"), qt.IsTrue)
 	called := false
+	previewedLock := true
 	runErr, releaseErr = dblock.WithPreviewLockSession(c.Context(), conn, "migration", dblock.NoWait,
-		func(*dbschema.DatabaseConnection, *dblock.Lock) error { called = true; return nil })
-	c.Assert(runErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		func(_ *dbschema.DatabaseConnection, lock *dblock.Lock) error {
+			called = true
+			previewedLock = lock.Supported()
+			return nil
+		})
+	c.Assert(runErr, qt.IsNil)
 	c.Assert(releaseErr, qt.IsNil)
-	c.Assert(called, qt.IsFalse)
+	c.Assert(called, qt.IsTrue)
+	c.Assert(previewedLock, qt.IsFalse)
 }
 
 func TestProviderLockLossBeforeCommitPreservesUnknownOutcome(t *testing.T) {

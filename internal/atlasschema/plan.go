@@ -16,6 +16,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -61,12 +62,16 @@ type PlanStatement struct {
 	// Transactions preserves the requirements of every owner operation that
 	// rendered this statement. Empty means no owner assessment is recorded.
 	Transactions []plangraph.Transaction `json:"transactions,omitempty"`
-	SQL          string                  `json:"sql"`
-	Severity     risk.Severity           `json:"severity"`
-	Reason       string                  `json:"reason"`
-	Owned        bool                    `json:"owned,omitempty"`
-	Access       schemaext.Access        `json:"access,omitempty"`
-	AccessReason string                  `json:"access_reason,omitempty"`
+	// SQL is the statement text, empty when the statement is a native operation.
+	SQL string `json:"sql,omitempty"`
+	// Native is a provider-native operation recorded in place of SQL. Only a
+	// plan bound to a provider holds one; see [PlanNative].
+	Native       *PlanNative      `json:"native,omitempty"`
+	Severity     risk.Severity    `json:"severity"`
+	Reason       string           `json:"reason"`
+	Owned        bool             `json:"owned,omitempty"`
+	Access       schemaext.Access `json:"access,omitempty"`
+	AccessReason string           `json:"access_reason,omitempty"`
 }
 
 // PlanFile is the local pre-approved declarative migration plan document.
@@ -280,13 +285,9 @@ func PreparePlanFileReportingUndecided(
 		name = defaultPlanName(fromFingerprint, toFingerprint, rowsFingerprint)
 	}
 
-	sqlStatements, err := (ApplyPlan{units: computation.units}).Statements()
+	statements, destructive, err := classifyComputedUnits(ctx, opts.Runtime, computation, conn.Info().Dialect)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
-	}
-	statements, destructive, err := classifyPlanStatements(ctx, opts.Runtime, sqlStatements, conn.Info().Dialect, computation.owned)
-	if err != nil {
-		return PlanFile{}, schemadiff.Diagnostics{}, fmt.Errorf("assess plan safety: %w", err)
 	}
 	for i := range statements {
 		statements[i].Transactions = slices.Clone(computation.transactions[i])
@@ -321,6 +322,33 @@ func PreparePlanFileReportingUndecided(
 		Destructive:      destructive,
 		Statements:       statements,
 	}, computation.undecided, nil
+}
+
+// classifyComputedUnits is the statement list of the computed batch. A batch
+// of SQL only is judged from its text; one holding native operations records
+// each operation in the owner's encoding beside its captured verdict.
+func classifyComputedUnits(
+	ctx context.Context,
+	runtime PlanRuntime,
+	computation applyComputation,
+	dialect string,
+) ([]PlanStatement, bool, error) {
+	if slices.ContainsFunc(computation.units, func(unit renderer.Fragment) bool { return unit.Native != nil }) {
+		statements, destructive, err := classifyPlanUnits(ctx, runtime, computation.units, dialect, computation.owned)
+		if err != nil {
+			return nil, false, fmt.Errorf("assess plan safety: %w", err)
+		}
+		return statements, destructive, nil
+	}
+	sqlStatements, err := (ApplyPlan{units: computation.units}).Statements()
+	if err != nil {
+		return nil, false, err
+	}
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, sqlStatements, dialect, computation.owned)
+	if err != nil {
+		return nil, false, fmt.Errorf("assess plan safety: %w", err)
+	}
+	return statements, destructive, nil
 }
 
 // planSourceSchema is the target state a plan's from-fingerprint describes.
@@ -656,7 +684,9 @@ func (p PlanFile) WithDirectiveHeader(ctx context.Context, runtime safety.Runtim
 	return p.WithStatementsFromSQL(ctx, runtime, header+p.SQL())
 }
 
-// StatementSQL returns the ordered plan statement SQL texts.
+// StatementSQL returns the ordered plan statement SQL texts, one per
+// statement. A native operation has no SQL, so its entry is empty; use
+// [PlanFile.UnitReports] to read them.
 func (p PlanFile) StatementSQL() []string {
 	statements := make([]string, 0, len(p.Statements))
 	for _, statement := range p.Statements {
@@ -882,8 +912,8 @@ func validatePlanFile(plan PlanFile) error {
 		return errors.New("plan contains no statements")
 	}
 	for i, statement := range plan.Statements {
-		if strings.TrimSpace(statement.SQL) == "" {
-			return fmt.Errorf("plan statement %d has empty sql", i+1)
+		if err := validatePlanNative(plan, statement); err != nil {
+			return fmt.Errorf("plan statement %d %w", i+1, err)
 		}
 		if err := txrequire.ValidateRequirements(statement.Transactions); err != nil {
 			return fmt.Errorf("plan statement %d: %w", i+1, err)

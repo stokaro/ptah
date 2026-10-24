@@ -51,12 +51,18 @@ func nativeLockService(conn Connection) (dbschema.SessionLocker, bool, error) {
 	return service, service != nil, nil
 }
 
-func nativePreviewLock(conn Connection) (bool, error) {
+// nativePreviewLock answers a run that writes nothing on a provider-served
+// target. The provider protocol has no acquisition that is known to write
+// nothing, so the preview takes no lock and gets a no-op one, the way a
+// built-in lock whose service would first have to create its own state does
+// (see [WithPreviewLockSession]). A provider that offers no lock service is
+// still refused, as it is for a run that writes.
+func nativePreviewLock(conn Connection, dialect, name string) (*Lock, bool, error) {
 	_, handled, err := nativeLockService(conn)
 	if !handled || err != nil {
-		return handled, err
+		return nil, handled, err
 	}
-	return true, fmt.Errorf("%w: provider lock acquisition has no established read-only preview", ptaherr.ErrUnsupportedFeature)
+	return &Lock{name: name, dialect: dialect}, true, nil
 }
 
 func waitForNativeLock(ctx context.Context, service dbschema.SessionLocker, dialect, name string, timeout time.Duration) (dbschema.SessionLock, error) {

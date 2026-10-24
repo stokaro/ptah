@@ -78,12 +78,16 @@ func TestProviderNativePreparedPlanPreservesOperations(t *testing.T) {
 	c.Assert(observed.Tables[0].Columns[1].Name, qt.Equals, "added")
 }
 
-func TestProviderNativeSchemaApplyPreviewRetainsLockRefusal(t *testing.T) {
+func TestProviderNativeSchemaApplyPreviewWritesNothing(t *testing.T) {
 	c := qt.New(t)
 	f := nativeCommandFixture(c)
-	_, diagnostics, code := f.run(c, c.Context(), "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--dry-run", "--json")
-	c.Assert(code, qt.Not(qt.Equals), 0)
-	c.Assert(diagnostics, qt.Contains, "lock acquisition has no established read-only preview")
+	previewed := f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--dry-run", "--json")
+	var report atlasschema.ApplyReport
+	c.Assert(json.Unmarshal([]byte(previewed), &report), qt.IsNil)
+	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeDryRun)
+	c.Assert(report.Units, qt.HasLen, 1)
+	c.Assert(report.Units[0].Native, qt.IsNotNil)
+	c.Assert(report.Units[0].Native.Subject, qt.Equals, "items")
 	c.Assert(f.success(c, "inspect", "--format", "json"), qt.Not(qt.Contains), `"Name": "added"`)
 }
 

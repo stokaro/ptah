@@ -412,8 +412,6 @@ ptah migrations tag release --provider-config providers.json \
 
 Use the same provider manifest when [rolling back migrations](../../versioned/rollback/)
 or [maintaining revision metadata](../../versioned/maintain-history/).
-Provider lock acquisition during a read-only preview is refused because the
-experimental protocol does not establish acquisition without writes.
 
 ## Apply native operations
 
@@ -426,13 +424,24 @@ the whole plan before any operation runs.
 
 Apply JSON reports use contract version `3` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
-provider payloads and are reports, not saved execution plans.
+provider payloads and are reports, not execution plans.
 
-Saved schema plans and migration files still require a SQL projection.
-`--edit` and dev-database rehearsal refuse native plans. Provider lock
-acquisition during `--dry-run` remains subject to the read-only preview refusal
-above. Native execution support alone does not qualify an official provider's
-schema models or live database behavior.
+A saved plan records each native operation in the provider's own encoding,
+with the codec owner, version and definition digest, beside the provider
+binding. `ptah schema apply --plan` decodes the operations through the selected
+provider, preflights the whole plan against the transaction mode, and refuses
+a changed provider, definition or target before any operation runs. Only the
+native JSON plan format holds them: the Atlas `.plan.hcl` format and
+`ptah-compat` refuse such a plan.
+
+Migration files still require a SQL projection. `--edit` and dev-database
+rehearsal refuse native plans.
+
+`--dry-run` lists the planned operations, decodes and preflights a saved plan,
+and writes nothing. The protocol does not establish a lock acquisition that
+writes nothing, so a preview on a provider-served target takes no lock and does
+not wait for a running apply. Native execution support alone does not qualify
+an official provider's schema models or live database behavior.
 
 ## Resolve failures
 

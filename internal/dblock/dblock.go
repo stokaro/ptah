@@ -439,8 +439,8 @@ func acquirePreviewLock(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
-	if handled, err := nativePreviewLock(session); handled {
-		return nil, err
+	if lock, handled, err := nativePreviewLock(session, dialect, name); handled {
+		return lock, err
 	}
 	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
 }

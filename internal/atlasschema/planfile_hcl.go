@@ -92,6 +92,11 @@ func ReadPlanDocument(ctx context.Context, runtime safety.Runtime, path string) 
 	switch format {
 	case PlanFormatJSON:
 		plan, err := decodePlanJSON(contents, path)
+		if err == nil {
+			// The Atlas-compatible verbs replay SQL, and a native operation has
+			// none: skipping it would run a different plan than the file holds.
+			err = plan.requireSQL()
+		}
 		return plan, format, err
 	default:
 		plan, err := decodePlanHCL(ctx, runtime, contents, path)
