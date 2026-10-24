@@ -3486,7 +3486,7 @@ CREATE TABLE users (
 
 	err := cmd.Execute()
 	sumAfter, sumErr := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
-	lockInfo, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
+	_, lockStatErr := os.Stat(atlasMigrateDiffLockPath(migrationsDir))
 	releaseLock, lockErr := testutils.AcquireExclusiveFileLock(
 		atlasMigrateDiffLockPath(migrationsDir),
 	)
@@ -3503,8 +3503,8 @@ CREATE TABLE users (
 	// directory would still leave exactly one SQL file behind.
 	c.Assert(sumErr, qt.IsNil)
 	c.Assert(string(sumAfter), qt.Equals, string(sumBefore))
-	c.Assert(lockStatErr, qt.IsNil)
-	c.Assert(lockInfo.Mode().IsRegular(), qt.IsTrue)
+	// The run removed the lock file it created and left the lock free.
+	c.Assert(lockStatErr, qt.ErrorIs, fs.ErrNotExist)
 	c.Assert(lockErr, qt.IsNil)
 	c.Assert(releaseLock(), qt.IsNil)
 }
@@ -3889,6 +3889,22 @@ func TestCompatCommand_MigrateDiffRejectsInvalidLockTimeout(t *testing.T) {
 }
 
 func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		extra []string
+	}{
+		{name: "a run that writes"},
+		// A dry run writes nothing, and it still waits for the directory: the
+		// lock file it would have left behind used to be the only sign of that.
+		{name: "a dry run", extra: []string{"--dry-run"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testMigrateDiffLockTimeout(t, test.extra)
+		})
+	}
+}
+
+func testMigrateDiffLockTimeout(t *testing.T, extra []string) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -3905,14 +3921,14 @@ func TestCompatCommand_MigrateDiffLockTimeout(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
+	cmd.SetArgs(append([]string{
 		"migrate", "diff",
 		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"--dir", "file://" + migrationsDir,
 		"--to", "file://" + schemaPath,
 		"--lock-timeout", "1ms",
 		"locked_diff",
-	})
+	}, extra...))
 
 	err = cmd.Execute()
 

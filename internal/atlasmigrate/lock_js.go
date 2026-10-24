@@ -9,3 +9,8 @@ import "os"
 func tryLockFile(*os.File) (bool, error) { return true, nil }
 
 func unlockFile(*os.File) error { return nil }
+
+// The lock file is removed on release; see (*dirLock).release for the order.
+func removeLockFileBeforeUnlock(path string) { _ = os.Remove(path) }
+
+func removeLockFileAfterClose(string) {}

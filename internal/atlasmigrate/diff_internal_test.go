@@ -1405,12 +1405,29 @@ func TestTryAcquireDirLock_ReclaimsStaleFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.release(), qt.IsNil)
 
-	info, err := os.Stat(lockPath)
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().IsRegular(), qt.IsTrue)
 	lock, err = tryAcquireDirLock(lockPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.release(), qt.IsNil)
+}
+
+// TestDirLockRelease_LeavesNoFile pins that a run removes the lock file it
+// created beside the migration directory, and that the lock is still exclusive
+// while it is held and free again once it is not.
+func TestDirLockRelease_LeavesNoFile(t *testing.T) {
+	c := qt.New(t)
+	lockPath := filepath.Join(c.TempDir(), ".migrations"+lockFileName)
+
+	held, err := tryAcquireDirLock(lockPath)
+	c.Assert(err, qt.IsNil)
+	_, err = tryAcquireDirLock(lockPath)
+	c.Assert(err, qt.ErrorIs, errDirLocked)
+	c.Assert(held.release(), qt.IsNil)
+
+	_, err = os.Stat(lockPath)
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+	again, err := tryAcquireDirLock(lockPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(again.release(), qt.IsNil)
 }
 
 func TestGenerateDiff_SerializesSQLiteDevDatabaseAcrossDirectories(t *testing.T) {

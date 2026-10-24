@@ -1051,7 +1051,9 @@ ptah-compat migrate diff add_users \
 
 Use `--lock-timeout` to bound waiting for both the migration-directory lock and
 the exclusive dev-database lock. It defaults to `10s`, and zero or a negative
-value tries each lock once without waiting, as on Atlas. The default migration-file format matches
+value tries each lock once without waiting, as on Atlas. The migration-directory
+lock is a file beside the directory, such as `.migrations.ptah-migrate-diff.lock`
+next to `migrations/`, and the run removes it when it releases the lock. The default migration-file format matches
 Atlas's two-space SQL indentation template. Use `--format` to render the
 generated migration SQL through Atlas-style Go templates with `sql` and
 `.MarshalSQL`, for example to disable indentation:

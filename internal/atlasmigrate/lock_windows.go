@@ -42,3 +42,8 @@ func unlockFile(file *os.File) error {
 	}
 	return nil
 }
+
+// The lock file is removed on release; see (*dirLock).release for the order.
+func removeLockFileBeforeUnlock(string) {}
+
+func removeLockFileAfterClose(path string) { _ = os.Remove(path) }
