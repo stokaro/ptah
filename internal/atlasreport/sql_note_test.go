@@ -24,9 +24,9 @@ func TestSQLTemplate_ANoteWithNothingAfterItEndsWithoutASemicolon(t *testing.T) 
 		`DROP POLICY IF EXISTS "tenant_only" ON "site_media_settings"`
 	note := "-- NOTE: RLS policies were removed from table site_media_settings - verify if RLS should be disabled"
 	statements := []string{drop, note}
-	want := "  -- Drop RLS policy tenant_only from table site_media_settings\n" +
-		"  DROP POLICY IF EXISTS \"tenant_only\" ON \"site_media_settings\";\n" +
-		"  -- NOTE: RLS policies were removed from table site_media_settings - verify if RLS should be disabled\n"
+	want := "-- Drop RLS policy tenant_only from table site_media_settings\n" +
+		"DROP POLICY IF EXISTS \"tenant_only\" ON \"site_media_settings\";\n" +
+		"-- NOTE: RLS policies were removed from table site_media_settings - verify if RLS should be disabled\n"
 
 	var migrateDiff bytes.Buffer
 	c.Assert(atlasreport.WriteMigrateDiff(&migrateDiff, atlasreport.NormalizeMigrateDiffFormat(""),

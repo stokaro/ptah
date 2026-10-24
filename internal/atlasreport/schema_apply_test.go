@@ -24,7 +24,7 @@ func TestSchemaApplyCustomSQLTemplate(t *testing.T) {
 	err := atlasreport.WriteSchemaApply(&out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|  CREATE TABLE \"users\" (\"id\" integer);\n")
+	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|CREATE TABLE \"users\" (\"id\" integer);\n")
 }
 
 // TestSchemaApplyRegistersJSONHelper is the regression test for stokaro/ptah#940

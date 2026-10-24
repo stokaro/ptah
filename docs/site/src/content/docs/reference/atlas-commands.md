@@ -878,7 +878,7 @@ each session selected.
 | Flag | Behavior |
 | --- | --- |
 | `--dry-run` | Atlas-hidden; prints the generated SQL instead of writing files. |
-| `--format` | Renders generated SQL with `sql` and `.MarshalSQL` templates. The default is Atlas-style two-space indentation. |
+| `--format` | Renders generated SQL with `sql` and `.MarshalSQL` templates. The default is Atlas's `{{ sql . "  " }}`: statements at the first column, inner lines two spaces in. |
 | `--schema`/`-s` | Narrows the current and desired schemas used for comparison and output. |
 | `--edit` | Opens the generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized. |
 | `--env` | Reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. |

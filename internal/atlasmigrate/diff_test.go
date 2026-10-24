@@ -58,7 +58,7 @@ CREATE TABLE users (
 	c.Assert(migrationFiles, qt.HasLen, 2)
 	newSQL, err := os.ReadFile(result.MigrationPaths[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.HasPrefix(string(newSQL), "  ALTER TABLE"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
 	sum, err := os.ReadFile(result.SumPath)

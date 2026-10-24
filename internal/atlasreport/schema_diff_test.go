@@ -31,7 +31,7 @@ func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report, schemaext.Registry{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|  CREATE TABLE \"users\" (\"id\" integer);\n")
+	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|CREATE TABLE \"users\" (\"id\" integer);\n")
 }
 
 func TestNormalizeMigrateDiffFormat_HappyPath(t *testing.T) {

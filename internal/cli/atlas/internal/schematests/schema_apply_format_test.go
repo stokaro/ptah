@@ -39,7 +39,7 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1|CREATE|  CREATE TABLE")
+	c.Assert(out.String(), qt.Contains, "1|CREATE|CREATE TABLE")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Auto-approval enabled")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
