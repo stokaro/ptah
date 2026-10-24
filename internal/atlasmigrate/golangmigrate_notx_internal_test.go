@@ -85,3 +85,33 @@ func assertTransactionModeError(c *qt.C, err error, want string) {
 	}
 	c.Assert(err, qt.ErrorMatches, want)
 }
+
+// TestGolangMigrateWritesEachNoTransactionStatementAsAMigration pins the shape
+// that makes the one-statement rule workable: a file that must run outside a
+// transaction and holds several statements becomes one migration per statement,
+// in order, and every other file is left alone.
+func TestGolangMigrateWritesEachNoTransactionStatementAsAMigration(t *testing.T) {
+	c := qt.New(t)
+	contents := []MigrationFileContent{
+		{NameSuffix: "_transactional", SQL: "a;\nb;\n", Statements: []string{"a;", "b;"}},
+		{
+			NameSuffix: "_constraint_validations", NoTransaction: true,
+			Statements: []string{`ALTER TABLE "t" VALIDATE CONSTRAINT "c1";`, `ALTER TABLE "t" VALIDATE CONSTRAINT "c2";`},
+		},
+	}
+
+	split, err := splitNoTransactionStatements(contents, "postgres", "{{ sql . }}")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(split, qt.HasLen, 3)
+	c.Assert(split[0], qt.DeepEquals, contents[0])
+	c.Assert(split[1].NameSuffix, qt.Equals, "_constraint_validations_1")
+	c.Assert(split[1].Statements, qt.DeepEquals, []string{`ALTER TABLE "t" VALIDATE CONSTRAINT "c1";`})
+	c.Assert(split[1].SQL, qt.Contains, `VALIDATE CONSTRAINT "c1"`)
+	c.Assert(split[1].SQL, qt.Not(qt.Contains), `"c2"`)
+	c.Assert(split[2].NameSuffix, qt.Equals, "_constraint_validations_2")
+	c.Assert(split[2].NoTransaction, qt.IsTrue)
+	for _, content := range split {
+		c.Assert(validateForeignTransactionMode(atlasmigrateimport.FormatGolangMigrate, content), qt.IsNil)
+	}
+}

@@ -44,3 +44,25 @@ func TestSplitEnumValueAdditionDiff_MovesOnlyTheAdditions(t *testing.T) {
 	c.Assert(groups.transactional.EnumsModified[0].ValuesAdded, qt.IsNil)
 	c.Assert(groups.transactional.TablesAdded.Names(), qt.DeepEquals, []string{"users"})
 }
+
+// TestSplitConstraintValidationDiff_MovesOnlyTheValidations is the control for
+// the validation split: the validations travel to the file that follows, and
+// every other change, a table addition here, stays in the transactional diff.
+func TestSplitConstraintValidationDiff_MovesOnlyTheValidations(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
+		ConstraintsValidated: []difftypes.ConstraintValidation{
+			{TableName: "ledger", Name: "fk_a"},
+			{TableName: "ledger", Name: "fk_b"},
+		},
+	}
+
+	groups := splitConstraintValidationDiff(diff)
+
+	c.Assert(groups.transactional.TablesAdded, qt.HasLen, 1)
+	c.Assert(groups.transactional.ConstraintsValidated, qt.HasLen, 0)
+	c.Assert(groups.noTransaction.TablesAdded, qt.HasLen, 0)
+	c.Assert(groups.noTransaction.ConstraintsValidated, qt.DeepEquals, diff.ConstraintsValidated)
+	c.Assert(diff.ConstraintsValidated, qt.HasLen, 2, qt.Commentf("the input is left as it was"))
+}

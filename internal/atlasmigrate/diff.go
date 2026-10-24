@@ -662,6 +662,12 @@ func planDiffFileContents(
 	if err != nil {
 		return nil, err
 	}
+	if opts.dirFormat() == atlasmigrateimport.FormatGolangMigrate {
+		contents, err = splitNoTransactionStatements(contents, info.Dialect, format)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if len(planned.ReverseNodes) == 0 {
 		if err := validateMigrationFileContentsTransactionModes(opts.dirFormat(), contents); err != nil {
 			return nil, err

@@ -213,3 +213,66 @@ func TestBuildMigrationFileContents_TxModeRoundTrip(t *testing.T) {
 	c.Assert(migrations[1].Version, qt.Equals, int64(2))
 	c.Assert(migrations[1].UpTxMode, qt.Equals, migrationfile.FileTxModeNone)
 }
+
+func validateAlter(table string, constraints ...string) *ast.AlterTableNode {
+	operations := make([]ast.AlterOperation, 0, len(constraints))
+	for _, name := range constraints {
+		operations = append(operations, &ast.ValidateConstraintOperation{ConstraintName: name})
+	}
+	return &ast.AlterTableNode{Name: table, Operations: operations}
+}
+
+// TestBuildMigrationFileContents_ValidationFollowsInItsOwnFile covers a plan that
+// validates constraints the database holds NOT VALID beside ordinary changes.
+//
+// The validations used to answer "has no ordered place", which left a project
+// whose history ends with NOT VALID keys unable to generate anything else. They
+// scan under a weaker lock only when they commit apart from the other
+// statements, so they follow in a file of their own. The order is the
+// assertion: the validations come last, whatever the plan listed.
+func TestBuildMigrationFileContents_ValidationFollowsInItsOwnFile(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{
+		validateAlter("ledger", "fk_a", "fk_b"),
+		ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
+		concurrentIndexNode("idx_users_email", "users", "email"),
+	}
+
+	contents, err := atlasmigrate.BuildMigrationFileContents(
+		t.Context(), selectedRuntime(c),
+		platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(contents, qt.HasLen, 3)
+	c.Assert(contents[0].NameSuffix, qt.Equals, "_transactional")
+	c.Assert(contents[0].SQL, qt.Not(qt.Contains), "VALIDATE CONSTRAINT")
+	c.Assert(contents[1].NameSuffix, qt.Equals, "_concurrent_indexes")
+	c.Assert(contents[2].NameSuffix, qt.Equals, "_constraint_validations")
+	c.Assert(contents[2].NoTransaction, qt.IsTrue)
+	c.Assert(strings.HasPrefix(contents[2].SQL, "-- atlas:txmode none\n\n"), qt.IsTrue)
+	c.Assert(contents[2].SQL, qt.Contains, `VALIDATE CONSTRAINT "fk_a"`)
+	c.Assert(contents[2].SQL, qt.Contains, `VALIDATE CONSTRAINT "fk_b"`)
+	c.Assert(contents[2].SQL, qt.Not(qt.Contains), "CREATE")
+}
+
+// TestBuildMigrationFileContents_RefusesAValidationBesideItsAddition keeps the
+// pair together: an ALTER that adds a constraint NOT VALID and validates it in
+// the same statement list is one migration of its own, and splitting it would
+// separate the two.
+func TestBuildMigrationFileContents_RefusesAValidationBesideItsAddition(t *testing.T) {
+	c := qt.New(t)
+	pair := &ast.AlterTableNode{Name: "ledger", Operations: []ast.AlterOperation{
+		&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{Name: "fk_a", Type: ast.ForeignKeyConstraint, NotValid: true}},
+		&ast.ValidateConstraintOperation{ConstraintName: "fk_a"},
+	}}
+	nodes := []ast.Node{
+		ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
+		pair,
+	}
+
+	_, err := atlasmigrate.BuildMigrationFileContents(
+		t.Context(), selectedRuntime(c),
+		platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
+
+	c.Assert(err, qt.ErrorMatches, `.*generated migration mixes transactional statements with ALTER TABLE ledger.*`)
+}

@@ -104,6 +104,16 @@ func validatesConstraint(node *ast.AlterTableNode) bool {
 	return false
 }
 
+// onlyValidatesConstraints reports whether every operation of the ALTER is a
+// validation. An ALTER that also adds the constraint it validates is the pair
+// that has to stay together, and is not this.
+func onlyValidatesConstraints(node *ast.AlterTableNode) bool {
+	return len(node.Operations) > 0 && !slices.ContainsFunc(node.Operations, func(operation ast.AlterOperation) bool {
+		_, ok := operation.(*ast.ValidateConstraintOperation)
+		return !ok
+	})
+}
+
 func addsEnumValue(node *ast.AlterTypeNode) bool {
 	for _, operation := range node.Operations {
 		if _, ok := operation.(*ast.AddEnumValueOperation); ok {
@@ -122,11 +132,16 @@ func addsEnumValue(node *ast.AlterTypeNode) bool {
 // 55P04 otherwise -- so its file leads. A concurrent index is built after the
 // table it indexes, so its file follows.
 //
+// A statement that only validates a constraint the database already holds NOT
+// VALID is [KindConstraintValidation]. It scans rows under a weaker lock and
+// depends on nothing else in the plan, so it follows every other statement in a
+// file of its own.
+//
 // [KindUnsplittable] is what a constraint pair asking for its own transaction
 // lands on, and the refusal is the answer: a NOT VALID constraint and the
-// statement that validates it have to stay together and have to commit apart
-// from the statements around them, which is one migration of their own rather
-// than a place in this one.
+// statement that validates it have to stay together in one ALTER TABLE and
+// have to commit apart from the statements around them, which is one migration
+// of their own rather than a place in this one.
 type AutocommitKind int
 
 const (
@@ -136,6 +151,9 @@ const (
 	KindEnumValue
 	// KindConcurrentIndex is CREATE/DROP INDEX CONCURRENTLY, which follows.
 	KindConcurrentIndex
+	// KindConstraintValidation is an ALTER TABLE that only validates
+	// constraints already in the database, which follows.
+	KindConstraintValidation
 )
 
 // Kind classifies one node. It answers for the node alone and does not ask
@@ -154,6 +172,10 @@ func Kind(node ast.Node) AutocommitKind {
 	case *ast.AlterTypeNode:
 		if addsEnumValue(typed) {
 			return KindEnumValue
+		}
+	case *ast.AlterTableNode:
+		if onlyValidatesConstraints(typed) {
+			return KindConstraintValidation
 		}
 	}
 	return KindUnsplittable

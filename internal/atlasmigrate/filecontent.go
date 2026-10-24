@@ -124,18 +124,21 @@ func BuildMigrationFileContents(
 	// `ALTER TYPE ... ADD VALUE` leads, because PostgreSQL answers 55P04 to a
 	// statement that uses the value before the ADD VALUE has committed. The
 	// concurrent indexes follow, because an index is built after the table it
-	// indexes. A plan with no enum additions produces exactly the two files it
-	// produced before (stokaro/ptah#1714).
-	enumNodes, concurrentNodes := partitionNoTransactionNodes(noTransaction)
-	contents := make([]MigrationFileContent, 0, 3)
+	// indexes. A validation of a constraint already in the database comes last,
+	// in a file of its own, so its scan commits apart from everything else. A
+	// plan with none of these produces exactly the files it produced before
+	// (stokaro/ptah#1714).
+	ordered := partitionNoTransactionNodes(noTransaction)
+	contents := make([]MigrationFileContent, 0, 4)
 	for _, group := range []struct {
 		nodes         []ast.Node
 		suffix        string
 		noTransaction bool
 	}{
-		{enumNodes, "_enum_values", true},
+		{ordered.enumValues, "_enum_values", true},
 		{transactional, "_transactional", false},
-		{concurrentNodes, "_concurrent_indexes", true},
+		{ordered.concurrentIndexes, "_concurrent_indexes", true},
+		{ordered.validations, "_constraint_validations", true},
 	} {
 		if len(group.nodes) == 0 {
 			continue
@@ -153,18 +156,30 @@ func BuildMigrationFileContents(
 	return contents, nil
 }
 
+// noTransactionGroups are the statements that leave the transactional file,
+// grouped by where their file belongs.
+type noTransactionGroups struct {
+	enumValues        []ast.Node
+	concurrentIndexes []ast.Node
+	validations       []ast.Node
+}
+
 // partitionNoTransactionNodes splits the statements that must leave the
-// transactional file into the two kinds this package can order, preserving
-// input order within each.
-func partitionNoTransactionNodes(nodes []ast.Node) (enumValues, concurrentIndexes []ast.Node) {
+// transactional file into the kinds this package can order, preserving input
+// order within each. A statement of any other kind has been refused already.
+func partitionNoTransactionNodes(nodes []ast.Node) noTransactionGroups {
+	var groups noTransactionGroups
 	for _, node := range nodes {
-		if txrequire.Kind(node) == txrequire.KindEnumValue {
-			enumValues = append(enumValues, node)
-			continue
+		switch txrequire.Kind(node) {
+		case txrequire.KindEnumValue:
+			groups.enumValues = append(groups.enumValues, node)
+		case txrequire.KindConstraintValidation:
+			groups.validations = append(groups.validations, node)
+		default:
+			groups.concurrentIndexes = append(groups.concurrentIndexes, node)
 		}
-		concurrentIndexes = append(concurrentIndexes, node)
 	}
-	return enumValues, concurrentIndexes
+	return groups
 }
 
 // unsplittableNoTransactionNodes returns the statements this package has no
@@ -295,6 +310,34 @@ func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
 		)
 	}
 	return nil
+}
+
+// splitNoTransactionStatements writes each statement of a file that must run
+// outside a transaction as a migration of its own.
+//
+// golang-migrate has no directive for it. A migration runs unwrapped only when
+// it holds one statement (see [validateGolangMigrateTransactionMode]), so a
+// group of concurrent index builds or constraint validations becomes one
+// migration per statement, at consecutive versions, in the order the group
+// listed them. The file that ends the run keeps the rollback.
+func splitNoTransactionStatements(contents []MigrationFileContent, dialect, format string) ([]MigrationFileContent, error) {
+	split := make([]MigrationFileContent, 0, len(contents))
+	for _, content := range contents {
+		if !content.NoTransaction || len(content.Statements) < 2 {
+			split = append(split, content)
+			continue
+		}
+		for i, statement := range content.Statements {
+			sql, err := renderMigrationDiffSQL(dialect, []string{statement}, format)
+			if err != nil {
+				return nil, err
+			}
+			one := withTxModeNoneDirective(MigrationFileContent{SQL: sql, Statements: []string{statement}})
+			one.NameSuffix = fmt.Sprintf("%s_%d", content.NameSuffix, i+1)
+			split = append(split, one)
+		}
+	}
+	return split, nil
 }
 
 func validateForeignTransactionMode(

@@ -41,6 +41,27 @@ func TestKind(t *testing.T) {
 			want: txrequire.KindEnumValue,
 		},
 		{
+			name: "an ALTER TABLE that only validates follows",
+			node: &ast.AlterTableNode{Name: "ledger", Operations: []ast.AlterOperation{
+				&ast.ValidateConstraintOperation{ConstraintName: "fk_a"},
+				&ast.ValidateConstraintOperation{ConstraintName: "fk_b"},
+			}},
+			want: txrequire.KindConstraintValidation,
+		},
+		{
+			name: "a validation beside the addition it completes stays a pair",
+			node: &ast.AlterTableNode{Name: "ledger", Operations: []ast.AlterOperation{
+				&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{Name: "fk_a", NotValid: true}},
+				&ast.ValidateConstraintOperation{ConstraintName: "fk_a"},
+			}},
+			want: txrequire.KindUnsplittable,
+		},
+		{
+			name: "an ALTER TABLE with no operation is not a validation",
+			node: &ast.AlterTableNode{Name: "ledger"},
+			want: txrequire.KindUnsplittable,
+		},
+		{
 			name: "an ALTER TYPE that adds no value is not the enum case",
 			node: &ast.AlterTypeNode{Name: "status"},
 			want: txrequire.KindUnsplittable,
