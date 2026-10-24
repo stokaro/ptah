@@ -1,6 +1,7 @@
 package schemaext
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -91,7 +92,7 @@ type codecKey struct {
 type registeredCodec struct {
 	owner      string
 	version    uint32
-	definition string
+	definition *definitionRef
 	typeOf     reflect.Type
 	clone      func(Payload) (Payload, error)
 	encode     func(Payload) (json.RawMessage, error)
@@ -105,9 +106,10 @@ type registeredCodec struct {
 type Registry struct {
 	codecs        map[codecKey]registeredCodec
 	batchDecoders map[string]func(context.Context, []Envelope) ([]Payload, error)
-	// definitions is Definitions' answer, sorted once when the registry is
-	// frozen: callers ask for it on every comparison and registration.
-	definitions []CodecIdentity
+	// definitions lists the registered keys in Definitions' order, sorted once
+	// when the registry is frozen. The identities, which carry the digests, are
+	// built when a caller asks for them.
+	definitions []codecKey
 }
 
 // NewRegistry validates registrations and freezes their metadata. It calls no
@@ -133,22 +135,22 @@ func NewRegistry(owned ...OwnedCodec) (Registry, error) {
 			result.batchDecoders[declaration.Owner] = declaration.BatchDecoder.Decode
 		}
 	}
-	result.definitions = make([]CodecIdentity, 0, len(result.codecs))
-	for key, codec := range result.codecs {
-		result.definitions = append(result.definitions, codec.identity(key))
+	result.definitions = make([]codecKey, 0, len(result.codecs))
+	for key := range result.codecs {
+		result.definitions = append(result.definitions, key)
 	}
-	slices.SortFunc(result.definitions, func(a, b CodecIdentity) int {
-		if a.Kind != b.Kind {
-			return strings.Compare(string(a.Kind), string(b.Kind))
+	slices.SortFunc(result.definitions, func(a, b codecKey) int {
+		if a.kind != b.kind {
+			return strings.Compare(string(a.kind), string(b.kind))
 		}
-		return strings.Compare(string(a.Representation), string(b.Representation))
+		return strings.Compare(string(a.representation), string(b.representation))
 	})
 	return result, nil
 }
 
 // identity is the registered codec's public identity under key.
 func (c registeredCodec) identity(key codecKey) CodecIdentity {
-	return CodecIdentity{Owner: c.owner, Kind: key.kind, Representation: key.representation, Version: c.version, Definition: c.definition}
+	return CodecIdentity{Owner: c.owner, Kind: key.kind, Representation: key.representation, Version: c.version, Definition: c.definition.digest()}
 }
 
 // Identity returns the identity of the codec registered for kind in
@@ -163,6 +165,15 @@ func (r Registry) Identity(kind Kind, representation Representation) (CodecIdent
 	return codec.identity(key), true
 }
 
+// Owner returns the owner of the codec registered for kind in representation,
+// and false when the registry has none. It answers what [Registry.Identity]
+// reports as Owner, without computing the definition digest the identity
+// carries.
+func (r Registry) Owner(kind Kind, representation Representation) (string, bool) {
+	codec, found := r.codecs[codecKey{kind: kind, representation: representation}]
+	return codec.owner, found
+}
+
 func registerCodec(owned OwnedCodec) (codecKey, registeredCodec, error) {
 	codec := owned.Codec
 	if !Kind(owned.Owner).Valid() || !codec.Representation.valid() || codec.Version == 0 {
@@ -174,40 +185,76 @@ func registerCodec(owned OwnedCodec) (codecKey, registeredCodec, error) {
 	if codec.Clone == nil || codec.Encode == nil || codec.Canonical == nil || !validDecoder(owned) {
 		return codecKey{}, registeredCodec{}, fmt.Errorf("%w: %q is incomplete", ErrInvalidCodec, codec.Prototype.Kind())
 	}
-	definitionDigest, err := definitionDigestOf(codec.Definition)
+	definition, err := newDefinitionRef(codec.Definition)
 	if err != nil {
 		return codecKey{}, registeredCodec{}, err
 	}
 	return codecKey{kind: codec.Prototype.Kind(), representation: codec.Representation}, registeredCodec{
-		owner: owned.Owner, version: codec.Version, definition: definitionDigest, typeOf: reflect.TypeOf(codec.Prototype),
+		owner: owned.Owner, version: codec.Version, definition: definition, typeOf: reflect.TypeOf(codec.Prototype),
 		clone: codec.Clone, encode: codec.Encode, decode: codec.Decode, canonical: codec.Canonical,
 	}, nil
 }
 
-// definitionDigests memoizes definitionDigestOf by definition text. A codec
+// definitionDigests memoizes [definitionRef.digest] by definition text. A codec
 // definition is a constant of its owner, and a runtime is assembled from the
-// same definitions many times in one process, so canonicalizing each one again
-// on every registry is work whose answer never changes.
+// same definitions many times in one process.
 var definitionDigests sync.Map
 
-// definitionDigestOf canonicalizes a codec definition, refuses one that is not
-// a nonempty object, and returns its digest. Refusals are not memoized.
-func definitionDigestOf(definition json.RawMessage) (string, error) {
-	if known, found := definitionDigests.Load(string(definition)); found {
-		if memoized, isText := known.(string); isText {
-			return memoized, nil
+// definitionRef is a codec definition that was checked when the codec was
+// registered and is digested when a digest is first asked for. Registering a
+// codec happens for every codec of every provider in every process, while only
+// an encode, a decode or a listing needs the digest, so canonicalizing each
+// definition at registration allocated megabytes no command used.
+type definitionRef struct {
+	text   string
+	once   sync.Once
+	result string
+}
+
+// newDefinitionRef refuses a definition that [CanonicalJSON] refuses or that is
+// not a nonempty object, and keeps its text for [definitionRef.digest].
+func newDefinitionRef(definition json.RawMessage) (*definitionRef, error) {
+	if !canonicalizable(definition) {
+		// CanonicalJSON repeats the check to produce the refusal text.
+		if _, err := CanonicalJSON(definition); err != nil {
+			return nil, fmt.Errorf("%w: definition: %w", ErrInvalidCodec, err)
 		}
 	}
-	canonical, err := CanonicalJSON(definition)
-	if err != nil {
-		return "", fmt.Errorf("%w: definition: %w", ErrInvalidCodec, err)
+	if !isNonemptyObject(definition) {
+		return nil, fmt.Errorf("%w: definition must be a nonempty object", ErrInvalidCodec)
 	}
-	if len(canonical) == 0 || canonical[0] != '{' || string(canonical) == "{}" {
-		return "", fmt.Errorf("%w: definition must be a nonempty object", ErrInvalidCodec)
+	return &definitionRef{text: string(definition)}, nil
+}
+
+// isNonemptyObject reports whether valid JSON text is an object with at least
+// one member, ignoring surrounding whitespace.
+func isNonemptyObject(definition []byte) bool {
+	trimmed := bytes.TrimLeft(definition, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return false
 	}
-	computed := digest(canonical)
-	definitionDigests.Store(string(definition), computed)
-	return computed, nil
+	members := bytes.TrimLeft(trimmed[1:], " \t\r\n")
+	return len(members) > 0 && members[0] != '}'
+}
+
+// digest returns the definition's digest, computing it once.
+func (d *definitionRef) digest() string {
+	d.once.Do(func() {
+		if known, found := definitionDigests.Load(d.text); found {
+			if memoized, isText := known.(string); isText {
+				d.result = memoized
+				return
+			}
+		}
+		canonical, err := CanonicalJSON([]byte(d.text))
+		if err != nil {
+			// newDefinitionRef refused every text CanonicalJSON refuses.
+			panic("schemaext: registered definition is not canonicalizable: " + err.Error())
+		}
+		d.result = digest(canonical)
+		definitionDigests.Store(d.text, d.result)
+	})
+	return d.result
 }
 
 // Envelope is the explicit wire boundary for a concrete payload. Identity never
@@ -239,7 +286,11 @@ type CodecIdentity struct {
 // A reader must explicitly account for the kinds it describes; registering one
 // does not retroactively make an older document authoritative for its absence.
 func (r Registry) Definitions() []CodecIdentity {
-	return slices.Clone(r.definitions)
+	identities := make([]CodecIdentity, len(r.definitions))
+	for i, key := range r.definitions {
+		identities[i] = r.codecs[key].identity(key)
+	}
+	return identities
 }
 
 // Encode serializes an ordered batch through its registered local codecs.
@@ -300,7 +351,7 @@ func (r Registry) encodeOne(representation Representation, payload Payload, enco
 		return Envelope{}, err
 	}
 	return Envelope{Format: envelopeFormat, Owner: codec.owner, Kind: kind, Representation: representation,
-		Version: codec.version, Definition: codec.definition, Payload: data}, nil
+		Version: codec.version, Definition: codec.definition.digest(), Payload: data}, nil
 }
 
 // snapshot clones a payload through its codec. Every codec boundary passes

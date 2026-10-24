@@ -61,8 +61,8 @@ func (r *Runtime) validateReportDefinition(owner string, representation schemaex
 	if !definition.Kind.Valid() || !reportText(definition.DisplayName) {
 		return fmt.Errorf("%w: invalid reporting definition for %q", ErrInvalidRegistration, definition.Kind)
 	}
-	model, found := r.codecs.Identity(definition.Kind, representation)
-	if !found || model.Owner != owner {
+	codecOwner, found := r.codecs.Owner(definition.Kind, representation)
+	if !found || codecOwner != owner {
 		return fmt.Errorf("%w: %q does not own %q/%s", ErrInvalidRegistration, owner, definition.Kind, representation)
 	}
 	seen := make(map[string]bool, len(definition.Metrics))

@@ -73,7 +73,7 @@ func (r Registry) prepareDecode(ctx context.Context, envelopes []Envelope) ([]En
 		if !found {
 			return nil, &UnknownCodecError{Kind: envelope.Kind, Representation: envelope.Representation}
 		}
-		if envelope.Format != envelopeFormat || envelope.Owner != codec.owner || envelope.Version != codec.version || envelope.Definition != codec.definition {
+		if envelope.Format != envelopeFormat || envelope.Owner != codec.owner || envelope.Version != codec.version || envelope.Definition != codec.definition.digest() {
 			return nil, fmt.Errorf("%w: %q/%s; decode with the recorded definition or regenerate the artifact", ErrIncompatibleCodec, envelope.Kind, envelope.Representation)
 		}
 		data, err := CanonicalJSON(envelope.Payload)
