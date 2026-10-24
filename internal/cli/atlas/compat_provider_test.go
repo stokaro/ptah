@@ -39,6 +39,37 @@ func TestCompatProviderSession_HappyPath(t *testing.T) {
 		c.Assert(stderr, qt.Contains, "executable was not found")
 		c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
 	})
+	t.Run("the connection URL gate of each verb lets a claimed scheme through", func(t *testing.T) {
+		c := qt.New(t)
+		c.Setenv("PTAH_PROVIDER_CONFIG", missingProviderManifest(c))
+		migrations := filepath.Join(c.TempDir(), "migrations")
+		c.Assert(os.Mkdir(migrations, 0o750), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrations, "20240101000000_init.sql"), []byte("CREATE TABLE widgets (id integer NOT NULL);\n"), 0o600), qt.IsNil)
+		dir := "file://" + filepath.ToSlash(migrations)
+		_, _, err := runCompatWithPolicy(atlascompatpolicy.Full(), "migrate", "hash", "--dir", dir)
+		c.Assert(err, qt.IsNil)
+		for _, args := range [][]string{
+			{"migrate", "status", "--url", "fixture:///x.db", "--dir", dir},
+			{"migrate", "apply", "--url", "fixture:///x.db", "--dir", dir},
+			{"schema", "clean", "--url", "fixture:///x.db", "--auto-approve"},
+		} {
+			_, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), args...)
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%v", args))
+			c.Assert(stderr, qt.Contains, "executable was not found", qt.Commentf("%v", args))
+			c.Assert(stderr, qt.Not(qt.Contains), "unknown driver", qt.Commentf("%v", args))
+		}
+	})
+	t.Run("the dev URL gate lets a claimed scheme through", func(t *testing.T) {
+		c := qt.New(t)
+		c.Setenv("PTAH_PROVIDER_CONFIG", missingProviderManifest(c))
+		lite := "sqlite://" + filepath.ToSlash(filepath.Join(c.TempDir(), "lite.db"))
+
+		_, stderr, err := runCompatWithPolicy(atlascompatpolicy.Full(), "schema", "diff", "--from", lite, "--to", lite, "--dev-url", "fixture:///x.db")
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(stderr, qt.Not(qt.Contains), "unknown driver")
+	})
 	t.Run("a built-in URL is untouched by a manifest", func(t *testing.T) {
 		c := qt.New(t)
 		c.Setenv("PTAH_PROVIDER_CONFIG", missingProviderManifest(c))
