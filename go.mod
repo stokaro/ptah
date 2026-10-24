@@ -72,7 +72,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect
