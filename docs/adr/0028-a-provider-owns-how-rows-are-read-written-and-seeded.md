@@ -373,5 +373,5 @@ These are for the future implementation. None holds today.
 - [ADR 0032](0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md)
   is the follow-up record that Consequences requires. Embeddings get a provider
   service of their own, `embeddings.store`, and the embedded YDB engine is deleted
-  only after a plugin release serves it and the host adapter is merged. For
-  embeddings alone, ADR 0032 places the YDB tests in the plugin's pipeline.
+  only after a plugin release serves it and the host adapter is merged. Its YDB
+  tests follow the rule above.
