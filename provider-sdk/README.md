@@ -14,8 +14,11 @@ owns integration with the application and extraction of the official providers.
 The SDK imports no Ptah application package or database driver. Providers own
 their drivers and may build with a different dependency graph from the host.
 The independent fixture module under `testdata/fixture` uses SQLite through its
-own driver and a pinned published SDK version. It has no local `replace`;
-process acceptance builds run with `GOWORK=off`.
+own driver and a pinned published SDK version. It has no local `replace`. The
+host's process acceptance builds it with `GOWORK=off`, from the pinned version.
+The SDK's own process tests build it against the in-tree SDK through a workspace
+file in a temporary directory, because a client and a provider negotiate only
+at the same protocol revision and the client under test is the in-tree one.
 
 `protocol/experimental` contains generated Protobuf messages and the gRPC service.
 `provider` defines service contracts and validates complete results.
@@ -278,7 +281,7 @@ test and refuses skipped tests:
 go run ./internal/cmd/testcontour --dir provider-sdk --tags integration --race
 ```
 
-The tests build the fixture in its own module with `GOWORK=off`. They exercise
+The tests build the fixture module against the in-tree SDK. They exercise
 inspect, render, execute, and inspect again; partial execution; crashes and
 cancellation after committed writes; environment isolation; message limits;
 checksum and identity refusal; and parent death.
