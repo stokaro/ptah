@@ -3,11 +3,13 @@ package sqlschema
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/internal/rundiag"
 )
 
 // ErrStoredNameCollision is the refusal of a file in which two different names
@@ -46,6 +48,20 @@ type StoredName struct {
 func (n StoredName) String() string {
 	return fmt.Sprintf("%s %q in %s is %d bytes; the server keeps its first %d: %q",
 		n.Kind, n.Written, n.Scope, len(n.Written), len(n.Stored), n.Stored)
+}
+
+// StoredNameRecord is the run diagnostic for name, read from source: keyed by
+// the object, so the same name read twice in one run counts once, and carrying
+// the written and the stored name for the debug log.
+func StoredNameRecord(source string, name StoredName) rundiag.Record {
+	return rundiag.Record{
+		Key:  name.Kind + "\x00" + name.Scope + "\x00" + name.Written,
+		Line: source + ": " + name.String(),
+		Attrs: []slog.Attr{
+			slog.String("source", source), slog.String("kind", name.Kind), slog.String("scope", name.Scope),
+			slog.String("written", name.Written), slog.String("stored", name.Stored), slog.Int("limit", name.Limit),
+		},
+	}
 }
 
 // storedNames follows, statement by statement, the names a document declares

@@ -609,7 +609,7 @@ func openAtlasProjectForCommand(
 		if err := atlasCompatibilityPolicy(cmd).ValidateProjectConfig(project.Config); err != nil {
 			return atlasProject{}, false, errors.Join(err, project.Close())
 		}
-		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), project.Config); err != nil {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), project.Config); err != nil {
 			return atlasProject{}, false, errors.Join(err, project.Close())
 		}
 	}
@@ -647,7 +647,7 @@ func openAtlasProjectsForCommand(
 				return atlasProjectSet{}, false, errors.Join(err, projects.Close())
 			}
 		}
-		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), projects.projects[0].Config); err != nil {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), projects.projects[0].Config); err != nil {
 			return atlasProjectSet{}, false, errors.Join(err, projects.Close())
 		}
 	}

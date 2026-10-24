@@ -23,6 +23,15 @@ const (
 	MetricsAddrFlagName = "metrics-addr"
 )
 
+// LogLevelEnvVar and LogFormatEnvVar are the environment twins of --log-level
+// and --log-format. A command without those flags reads them through the
+// default logger, so PTAH_LOG_LEVEL=debug lists the objects a run's
+// aggregated warnings count (see ptah.run/internal/rundiag) on every command.
+const (
+	LogLevelEnvVar  = "PTAH_LOG_LEVEL"
+	LogFormatEnvVar = "PTAH_LOG_FORMAT"
+)
+
 const (
 	logFormatText = "text"
 	logFormatJSON = "json"
@@ -79,10 +88,45 @@ type Runtime struct {
 // restores whatever default was installed beforehand, so a command that starts
 // its own observability runtime still nests correctly on top of the quiet
 // default.
+//
+// PTAH_LOG_LEVEL and PTAH_LOG_FORMAT override the level and the format, as
+// they do for the commands that take --log-level and --log-format.
 func QuietDefaultLogger() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
+	installDefaultLogger(os.Stderr, slog.LevelWarn)
+}
+
+// EnvironmentDefaultLogger installs the default logger PTAH_LOG_LEVEL and
+// PTAH_LOG_FORMAT describe, at info level by default, and leaves the process
+// default alone when neither is set.
+func EnvironmentDefaultLogger() {
+	if os.Getenv(LogLevelEnvVar) == "" && os.Getenv(LogFormatEnvVar) == "" {
+		return
+	}
+	installDefaultLogger(os.Stderr, slog.LevelInfo)
+}
+
+// installDefaultLogger installs a text or JSON logger on out at level, with
+// the level and the format the environment names in place of the defaults. A
+// value the commands' flags would refuse is reported and not used.
+func installDefaultLogger(out io.Writer, level slog.Level) {
+	if value := os.Getenv(LogLevelEnvVar); value != "" {
+		parsed, err := parseLogLevel(value)
+		if err != nil {
+			fmt.Fprintf(out, "warning: %s=%q is not debug, info, warn or error; it is not used\n", LogLevelEnvVar, value)
+		} else {
+			level = parsed
+		}
+	}
+	options := &slog.HandlerOptions{Level: level}
+	switch format := strings.ToLower(strings.TrimSpace(os.Getenv(LogFormatEnvVar))); format {
+	case "", logFormatText:
+		slog.SetDefault(slog.New(slog.NewTextHandler(out, options)))
+	case logFormatJSON:
+		slog.SetDefault(slog.New(slog.NewJSONHandler(out, options)))
+	default:
+		fmt.Fprintf(out, "warning: %s=%q is not text or json; text is used\n", LogFormatEnvVar, format)
+		slog.SetDefault(slog.New(slog.NewTextHandler(out, options)))
+	}
 }
 
 // Start initializes command logging, tracing, and metrics.

@@ -2,6 +2,7 @@ package dbcli_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -131,6 +132,7 @@ func TestReportIgnoredAtlasConstructsReturnsWriterError(t *testing.T) {
 	writeErr := errors.New("diagnostics unavailable")
 
 	err := dbcli.ReportIgnoredAtlasConstructs(
+		context.Background(),
 		failingDiagnosticsWriter{err: writeErr},
 		projectconfig.Config{IgnoredConstructs: []projectconfig.IgnoredAtlasConstruct{
 			{Name: "project", Kind: "attribute", Filename: "atlas.hcl", Line: 2},

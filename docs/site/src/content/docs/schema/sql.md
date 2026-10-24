@@ -445,11 +445,22 @@ YugabyteDB keep the first 63 bytes of a longer name, quoted or not, ending on a
 character boundary, and print a notice. The reader records the object under the
 same name, so render, compare and planning all use the name the database holds:
 a foreign key that Ent's schema export names in 64 bytes is the key the server
-holds, and an `ALTER TABLE` that names it by its first 63 bytes reaches it. The
-read prints a warning for each name it cuts, such as `warning: schema file
-schema.sql: foreign key "…" in table "public.orders" is 69 bytes; the server
-keeps its first 63: "…"`. CockroachDB keeps a long name whole, and so does the
-reader there.
+holds, and an `ALTER TABLE` that names it by its first 63 bytes reaches it.
+CockroachDB keeps a long name whole, and so does the reader there.
+
+A run reports the names it cuts in one warning. One name is reported as itself,
+such as `warning: schema file schema.sql: foreign key "…" in table
+"public.orders" is 69 bytes; the server keeps its first 63: "…"`. Several are
+one line with how many, counted once each however often the run reads them:
+
+```text
+warning: 47 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; PTAH_LOG_LEVEL=debug lists them
+```
+
+`PTAH_LOG_LEVEL=debug` lists each name written and kept, and
+`PTAH_LOG_FORMAT=json` lists them as records with `written`, `stored`, `kind`,
+`scope` and `source` fields. See
+[Warnings about many objects](../../operate/troubleshooting/#warnings-about-many-objects).
 
 Two different names cut to one are refused where the server refuses the second,
 and accepted where it accepts it. PostgreSQL keeps one namespace per schema for

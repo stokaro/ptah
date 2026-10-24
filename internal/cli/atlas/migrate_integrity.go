@@ -154,7 +154,7 @@ func newAtlasMigrateIntegrityCommand(
 		// Only the directly executed path can report what the project file
 		// declares and this run ignores; the forwarded native command reports
 		// its own.
-		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), source.project.Config); err != nil {
 			return err
 		}
 		return run(cmd, source)

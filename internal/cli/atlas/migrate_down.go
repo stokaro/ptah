@@ -475,7 +475,7 @@ func applyAtlasMigrateDownFormatProjectConfig(
 	}
 	defer closeAtlasProjectOnError(&project, &returnErr)
 	cfg := project.Config
-	if err := dbcli.ReportIgnoredAtlasConstructs(diagnostics, cfg); err != nil {
+	if err := dbcli.ReportIgnoredAtlasConstructs(ctx, diagnostics, cfg); err != nil {
 		return atlasProject{}, err
 	}
 	opts.url = atlasDownEffective(

@@ -1331,7 +1331,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), project.project.Config); err != nil {
+		if err := dbcli.ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), project.project.Config); err != nil {
 			return nil, nil, err
 		}
 		args = project.args

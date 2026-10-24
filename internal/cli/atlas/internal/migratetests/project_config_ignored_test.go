@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/root"
 )
 
 func TestCompatDirectCommandReportsIgnoredAtlasConstructs(t *testing.T) {
@@ -121,4 +122,28 @@ func TestCompatConvertedMigrateNewReportsIgnoredAtlasConstructs(t *testing.T) {
 	created, err := filepath.Glob(filepath.Join("migrations", "*_add_users.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(created, qt.HasLen, 1)
+}
+
+// A run reports the ignored names of a project file together: one line with
+// how many, where Execute alone writes one line each.
+func TestCompatRunReportsIgnoredAtlasConstructsTogether(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url     = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "inspect.db"))+`"
+  project = "ignored"
+  owner   = "ignored"
+}
+`), 0o600), qt.IsNil)
+	cmd := atlas.NewCompatCommand("atlas")
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	code := root.RunContext(t.Context(), cmd, "schema", "inspect", "--env", "local")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stderr.String(), qt.Equals,
+		"warning: 2 atlas.hcl settings are ignored for Atlas compatibility and have no effect; PTAH_LOG_LEVEL=debug lists them\n")
 }

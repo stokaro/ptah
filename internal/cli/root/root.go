@@ -12,6 +12,7 @@ import (
 	"ptah.run/internal/buildinfo"
 	assistcmd "ptah.run/internal/cli/assist"
 	"ptah.run/internal/cli/banner"
+	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/db"
 	"ptah.run/internal/cli/inference"
 	"ptah.run/internal/cli/internal/cmdflags"
@@ -123,8 +124,11 @@ func versionTemplate(info buildinfo.Info) string {
 }
 
 // Execute runs the root command and exits the process with the command's
-// declared exit-code contract.
+// declared exit-code contract. PTAH_LOG_LEVEL and PTAH_LOG_FORMAT, when set,
+// describe the default logger of every command; see
+// [cliobs.EnvironmentDefaultLogger].
 func Execute(args ...string) {
+	cliobs.EnvironmentDefaultLogger()
 	ExecuteCommand(NewRootCommand(), args...)
 }
 

@@ -1,13 +1,16 @@
 package migratetests_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
+	"ptah.run/internal/cli/root"
 )
 
 // These tests pin stokaro/ptah#974 on `ptah-compat migrate status`: the
@@ -430,4 +433,28 @@ func assertStatusMatchesValidate(c *qt.C, tempDir, dir string) {
 	c.Assert(statusOut, qt.Equals, validateOut)
 	c.Assert(statusErrOut, qt.Equals, validateErrOut)
 	c.Assert(statusErr.Error(), qt.Equals, validateErr.Error())
+}
+
+// A run reports the SQL files atlas.sum leaves out together: two nested
+// migrations are one line with how many.
+func TestCompatMigrateStatus_RunReportsUnhashedFilesTogether(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m_nested")
+	atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "a"), statusIntegrityMigration,
+		"CREATE TABLE nested_a (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "b"), statusIntegrityMigration,
+		"CREATE TABLE nested_b (id INTEGER PRIMARY KEY);\n")
+	cmd := atlas.NewCompatCommand("atlas")
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	code := root.RunContext(t.Context(), cmd, "migrate", "status",
+		"--url", "sqlite://"+filepath.Join(tempDir, "nested.db"), "--dir", "file://"+dir)
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
+	c.Assert(stderr.String(), qt.Equals,
+		"warning: 2 SQL files are not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql; "+
+			"PTAH_LOG_LEVEL=debug lists them\n")
 }

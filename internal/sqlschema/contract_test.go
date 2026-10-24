@@ -47,7 +47,7 @@ func TestPackageContract_OutsideCallersUseReadOnly(t *testing.T) {
 	// ErrUnmodeledStatement is part of Read's failure contract.
 	used := referencedSymbolsOutsidePackage(c, root)
 
-	c.Assert(used, qt.DeepEquals, []string{"ConvertScript", "Document", "ErrUnmodeledStatement", "Load", "NewDocument", "Options", "Read", "ReadLoad", "ReadOnto", "ReadWith", "ReadsAsLoad", "Scope", "StoredName", "Table"},
+	c.Assert(used, qt.DeepEquals, []string{"ConvertScript", "Document", "ErrUnmodeledStatement", "Load", "NewDocument", "Options", "Read", "ReadLoad", "ReadOnto", "ReadWith", "ReadsAsLoad", "Scope", "StoredName", "StoredNameRecord", "Table"},
 		qt.Commentf("another package reached past Read into the conversion internals; "+
 			"either it wants SQL read into the model, which Read does, or it wants a "+
 			"conversion service, which this package deliberately is not"))

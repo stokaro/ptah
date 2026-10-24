@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
@@ -492,26 +494,27 @@ func dbmlCannotExpress() []coverage.Kind {
 // and dropped. Deliberately not a second one: the same product should not
 // describe an ignored HCL block and an ignored DBML block in two different
 // sentences.
-func loadDBMLFile(resolved string, opts Options) (*schemamodel.Database, error) {
+func loadDBMLFile(ctx context.Context, resolved string, opts Options) (*schemamodel.Database, error) {
 	contents, err := os.ReadFile(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("read schema file %s: %w", resolved, err)
 	}
 	return dbmlparse.Parse(string(contents), dbmlparse.Options{
 		File:         resolved,
-		OnDiagnostic: dbmlLossReporter(opts.ReportIgnored),
+		OnDiagnostic: dbmlLossReporter(ctx, opts.ReportIgnored),
 	})
 }
 
 // dbmlLossReporter adapts the parser's diagnostics onto the loader's writer,
 // and returns nil when nobody is listening so the parse does no work for a
 // report that goes nowhere.
-func dbmlLossReporter(out io.Writer) func(string) {
+func dbmlLossReporter(ctx context.Context, out io.Writer) func(string) {
 	if out == nil {
 		return nil
 	}
 	return func(message string) {
-		fmt.Fprintf(out, "warning: schema file %s\n", message)
+		line := "schema file " + message
+		_ = rundiag.Warn(ctx, out, rundiag.IgnoredSchemaFileSettings, rundiag.Record{Key: line, Line: line})
 	}
 }
 
@@ -540,7 +543,7 @@ func parseSchemaFile(ctx context.Context, resolved string, opts Options) (*schem
 		return atlashcl.ParseFileWithOptions(ctx, resolved, atlashcl.Options{
 			Dialect:            opts.Dialect,
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
-			RecordIgnored:      ignoredNameReporter(opts.ReportIgnored),
+			RecordIgnored:      ignoredNameReporter(ctx, opts.ReportIgnored),
 			RecordSchemaBlock:  opts.recordSchemaBlock(),
 			DeferTableSettings: opts.deferTableSettings,
 			Vars:               opts.Vars,
@@ -553,7 +556,7 @@ func parseSchemaFile(ctx context.Context, resolved string, opts Options) (*schem
 	case ".sql":
 		return loadSQLFileTree(ctx, resolved, opts)
 	case ".dbml":
-		return loadDBMLFile(resolved, opts)
+		return loadDBMLFile(ctx, resolved, opts)
 	default:
 		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, .sql, and .dbml are supported", filepath.Ext(resolved))
 	}
@@ -889,7 +892,7 @@ func readSQLFile(
 	// process, so the parse bounds the read.
 	db, statements, err := sqlschema.ReadWith(ctx, data, opts.Dialect, earlier, sqlschema.Options{
 		Owners: opts.SQL, Vocabulary: opts.CoverageVocabulary, Relations: opts.Relations,
-		StoredNames: storedNameReporter(opts.Notices, "schema file "+path),
+		StoredNames: storedNameReporter(ctx, opts.Notices, "schema file "+path),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
@@ -920,20 +923,23 @@ func sourceDatabasePath(opts Options) (string, error) {
 // documented behavior -- "nil discards them, which is what the community binary
 // does" -- reachable, and keeps a caller that wants silence from paying for a
 // formatted string it throws away.
-func ignoredNameReporter(out io.Writer) func(atlashcl.IgnoredName) {
+func ignoredNameReporter(ctx context.Context, out io.Writer) func(atlashcl.IgnoredName) {
 	if out == nil {
 		return nil
 	}
 	return func(ignored atlashcl.IgnoredName) {
-		fmt.Fprintf(
-			out,
-			"warning: schema file %s %q%s at %s:%d is ignored for Atlas compatibility and has no effect\n",
+		line := fmt.Sprintf(
+			"schema file %s %q%s at %s:%d is ignored for Atlas compatibility and has no effect",
 			ignored.Kind,
 			ignored.Name,
 			ignoredScopeClause(ignored.Scope),
 			ignored.Filename,
 			ignored.Line,
 		)
+		_ = rundiag.Warn(ctx, out, rundiag.IgnoredSchemaFileSettings, rundiag.Record{Key: line, Line: line, Attrs: []slog.Attr{
+			slog.String("kind", ignored.Kind), slog.String("name", ignored.Name),
+			slog.String("file", ignored.Filename), slog.Int("line", ignored.Line),
+		}})
 	}
 }
 
@@ -1009,12 +1015,13 @@ func rootReaderOf(dialect string) (dburlext.RootReader, error) {
 }
 
 // storedNameReporter turns the writer into the callback the SQL reader takes,
-// or nil when there is nowhere to write. source names what was read.
-func storedNameReporter(out io.Writer, source string) func(sqlschema.StoredName) {
+// or nil when there is nowhere to write. source names what was read. The run
+// ctx carries counts the names and lists them at debug level; see [rundiag].
+func storedNameReporter(ctx context.Context, out io.Writer, source string) func(sqlschema.StoredName) {
 	if out == nil {
 		return nil
 	}
 	return func(name sqlschema.StoredName) {
-		fmt.Fprintf(out, "warning: %s: %s\n", source, name)
+		_ = rundiag.Warn(ctx, out, rundiag.TruncatedNames, sqlschema.StoredNameRecord(source, name))
 	}
 }

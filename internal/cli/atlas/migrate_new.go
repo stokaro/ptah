@@ -47,7 +47,7 @@ func newAtlasMigrateNewCommand() *cobra.Command {
 			return err
 		}
 		if !atlasmigrate.ReadsNativeAtlasDir(source.format) {
-			if err := dbcli.ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), source.project.Config); err != nil {
+			if err := dbcli.ReportIgnoredAtlasConstructs(cmd.Context(), cmd.ErrOrStderr(), source.project.Config); err != nil {
 				return err
 			}
 			return runAtlasMigrateNewConverted(cmd, verb, source)

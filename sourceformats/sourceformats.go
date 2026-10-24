@@ -8,7 +8,6 @@ package sourceformats
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"ptah.run/core/coverage"
@@ -20,6 +19,7 @@ import (
 	"ptah.run/core/yamlext"
 	"ptah.run/core/yamlschema"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -76,7 +76,7 @@ func (r readers) ReadSQL(ctx context.Context, data []byte, dialect string) (*sch
 	opts := sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary, Relations: r.relations}
 	if r.notices != nil {
 		opts.StoredNames = func(name sqlschema.StoredName) {
-			fmt.Fprintf(r.notices, "warning: %s: %s\n", r.source, name)
+			_ = rundiag.Warn(ctx, r.notices, rundiag.TruncatedNames, sqlschema.StoredNameRecord(r.source, name))
 		}
 	}
 	db, _, err := sqlschema.ReadWith(ctx, data, dialect, nil, opts)
