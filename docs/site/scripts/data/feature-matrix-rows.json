@@ -159,7 +159,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered.",
-    "evidence": "integration/atlasreference/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares pinned Atlas CE v1.3.0 and ptah-compat constant-variable output byte for byte. integration/atlasprojectdata TestAtlasDataRuntimeVariableReadsConstantBytes, TestAtlasDataRuntimeVariablePreservesFileBytes, TestAtlasDataRuntimeVariableHonorsURLTimeout, and TestAtlasDataRuntimeVariableReadsHTTPBytes cover constant, file, timeout, and HTTP behavior. scripts/mutations/atlas-project-data-sources.json kills a byte-snapshot-discarding runtime-variable handler mutant."
+    "evidence": "integration/atlasreference/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares pinned Atlas CE v1.3.0 and ptah-compat constant-variable output byte for byte. integration/atlasprojectdata TestAtlasDataRuntimeVariableReadsConstantBytes, TestAtlasDataRuntimeVariablePreservesFileBytes, TestAtlasDataRuntimeVariableHonorsURLTimeout, and TestAtlasDataRuntimeVariableReadsHTTPBytes cover constant, file, timeout, and HTTP behavior. TestAtlasDataRuntimeVariableReadsParameterStore and TestAtlasDataRuntimeVariableReportsAMissingParameter read awsparamstore:// URLs from a fake SSM endpoint, and internal/atlasruntimevar/awsparamstore compares Ptah's Parameter Store driver with the Go CDK driver request by request. scripts/mutations/atlas-project-data-sources.json kills a byte-snapshot-discarding runtime-variable handler mutant."
   },
   {
     "area": "Project config",

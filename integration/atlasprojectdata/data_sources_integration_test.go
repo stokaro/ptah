@@ -578,6 +578,85 @@ env "local" {
 	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://http-value\n")
 }
 
+// fakeParameterStore answers every SSM GetParameter call with status and body.
+func fakeParameterStore(c *qt.C, status int, body string) string {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-Amz-Target") != "AmazonSSM.GetParameter" {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("X-Amzn-Requestid", "request-1")
+		writer.WriteHeader(status)
+		_, _ = writer.Write([]byte(body))
+	}))
+	c.Cleanup(server.Close)
+	return server.URL
+}
+
+// isolateAWSCredentials leaves the default credential chain only static test
+// credentials, whatever the developer's environment holds.
+func isolateAWSCredentials(c *qt.C) {
+	for _, entry := range os.Environ() {
+		if name, _, _ := strings.Cut(entry, "="); strings.HasPrefix(name, "AWS_") {
+			c.Unsetenv(name)
+		}
+	}
+	dir := c.TempDir()
+	c.Setenv("AWS_CONFIG_FILE", filepath.Join(dir, "config"))
+	c.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(dir, "credentials"))
+	c.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	c.Setenv("AWS_ACCESS_KEY_ID", "AKIDPTAHTEST")
+	c.Setenv("AWS_SECRET_ACCESS_KEY", "ptah-test-secret")
+}
+
+// parameterStoreProject reads one parameter from endpoint. A failed read
+// waits out timeout, because the data source returns the last error only once
+// no value has arrived in time.
+func parameterStoreProject(endpoint, timeout string) []byte {
+	query := url.Values{"region": {"us-east-1"}, "endpoint": {endpoint}, "decoder": {"string"}, "timeout": {timeout}}
+	return fmt.Appendf(nil, `
+data "runtimevar" "selected" {
+  url = %s
+}
+env "local" {
+  url = data.runtimevar.selected
+}
+`, strconv.Quote((&url.URL{Scheme: "awsparamstore", Host: "ptah", Path: "/db", RawQuery: query.Encode()}).String()))
+}
+
+func TestAtlasDataRuntimeVariableReadsParameterStore(t *testing.T) {
+	c := qt.New(t)
+	isolateAWSCredentials(c)
+	endpoint := fakeParameterStore(c, http.StatusOK,
+		`{"Parameter":{"Name":"ptah/db","Type":"SecureString","Value":"sqlite://parameter-value\n","Version":2}}`)
+	dir := t.TempDir()
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(parameterStoreProject(endpoint, "5s"), filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
+		Context: context.Background(),
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://parameter-value\n")
+}
+
+// TestAtlasDataRuntimeVariableReportsAMissingParameter pins the whole message
+// of a missing parameter, which Ptah's Parameter Store driver writes in the
+// shape of the SDK client's.
+func TestAtlasDataRuntimeVariableReportsAMissingParameter(t *testing.T) {
+	c := qt.New(t)
+	isolateAWSCredentials(c)
+	endpoint := fakeParameterStore(c, http.StatusBadRequest, `{"__type":"ParameterNotFound","message":"no ptah/db"}`)
+	dir := t.TempDir()
+
+	_, err := projectconfig.ParseAtlasWithOptions(parameterStoreProject(endpoint, "200ms"), filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
+		Context: context.Background(),
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `data\.runtimevar\.selected: getting latest snapshot: runtimevar \(code=NotFound\): operation error SSM: GetParameter, https response error StatusCode: 400, RequestID: request-1, ParameterNotFound: no ptah/db`)
+}
+
 func TestAtlasDataTemplateDirectoryRendersImmutableMigrationFS(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
