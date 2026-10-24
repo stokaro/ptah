@@ -67,6 +67,9 @@ var hostFeatures = []string{
 	// The query builder renders an engine from the spelling its provider
 	// declares; see registerQueryDialects.
 	provider.QueryDialectFeature,
+	// `ptah inference` keeps a generation's run state and vectors in a
+	// provider's embedding store; see EmbeddingSession.
+	provider.EmbeddingStoreFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

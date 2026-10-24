@@ -159,7 +159,7 @@ func (s *Session) openInference(
 // another engine is refused before it is dialed, in the words `ptah inference`
 // uses for the same URL.
 func openInferenceDatabase(ctx context.Context, target *agenttarget.Target) (embedbackend.Backend, error) {
-	if err := embedconnect.RefuseAnotherEngine(target.URL()); err != nil {
+	if err := embedconnect.RefuseAnotherEngine(ctx, target.URL()); err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest, "target %s: %w", target.Name(), err)
 	}
 	backend, err := embedconnect.Open(ctx, target.URL())

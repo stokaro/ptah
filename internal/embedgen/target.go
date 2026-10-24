@@ -67,8 +67,7 @@ func (s Spec) TargetObjects() (TargetObjects, error) {
 			// an error. Verification is what reports coverage; NOT NULL would
 			// make the column uncreatable until the backfill finished.
 			Nullable: true,
-			Comment: fmt.Sprintf("embedding generation %s (%s, %s)",
-				s.Identity().Short(), s.Model.Identifier, s.Target.Metric),
+			Comment:  s.ColumnComment(),
 		},
 		RequiredExtensions: []string{"vector"},
 		OwnsTable:          s.Target.Layout.OwnsTable(),
@@ -189,6 +188,14 @@ func IndexName(table, column, identity string) string {
 // because two generations over one source each own a relation.
 func ForeignKeyName(table, column, identity string) string {
 	return fmt.Sprintf("%s_%s_%s_fkey", table, column, embeddigest.Short(identity))
+}
+
+// ColumnComment is what Ptah writes on a generation's vector column: the
+// generation, the model and the metric, so a person reading the table sees
+// which generation a column holds. One derivation, so every engine writes the
+// same comment.
+func (s Spec) ColumnComment() string {
+	return fmt.Sprintf("embedding generation %s (%s, %s)", s.Identity().Short(), s.Model.Identifier, s.Target.Metric)
 }
 
 // TableComment is what Ptah writes on a target relation it created, and reads

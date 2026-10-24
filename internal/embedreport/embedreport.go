@@ -510,8 +510,12 @@ type Specification struct {
 }
 
 // DescribeSpecification reads a loaded specification into what it says.
-func DescribeSpecification(loaded embedspec.Loaded) (Specification, error) {
-	objects, err := embedconnect.TargetObjects(loaded.Spec)
+//
+// The target objects are the engine's: a provider the context selected
+// describes its own engine, and otherwise the representation names the
+// built-in engine (see [embedconnect.TargetObjects]).
+func DescribeSpecification(ctx context.Context, loaded embedspec.Loaded) (Specification, error) {
+	objects, err := embedconnect.TargetObjects(ctx, loaded.Spec)
 	if err != nil {
 		return Specification{}, err
 	}

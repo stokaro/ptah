@@ -10,34 +10,54 @@ goal: "Distinguish measured, unsupported, and operator-owned inference guarantee
 sourceOfTruth:
   - "internal/cli/inference"
   - "internal/embedydb"
+  - "internal/embedrpc"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_ydb_cli_e2e_test.go"
+  - "integration/providercli/provider_inference_e2e_test.go"
 generated: false
-lastVerified: "2026-08-30"
+lastVerified: "2026-10-24"
 evidence:
   - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_ydb_cli_e2e_test.go"
+  - "integration/providercli/provider_inference_e2e_test.go"
 overlaps: []
 disposition: keep
 ---
 
 ## What is supported
 
-| | PostgreSQL | YDB |
-| --- | --- | --- |
-| Database | PostgreSQL with the pgvector extension | YDB, through its own vector functions and indexes |
-| Provider API | OpenAI-compatible `/v1/embeddings` | OpenAI-compatible `/v1/embeddings` |
-| Vector types | `vector`, `halfvec`, `sparsevec` | `float` |
-| Metrics | `cosine`, `l2`, `inner_product` | `cosine`, `l2`, `inner_product` |
-| Index methods | `hnsw`, `ivfflat` | `vector_kmeans_tree` |
-| Consistency modes | `outbox`, `immutable` | `immutable` |
-| Target layouts | source columns, own table | source columns, own table |
+| | PostgreSQL | YDB | Provider engine |
+| --- | --- | --- | --- |
+| Database | PostgreSQL with the pgvector extension | YDB, through its own vector functions and indexes | An engine whose executable provider keeps an embedding store |
+| Provider API | OpenAI-compatible `/v1/embeddings` | OpenAI-compatible `/v1/embeddings` | OpenAI-compatible `/v1/embeddings` |
+| Vector types | `vector`, `halfvec`, `sparsevec` | `float` | The provider's |
+| Metrics | `cosine`, `l2`, `inner_product` | `cosine`, `l2`, `inner_product` | `cosine`, `l2`, `inner_product` |
+| Index methods | `hnsw`, `ivfflat` | `vector_kmeans_tree` | The provider's |
+| Consistency modes | `outbox`, `immutable` | `immutable` | The ones the engine declares; `immutable` today |
+| Target layouts | source columns, own table | source columns, own table | source columns, own table |
 
 The `--db-url` scheme decides the engine: a `postgres://` URL, or a
-keyword/value DSN with no scheme, is PostgreSQL, and a `ydb://` or `ydbs://`
-URL is YDB. Every verb, and the `inference_plan` and `inference_status` tools of
-`ptah mcp`, runs the same lifecycle on both.
+keyword/value DSN with no scheme, is PostgreSQL, a `ydb://` or `ydbs://` URL is
+YDB, and a scheme an executable provider serves is that provider's engine. Every
+verb runs the same lifecycle on each. The `inference_plan` and
+`inference_status` tools of `ptah mcp` select no provider, so they reach
+PostgreSQL and YDB.
+
+**A provider engine.** `--provider-config` or `--provider-engine` selects the
+provider, as for every native command; see [Test an executable
+provider](../../../extend/executable-providers/). Its engine has to declare the
+`embeddings.store` feature, which contract 25.2 adds, and a provider without it
+is refused by name. The provider keeps the run state in a layout of its own and
+owns the vector storage, the index and the searches; Ptah keeps every
+lifecycle decision and every refusal for a lifecycle reason. `inference
+describe` takes `--provider-engine` to describe the target objects of a
+provider engine.
+
+**YDB through its provider.** Without a provider flag, `ydb://` uses the YDB
+engine built into Ptah. With `--provider-engine ydb`, the provider that
+`ptah providers install ydb` installed serves the URL instead, and inference
+then needs a provider release that keeps an embedding store.
 
 ## What is not
 
@@ -46,9 +66,10 @@ the rest are not supported, and a URL naming one is refused by name:
 
 ```console
 $ ptah inference plan --spec spec.yaml --db-url "mysql://localhost:3306/db"
-error: ptah inference works against PostgreSQL with pgvector and against YDB,
-and "mysql://" names another engine: a generation's run state and its vectors
-need one of those two, so there is nothing here to run against mysql
+error: ptah inference works against PostgreSQL with pgvector, against YDB, and
+against a provider engine with an embedding store, and "mysql://" names another
+engine: a generation's run state and its vectors need one of those, so there is
+nothing here to run against mysql
 ```
 
 The PostgreSQL family is refused too. CockroachDB, YugabyteDB and Spanner speak
@@ -123,7 +144,9 @@ schedule a GPU, store model weights, or answer a search query.
 - A vector and its checkpoint are written in one transaction, so there is no
   state in which the work landed and the record of it did not. On YDB it is one
   serializable transaction, and a conflict with another transaction aborts it
-  and runs it again on what is there now.
+  and runs it again on what is there now. On a provider engine it is one atomic
+  compare-and-write in the provider; a commit whose state changed after it was
+  read writes nothing, and Ptah reads and decides again.
 - A write never crosses generations: a row belonging to another generation is
   refused rather than overwritten.
 - A stale result does not win. A provider answer computed from a source version
@@ -167,6 +190,9 @@ schedule a GPU, store model weights, or answer a search query.
 - On YDB, a lifecycle operation reads the whole run-state registry inside its
   transaction, so two operations on different generations can abort each other
   and run again. A batch checkpoint reads only its own run.
+- On a provider engine, a lifecycle decision is two calls, a read and a
+  compare-and-write, and so is a batch commit. A decision over the whole run
+  state conflicts with every concurrent batch commit and is decided again.
 - Five columns on the target table per generation, and two generations coexist by
   design.
 - The provider bill for the whole corpus, per generation.

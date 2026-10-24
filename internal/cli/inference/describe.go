@@ -26,8 +26,10 @@ Every other verb needs a live database, and two readers need the file's own
 answer and have no server to hand: an author writing a specification, and a CI
 job asking whether an edit changed the corpus.
 
-The engine the target objects describe is the one the representation names:
-vector, halfvec and sparsevec are pgvector's types, and float is YDB's.
+The engine the target objects describe is the one --provider-engine selects,
+whose provider describes them. Without one, it is the built-in engine the
+representation names: vector, halfvec and sparsevec are pgvector's types, and
+float is YDB's.
 
 What it reports is the generation identity, whether that generation can be
 rebuilt and why not, what running it would send out of the database, what the
@@ -65,7 +67,7 @@ func runDescribe(
 	if err != nil {
 		return err
 	}
-	described, err := embedreport.DescribeSpecification(loaded)
+	described, err := embedreport.DescribeSpecification(ctx, loaded)
 	if err != nil {
 		return err
 	}

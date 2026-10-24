@@ -33,7 +33,8 @@ func TestInferenceStatus_FailurePath_AnotherEngineTarget(t *testing.T) {
 	response, err := session.InferenceStatus(context.Background(), agentapi.InferenceStatusRequest{RunID: "run-1"})
 
 	c.Assert(err, qt.ErrorMatches,
-		`target events: ptah inference works against PostgreSQL with pgvector and against YDB, and "mysql://" `+
+		`target events: ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider `+
+			`engine with an embedding store, and "mysql://" `+
 			`names another engine: .* nothing here to run against mysql`)
 	code, coded := agentdiag.CodeOf(err)
 	c.Assert(coded, qt.IsTrue)
