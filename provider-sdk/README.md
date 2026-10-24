@@ -21,8 +21,10 @@ host's process acceptance builds it with `GOWORK=off`, from the pinned version.
 The SDK's own process tests build it against the in-tree SDK through a workspace
 file in a temporary directory, because the client under test is the in-tree one
 and the tests exercise what the in-tree SDK adds. The mixed-version tests build
-it from the pinned release instead, so that a host and a provider of different
-contract minors meet.
+its contract-25.0 programs (`provider`, `lint` and `contract-host`) against
+`provider-sdk/v0.2.0` instead, so that a host and a provider of different
+contract minors meet. Those programs and the `backend` package use nothing a
+later minor added.
 
 `protocol/experimental` contains generated Protobuf messages and the gRPC service.
 `provider` defines service contracts and validates complete results.

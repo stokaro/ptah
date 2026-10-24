@@ -1,5 +1,10 @@
 // Package backend implements a deliberately small SQLite-backed test engine.
 // It depends on the public SDK and its own driver, never the Ptah host module.
+//
+// The package uses only what contract 25.0 has. The SDK's mixed-version tests
+// build the programs provider, lint and contract-host, which import it,
+// against provider-sdk v0.2.0, so an addition of a later minor belongs in a
+// package of its own.
 package backend
 
 import (
