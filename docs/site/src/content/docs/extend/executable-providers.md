@@ -494,7 +494,9 @@ A saved plan records each native operation in the provider's own encoding,
 with the codec owner, version and definition digest, beside the provider
 binding. `ptah schema apply --plan` decodes the operations through the selected
 provider, preflights the whole plan against the transaction mode, and refuses
-a changed provider, definition or target before any operation runs. Only the
+another provider or release, a changed definition or a changed target before
+any operation runs. Another build of the same release, such as one for another
+platform, decodes the same definitions and applies the plan. Only the
 native JSON plan format holds them: the Atlas `.plan.hcl` format and
 `ptah-compat` refuse such a plan.
 

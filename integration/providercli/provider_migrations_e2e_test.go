@@ -27,7 +27,14 @@ func migrationProviderSpec(c *qt.C) providerhost.Spec {
 
 func migrationProviderCommandSpec(c *qt.C, name string) providerhost.Spec {
 	c.Helper()
-	binary := testutils.BuildFixtureProvider(c, name)
+	return fixtureReleaseSpec(c, name, testutils.FixtureRelease{})
+}
+
+// fixtureReleaseSpec builds one fixture command as release selects and trusts
+// the digest of the executable it produced.
+func fixtureReleaseSpec(c *qt.C, name string, release testutils.FixtureRelease) providerhost.Spec {
+	c.Helper()
+	binary := testutils.BuildFixtureProviderRelease(c, name, release)
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)

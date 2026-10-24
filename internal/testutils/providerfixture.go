@@ -22,10 +22,34 @@ const fixtureProviderDirectory = "provider-sdk/testdata/fixture/"
 // or replacement can satisfy it. The dependency list of the command must name
 // no `ptah.run/` package, which is what makes the provider independent of the
 // host. command names a directory below cmd/ of the fixture module, such as
-// "provider".
+// "provider". The build is reproducible: -trimpath keeps the path of the
+// temporary copy out of the executable, so two builds of one command with the
+// same settings have one digest.
 //
 // The caller's working directory must be inside the repository.
 func BuildFixtureProvider(c *qt.C, command string) string {
+	c.Helper()
+	return BuildFixtureProviderRelease(c, command, FixtureRelease{})
+}
+
+// FixtureRelease selects how [BuildFixtureProviderRelease] links one fixture
+// provider. The zero value builds the fixture as [BuildFixtureProvider] does.
+type FixtureRelease struct {
+	// Version replaces the release version the fixture declares. Empty keeps
+	// the declared one.
+	Version string
+	// Stripped links without the symbol table and debug information. The
+	// executable then has another digest than an unstripped build of the same
+	// source, as another platform build of one release does, while the
+	// provider declares exactly the same description. It is the only setting
+	// that changes the bytes without changing what the provider declares.
+	Stripped bool
+}
+
+// BuildFixtureProviderRelease is [BuildFixtureProvider] with the link-time
+// settings release selects, for a test that needs two builds of one release
+// or two releases of one provider.
+func BuildFixtureProviderRelease(c *qt.C, command string, release FixtureRelease) string {
 	c.Helper()
 	repo := strings.TrimSpace(string(runBuildCommand(c, ".", "go", "list", "-m", "-f", "{{.Dir}}", "ptah.run")))
 	dir := c.TempDir()
@@ -49,10 +73,24 @@ func BuildFixtureProvider(c *qt.C, command string) string {
 	runBuildCommand(c, dir, "go", "mod", "tidy")
 	dependencies := string(runBuildCommand(c, dir, "go", "list", "-deps", "-f", "{{.ImportPath}}", "./cmd/"+command))
 	c.Assert(dependencies, qt.Not(qt.Contains), "ptah.run/")
+	var linkFlags []string
+	if release.Stripped {
+		linkFlags = append(linkFlags, "-s", "-w")
+	}
+	if release.Version != "" {
+		linkFlags = append(linkFlags, "-X", fixtureVersionSymbol+"="+release.Version)
+	}
 	binary := filepath.Join(c.TempDir(), "provider"+ExecutableSuffix)
-	runBuildCommand(c, dir, "go", "build", "-o", binary, "./cmd/"+command)
+	build := []string{"build", "-trimpath", "-o", binary}
+	if len(linkFlags) > 0 {
+		build = append(build, "-ldflags="+strings.Join(linkFlags, " "))
+	}
+	runBuildCommand(c, dir, "go", append(build, "./cmd/"+command)...)
 	return binary
 }
+
+// fixtureVersionSymbol is the fixture variable that holds its release version.
+const fixtureVersionSymbol = "example.com/ptah-fixture-provider/backend.version"
 
 func runBuildCommand(c *qt.C, dir, program string, args ...string) []byte {
 	c.Helper()

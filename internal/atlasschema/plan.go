@@ -79,8 +79,8 @@ type PlanStatement struct {
 // state they were computed against, so a stale plan is detectable before
 // execution.
 type PlanFile struct {
-	// Provider records executable identity, negotiated semantics, and target
-	// facts. It is required when a plan targets an executable provider.
+	// Provider records the provider release and the target facts the plan
+	// binds to. It is required when a plan targets an executable provider.
 	Provider        *PlanProviderBinding `json:"provider,omitempty"`
 	FormatVersion   int                  `json:"format_version"`
 	Name            string               `json:"name"`

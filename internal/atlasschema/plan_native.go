@@ -21,7 +21,7 @@ import (
 // Operation is the owner's own encoding of the operation, wrapped in the codec
 // envelope that names its owner, version and definition. A plan that holds one
 // also records the provider binding, so the operation is replayed only through
-// the executable and target profile that produced it. Kind and Subject are
+// the provider release and target profile that produced it. Kind and Subject are
 // copies for the person reviewing the file; apply decodes Operation and
 // refuses a plan whose copies disagree with it.
 type PlanNative struct {
@@ -149,7 +149,7 @@ func validatePlanNative(plan PlanFile, statement PlanStatement) error {
 	case statement.SQL != "":
 		return errors.New("records both sql and a native operation")
 	case plan.Provider == nil:
-		return errors.New("records a native operation, which needs the provider binding of the executable that produced it")
+		return errors.New("records a native operation, which needs the provider binding of the release that produced it")
 	case !statement.Owned:
 		return errors.New("records a native operation without its owner verdict")
 	case !native.Kind.Valid():

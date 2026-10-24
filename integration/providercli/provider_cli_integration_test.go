@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,14 +90,15 @@ func TestNativeCLIWithIndependentlyBuiltProvider(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		var plan map[string]any
 		c.Assert(json.Unmarshal(data, &plan), qt.IsNil)
-		binding := plan["provider"].(map[string]any)["identity"].(map[string]any)
-		binding["artifact_sha256"] = strings.Repeat("a", 64)
+		binding := plan["provider"].(map[string]any)
+		c.Assert(binding["version"], qt.Equals, "0.0.1")
+		binding["version"] = "9.9.9"
 		changed, err := json.Marshal(plan)
 		c.Assert(err, qt.IsNil)
 		c.Assert(os.WriteFile(f.planPath, changed, 0o600), qt.IsNil)
 		_, diagnostics, code := f.run(c, c.Context(), "apply", "--plan", f.planPath, "--tx-mode", "none", "--auto-approve", "--json")
 		c.Assert(code, qt.Equals, 2)
-		c.Assert(diagnostics, qt.Contains, "provider")
+		c.Assert(diagnostics, qt.Contains, `version "9.9.9", but the selected provider is version "0.0.1"`)
 		c.Assert(f.success(c, "inspect", "--format", "json"), qt.Not(qt.Contains), "items")
 	})
 	t.Run("crash after write is unknown and never replayed", func(t *testing.T) {
@@ -165,12 +167,19 @@ func newProviderCLI(c *qt.C, spec providerhost.Spec) providerCLI {
 	dir := c.TempDir()
 	f := providerCLI{manifestPath: filepath.Join(dir, "providers.json"), pidPath: filepath.Join(dir, "provider.pid"), databasePath: filepath.Join(dir, "database.db"), schemaPath: filepath.Join(dir, "schema.yaml"), planPath: filepath.Join(dir, "change.plan.json")}
 	f.address = (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(f.databasePath), "/")}).String()
-	spec.Environment = append(spec.Environment, "PTAH_FIXTURE_PID_FILE="+f.pidPath)
+	f.selectProvider(c, spec)
+	c.Assert(os.WriteFile(f.schemaPath, []byte("tables:\n  items:\n    columns:\n      id:\n        type: INTEGER\n        not_null: true\n  second:\n    columns:\n      value:\n        type: TEXT\n"), 0o600), qt.IsNil)
+	return f
+}
+
+// selectProvider writes the manifest so that the next command starts spec
+// against the same database, schema and plan.
+func (f providerCLI) selectProvider(c *qt.C, spec providerhost.Spec) {
+	c.Helper()
+	spec.Environment = append(slices.Clone(spec.Environment), "PTAH_FIXTURE_PID_FILE="+f.pidPath)
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion, Providers: []providerconfig.Installation{{Spec: spec, Engines: []providerconfig.Engine{{ID: "fixture"}}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifestPath, manifest, 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(f.schemaPath, []byte("tables:\n  items:\n    columns:\n      id:\n        type: INTEGER\n        not_null: true\n  second:\n    columns:\n      value:\n        type: TEXT\n"), 0o600), qt.IsNil)
-	return f
 }
 func (f providerCLI) arguments(verb string, args ...string) []string {
 	return append([]string{"schema", verb, "--provider-config", f.manifestPath, "--db-url", f.address}, args...)
