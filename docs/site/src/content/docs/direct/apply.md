@@ -428,6 +428,7 @@ refusal means that nothing reached the database.
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects) |
 | `refusal` | Why planning refused; see below |
 | `error` | The message printed on standard error, for `refused` and `failed` |
+| `schema_diagnostics` | Every diagnostic a provider reported when it refused the SQL schema documents it read: `code`, `severity`, `path`, `start` and `end` (byte `offset`, `line`, `column`) and `message` |
 
 `plan`, `plan_digest` and `plan_path` appear only with `changes`. `no-changes`
 means no statement was planned, and no file is written. The database matches
@@ -458,6 +459,7 @@ Schema plan reports retain contract version `2` and their saved SQL plan format.
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
+| `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |
 | --- | --- |

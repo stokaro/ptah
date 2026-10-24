@@ -595,6 +595,35 @@ another table, and a column the struct does not declare.
 Attribute values arrive as text, exactly as written, and the provider decides what a value
 means. The source position of an attribute is the position of its comment.
 
+An engine declares in `sql_schema` how its SQL schema documents are read. In the
+`FRAGMENTS` mode, the default, Ptah parses a document with the shared grammar
+and sends the statements it does not model to `DecodeSource`. An engine whose
+grammar the shared one cannot read, such as YQL, declares the `DOCUMENT` mode
+and the feature `schema.read-sql`, and Ptah does not parse the text.
+
+Ptah reads the files of a load, a schema file with its imports or a schema
+directory, and sends them in load order to `ReadSQLSchema` with the engine's
+identifier rules and the `ptah:not-described` entries of the kinds listed in
+`header_kinds`. The call has no session, address or credential. Ptah maps the
+reply as follows:
+
+- Tables, namespaces, enums, views, sequences, roles and grants enter the
+  common model.
+- The provider's own objects are normalized by the provider.
+- Each file's declarations feed the schema-directory check.
+- The reading's claim is the load's coverage.
+
+Ptah refuses a reply that is not complete. It prints the first error with its
+position, as the shared parser does:
+`read SQL schema file schema.sql: unsupported statement GRANT at position 42 (line 2, column 1)`.
+The JSON documents of `schema plan` and `schema apply` list every diagnostic in
+`schema_diagnostics`, with its code (`syntax`, `unsupported`, `invalid` or
+`incomplete`), severity, path and span. Ptah also refuses a reply the SDK's
+checks refuse, a complete reply with a warning, which it does not report yet,
+and a table that carries facets or owned objects, which a reading cannot place
+yet. A command that selects a provider for the engine fails with
+`provider_missing` before it reads the file when none is installed.
+
 The execution adapter does not support managed data, database cleanup, or
 isolated execution of untrusted SQL. It does not add
 provider selection to `ptah-compat` or native commands outside the list above. Project-file

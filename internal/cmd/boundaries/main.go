@@ -212,6 +212,12 @@ func rules(c corpus) []rule {
 			violations: sqlReaderOwnerLinks,
 		},
 		{
+			ID:         yqlParserRule,
+			Summary:    "only the in-process YDB reading may import the YQL parser, which moves into the YDB provider",
+			perPackage: true,
+			violations: yqlParserImporters,
+		},
+		{
 			ID:         dialectNameRule,
 			Summary:    "shared packages must not name a dialect, so that a new engine needs no edit to shared code",
 			perPackage: true,
@@ -353,7 +359,10 @@ func measure(root string) ([]ruleReport, error) {
 		return nil, fmt.Errorf("packages failed to load")
 	}
 
-	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots, requiredNeutralPackages, sqlReaderRoots) {
+	if err := checkYQLParserScan(loaded); err != nil {
+		return nil, err
+	}
+	for _, required := range slices.Concat(providerContractRoots, rendererConsumerRoots, requiredNeutralPackages, sqlReaderRoots, []string{yqlParser}) {
 		if !slices.ContainsFunc(loaded, func(pkg *packages.Package) bool { return relative(pkg.PkgPath) == required }) {
 			return nil, fmt.Errorf("architecture root %q was not loaded", required)
 		}

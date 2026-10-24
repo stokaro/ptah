@@ -441,6 +441,18 @@ GO
 require_acceptance "collections, a lookup and a struct field holding no dialect name"
 rm -f "$target"
 
+# A package outside the in-process YDB reading that imports the YQL parser,
+# which moves into the YDB provider.
+target="$tree/internal/schemafile/boundaries_selftest_defect.go"
+cat >"$target" <<'GO'
+package schemafile
+
+import _ "ptah.run/internal/yqlparse"
+GO
+require_refusal "a new importer of the YQL parser"
+rm -f "$target"
+require_acceptance "the repaired tree"
+
 # A fall must be recorded package by package. A baseline that still permits
 # one more reference in a package is refused, and so is debt that moved
 # between two packages with the total unchanged. The packages are the first
@@ -457,4 +469,4 @@ require_refusal "dialect debt recorded in the wrong package with the total uncha
 cp "$work_dir/baseline.orig" "$baseline"
 require_acceptance "the restored dialect-name baseline"
 
-echo "check-architecture-boundaries-selftest: OK (28 refusals, 8 false-positive controls)"
+echo "check-architecture-boundaries-selftest: OK (29 refusals, 8 false-positive controls)"

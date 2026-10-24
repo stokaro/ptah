@@ -1,5 +1,7 @@
-// Package providerdiagnostic carries engine-neutral installation failures.
-// Shared reports preserve this data without importing the official catalog.
+// Package providerdiagnostic carries engine-neutral provider failures: setup
+// and installation failures, and a provider's refusal of the SQL schema
+// documents it read. Shared reports preserve this data without importing the
+// official catalog or the provider host.
 package providerdiagnostic
 
 // Diagnostic preserves provider setup guidance in errors and JSON output.

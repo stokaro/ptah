@@ -9,11 +9,16 @@
     "renderer-consumers-import-builtins": 0,
     "renderer-imports-comparator": 0,
     "shared-packages-name-dialects": 10,
-    "sql-reader-links-owners": 0
+    "sql-reader-links-owners": 0,
+    "yql-parser-importers": 2
   },
   "packages": {
     "shared-packages-name-dialects": {
       "internal/liquibaserun": 10
+    },
+    "yql-parser-importers": {
+      "internal/syntaxext/yql": 1,
+      "internal/ydbsql": 1
     }
   }
 }

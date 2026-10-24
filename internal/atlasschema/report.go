@@ -2,6 +2,7 @@ package atlasschema
 
 import (
 	"errors"
+	"slices"
 
 	digest "github.com/opencontainers/go-digest"
 
@@ -169,6 +170,10 @@ type PlanReport struct {
 	Error string `json:"error,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+	// SchemaDiagnostics are every diagnostic a provider reported when it
+	// refused the SQL schema documents it read, with their positions. Error
+	// names the first error among them.
+	SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics,omitempty"`
 }
 
 // PlanEvidence is what a caller saw of one `schema plan` run.
@@ -192,6 +197,7 @@ func NewPlanReport(evidence PlanEvidence) PlanReport {
 	if evidence.Err != nil {
 		report.Error = evidence.Err.Error()
 		report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
+		report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 		report.Refusal = refusalFor(evidence.Err)
 		report.Outcome = PlanOutcomeFailed
 		if report.Refusal != nil {
@@ -243,6 +249,8 @@ type ApplyReport struct {
 	Error string `json:"error,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+	// SchemaDiagnostics is [PlanReport.SchemaDiagnostics] for this run.
+	SchemaDiagnostics []providerdiagnostic.SchemaDiagnostic `json:"schema_diagnostics,omitempty"`
 }
 
 // ApplyEvidence is what a caller saw of one `schema apply` run.
@@ -288,6 +296,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	}
 	report.Error = evidence.Err.Error()
 	report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
+	report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 	if evidence.Dispatched {
 		report.Outcome = ApplyOutcomeUnknown
 		return report
@@ -298,6 +307,16 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		report.Outcome = ApplyOutcomeRefused
 	}
 	return report
+}
+
+// schemaDiagnostics returns every diagnostic of a provider's refusal of the SQL
+// schema documents it read, and nil for any other error.
+func schemaDiagnostics(err error) []providerdiagnostic.SchemaDiagnostic {
+	refused, ok := errors.AsType[*providerdiagnostic.SchemaRefusal](err)
+	if !ok {
+		return nil
+	}
+	return slices.Clone(refused.Diagnostics)
 }
 
 // refusalFor names the refusal err carries, and nil when it carries none.

@@ -76,6 +76,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		client.Close()
 		return nil, fmt.Errorf("%w: %w", provider.ErrProtocol, err)
 	}
+	if err = checkSQLHeaderKinds(host.description); err != nil {
+		client.Close()
+		return nil, err
+	}
 	if host.goSource, err = goDirectiveClaims(host.description); err != nil {
 		client.Close()
 		return nil, err
@@ -125,7 +129,9 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	// Version 8 binds session capability capture and owner transaction enforcement
 	// to the host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
-	// database addresses are deliberately absent.
+	// database addresses are deliberately absent. An engine that reads its SQL
+	// documents whole adds how it reads them; one that declares nothing keeps
+	// the digest it has without the field.
 	projection := struct {
 		Version            int                          `json:"version"`
 		Engine             string                       `json:"engine"`
@@ -138,6 +144,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		GoDirectives       []goDirectiveIdentity        `json:"go_directives,omitempty"`
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
 		Planning           []planningIdentityContract   `json:"planning"`
+		SQLSchema          *sqlSchemaIdentity           `json:"sql_schema,omitempty"`
 	}{8,
 		t.engine.GetId(),
 		featureSet(t.host.description.GetFeatures()),
@@ -147,7 +154,8 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		modelIdentities(t.engine.GetValueModels()),
 		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
 		goDirectiveIdentities(t.engine.GetGoSourceDirectives()),
-		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning())}
+		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning()),
+		sqlSchemaIdentityOf(t.engine.GetSqlSchema())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)

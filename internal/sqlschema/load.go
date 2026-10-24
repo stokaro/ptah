@@ -33,7 +33,9 @@ type Load struct {
 // change what a source in another format declares. The reader adds what each
 // document's `ptah:not-described` header leaves undescribed and the owner's
 // claim, limited by the header entries the owner reads; the coverage of a load
-// of several documents is the union of theirs, as for a schema directory.
+// of several documents is the union of theirs, as for a schema directory. A
+// claim the owner returns with its reading of the whole load
+// ([sqlext.GrammarResult.Coverage]) is combined with that.
 //
 // request.Target is the dialect the documents are written for. A refusal of
 // one document is a [*sqlext.FileError] naming it.
@@ -61,6 +63,9 @@ func ReadLoad(ctx context.Context, request sqlext.GrammarRequest, opts Options) 
 	}
 	database := result.Database
 	if err := describeLoad(&database, request.Files, dialect, opts); err != nil {
+		return Load{}, err
+	}
+	if err := addLoadClaim(&database, result.Coverage); err != nil {
 		return Load{}, err
 	}
 	schemamodel.Finalize(&database)
@@ -109,6 +114,26 @@ func describeLoad(database *schemamodel.Database, files []sqlext.SourceFile, dia
 	}
 	database.NotDescribed = described.NotDescribed
 	database.FeatureCoverage = described.FeatureCoverage
+	return nil
+}
+
+// addLoadClaim combines the claim an owner made for the whole load with what
+// the documents' headers and the owners' per-document claims set. An owner
+// served by another process reads the load and claims its coverage in one
+// call, so its claim arrives with the reading rather than per document.
+func addLoadClaim(database *schemamodel.Database, claim schemaext.Coverage) error {
+	if claim.Representation() == "" {
+		return nil
+	}
+	if database.FeatureCoverage.Representation() == "" {
+		database.FeatureCoverage = claim
+		return nil
+	}
+	combined, err := database.FeatureCoverage.Combine(claim)
+	if err != nil {
+		return fmt.Errorf("coverage of the SQL owner's load: %w", err)
+	}
+	database.FeatureCoverage = combined
 	return nil
 }
 
