@@ -176,7 +176,9 @@ func Classify(node ast.Node) Severity {
 // Assess returns per-statement risk classifications for generated AST nodes,
 // in input order with 1-based Index. A node type the classifier does not
 // recognize is reported Safe with the default reason, so an unknown construct
-// never blocks a migration by accident.
+// never blocks a migration by accident. Each node is judged alone: a drop of a
+// view or a trigger is destructive here even where the plan creates the object
+// again, which [AssessSQL] and [AssessRendered] read from the plan's statements.
 func Assess(nodes []ast.Node) []StatementAssessment {
 	assessments := make([]StatementAssessment, 0, len(nodes))
 	for i, node := range nodes {
@@ -223,6 +225,11 @@ func AssessRendered(ctx context.Context, runtime RenderingRuntime, nodes []ast.N
 // node's verdict raised to Destructive, with an unknown access effect when the
 // operation makes an access claim. Raising never lowers what the node
 // established: a known widening stays a widening.
+//
+// The plan's statements are read together once each is classified: a drop of
+// a view or a trigger that a later statement creates again is judged as
+// [AssessSQL] judges it, over the node's verdict, unless an owner judged the
+// statement or wrote it.
 func AssessRenderedWithCapabilities(
 	ctx context.Context,
 	runtime RenderingRuntime,
@@ -261,6 +268,7 @@ func AssessRenderedWithCapabilities(
 		return nil, err
 	}
 	var assessments []StatementAssessment
+	ownWords := make([]bool, 0, len(all))
 	for i, node := range units {
 		nodeAssessment := assessNode(node)
 		placement := ast.PlacementOf(node)
@@ -286,8 +294,10 @@ func AssessRenderedWithCapabilities(
 			}
 			assessment.Index = len(assessments) + 1
 			assessments = append(assessments, assessment)
+			ownWords = append(ownWords, judged == nil && placement == ast.NoExtension)
 		}
 	}
+	applyReplacements(assessments, all, target, ownWords)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -417,7 +427,11 @@ func judgeNullFillPair(assessment *StatementAssessment, statement, target string
 // Every other statement is classified by its words, insensitive to its casing
 // and layout, so the same statement classifies the same however it is spelled;
 // one matching no known destructive or warning shape is reported Safe with the
-// default reason.
+// default reason. A drop of a view or a trigger that a later statement creates
+// again, under the same name and for a trigger on the same table, replaces the
+// object, and is rated as the drift report rates the change, a warning; with
+// CASCADE it stays destructive, since it also drops the objects that depend on
+// the dropped one.
 //
 // A missing context or runtime wraps [schemaext.ErrInvalidValue]; a target
 // without a splitter wraps [ptah.run/core/ptaherr.ErrUnsupportedDialect]. A
@@ -428,11 +442,14 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 		return nil, err
 	}
 	assessments := make([]StatementAssessment, 0, len(statements))
+	ownWords := make([]bool, 0, len(statements))
 	for i, statement := range statements {
 		assessment := assessStatement(statement, false, judgments[i])
 		assessment.Index = i + 1
 		assessments = append(assessments, assessment)
+		ownWords = append(ownWords, judgments[i] == nil)
 	}
+	applyReplacements(assessments, statements, target, ownWords)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -679,6 +696,14 @@ func assessNode(node ast.Node) StatementAssessment {
 			assessment.Severity = Destructive
 			assessment.Reason = noForceReason
 		}
+	case *ast.RevokePrivilegeNode:
+		assessment.Subject = n.ObjectName
+		assessment.Severity = Warning
+		assessment.Reason = revokeReason
+	case *ast.RevokeRoleMembershipNode:
+		assessment.Subject = n.Role
+		assessment.Severity = Warning
+		assessment.Reason = revokeMembershipReason
 	case *ast.IndexNode:
 		assessment.Subject = n.Name
 		if n.Unique {
@@ -717,6 +742,14 @@ func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
 		return n.Name, "DROP ROLE removes an existing database principal", true
 	case *ast.DropPolicyNode:
 		return n.Name, "DROP POLICY removes an access-control protection", true
+	case *ast.DropSequenceNode:
+		return n.Name, dropSequenceReason, true
+	case *ast.DropViewNode:
+		return n.Name, dropViewReason, true
+	case *ast.DropMaterializedViewNode:
+		return n.Name, dropMaterializedViewReason, true
+	case *ast.DropTriggerNode:
+		return n.Name, dropTriggerReason, true
 	default:
 		return "", "", false
 	}
@@ -906,6 +939,16 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case hasWordSequence(words, "DROP", "VALUE"), hasWordSequence(words, "DELETE", "FROM", "PG_ENUM"):
 		assessment.Severity = Destructive
 		assessment.Reason = "removing an enum value can invalidate existing rows"
+	case replacesInPlace(words) != "":
+		kind := replacesInPlace(words)
+		assessment.Severity = modifiedSeverity(replaceableKinds[kind])
+		assessment.Reason = inPlaceReplacementReason(kind)
+	case hasWordPrefix(words, "REVOKE"):
+		assessment.Severity = Warning
+		assessment.Reason = revokeReason
+	case hasWordPrefix(words, "ALTER", "GROUP") && hasWordSequence(words, "DROP", "USER"):
+		assessment.Severity = Warning
+		assessment.Reason = revokeMembershipReason
 	case hasWordSequence(words, "RENAME", "COLUMN"), hasWordSequence(words, "RENAME", "TO"):
 		assessment.Severity = Warning
 		assessment.Reason = "rename can break deployed readers and writers"
@@ -1189,6 +1232,10 @@ var destructivePrefixes = []struct {
 	{words: []string{"DROP", "FUNCTION"}, reason: "DROP FUNCTION removes executable database behavior"},
 	{words: []string{"DROP", "ROLE"}, reason: "DROP ROLE removes an existing database principal"},
 	{words: []string{"DROP", "POLICY"}, reason: "DROP POLICY removes an access-control protection"},
+	{words: []string{"DROP", "SEQUENCE"}, reason: dropSequenceReason},
+	{words: []string{"DROP", "VIEW"}, reason: dropViewReason},
+	{words: []string{"DROP", "MATERIALIZED", "VIEW"}, reason: dropMaterializedViewReason},
+	{words: []string{"DROP", "TRIGGER"}, reason: dropTriggerReason},
 	{words: []string{"TRUNCATE"}, reason: "TRUNCATE removes all rows from a table"},
 }
 
@@ -1206,6 +1253,21 @@ func destructivePrefixReason(words []string) (string, bool) {
 // noForceReason is why NO FORCE ROW LEVEL SECURITY is destructive, in the
 // words both the AST and the SQL-text classifiers report.
 const noForceReason = "NO FORCE ROW LEVEL SECURITY exempts the table owner from its policies"
+
+// The reasons for the removals the drift report counts, in the words both the
+// AST and the SQL-text classifiers report. A sequence, a view, a materialized
+// view and a trigger hold what no declaration gives back, so dropping one is
+// destructive, as [ClassifySchemaDiff] rates the removal, unless the plan
+// creates the view or the trigger again (see [replacements]); a privilege and
+// a membership hold nothing stored, so taking one away is a warning.
+const (
+	dropSequenceReason         = "DROP SEQUENCE removes the sequence and its position; one created again can hand out a key a row already holds"
+	dropViewReason             = "DROP VIEW removes a definition the plan cannot restore, and every query that reads the view fails"
+	dropMaterializedViewReason = "DROP MATERIALIZED VIEW removes the view and the rows it holds"
+	dropTriggerReason          = "DROP TRIGGER removes executable behavior from every write to its table"
+	revokeReason               = "REVOKE takes away access a role may rely on"
+	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
+)
 
 // rlsForceDirections counts the FORCE changes that turn the flag on and off.
 func rlsForceDirections(changes difftypes.RLSForceChanges) (forced, unforced int) {
