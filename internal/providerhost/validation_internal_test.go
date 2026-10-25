@@ -38,6 +38,15 @@ func TestSchemaValidationCaptureRetainsContextAndSource(t *testing.T) {
 	c.Assert(source.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 	c.Assert(source.Dependencies["app.records"], qt.DeepEquals, []string{"app.parent"})
 }
+func TestSchemaValidationLeavesDeclaredRowsToTheDataServices(t *testing.T) {
+	c := qt.New(t)
+	capture := validationCapture()
+	source := validationSchema()
+	source.ManagedData = []schemamodel.ManagedData{{StructName: "Record", Table: "records", Schema: "app", Keys: []string{"id"}, File: "records.yaml"}}
+	captured, err := capture.validation(source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(captured.Tables, qt.HasLen, 1)
+}
 func TestSchemaValidationRefusesLostOrAmbiguousDeclarations(t *testing.T) {
 	for _, test := range []struct {
 		name   string
