@@ -235,7 +235,7 @@ var atlasChecks = []AtlasCheck{
 	{
 		Code: "PG103", Meaning: "concurrent operation without the atlas:txmode none header", Pro: true,
 		PtahRules: []string{"PG103"}, Status: StatusCovered,
-		Note: "the atlas:txmode none header and Ptah's own directive both silence it",
+		Note: "the atlas:txmode none header and Ptah's own directive both silence it, and so does a golang-migrate file that holds nothing else",
 	},
 	{Code: "PG104", Meaning: "PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock", Pro: true, PtahRules: []string{"PG104"}, Status: StatusCovered},
 	{Code: "PG105", Meaning: "UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock", Pro: true, PtahRules: []string{"PG105"}, Status: StatusCovered},
@@ -302,7 +302,7 @@ var atlasChecks = []AtlasCheck{
 
 	{Code: "TX101", Meaning: "statements cannot run in a single transaction", Pro: true, PtahRules: []string{"TX101"}, Status: StatusCovered},
 	{Code: "TX201", Meaning: "a nested transaction was detected", Pro: true, PtahRules: []string{"TX201"}, Status: StatusCovered,
-		Note: "not reported in a golang-migrate directory, whose tool opens no transaction around a file"},
+		Note: "in a golang-migrate directory, whose tool opens no transaction around a file, only a block opened inside another"},
 
 	// The six naming rules read the convention a project configures, as the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block

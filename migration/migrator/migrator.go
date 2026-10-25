@@ -270,6 +270,9 @@ type Migrator struct {
 	metadataAvailable        bool
 	legacyRevisionTable      bool
 	postgresIndexObservation *postgresIndexObservation
+	// ownTransactions applies a body that decides its own transactions the
+	// way a runner that wraps none does; see [Migrator.WithOwnTransactions].
+	ownTransactions bool
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -2637,6 +2640,9 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionUp); err != nil {
 		return err
 	}
+	if err := m.validateUpOwnTransactions(migrations); err != nil {
+		return err
+	}
 	resolvedTimeouts := make(map[*Migration]migrationfile.Timeouts, len(migrations))
 	for _, migration := range migrations {
 		timeouts, err := m.effectiveUpTimeouts(migration)
@@ -2751,7 +2757,11 @@ func (m *Migrator) applyUpMigrationObserved(
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	if txMode == MigrationTxModeNone {
+	ownBlocks, txMode, err := m.upOwnTransactionMode(migration, txMode)
+	if err != nil {
+		return false, err
+	}
+	if txMode == MigrationTxModeNone && ownBlocks.Empty() {
 		if err := m.validateNoTransactionSQL(migration, MigrationDirectionUp); err != nil {
 			return false, err
 		}
@@ -2788,6 +2798,9 @@ func (m *Migrator) applyUpMigrationObserved(
 	// [Migrator.refuseUpOverUnsafeIndex].
 	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode); err != nil {
 		return false, err
+	}
+	if !ownBlocks.Empty() {
+		return checksDeferred, m.applyUpMigrationOwnTransactions(ctx, migration, startedAt, plan, ownBlocks)
 	}
 	if txMode == MigrationTxModeNone {
 		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt, plan)

@@ -391,6 +391,14 @@ func migrationExecutionProgress(
 		}
 	}
 
+	// A body that runs its own transactions knows which of its statements
+	// stayed committed; the statement that failed says only where it stopped.
+	if owned, ok := errors.AsType[*ownTransactionFailure](err); ok {
+		progress := migrationExecutionProgress(owned.err, dialect, txMode)
+		progress.Applied = owned.applied
+		return progress
+	}
+
 	if observationErr, ok := errors.AsType[*StatementObservationError](err); ok {
 		event := observationErr.Event
 		// The observed statement executed and only the observation that follows

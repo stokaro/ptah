@@ -190,7 +190,7 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 			Targets:  []string{"postgres"},
 		},
 		File: func(file *lintkit.File) []lintext.Violation {
-			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
+			if (!file.IsUp && !file.IsDown) || file.NoTransaction || runsAlone(file) {
 				return nil
 			}
 			var findings []lintext.Violation
@@ -204,6 +204,25 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 			return findings
 		},
 	}
+}
+
+// runsAlone reports a file of one statement whose runner opens no
+// transaction around a file. Such a runner sends the statement on its own, and
+// PostgreSQL runs a statement sent alone outside a transaction, so a statement
+// it refuses inside one runs: measured with golang-migrate on PostgreSQL, a file
+// holding only CREATE INDEX CONCURRENTLY applies (stokaro/ptah#4962). A second
+// statement makes the file one implicit transaction again, which TX101 reports.
+func runsAlone(file *lintkit.File) bool {
+	if file.TransactionOwner != lintext.TransactionOwnerFile {
+		return false
+	}
+	statements := 0
+	for i := range file.Statements {
+		if len(file.Statements[i].Words) > 0 {
+			statements++
+		}
+	}
+	return statements == 1
 }
 
 // postgresPerChunkIndexInTransactionRule is PG103 for TimescaleDB's per-chunk
@@ -231,7 +250,7 @@ func postgresPerChunkIndexInTransactionRule() lintkit.Rule {
 			Targets:  []string{"postgres"},
 		},
 		File: func(file *lintkit.File) []lintext.Violation {
-			if (!file.IsUp && !file.IsDown) || file.NoTransaction {
+			if (!file.IsUp && !file.IsDown) || file.NoTransaction || runsAlone(file) {
 				return nil
 			}
 			var findings []lintext.Violation
