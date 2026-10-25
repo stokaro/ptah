@@ -68,8 +68,12 @@ func cutNamesWarning(count int, listing rundiag.Listing) string {
 // cut: its kind, the place it is unique in, and the name stored. It reads the
 // server, not the reader, so a test can hold the reader to it. The index a
 // PRIMARY KEY, UNIQUE or EXCLUDE constraint builds carries the constraint's
-// name, and is counted as the constraint. On a database built from a file
-// that writes no name of exactly 63 bytes, these are the names the server cut.
+// name, and is counted as the constraint. A NOT NULL constraint is left out:
+// PostgreSQL 18 records one for each NOT NULL column under a name it derives,
+// such as `billing_standard_invoice_detailed_lines_parent_line_id_not_null`,
+// and cuts that to 63 bytes for a long table and column, so it is a name the
+// file never wrote. On a database built from a file that writes no name of
+// exactly 63 bytes and no named NOT NULL, these are the names the server cut.
 func catalogCutNames(c *qt.C, url string) []sqlschema.StoredName {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
@@ -80,7 +84,7 @@ func catalogCutNames(c *qt.C, url string) []sqlschema.StoredName {
 			WHEN 'u' THEN 'unique constraint' WHEN 'c' THEN 'check' ELSE 'constraint' END,
 			'table "public.' || t.relname || '"', k.conname
 		FROM pg_constraint k JOIN pg_class t ON t.oid = k.conrelid
-		WHERE k.connamespace = 'public'::regnamespace AND octet_length(k.conname) = 63
+		WHERE k.connamespace = 'public'::regnamespace AND octet_length(k.conname) = 63 AND k.contype <> 'n'
 		UNION ALL
 		SELECT CASE r.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized view'
 			WHEN 'S' THEN 'sequence' ELSE 'index' END,
