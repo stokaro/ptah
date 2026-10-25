@@ -167,10 +167,10 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	return validateSQLSchemaDeclaration(description, engine)
 }
 
-// validateEngineAdditions checks what contracts 25.1 to 25.3 add to an
+// validateEngineAdditions checks what contracts 25.1 to 25.4 add to an
 // engine: the data services it names, its statement facts, its query dialect,
-// its embedding store, its common objects, its HCL claims and the features it
-// lists beside them.
+// its embedding store, its common objects, its HCL claims, its scope
+// selections and the features it lists beside them.
 func validateEngineAdditions(description *protocol.Description, engine *protocol.Engine) error {
 	if err := validateDataServices(description, engine); err != nil {
 		return err
@@ -178,12 +178,12 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	if err := validateEmbeddingEngine(description, engine); err != nil {
 		return err
 	}
-	for _, check := range []func(*protocol.Description, *protocol.Engine) error{validateCommonObjectSupport, validateHCLSource, validateEncodeEngine} {
+	for _, check := range []func(*protocol.Description, *protocol.Engine) error{validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections} {
 		if err := check(description, engine); err != nil {
 			return err
 		}
 	}
-	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature} {
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, StatementsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}

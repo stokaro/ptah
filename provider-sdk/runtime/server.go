@@ -76,6 +76,7 @@ type Server struct {
 	EmbeddingStore  provider.EmbeddingStore
 	CommonObjects   provider.CommonObjectPreparer
 	SourceEncoder   provider.SourceEncoder
+	Statements      provider.StatementRunner
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -118,6 +119,7 @@ func (s Server) Validate() error {
 		{provider.EmbeddingStoreFeature, !nilService(s.EmbeddingStore)},
 		{provider.CommonObjectsFeature, !nilService(s.CommonObjects)},
 		{provider.EncodeSourceFeature, !nilService(s.SourceEncoder)},
+		{provider.StatementsFeature, !nilService(s.Statements)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)

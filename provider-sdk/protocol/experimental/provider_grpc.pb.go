@@ -84,6 +84,9 @@ const (
 	Provider_SearchEmbeddings_FullMethodName          = "/ptah.provider.experimental.Provider/SearchEmbeddings"
 	Provider_PrepareCommonObjects_FullMethodName      = "/ptah.provider.experimental.Provider/PrepareCommonObjects"
 	Provider_EncodeSource_FullMethodName              = "/ptah.provider.experimental.Provider/EncodeSource"
+	Provider_RunStatement_FullMethodName              = "/ptah.provider.experimental.Provider/RunStatement"
+	Provider_ReadStatementRows_FullMethodName         = "/ptah.provider.experimental.Provider/ReadStatementRows"
+	Provider_CloseStatement_FullMethodName            = "/ptah.provider.experimental.Provider/CloseStatement"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -169,6 +172,11 @@ type ProviderClient interface {
 	// lists source.encode.
 	PrepareCommonObjects(ctx context.Context, in *PrepareCommonObjectsRequest, opts ...grpc.CallOption) (*PreparedCommonObjects, error)
 	EncodeSource(ctx context.Context, in *EncodeSourceRequest, opts ...grpc.CallOption) (*EncodedSource, error)
+	// Contract 25.4. A host calls these only when the provider and the engine
+	// list sessions.statements.
+	RunStatement(ctx context.Context, in *RunStatementRequest, opts ...grpc.CallOption) (*StatementResult, error)
+	ReadStatementRows(ctx context.Context, in *ReadStatementRowsRequest, opts ...grpc.CallOption) (*StatementRows, error)
+	CloseStatement(ctx context.Context, in *CloseStatementRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type providerClient struct {
@@ -829,6 +837,36 @@ func (c *providerClient) EncodeSource(ctx context.Context, in *EncodeSourceReque
 	return out, nil
 }
 
+func (c *providerClient) RunStatement(ctx context.Context, in *RunStatementRequest, opts ...grpc.CallOption) (*StatementResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatementResult)
+	err := c.cc.Invoke(ctx, Provider_RunStatement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadStatementRows(ctx context.Context, in *ReadStatementRowsRequest, opts ...grpc.CallOption) (*StatementRows, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatementRows)
+	err := c.cc.Invoke(ctx, Provider_ReadStatementRows_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CloseStatement(ctx context.Context, in *CloseStatementRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Provider_CloseStatement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -912,6 +950,11 @@ type ProviderServer interface {
 	// lists source.encode.
 	PrepareCommonObjects(context.Context, *PrepareCommonObjectsRequest) (*PreparedCommonObjects, error)
 	EncodeSource(context.Context, *EncodeSourceRequest) (*EncodedSource, error)
+	// Contract 25.4. A host calls these only when the provider and the engine
+	// list sessions.statements.
+	RunStatement(context.Context, *RunStatementRequest) (*StatementResult, error)
+	ReadStatementRows(context.Context, *ReadStatementRowsRequest) (*StatementRows, error)
+	CloseStatement(context.Context, *CloseStatementRequest) (*Empty, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1116,6 +1159,15 @@ func (UnimplementedProviderServer) PrepareCommonObjects(context.Context, *Prepar
 }
 func (UnimplementedProviderServer) EncodeSource(context.Context, *EncodeSourceRequest) (*EncodedSource, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EncodeSource not implemented")
+}
+func (UnimplementedProviderServer) RunStatement(context.Context, *RunStatementRequest) (*StatementResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunStatement not implemented")
+}
+func (UnimplementedProviderServer) ReadStatementRows(context.Context, *ReadStatementRowsRequest) (*StatementRows, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadStatementRows not implemented")
+}
+func (UnimplementedProviderServer) CloseStatement(context.Context, *CloseStatementRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseStatement not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2308,6 +2360,60 @@ func _Provider_EncodeSource_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_RunStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunStatementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).RunStatement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_RunStatement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).RunStatement(ctx, req.(*RunStatementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadStatementRows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadStatementRowsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadStatementRows(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadStatementRows_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadStatementRows(ctx, req.(*ReadStatementRowsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CloseStatement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseStatementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CloseStatement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CloseStatement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CloseStatement(ctx, req.(*CloseStatementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2574,6 +2680,18 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EncodeSource",
 			Handler:    _Provider_EncodeSource_Handler,
+		},
+		{
+			MethodName: "RunStatement",
+			Handler:    _Provider_RunStatement_Handler,
+		},
+		{
+			MethodName: "ReadStatementRows",
+			Handler:    _Provider_ReadStatementRows_Handler,
+		},
+		{
+			MethodName: "CloseStatement",
+			Handler:    _Provider_CloseStatement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

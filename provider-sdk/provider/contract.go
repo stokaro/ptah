@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 3
+const ContractMinor uint32 = 4
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -43,7 +43,7 @@ const (
 // declares Engine.common_objects, so their calls are two-way too.
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
-		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature}
+		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -134,8 +134,9 @@ func ValidateHostFeatures(features []string) error {
 // from each engine's. The query dialects are removed unless the host lists
 // QueryDialectFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
-// CommonObjectsFeature, and the HCL claims unless it lists HCLSourceFeature.
-// Without EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
+// CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, and
+// the scope selections unless it lists ScopeSelectionsFeature. Without
+// EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
 // claim loses YAML from its source formats. Both sides validate with this
@@ -163,6 +164,9 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		if !slices.Contains(hostFeatures, HCLSourceFeature) {
 			engine.HclSource = nil
+		}
+		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
+			engine.ScopeSelections = nil
 		}
 		if !slices.Contains(hostFeatures, EntryKeysFeature) {
 			withoutEntryKeys(engine)
