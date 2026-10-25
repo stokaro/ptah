@@ -50,7 +50,7 @@ func (h *Host) sourceSubject(engine string, source, normalized *protocol.Referen
 		return objectidentity.ID{}, err
 	}
 	if id.Kind != objectidentity.KindColumn && id.Kind != objectidentity.KindIndex {
-		return id, nil
+		return id, h.selections.fit(id)
 	}
 	path := id.Namespace.Values()
 	if len(path) != 1 {

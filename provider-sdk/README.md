@@ -1476,6 +1476,16 @@ a relation that is not in a schema, a grant object type that is not upper-case
 words, is a common target such as `TABLE`, or names two selections, and a kept
 requirement that names no other selection.
 
+The host reads a kind one way whichever engine holds it, so it refuses a
+provider whose engines select one kind differently or compare its names by
+other identifier rules, and a grant object type that two engines give to two
+kinds. It refuses an object of a selected kind whose identity the naming cannot
+read: an identity with a database, a catalog, a path, a parent or an overload,
+a database-wide one with a schema, and one in a schema that leaves the schema
+out when the engine has a default schema. A grant names an object in the
+default schema without a schema, and the host reads the name with the engine's
+identifier rules.
+
 The SDK conformance tests in `runtime` page a statement's result, release one
 before its last page, refuse a malformed reply from a peer that is not the SDK
 server, leave a write whose reply cannot be read unknown, and negotiate the

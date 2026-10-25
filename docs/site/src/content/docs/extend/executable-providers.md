@@ -430,6 +430,14 @@ session's database, or refuses it with the reason. A check the database refuses
 reports the server's message. An engine that does not list the feature refuses
 the checks.
 
+The `--include`, `--exclude` and `--schema` selectors name a provider's objects
+by the selector types its engines declare under `scope.selections`, such as
+`*[type=topic]`. A grant whose object type a selection declares leaves a scope
+with the object it names, and a kept object keeps the objects it requires of
+the kinds its selection lists, unless an exclusion names them. A read that
+reports an object of a selected kind under an identity its naming cannot read
+is refused.
+
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions
 or names, and Ptah runs no SQL of its own there. The provider reports its

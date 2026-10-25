@@ -42,6 +42,7 @@ type Host struct {
 	models      map[modelKey]*modelContract
 	modelCodecs []schemaext.Codec
 	goSource    *goSource
+	selections  *scopeSelections
 }
 
 type target struct {
@@ -91,6 +92,10 @@ var hostFeatures = []string{
 	// blocks, read by the frontend and decoded by the provider; see
 	// Host.hclExtensions.
 	provider.HCLSourceFeature,
+	// A command's scope names a provider's objects by the selector types its
+	// engines declare, and a grant rides the object it names; see
+	// newScopeSelections.
+	provider.ScopeSelectionsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
@@ -134,6 +139,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		return nil, err
 	}
 	if err = registerQueryDialects(host.description.GetEngines()); err != nil {
+		client.Close()
+		return nil, err
+	}
+	if host.selections, err = newScopeSelections(host.description); err != nil {
 		client.Close()
 		return nil, err
 	}
@@ -183,8 +192,9 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 	// to the host-owned JSON projection. Repeated protocol fields
 	// are sets here; their wire order is not semantic identity. Session IDs and
 	// database addresses are deliberately absent. An engine that reads its SQL
-	// documents whole adds how it reads them; one that declares nothing keeps
-	// the digest it has without the field.
+	// documents whole adds how it reads them, and one that declares scope
+	// selections adds them; one that declares neither keeps the digest it has
+	// without the fields.
 	projection := struct {
 		Version            int                          `json:"version"`
 		Engine             string                       `json:"engine"`
@@ -198,6 +208,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		Comparisons        []comparisonIdentityContract `json:"comparisons"`
 		Planning           []planningIdentityContract   `json:"planning"`
 		SQLSchema          *sqlSchemaIdentity           `json:"sql_schema,omitempty"`
+		ScopeSelections    []scopeSelectionIdentity     `json:"scope_selections,omitempty"`
 	}{8,
 		t.engine.GetId(),
 		featureSet(t.host.description.GetFeatures()),
@@ -208,7 +219,7 @@ func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, 
 		yamlKeyIdentities(t.engine.GetYamlSourceKeys()),
 		goDirectiveIdentities(t.engine.GetGoSourceDirectives()),
 		comparisonContracts(t.engine.GetComparisons()), planningContracts(t.engine.GetPlanning()),
-		sqlSchemaIdentityOf(t.engine.GetSqlSchema())}
+		sqlSchemaIdentityOf(t.engine.GetSqlSchema()), scopeSelectionIdentities(t.engine.GetScopeSelections())}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return catalog.ProviderIdentity{}, fmt.Errorf("encode negotiated provider contract: %w", err)
