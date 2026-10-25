@@ -297,3 +297,8 @@ These are for the future implementation. None holds today.
   spelling, both behind `planning.policy`. The migrate timeout and the dev
   snapshot realm need no contract change: the host reads the session's timeout
   capabilities and the provider's `database.dev-realms` declaration.
+- [ADR 0038](0038-a-provider-runs-the-operators-statements-and-returns-what-they-read.md)
+  replaces the plan for `rowCountsUnreported` under "The built-in YDB
+  implementation goes". There is no `execute.row-counts` capability: a
+  provider's statement result carries `rows_affected` only when the engine
+  measured it, and the script runner reads its absence as an unreported count.
