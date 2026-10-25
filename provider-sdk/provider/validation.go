@@ -48,6 +48,9 @@ func ValidateSchemaRequest(description *protocol.Description, request *protocol.
 	if err := validateNamespaceDeclarations(request.Namespaces); err != nil {
 		return err
 	}
+	if err := validateValidationCommonObjects(engine, request); err != nil {
+		return err
+	}
 	for _, declared := range request.Enums {
 		if !comparisonReason(declared.GetName()) {
 			return fmt.Errorf("%w: missing declared enum name", ErrProtocol)
@@ -109,4 +112,17 @@ func ValidateSchemaResult(description *protocol.Description, request *protocol.V
 		}
 	}
 	return nil
+}
+
+// validateValidationCommonObjects checks the declared common objects a
+// validation carries, on an engine that carries them.
+func validateValidationCommonObjects(engine *protocol.Engine, request *protocol.ValidateSchemaRequest) error {
+	if request.GetCommonObjects() == nil {
+		return nil
+	}
+	kinds := engineCommonKinds(engine)
+	if len(kinds) == 0 {
+		return commonObjectError("the engine carries no common object")
+	}
+	return validateDeclaredCommonObjects(request.GetIdentifiers(), kinds, request.GetCommonObjects())
 }

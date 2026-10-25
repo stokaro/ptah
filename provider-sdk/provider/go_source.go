@@ -14,6 +14,12 @@ func validateGoSourceDirectives(description *protocol.Description, engine *proto
 		if err := validateGoSourceDirective(description, engine.GetId(), claim); err != nil {
 			return err
 		}
+		if len(claim.GetInherited()) != 0 && !slices.Contains(engine.GetFeatures(), EntryKeysFeature) {
+			return sourceError("an inherited Go attribute needs " + EntryKeysFeature)
+		}
+		if err := validateInheritedNames(claim.GetInherited(), claim.GetAttributes()); err != nil {
+			return err
+		}
 		if claimed[claim.GetDirective()] {
 			return sourceError("duplicate Go directive claim")
 		}
@@ -85,6 +91,9 @@ func validateGoSourceFragments(description *protocol.Description, engine string,
 			return err
 		}
 		if err := validateGoSourceBinding(document, claim, fragment); err != nil {
+			return err
+		}
+		if err := validateInheritedAttributes(claim.GetInherited(), fragment); err != nil {
 			return err
 		}
 	}

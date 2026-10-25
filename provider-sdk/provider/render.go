@@ -8,13 +8,53 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// TextUnitsFeature enables RenderRequest.form and RenderRowWritesRequest.form:
+// a host asks for SQL text units only, portable statements the same
+// provider's Execute accepts read back from a file, and a change without a
+// text form refuses the batch with the reason NO_TEXT_FORM. It is a two-way
+// feature. A provider lists it, and so does each engine whose changes it can
+// write as text. Contract 25.3.
+const TextUnitsFeature = "render.text-units"
+
+// validateUnitForm refuses a form the negotiated engine does not allow.
+func validateUnitForm(description *protocol.Description, engine *protocol.Engine, form protocol.RenderRequest_Form) error {
+	switch form {
+	case protocol.RenderRequest_ANY:
+		return nil
+	case protocol.RenderRequest_TEXT:
+		if !slices.Contains(description.GetFeatures(), TextUnitsFeature) || !slices.Contains(engine.GetFeatures(), TextUnitsFeature) {
+			return fmt.Errorf("%w: %s was not negotiated", ErrProtocol, TextUnitsFeature)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: unknown unit form", ErrProtocol)
+	}
+}
+
+// validateTextUnits refuses a native unit in the TEXT form.
+func validateTextUnits(form protocol.RenderRequest_Form, units []*protocol.Unit) error {
+	if form != protocol.RenderRequest_TEXT {
+		return nil
+	}
+	for _, unit := range units {
+		if _, text := unit.GetBody().(*protocol.Unit_Sql); !text {
+			return fmt.Errorf("%w: the TEXT form carries a native unit", ErrProtocol)
+		}
+	}
+	return nil
+}
+
 // ValidateRenderRequest checks the complete rendering batch before owner code
 // runs. Native operations must use the negotiated OPERATION model.
 func ValidateRenderRequest(description *protocol.Description, request *protocol.RenderRequest) error {
 	if request == nil || !slices.Contains(description.GetFeatures(), RenderFeature) {
 		return fmt.Errorf("%w: rendering is unavailable", ErrProtocol)
 	}
-	if _, _, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures()); err != nil {
+	engine, _, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err != nil {
+		return err
+	}
+	if err := validateUnitForm(description, engine, request.GetForm()); err != nil {
 		return err
 	}
 	for name := range request.GetCapabilities() {
@@ -28,15 +68,21 @@ func ValidateRenderRequest(description *protocol.Description, request *protocol.
 			return fmt.Errorf("%w: missing or duplicate rendering identity", ErrProtocol)
 		}
 		seen[change.GetId()] = true
-		if err := validateRenderOperation(description, request, change); err != nil {
+		if err := validateRenderOperation(description, engine, request, change); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateRenderOperation(description *protocol.Description, request *protocol.RenderRequest, change *protocol.Change) error {
+func validateRenderOperation(description *protocol.Description, engine *protocol.Engine, request *protocol.RenderRequest, change *protocol.Change) error {
 	switch operation := change.GetOperation().(type) {
+	case *protocol.Change_CommonObject:
+		kinds := engineCommonKinds(engine)
+		if len(kinds) == 0 {
+			return commonObjectError("the engine carries no common object")
+		}
+		return validateCommonObjectChange(engine.GetId(), kinds, change.GetObject(), operation.CommonObject)
 	case *protocol.Change_Native:
 		if operation == nil {
 			return fmt.Errorf("%w: missing native rendering operation", ErrProtocol)

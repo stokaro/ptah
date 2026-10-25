@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 2
+const ContractMinor uint32 = 3
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -39,9 +39,11 @@ const (
 // Options.HostFeatures; a provider sees what the host listed in HostFeatures.
 // A new RPC needs no host feature, since a host that does not know it never
 // calls it, unless it comes with an addition to an existing message: the
-// embedding store declares Engine.embeddings, so its calls are two-way too.
+// embedding store declares Engine.embeddings, and the common-object wire
+// declares Engine.common_objects, so their calls are two-way too.
 func TwoWayFeatures() []string {
-	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature}
+	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
+		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -130,10 +132,15 @@ func ValidateHostFeatures(features []string) error {
 // NegotiatedDescription returns a copy of description with every two-way
 // feature the host did not list removed, from the provider's features and
 // from each engine's. The query dialects are removed unless the host lists
-// QueryDialectFeature, and the embedding store declarations unless it lists
-// EmbeddingStoreFeature. Both sides validate with this copy, so neither sends
-// an addition the other did not ask for. Services and everything the
-// contract had at minor 0 are kept.
+// QueryDialectFeature, the embedding store declarations unless it lists
+// EmbeddingStoreFeature, the common-object declarations unless it lists
+// CommonObjectsFeature, and the HCL claims unless it lists HCLSourceFeature.
+// Without EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
+// YAML and Go claims that inherit common attributes are removed, since their
+// owner needs what the host would not send, and a model left with no YAML
+// claim loses YAML from its source formats. Both sides validate with this
+// copy, so neither sends an addition the other did not ask for. Services and
+// everything the contract had at minor 0 are kept.
 func NegotiatedDescription(description *protocol.Description, hostFeatures []string) *protocol.Description {
 	negotiated := proto.CloneOf(description)
 	if negotiated == nil {
@@ -151,8 +158,42 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		if !slices.Contains(hostFeatures, EmbeddingStoreFeature) {
 			engine.Embeddings = nil
 		}
+		if !slices.Contains(hostFeatures, CommonObjectsFeature) {
+			engine.CommonObjects = nil
+		}
+		if !slices.Contains(hostFeatures, HCLSourceFeature) {
+			engine.HclSource = nil
+		}
+		if !slices.Contains(hostFeatures, EntryKeysFeature) {
+			withoutEntryKeys(engine)
+		}
 	}
 	return negotiated
+}
+
+// withoutEntryKeys removes the source claims that need EntryKeysFeature, and
+// YAML from the source formats of a model that no YAML claim names after it.
+func withoutEntryKeys(engine *protocol.Engine) {
+	engine.YamlSourceKeys = slices.DeleteFunc(engine.YamlSourceKeys, func(claim *protocol.YAMLSourceKey) bool {
+		// Only an entry scope inherits, so the scope decides alone.
+		return claim.GetScope() != protocol.YAMLSourceKey_DOCUMENT && claim.GetScope() != protocol.YAMLSourceKey_TABLE
+	})
+	engine.GoSourceDirectives = slices.DeleteFunc(engine.GoSourceDirectives, func(claim *protocol.GoSourceDirective) bool {
+		return len(claim.GetInherited()) != 0
+	})
+	claimed := make(map[string]bool)
+	for _, claim := range engine.GetYamlSourceKeys() {
+		for _, kind := range claim.GetModels() {
+			claimed[kind] = true
+		}
+	}
+	for _, model := range engine.GetValueModels() {
+		if !claimed[model.GetKind()] {
+			model.SourceFormats = slices.DeleteFunc(model.SourceFormats, func(format protocol.SourceDocument_Format) bool {
+				return format == protocol.SourceDocument_YAML
+			})
+		}
+	}
 }
 
 type hostFeaturesKey struct{}
