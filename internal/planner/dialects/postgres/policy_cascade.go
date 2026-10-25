@@ -21,6 +21,11 @@ import (
 // refused and names the object, and changing the object so it no longer reads
 // the relation first is the way through.
 //
+// The refusal holds in both statement styles. A view rebuild drops its objects
+// with CASCADE only in Ptah's own style; the exact style drops them without
+// it, and the server refuses that drop while the policy reads the relation, so
+// the plan could not apply either (stokaro/ptah#4965).
+//
 // The objects answer for themselves through [schemaext.RelationReader], so
 // this planner names no owner. A diff built without a comparison carries no
 // observation and is not checked.
@@ -56,9 +61,13 @@ func refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
 
 // relationsDroppedWithCascade names every view and materialized view the plan
 // drops with CASCADE: a view it cannot replace in place, the view-like objects
-// that read one, and the ones it changes or removes.
+// that read one, the ones a view rebuild takes out, and the ones it changes or
+// removes.
 func relationsDroppedWithCascade(diff *difftypes.SchemaDiff) []string {
 	var dropped []string
+	for _, object := range planViewRebuild(diff).dropped() {
+		dropped = append(dropped, object.Name)
+	}
 	for _, viewDiff := range diff.ViewsModified {
 		if viewDiff.Desired.Name != "" && !viewReplaceKeepsDependents(viewDiff, viewDiff.Desired.Body) {
 			dropped = append(dropped, viewDiff.Desired.Name)

@@ -1703,8 +1703,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.releaseKeyNames(result, diff, released)
 
 	// 5c. Views that read a column whose type changes leave first: PostgreSQL
-	// refuses ALTER COLUMN TYPE under a view. Step 6.6 puts them back.
-	result = p.dropViewsBeforeRetype(result, diff)
+	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes
+	// leaves with everything that reads it. Step 6.6 puts them back.
+	rebuild := planViewRebuild(diff)
+	result = p.dropRebuiltViewLikes(result, rebuild)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
@@ -1727,10 +1729,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// 6.6. Add and modify views, materialized views, and triggers after their
 	// tables/functions exist. The routines that name a relation this plan
 	// creates are ordered with the views, since either may read the other.
-	result = p.addNewViewLikeObjects(result, diff, relationPlaced)
-	result = p.modifyExistingViews(result, diff)
-	result = p.modifyExistingMaterializedViews(result, diff)
-	result = p.recreateViewsAfterRetype(result, diff)
+	result = p.addNewViewLikeObjects(result, diff, relationPlaced, rebuild)
+	result = p.modifyExistingViews(result, diff, rebuild)
+	result = p.createRebuiltViewLikes(result, diff, rebuild, relationPlaced)
 	result = p.addNewTriggers(result, diff)
 	result = p.modifyExistingTriggers(result, diff)
 
@@ -1816,7 +1817,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
-	result = p.removeViewLikes(result, diff)
+	result = p.removeViewLikes(result, diff, rebuild)
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
@@ -2288,23 +2289,41 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 	return ref.Schema, ref.Name
 }
 
+// addNewViewLikeObjects creates the views and materialized views the plan
+// adds, with the routines placed among them. An added object that reads one a
+// view rebuild takes out, and a routine that names one, waits for the rebuild
+// to put it back; see [Planner.createRebuiltViewLikes].
 func (p *Planner) addNewViewLikeObjects(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	routines relationRoutines,
+	rebuild viewRebuild,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	objects := routines.viewLikes()
+	deferred := make(viewLikeSet)
+	for _, object := range append(slices.Clone(rebuild.deferred), deferredRoutines(rebuild, routines)...) {
+		deferred[viewLikeKey(object)] = true
+	}
+	var objects []deporder.ViewLike
+	for _, routine := range routines.viewLikes() {
+		if !deferred.has(routine) {
+			objects = append(objects, routine)
+		}
+	}
 	routineNodes := routines.nodes
 	for _, view := range diff.ViewsAdded {
 		// The body travels WITH the change, so the dependency order this
 		// computes does not depend on finding the view again.
-		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		if object := (deporder.ViewLike{Name: view.Name, Body: view.Body}); !deferred.has(object) {
+			objects = append(objects, object)
+		}
 	}
 	for _, view := range diff.MaterializedViewsAdded {
 		// The body travels WITH the change, so the dependency order this
 		// computes does not depend on finding the view again.
-		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+		if object := (deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true}); !deferred.has(object) {
+			objects = append(objects, object)
+		}
 	}
 
 	// The dialect is what lets a body reference resolve through PostgreSQL's
@@ -2373,27 +2392,26 @@ func (p *Planner) addNewViewLikeObjects(
 // pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
 // before removals, so a modification expressed from outside comes out
 // create-then-drop and ends with no view at all.
-func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	changes := modifiedViewPaths(diff)
-	// A view the retype step dropped is gone already. It is not dropped a
-	// second time, and it is created outright like one this step drops.
-	gone := retypeDropped(diff)
-	cleared := slices.Clone(changes.dropped)
+	// A view the rebuild owns is absent while this step runs. This step
+	// neither drops it nor creates it, and the same holds for everything that
+	// reads it, which the rebuild owns too.
+	owned := rebuild.owns()
+	cleared := make([]string, 0, len(changes.dropped))
 	for _, name := range changes.dropped {
-		if gone[name] {
+		if owned.has(deporder.ViewLike{Name: name}) {
 			continue
 		}
-		result = append(result, p.dropViewNode(name, p.cascades(p.viewDropRelies(diff, name, gone))))
-	}
-	for _, name := range slices.Sorted(maps.Keys(gone)) {
-		if !slices.Contains(cleared, name) {
-			cleared = append(cleared, name)
-		}
+		cleared = append(cleared, name)
+		result = append(result, p.dropViewNode(name, p.cascades(p.viewDropRelies(diff, name, owned))))
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(changes.recreate(diff, semantics), p.targetDialect()) {
-		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, cleared, semantics)
+		if !owned.has(object) {
+			result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, cleared, semantics)
+		}
 	}
 	return result
 }
@@ -2442,41 +2460,27 @@ func (v viewPaths) recreate(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	return recreate
 }
 
-// viewStepRenders names every object [Planner.modifyExistingViews] writes, so
-// a later step that puts views back does not write one a second time.
-func (p *Planner) viewStepRenders(diff *difftypes.SchemaDiff) map[string]bool {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	rendered := make(map[string]bool)
-	for _, viewDiff := range diff.ViewsModified {
-		rendered[viewDiff.Desired.Name] = true
-	}
-	for _, object := range modifiedViewPaths(diff).recreate(diff, semantics) {
-		rendered[object.Name] = true
-	}
-	return rendered
-}
-
 // viewDropRelies reports whether dropping the modified view name relies on
 // CASCADE: a view or materialized view that reads it is still in the database
 // when the drop runs. That is a declared one the view step puts back after
 // the drop, or one the declaration removes, which the removal step drops only
-// later. A reader the retype step dropped is gone by then.
-func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, gone map[string]bool) bool {
+// later. A reader the view rebuild owns is absent by then.
+func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, owned viewLikeSet) bool {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, object := range viewLikesLostToCascade(diff.DeclaredViewLikes, []string{name}, semantics) {
-		if object.Name != name && !gone[object.Name] {
+		if object.Name != name && !owned.has(object) {
 			return true
 		}
 	}
-	return removedReaderRemains(diff, name, gone)
+	return removedReaderRemains(diff, name, owned)
 }
 
 // removedReaderRemains reports whether a view or materialized view the
 // declaration removes reads relation and is still in the database when a
 // step before the removal step drops relation.
-func removedReaderRemains(diff *difftypes.SchemaDiff, relation string, gone map[string]bool) bool {
+func removedReaderRemains(diff *difftypes.SchemaDiff, relation string, owned viewLikeSet) bool {
 	for _, object := range removedViewLikes(diff) {
-		if !gone[object.Name] && object.Name != relation && deporder.ReferencesIdentifier(object.Body, relation) {
+		if !owned.has(object) && object.Name != relation && deporder.ReferencesIdentifier(object.Body, relation) {
 			return true
 		}
 	}
@@ -2599,13 +2603,13 @@ func viewLikesLostToCascade(
 
 // removeViewLikes drops the views and materialized views the declaration no
 // longer holds, each after every removed one that reads it, so no drop relies
-// on CASCADE to take another removed object. One the retype step dropped
+// on CASCADE to take another removed object. One the view rebuild dropped
 // already is left out.
-func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	gone := retypeDropped(diff)
+func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+	owned := rebuild.owns()
 	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
 	for _, object := range removedViewLikes(diff) {
-		if !gone[object.Name] {
+		if !owned.has(object) {
 			removed = append(removed, object)
 		}
 	}
@@ -2630,23 +2634,6 @@ func dropMaterializedViewNode(name string, cascade bool) *ast.DropMaterializedVi
 	drop := ast.NewDropMaterializedView(name).SetIfExists()
 	drop.Cascade = cascade
 	return drop
-}
-
-func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	gone := retypeDropped(diff)
-	// The view travels WITH the change (stokaro/ptah#2315). A change carrying
-	// none names a view the pre-change database did not hold, and there is
-	// nothing to recreate.
-	for _, viewDiff := range diff.MaterializedViewsModified {
-		if view := viewDiff.Desired; view.Name != "" {
-			// One the retype step dropped is gone already and is only created.
-			if !gone[view.Name] {
-				result = append(result, dropMaterializedViewNode(view.Name, p.cascades(p.viewDropRelies(diff, view.Name, gone))))
-			}
-			result = append(result, modelast.FromMaterializedView(view))
-		}
-	}
-	return result
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {

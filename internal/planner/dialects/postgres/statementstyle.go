@@ -82,9 +82,9 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff)
 			return true
 		}
 	}
-	gone := retypeDropped(diff)
+	owned := planViewRebuild(diff).owns()
 	for _, object := range removedViewLikes(diff) {
-		if !gone[object.Name] && deporder.ReferencesIdentifier(object.Body, table) {
+		if !owned.has(object) && deporder.ReferencesIdentifier(object.Body, table) {
 			return true
 		}
 	}
