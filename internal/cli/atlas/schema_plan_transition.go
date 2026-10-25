@@ -166,7 +166,7 @@ func validateAtlasSchemaPlanTransition(
 	if len(transition.fromURLs) > 1 {
 		return fmt.Errorf("%s accepts multiple --from URLs, but Ptah plans against one target database URL", verb)
 	}
-	if err := ensureAtlasPlanDatabaseURL(verb, transition.fromURLs[0]); err != nil {
+	if err := ensureAtlasPlanDatabaseURL(cmd.Context(), verb, transition.fromURLs[0]); err != nil {
 		return err
 	}
 	if len(transition.toURLs) == 0 {

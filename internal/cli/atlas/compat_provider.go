@@ -87,17 +87,21 @@ func installAtlasProviderSession(root *cobra.Command, policy atlascompatpolicy.P
 	}
 	for _, name := range []string{"schema", "migrate", "script"} {
 		if group, _, err := root.Find([]string{name}); err == nil && group != root {
-			installProviderSessionOnLeaves(group)
+			for _, verb := range group.Commands() {
+				installProviderSession(verb)
+			}
 		}
 	}
 }
 
-func installProviderSessionOnLeaves(cmd *cobra.Command) {
-	if children := cmd.Commands(); len(children) != 0 {
-		for _, child := range children {
-			installProviderSessionOnLeaves(child)
-		}
-		return
+// installProviderSession gives cmd and every command below it that runs a
+// session. The groups it starts below only print their help, so they get none,
+// and a manifest variable that fails to load does not stop them printing it. A
+// command with subcommands may run a verb of its own: `schema plan` writes a
+// plan, and connects to --from and --dev-url as its subcommands do.
+func installProviderSession(cmd *cobra.Command) {
+	for _, child := range cmd.Commands() {
+		installProviderSession(child)
 	}
 	run := cmd.RunE
 	if run == nil {
