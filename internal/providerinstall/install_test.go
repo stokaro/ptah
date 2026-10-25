@@ -221,7 +221,7 @@ func TestInstall_TheRecordNamesTheLastInstall(t *testing.T) {
 	c.Assert(again.Installed, qt.IsTrue)
 	c.Assert(count(srv, "ptah-plugin-ydb_0.2.0_linux_amd64.tar.gz"), qt.Equals, 2)
 	// The other version stays on disk and is not read.
-	c.Assert(names(providerinstall.ProviderDir(i.Root, providerID)), qt.DeepEquals, []string{"0.1.0", "0.2.0", "installed-linux_amd64.json"})
+	c.Assert(names(providerinstall.ProviderDir(i.Root, providerID)), qt.DeepEquals, []string{".install.lock", "0.1.0", "0.2.0", "installed-linux_amd64.json"})
 }
 
 func TestInstall_ReplacesACorruptInstallation(t *testing.T) {
@@ -239,11 +239,18 @@ func TestInstall_ReplacesACorruptInstallation(t *testing.T) {
 	c.Assert(names(filepath.Dir(filepath.Dir(second.Executable))), qt.DeepEquals, []string{"linux_amd64"})
 }
 
+// TestInstall_ParallelInstallsAgree starts installs of one release at once.
+// Each install reads checksums.txt right before it takes the store, so the
+// server holds those answers back until every install has asked, and all of
+// them reach the store together. One downloads and publishes the release; each
+// other one waits for the lock and finds the record naming it.
 func TestInstall_ParallelInstallsAgree(t *testing.T) {
 	c := qt.New(t)
-	srv := newServer(c, provider("0.2.0", 25, 0))
-	i := discovering(c, srv)
+	release := provider("0.2.0", 25, 0)
+	srv := newServer(c, release)
 	const workers = 8
+	srv.Handle(providerrelease.ChecksumsName, together(workers, release.Assets[providerrelease.ChecksumsName]))
+	i := discovering(c, srv)
 	results := make([]providerinstall.Result, workers)
 	errs := make([]error, workers)
 	var wg sync.WaitGroup
@@ -251,12 +258,16 @@ func TestInstall_ParallelInstallsAgree(t *testing.T) {
 		wg.Go(func() { results[n], errs[n] = i.Install(context.Background(), "ydb", "") })
 	}
 	wg.Wait()
+	installed := 0
 	for n := range workers {
 		c.Assert(errs[n], qt.IsNil, qt.Commentf("worker %d", n))
 		c.Assert(string(must.Must(os.ReadFile(results[n].Executable))), qt.Equals, "executable 0.2.0")
+		installed += map[bool]int{true: 1, false: 0}[results[n].Installed]
 	}
+	c.Assert(installed, qt.Equals, 1)
+	c.Assert(count(srv, ".tar.gz"), qt.Equals, 1)
 	c.Assert(names(providerinstall.Dir(i.Root, providerID, "0.2.0", linux)), qt.DeepEquals, []string{"ptah-plugin-ydb"})
-	c.Assert(names(providerinstall.ProviderDir(i.Root, providerID)), qt.DeepEquals, []string{"0.2.0", "installed-linux_amd64.json"})
+	c.Assert(names(providerinstall.ProviderDir(i.Root, providerID)), qt.DeepEquals, []string{".install.lock", "0.2.0", "installed-linux_amd64.json"})
 	record, _, err := providerinstall.ReadRecord(i.Root, providerID, linux)
 	c.Assert(err, qt.IsNil)
 	c.Assert(record.SHA256, qt.Equals, archivetest.SHA256([]byte("executable 0.2.0")))

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -34,6 +35,32 @@ func TestRecord_HappyPath(t *testing.T) {
 	_, _, err = providerinstall.ReadRecord(root, providerID, windows)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 	// The write leaves no temporary file behind.
+	c.Assert(names(providerinstall.ProviderDir(root, providerID)), qt.DeepEquals, []string{"installed-linux_amd64.json"})
+}
+
+// TestWriteRecord_ReplacesARecordAReaderHolds holds the record open while a
+// new one is written and lets go a moment later, as a provider selection in
+// another process does. Windows refuses to replace the record while the reader
+// holds it, so the write waits for the reader there; other systems replace it
+// at once. Either way the write succeeds and the new record is read back.
+func TestWriteRecord_ReplacesARecordAReaderHolds(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	c.Assert(providerinstall.WriteRecord(root, linux, goodRecord()), qt.IsNil)
+	reader, err := os.Open(providerinstall.RecordPath(root, providerID, linux))
+	c.Assert(err, qt.IsNil)
+	released := make(chan error, 1)
+	time.AfterFunc(200*time.Millisecond, func() { released <- reader.Close() })
+	newer := goodRecord()
+	newer.Version, newer.Executable = "0.3.0", "0.3.0/linux_amd64/ptah-plugin-ydb"
+
+	err = providerinstall.WriteRecord(root, linux, newer)
+
+	c.Assert(<-released, qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	record, _, err := providerinstall.ReadRecord(root, providerID, linux)
+	c.Assert(err, qt.IsNil)
+	c.Assert(record, qt.DeepEquals, newer)
 	c.Assert(names(providerinstall.ProviderDir(root, providerID)), qt.DeepEquals, []string{"installed-linux_amd64.json"})
 }
 

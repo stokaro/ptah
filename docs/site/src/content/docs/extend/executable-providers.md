@@ -238,9 +238,11 @@ readable only by you. Then it writes the install record
 `ptah/providers/<provider-id>/installed-<os>_<arch>.json`, which names that
 version and holds the executable's SHA-256. The command never runs the
 executable and never edits a manifest. Installing the release the record already
-names downloads no archive. An interrupted or parallel run leaves no executable
-that is only partly written, and the record keeps naming a complete
-installation.
+names downloads no archive. Runs that install one provider at the same time,
+in one process or in several, take turns on the lock file
+`ptah/providers/<provider-id>/.install.lock`, so parallel runs of one release
+download it once. An interrupted or parallel run leaves no executable that is
+only partly written, and the record keeps naming a complete installation.
 
 The output names the version, its minimum contract, the executable and its
 SHA-256. Ptah selects the installation by itself when the command asks for the
