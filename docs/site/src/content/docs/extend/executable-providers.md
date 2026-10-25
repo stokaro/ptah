@@ -660,6 +660,13 @@ that names no engine of the provider. Source-loading support alone does not esta
 for those objects and facets. Those operations require their own provider
 services and declarations.
 
+Ptah keeps a copy of what each official provider publishes, its lint rule
+catalog and its Go annotation claims, recorded from a provider build under
+`internal/providerpublished`. The lint rule reference, `ptah schema annotations`
+and `ptah-ls` read the copy for an engine the binary does not serve, so they
+list the engine's rules and directives without the provider installed. A
+command still needs the provider to lint the engine or to read its directives.
+
 A provider also declares the Go annotation syntax it owns. Each claim in
 `go_source_directives` names a directive, its scope (`DOCUMENT`, `TABLE`, `COLUMN`
 or `INDEX`), the attribute names it accepts and the desired models it can declare.

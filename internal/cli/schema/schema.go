@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/openapirender"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/protobufrender"
+	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/schemaexport"
 )
@@ -204,7 +205,14 @@ func runAnnotations(cmd *cobra.Command, format, outPath string) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	catalog, err := annotationmeta.NewCatalog(runtime.Annotations())
+	// The directives official providers published for the engines the
+	// runtime does not serve join the schema, so an editor validates a model
+	// written for such an engine without its provider installed.
+	published, err := providerpublished.AnnotationSet(runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	catalog, err := annotationmeta.NewCatalog(runtime.Annotations(), published)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

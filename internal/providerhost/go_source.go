@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/core/annotation"
 	"ptah.run/core/coverage"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/providersource"
 )
@@ -47,21 +48,61 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 	if h.goSource == nil || len(h.goSource.claims) == 0 {
 		return nil
 	}
-	extension := annotation.Extension{Owner: h.description.GetProviderId(),
-		File:     func() annotation.FileDecoder { return &goFileDecoder{host: h} },
-		Coverage: func([]coverage.Object) (schemaext.Coverage, error) { return h.goBaseCoverage() }}
-	for _, name := range slices.Sorted(maps.Keys(h.goSource.claims)) {
-		owned := h.goSource.claims[name]
+	extension := claimedExtension(h.description.GetProviderId(), h.goSource.claims)
+	extension.File = func() annotation.FileDecoder { return &goFileDecoder{host: h} }
+	extension.Coverage = func([]coverage.Object) (schemaext.Coverage, error) { return h.goBaseCoverage() }
+	return []annotation.Extension{extension}
+}
+
+// PublishedAnnotations returns the Go annotation extension a provider's
+// description claims, with the directives and attributes a started provider's
+// extension declares, for a caller that reads them without starting the
+// provider: an editor's completion and the annotation schema. It decodes no
+// declaration, and states no coverage of a Go source: both refuse, naming the
+// provider to select, because only the provider reads its claims. It returns
+// false when no engine of the description claims a directive.
+func PublishedAnnotations(description *protocol.Description) (annotation.Extension, bool, error) {
+	claims, err := providersource.GoClaims(description.GetEngines())
+	if err != nil {
+		return annotation.Extension{}, false, err
+	}
+	if len(claims) == 0 {
+		return annotation.Extension{}, false, nil
+	}
+	providerID := description.GetProviderId()
+	extension := claimedExtension(providerID, claims)
+	unread := func() error {
+		return fmt.Errorf("%w: provider %s reads its Go annotations; select it to read this file", ptaherr.ErrUnsupportedFeature, providerID)
+	}
+	extension.File = func() annotation.FileDecoder { return unreadFile{err: unread()} }
+	extension.Coverage = func([]coverage.Object) (schemaext.Coverage, error) { return schemaext.Coverage{}, unread() }
+	return extension, true, nil
+}
+
+// unreadFile refuses every declaration of a provider that was not started.
+type unreadFile struct{ err error }
+
+func (u unreadFile) Decode(annotation.Declaration) ([]annotation.Contribution, error) {
+	return nil, u.err
+}
+func (u unreadFile) Finish(annotation.Tables) ([]annotation.Contribution, error) { return nil, u.err }
+
+// claimedExtension describes the directives and attributes a provider claims,
+// and the models they declare, without a decoder or a coverage claim.
+func claimedExtension(providerID string, claims map[string]providersource.GoClaim) annotation.Extension {
+	extension := annotation.Extension{Owner: providerID}
+	for _, name := range slices.Sorted(maps.Keys(claims)) {
+		owned := claims[name]
 		claim := owned.Directive
 		var attributes []annotation.Attribute
 		for _, attribute := range claim.GetAttributes() {
 			attributes = append(attributes, annotation.Attribute{Name: attribute, Value: "string",
-				Description: "Attribute of " + name + ", read by provider " + h.description.GetProviderId() + "."})
+				Description: "Attribute of " + name + ", read by provider " + providerID + "."})
 		}
 		if owned.Attributes {
 			extension.Attributes = append(extension.Attributes, annotation.DirectiveAttributes{Directive: name, Attributes: attributes, PerFile: true})
 		} else {
-			extension.Directives = append(extension.Directives, h.goDirective(name, claim, attributes))
+			extension.Directives = append(extension.Directives, goDirective(providerID, name, claim, attributes))
 		}
 		for _, kind := range claim.GetModels() {
 			if !slices.Contains(extension.Kinds, schemaext.Kind(kind)) {
@@ -69,16 +110,16 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 			}
 		}
 	}
-	return []annotation.Extension{extension}
+	return extension
 }
 
 // goDirective describes a directive of the provider's own. Its scope says where
 // the comment is written and which part of a table the declaration describes:
 // a column directive sits on a field beside the field's directive, and an index
 // directive beside the index directive it describes.
-func (h *Host) goDirective(name string, claim *protocol.GoSourceDirective, attributes []annotation.Attribute) annotation.Directive {
+func goDirective(providerID, name string, claim *protocol.GoSourceDirective, attributes []annotation.Attribute) annotation.Directive {
 	directive := annotation.Directive{Name: name, Attributes: attributes,
-		Description: "Directive owned by provider " + h.description.GetProviderId() + ".",
+		Description: "Directive owned by provider " + providerID + ".",
 		Scopes:      []annotation.Scope{annotation.ScopeStruct}}
 	switch claim.GetScope() {
 	case protocol.GoSourceDirective_COLUMN:

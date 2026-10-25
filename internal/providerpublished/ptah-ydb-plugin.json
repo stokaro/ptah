@@ -1,0 +1,291 @@
+{
+  "engines": [
+    {
+      "aliases": [
+        "ydbs"
+      ],
+      "goSourceDirectives": [
+        {
+          "attributes": [
+            "auto_partitioning_by_size",
+            "auto_partitioning_partition_size_mb",
+            "auto_partitioning_by_load",
+            "auto_partitioning_min_partitions_count",
+            "auto_partitioning_max_partitions_count",
+            "read_replicas_settings",
+            "key_bloom_filter",
+            "uniform_partitions",
+            "partition_at_keys",
+            "store",
+            "partition_by_hash",
+            "column_shards",
+            "column_ttl",
+            "platform.ydb.row_deletion_column",
+            "platform.ydb.row_deletion_interval",
+            "platform.ydb.row_deletion_unit"
+          ],
+          "directive": "ptah:schema:table",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/row-table-properties",
+            "github.com/stokaro/ptah-ydb-plugin/column-storage-properties"
+          ],
+          "scope": "TABLE",
+          "selector": "ptah:schema:table"
+        },
+        {
+          "attributes": [
+            "auto_partitioning_by_size",
+            "auto_partitioning_partition_size_mb",
+            "auto_partitioning_by_load",
+            "auto_partitioning_min_partitions_count",
+            "auto_partitioning_max_partitions_count",
+            "read_replicas_settings",
+            "false_positive_probability",
+            "ngram_size",
+            "case_sensitive",
+            "tokenizer",
+            "language",
+            "use_filter_lowercase",
+            "use_filter_stopwords",
+            "use_filter_ngram",
+            "use_filter_edge_ngram",
+            "filter_ngram_min_length",
+            "filter_ngram_max_length",
+            "use_filter_length",
+            "filter_length_min",
+            "filter_length_max",
+            "use_filter_snowball",
+            "distance",
+            "similarity",
+            "vector_type",
+            "vector_dimension",
+            "levels",
+            "clusters"
+          ],
+          "directive": "ptah:schema:index",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+          ],
+          "scope": "INDEX",
+          "selector": "ptah:schema:index"
+        },
+        {
+          "attributes": [
+            "name",
+            "table",
+            "data",
+            "compression",
+            "cache_mode",
+            "fields"
+          ],
+          "directive": "ptah:schema:columnfamily",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/row-table-properties",
+            "github.com/stokaro/ptah-ydb-plugin/column-properties"
+          ],
+          "scope": "TABLE",
+          "selector": "ptah:schema:columnfamily"
+        },
+        {
+          "attributes": [
+            "name",
+            "table",
+            "mode",
+            "format",
+            "virtual_timestamps",
+            "resolved_timestamps",
+            "initial_scan",
+            "user_sids",
+            "schema_changes",
+            "topic_min_active_partitions",
+            "topic_auto_partitioning",
+            "retention_period"
+          ],
+          "directive": "ptah:schema:changefeed",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+          ],
+          "scope": "TABLE",
+          "selector": "ptah:schema:changefeed"
+        },
+        {
+          "attributes": [
+            "name",
+            "changefeed",
+            "table",
+            "important",
+            "read_from",
+            "supported_codecs",
+            "availability_period"
+          ],
+          "directive": "ptah:schema:changefeed:consumer",
+          "models": [
+            "github.com/stokaro/ptah-ydb-plugin/row-table-properties"
+          ],
+          "scope": "TABLE",
+          "selector": "ptah:schema:changefeed:consumer"
+        }
+      ],
+      "id": "ydb",
+      "lintRules": [
+        {
+          "appliesToDown": true,
+          "code": "YD101",
+          "severity": "ERROR",
+          "subsumes": [
+            "MF101",
+            "MF102"
+          ],
+          "title": "unique index added to an existing table"
+        },
+        {
+          "code": "YD102",
+          "severity": "ERROR",
+          "title": "scheme and data statements in one query"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD103",
+          "severity": "ERROR",
+          "subsumes": [
+            "DD101"
+          ],
+          "title": "column added in a form YDB refuses"
+        },
+        {
+          "code": "YD104",
+          "severity": "ERROR",
+          "title": "column dropped while an index or the TTL uses it"
+        },
+        {
+          "code": "YD105",
+          "severity": "WARNING",
+          "title": "partitioning change resets the minimum partition count"
+        },
+        {
+          "code": "YD106",
+          "severity": "ERROR",
+          "title": "table dropped or renamed while a view reads it"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD107",
+          "severity": "ERROR",
+          "title": "ALTER SEQUENCE widens a 16-bit or 32-bit Serial"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD108",
+          "severity": "ERROR",
+          "title": "ALTER SEQUENCE replays an earlier RESTART"
+        },
+        {
+          "code": "YD109",
+          "severity": "ERROR",
+          "title": "table renamed while it carries a changefeed"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD110",
+          "severity": "ERROR",
+          "title": "REVOKE GRANT OPTION FOR revokes the permission too"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD111",
+          "severity": "WARNING",
+          "title": "dropped user or group keeps its permissions"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD113",
+          "severity": "ERROR",
+          "title": "topic setting reset"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD114",
+          "severity": "ERROR",
+          "title": "topic setting YDB keeps as nothing"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD115",
+          "severity": "WARNING",
+          "title": "async replication dropped without failover"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD116",
+          "severity": "ERROR",
+          "title": "secret written in clear"
+        },
+        {
+          "code": "YD118",
+          "severity": "WARNING",
+          "title": "partitioning change resets the partition size"
+        },
+        {
+          "code": "YD119",
+          "severity": "WARNING",
+          "title": "column family the table does not have"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD120",
+          "severity": "ERROR",
+          "title": "the resource pool default dropped"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD121",
+          "severity": "ERROR",
+          "title": "backup collection dropped"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD122",
+          "severity": "WARNING",
+          "title": "ANALYZE in a migration"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD130",
+          "severity": "ERROR",
+          "title": "vector index the target does not build"
+        },
+        {
+          "code": "YD131",
+          "severity": "WARNING",
+          "title": "rows written past a vector index that does not take them"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD140",
+          "severity": "ERROR",
+          "title": "secret value written in the migration"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD141",
+          "severity": "WARNING",
+          "title": "external data source credential in a deprecated secret object"
+        },
+        {
+          "code": "YD150",
+          "severity": "WARNING",
+          "title": "comment left behind by a drop or a rename"
+        },
+        {
+          "appliesToDown": true,
+          "code": "YD160",
+          "severity": "WARNING",
+          "title": "streaming query checkpoint state discarded"
+        }
+      ]
+    }
+  ],
+  "providerId": "github.com/stokaro/ptah-ydb-plugin",
+  "revision": 25,
+  "version": "0.0.0-dev"
+}

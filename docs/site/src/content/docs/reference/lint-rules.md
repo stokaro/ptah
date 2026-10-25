@@ -10,6 +10,7 @@ sourceOfTruth:
   - "migration/lint"
   - "internal/sqllint"
   - "internal/lintcatalog"
+  - "internal/providerpublished"
 generated: false
 overlaps: []
 disposition: keep
@@ -24,10 +25,11 @@ files. This page enumerates every identifier either one can report.
 The tables below are generated from the rule registries themselves.
 `scripts/check-docsync.sh` fails when a rule exists in the code and not on
 this page, or when a row here names a rule that no longer exists. The page
-reads the engine owners' rules from the bundled runtime. The generator can
-read them from a runtime that holds an executable provider instead, which lists
-the rule catalog the provider publishes; the meanings stay on this page either
-way.
+reads the engine owners' rules from the bundled runtime. For an official
+provider's engine the bundle does not serve, it reads the rule catalog the
+provider publishes, from a copy recorded from a provider build under
+`internal/providerpublished`. The generator can also read them from a runtime
+that holds an executable provider; the meanings stay on this page either way.
 
 ## Which commands lint
 

@@ -31,11 +31,15 @@ type ServerOptions struct {
 	// knows beside the frontend's own. The zero value is refused; pass
 	// annotation.None for the frontend's own directives only.
 	Annotations annotation.Set
+	// More are further sets whose directives the server knows beside those
+	// of Annotations, such as the directives official providers published
+	// for engines Annotations' runtime does not serve.
+	More []annotation.Set
 }
 
 // RunWithOptions serves the Ptah LSP protocol with explicit server metadata.
 func RunWithOptions(ctx context.Context, reader io.Reader, writer io.Writer, opts ServerOptions) error {
-	catalog, err := annotationmeta.NewCatalog(opts.Annotations)
+	catalog, err := annotationmeta.NewCatalog(opts.Annotations, opts.More...)
 	if err != nil {
 		return fmt.Errorf("ptah-ls: %w", err)
 	}
