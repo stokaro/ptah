@@ -152,8 +152,8 @@ request that flips `ydb://`.
 Both transport boundaries refuse:
 
 - a `policy` or a `written` request the negotiated description does not allow;
-- a policy subject that is not a valid comparison identity, or that names an
-  index twice;
+- a policy without the words of a rebuild request, and a policy subject that
+  is not the identity of an index or that names one index twice;
 - a request with both `subject` and `written`, with neither, or with an empty
   spelling;
 - a resolved request whose index is outside the request, that resolves a request

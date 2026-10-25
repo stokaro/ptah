@@ -248,8 +248,8 @@ and a privilege list is never empty. The host compares the prepared declaration
 with the observed objects and keeps the authored one for rendering and for
 saved plans, as it keeps authored tables beside `PrepareTables`.
 
-`CompareModels` gains no field. Native object comparisons keep the context they
-have, `declared_roles` and `declared_relations` among it.
+The wire adds no field to `CompareModels`. Native object comparisons keep the
+context they have, `declared_roles` and `declared_relations` among it.
 
 ### Planning and rendering
 
