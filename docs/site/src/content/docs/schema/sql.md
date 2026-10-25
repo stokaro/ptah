@@ -462,18 +462,21 @@ warning: 47 names are longer than 63 bytes; the server keeps their first 63 byte
 
 `PTAH_LOG_LEVEL=debug` lists each name written and kept, and
 `PTAH_LOG_FORMAT=json` lists them as records with `written`, `stored`, `kind`,
-`scope`, `source` and `limit` fields. The strict compatibility profile refuses
-both variables. See
+`scope`, `source` and `limit` fields, followed by the summary as a record with
+`category` and `count`. The strict compatibility profile refuses both
+variables. See
 [Warnings about many objects](../../operate/troubleshooting/#warnings-about-many-objects).
 
-Two different names cut to one are refused where the server refuses the second,
-and accepted where it accepts it. PostgreSQL keeps one namespace per schema for
-tables, views, materialized views, sequences and indexes, including the index
-that a `PRIMARY KEY`, `UNIQUE` or `EXCLUDE` constraint builds under its own
-name. Constraint and column names are unique per table, so two tables may each
-hold a foreign key of the same cut name. A `CREATE INDEX IF NOT EXISTS` that
-lands on a name already in use is skipped, as the server skips it. The refusal
-names both declarations and the name they share.
+Two different names cut to one are refused in the namespace where the server
+stores them as one. PostgreSQL keeps one namespace per schema for tables, views,
+materialized views, sequences and indexes, including the index that a
+`PRIMARY KEY`, `UNIQUE` or `EXCLUDE` constraint builds under its own name.
+Constraint and column names are unique per table, so two tables may each hold a
+foreign key of the same cut name. The refusal names both declarations and the
+name they share. It holds under `IF NOT EXISTS` and `OR REPLACE` too, where the
+server skips the second statement or lets it replace the first: the file names
+two objects, and the server would keep one of them without an error. Ptah is
+stricter than the server here.
 
 The same namespaces decide a name written twice. A table created again without
 `IF NOT EXISTS`, a second index of one name, an index, view or sequence named
@@ -482,6 +485,13 @@ refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
 `UNIQUE` constraints that one `CREATE TABLE` writes identically, name and
 definition alike, are read as one, as the server keeps one. A schema directory
 refuses an object that a later file declares again in its own words.
+
+A guard on a name written twice is read the way the server runs it. A
+`CREATE TABLE`, `CREATE INDEX` or `CREATE SEQUENCE ... IF NOT EXISTS` of an
+object already declared is skipped whole, so the first declaration stands with
+nothing of the second, not its columns, keys or options. A `CREATE OR REPLACE`
+view, function or trigger replaces the earlier definition, so the last one
+counts. A database built from the file and the file itself then compare equal.
 
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,

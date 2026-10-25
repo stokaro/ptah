@@ -180,15 +180,18 @@ func (s *storedNames) declare(space, owner, kind, raw string, rule onExisting) (
 }
 
 // declareName is [storedNames.declare] for a name already read the way the
-// server reads it, as [storedNames.relation] reads one.
+// server reads it, as [storedNames.relation] reads one. A cut name is recorded
+// for the declaration that takes it: one that finds its name taken, as a
+// statement the server skips does, declares no object of its own.
 func (s *storedNames) declareName(space, owner, kind, written string, rule onExisting) (existed bool, err error) {
-	if stored := storedIdentifier(s.sourcePlatform, written); written != stored {
+	existed, err = s.claimName(space, owner, kind, written, rule)
+	if stored := storedIdentifier(s.sourcePlatform, written); err == nil && !existed && written != stored {
 		s.cut = append(s.cut, StoredName{
 			Kind: kind, Scope: scopeLabel(space, owner), Written: written, Stored: stored,
 			Limit: factsOf(s.sourcePlatform).identifierLimit.Max,
 		})
 	}
-	return s.claimName(space, owner, kind, written, rule)
+	return existed, err
 }
 
 // claim takes a name in a second namespace for an object [storedNames.declare]
@@ -203,7 +206,10 @@ func (s *storedNames) claim(space, owner, kind, raw string, rule onExisting) (ex
 }
 
 // claimName enters written in a namespace and refuses a second declaration
-// the server refuses.
+// the server refuses. Two names written differently and stored as one are
+// refused under IF NOT EXISTS and OR REPLACE too, where the server takes the
+// second for the first and skips or replaces it: the file names two objects,
+// and the server keeps one of them.
 func (s *storedNames) claimName(space, owner, kind, written string, rule onExisting) (existed bool, err error) {
 	stored := storedIdentifier(s.sourcePlatform, written)
 	key := spaceKey(space, owner)
@@ -217,24 +223,35 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 		names[stored] = storedEntry{kind: kind, written: written, file: s.file}
 		return false, nil
 	}
+	if previous.written != written {
+		return true, storedNameCollision(previous, kind, written, scopeLabel(space, owner), stored, rule)
+	}
 	if rule == skipExisting {
 		return true, nil
 	}
-	if previous.written == written {
-		// A schema directory refuses an object of one kind that a later file
-		// declares again, in words of its own; a name taken across kinds, or
-		// within one file, is this check's.
-		if previous.file != s.file && previous.kind == kind {
-			return true, nil
-		}
-		if s.duplicate == nil {
-			s.duplicate = fmt.Errorf("%w: %s %q in %s takes the name of %s %q, and the server refuses the second declaration",
-				ErrNameInUse, kind, written, scopeLabel(space, owner), previous.kind, previous.written)
-		}
+	// A schema directory refuses an object of one kind that a later file
+	// declares again, in words of its own; a name taken across kinds, or within
+	// one file, is this check's.
+	if previous.file != s.file && previous.kind == kind {
 		return true, nil
 	}
-	return true, fmt.Errorf("%w: %s %q and %s %q in %s are both stored as %q, and the server refuses the second",
-		ErrStoredNameCollision, previous.kind, previous.written, kind, written, scopeLabel(space, owner), stored)
+	if s.duplicate == nil {
+		s.duplicate = fmt.Errorf("%w: %s %q in %s takes the name of %s %q, and the server refuses the second declaration",
+			ErrNameInUse, kind, written, scopeLabel(space, owner), previous.kind, previous.written)
+	}
+	return true, nil
+}
+
+// storedNameCollision is the refusal of written, which the server stores as
+// the name an earlier declaration took. What the server does with the second
+// statement depends on its guard, and the refusal says which.
+func storedNameCollision(previous storedEntry, kind, written, scope, stored string, rule onExisting) error {
+	outcome := "the server refuses the second"
+	if rule == skipExisting {
+		outcome = "the server keeps only one of them"
+	}
+	return fmt.Errorf("%w: %s %q and %s %q in %s are both stored as %q, and %s",
+		ErrStoredNameCollision, previous.kind, previous.written, kind, written, scope, stored, outcome)
 }
 
 func (s *storedNames) drop(space, owner, raw string) {

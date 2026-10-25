@@ -3,6 +3,7 @@ package rundiag_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
@@ -48,7 +49,7 @@ func TestWarn_WithoutARunReturnsTheWriteError(t *testing.T) {
 // override it.
 func TestWarn_NilWriterRaisesNothing(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New(&bytes.Buffer{}, rundiag.ListedAtDebugLevel)
+	report := rundiag.New(rundiag.Options{Stream: &bytes.Buffer{}, Listing: rundiag.ListedAtDebugLevel})
 
 	c.Assert(rundiag.Warn(context.Background(), nil, widgets, record("a")), qt.IsNil)
 	c.Assert(rundiag.Warn(rundiag.With(context.Background(), report), nil, widgets, record("a")), qt.IsNil)
@@ -60,7 +61,7 @@ func TestWarn_NilWriterRaisesNothing(t *testing.T) {
 // that object's own line, so a lone typo keeps its location.
 func TestReport_OneObjectWritesItsLine(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 
@@ -76,7 +77,7 @@ func TestReport_OneObjectWritesItsLine(t *testing.T) {
 // once.
 func TestReport_SeveralObjectsAreOneSummary(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 
@@ -91,7 +92,7 @@ func TestReport_SeveralObjectsAreOneSummary(t *testing.T) {
 
 func TestReport_FlushKeepsTheOrderCategoriesWereRaisedIn(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
@@ -112,7 +113,7 @@ func TestReport_LogsEachObjectOnceAtDebug(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	defer slog.SetDefault(previous)
-	ctx := rundiag.With(context.Background(), rundiag.New(nil, rundiag.ListedAtDebugLevel))
+	ctx := rundiag.With(context.Background(), rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel}))
 
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
@@ -140,7 +141,7 @@ func TestReport_SummaryNamesTheListing(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			report := rundiag.New(nil, test.listing)
+			report := rundiag.New(rundiag.Options{Listing: test.listing})
 			ctx := rundiag.With(context.Background(), report)
 			var out bytes.Buffer
 
@@ -158,7 +159,7 @@ func TestReport_SummaryNamesTheListing(t *testing.T) {
 func TestStream_IsTheRunsDiagnosticsStream(t *testing.T) {
 	c := qt.New(t)
 	var stream bytes.Buffer
-	report := rundiag.New(&stream, rundiag.ListedAtDebugLevel)
+	report := rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedAtDebugLevel})
 	ctx := rundiag.With(context.Background(), report)
 
 	c.Assert(rundiag.Warn(ctx, rundiag.Stream(ctx), widgets, record("a")), qt.IsNil)
@@ -174,7 +175,39 @@ func TestStream_IsNilWithoutARun(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(rundiag.Stream(context.Background()), qt.IsNil)
-	c.Assert(rundiag.Stream(rundiag.With(context.Background(), rundiag.New(nil, rundiag.ListedAtDebugLevel))), qt.IsNil)
+	c.Assert(rundiag.Stream(rundiag.With(context.Background(), rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel}))), qt.IsNil)
+}
+
+// A run whose log is JSON writes its warnings as records at warning level,
+// with the category and the number of objects, and writes no line.
+func TestReport_RecordsAreLogRecords(t *testing.T) {
+	c := qt.New(t)
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	c.Cleanup(func() { slog.SetDefault(previous) })
+	report := rundiag.New(rundiag.Options{Records: true})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
+
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, rundiag.Record{Key: "g", Line: "gadget g", Attrs: []slog.Attr{slog.String("key", "g")}}), qt.IsNil)
+	report.Flush()
+
+	c.Assert(out.String(), qt.Equals, "")
+	var records []map[string]any
+	for line := range strings.SplitSeq(strings.TrimSpace(logged.String()), "\n") {
+		var record map[string]any
+		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil)
+		delete(record, "time")
+		records = append(records, record)
+	}
+	c.Assert(records, qt.DeepEquals, []map[string]any{
+		{"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug lists them", "category": "widget", "count": float64(2)},
+		{"level": "WARN", "msg": "gadget g", "category": "gadget", "count": float64(1), "key": "g"},
+	})
 }
 
 func TestTruncatedNames_SummaryNamesTheLimitTheRecordsShare(t *testing.T) {

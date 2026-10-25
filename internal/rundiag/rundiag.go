@@ -71,7 +71,24 @@ type Report struct {
 	mu      sync.Mutex
 	stream  io.Writer
 	listing Listing
+	records bool
 	buckets []*bucket
+}
+
+// Options describe the report of one run.
+type Options struct {
+	// Stream is the run's diagnostics stream, the writer [Stream] hands a
+	// loader that has none of its own. A nil Stream gives such a loader none.
+	Stream io.Writer
+	// Listing is how a summary tells its reader to list the objects it
+	// counts. The zero Listing is [ListedAtDebugLevel].
+	Listing Listing
+	// Records writes each warning as a log record at warning level, through
+	// the default logger, instead of as a line, for a run whose log is JSON:
+	// the summaries then join the objects' records as JSON lines rather than
+	// break that log with text. A record carries the category, the number of
+	// objects, and for one object that object's fields.
+	Records bool
 }
 
 // bucket is the records of one category. They are written to the writer the
@@ -85,15 +102,13 @@ type bucket struct {
 	records  []Record
 }
 
-// New returns an empty report for a run whose diagnostics stream is stream and
-// whose summaries list their objects as listing says; the zero Listing is
-// [ListedAtDebugLevel]. A nil stream is a run whose loaders get no writer from
-// [Stream].
-func New(stream io.Writer, listing Listing) *Report {
+// New returns an empty report for a run as opts describe it.
+func New(opts Options) *Report {
+	listing := opts.Listing
 	if listing == "" {
 		listing = ListedAtDebugLevel
 	}
-	return &Report{stream: stream, listing: listing}
+	return &Report{stream: opts.Stream, listing: listing, records: opts.Records}
 }
 
 type reportKey struct{}
@@ -170,20 +185,37 @@ func (r *Report) bucket(category *Category, out io.Writer) *bucket {
 // Flush writes one warning per category to the writer its first record was
 // raised for, in the order the categories were first raised, and empties the
 // report. A category with one object writes that object's line; one with
-// several writes its summary and the report's [Listing].
+// several writes its summary and the report's [Listing]. With
+// [Options.Records] each warning is a log record instead.
 func (r *Report) Flush() {
 	r.mu.Lock()
 	buckets := r.buckets
 	r.buckets = nil
 	r.mu.Unlock()
 	for _, target := range buckets {
-		switch len(target.records) {
-		case 0:
-		case 1:
-			fmt.Fprintf(target.out, "warning: %s\n", target.records[0].Line)
+		line, attrs := r.summary(target)
+		switch {
+		case line == "":
+		case r.records:
+			slog.LogAttrs(context.Background(), slog.LevelWarn, line, attrs...)
 		default:
-			fmt.Fprintf(target.out, "warning: %s; %s\n", target.category.Summary(target.records), r.listing)
+			fmt.Fprintf(target.out, "warning: %s\n", line)
 		}
+	}
+}
+
+// summary is the warning of one category and the fields of its record: the
+// object's own line and fields for one object, and for several their summary
+// and how to list them. It is empty for a category with no object.
+func (r *Report) summary(target *bucket) (string, []slog.Attr) {
+	attrs := []slog.Attr{slog.String("category", target.category.Name), slog.Int("count", len(target.records))}
+	switch len(target.records) {
+	case 0:
+		return "", nil
+	case 1:
+		return target.records[0].Line, append(attrs, target.records[0].Attrs...)
+	default:
+		return target.category.Summary(target.records) + "; " + string(r.listing), attrs
 	}
 }
 

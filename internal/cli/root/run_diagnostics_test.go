@@ -2,9 +2,12 @@ package root_test
 
 import (
 	"bytes"
+	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,16 +124,97 @@ func TestRunContext_ReportsAConstraintNameOnce(t *testing.T) {
 // What a DBML document declares and the schema model drops is reported by the
 // native commands too, one line for the run.
 func TestRunContext_ReportsDroppedDBMLConstructsTogether(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "schema render", args: []string{"schema", "render", "--dialect", "postgres"}},
+		{name: "schema validate", args: []string{"schema", "validate", "--dialect", "postgres"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(c.TempDir(), "schema.dbml")
+			c.Assert(os.WriteFile(path, []byte("Project shop {\n  database_type: 'PostgreSQL'\n}\n"+
+				"TableGroup g {\n  users\n}\nTable users {\n  id int [pk]\n}\n"), 0o600), qt.IsNil)
+
+			warnings := runWarnings(c, append(test.args, "--schema-file", path)...)
+
+			c.Assert(warnings, qt.DeepEquals, []string{
+				"warning: 2 schema file constructs are ignored and have no effect; PTAH_LOG_LEVEL=debug lists them",
+			})
+		})
+	}
+}
+
+// A cut name is an object: the kind, the place it is unique in, and the name
+// written. The same name on two tables is two objects, and the same object read
+// from two files is one, whichever file it was read from.
+func TestRunContext_CountsCutNamesByObject(t *testing.T) {
+	long := strings.Repeat("f", 70)
+	twoTables := "CREATE TABLE p (id int PRIMARY KEY);\n" +
+		`CREATE TABLE c1 (id int PRIMARY KEY, a int, CONSTRAINT "` + long + `" FOREIGN KEY (a) REFERENCES p (id));` + "\n" +
+		`CREATE TABLE c2 (id int PRIMARY KEY, a int, CONSTRAINT "` + long + `" FOREIGN KEY (a) REFERENCES p (id));` + "\n"
+	oneTable := "CREATE TABLE p (id int PRIMARY KEY);\n" +
+		`CREATE TABLE c1 (id int PRIMARY KEY, a int, CONSTRAINT "` + long + `" FOREIGN KEY (a) REFERENCES p (id));` + "\n" +
+		`CREATE INDEX "` + strings.Repeat("i", 70) + `" ON c1 (a);` + "\n"
+	tests := []struct {
+		name  string
+		files []string
+	}{
+		{name: "one foreign key name on two tables", files: []string{twoTables}},
+		{name: "one file read twice", files: []string{oneTable, oneTable}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			args := []string{"schema", "render", "--dialect", "postgres"}
+			for index, sql := range test.files {
+				path := filepath.Join(c.TempDir(), "schema"+strconv.Itoa(index)+".sql")
+				c.Assert(os.WriteFile(path, []byte(sql), 0o600), qt.IsNil)
+				args = append(args, "--schema-file", path)
+			}
+
+			warnings := runWarnings(c, args...)
+
+			c.Assert(warnings, qt.DeepEquals, []string{
+				"warning: 2 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; PTAH_LOG_LEVEL=debug lists them",
+			})
+		})
+	}
+}
+
+// With PTAH_LOG_FORMAT=json the summary is a JSON record at warning level
+// beside the objects' records, so the error stream holds no text line.
+func TestRunContext_ReportsCutNamesAsRecordsInAJSONLog(t *testing.T) {
 	c := qt.New(t)
-	path := filepath.Join(c.TempDir(), "schema.dbml")
-	c.Assert(os.WriteFile(path, []byte("Project shop {\n  database_type: 'PostgreSQL'\n}\n"+
-		"TableGroup g {\n  users\n}\nTable users {\n  id int [pk]\n}\n"), 0o600), qt.IsNil)
+	t.Setenv(cliobs.LogFormatEnvVar, "json")
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	c.Cleanup(func() { slog.SetDefault(previous) })
+	path := longNamesSchema(c, longName(0), longName(1), longName(2))
+	cmd := root.NewRootCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
 
-	warnings := renderWarnings(c, path)
+	code := root.RunContext(c.Context(), cmd, "schema", "validate", "--dialect", "postgres", "--schema-file", path)
 
-	c.Assert(warnings, qt.DeepEquals, []string{
-		"warning: 2 schema file constructs are ignored and have no effect; PTAH_LOG_LEVEL=debug lists them",
-	})
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stderr.String(), qt.Equals, "")
+	var levels []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logged.String()), "\n") {
+		var record struct {
+			Level    string  `json:"level"`
+			Category string  `json:"category"`
+			Count    float64 `json:"count"`
+			Message  string  `json:"msg"`
+		}
+		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil, qt.Commentf("%s", line))
+		levels = append(levels, record.Level+" "+record.Category+" "+strconv.Itoa(int(record.Count)))
+	}
+	c.Assert(levels, qt.DeepEquals, []string{"DEBUG truncated-name 0", "DEBUG truncated-name 0", "DEBUG truncated-name 0", "WARN truncated-name 3"})
 }
 
 // The words a summary uses to list its objects name the switches they mean,

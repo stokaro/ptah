@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/rundiag"
 )
 
 func TestWrapRunEMapsOrdinaryErrorsToExit2(t *testing.T) {
@@ -569,4 +570,39 @@ func TestFail_ACancellationDoesNotMaskAUsageError(t *testing.T) {
 
 	c.Assert(stderr.String(), qt.Equals, "error: --db-url is required\n")
 	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
+}
+
+// A subcommand lists the objects of an aggregated warning the way the
+// nearest ancestor that declares a listing says, and a tree that declares
+// none lists them at debug level.
+func TestDiagnosticsListing_IsTheNearestDeclaration(t *testing.T) {
+	tests := []struct {
+		name     string
+		root     rundiag.Listing
+		subtree  rundiag.Listing
+		expected rundiag.Listing
+	}{
+		{name: "none", expected: rundiag.ListedAtDebugLevel},
+		{name: "on the root", root: rundiag.ListedOutsideStrictCompat, expected: rundiag.ListedOutsideStrictCompat},
+		{
+			name:     "on the subtree",
+			root:     rundiag.ListedOutsideStrictCompat,
+			subtree:  rundiag.ListedAtDebugLevel,
+			expected: rundiag.ListedAtDebugLevel,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := &cobra.Command{Use: "root"}
+			group := &cobra.Command{Use: "group"}
+			leaf := &cobra.Command{Use: "leaf"}
+			root.AddCommand(group)
+			group.AddCommand(leaf)
+			cmdutil.SetDiagnosticsListing(root, test.root)
+			cmdutil.SetDiagnosticsListing(group, test.subtree)
+
+			c.Assert(cmdutil.DiagnosticsListing(leaf), qt.Equals, test.expected)
+		})
+	}
 }

@@ -121,9 +121,9 @@ func TestReadStoredNames_KeepsLegitimateRepetition(t *testing.T) {
 		},
 		{
 			// The server skips the second statement with a notice.
-			name: "an index guarded by IF NOT EXISTS",
+			name: "an index guarded by IF NOT EXISTS, written the same way twice",
 			sql: "CREATE TABLE t (a int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
-				`CREATE INDEX IF NOT EXISTS "` + long + `_beta" ON t (a);`,
+				`CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);`,
 		},
 		{
 			name: "an index dropped before the next is created",
@@ -145,6 +145,74 @@ func TestReadStoredNames_KeepsLegitimateRepetition(t *testing.T) {
 			_, err := readNotices(c, platform.Postgres, test.sql)
 
 			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+// TestReadStoredNames_ReportsAGuardedRepetitionOnce holds that a statement the
+// server skips declares no name of its own: the cut name is the first
+// statement's, reported once.
+func TestReadStoredNames_ReportsAGuardedRepetitionOnce(t *testing.T) {
+	c := qt.New(t)
+	long := strings.Repeat("k", 70)
+
+	cut, err := readNotices(c, platform.Postgres, "CREATE TABLE t (a int);\n"+
+		`CREATE INDEX IF NOT EXISTS "`+long+`" ON t (a);`+"\n"+`CREATE INDEX IF NOT EXISTS "`+long+`" ON t (a);`)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cut, qt.DeepEquals, []sqlschema.StoredName{
+		{Kind: "index", Scope: `schema "public"`, Written: long, Stored: long[:63], Limit: 63},
+	})
+}
+
+// TestReadStoredNames_RefusesAGuardedNameCutToOneInUse holds the collisions an
+// IF NOT EXISTS or an OR REPLACE hides from the server. PostgreSQL 15.19 runs
+// each file: it skips the second index, table and sequence with "already
+// exists, skipping", and replaces the first view with the second. The file
+// names two objects and the server keeps one, so the reader refuses it. We are
+// stricter than the server here, deliberately.
+func TestReadStoredNames_RefusesAGuardedNameCutToOneInUse(t *testing.T) {
+	long := strings.Repeat("k", 63)
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{
+			name: "an index",
+			sql: "CREATE TABLE t (a int, b int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
+				`CREATE INDEX IF NOT EXISTS "` + long + `_beta" ON t (b);`,
+			want: `.*index "` + long + `_alpha" and index "` + long + `_beta" in schema "public" are both stored as "` + long +
+				`", and the server keeps only one of them`,
+		},
+		{
+			name: "a table",
+			sql:  `CREATE TABLE IF NOT EXISTS "` + long + `_alpha" (a int);` + "\n" + `CREATE TABLE IF NOT EXISTS "` + long + `_beta" (b int);`,
+			want: `.*table "` + long + `_alpha" and table "` + long + `_beta" in schema "public" are both stored as "` + long +
+				`", and the server keeps only one of them`,
+		},
+		{
+			name: "a sequence",
+			sql:  `CREATE SEQUENCE IF NOT EXISTS "` + long + `_alpha";` + "\n" + `CREATE SEQUENCE IF NOT EXISTS "` + long + `_beta";`,
+			want: `.*sequence "` + long + `_alpha" and sequence "` + long + `_beta" in schema "public" are both stored as "` + long +
+				`", and the server keeps only one of them`,
+		},
+		{
+			name: "a view",
+			sql:  `CREATE OR REPLACE VIEW "` + long + `_alpha" AS SELECT 1 AS a;` + "\n" + `CREATE OR REPLACE VIEW "` + long + `_beta" AS SELECT 2 AS a;`,
+			want: `.*view "` + long + `_alpha" and view "` + long + `_beta" in schema "public" are both stored as "` + long +
+				`", and the server keeps only one of them`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cut, err := readNotices(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrStoredNameCollision)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(cut, qt.HasLen, 0)
 		})
 	}
 }

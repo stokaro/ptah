@@ -662,17 +662,17 @@ func appendStatement(
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node, sourcePlatform))
 	case *ast.CreateTableNode:
-		return appendCreateTable(database, document, node, sourcePlatform)
+		return appendGuardedCreateTable(database, document, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node, sourcePlatform))
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.CreateFunctionNode:
-		database.Functions = append(database.Functions, toFunction(node, sourcePlatform))
+		appendFunction(database, node, sourcePlatform)
 	case *ast.CreateTriggerNode:
-		database.Triggers = append(database.Triggers, toTrigger(node, sourcePlatform))
+		appendTrigger(database, node, sourcePlatform)
 	case *ast.CreateSequenceNode:
-		database.Sequences = append(database.Sequences, toSequence(node, sourcePlatform))
+		appendSequence(database, document, node, sourcePlatform)
 	case *ast.CreateRoleNode:
 		return appendCreateRole(database, document, node, sourcePlatform)
 	case *ast.DoBlockNode:

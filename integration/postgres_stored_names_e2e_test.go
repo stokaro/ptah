@@ -126,11 +126,6 @@ func TestPostgresStoredNameCollisionsAgreeWithTheServerE2E(t *testing.T) {
 			sql: "CREATE SCHEMA s1;\nCREATE SCHEMA s2;\nCREATE TABLE s1.t (a int);\nCREATE TABLE s2.t (a int);\n" +
 				`CREATE INDEX "` + long + `_alpha" ON s1.t (a);` + "\n" + `CREATE INDEX "` + long + `_beta" ON s2.t (a);`,
 		},
-		{
-			name: "an index guarded by IF NOT EXISTS",
-			sql: "CREATE TABLE t (a int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
-				`CREATE INDEX IF NOT EXISTS "` + long + `_beta" ON t (a);`,
-		},
 		// A name written twice, which the reader used to merge
 		// (stokaro/ptah#4914).
 		{name: "an index created twice", sql: "CREATE TABLE t (a int, b int);\nCREATE INDEX ix ON t (a);\nCREATE INDEX ix ON t (b);", refused: true},
@@ -158,6 +153,54 @@ func TestPostgresStoredNameCollisionsAgreeWithTheServerE2E(t *testing.T) {
 
 			c.Assert(serverErr != nil, qt.Equals, test.refused, qt.Commentf("server: %v", serverErr))
 			c.Assert(readErr != nil, qt.Equals, test.refused, qt.Commentf("reader: %v", readErr))
+		})
+	}
+}
+
+// TestPostgresStoredNameCollisionUnderAGuardIsRefusedE2E runs each file on the
+// server and through the reader. The server accepts it: IF NOT EXISTS skips
+// the second object and OR REPLACE replaces the first, so one of two objects
+// the file names is gone without an error. The reader refuses the file. We are
+// stricter than the server here, deliberately.
+func TestPostgresStoredNameCollisionUnderAGuardIsRefusedE2E(t *testing.T) {
+	long := strings.Repeat("k", 63)
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "two indexes guarded by IF NOT EXISTS",
+			sql: "CREATE TABLE t (a int, b int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
+				`CREATE INDEX IF NOT EXISTS "` + long + `_beta" ON t (b);`,
+		},
+		{
+			name: "two tables guarded by IF NOT EXISTS",
+			sql:  `CREATE TABLE IF NOT EXISTS "` + long + `_alpha" (a int);` + "\n" + `CREATE TABLE IF NOT EXISTS "` + long + `_beta" (b int);`,
+		},
+		{
+			name: "two sequences guarded by IF NOT EXISTS",
+			sql:  `CREATE SEQUENCE IF NOT EXISTS "` + long + `_alpha";` + "\n" + `CREATE SEQUENCE IF NOT EXISTS "` + long + `_beta";`,
+		},
+		{
+			name: "two views written OR REPLACE",
+			sql:  `CREATE OR REPLACE VIEW "` + long + `_alpha" AS SELECT 1 AS a;` + "\n" + `CREATE OR REPLACE VIEW "` + long + `_beta" AS SELECT 2 AS a;`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, _ := scratchReplayDatabase(c)
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+
+			_, serverErr := conn.ExecContext(c.Context(), test.sql)
+			stored, readErr := storedNamesOf(c, test.sql)
+
+			c.Assert(serverErr, qt.IsNil)
+			c.Assert(readErr, qt.ErrorIs, sqlschema.ErrStoredNameCollision)
+			c.Assert(readErr, qt.ErrorMatches, `.* are both stored as "`+long+`", and the server keeps only one of them`)
+			c.Assert(stored, qt.HasLen, 0)
 		})
 	}
 }
