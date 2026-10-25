@@ -7,7 +7,6 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/deporder"
 	"ptah.run/internal/tableref"
 )
 
@@ -62,54 +61,40 @@ func (p *Planner) cascades(relied bool) bool {
 // The objects a column drop needs CASCADE for are the ones outside the
 // table's own indexes and constraints, which PostgreSQL drops with the column
 // anyway. This plan removes such an object before the column when it changes
-// or removes it in an earlier step: a policy, a view it replaces, an index, a
-// foreign key. It removes these only after the column, so a drop relies on
-// CASCADE when the plan holds one:
+// or removes it in an earlier step: a policy, a view, a trigger, an index, a
+// foreign key, and a generated column of the same table, which goes before
+// the columns it reads. It removes these only after the column, so a drop
+// relies on CASCADE when the plan holds one:
 //
-//   - a trigger it removes from the table, which may fire on UPDATE OF the
-//     column;
-//   - a view or materialized view it removes whose definition reads the
-//     table, unless the step before the column changes dropped it already;
-//   - another removed column of the table that is generated, which may be
-//     computed from this one;
-//   - a routine it removes, whose body may read the column;
-//   - an owner operation on a standalone object, which may be dropped in a
-//     later window and may read the column.
+//   - a routine it removes whose SQL-standard body reads the table;
+//   - a captured object of a table it removes that reads the table, such as a
+//     row-level security policy;
+//   - an owner operation that may drop a standalone object in a later window,
+//     which may read the column.
 func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) bool {
-	table := bareName(tableDiff.TableName)
-	for _, trigger := range diff.TriggersRemoved {
-		if bareName(trigger.TableName) == table {
-			return true
-		}
-	}
-	owned := planViewRebuild(diff).owns()
-	for _, object := range removedViewLikes(diff) {
-		if !owned.has(object) && deporder.ReferencesIdentifier(object.Body, table) {
-			return true
-		}
-	}
-	for _, column := range tableDiff.ColumnsRemoved {
-		if isGenerated(column) && len(tableDiff.ColumnsRemoved) > 1 {
-			return true
-		}
-	}
-	return removesRoutines(diff) || len(diff.FeatureChanges) > 0
+	return removedRoutineReadsColumns(diff, tableDiff.TableName) ||
+		removedTableReads(diff, tableDiff.TableName, nil) ||
+		removesFeatureState(diff)
 }
 
-// tableDropRelies reports whether dropping a table relies on CASCADE.
+// tableDropRelies reports whether dropping the table name relies on CASCADE,
+// given the removed tables dropped after it.
 //
 // The table's indexes, constraints, triggers and policies go with it, its
 // foreign keys and the ones that point at it are dropped by name first, and
 // the views that read it are removed before it. What the plan removes only
-// after the table is a routine, whose signature or body may name the table's
-// row type, and an owner operation on a standalone object, such as a type
-// whose attribute is that row type.
-func tableDropRelies(diff *difftypes.SchemaDiff) bool {
-	return removesRoutines(diff) || len(diff.FeatureChanges) > 0
-}
-
-func removesRoutines(diff *difftypes.SchemaDiff) bool {
-	return len(diff.FunctionsRemoved) > 0 || len(diff.ProceduresRemoved) > 0
+// after the table is:
+//
+//   - a routine whose parameters, result or SQL-standard body name the table;
+//   - a captured object of a removed table dropped after this one, such as a
+//     policy that reads this table. The tables are ordered so the one holding
+//     the policy goes first, and only a cycle leaves one after;
+//   - an owner operation that may drop a standalone object, such as a type
+//     whose attribute is the table's row type.
+func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool) bool {
+	return removedRoutineNames(diff, name) ||
+		removedTableReads(diff, name, droppedBefore) ||
+		removesFeatureState(diff)
 }
 
 func isGenerated(column schemamodel.Field) bool {

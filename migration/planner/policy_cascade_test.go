@@ -2,6 +2,7 @@ package planner_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -125,17 +126,24 @@ func TestGenerateSchemaDiffSQL_ReplacesAViewAPolicyReads_HappyPath(t *testing.T)
 	c.Assert(sql, qt.Not(qt.Contains), "CASCADE")
 }
 
-// policyLossStyles is both statement styles. The refusal holds in each: Ptah's
-// own style would drop the view with CASCADE and lose the policy, and the
-// exact style would drop it without CASCADE, which the server refuses while the
-// policy reads it.
+// policyLossStyles is both statement styles, each with the refusal it writes,
+// as a pattern of the dropped relation and the policy. The refusal holds in
+// each: Ptah's own style would drop the view with CASCADE and lose the policy,
+// and the exact style would drop it without CASCADE, which the server refuses
+// while the policy reads it.
 var policyLossStyles = []struct {
-	name  string
-	style planext.StatementStyle
+	name    string
+	style   planext.StatementStyle
+	refusal string
 }{
-	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
-	{name: "the exact style", style: planext.StatementStyleExact},
+	{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
+		refusal: `(?s).*drops %[1]s with CASCADE, which also drops %[2]s, whose definition reads it.*`},
+	{name: "the exact style", style: planext.StatementStyleExact,
+		refusal: `(?s).*drops %[1]s, which %[2]s reads, and PostgreSQL refuses the drop while it does.*`},
 }
+
+// tenantVisible is the policy the refusals name, as a pattern.
+const tenantVisible = `ptah\.run/pgpolicy/policy public\.orders\.tenant_visible`
 
 // TestGenerateSchemaDiffSQL_RefusesARetypeThatDropsAPolicy_FailurePath pins
 // stokaro/ptah#4965. A column type change under a view drops the view before
@@ -151,7 +159,7 @@ func TestGenerateSchemaDiffSQL_RefusesARetypeThatDropsAPolicy_FailurePath(t *tes
 			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`)
+			c.Assert(err, qt.ErrorMatches, fmt.Sprintf(test.refusal, "active_tenants", tenantVisible))
 			c.Assert(statements, qt.IsNil)
 		})
 	}
@@ -169,7 +177,7 @@ func TestGenerateSchemaDiffSQL_RefusesAMaterializedViewChangeThatDropsAPolicy_Fa
 			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`)
+			c.Assert(err, qt.ErrorMatches, fmt.Sprintf(test.refusal, "active_tenants", tenantVisible))
 			c.Assert(statements, qt.IsNil)
 		})
 	}

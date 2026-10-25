@@ -837,6 +837,7 @@ func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	vocabulary difftypes.UserTypeVocabulary,
+	enums map[string]bool,
 ) []ast.Node {
 	for _, colDiff := range tableDiff.ColumnsModified {
 		if isGeneratedColumnChange(colDiff) {
@@ -866,6 +867,7 @@ func (p *Planner) modifyExistingTableColumns(
 		// are emitted above this and reach a column the diff carries no
 		// definition for.
 		changed := columnchange.Properties(colDiff)
+		changed.Default = changed.Default || restatesDefault(colDiff, enums)
 		_, uniqueChanged := colDiff.Changes["unique"]
 		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
@@ -896,6 +898,37 @@ func (p *Planner) modifyExistingTableColumns(
 		}
 	}
 	return result
+}
+
+// restatesDefault reports whether a column whose type changes away from an
+// enum sets its declared default again after the TYPE clause.
+//
+// PostgreSQL converts the stored default to the new type and keeps the old
+// one inside it: `'a'::status` becomes `('a'::status)::text`. The comparison
+// reads that back as the declared `'a'`, so it reports no change, but the
+// default still depends on the enum, and `DROP TYPE status` is refused while
+// it does (`default value for column s of table t depends on type status`);
+// with CASCADE the server drops the default instead. Setting the declared
+// default again leaves the column with no trace of the old type.
+func restatesDefault(colDiff difftypes.ColumnDiff, enums map[string]bool) bool {
+	previous := previousColumnType(colDiff.Changes["type"])
+	if previous == "" || !enums[bareName(strings.TrimSuffix(previous, "[]"))] {
+		return false
+	}
+	return colDiff.Desired.DefaultSet || colDiff.Desired.Default != "" || colDiff.Desired.DefaultExpr != ""
+}
+
+// knownEnums names, by bare name, every enum the diff knows of: the declared
+// ones and the ones it removes.
+func knownEnums(diff *difftypes.SchemaDiff) map[string]bool {
+	enums := make(map[string]bool, len(diff.DeclaredUserTypes.Enums)+len(diff.EnumsRemoved))
+	for _, enum := range diff.DeclaredUserTypes.Enums {
+		enums[bareName(enum.Name)] = true
+	}
+	for _, enum := range diff.EnumsRemoved {
+		enums[bareName(enum.Name)] = true
+	}
+	return enums
 }
 
 // addedColumnUnique is the ADD CONSTRAINT for a column that gains a
@@ -1145,9 +1178,20 @@ func (p *Planner) dropsWithCascade() bool {
 	return p.targetDialect() != platform.Spanner
 }
 
+// removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
+// longer holds. A generated column goes first: it may be computed from another
+// removed column, which a drop could otherwise take only with CASCADE.
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) []ast.Node {
 	cascade := p.cascades(columnDropRelies(diff, tableDiff))
-	for _, column := range tableDiff.ColumnsRemoved {
+	columns := make([]schemamodel.Field, 0, len(tableDiff.ColumnsRemoved))
+	for _, generated := range []bool{true, false} {
+		for _, column := range tableDiff.ColumnsRemoved {
+			if isGenerated(column) == generated {
+				columns = append(columns, column)
+			}
+		}
+	}
+	for _, column := range columns {
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
 			Cascade:    cascade,
@@ -1197,7 +1241,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)
+			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, knownEnums(diff))
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1412,20 +1456,41 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 	return result
 }
 
+// removeTables drops the tables the declaration no longer holds. A table whose
+// row-level security policy reads another removed table goes before that
+// table, since the policy goes with its own table; see [tableDropRelies].
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
+	dropped := make(map[string]bool, len(diff.TablesRemoved))
+	for _, tableName := range removedTableOrder(diff) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists()
 		if p.describes() {
 			dropTableNode.SetComment("WARNING: This will delete all data!")
 		}
-		if p.cascades(tableDropRelies(diff)) {
+		dropped[tableName] = true
+		if p.cascades(tableDropRelies(diff, tableName, dropped)) {
 			dropTableNode.SetCascade()
 		}
 
 		result = append(result, dropTableNode)
 	}
 	return result
+}
+
+// removedTableOrder is the order the removed tables are dropped in: children
+// before the tables their foreign keys reference, and a table whose captured
+// object reads another removed table before that table.
+func removedTableOrder(diff *difftypes.SchemaDiff) []string {
+	names := deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies)
+	readers := make(map[string][]string)
+	for _, removal := range diff.TablesRemoved {
+		for _, name := range names {
+			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name) {
+				readers[removal.Name] = append(readers[removal.Name], name)
+			}
+		}
+	}
+	return deporder.StableReverseDependencySort(names, readers)
 }
 
 func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -1627,7 +1692,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	}
 	// After the skip policy, which may leave a removal out: only the drops
 	// the plan makes can take a policy with them.
-	if err := refusePoliciesLostToCascade(diff); err != nil {
+	if err := p.refusePoliciesLostToCascade(diff); err != nil {
 		return nil, err
 	}
 	// Hand-built diffs may lack identities. Resolve them before either the
@@ -1706,7 +1771,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes
 	// leaves with everything that reads it. Step 6.6 puts them back.
 	rebuild := planViewRebuild(diff)
-	result = p.dropRebuiltViewLikes(result, rebuild)
+	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
@@ -1807,6 +1872,13 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
+	// 11.9. Remove triggers and view-like objects before the columns, the
+	// constraints and the tables they depend on. A trigger may fire on UPDATE
+	// OF a column, and a view reads columns and, through GROUP BY, a primary
+	// key; dropped first, neither leaves a column drop relying on CASCADE.
+	result = p.removeTriggers(result, diff)
+	result = p.removeViewLikes(result, diff, rebuild)
+
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
 
@@ -1815,9 +1887,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(releasedConstraints, foreignKeysReleased)
 	result = p.removeConstraints(result, diff, releasedConstraints)
 
-	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
-	result = p.removeTriggers(result, diff)
-	result = p.removeViewLikes(result, diff, rebuild)
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
@@ -2461,10 +2530,12 @@ func (v viewPaths) recreate(diff *difftypes.SchemaDiff, semantics identifier.Sem
 }
 
 // viewDropRelies reports whether dropping the modified view name relies on
-// CASCADE: a view or materialized view that reads it is still in the database
-// when the drop runs. That is a declared one the view step puts back after
-// the drop, or one the declaration removes, which the removal step drops only
-// later. A reader the view rebuild owns is absent by then.
+// CASCADE: an object that depends on it is still in the database when the
+// drop runs. That is a declared view or materialized view that reads it,
+// which the view step puts back after the drop, a view or materialized view
+// the declaration removes, which the removal step drops only later, and a
+// removed routine or a policy of a removed table, dropped later still. A
+// reader the view rebuild owns is absent by then.
 func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, owned viewLikeSet) bool {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, object := range viewLikesLostToCascade(diff.DeclaredViewLikes, []string{name}, semantics) {
@@ -2472,7 +2543,7 @@ func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, owned 
 			return true
 		}
 	}
-	return removedReaderRemains(diff, name, owned)
+	return removedReaderRemains(diff, name, owned) || removalOutlivesDrop(diff, name)
 }
 
 // removedReaderRemains reports whether a view or materialized view the
@@ -2604,7 +2675,9 @@ func viewLikesLostToCascade(
 // removeViewLikes drops the views and materialized views the declaration no
 // longer holds, each after every removed one that reads it, so no drop relies
 // on CASCADE to take another removed object. One the view rebuild dropped
-// already is left out.
+// already is left out. A drop relies on CASCADE when a removed routine uses
+// the object's row type or a policy of a removed table reads it, since both
+// are dropped later; see [removalOutlivesDrop].
 func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	owned := rebuild.owns()
 	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
@@ -2614,7 +2687,7 @@ func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff,
 		}
 	}
 	for _, object := range deporder.ViewLikesForDropForDialect(removed, p.targetDialect()) {
-		result = append(result, p.dropViewLikeNode(object, p.cascades(false)))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
 	}
 	return result
 }

@@ -2034,13 +2034,24 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	if op.HasChanged {
 		changed = op.Changed
 	}
+	// No assignment cast reaches an enum from the old default either, so a
+	// column that keeps or gains a default loses it before the TYPE clause and
+	// takes it back after: `default for column "s" cannot be cast
+	// automatically to type status` otherwise.
+	enumDefault := changed.Type && column.EnumType && (column.Default != nil || changed.Default)
+	if enumDefault {
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
+	}
 	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
 		return
 	}
 	if changed.Nullability {
 		r.writeColumnNullabilityChange(tableName, op)
 	}
-	if changed.Default {
+	switch {
+	case enumDefault && column.Default != nil:
+		r.writeColumnDefaultChange(tableName, column)
+	case changed.Default && !enumDefault:
 		r.writeColumnDefaultChange(tableName, column)
 	}
 }
