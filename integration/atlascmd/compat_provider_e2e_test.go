@@ -18,6 +18,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/providerconfig"
@@ -161,6 +162,31 @@ func TestCompatProviderE2E_HappyPath(t *testing.T) {
 		c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
 		c.Assert(out, qt.Contains, "Schemas are synced")
 		f.assertStopped(c)
+	})
+	// A database another provider URL names is a desired state, as a
+	// built-in database URL is: the apply plans the target toward it and
+	// needs no dev database.
+	t.Run("a schema apply takes another fixture database as the desired state", func(t *testing.T) {
+		c := qt.New(t)
+		f := newCompatProviderFixture(c, binaries)
+		target := filepath.Join(f.dir, "database.db")
+		createSchemaInspectSQLiteDatabase(c, target, `CREATE TABLE "widgets" ("id" INTEGER)`, `CREATE TABLE "gadgets" ("id" INTEGER)`)
+		desired := filepath.Join(f.dir, "desired.db")
+		createSchemaInspectSQLiteDatabase(c, desired, `CREATE TABLE "widgets" ("id" INTEGER)`)
+		to := (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(desired), "/")}).String()
+
+		out, stderr, code := f.run(f.withManifest(), "schema", "apply", "--url", f.address, "--to", to, "--auto-approve")
+
+		c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+		c.Assert(out, qt.Contains, "DROP TABLE \"gadgets\";")
+		f.assertStopped(c)
+		conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+target)
+		c.Assert(err, qt.IsNil)
+		defer dbschema.CloseAndWarn(conn)
+		var gadgets, widgets int
+		c.Assert(conn.QueryRowContext(c.Context(), `SELECT count(*) FROM sqlite_schema WHERE name = 'gadgets'`).Scan(&gadgets), qt.IsNil)
+		c.Assert(conn.QueryRowContext(c.Context(), `SELECT count(*) FROM sqlite_schema WHERE name = 'widgets'`).Scan(&widgets), qt.IsNil)
+		c.Assert([]int{gadgets, widgets}, qt.DeepEquals, []int{0, 1})
 	})
 	t.Run("a built-in URL under a manifest stays on its driver and starts no process", func(t *testing.T) {
 		c := qt.New(t)
