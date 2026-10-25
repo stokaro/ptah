@@ -172,8 +172,9 @@ Both transport boundaries refuse:
 - a value written twice, written and lost, or neither;
 - a placement on a fragment that is not an HCL `TOP_LEVEL` or `IN_TABLE` one, or
   none on such a fragment;
-- an empty or multi-line loss, a limit of a kind the engine does not declare, and
-  a field type for a column the request does not hold or for one column twice;
+- an empty or multi-line loss, a limit without a kind, an HCL limit of a kind the
+  engine does not declare in `hcl_source.header_kinds`, and a field type outside
+  a Go export, for a column the request does not hold, or for one column twice;
 - `complete=false`. A canceled call returns nothing.
 
 ### Versioning
