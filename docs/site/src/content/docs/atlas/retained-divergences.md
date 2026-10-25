@@ -24,9 +24,11 @@ disposition: keep
 The drop-in rule has two directions and they are not symmetric. `ptah-compat`
 must never exit `0` where the pinned Atlas community binary v1.3.0 exits `1`
 over a mistake in the invocation; that direction is a correctness failure and
-there are no entries for it. A database engine the binary has no driver for is
-not a mistake, and [A YDB database URL](#a-ydb-database-url) is the one entry
-of that kind. The other direction — `ptah-compat` exits `1` where that binary exits `0` — is a
+there are no entries for it. Where the binary fails for a reason the invocation
+does not cause, there are two entries:
+[A YDB database URL](#a-ydb-database-url), an engine it has no driver for, and
+[A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction),
+a file it nests in a transaction of its own. The other direction — `ptah-compat` exits `1` where that binary exits `0` — is a
 usability failure for a drop-in replacement, and it is allowed only where the
 refusal is more useful than the acceptance.
 
@@ -141,6 +143,7 @@ own measurement conditions.
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
 | [A YDB database URL](#a-ydb-database-url) | serves it on every verb in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
+| [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
 
 ## A `--config` selection naming more than one file
 
@@ -1155,6 +1158,38 @@ profile. The strict profile answers `unsupported docker image "ydb"`, as the
 binary does.
 
 **Tracking.** [`stokaro/ptah#4015`](https://github.com/stokaro/ptah/issues/4015)
+
+## A golang-migrate file that runs its own transaction
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `ptah-compat migrate apply` runs a golang-migrate
+directory the way golang-migrate runs it, which opens no transaction around a
+file. A PostgreSQL file that opens and closes its own transaction runs as
+written, outside any transaction of the migrator's, with its revision row
+written after the file's last statement. A file whose one statement PostgreSQL
+refuses inside a transaction runs without one. The pinned community binary
+v1.3.0 wraps each file in a transaction of its own, so a file with its own
+block nests in it, and its `COMMIT` ends the binary's transaction early.
+
+Measured on PostgreSQL 18, each directory applied to a fresh database:
+
+```text
+second migration                                   binary                          ptah-compat
+BEGIN; CREATE TABLE t1 (id int);                   applies, records 4 of 4,        applies, records 4 of 4,
+INSERT INTO t1 VALUES (1); COMMIT;                 exits 1: unexpected             exits 0
+                                                   transaction status idle
+BEGIN; CREATE TABLE t2 (id int); COMMIT;           t2 stays, records 3 of 4        t2 stays, records 3 of 4
+INSERT INTO missing_table VALUES (1);              with the error, exits 1         with the error, exits 1
+CREATE INDEX CONCURRENTLY base_id_idx              fails: cannot run inside a      builds a valid index,
+ON base (id);                                      transaction block, exits 1      records 1 of 1, exits 0
+```
+
+Directories in every other layout keep the per-file transaction on both
+binaries; [Transactions in a golang-migrate directory](../migrate-commands/#transactions-in-a-golang-migrate-directory)
+has the rules.
+
+**Evidence.** [`stokaro/ptah#4962`](https://github.com/stokaro/ptah/issues/4962)
 
 ## Not on this page
 
