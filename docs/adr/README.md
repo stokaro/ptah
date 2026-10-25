@@ -47,6 +47,8 @@ a new record that names it, and its own status line is updated to point there.
 | [0035](0035-the-operators-planning-policy-reaches-the-provider.md) | The operator's planning policy reaches the provider | Accepted |
 | [0036](0036-a-provider-claims-yaml-entry-keys-and-hcl-blocks.md) | A provider claims YAML entry keys and HCL blocks | Accepted |
 | [0037](0037-a-provider-encodes-the-source-it-decodes.md) | A provider encodes the source it decodes | Accepted |
+| [0038](0038-a-provider-runs-the-operators-statements-and-returns-what-they-read.md) | A provider runs the operator's statements and returns what they read | Accepted |
+| [0039](0039-a-provider-declares-how-a-scope-names-its-objects-and-which-grants-name-them.md) | A provider declares how a scope names its objects and which grants name them | Accepted |
 
 ## Writing one
 

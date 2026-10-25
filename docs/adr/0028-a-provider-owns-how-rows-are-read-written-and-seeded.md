@@ -380,3 +380,8 @@ These are for the future implementation. None holds today.
   only" requires: the `TEXT` form of `Render` and `RenderRowWrites`, behind the
   feature `render.text-units`, and the refusal reason `NO_TEXT_FORM` for a change
   that has none.
+- [ADR 0038](0038-a-provider-runs-the-operators-statements-and-returns-what-they-read.md)
+  adds `sessions.statements`, which runs a statement the operator wrote, such as
+  a check or a test assertion, and returns its rows. It is not the general
+  `database/sql` proxy rejected above: the host sends no SQL it composes, and
+  the rows it writes still go through `RenderRowWrites`.
