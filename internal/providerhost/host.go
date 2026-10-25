@@ -78,6 +78,11 @@ var hostFeatures = []string{
 	// text units, and a provider refuses a change it can make only natively;
 	// see target.Render and rowWriter.RenderWrites.
 	provider.TextUnitsFeature,
+	// Views, materialized views, sequences, roles, grants and comments reach
+	// a provider on the common-object wire: read, validated, spelled for the
+	// comparison and rendered by it; see target.declaredCommonObjects and
+	// target.commonObjectChange.
+	provider.CommonObjectsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

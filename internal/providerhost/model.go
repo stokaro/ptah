@@ -5,10 +5,13 @@ import (
 	"reflect"
 	"slices"
 
+	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
 )
 
@@ -102,13 +105,21 @@ func commonTable(declaration schemacapture.TableDeclaration) (*ast.CreateTableNo
 	return node, nil
 }
 
-func commonSchema(schema *schemamodel.Database, defaultSchema string) ([]ast.Node, error) {
+// commonSchema creates schema from nothing: the common objects beyond tables
+// before and after the tables, as commonObjectCreations places them, and the
+// tables in dependency order, each followed by the steps that set its
+// comments where the engine carries them on the common-object wire.
+func (t *target) commonSchema(schema *schemamodel.Database) ([]ast.Node, error) {
+	defaultSchema := t.engine.GetDefaultSchema()
 	if schema == nil {
 		return nil, fmt.Errorf("provider schema is required")
 	}
 	// Declared rows are the host's data stage, which the provider serves
-	// through its row services; they render no schema object.
-	if err := onlyFields(*schema, "Tables", "Fields", "Schemas", "Dependencies", "FeatureCoverage", "NotDescribed", "ManagedData"); err != nil {
+	// through its row services; they render no schema object. The common
+	// objects beyond tables travel on the common-object wire, whose capture
+	// has already refused a kind the engine does not carry.
+	if err := onlyFields(*schema, "Tables", "Fields", "Schemas", "Dependencies", "FeatureCoverage", "NotDescribed", "ManagedData",
+		"Views", "MaterializedViews", "Sequences", "Roles", "Grants", "RevokedGrants"); err != nil {
 		return nil, err
 	}
 	for _, namespace := range schema.Schemas {
@@ -143,13 +154,50 @@ func commonSchema(schema *schemamodel.Database, defaultSchema string) ([]ast.Nod
 	if len(ordered) != len(creations) {
 		return nil, fmt.Errorf("provider schema contains duplicate tables")
 	}
-	nodes := make([]ast.Node, 0, len(ordered))
+	before, after := commonObjectCreations(schema)
+	nodes := make([]ast.Node, 0, len(before)+len(ordered)+len(after))
+	nodes = append(nodes, before...)
 	for _, creation := range ordered {
-		node, err := commonTable(schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields})
+		declaration := schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields}
+		var comments []ast.Node
+		if t.commonKinds()[protocol.CommonObjectSupport_COMMENT] {
+			declaration, comments = creationComments(declaration)
+		}
+		node, err := commonTable(declaration)
 		if err != nil {
 			return nil, err
 		}
-		nodes = append(nodes, node)
+		nodes = append(append(nodes, node), comments...)
 	}
-	return nodes, nil
+	return append(nodes, after...), nil
+}
+
+// commonObjectCreations creates the common objects beyond tables that schema
+// declares, where a plan from an empty database places them: the roles and
+// the sequences before the tables, which may name them, and the views, the
+// memberships, the grants and the revocations after them. A comment travels
+// with the object it belongs to.
+func commonObjectCreations(schema *schemamodel.Database) (before, after []ast.Node) {
+	for _, role := range schema.Roles {
+		before = append(before, modelast.FromRole(role))
+	}
+	for _, sequence := range schema.Sequences {
+		before = append(before, modelast.FromSequence(sequence))
+	}
+	after = createdViews(&difftypes.SchemaDiff{ViewsAdded: schema.Views})
+	for _, view := range schema.MaterializedViews {
+		after = append(after, modelast.FromMaterializedView(view))
+	}
+	for _, role := range schema.Roles {
+		for _, membership := range modelast.FromRoleMemberships(role) {
+			after = append(after, membership)
+		}
+	}
+	for _, grant := range schema.Grants {
+		after = append(after, modelast.FromGrant(grant))
+	}
+	for _, grant := range schema.RevokedGrants {
+		after = append(after, modelast.FromRevokedGrant(grant))
+	}
+	return before, after
 }

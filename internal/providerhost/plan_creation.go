@@ -18,7 +18,10 @@ func (n *pendingTableCreation) Accept(ast.Visitor) error {
 	return unsupported("unclaimed provider table creation " + n.name)
 }
 
-func (p commonPlanner) creationNode(creation difftypes.TableCreation) (ast.Node, error) {
+// creationNodes creates a table: the provider's step for an owned lifecycle,
+// or the common creation followed by the steps that set its comments on an
+// engine that carries them on the common-object wire.
+func (p commonPlanner) creationNodes(creation difftypes.TableCreation) ([]ast.Node, error) {
 	allowed := []string{"Name", "Table", "Fields", "OwnedObjects", "FeatureCoverage", "DependsOn"}
 	if !p.commonTables {
 		allowed = append(allowed, "Enums", "Constraints")
@@ -27,9 +30,18 @@ func (p commonPlanner) creationNode(creation difftypes.TableCreation) (ast.Node,
 		return nil, err
 	}
 	if !p.commonTables {
-		return &pendingTableCreation{name: tableref.CanonicalExact(creation.Table.Schema, creation.Table.Name)}, nil
+		return []ast.Node{&pendingTableCreation{name: tableref.CanonicalExact(creation.Table.Schema, creation.Table.Name)}}, nil
 	}
-	return commonTable(schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields})
+	declaration := schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields}
+	var comments []ast.Node
+	if p.comments {
+		declaration, comments = creationComments(declaration)
+	}
+	node, err := commonTable(declaration)
+	if err != nil {
+		return nil, err
+	}
+	return append([]ast.Node{node}, comments...), nil
 }
 
 // pendingTableDrop stands in for the removal of a table whose provider owns

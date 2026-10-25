@@ -10,7 +10,7 @@ import (
 )
 
 func (c *planningCapture) commonStep(source featureplan.CommonStep) (*protocol.CommonPlanningStep, error) {
-	if err := onlyFields(source, "ID", "Parent", "Effects", "Transaction", "Impact", "AddedColumn"); err != nil {
+	if err := onlyFields(source, "ID", "Parent", "Effects", "Transaction", "Impact", "AddedColumn", "CommonObject"); err != nil {
 		return nil, err
 	}
 	metadata, err := planningMetadata(source)
@@ -20,6 +20,13 @@ func (c *planningCapture) commonStep(source featureplan.CommonStep) (*protocol.C
 	result := &protocol.CommonPlanningStep{Id: planningStepID(source.ID), Parent: optionalPlanningIdentity(source.Parent), Metadata: metadata}
 	if source.AddedColumn != nil {
 		result.AddedColumn, err = c.columnOperand(source.AddedColumn)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if source.CommonObject != nil {
+		// The operand travels as the change Render receives for the node.
+		result.CommonObject, _, err = c.target.commonOperation(source.CommonObject)
 		if err != nil {
 			return nil, err
 		}
