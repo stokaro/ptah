@@ -67,7 +67,8 @@ the top-level `indexes` with its `table`. The host's YAML frontend keeps the key
 of a selected owner on a column entry as it keeps them on a table and an index
 entry today.
 
-A claim can name the common keys of its entry that the owner reads with it:
+A claim of either scope, and a Go claim, can name the common keys of its entry
+that the owner reads with it:
 
 ```proto
 // YAMLSourceKey gains: repeated string inherited = 5;
@@ -192,14 +193,22 @@ part in it.
 - A block type at the top level, and an attribute name at a site, belong to one
   selected owner. The host refuses a provider claim that collides with the
   frontend's own blocks or with another owner, as it refuses a YAML key.
-- The SDK refuses a claim without a type, selector or models; a naming at a site
-  other than `TOP_LEVEL` or none at `TOP_LEVEL`; children or a grant kind outside
-  `TOP_LEVEL` and `IN_TABLE`; a reference attribute without `refers`, `optional` on
+- The SDK refuses a claim without a type, selector or models; an attribute
+  claim whose type is not the frontend's block at its site (`table`, `index`,
+  `function` or `procedure`, `materialized`); a naming at a site other than
+  `TOP_LEVEL` or none at `TOP_LEVEL`; children outside `TOP_LEVEL` and
+  `IN_TABLE`, and a declared type or a grant kind outside `TOP_LEVEL`; an
+  inherited list on a claim of the owner's own block, and an inherited name the
+  claim owns; a reference attribute without `refers`, `refers` or `optional` on
   any other kind; an attribute or child named twice; two claims of one site and
-  type; and an HCL model that no claim names.
-- The SDK refuses a fragment whose claim is not one the engine declares, whose
-  selector differs, whose content does not fit its site, whose attributes or
-  children are not in the claim, or whose binding or subject is missing.
+  type; and, on an engine that declares HCL claims, an HCL model that no claim
+  names.
+- On an engine that declares HCL claims, the SDK refuses a fragment without one,
+  a claim the engine does not declare, a selector that differs, content that
+  does not fit its site, attributes or children that are not in the claim, and a
+  missing binding or subject. An engine that declares none keeps accepting HCL
+  fragments without a claim, as contract 25.2 does, so a provider of an older
+  minor stays valid.
 - A provider refuses a block it cannot read with a positioned refusal; it never
   skips one.
 
@@ -209,8 +218,13 @@ Both additions are two-way. `source.entry-keys` enables the `COLUMN` and `INDEX`
 YAML scopes and the `inherited` lists; `source.hcl` enables `Engine.hcl_source`,
 `SourceFragment.hcl_block` and `SourceDocument.limits`. A provider lists each in
 `Description.features` and in each engine that uses it, beside `source.decode`.
-The SDK drops the declarations a host did not ask for, and a host that does not
-list the feature reads no provider block or entry key.
+The SDK drops the declarations a host did not ask for. Without
+`source.entry-keys` it drops every YAML claim of a `COLUMN` or `INDEX` scope and
+every YAML or Go claim with an `inherited` list, since its owner needs what the
+host would not send; a model left with no YAML claim loses YAML from its source
+formats, so the description stays valid. Without `source.hcl` it drops
+`hcl_source`. A host that does not list a feature reads no provider block or
+entry key of it, and refuses one in a document as an unknown key.
 
 ### Versioning
 
