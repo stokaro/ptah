@@ -141,6 +141,9 @@ func migrationDirLockPath(migrationsDir string) string {
 
 func tryAcquireDirLock(lockPath string) (*dirLock, error) {
 	file, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
+	if lockFileInUse(err) {
+		return nil, errDirLocked
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open migration directory lock: %w", err)
 	}

@@ -43,6 +43,15 @@ func unlockFile(file *os.File) error {
 	return nil
 }
 
+// lockFileInUse reports an open of the lock file that another handle refused.
+// Removing a file opens it without sharing it, so an open in the instant a
+// release removes the lock file fails with ERROR_SHARING_VIOLATION; the lock
+// is held then as surely as when LockFileEx refuses it, and the caller waits
+// for it the same way.
+func lockFileInUse(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
+
 // The lock file is removed on release; see (*dirLock).release for the order.
 func removeLockFileBeforeUnlock(string) {}
 
