@@ -217,8 +217,7 @@ func TestYDBSchemaSecurity_FailurePath_RefusesUnreadPrincipals(t *testing.T) {
 			command.SetContext(ctx)
 			stdout, err := runCommand(command, "--db-url", parsed.String())
 
-			c.Assert(err, qt.ErrorMatches, `the analysis reads YDB's users and groups from .sys/auth_users, `+
-				`.sys/auth_groups and .sys/auth_group_members, and this connection may not read them; .*`)
+			c.Assert(err, qt.ErrorMatches, `the analysis reads the database's roles, and this connection may not read them, .*`)
 			c.Assert(stdout, qt.Equals, "")
 		})
 	}

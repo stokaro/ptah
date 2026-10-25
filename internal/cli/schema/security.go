@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
-	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -153,7 +153,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}
-	if err := refuseUnreadPrincipals(conn.Info().Dialect, live); err != nil {
+	if err := refuseUnreadPrincipals(live); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// The connection's own set rather than the dialect default: it is what the
@@ -191,21 +191,21 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	return nil
 }
 
-// refuseUnreadPrincipals refuses an analysis of a YDB database whose users
-// and groups the connection may not read. YDB reports them only through
-// .sys/auth_*, and a connection that may describe the tables but not read
-// .sys sees the permission entries and no principal: every rule about roles
-// would answer over an empty set and report a clean access model nobody saw.
-func refuseUnreadPrincipals(dialect string, live *catalog.Database) error {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
-		return nil
-	}
+// refuseUnreadPrincipals refuses an analysis of a database whose roles the
+// read did not describe. A connection that may describe the tables but not
+// the roles sees no principal, and every rule about roles would answer over an
+// empty set and report a clean access model nobody saw.
+//
+// The reader decides, on every engine: it records roles as not described when
+// the server refuses their catalog, as YDB does for .sys/auth_*, MySQL for
+// mysql.user, ClickHouse for system.roles and Oracle for its role views, and
+// as a provider's read does when it leaves roles uninspected.
+func refuseUnreadPrincipals(live *catalog.Database) error {
 	if _, limited := live.NotDescribed.Limit(coverage.Role); !limited {
 		return nil
 	}
-	return fmt.Errorf("the analysis reads YDB's users and groups from .sys/auth_users, .sys/auth_groups and " +
-		".sys/auth_group_members, and this connection may not read them; connect as a user that may read " +
-		"rows of the database, such as a member of DATA-READERS")
+	return errors.New("the analysis reads the database's roles, and this connection may not read them, " +
+		"so a report would describe an access model nobody saw; connect as a user that may read the roles")
 }
 
 // roleMemberships carries the live role graph into the analysis.
