@@ -48,28 +48,27 @@ func Common() Catalog {
 }
 
 // NewCatalog joins the frontend's own directives with those of the owners in
-// set, and adds to each of the frontend's directives the attributes owners add
-// to it. It refuses an unselected set, an owner directive that takes the name
-// of one of the frontend's own, an owner attribute the directive declares
-// already, and owner attributes or target scopes on a directive that is not
-// the frontend's.
-func NewCatalog(set annotation.Set) (Catalog, error) {
-	if !set.Selected() {
-		return Catalog{}, annotation.ErrUnselected
-	}
-	for _, name := range set.AttributedDirectives() {
-		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
-			return Catalog{}, fmt.Errorf("an owner adds attributes to %q, which is not one of the frontend's own directives", name)
-		}
-	}
-	for _, name := range set.TargetScopedDirectives() {
-		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
-			return Catalog{}, fmt.Errorf("an owner reads scoped declarations of %q, which is not one of the frontend's own directives", name)
+// set and in each of more, and adds to each of the frontend's directives the
+// attributes owners add to it. more holds sets a surface knows beside the one
+// its runtime selected, such as the directives official providers published
+// for engines the runtime does not serve; their directives follow set's. It
+// refuses an unselected set, an owner directive that takes the name of one of
+// the frontend's own or of another owner's, an owner attribute the directive
+// declares already, and owner attributes or target scopes on a directive that
+// is not the frontend's.
+func NewCatalog(set annotation.Set, more ...annotation.Set) (Catalog, error) {
+	sets := append([]annotation.Set{set}, more...)
+	for _, each := range sets {
+		if err := checkSet(each); err != nil {
+			return Catalog{}, err
 		}
 	}
 	joined := make([]Directive, 0, len(directives))
 	for _, own := range directives {
-		added := set.Attributes(own.Name)
+		var added []Attribute
+		for _, each := range sets {
+			added = append(added, each.Attributes(own.Name)...)
+		}
 		if len(added) == 0 {
 			joined = append(joined, own)
 			continue
@@ -83,14 +82,38 @@ func NewCatalog(set annotation.Set) (Catalog, error) {
 		}
 		joined = append(joined, widened)
 	}
-	for _, directive := range set.Directives() {
-		if slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == directive.Name }) {
-			owner, _ := set.Owner(directive.Name)
-			return Catalog{}, fmt.Errorf("directive %q of %s takes the name of one of the frontend's own", directive.Name, owner)
+	for _, each := range sets {
+		for _, directive := range each.Directives() {
+			owner, _ := each.Owner(directive.Name)
+			if slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == directive.Name }) {
+				return Catalog{}, fmt.Errorf("directive %q of %s takes the name of one of the frontend's own", directive.Name, owner)
+			}
+			if slices.ContainsFunc(joined, func(declared Directive) bool { return declared.Name == directive.Name }) {
+				return Catalog{}, fmt.Errorf("directive %q of %s takes the name of another owner's", directive.Name, owner)
+			}
+			joined = append(joined, directive)
 		}
-		joined = append(joined, directive)
 	}
 	return Catalog{directives: joined}, nil
+}
+
+// checkSet refuses an unselected set, and one whose owners add attributes to,
+// or read scoped declarations of, a directive that is not the frontend's.
+func checkSet(set annotation.Set) error {
+	if !set.Selected() {
+		return annotation.ErrUnselected
+	}
+	for _, name := range set.AttributedDirectives() {
+		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
+			return fmt.Errorf("an owner adds attributes to %q, which is not one of the frontend's own directives", name)
+		}
+	}
+	for _, name := range set.TargetScopedDirectives() {
+		if !slices.ContainsFunc(directives, func(own Directive) bool { return own.Name == name }) {
+			return fmt.Errorf("an owner reads scoped declarations of %q, which is not one of the frontend's own directives", name)
+		}
+	}
+	return nil
 }
 
 // Directives returns every directive of the catalog in stable order.

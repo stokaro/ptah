@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 
+	"ptah.run/core/annotation"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/buildinfo"
 	"ptah.run/internal/cli/banner"
+	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/ptahls"
 )
 
@@ -76,13 +78,20 @@ func main() {
 	banner.Print(os.Stderr, "ptah-ls", info.Version)
 
 	// The server knows the directives of every bundled owner, as the parse the
-	// ptah binary runs does.
-	annotations, err := builtin.Annotations()
+	// ptah binary runs does, and those official providers published for the
+	// engines the bundle does not serve, so a model written for such an engine
+	// completes without its provider installed.
+	runtime, err := builtin.Bundled()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ptah-ls: %v\n", err)
 		os.Exit(1)
 	}
-	opts := ptahls.ServerOptions{Version: info.Version, Annotations: annotations}
+	published, err := providerpublished.AnnotationSet(runtime)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ptah-ls: %v\n", err)
+		os.Exit(1)
+	}
+	opts := ptahls.ServerOptions{Version: info.Version, Annotations: runtime.Annotations(), More: []annotation.Set{published}}
 	if err := ptahls.RunWithOptions(context.Background(), os.Stdin, os.Stdout, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "ptah-ls: %v\n", err)
 		os.Exit(1)
