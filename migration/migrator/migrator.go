@@ -270,9 +270,6 @@ type Migrator struct {
 	metadataAvailable        bool
 	legacyRevisionTable      bool
 	postgresIndexObservation *postgresIndexObservation
-	// ownTransactions applies a body that decides its own transactions the
-	// way a runner that wraps none does; see [Migrator.WithOwnTransactions].
-	ownTransactions bool
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -2536,7 +2533,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		// Same reason the plans are read here: the probe queries the catalog, so
 		// it has to run before the batch transaction takes the connection. See
 		// [Migrator.refuseUpOverUnsafeIndex].
-		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, MigrationTxModeAll); err != nil {
+		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, MigrationTxModeAll, ownTransactionRun{}); err != nil {
 			return nil, err
 		}
 		plans[migration.RevisionVersion()] = plan
@@ -2757,11 +2754,12 @@ func (m *Migrator) applyUpMigrationObserved(
 	}()
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-	ownBlocks, txMode, err := m.upOwnTransactionMode(migration, txMode)
+	own, err := m.upOwnTransactionMode(migration, txMode)
 	if err != nil {
 		return false, err
 	}
-	if txMode == MigrationTxModeNone && ownBlocks.Empty() {
+	txMode = own.mode
+	if txMode == MigrationTxModeNone && own.blocks.Empty() {
 		if err := m.validateNoTransactionSQL(migration, MigrationDirectionUp); err != nil {
 			return false, err
 		}
@@ -2796,11 +2794,11 @@ func (m *Migrator) applyUpMigrationObserved(
 	// Read-only, and before the revision row is touched: a refusal has to leave
 	// whatever an earlier attempt recorded exactly as it found it. See
 	// [Migrator.refuseUpOverUnsafeIndex].
-	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode); err != nil {
+	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode, own); err != nil {
 		return false, err
 	}
-	if !ownBlocks.Empty() {
-		return checksDeferred, m.applyUpMigrationOwnTransactions(ctx, migration, startedAt, plan, ownBlocks)
+	if !own.blocks.Empty() {
+		return checksDeferred, m.applyUpMigrationOwnTransactions(ctx, migration, startedAt, plan, own)
 	}
 	if txMode == MigrationTxModeNone {
 		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt, plan)

@@ -50,6 +50,11 @@ func TestRead_HappyPath(t *testing.T) {
 			want:       []int{0, 2, 4, 6},
 		},
 		{
+			name:       "and no chain is a plain commit",
+			statements: []string{"BEGIN", "SELECT 1", "COMMIT AND NO CHAIN", "BEGIN", "END TRANSACTION AND NO CHAIN"},
+			want:       []int{0, 2, 3, 4},
+		},
+		{
 			name:       "lower case and a terminator",
 			statements: []string{"begin;", "select 1;", "commit;"},
 			want:       []int{0, 2},
@@ -100,8 +105,8 @@ func TestRead_FailurePath(t *testing.T) {
 		{name: "savepoint", statements: []string{"BEGIN", "SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "SAVEPOINT is partial transaction state"},
 		{name: "release savepoint", statements: []string{"BEGIN", "RELEASE SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "RELEASE is partial transaction state"},
 		{name: "rollback to savepoint", statements: []string{"BEGIN", "SAVEPOINT s", "ROLLBACK TO SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "SAVEPOINT is partial transaction state"},
-		{name: "commit and chain", statements: []string{"BEGIN", "COMMIT AND CHAIN"}, wantIndex: 1, wantReason: "AND [NO] CHAIN"},
-		{name: "commit and no chain", statements: []string{"BEGIN", "COMMIT AND NO CHAIN"}, wantIndex: 1, wantReason: "AND [NO] CHAIN"},
+		{name: "commit and chain", statements: []string{"BEGIN", "COMMIT AND CHAIN"}, wantIndex: 1, wantReason: "COMMIT AND CHAIN starts a transaction"},
+		{name: "end and chain", statements: []string{"BEGIN", "END WORK AND CHAIN"}, wantIndex: 1, wantReason: "END AND CHAIN starts a transaction"},
 		{name: "prepare transaction", statements: []string{"BEGIN", "PREPARE TRANSACTION 'x'"}, wantIndex: 1, wantReason: "PREPARE TRANSACTION leaves a prepared transaction"},
 		{name: "commit prepared", statements: []string{"COMMIT PREPARED 'x'"}, wantIndex: 0, wantReason: "COMMIT PREPARED leaves a prepared transaction"},
 		{name: "unknown begin mode", statements: []string{"BEGIN SNAPSHOT 'abc'", "COMMIT"}, wantIndex: 0, wantReason: "not a transaction mode"},
@@ -128,6 +133,29 @@ func TestStructureError_Error(t *testing.T) {
 	_, err := filetx.Read([]string{"SELECT 1", "COMMIT"})
 	c.Assert(err, qt.ErrorMatches,
 		`the file controls its own transactions in a form Ptah does not run, at statement 2: no transaction is open to close`)
+}
+
+// RunsAlone counts the statements that hold something to run: a comment or an
+// empty statement beside the one statement leaves the file one that runs
+// alone, and a second statement does not.
+func TestRunsAlone(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		statements []string
+		want       bool
+	}{
+		{"one statement", []string{"CREATE INDEX CONCURRENTLY i ON t (id)"}, true},
+		{"one statement after a comment", []string{"-- build it\nCREATE INDEX CONCURRENTLY i ON t (id)"}, true},
+		{"one statement beside empty and comment-only ones", []string{"", "CREATE INDEX CONCURRENTLY i ON t (id)", "-- done", ";"}, true},
+		{"two statements", []string{"CREATE TABLE t (id int)", "CREATE INDEX CONCURRENTLY i ON t (id)"}, false},
+		{"no statement", []string{"-- nothing"}, false},
+		{"none at all", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(filetx.RunsAlone(test.statements), qt.Equals, test.want)
+		})
+	}
 }
 
 // Each statement of a file with a statement before, inside, between and after
@@ -194,4 +222,106 @@ func TestBlocks_ZeroValue(t *testing.T) {
 
 func blocksStatementName(index int) string {
 	return []string{"create", "first begin", "insert", "first commit", "update", "second begin", "second commit", "drop"}[index]
+}
+
+// Sent as one query, a file's statements run in transactions that end where
+// the file's COMMITs do: the statements before a BEGIN join its transaction,
+// and those after the last COMMIT form one the end of the file closes, at the
+// statement count. A file that ends with its COMMIT has no such last one.
+func TestBlocks_AsOneQuery(t *testing.T) {
+	tests := []struct {
+		name       string
+		statements []string
+		want       []int
+	}{
+		{
+			name:       "statements on both sides of a block",
+			statements: []string{"CREATE TABLE a (id int)", "BEGIN", "CREATE TABLE b (id int)", "COMMIT", "CREATE TABLE c (id int)"},
+			want:       []int{0, 3, 4, 5},
+		},
+		{
+			name:       "a file that is one block",
+			statements: []string{"BEGIN", "CREATE TABLE a (id int)", "COMMIT"},
+			want:       []int{0, 2},
+		},
+		{
+			name: "two blocks with a statement between",
+			statements: []string{"BEGIN", "SELECT 1", "COMMIT", "CREATE TABLE a (id int)", "BEGIN", "SELECT 2", "COMMIT",
+				"DROP TABLE a"},
+			want: []int{0, 2, 3, 6, 7, 8},
+		},
+		{
+			name:       "no block",
+			statements: []string{"CREATE TABLE a (id int)", "CREATE TABLE b (id int)"},
+			want:       nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			blocks, err := filetx.Read(test.statements)
+			c.Assert(err, qt.IsNil)
+			c.Assert(blocks.AsOneQuery(len(test.statements)).Boundaries(), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// In a file sent as one query, a failure takes back the transaction its
+// statement runs in, from that transaction's first statement on, the
+// statements before its BEGIN included; the end of the file closes the last
+// one.
+func TestBlocks_AsOneQueryPositions(t *testing.T) {
+	c := qt.New(t)
+	statements := []string{"CREATE TABLE a (id int)", "BEGIN", "CREATE TABLE b (id int)", "COMMIT", "CREATE TABLE c (id int)", "SELECT 1"}
+	blocks, err := filetx.Read(statements)
+	c.Assert(err, qt.IsNil)
+	query := blocks.AsOneQuery(len(statements))
+	for _, test := range []struct {
+		index     int
+		inside    bool
+		closes    bool
+		committed int
+	}{
+		{index: 0, inside: true, closes: false, committed: 0},
+		{index: 1, inside: true, closes: false, committed: 0},
+		{index: 3, inside: false, closes: true, committed: 0},
+		{index: 4, inside: true, closes: false, committed: 4},
+		{index: 5, inside: true, closes: false, committed: 4},
+		{index: 6, inside: false, closes: true, committed: 4},
+	} {
+		c.Assert(query.Inside(test.index), qt.Equals, test.inside, qt.Commentf("statement %d", test.index))
+		c.Assert(query.Closes(test.index), qt.Equals, test.closes, qt.Commentf("statement %d", test.index))
+		c.Assert(query.Committed(test.index), qt.Equals, test.committed, qt.Commentf("statement %d", test.index))
+	}
+}
+
+// Begin names a statement that opens a transaction, with the modes a SET
+// TRANSACTION applies to one already open, and nothing else.
+func TestBegin(t *testing.T) {
+	tests := []struct {
+		statement string
+		wantModes string
+		wantOK    bool
+	}{
+		{statement: "BEGIN", wantModes: "", wantOK: true},
+		{statement: "begin work;", wantModes: "", wantOK: true},
+		{statement: "START TRANSACTION", wantModes: "", wantOK: true},
+		{statement: "BEGIN ISOLATION LEVEL SERIALIZABLE", wantModes: "ISOLATION LEVEL SERIALIZABLE", wantOK: true},
+		{statement: "BEGIN TRANSACTION READ ONLY, DEFERRABLE", wantModes: "READ ONLY, DEFERRABLE", wantOK: true},
+		{statement: "START TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE", wantModes: "ISOLATION LEVEL REPEATABLE READ READ WRITE", wantOK: true},
+		{statement: "-- open it\nBEGIN READ ONLY", wantModes: "READ ONLY", wantOK: true},
+		{statement: "COMMIT", wantOK: false},
+		{statement: "START something", wantOK: false},
+		{statement: "BEGIN ATOMIC", wantOK: false},
+		{statement: "CREATE TABLE \"BEGIN\" (id int)", wantOK: false},
+		{statement: "", wantOK: false},
+	}
+	for _, test := range tests {
+		t.Run(test.statement, func(t *testing.T) {
+			c := qt.New(t)
+			modes, ok := filetx.Begin(test.statement)
+			c.Assert(ok, qt.Equals, test.wantOK)
+			c.Assert(modes, qt.Equals, test.wantModes)
+		})
+	}
 }

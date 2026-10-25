@@ -407,7 +407,6 @@ func TestNativeVerbsStopAtSQLAProviderConnectionDoesNotTake(t *testing.T) {
 	}{
 		{"db verify", []string{"db", "verify", "--db-url", "{db}", "--checks", "{checks}"}},
 		{"schema test", []string{"schema", "test", "--db-url", "{scratch}", "--dir", "{cases}", "--schema-file", "{schema}"}},
-		{"migrations checkpoint", []string{"migrations", "checkpoint", "--shadow-db", "docker://fixture/1", "--migrations-dir", "{migrations}", "--dry-run"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)

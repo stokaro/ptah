@@ -12,11 +12,20 @@ import (
 	"context"
 	"fmt"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
+
+// Runtime splits and judges the plan's statements, and names the engines it
+// serves, so a plan for an engine a provider serves is analyzed by that
+// provider.
+type Runtime interface {
+	lint.Runtime
+	schemaext.TargetResolver
+}
 
 // sourceName is the name the plan's SQL is analyzed under.
 //
@@ -38,12 +47,16 @@ const sourceName = "20060102150405_plan.sql"
 // PostgreSQL or MySQL rules reports fewer hazards than the caller asked for,
 // and reporting fewer hazards is the one failure this analysis must not have.
 //
+// An engine only an executable provider serves is accepted when runtime
+// serves it, as `migrate lint` accepts it: its provider splits and judges the
+// statements.
+//
 // The compatibility profile is the Atlas-compatible one, so a plan is analyzed
 // on the same terms as a migration file holding the same SQL is analyzed by
 // `ptah-compat migrate lint`: the same rules, the same codes, and the same
 // `atlas:nolint` directives.
-func Analyze(ctx context.Context, runtime lint.Runtime, sql, dialect string) (lint.Analysis, error) {
-	canonical, ok := lintdialect.Canonical(dialect)
+func Analyze(ctx context.Context, runtime Runtime, sql, dialect string) (lint.Analysis, error) {
+	canonical, ok := lintdialect.CanonicalIn(dialect, runtime)
 	if !ok {
 		return lint.Analysis{}, fmt.Errorf(
 			"unsupported lint dialect %q; expected %s", dialect, lintdialect.Expected)

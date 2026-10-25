@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/dbschema"
 	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
@@ -22,7 +24,7 @@ import (
 // newCompatLintFixture is a private directory holding a manifest that names
 // the fixture command as the provider of engine under providerID, and a
 // hashed migration directory whose second version drops the table the first
-// creates.
+// creates. The statements are in the grammar the fixture's SQL analysis reads.
 func newCompatLintFixture(c *qt.C, command, providerID, engine string) compatProviderFixture {
 	c.Helper()
 	binaries := compatProviderBinaries{
@@ -41,14 +43,50 @@ func newCompatLintFixture(c *qt.C, command, providerID, engine string) compatPro
 	}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.WriteFile(f.manifest, manifest, 0o600), qt.IsNil)
-	migrations := filepath.Join(dir, "migrations")
+	f.migrationsURL = "file://" + filepath.ToSlash(filepath.Join(dir, "migrations"))
+	f.writeMigrations(c, `CREATE TABLE "widgets" ("id" INTEGER NOT NULL);`, `DROP TABLE "widgets";`)
+	return f
+}
+
+// writeMigrations replaces the migration directory with one version for each
+// statement, in order, and hashes it.
+func (f compatProviderFixture) writeMigrations(c *qt.C, statements ...string) {
+	c.Helper()
+	migrations := filepath.Join(f.dir, "migrations")
+	c.Assert(os.RemoveAll(migrations), qt.IsNil)
 	c.Assert(os.MkdirAll(migrations, 0o700), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(migrations, "20240101000000_init.sql"), []byte("CREATE TABLE widgets (id integer NOT NULL);\n"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(migrations, "20240102000000_drop.sql"), []byte("DROP TABLE widgets;\n"), 0o600), qt.IsNil)
-	f.migrationsURL = "file://" + filepath.ToSlash(migrations)
+	for i, statement := range statements {
+		name := fmt.Sprintf("2024010%d000000_v%d.sql", i+1, i+1)
+		c.Assert(os.WriteFile(filepath.Join(migrations, name), []byte(statement+"\n"), 0o600), qt.IsNil)
+	}
 	_, stderr, code := f.run(nil, "migrate", "hash", "--dir", f.migrationsURL)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
-	return f
+}
+
+// fixtureURL is the fixture provider's address of the database file name in
+// the fixture's directory.
+func (f compatProviderFixture) fixtureURL(name string) string {
+	return (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(f.dir, name)), "/")}).String()
+}
+
+// sqliteTables lists the tables a fixture database file holds, read through a
+// driver of the test's own, so the answer does not pass through the provider.
+func sqliteTables(c *qt.C, path string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+path)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	rows, err := conn.QueryContext(c.Context(), "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
 }
 
 // TestCompatMigrateLintSelectsTheProviderOfTheDevURL runs `migrate lint` with
@@ -95,23 +133,128 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	f.assertStopped(c)
 }
 
-// TestCompatMigrateLintReachesTheProviderOfADevURLOnlyItServes lints a
+// TestCompatMigrateLintRefusesADevDatabaseItsProviderCannotClean lints a
 // migration directory whose dev URL names the fixture engine, which no
-// built-in dialect is. The run reads the engine from the provider selection
-// rather than from the built-in URL table and takes it as the lint dialect, so
-// it reaches the provider's dev database. There it stops: the provider
-// contract has no check that a dev database is clean, and the replay refuses
-// to run on one it cannot check. The provider process ends with the command.
-func TestCompatMigrateLintReachesTheProviderOfADevURLOnlyItServes(t *testing.T) {
+// built-in dialect is, on a provider that declares no dev database cleanup.
+// The run reads the engine from the provider selection rather than from the
+// built-in URL table and takes it as the lint dialect, so it reaches the
+// provider's dev database. There it stops: nothing can say the database is
+// clean, and the replay refuses to run on one nobody checked. The provider
+// process ends with the command.
+func TestCompatMigrateLintRefusesADevDatabaseItsProviderCannotClean(t *testing.T) {
 	c := qt.New(t)
 	f := newCompatLintFixture(c, "lint", "example.org/fixture", "fixture")
-	dev := (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(f.dir, "dev.db")), "/")}).String()
 
-	out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", dev, "--latest", "1")
+	out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", f.fixtureURL("dev.db"), "--latest", "1")
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "Error: error validating migration SQL on dev database: check that the dev database is clean: "+
 		"clean check: unsupported feature: the experimental provider contract does not support database cleanup\n")
 	f.assertStopped(c)
+}
+
+// TestCompatMigrateLintReplaysOnTheProvidersDevDatabase lints a migration
+// directory on a dev database that the provider cleans and guards. The run
+// replays the directory there, the provider's rules report the drop, and the
+// database is empty again when the command returns.
+func TestCompatMigrateLintReplaysOnTheProvidersDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+
+	out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", f.fixtureURL("dev.db"), "--latest", "1")
+
+	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(out, qt.Contains, "  -- analyzing version 20240102000000\n")
+	c.Assert(out, qt.Contains, " [DS102]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " [FX101]: DROP TABLE removes every row\n")
+	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
+	f.assertStopped(c)
+}
+
+// TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath holds
+// the two refusals of a replay on a provider's dev database: a statement the
+// dev database refuses fails the lint in the replay, and a dev database the
+// provider lists an object in is refused before anything runs and keeps the
+// object.
+func TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath(t *testing.T) {
+	t.Run("a statement the dev database refuses", func(t *testing.T) {
+		c := qt.New(t)
+		f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+		f.writeMigrations(c, `CREATE TABLE "widgets" ("id" INTEGER NOT NULL);`, `DROP TABLE "gadgets";`)
+
+		out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", f.fixtureURL("dev.db"), "--latest", "1")
+
+		c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+		c.Assert(out, qt.Equals, "")
+		c.Assert(stderr, qt.Contains, "Error: error validating migration SQL on dev database: replay migration 20240102000000 on dev database: ")
+		c.Assert(stderr, qt.Contains, "\nSQL: DROP TABLE \"gadgets\"\n")
+		c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
+		f.assertStopped(c)
+	})
+	t.Run("a dev database that is not clean", func(t *testing.T) {
+		c := qt.New(t)
+		f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+		createSchemaInspectSQLiteDatabase(c, filepath.Join(f.dir, "dev.db"), `CREATE TABLE "leftover" ("id" INTEGER)`)
+
+		out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", f.fixtureURL("dev.db"), "--latest", "1")
+
+		c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+		c.Assert(out, qt.Equals, "")
+		c.Assert(stderr, qt.Equals, "Error: taking database snapshot: sql/migrate: connected database is not clean: found table \"leftover\"\n")
+		c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.DeepEquals, []string{"leftover"})
+		f.assertStopped(c)
+	})
+}
+
+// TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase plans a drop on a
+// database the fixture provider serves, then lints and validates the saved
+// plan. `schema plan` connects to its --from and --dev-url through the
+// provider like its subcommands do, and the plan verbs replay the plan on the
+// provider's dev database. Neither command changes the target.
+func TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+	target := filepath.Join(f.dir, "target.db")
+	createSchemaInspectSQLiteDatabase(c, target, `CREATE TABLE "widgets" ("id" INTEGER)`, `CREATE TABLE "gadgets" ("id" INTEGER)`)
+	c.Assert(os.WriteFile(filepath.Join(f.dir, "schema.yaml"), []byte("tables:\n  widgets:\n    columns:\n      id:\n        type: INTEGER\n"), 0o600), qt.IsNil)
+	plan := filepath.Join(f.dir, "drop.plan.json")
+	transition := []string{"--from", f.fixtureURL("target.db"), "--to", "file://schema.yaml", "--dev-url", f.fixtureURL("dev.db")}
+
+	out, stderr, code := f.run(f.withManifest(), append([]string{"schema", "plan", "--save", "--output", plan, "--auto-approve"}, transition...)...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Contains, "Planned schema changes:\nDROP TABLE \"gadgets\";\n")
+	f.assertStopped(c)
+
+	out, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "lint", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Contains, "Analyzing planned statements (1 in total):\n")
+	c.Assert(out, qt.Contains, " [DS102]: DROP TABLE permanently deletes the table")
+	c.Assert(out, qt.Contains, " [FX101]: DROP TABLE removes every row\n")
+	f.assertStopped(c)
+
+	_, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "validate", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	f.assertStopped(c)
+
+	c.Assert(sqliteTables(c, target), qt.DeepEquals, []string{"gadgets", "widgets"})
+	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
+}
+
+// TestCompatSchemaPlanReadsTheManifestVariable holds where the provider
+// session sits. `schema plan` runs a verb of its own and reads the manifest
+// variable as its subcommands do, so a blank one is refused before anything
+// connects; the `schema` group only prints its help and reads none.
+func TestCompatSchemaPlanReadsTheManifestVariable(t *testing.T) {
+	c := qt.New(t)
+	f := compatProviderFixture{binaries: compatProviderBinaries{compat: buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")}, dir: c.TempDir()}
+
+	_, stderr, code := f.run([]string{"PTAH_PROVIDER_CONFIG="}, "schema", "plan", "--from", "fixture:///target.db", "--to", "file://schema.yaml")
+	c.Assert(code, qt.Equals, 1)
+	c.Assert(stderr, qt.Equals, "Error: PTAH_PROVIDER_CONFIG requires a manifest path\n")
+
+	out, stderr, code := f.run([]string{"PTAH_PROVIDER_CONFIG="}, "schema")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Contains, "Use \"ptah-compat schema [command] --help\" for more information about a command.\n")
 }

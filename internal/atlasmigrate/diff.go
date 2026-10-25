@@ -15,6 +15,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/lintext"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
@@ -240,6 +241,7 @@ type replaySnapshotConsumer func(
 	fs.FS,
 	migrationfile.DirFormat,
 	migrationreplay.Consumer,
+	...migrationreplay.SnapshotOption,
 ) error
 
 type diffRuntime struct {
@@ -262,6 +264,16 @@ func GenerateDiff(
 		readDevSchema:        readReplayedSchema,
 		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
+}
+
+// diffReplayOptions are how a diff over a directory in format replays it. A
+// golang-migrate directory replays the way a migrate apply of it runs, because
+// its runner opens no transaction around a file.
+func diffReplayOptions(format atlasmigrateimport.Format) []migrationreplay.SnapshotOption {
+	if format.TransactionOwner() == lintext.TransactionOwnerFile {
+		return []migrationreplay.SnapshotOption{migrationreplay.OwnTransactions()}
+	}
+	return nil
 }
 
 func generateDiff(
@@ -373,6 +385,7 @@ func generateDiff(
 			contents, err = markFileModeRefusals(ctx, replayConn, opts, planned)
 			return err
 		},
+		diffReplayOptions(opts.DirFormat)...,
 	); err != nil {
 		return DiffResult{}, err
 	}

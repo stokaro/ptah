@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/filetx"
 )
 
 func TestNoTransactionResumeAction(t *testing.T) {
@@ -33,6 +35,50 @@ func TestNoTransactionResumeAction(t *testing.T) {
 			c := qt.New(t)
 			got := noTransactionResumeAction(test.statement, "postgres")
 			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// A resumed body that runs its own transactions replays the session state of
+// its committed prefix by the transactions the statements ran in. Inside one,
+// the body's BEGIN and COMMIT and the state that ended with the transaction
+// are durable, and a plain SET outlived it. A statement no transaction holds
+// keeps the no-transaction rule, under which a MySQL LOCK TABLES is session
+// state to replay.
+func TestOwnTransactionResumeAction(t *testing.T) {
+	statements := []string{
+		"SET search_path = app", "BEGIN", "LOCK TABLE a IN ACCESS EXCLUSIVE MODE", "SET LOCAL lock_timeout = '1s'",
+		"SET application_name = 'owntx'", "COMMIT", "CREATE TABLE b (id int)",
+	}
+	blocks, err := filetx.Read(statements)
+	qt.New(t).Assert(err, qt.IsNil)
+	oneQuery := ownTransactionRun{blocks: blocks, statements: statements, transactions: blocks.AsOneQuery(len(statements)), oneQuery: true}
+	perStatement := ownTransactionRun{blocks: blocks, statements: statements, transactions: blocks}
+	tests := []struct {
+		name      string
+		run       ownTransactionRun
+		index     int
+		statement string
+		dialect   string
+		want      noTransactionPrefixAction
+	}{
+		{name: "a setting before BEGIN in its transaction", run: oneQuery, index: 0, statement: statements[0], dialect: "postgres", want: noTransactionPrefixReplay},
+		{name: "the file's BEGIN", run: oneQuery, index: 1, statement: statements[1], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a lock inside a transaction", run: oneQuery, index: 2, statement: statements[2], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "SET LOCAL inside a transaction", run: oneQuery, index: 3, statement: statements[3], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a plain SET inside a transaction", run: oneQuery, index: 4, statement: statements[4], dialect: "postgres", want: noTransactionPrefixReplay},
+		{name: "the file's COMMIT", run: oneQuery, index: 5, statement: statements[5], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a lock inside a block run per statement", run: perStatement, index: 2, statement: statements[2], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a setting outside the blocks run per statement", run: perStatement, index: 0, statement: statements[0], dialect: "postgres", want: noTransactionPrefixReplay},
+		{
+			name: "a MySQL lock no transaction holds", run: ownTransactionRun{}, index: 0, statement: "LOCK TABLES a WRITE",
+			dialect: "mysql", want: noTransactionPrefixReplay,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(ownTransactionResumeAction(test.index, test.statement, test.dialect, test.run), qt.Equals, test.want)
 		})
 	}
 }

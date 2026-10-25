@@ -297,3 +297,76 @@ func TestProviderDevRealmLockExcludesASecondReplay(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(again.Release(), qt.IsNil)
 }
+
+// lintMigrations is a hashed migration directory whose first version creates
+// "records" and whose second runs drop, each with a rollback.
+func lintMigrations(c *qt.C, drop string) string {
+	c.Helper()
+	dir := c.TempDir()
+	for name, statement := range map[string]string{
+		"0000000001_records.up.sql":   `CREATE TABLE "records" ("id" INTEGER);`,
+		"0000000001_records.down.sql": `DROP TABLE "records";`,
+		"0000000002_drop.up.sql":      drop,
+		"0000000002_drop.down.sql":    `CREATE TABLE "records" ("id" INTEGER);`,
+	} {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(statement), 0o600), qt.IsNil)
+	}
+	_, diagnostics, code := executeProviderCLI(c.Context(), []string{"migrations", "hash", "--dir", dir})
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	return dir
+}
+
+// lintWithDev lints dir with a provider that cleans and guards its dev
+// databases and owns the lint rules of its engine, replaying it on devPath.
+func lintWithDev(c *qt.C, dir, devPath string, leftover ...string) (out, diagnostics string, code int) {
+	c.Helper()
+	f := newProviderCLI(c, migrationProviderCommandSpec(c, "devdb-lint"))
+	for _, table := range leftover {
+		createTable(c, devPath, table)
+	}
+	out, diagnostics, code = executeProviderCLI(c.Context(), []string{
+		"migrations", "lint", "--provider-config", f.manifestPath, "--dir", dir, "--dev-url", fixtureAddress("", devPath),
+	})
+	f.assertStopped(c)
+	return out, diagnostics, code
+}
+
+// A lint run replays the directory on a dev database its provider cleans and
+// guards: the provider's rule reports the drop, and the dev database is empty
+// again when the run ends.
+func TestProviderLintReplaysMigrationsOnItsDevDatabase(t *testing.T) {
+	c := qt.New(t)
+	devPath := filepath.Join(c.TempDir(), "dev.db")
+
+	out, diagnostics, code := lintWithDev(c, lintMigrations(c, `DROP TABLE "records";`), devPath)
+
+	c.Assert(code, qt.Equals, 1, qt.Commentf("%s\n%s", out, diagnostics))
+	c.Assert(out, qt.Contains, "0000000002_drop.up.sql:1 [error] FX101: DROP TABLE removes every row")
+	c.Assert(tables(c, devPath), qt.HasLen, 0)
+}
+
+// The replay is what judges a statement the dev database refuses, and the
+// provider's listing is what judges a dev database clean: one that holds a
+// table is refused before the replay, and keeps the table.
+func TestProviderLintReplaysMigrationsOnItsDevDatabase_FailurePath(t *testing.T) {
+	t.Run("a statement the dev database refuses", func(t *testing.T) {
+		c := qt.New(t)
+		devPath := filepath.Join(c.TempDir(), "dev.db")
+
+		out, diagnostics, code := lintWithDev(c, lintMigrations(c, `DROP TABLE "gadgets";`), devPath)
+
+		c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("%s", out))
+		c.Assert(diagnostics, qt.Contains, "error validating migration SQL on dev database: replay migration 2 on dev database: ")
+		c.Assert(tables(c, devPath), qt.HasLen, 0)
+	})
+	t.Run("a dev database that is not clean", func(t *testing.T) {
+		c := qt.New(t)
+		devPath := filepath.Join(c.TempDir(), "dev.db")
+
+		out, diagnostics, code := lintWithDev(c, lintMigrations(c, `DROP TABLE "records";`), devPath, "leftover")
+
+		c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("%s", out))
+		c.Assert(diagnostics, qt.Contains, `connected database is not clean: found table "leftover"`)
+		c.Assert(tables(c, devPath), qt.DeepEquals, []string{"leftover"})
+	})
+}

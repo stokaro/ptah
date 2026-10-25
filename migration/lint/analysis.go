@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -218,7 +219,9 @@ type File struct {
 	// strictNameRe comment).
 	WellFormedName bool
 	// NoTransaction reports whether file-scoped directives opt this migration
-	// out of the migrator's transaction wrapper.
+	// out of the migrator's transaction wrapper, or the migration runs without
+	// one because its directory's runner sends its one statement alone; see
+	// [Options.TransactionOwner].
 	NoTransaction bool
 	// Target is the server this run plans against, the same value every file
 	// of the run carries and the one each of its [Statement]s carries. See
@@ -268,6 +271,9 @@ type File struct {
 	// statement's line in the SQL is moved by.
 	split      bool
 	lineOffset int
+	// txModeNamed reports a file whose directives name a transaction mode,
+	// which a file of a directory whose runner wraps nothing keeps.
+	txModeNamed bool
 	// contract holds the statements in the forms the owners read them, each
 	// line moved by lineOffset: what a check request carries, and what the
 	// recognizers this package shares with the owners take.
@@ -553,6 +559,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	}
 	withOwners(files, runtime.SQL())
 	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
+	markAloneOutsideATransaction(files, opts, target)
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
 		return Analysis{}, err
@@ -798,10 +805,34 @@ func prepareFile(
 		}
 		file.SQL = up.SQL
 		file.NoTransaction = up.TxMode == migrationfile.FileTxModeNone
+		file.txModeNamed = up.TxMode != migrationfile.FileTxModeUnspecified
 		file.split = true
 		file.lineOffset = up.SourceLineOffset
 	}
 	return file, nil
+}
+
+// markAloneOutsideATransaction marks, in a run whose files run in
+// transactions they open themselves, each up file that names no transaction
+// mode and whose one statement the engine refuses inside a transaction, as
+// one that runs without a transaction. Its runner sends the statement on its
+// own, and the migrator applies and replays it the same way; the answer is
+// [txrequire.AloneOutsideATransaction], the one they ask.
+func markAloneOutsideATransaction(files []File, opts Options, target Target) {
+	if opts.TransactionOwner != lintext.TransactionOwnerFile {
+		return
+	}
+	for i := range files {
+		file := &files[i]
+		if !file.IsUp || file.NoTransaction || file.txModeNamed {
+			continue
+		}
+		statements := make([]string, 0, len(file.Statements))
+		for j := range file.Statements {
+			statements = append(statements, file.Statements[j].SQL)
+		}
+		file.NoTransaction = txrequire.AloneOutsideATransaction(opts.Dialect, target.Capabilities, statements)
+	}
 }
 
 // splitOutcome is a run's split: each file's statements, the facts the split

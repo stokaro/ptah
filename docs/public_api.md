@@ -4284,14 +4284,22 @@ SQL or Atlas txtar content. The two directions remain independent; the
 migrator resolves the up value against its global transaction mode and treats
 an unspecified down value as `file`.
 
-`Migrator.WithOwnTransactions` applies a directory written for a runner that
-opens no transaction around a file, as golang-migrate does. An up body that
-opens and closes its own PostgreSQL transaction runs as written, outside any
-transaction of the migrator's, with progress recorded where the body commits;
-a body whose one statement the engine refuses inside a transaction runs
-without one. A body whose transaction control the migrator cannot follow, or
-one that opens its own transaction under tx-mode all, is refused before any
-migration runs. The policy is off by default.
+The `migrator.WithOwnTransactions` provider option loads a directory written
+for a runner that opens no transaction around a file, as golang-migrate does,
+and the migrator applies and replays its files the way that runner runs them.
+The option is off by default. With it:
+
+- An up body that opens and closes its own PostgreSQL transaction runs outside
+  any transaction of the migrator's. Under tx-mode file it runs in the
+  transactions the body sent as one query runs in, as golang-migrate's default
+  mode runs it. Under tx-mode none each statement outside its transactions
+  commits on its own. Progress is recorded where a transaction commits, and a
+  retry resumes after the committed statements.
+- A body whose one statement the engine refuses inside a transaction runs
+  without one, unless the file names a transaction mode.
+- A body whose transaction control the migrator cannot follow, or one that
+  opens its own transaction under tx-mode all or with a directive asking for a
+  transaction around the file, is refused before any migration runs.
 
 Atlas transaction-mode directive validation errors expose
 `migrationfile.AtlasTxModeDirectiveError` through `errors.As`. The leaf error
