@@ -61,7 +61,7 @@ func TestRender_KeylessTable_HappyPath(t *testing.T) {
 		statements, err := builtin.GetOrderedCreateStatements(keylessEvents(), "postgres")
 		c.Assert(err, qt.IsNil)
 		c.Assert(statements, qt.DeepEquals,
-			[]string{"-- POSTGRES TABLE: events --\nCREATE TABLE \"events\" (\n  \"payload\" TEXT NOT NULL\n);\n\n"})
+			[]string{"CREATE TABLE \"events\" (\n  \"payload\" TEXT NOT NULL\n);\n\n"})
 	})
 
 	t.Run("a set with the key renders a keyed table", func(t *testing.T) {

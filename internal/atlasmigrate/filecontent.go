@@ -11,7 +11,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
-	"ptah.run/core/sqlutil"
+	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
@@ -48,16 +48,18 @@ type MigrationFileContent struct {
 	// [DiffOptions.PlanBidirectional].
 	DownSQL string
 	// Statements are the forward statements SQL renders, in apply order, each
-	// carrying whatever leading comment the planner emitted for it.
+	// carrying whatever leading comment the planner emitted for it and the
+	// change comment written above it.
 	//
 	// It exists for liquibase, the one layout that cannot take the rendered
 	// body: its rollback is attached to a changeset rather than appended as a
 	// block, so that layout composes the file from the statements instead of
 	// from SQL (see [composeLiquibaseArtifact]).
-	Statements []string
+	Statements []Statement
 	// ReverseStatements are the statements that undo Statements, in the order
-	// they must run. Empty exactly when DownSQL is.
-	ReverseStatements []string
+	// they must run. Empty exactly when DownSQL is. Each change comment names
+	// the forward change the statement undoes, after `reverse: `.
+	ReverseStatements []Statement
 	// ReverseNoTransaction reports that the rollback contains statements the
 	// database refuses inside a transaction block.
 	ReverseNoTransaction bool
@@ -66,8 +68,31 @@ type MigrationFileContent struct {
 	NoTransaction bool
 }
 
+// Statement is one statement of a migration file.
+type Statement struct {
+	// SQL is the statement as the renderer wrote it, with any comment the
+	// planner put before it.
+	SQL string
+	// Change names the change the statement makes, as the community binary
+	// writes it above the statement: `create "users" table`. It is empty for a
+	// statement no change names; see [ptah.run/internal/atlaschange].
+	Change string
+}
+
+// FileFormat is how the statements of a migration file are written.
+type FileFormat struct {
+	// Template is the `migrate diff --format` template.
+	Template string
+	// Foreign marks a layout another tool reads, such as golang-migrate. The
+	// community binary writes such a file through its own template, which
+	// writes each change comment as the change names it, where the `sql`
+	// helper of the native layout writes its first letter in upper case.
+	Foreign bool
+}
+
 // BuildMigrationFileContents renders a planned migration AST into Atlas
-// migration file contents.
+// migration file contents. Each statement is written under the comment that
+// names its change, as the community binary writes it.
 //
 // Statements that PostgreSQL rejects inside a transaction block (CREATE INDEX
 // CONCURRENTLY, ALTER TYPE ... ADD VALUE) must not silently strip transaction
@@ -90,7 +115,7 @@ func BuildMigrationFileContents(
 	service renderer.Service,
 	dialect string,
 	caps capability.Capabilities,
-	format string,
+	format FileFormat,
 	nodes []ast.Node,
 ) ([]MigrationFileContent, error) {
 	if err := schemaext.RequireRuntime(ctx, service); err != nil {
@@ -104,7 +129,7 @@ func BuildMigrationFileContents(
 		}
 		return []MigrationFileContent{content}, nil
 	}
-	transactionalSQL, err := renderMigrationStatements(ctx, service, dialect, caps, transactional)
+	transactionalSQL, err := renderMigrationStatements(ctx, service, dialect, caps, transactional, atlaschange.Of)
 	if err != nil {
 		return nil, err
 	}
@@ -204,10 +229,10 @@ func renderMigrationFileContent(
 	service renderer.Service,
 	dialect string,
 	caps capability.Capabilities,
-	format string,
+	format FileFormat,
 	nodes []ast.Node,
 ) (MigrationFileContent, error) {
-	statements, err := renderMigrationStatements(ctx, service, dialect, caps, nodes)
+	statements, err := renderMigrationStatements(ctx, service, dialect, caps, nodes, atlaschange.Of)
 	if err != nil {
 		return MigrationFileContent{}, err
 	}
@@ -234,8 +259,8 @@ func renderMigrationFileContent(
 func attachReversePlan(
 	contents []MigrationFileContent,
 	dialect string,
-	reverse []string,
-	format string,
+	reverse []Statement,
+	format FileFormat,
 	requiresNoTransaction bool,
 ) ([]MigrationFileContent, error) {
 	if len(contents) == 0 || len(reverse) == 0 {
@@ -339,7 +364,7 @@ func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
 // group of concurrent index builds or constraint validations becomes one
 // migration per statement, at consecutive versions, in the order the group
 // listed them. The file that ends the run keeps the rollback.
-func splitNoTransactionStatements(contents []MigrationFileContent, dialect, format string) ([]MigrationFileContent, error) {
+func splitNoTransactionStatements(contents []MigrationFileContent, dialect string, format FileFormat) ([]MigrationFileContent, error) {
 	split := make([]MigrationFileContent, 0, len(contents))
 	for _, content := range contents {
 		if !content.NoTransaction || len(content.Statements) < 2 {
@@ -347,11 +372,11 @@ func splitNoTransactionStatements(contents []MigrationFileContent, dialect, form
 			continue
 		}
 		for i, statement := range content.Statements {
-			sql, err := renderMigrationDiffSQL(dialect, []string{statement}, format)
+			sql, err := renderMigrationDiffSQL(dialect, []Statement{statement}, format)
 			if err != nil {
 				return nil, err
 			}
-			one := withTxModeNoneDirective(MigrationFileContent{SQL: sql, Statements: []string{statement}})
+			one := withTxModeNoneDirective(MigrationFileContent{SQL: sql, Statements: []Statement{statement}})
 			one.NameSuffix = fmt.Sprintf("%s_%d", content.NameSuffix, i+1)
 			split = append(split, one)
 		}
@@ -405,20 +430,61 @@ func withTxModeNoneDirective(content MigrationFileContent) MigrationFileContent 
 	return content
 }
 
-func renderMigrationStatements(ctx context.Context, service renderer.Service, dialect string, caps capability.Capabilities, nodes []ast.Node) ([]string, error) {
+// renderMigrationStatements renders nodes and returns their statements, each
+// under the change comment name gives the node that rendered it.
+//
+// The comment heads the first statement a node renders, and the node's other
+// statements follow under it, as the community binary writes the statements
+// of one change. A comment-only piece, such as a planner's note, is joined to
+// the statement after it and takes that statement's node.
+//
+// [planner.RenderedPlan.PlannedStatements] runs without a dialect here, which
+// leaves the boundaries to the generic splitter. The dialect's own grammar
+// would move a boundary on the engines whose grammar differs, and with it the
+// one-statement files a golang-migrate run writes, which is a decision of its
+// own.
+func renderMigrationStatements(
+	ctx context.Context,
+	service renderer.Service,
+	dialect string,
+	caps capability.Capabilities,
+	nodes []ast.Node,
+	name func(ast.Node) (string, bool),
+) ([]Statement, error) {
 	target := platform.NormalizeDialect(dialect)
 	if target == "" {
 		target = dialect
 	}
-	output, err := renderer.Render(ctx, service, renderer.Request{Target: target, Capabilities: caps, Nodes: nodes})
+	request := renderer.Request{Target: target, Capabilities: caps, Nodes: nodes}
+	output, err := renderer.Render(ctx, service, request)
 	if err != nil {
 		return nil, err
 	}
-	sql, err := output.SQL()
+	planned, err := planner.RenderedPlan{Request: request, Result: output}.PlannedStatements()
 	if err != nil {
 		return nil, err
 	}
-	return sqlutil.SplitSQLStatements(sql), nil
+	statements := make([]Statement, 0, len(planned))
+	named := -1
+	for _, piece := range planned {
+		statement := Statement{SQL: piece.SQL}
+		if piece.Node >= 0 && piece.Node != named {
+			named = piece.Node
+			statement.Change, _ = name(nodes[piece.Node])
+		}
+		statements = append(statements, statement)
+	}
+	return statements, nil
+}
+
+// reverseChange names, for a statement of a rollback, the forward change it
+// undoes, written the way the community binary writes a rollback file.
+func reverseChange(node ast.Node) (string, bool) {
+	undone, ok := atlaschange.Undone(node)
+	if !ok {
+		return "", false
+	}
+	return "reverse: " + undone, true
 }
 
 // splitNoTransactionPlanNodes partitions the planned nodes into statements
@@ -437,8 +503,8 @@ func splitNoTransactionPlanNodes(dialect string, nodes []ast.Node) (transactiona
 	return transactional, noTransaction
 }
 
-func hasActualSQLStatements(statements []string) bool {
-	return slices.ContainsFunc(statements, func(statement string) bool {
-		return !sqlscript.CommentOnly(statement)
+func hasActualSQLStatements(statements []Statement) bool {
+	return slices.ContainsFunc(statements, func(statement Statement) bool {
+		return !sqlscript.CommentOnly(statement.SQL)
 	})
 }

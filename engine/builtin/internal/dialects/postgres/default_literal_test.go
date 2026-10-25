@@ -34,8 +34,7 @@ func TestPostgreSQLRenderer_DefaultIsQuotedExactlyOnce(t *testing.T) {
 				AddColumn(ast.NewColumn("tag", "VARCHAR(20)").
 					SetNotNull().
 					SetDefault("'x'")),
-			expected: `-- POSTGRES TABLE: items --
-CREATE TABLE items (
+			expected: `CREATE TABLE items (
   tag VARCHAR(20) NOT NULL DEFAULT 'x'
 );
 
@@ -47,8 +46,7 @@ CREATE TABLE items (
 				AddColumn(ast.NewColumn("tag", "VARCHAR(20)").
 					SetNotNull().
 					SetDefault("x")),
-			expected: `-- POSTGRES TABLE: items --
-CREATE TABLE items (
+			expected: `CREATE TABLE items (
   tag VARCHAR(20) NOT NULL DEFAULT 'x'
 );
 
@@ -62,8 +60,7 @@ CREATE TABLE items (
 				AddColumn(ast.NewColumn("ok", "BOOL").
 					SetNotNull().
 					SetDefault("'t'")),
-			expected: `-- POSTGRES TABLE: items --
-CREATE TABLE items (
+			expected: `CREATE TABLE items (
   ok BOOL NOT NULL DEFAULT 't'
 );
 
@@ -77,8 +74,7 @@ CREATE TABLE items (
 				AddColumn(ast.NewColumn("meta", "JSONB").
 					SetNotNull().
 					SetDefault("'{}'::jsonb")),
-			expected: `-- POSTGRES TABLE: items --
-CREATE TABLE items (
+			expected: `CREATE TABLE items (
   meta JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
@@ -92,8 +88,7 @@ CREATE TABLE items (
 				AddColumn(ast.NewColumn("note", "TEXT").
 					SetNotNull().
 					SetDefault("it's")),
-			expected: `-- POSTGRES TABLE: items --
-CREATE TABLE items (
+			expected: `CREATE TABLE items (
   note TEXT NOT NULL DEFAULT 'it''s'
 );
 

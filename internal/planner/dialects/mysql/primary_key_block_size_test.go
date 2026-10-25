@@ -81,18 +81,18 @@ func TestPlanner_PrimaryKeyBlockSize(t *testing.T) {
 		want                     string
 	}{
 		{"MySQL, the hint alone", "mysql", "Compressed", primaryKeyState{columns: id, size: 8}, primaryKeyState{columns: id, size: 4},
-			"-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"},
+			"-- Modify table: t\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"},
 		{"MySQL, the hint removed", "mysql", "Compressed", primaryKeyState{columns: id}, primaryKeyState{columns: id, size: 4},
-			"-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`), ALGORITHM=COPY;\n\n"},
+			"-- Modify table: t\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`), ALGORITHM=COPY;\n\n"},
 		{"MySQL, a row format that discards the hint", "mysql", "Dynamic", primaryKeyState{columns: id, size: 8}, primaryKeyState{columns: id},
 			""},
 		{"MySQL, the comment changes too", "mysql", "Compressed", primaryKeyState{columns: id, size: 8, comment: "new"},
 			primaryKeyState{columns: id, size: 4, comment: "old"},
-			"-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'new';\n\n"},
+			"-- Modify table: t\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8 COMMENT 'new';\n\n"},
 		{"MySQL, the columns change too", "mysql", "Compressed", primaryKeyState{columns: both, size: 8}, primaryKeyState{columns: id, size: 4},
-			"-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`, `a`) KEY_BLOCK_SIZE=8;\n\n"},
+			"-- Modify table: t\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`, `a`) KEY_BLOCK_SIZE=8;\n\n"},
 		{"MariaDB, the hint alone", "mariadb", "Dynamic", primaryKeyState{columns: id, size: 8}, primaryKeyState{columns: id, size: 4},
-			"-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8;\n\n"},
+			"-- Modify table: t\nALTER TABLE `t` DROP PRIMARY KEY, ADD PRIMARY KEY (`id`) KEY_BLOCK_SIZE=8;\n\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

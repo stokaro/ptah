@@ -227,7 +227,7 @@ func TestEmissionsOf_ReadsTheShapesTheRenderersWrite(t *testing.T) {
 		},
 		{
 			name:       "a comment header in front of the statement",
-			statements: []string{"-- POSTGRES TABLE: nodes --\nCREATE TABLE \"nodes\" (\n  \"id\" BIGINT\n);\n\n"},
+			statements: []string{"-- create \"nodes\" table\nCREATE TABLE \"nodes\" (\n  \"id\" BIGINT\n);\n\n"},
 			want:       []schemacensus.Emission{{Kind: "table", Name: "nodes"}},
 		},
 		{

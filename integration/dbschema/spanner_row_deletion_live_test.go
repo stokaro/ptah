@@ -113,7 +113,7 @@ func spannerObservedPolicy(c *qt.C, conn *dbschema.DatabaseConnection, table str
 // spannerPolicyNote is the comment the plan writes above a row deletion
 // policy statement.
 func spannerPolicyNote(table string) string {
-	return "-- Row deletion policy on table: " + table + "\n-- ALTER statements: --\n"
+	return "-- Row deletion policy on table: " + table + "\n"
 }
 
 // spannerDropTable drops table, for cleanup.
@@ -136,8 +136,7 @@ func TestSpannerLiveRowDeletionPolicyRoundTrip(t *testing.T) {
 	declared := spannerRowDeletionSource(c, table, spannerRowDeletionPolicy("created_at", "30 days"), "created_at")
 	created := spannerPlan(c, conn, declared, table)
 	c.Assert(created, qt.DeepEquals, []string{
-		"-- SPANNER TABLE: " + table + " --\n" +
-			`CREATE TABLE "` + table + `" (
+		`CREATE TABLE "` + table + `" (
   "id" BIGINT PRIMARY KEY NOT NULL,
   "created_at" TIMESTAMPTZ
 ) TTL INTERVAL '30 days' ON "created_at"`,
@@ -194,10 +193,10 @@ func TestSpannerLiveRowDeletionPolicyChangesInPlace(t *testing.T) {
 			name:     "another column, added in the same plan, and the old one dropped",
 			declared: spannerRowDeletionSource(c, table, spannerRowDeletionPolicy("expires_at", "7 days"), "expires_at"),
 			want: []string{
-				"-- Add/modify columns for table: " + table + "\n-- ALTER statements: --\n" +
+				"-- Add/modify columns for table: " + table + "\n" +
 					`ALTER TABLE "` + table + `" ADD COLUMN "expires_at" TIMESTAMPTZ`,
 				spannerPolicyNote(table) + `ALTER TABLE "` + table + `" ALTER TTL INTERVAL '7 days' ON "expires_at"`,
-				"-- Remove columns from table: " + table + "\n-- ALTER statements: --\n" +
+				"-- Remove columns from table: " + table + "\n" +
 					`ALTER TABLE "` + table + `" DROP COLUMN "created_at"`,
 				"-- WARNING: Dropping column " + table + ".created_at - This will delete data!",
 			},

@@ -333,14 +333,19 @@ func composeLiquibaseArtifact(
 	fmt.Fprintf(&body, "--changeset %s:%d-1%s\n",
 		liquibaseChangesetAuthor, version, liquibaseChangesetAttributes(content))
 	for _, statement := range content.Statements {
-		statement = strings.TrimRight(statement, "\n")
-		body.WriteString(statement)
-		body.WriteString(sqlscript.Terminator(statement))
+		if statement.Change != "" {
+			fmt.Fprintf(&body, "-- %s\n", statement.Change)
+		}
+		sql := strings.TrimRight(statement.SQL, "\n")
+		body.WriteString(sql)
+		body.WriteString(sqlscript.Terminator(sql))
 		body.WriteString("\n")
 	}
+	// A rollback line carries the statement alone, as the community binary
+	// writes it: the change comments head the forward statements.
 	for _, statement := range content.ReverseStatements {
-		statement = strings.TrimRight(statement, "\n")
-		for line := range strings.SplitSeq(statement+sqlscript.Terminator(statement), "\n") {
+		sql := strings.TrimRight(statement.SQL, "\n")
+		for line := range strings.SplitSeq(sql+sqlscript.Terminator(sql), "\n") {
 			body.WriteString(liquibaseRollbackPrefix)
 			body.WriteString(line)
 			body.WriteString("\n")

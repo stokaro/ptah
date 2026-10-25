@@ -76,7 +76,6 @@ tables:
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: accounts --
 	// CREATE TABLE "accounts" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "email" VARCHAR(255) NOT NULL

@@ -129,7 +129,6 @@ func main() {
 Expected output shape:
 
 ```sql
--- POSTGRES TABLE: users --
 CREATE TABLE "users" (
   "id" SERIAL PRIMARY KEY NOT NULL,
   "email" TEXT UNIQUE NOT NULL

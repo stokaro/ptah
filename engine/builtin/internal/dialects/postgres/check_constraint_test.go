@@ -29,8 +29,7 @@ func TestPostgreSQLRenderer_ColumnCheckConstraint(t *testing.T) {
 					SetNotNull().
 					SetDefault("other").
 					SetCheck("category IN ('photos','invoices','documents','other')")),
-			expected: `-- POSTGRES TABLE: files --
-CREATE TABLE files (
+			expected: `CREATE TABLE files (
   id TEXT PRIMARY KEY NOT NULL,
   category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('photos','invoices','documents','other'))
 );
@@ -45,8 +44,7 @@ CREATE TABLE files (
 					SetNotNull().
 					SetCheck("type IN ('image','document','video','audio','archive','other')").
 					SetCheckName("files_type_valid")),
-			expected: `-- POSTGRES TABLE: files --
-CREATE TABLE files (
+			expected: `CREATE TABLE files (
   id TEXT PRIMARY KEY NOT NULL,
   type TEXT NOT NULL CONSTRAINT files_type_valid CHECK (type IN ('image','document','video','audio','archive','other'))
 );

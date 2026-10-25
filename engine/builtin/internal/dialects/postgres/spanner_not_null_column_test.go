@@ -67,7 +67,7 @@ func TestRenderer_AddNotNullColumnOnSpanner(t *testing.T) {
 			}})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+test.want+"\n")
+			c.Assert(got, qt.Equals, test.want+"\n")
 		})
 	}
 }
@@ -84,5 +84,5 @@ func TestRenderer_AddNotNullColumnOnPostgres(t *testing.T) {
 	}})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "-- ALTER statements: --\nALTER TABLE \"t\" ADD COLUMN \"c\" TEXT NOT NULL;\n\n")
+	c.Assert(got, qt.Equals, "ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT NOT NULL;\n\n")
 }

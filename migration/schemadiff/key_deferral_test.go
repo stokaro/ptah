@@ -185,8 +185,8 @@ func TestCompare_AColumnPrimaryKeyAgainstADeferrableLiveKey(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan, qt.DeepEquals, []string{
-		"-- ALTER statements: --\nALTER TABLE \"slots\" DROP CONSTRAINT IF EXISTS \"slots_pkey\"",
-		"-- ALTER statements: --\nALTER TABLE \"slots\" ADD PRIMARY KEY (\"id\")",
+		"ALTER TABLE \"slots\" DROP CONSTRAINT IF EXISTS \"slots_pkey\"",
+		"ALTER TABLE \"slots\" ADD PRIMARY KEY (\"id\")",
 	})
 }
 

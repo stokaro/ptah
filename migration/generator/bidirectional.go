@@ -60,6 +60,9 @@ type BidirectionalPlanPolicy struct {
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild. See
 	// [planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
+	// Statements selects the statement style of both directions. See
+	// [planext.Options.Statements].
+	Statements planext.StatementStyle
 }
 
 // SchemaDirectionPlan is one half of a bidirectional schema migration plan.
@@ -212,6 +215,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
+		Statements:              opts.Policy.Statements,
 	}
 	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		ctx, opts.Runtime,
@@ -275,6 +279,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		OmitNullBackfill:        opts.Policy.OmitNullBackfill,
 		AllowTableRebuild:       opts.Policy.AllowTableRebuild,
 		TableRebuildRequest:     opts.Policy.TableRebuildRequest,
+		Statements:              opts.Policy.Statements,
 	}
 	// The rollback's target is the schema the database currently holds, and it
 	// is validated here because this is where that schema exists. The forward

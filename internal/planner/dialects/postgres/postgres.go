@@ -115,6 +115,10 @@ type Planner struct {
 	// skip lists destructive change kinds this planner omits from the plan,
 	// emitting a clearly-marked comment in their place. See diffpolicy.
 	skip diffpolicy.SkipSet
+	// statements is the statement style the plan is spelled in. The zero
+	// value is Ptah's own; see statementstyle.go for what the exact style
+	// leaves out and why.
+	statements planext.StatementStyle
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
@@ -236,6 +240,14 @@ func (p *Planner) WithSkipChangeKinds(kinds ...planext.ChangeKind) *Planner {
 	for _, kind := range kinds {
 		cp.skip[kind] = struct{}{}
 	}
+	return &cp
+}
+
+// WithStatementStyle returns a copy of the planner that spells its statements
+// in style. The receiver is not modified.
+func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
+	cp := *p
+	cp.statements = style
 	return &cp
 }
 
@@ -933,7 +945,7 @@ func modifyColumnComment(tableName string, colDiff difftypes.ColumnDiff) ast.Nod
 	for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
 		changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
 	}
-	return ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
+	return ast.NewDescriptiveComment(fmt.Sprintf("Modify column %s.%s: %s", tableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 }
 
 // columnNodeFor renders the column a modification carries, and reports whether
@@ -1070,7 +1082,7 @@ func (p *Planner) modifyGeneratedColumnExpression(
 		},
 	}
 	result = append(result, alterNode)
-	result = append(result, ast.NewComment(fmt.Sprintf(
+	result = append(result, ast.NewDescriptiveComment(fmt.Sprintf(
 		"Modify generated column %s.%s: %s",
 		tableName,
 		colDiff.ColumnName,
@@ -1133,8 +1145,8 @@ func (p *Planner) dropsWithCascade() bool {
 	return p.targetDialect() != platform.Spanner
 }
 
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
-	cascade := p.dropsWithCascade()
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) []ast.Node {
+	cascade := p.cascades(columnDropRelies(diff, tableDiff))
 	for _, column := range tableDiff.ColumnsRemoved {
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
@@ -1149,7 +1161,7 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff diffty
 		if cascade {
 			warning = fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, column.Name)
 		}
-		result = append(result, ast.NewComment(warning))
+		result = append(result, ast.NewDescriptiveComment(warning))
 	}
 	return result
 }
@@ -1190,7 +1202,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
 				// Insert the comment at the beginning of the operations for this table
-				astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
+				astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
 				// Insert the comment before the operations we just added
 				newResult := make([]ast.Node, 0, len(result)+1)
 				newResult = append(newResult, result[:initialLength]...)
@@ -1219,7 +1231,7 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
 				// Insert the comment at the beginning of the operations for this table
-				astCommentNode := ast.NewComment(fmt.Sprintf("Add foreign key constraints for table: %s", tableDiff.TableName))
+				astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Add foreign key constraints for table: %s", tableDiff.TableName))
 				// Insert the comment before the operations we just added
 				newResult := make([]ast.Node, 0, len(result)+1)
 				newResult = append(newResult, result[:initialLength]...)
@@ -1235,11 +1247,11 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
-			astCommentNode := ast.NewComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
+			astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
 			result = append(result, astCommentNode)
 
 			// Remove columns (dangerous!)
-			result = p.removeTableColumnsFromDiff(result, tableDiff)
+			result = p.removeTableColumnsFromDiff(result, diff, tableDiff)
 		}
 	}
 	return result
@@ -1403,9 +1415,11 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
-			SetIfExists().
-			SetComment("WARNING: This will delete all data!")
-		if p.dropsWithCascade() {
+			SetIfExists()
+		if p.describes() {
+			dropTableNode.SetComment("WARNING: This will delete all data!")
+		}
+		if p.cascades(tableDropRelies(diff)) {
 			dropTableNode.SetCascade()
 		}
 
@@ -1416,10 +1430,16 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 
 func (p *Planner) removeEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, enum := range diff.EnumsRemoved {
+		// Every column, routine and type that can use the enum is changed or
+		// removed by an earlier step, so the drop never relies on CASCADE.
 		dropTypeNode := ast.NewDropType(enum.QualifiedName()).
-			SetIfExists().
-			SetCascade().
-			SetComment("WARNING: Make sure no tables use this enum!")
+			SetIfExists()
+		if p.cascades(false) {
+			dropTypeNode.SetCascade()
+		}
+		if p.describes() {
+			dropTypeNode.SetComment("WARNING: Make sure no tables use this enum!")
+		}
 
 		result = append(result, dropTypeNode)
 	}
@@ -1543,7 +1563,16 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
-	return p.scheduleFeatures(ctx, runtime, diff, nodes, windows)
+	nodes, err = p.scheduleFeatures(ctx, runtime, diff, nodes, windows)
+	if err != nil {
+		return nil, err
+	}
+	if p.exact() {
+		// Over the scheduled plan, owner operations included, because what a
+		// guard is for depends on every statement before it.
+		settleGuards(nodes)
+	}
+	return nodes, nil
 }
 
 func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
@@ -1787,8 +1816,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
-	result = p.removeMaterializedViews(result, diff)
-	result = p.removeViews(result, diff)
+	result = p.removeViewLikes(result, diff)
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
 	// tables they may read.
@@ -1840,7 +1868,9 @@ func (p *Planner) modifyExistingRoles(result []ast.Node, diff *difftypes.SchemaD
 
 		alterRoleNode := p.buildAlterRoleNode(roleDiff, targetRole)
 		if len(alterRoleNode.Operations) > 0 {
-			alterRoleNode.SetComment(fmt.Sprintf("Modify role %s attributes", roleDiff.RoleName))
+			if p.describes() {
+				alterRoleNode.SetComment(fmt.Sprintf("Modify role %s attributes", roleDiff.RoleName))
+			}
 			result = append(result, alterRoleNode)
 		}
 	}
@@ -1947,8 +1977,10 @@ func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeV
 func (p *Planner) removeRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, role := range diff.RolesRemoved {
 		dropRoleNode := ast.NewDropRole(role.Name).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this role")
+			SetIfExists()
+		if p.describes() {
+			dropRoleNode.SetComment("WARNING: Ensure no other objects depend on this role")
+		}
 		result = append(result, dropRoleNode)
 	}
 	return result
@@ -2004,7 +2036,7 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 
 // modifiedFunctionNodes is the statements that replace one routine: CREATE OR
 // REPLACE, or a drop and a create where the server refuses the replacement.
-func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
+func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 	target := fnDiff.Desired
 	var result []ast.Node
 	if replacementIsRefused(fnDiff) {
@@ -2015,9 +2047,11 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 		// routine makes the server refuse the drop, which stops the plan
 		// rather than removing an object nobody asked to remove.
 		drop := ast.NewDropFunction(target.Name).
-			SetKind(target.Kind).
-			SetComment(fmt.Sprintf("Drop function %s to recreate it: its %s changed",
+			SetKind(target.Kind)
+		if p.describes() {
+			drop.SetComment(fmt.Sprintf("Drop function %s to recreate it: its %s changed",
 				target.Name, refusedReplacementChanges(fnDiff)))
+		}
 		// An empty list is still a list: the routine that takes no
 		// arguments is dropped as `f()`, and only a change that recorded
 		// no identity at all leaves the statement naming the routine.
@@ -2029,7 +2063,7 @@ func modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Node {
 
 	// The note is a statement of its own: the create node's comment is the
 	// routine's, which the renderer writes with COMMENT ON.
-	result = append(result, ast.NewComment(fmt.Sprintf("Modify function %s: %s",
+	result = append(result, ast.NewDescriptiveComment(fmt.Sprintf("Modify function %s: %s",
 		target.Name, summarizeFunctionChanges(fnDiff))))
 	// A replacement even after the drop above: the plan still rewrites a
 	// routine that exists, and the drop took its grants with it. Only an added
@@ -2102,8 +2136,10 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	// ambiguity rather than existence (stokaro/ptah#2296).
 	for _, removal := range diff.FunctionsRemoved.Removals() {
 		dropFunctionNode := ast.NewDropFunction(removal.Name).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this function")
+			SetIfExists()
+		if p.describes() {
+			dropFunctionNode.SetComment("WARNING: Ensure no other objects depend on this function")
+		}
 		// An empty list addresses the overload that takes no arguments, so it
 		// is carried like any other; only a removal that recorded no identity
 		// leaves the statement naming the routine.
@@ -2119,8 +2155,10 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	for _, removal := range diff.ProceduresRemoved.Removals() {
 		dropProcedureNode := ast.NewDropFunction(removal.Name).
 			SetKind(schemamodel.FunctionKindProcedure).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this procedure")
+			SetIfExists()
+		if p.describes() {
+			dropProcedureNode.SetComment("WARNING: Ensure no other objects depend on this procedure")
+		}
 		// A procedure overloads too, and the same ambiguity refusal applies,
 		// including for the one that takes no arguments.
 		if removal.Signature != nil {
@@ -2173,7 +2211,9 @@ func (p *Planner) modifyExistingSequences(result []ast.Node, diff *difftypes.Sch
 			continue
 		}
 		node := alterSequenceFromDiff(sequence, sequenceDiff.Changes)
-		node.SetComment(fmt.Sprintf("Modify sequence %s: %s", sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
+		if p.describes() {
+			node.SetComment(fmt.Sprintf("Modify sequence %s: %s", sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
+		}
 		result = append(result, node)
 	}
 	return result
@@ -2226,8 +2266,10 @@ func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff)
 	for _, sequence := range diff.SequencesRemoved {
 		schemaName, sequenceName := splitQualifiedSequenceName(sequence.QualifiedName())
 		dropSequence := ast.NewDropSequence(sequenceName).
-			SetIfExists().
-			SetComment("WARNING: Ensure no column default still draws from this sequence")
+			SetIfExists()
+		if p.describes() {
+			dropSequence.SetComment("WARNING: Ensure no column default still draws from this sequence")
+		}
 		if schemaName != "" {
 			dropSequence.SetSchema(schemaName)
 		}
@@ -2333,8 +2375,39 @@ func (p *Planner) addNewViewLikeObjects(
 // create-then-drop and ends with no view at all.
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	var dropped []string
-	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
+	changes := modifiedViewPaths(diff)
+	// A view the retype step dropped is gone already. It is not dropped a
+	// second time, and it is created outright like one this step drops.
+	gone := retypeDropped(diff)
+	cleared := slices.Clone(changes.dropped)
+	for _, name := range changes.dropped {
+		if gone[name] {
+			continue
+		}
+		result = append(result, p.dropViewNode(name, p.cascades(p.viewDropRelies(diff, name, gone))))
+	}
+	for _, name := range slices.Sorted(maps.Keys(gone)) {
+		if !slices.Contains(cleared, name) {
+			cleared = append(cleared, name)
+		}
+	}
+
+	for _, object := range deporder.ViewLikesForCreateForDialect(changes.recreate(diff, semantics), p.targetDialect()) {
+		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, cleared, semantics)
+	}
+	return result
+}
+
+// viewPaths is the split [Planner.modifyExistingViews] makes of the modified
+// views: the ones it drops and creates again, and the ones it replaces in
+// place.
+type viewPaths struct {
+	dropped  []string
+	replaced []deporder.ViewLike
+}
+
+func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
+	var paths viewPaths
 	for _, viewDiff := range diff.ViewsModified {
 		// The view this change leaves behind travels WITH it, in the direction
 		// being planned (stokaro/ptah#2315).
@@ -2343,48 +2416,89 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 			continue
 		}
 		if viewReplaceKeepsDependents(viewDiff, view.Body) {
-			replaced = append(replaced, deporder.ViewLike{Name: view.Name, Body: view.Body})
+			paths.replaced = append(paths.replaced, deporder.ViewLike{Name: view.Name, Body: view.Body})
 			continue
 		}
-		dropped = append(dropped, view.Name)
+		paths.dropped = append(paths.dropped, view.Name)
 	}
+	return paths
+}
 
-	for _, name := range dropped {
-		result = append(result, p.dropViewNode(name))
-	}
-
+// recreate is every object the view step writes: what the drops take with
+// them, and the views replaced in place.
+func (v viewPaths) recreate(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []deporder.ViewLike {
 	// A view on the replace path can also be a dependent of one on the drop
 	// path, in which case it is on both lists and must still be rendered once.
-	recreate := viewLikesLostToCascade(diff.DeclaredViewLikes, dropped, semantics)
+	recreate := viewLikesLostToCascade(diff.DeclaredViewLikes, v.dropped, semantics)
 	named := make(map[string]bool, len(recreate))
 	for _, object := range recreate {
 		named[object.Name] = true
 	}
-	for _, object := range replaced {
+	for _, object := range v.replaced {
 		if !named[object.Name] {
 			recreate = append(recreate, object)
 		}
 	}
+	return recreate
+}
 
-	for _, object := range deporder.ViewLikesForCreateForDialect(recreate, p.targetDialect()) {
-		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, dropped, semantics)
+// viewStepRenders names every object [Planner.modifyExistingViews] writes, so
+// a later step that puts views back does not write one a second time.
+func (p *Planner) viewStepRenders(diff *difftypes.SchemaDiff) map[string]bool {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	rendered := make(map[string]bool)
+	for _, viewDiff := range diff.ViewsModified {
+		rendered[viewDiff.Desired.Name] = true
 	}
-	return result
+	for _, object := range modifiedViewPaths(diff).recreate(diff, semantics) {
+		rendered[object.Name] = true
+	}
+	return rendered
+}
+
+// viewDropRelies reports whether dropping the modified view name relies on
+// CASCADE: a view or materialized view that reads it is still in the database
+// when the drop runs. That is a declared one the view step puts back after
+// the drop, or one the declaration removes, which the removal step drops only
+// later. A reader the retype step dropped is gone by then.
+func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, gone map[string]bool) bool {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	for _, object := range viewLikesLostToCascade(diff.DeclaredViewLikes, []string{name}, semantics) {
+		if object.Name != name && !gone[object.Name] {
+			return true
+		}
+	}
+	return removedReaderRemains(diff, name, gone)
+}
+
+// removedReaderRemains reports whether a view or materialized view the
+// declaration removes reads relation and is still in the database when a
+// step before the removal step drops relation.
+func removedReaderRemains(diff *difftypes.SchemaDiff, relation string, gone map[string]bool) bool {
+	for _, object := range removedViewLikes(diff) {
+		if !gone[object.Name] && object.Name != relation && deporder.ReferencesIdentifier(object.Body, relation) {
+			return true
+		}
+	}
+	return false
 }
 
 // appendViewLikeRecreate renders the CREATE that puts one view-like object back.
 //
-// A view this step dropped itself is created outright. Everything else is
-// re-asserted rather than created blind: a dependent is on the list because its
-// body names a dropped view in code, which is a syntactic test rather than a
-// resolved one, and a CREATE OR REPLACE costs nothing if the object survived
-// after all while a bare CREATE would fail on "already exists". A materialized
-// view has no in-place replace, so it is dropped first for the same reason.
+// An object this plan dropped by name before this step, which cleared lists, is
+// created outright. Everything else is re-asserted rather than created blind: a
+// dependent is on the list because its body names a dropped view in code,
+// which is a syntactic test rather than a resolved one, and a CREATE OR
+// REPLACE costs nothing if the object survived after all while a bare CREATE
+// would fail on "already exists". A materialized view has no in-place
+// replace, so it is dropped first for the same reason. The re-assertion is
+// what the plan writes after a drop that relies on CASCADE, so the exact
+// statement style keeps its guard and its CASCADE too.
 func (p *Planner) appendViewLikeRecreate(
 	result []ast.Node,
 	declared difftypes.ViewLikeVocabulary,
 	object deporder.ViewLike,
-	dropped []string,
+	cleared []string,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	if object.Materialized {
@@ -2392,7 +2506,9 @@ func (p *Planner) appendViewLikeRecreate(
 		if view == nil {
 			return result
 		}
-		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
+		if !slices.Contains(cleared, object.Name) {
+			result = append(result, dropMaterializedViewNode(view.Name, true).SetIfExists())
+		}
 		return append(result, modelast.FromMaterializedView(*view))
 	}
 
@@ -2400,7 +2516,7 @@ func (p *Planner) appendViewLikeRecreate(
 	if view == nil {
 		return result
 	}
-	if slices.Contains(dropped, object.Name) {
+	if slices.Contains(cleared, object.Name) {
 		return append(result, modelast.FromView(*view))
 	}
 	return append(result, modelast.FromView(*view).SetReplace())
@@ -2481,39 +2597,54 @@ func viewLikesLostToCascade(
 	return lost
 }
 
-func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, view := range diff.ViewsRemoved {
-		result = append(result, p.dropViewNode(view.Name))
+// removeViewLikes drops the views and materialized views the declaration no
+// longer holds, each after every removed one that reads it, so no drop relies
+// on CASCADE to take another removed object. One the retype step dropped
+// already is left out.
+func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	gone := retypeDropped(diff)
+	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
+	for _, object := range removedViewLikes(diff) {
+		if !gone[object.Name] {
+			removed = append(removed, object)
+		}
+	}
+	for _, object := range deporder.ViewLikesForDropForDialect(removed, p.targetDialect()) {
+		result = append(result, p.dropViewLikeNode(object, p.cascades(false)))
 	}
 	return result
 }
 
 // dropViewNode is the statement that drops the view name, with CASCADE where
-// [Planner.dropsWithCascade] allows it.
-func (p *Planner) dropViewNode(name string) *ast.DropViewNode {
+// cascade asks for it and [Planner.dropsWithCascade] allows it.
+func (p *Planner) dropViewNode(name string, cascade bool) *ast.DropViewNode {
 	drop := ast.NewDropView(name).SetIfExists()
-	if p.dropsWithCascade() {
-		drop.SetCascade()
-	}
+	drop.Cascade = cascade && p.dropsWithCascade()
+	return drop
+}
+
+// dropMaterializedViewNode is the statement that drops the materialized view
+// name, with CASCADE where cascade asks for it. No target without CASCADE has
+// materialized views.
+func dropMaterializedViewNode(name string, cascade bool) *ast.DropMaterializedViewNode {
+	drop := ast.NewDropMaterializedView(name).SetIfExists()
+	drop.Cascade = cascade
 	return drop
 }
 
 func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	gone := retypeDropped(diff)
 	// The view travels WITH the change (stokaro/ptah#2315). A change carrying
 	// none names a view the pre-change database did not hold, and there is
 	// nothing to recreate.
 	for _, viewDiff := range diff.MaterializedViewsModified {
 		if view := viewDiff.Desired; view.Name != "" {
-			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
+			// One the retype step dropped is gone already and is only created.
+			if !gone[view.Name] {
+				result = append(result, dropMaterializedViewNode(view.Name, p.cascades(p.viewDropRelies(diff, view.Name, gone))))
+			}
 			result = append(result, modelast.FromMaterializedView(view))
 		}
-	}
-	return result
-}
-
-func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	for _, view := range diff.MaterializedViewsRemoved {
-		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
 	}
 	return result
 }
@@ -2540,7 +2671,11 @@ func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.Sche
 
 func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerRef := range diff.TriggersRemoved {
-		drop := ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists().SetCascade()
+		// Nothing depends on a trigger, so the drop never relies on CASCADE.
+		drop := ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists()
+		if p.cascades(false) {
+			drop.SetCascade()
+		}
 		if triggerRef.ExecuteFunction != "" {
 			// The function is declared on its own; dropping it here would take
 			// it from every other trigger that runs it (stokaro/ptah#3722).

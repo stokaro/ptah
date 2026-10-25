@@ -94,7 +94,6 @@ func ExampleWithRendering() {
 	fmt.Println(parsed.Migrations[0].DownSQL)
 
 	// Output:
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" bigint PRIMARY KEY NOT NULL
 	// );

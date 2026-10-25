@@ -51,7 +51,6 @@ func ExampleGenerateSchemaDiffSQL() {
 	fmt.Print(sql)
 
 	// Output:
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "email" VARCHAR(255) NOT NULL
@@ -101,7 +100,6 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 	// Output:
 	// -- statement 1 --
 	// -- Add/modify columns for table: users
-	// -- ALTER statements: --
 	// ALTER TABLE "users" ADD COLUMN "email" VARCHAR(255) NOT NULL
 	// -- statement 2 --
 	// CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email")

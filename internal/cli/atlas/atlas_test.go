@@ -3420,7 +3420,7 @@ CREATE TABLE users (
 	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(string(newSQL), "-- Modify \"users\" table\nALTER TABLE"), qt.IsTrue, qt.Commentf("%s", newSQL))
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
 	sum, err := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
@@ -3553,7 +3553,7 @@ CREATE TABLE users (
 	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(string(newSQL), "-- Modify \"users\" table\nALTER TABLE"), qt.IsTrue, qt.Commentf("%s", newSQL))
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
 }
@@ -3615,7 +3615,7 @@ CREATE TABLE users (
 	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(string(newSQL), "-- Modify \"users\" table\nALTER TABLE"), qt.IsTrue, qt.Commentf("%s", newSQL))
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
 }

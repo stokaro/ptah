@@ -109,7 +109,7 @@ func cockroachDBRowTTLFixture() extensionFixture {
 		After:  &crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpirationExpression: "expires_at + INTERVAL '1 day'"}},
 	}
 	return extensionFixture{payload: &crdbast.AlterRowTTL{Change: change},
-		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
+		wantSQL: "ALTER TABLE \"items\" SET (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');\n" +
 			"ALTER TABLE \"items\" RESET (ttl_job_cron);\n\n"}
 }
 
@@ -119,7 +119,7 @@ func spannerRowDeletionFixture() extensionFixture {
 		After:  &spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "created_at", Interval: "60 days"}},
 	}
 	return extensionFixture{payload: &spannerast.AlterRowDeletion{Change: change},
-		wantSQL: "-- ALTER statements: --\nALTER TABLE \"items\" ALTER TTL INTERVAL '60 days' ON \"created_at\";\n\n"}
+		wantSQL: "ALTER TABLE \"items\" ALTER TTL INTERVAL '60 days' ON \"created_at\";\n\n"}
 }
 
 func clickhouseIndexFixture() extensionFixture {
@@ -214,7 +214,7 @@ func continuousAggregateFixture() extensionFixture {
 // header and closing blank line around every ALTER TABLE.
 func mysqlReplaceIndexFixture() extensionFixture {
 	return extensionFixture{payload: &mysqlast.ReplaceIndex{Index: mysqlast.Index{Name: "k", Parts: []mysqlast.IndexPart{{Column: "a"}}, KeyBlockSize: 8},
-		TableCopy: true}, wantSQL: "-- ALTER statements: --\nALTER TABLE `items` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"}
+		TableCopy: true}, wantSQL: "ALTER TABLE `items` DROP INDEX `k`, ADD INDEX `k` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n"}
 }
 
 func allExtensionFixtures() []extensionFixture {
@@ -702,7 +702,7 @@ func TestPostgreSQLTypeOwnerSkipsWhatATargetDoesNotHold(t *testing.T) {
 // neither.
 func TestRowSecurityTableFacetsFollowTheirTable(t *testing.T) {
 	hypertable := &tsschema.DesiredHypertable{Column: "id"}
-	header := "-- POSTGRES TABLE: orders --\nCREATE TABLE \"orders\" (\n  \"id\" INTEGER\n);\n\n"
+	header := "CREATE TABLE \"orders\" (\n  \"id\" INTEGER\n);\n\n"
 	tests := []struct {
 		name   string
 		facets []schemaext.Value

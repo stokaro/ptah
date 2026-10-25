@@ -69,8 +69,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.MySQL,
 			diff:    xGainsKey(removedKey("c", "x", "UNIQUE"), nil),
 			want: []string{
-				"-- ALTER statements: --\nALTER TABLE `c` DROP INDEX `x`",
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"ALTER TABLE `c` DROP INDEX `x`",
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
 			},
 		},
@@ -79,8 +79,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.MariaDB,
 			diff:    xGainsKey(removedKey("c", "x", "UNIQUE"), nil),
 			want: []string{
-				"-- ALTER statements: --\nALTER TABLE `c` DROP INDEX IF EXISTS `x`",
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"ALTER TABLE `c` DROP INDEX IF EXISTS `x`",
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
 			},
 		},
@@ -90,7 +90,7 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			diff:    xGainsKey(nil, []difftypes.IndexRef{{Name: "X", TableName: "c"}}),
 			want: []string{
 				"DROP INDEX `X` ON `c`",
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
 			},
 		},
@@ -99,8 +99,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.MySQL,
 			diff:    xAddedWithKey(removedKey("c", "x", "UNIQUE")),
 			want: []string{
-				"-- ALTER statements: --\nALTER TABLE `c` DROP INDEX `x`",
-				"-- Modify table: c\n-- ALTER statements: --\nALTER TABLE `c` ADD COLUMN `x` INTEGER UNIQUE",
+				"ALTER TABLE `c` DROP INDEX `x`",
+				"-- Modify table: c\nALTER TABLE `c` ADD COLUMN `x` INTEGER UNIQUE",
 			},
 		},
 		{
@@ -108,8 +108,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.Postgres,
 			diff:    xGainsKey(removedKey("c", "c_x_key", "UNIQUE"), nil),
 			want: []string{
-				"-- ALTER statements: --\n" + `ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
-				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				`ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
+				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n" +
 					`ALTER TABLE "c" ADD CONSTRAINT "c_x_key" UNIQUE ("x")`,
 			},
 		},
@@ -118,8 +118,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.Postgres,
 			diff:    xGainsKey(removedKey("c", "c_x_key", "CHECK"), nil),
 			want: []string{
-				"-- ALTER statements: --\n" + `ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
-				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				`ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
+				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n" +
 					`ALTER TABLE "c" ADD CONSTRAINT "c_x_key" UNIQUE ("x")`,
 			},
 		},
@@ -129,7 +129,7 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			diff:    xGainsKey(nil, []difftypes.IndexRef{{Name: "c_x_key", TableName: "c"}}),
 			want: []string{
 				`DROP INDEX IF EXISTS "c_x_key"`,
-				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n" +
 					`ALTER TABLE "c" ADD CONSTRAINT "c_x_key" UNIQUE ("x")`,
 			},
 		},
@@ -138,8 +138,8 @@ func TestGenerateSchemaDiffSQLStatements_KeyHoldingTheColumnKeysNameGoesFirst(t 
 			dialect: platform.Postgres,
 			diff:    xAddedWithKey(removedKey("c", "c_x_key", "UNIQUE")),
 			want: []string{
-				"-- ALTER statements: --\n" + `ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
-				"-- Add/modify columns for table: c\n-- ALTER statements: --\n" + `ALTER TABLE "c" ADD COLUMN "x" INTEGER UNIQUE`,
+				`ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "c_x_key"`,
+				"-- Add/modify columns for table: c\n" + `ALTER TABLE "c" ADD COLUMN "x" INTEGER UNIQUE`,
 			},
 		},
 	}
@@ -174,9 +174,9 @@ func TestGenerateSchemaDiffSQLStatements_KeyUnderAnotherNameStaysWithTheRemovals
 			dialect: platform.MySQL,
 			diff:    xGainsKey(removedKey("c", "c_x_uq", "UNIQUE"), nil),
 			want: []string{
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
-				"-- ALTER statements: --\nALTER TABLE `c` DROP INDEX `c_x_uq`",
+				"ALTER TABLE `c` DROP INDEX `c_x_uq`",
 			},
 		},
 		{
@@ -184,9 +184,9 @@ func TestGenerateSchemaDiffSQLStatements_KeyUnderAnotherNameStaysWithTheRemovals
 			dialect: platform.MySQL,
 			diff:    xGainsKey(removedKey("c", "x", "CHECK"), nil),
 			want: []string{
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
-				"-- ALTER statements: --\nALTER TABLE `c` DROP CONSTRAINT `x`",
+				"ALTER TABLE `c` DROP CONSTRAINT `x`",
 			},
 		},
 		{
@@ -194,9 +194,9 @@ func TestGenerateSchemaDiffSQLStatements_KeyUnderAnotherNameStaysWithTheRemovals
 			dialect: platform.MySQL,
 			diff:    xGainsKey(removedKey("d", "x", "UNIQUE"), nil),
 			want: []string{
-				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Modify table: c\n-- Modify column c.x: unique: false -> true\n" +
 					"ALTER TABLE `c` MODIFY COLUMN `x` INTEGER UNIQUE",
-				"-- ALTER statements: --\nALTER TABLE `d` DROP INDEX `x`",
+				"ALTER TABLE `d` DROP INDEX `x`",
 			},
 		},
 		{
@@ -204,9 +204,9 @@ func TestGenerateSchemaDiffSQLStatements_KeyUnderAnotherNameStaysWithTheRemovals
 			dialect: platform.Postgres,
 			diff:    xGainsKey(removedKey("c", "x", "UNIQUE"), nil),
 			want: []string{
-				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n-- ALTER statements: --\n" +
+				"-- Add/modify columns for table: c\n-- Modify column c.x: unique: false -> true\n" +
 					`ALTER TABLE "c" ADD CONSTRAINT "c_x_key" UNIQUE ("x")`,
-				"-- ALTER statements: --\n" + `ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "x"`,
+				`ALTER TABLE "c" DROP CONSTRAINT IF EXISTS "x"`,
 			},
 		},
 		{

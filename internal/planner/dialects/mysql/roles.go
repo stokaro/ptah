@@ -79,9 +79,11 @@ func (p *Planner) removeGrantsAndRoles(result []ast.Node, diff *difftypes.Schema
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
 	}
 	for _, role := range diff.RolesRemoved {
-		result = append(result, ast.NewDropRole(role.Name).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this role"))
+		drop := ast.NewDropRole(role.Name).SetIfExists()
+		if p.describes() {
+			drop.SetComment("WARNING: Ensure no other objects depend on this role")
+		}
+		result = append(result, drop)
 	}
 	return result
 }

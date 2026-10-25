@@ -348,17 +348,17 @@ func TestRenderer_CreateTable(t *testing.T) {
 		{
 			name:     "PostgreSQL CREATE TABLE",
 			dialect:  "postgresql",
-			contains: []string{"CREATE TABLE", "users", "POSTGRES TABLE"},
+			contains: []string{"CREATE TABLE", "users"},
 		},
 		{
 			name:     "MySQL CREATE TABLE",
 			dialect:  "mysql",
-			contains: []string{"CREATE TABLE", "users", "MYSQL TABLE"},
+			contains: []string{"CREATE TABLE", "users"},
 		},
 		{
 			name:     "MariaDB CREATE TABLE",
 			dialect:  "mariadb",
-			contains: []string{"CREATE TABLE", "users", "MARIADB TABLE"},
+			contains: []string{"CREATE TABLE", "users"},
 		},
 	}
 

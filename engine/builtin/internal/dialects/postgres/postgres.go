@@ -647,12 +647,6 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 			},
 		)
 	}
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- %s TABLE: %s --", r.dialectUpper, node.Name)
-	}
-
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -731,12 +725,10 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 // MySQL renderer needs none of this -- so a comment is its own statement and
 // has to follow the table that owns it.
 //
-// Without them a comment reached the renderer and left as a `-- POSTGRES
-// TABLE: … (…)` header, which is a decoration for whoever reads the plan and
-// nothing the server stores. So `schema inspect` described a commented
-// database, the document carried the comment, and applying it produced a
-// database with no comments on it -- silently, because the comparison reads
-// both sides the same way and answered `Schema is synced` (stokaro/ptah#2101).
+// Without them `schema inspect` describes a commented database, the document
+// carries the comment, and applying it produces a database with no comments on
+// it -- silently, because the comparison reads both sides the same way and
+// answers `Schema is synced` (stokaro/ptah#2101).
 func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
 	table := r.escapeQualifiedIdentifier(node.Name)
 	if node.Comment != "" {
@@ -965,8 +957,6 @@ func addColumnClause(op *ast.AddColumnOperation) string {
 
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
-	r.w.WriteLine("-- ALTER statements: --")
-
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
@@ -3092,7 +3082,13 @@ func (r *Renderer) renderDropTrigger(node *ast.DropTriggerNode) error {
 	if functionName == "" {
 		functionName = schemamodel.Trigger{Table: node.Table, Name: node.Name}.FunctionName()
 	}
-	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", r.escapeQualifiedIdentifier(functionName))
+	// The function is the trigger's own, so it exists exactly when the
+	// trigger does, and the trigger's guard speaks for both.
+	guard := ""
+	if node.IfExists {
+		guard = "IF EXISTS "
+	}
+	r.w.WriteLinef("DROP FUNCTION %s%s();", guard, r.escapeQualifiedIdentifier(functionName))
 	return nil
 }
 

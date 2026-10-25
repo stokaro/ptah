@@ -46,7 +46,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			changes: map[string]string{"unique": "false -> true"},
 			want: []string{"-- Add/modify columns for table: flags\n" +
 				"-- Modify column flags.code: unique: false -> true\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`},
 		},
 		{
@@ -56,7 +55,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			changes: map[string]string{"unique": "false -> true"},
 			want: []string{"-- Add/modify columns for table: app.flags\n" +
 				"-- Modify column app.flags.code: unique: false -> true\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "app"."flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`},
 		},
 		{
@@ -68,7 +66,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			changes: map[string]string{"unique": "false -> true"},
 			want: []string{"-- Add/modify columns for table: t3649_a_rather_long_table_name_for_truncation\n" +
 				"-- Modify column t3649_a_rather_long_table_name_for_truncation.a_rather_long_column_name_too: unique: false -> true\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "t3649_a_rather_long_table_name_for_truncation" ADD CONSTRAINT ` +
 				`"t3649_a_rather_long_table_nam_a_rather_long_column_name_too_key" UNIQUE ("a_rather_long_column_name_too")`},
 		},
@@ -80,10 +77,8 @@ func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 			want: []string{
 				"-- Add/modify columns for table: flags\n" +
 					"-- Modify column flags.code: type: int4 -> bigint, unique: false -> true\n" +
-					"-- ALTER statements: --\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "code" TYPE BIGINT`,
-				"-- ALTER statements: --\n" +
-					`ALTER TABLE "flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`,
+				`ALTER TABLE "flags" ADD CONSTRAINT "flags_code_key" UNIQUE ("code")`,
 			},
 		},
 	}

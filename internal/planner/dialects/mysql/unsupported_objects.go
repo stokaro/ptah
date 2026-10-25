@@ -243,12 +243,14 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 		// a server answers the wrong one by name. A replacement that dropped a
 		// procedure as a function would fail on the drop and leave the old body
 		// in place while reporting the plan it did not run.
-		result = append(result, ast.NewDropFunction(fn.Name).
+		drop := ast.NewDropFunction(fn.Name).
 			SetKind(fn.Kind).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Replace %s %s: %s", routineWord(fn), fn.Name, changes)))
-		node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
-		result = append(result, node)
+			SetIfExists()
+		if p.describes() {
+			drop.SetComment(fmt.Sprintf("Replace %s %s: %s", routineWord(fn), fn.Name, changes))
+			node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
+		}
+		result = append(result, drop, node)
 	}
 	if p.dropsRoutinesLate() {
 		// Removed after the tables and the feature objects that may call them;
@@ -270,17 +272,22 @@ func (p *Planner) removeRoutines(result []ast.Node, diff *difftypes.SchemaDiff) 
 		return result
 	}
 	for _, routine := range diff.FunctionsRemoved {
-		result = append(result, ast.NewDropFunction(routine.Name).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this function"))
+		drop := ast.NewDropFunction(routine.Name).SetIfExists()
+		if p.describes() {
+			drop.SetComment("WARNING: Ensure no other objects depend on this function")
+		}
+		result = append(result, drop)
 	}
 	// The verb has to match the object; the comparator kept the two apart for
 	// exactly this statement (stokaro/ptah#1722).
 	for _, routine := range diff.ProceduresRemoved {
-		result = append(result, ast.NewDropFunction(routine.Name).
+		drop := ast.NewDropFunction(routine.Name).
 			SetKind(schemamodel.FunctionKindProcedure).
-			SetIfExists().
-			SetComment("WARNING: Ensure no other objects depend on this procedure"))
+			SetIfExists()
+		if p.describes() {
+			drop.SetComment("WARNING: Ensure no other objects depend on this procedure")
+		}
+		result = append(result, drop)
 	}
 	return result
 }

@@ -57,7 +57,6 @@ func TestPostgres_SetNotNull_FillHoldsADefaultThatSpellsADollarQuote(t *testing.
 
 	got := renderPostgres(c, modifyColumn(column, ast.ColumnProperties{Nullability: true}, true))
 
-	c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-		"UPDATE \"t\" SET \"c\" = '$$' WHERE \"c\" IS NULL;\n"+
+	c.Assert(got, qt.Equals, "UPDATE \"t\" SET \"c\" = '$$' WHERE \"c\" IS NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
 }

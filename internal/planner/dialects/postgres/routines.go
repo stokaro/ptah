@@ -114,7 +114,7 @@ func (p *Planner) modifyExistingFunctions(
 		if fnDiff.Desired.Name == "" || placements[fnDiff.Desired.Name] != placement {
 			continue
 		}
-		result = append(result, modifiedFunctionNodes(fnDiff)...)
+		result = append(result, p.modifiedFunctionNodes(fnDiff)...)
 	}
 	return result
 }
@@ -181,7 +181,7 @@ func (p *Planner) relationRoutines(
 	}
 	for _, fnDiff := range diff.FunctionsModified {
 		if fnDiff.Desired.Name != "" && placements[fnDiff.Desired.Name] == deporder.RoutineWithRelations {
-			add(fnDiff.Desired, modifiedFunctionNodes(fnDiff))
+			add(fnDiff.Desired, p.modifiedFunctionNodes(fnDiff))
 		}
 	}
 	routines.tableSteps = deporder.TablesWithRoutinesForCreate(

@@ -13,7 +13,7 @@ import (
 
 // alterStatements is the header the renderer writes above an ALTER TABLE's
 // statements.
-const alterStatements = "-- ALTER statements: --\n"
+const alterStatements = ""
 
 // setConstraintComment is an ALTER on app.orders that sets the comment of its
 // constraint orders_total_positive to comment.

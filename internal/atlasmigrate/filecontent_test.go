@@ -17,8 +17,8 @@ import (
 	"ptah.run/migration/migrator"
 )
 
-func defaultMigrateDiffFormat() string {
-	return atlasreport.NormalizeMigrateDiffFormat("")
+func defaultMigrateDiffFormat() atlasmigrate.FileFormat {
+	return atlasmigrate.FileFormat{Template: atlasreport.NormalizeMigrateDiffFormat("")}
 }
 
 func concurrentIndexNode(name, table, column string) *ast.IndexNode {

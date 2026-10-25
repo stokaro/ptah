@@ -13,12 +13,10 @@ import (
 // server rather than the reader of the plan.
 //
 // PostgreSQL has no inline COMMENT clause, so a comment is its own statement.
-// The renderer wrote the table's as a `-- POSTGRES TABLE: … (…)` header, which
-// is a decoration, and wrote nothing at all for a column's — so `schema
-// inspect` described a commented database, the document carried the comment,
-// and applying it produced a database with no comments on it. Silently: the
-// comparison reads both sides the same way and answered `Schema is synced`
-// (stokaro/ptah#2101).
+// Without those statements `schema inspect` describes a commented database,
+// the document carries the comment, and applying it produces a database with
+// no comments on it. Silently: the comparison reads both sides the same way
+// and answers `Schema is synced` (stokaro/ptah#2101).
 func TestRenderer_WritesCommentsAsStatements(t *testing.T) {
 	c := qt.New(t)
 	table := ast.NewCreateTable("customers").

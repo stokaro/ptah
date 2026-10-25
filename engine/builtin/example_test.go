@@ -35,7 +35,6 @@ func ExampleRenderSQL() {
 	fmt.Print(sql)
 
 	// Output:
-	// -- POSTGRES TABLE: products --
 	// CREATE TABLE "products" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "name" VARCHAR(255) NOT NULL
@@ -65,7 +64,6 @@ func ExampleNewRenderer() {
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" BIGSERIAL PRIMARY KEY NOT NULL,
 	//   "email" VARCHAR(255) UNIQUE NOT NULL
@@ -130,22 +128,18 @@ tables:
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: posts --
 	// CREATE TABLE "posts" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "user_id" INTEGER NOT NULL
 	// );
 	//
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "favorite_post_id" INTEGER
 	// );
 	//
-	// -- ALTER statements: --
 	// ALTER TABLE "posts" ADD CONSTRAINT "fk_posts_user" FOREIGN KEY ("user_id") REFERENCES "users"("id");
 	//
-	// -- ALTER statements: --
 	// ALTER TABLE "users" ADD CONSTRAINT "fk_users_favorite_post" FOREIGN KEY ("favorite_post_id") REFERENCES "posts"("id");
 }
 

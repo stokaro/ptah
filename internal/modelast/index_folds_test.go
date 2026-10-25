@@ -50,7 +50,7 @@ func uniqueOn(name string, columns ...string) schemamodel.Constraint {
 // PostgreSQL 18.6, both constraints of each row exist when they are added this
 // way, and one does when both are written into the CREATE TABLE.
 func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *testing.T) {
-	const table = "-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+	const table = "CREATE TABLE \"ex\" (\n" +
 		"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL"
 	tests := []struct {
 		name     string
@@ -62,8 +62,8 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 			database: exclusionKeyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "btree")),
 			want: []string{
 				table + "\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING btree (r WITH =);\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING btree (r WITH =);\n\n",
 			},
 		},
 		{
@@ -71,7 +71,7 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 			database: keyedTable(uniqueOn("ex_id_key", "id")),
 			want: []string{
 				table + "\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_id_key\" UNIQUE (\"id\");\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_id_key\" UNIQUE (\"id\");\n\n",
 			},
 		},
 		{
@@ -79,7 +79,7 @@ func TestGetOrderedCreateStatements_FoldedIndexConstraintFollowsItsTable(t *test
 			database: keyedTable(uniqueOn("ex_r_key", "r"), uniqueOn("ex_r_key1", "r"), uniqueOn("ex_r_id_key", "r", "id")),
 			want: []string{
 				table + ",\n  CONSTRAINT \"ex_r_key\" UNIQUE (\"r\"),\n  CONSTRAINT \"ex_r_id_key\" UNIQUE (\"r\", \"id\")\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_key1\" UNIQUE (\"r\");\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_key1\" UNIQUE (\"r\");\n\n",
 			},
 		},
 	}
@@ -107,16 +107,16 @@ func TestGetOrderedCreateStatements_KeepsDistinctIndexConstraints(t *testing.T) 
 			name:     "an EXCLUDE under two access methods",
 			dialect:  platform.Postgres,
 			database: exclusionKeyedTable(excludeOnR("ex_r_excl", "btree"), excludeOnR("ex_r_excl1", "hash")),
-			want: []string{"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+			want: []string{"CREATE TABLE \"ex\" (\n" +
 				"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING hash (r WITH =);\n\n"},
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl\" EXCLUDE USING btree (r WITH =);\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"ex_r_excl1\" EXCLUDE USING hash (r WITH =);\n\n"},
 		},
 		{
 			name:     "a UNIQUE declared twice on MySQL",
 			dialect:  platform.MySQL,
 			database: keyedTable(uniqueOn("ex_r_key", "r"), uniqueOn("ex_r_key1", "r")),
-			want: []string{"-- MYSQL TABLE: ex --\nCREATE TABLE `ex` (\n" +
+			want: []string{"CREATE TABLE `ex` (\n" +
 				"  `id` INTEGER PRIMARY KEY,\n  `r` INTEGER NOT NULL,\n" +
 				"  CONSTRAINT `ex_r_key` UNIQUE (`r`),\n  CONSTRAINT `ex_r_key1` UNIQUE (`r`)\n);\n\n"},
 		},
@@ -160,9 +160,9 @@ func TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable(t *testing.T
 			name:     "beside a UNIQUE over the column",
 			database: keyedTableWithColumnKey("r", uniqueOn("uq_r", "r")),
 			want: []string{
-				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+				"CREATE TABLE \"ex\" (\n" +
 					"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER UNIQUE NOT NULL\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD CONSTRAINT \"uq_r\" UNIQUE (\"r\");\n\n",
+				"ALTER TABLE \"ex\" ADD CONSTRAINT \"uq_r\" UNIQUE (\"r\");\n\n",
 			},
 		},
 		{
@@ -179,18 +179,18 @@ func TestGetOrderedCreateStatements_FoldingColumnKeyFollowsItsTable(t *testing.T
 				return database
 			}(),
 			want: []string{
-				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+				"CREATE TABLE \"ex\" (\n" +
 					"  \"r\" INTEGER NOT NULL,\n  CONSTRAINT \"ex_pk\" PRIMARY KEY (\"r\")\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD UNIQUE (\"r\");\n\n",
+				"ALTER TABLE \"ex\" ADD UNIQUE (\"r\");\n\n",
 			},
 		},
 		{
 			name:     "on the primary key column",
 			database: keyedTableWithColumnKey("id"),
 			want: []string{
-				"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+				"CREATE TABLE \"ex\" (\n" +
 					"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER NOT NULL\n);\n\n",
-				"-- ALTER statements: --\nALTER TABLE \"ex\" ADD UNIQUE (\"id\");\n\n",
+				"ALTER TABLE \"ex\" ADD UNIQUE (\"id\");\n\n",
 			},
 		},
 	}
@@ -217,7 +217,7 @@ func TestGetOrderedCreateStatements_ColumnKeyTheServerKeepsStaysInTheTable(t *te
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
-		"-- POSTGRES TABLE: ex --\nCREATE TABLE \"ex\" (\n" +
+		"CREATE TABLE \"ex\" (\n" +
 			"  \"id\" INTEGER PRIMARY KEY NOT NULL,\n  \"r\" INTEGER UNIQUE NOT NULL,\n" +
 			"  CONSTRAINT \"uq_r_id\" UNIQUE (\"r\", \"id\")\n);\n\n",
 	})

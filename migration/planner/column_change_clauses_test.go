@@ -51,7 +51,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			changes: map[string]string{"default_expr": " -> true"},
 			want: []string{header +
 				"-- Modify column flags.fresh: default_expr:  -> true\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" SET DEFAULT true`},
 		},
 		{
@@ -60,7 +59,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			changes: map[string]string{"default": "false -> "},
 			want: []string{header +
 				"-- Modify column flags.fresh: default: false -> \n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" DROP DEFAULT`},
 		},
 		{
@@ -69,7 +67,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			changes: map[string]string{"nullable": "false -> true"},
 			want: []string{header +
 				"-- Modify column flags.fresh: nullable: false -> true\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "fresh" DROP NOT NULL`},
 		},
 		{
@@ -78,7 +75,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			changes: map[string]string{"type": "int4 -> bigint"},
 			want: []string{header +
 				"-- Modify column flags.hits: type: int4 -> bigint\n" +
-				"-- ALTER statements: --\n" +
 				`ALTER TABLE "flags" ALTER COLUMN "hits" TYPE BIGINT`},
 		},
 		{
@@ -88,7 +84,6 @@ func TestGenerateSchemaDiffSQLStatements_ColumnChangeClauses_HappyPath(t *testin
 			want: []string{
 				header +
 					"-- Modify column flags.hits: default_expr:  -> 1, type: int4 -> bigint\n" +
-					"-- ALTER statements: --\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "hits" TYPE BIGINT`,
 				`ALTER TABLE "flags" ALTER COLUMN "hits" SET DEFAULT 1`,
 			},
@@ -125,6 +120,5 @@ func TestGenerateSchemaDiffSQLStatements_MySQLColumnCommentPrecedesTheStatement(
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{"-- Modify table: flags\n" +
 		"-- Modify column flags.fresh: default_expr:  -> true\n" +
-		"-- ALTER statements: --\n" +
 		"ALTER TABLE `flags` MODIFY COLUMN `fresh` BOOLEAN NOT NULL DEFAULT 1"})
 }

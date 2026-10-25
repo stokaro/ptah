@@ -1284,18 +1284,39 @@ func (n *AlterIndexNode) Accept(visitor Visitor) error { return visitor.VisitNod
 //
 // Comments are useful for documenting generated SQL and providing context
 // about the schema structure.
+//
+// A comment is one of two kinds, and the code that writes it says which. A
+// descriptive comment restates the statements beside it, such as "Add/modify
+// columns for table: users", and a plan may leave it out without losing
+// anything. Every other comment reports something the statements cannot say:
+// a change the plan skipped, a step a person has to take, or a declaration the
+// target cannot hold. Such a comment is written in every statement style,
+// because leaving it out would drop that report in silence.
 type CommentNode struct {
 	// Text is the comment content
 	Text string
+	// Descriptive marks a comment that only describes the statements around
+	// it. The zero value is a comment that reports something, which is always
+	// written.
+	Descriptive bool
 }
 
-// NewComment creates a new comment node with the specified text.
+// NewComment creates a new comment node with the specified text. The comment
+// reports something the statements beside it do not say and is always
+// written; [NewDescriptiveComment] creates one a plan may leave out.
 //
 // Example:
 //
 //	comment := NewComment("User management tables")
 func NewComment(text string) *CommentNode {
 	return &CommentNode{Text: text}
+}
+
+// NewDescriptiveComment creates a comment that only describes the statements
+// around it, such as which table the next statements change. A plan made with
+// [ptah.run/core/planext.StatementStyleExact] leaves it out.
+func NewDescriptiveComment(text string) *CommentNode {
+	return &CommentNode{Text: text, Descriptive: true}
 }
 
 // Accept implements the Node interface for CommentNode.

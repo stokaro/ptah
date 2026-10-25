@@ -84,12 +84,12 @@ func TestPlanner_IndexBlockSize(t *testing.T) {
 		{
 			name: "MySQL, the hint alone", dialect: "mysql", rowFormat: "Compressed",
 			desired: blockSizeIndex{columns: a, size: 8}, current: blockSizeIndex{columns: a, size: 4},
-			want: "-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n",
+			want: "-- Modify table: t\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8, ALGORITHM=COPY;\n\n",
 		},
 		{
 			name: "MySQL, the hint removed", dialect: "mysql", rowFormat: "Compressed",
 			desired: blockSizeIndex{columns: a}, current: blockSizeIndex{columns: a, size: 4},
-			want: "-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`), ALGORITHM=COPY;\n\n",
+			want: "-- Modify table: t\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`), ALGORITHM=COPY;\n\n",
 		},
 		{
 			name: "MySQL, a row format that discards the hint", dialect: "mysql", rowFormat: "Dynamic",
@@ -99,18 +99,18 @@ func TestPlanner_IndexBlockSize(t *testing.T) {
 		{
 			name: "MySQL, the key changes too", dialect: "mysql", rowFormat: "Compressed",
 			desired: blockSizeIndex{columns: ab, size: 8}, current: blockSizeIndex{columns: a, size: 4},
-			want: "-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`, `b`) KEY_BLOCK_SIZE=8;\n\n",
+			want: "-- Modify table: t\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`, `b`) KEY_BLOCK_SIZE=8;\n\n",
 		},
 		{
 			name: "MySQL, the visibility changes too", dialect: "mysql", rowFormat: "Compressed",
 			desired: blockSizeIndex{columns: a, size: 8, invisible: true}, current: blockSizeIndex{columns: a, size: 4},
-			want: "-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8 INVISIBLE, ALGORITHM=COPY;\n\n" +
-				"-- ALTER statements: --\nALTER TABLE `app`.`t` ALTER INDEX `idx_a` INVISIBLE;\n\n",
+			want: "-- Modify table: t\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8 INVISIBLE, ALGORITHM=COPY;\n\n" +
+				"ALTER TABLE `app`.`t` ALTER INDEX `idx_a` INVISIBLE;\n\n",
 		},
 		{
 			name: "MariaDB, the hint alone", dialect: "mariadb", rowFormat: "Dynamic",
 			desired: blockSizeIndex{columns: a, size: 8}, current: blockSizeIndex{columns: a, size: 4},
-			want: "-- Modify table: t\n-- ALTER statements: --\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8;\n\n",
+			want: "-- Modify table: t\nALTER TABLE `t` DROP INDEX `idx_a`, ADD INDEX `idx_a` (`a`) KEY_BLOCK_SIZE=8;\n\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
