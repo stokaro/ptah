@@ -7,8 +7,9 @@
 // release's ptah-provider.json and archive against the release's own
 // checksums.txt before reading the archive, takes only the one executable the
 // manifest names, publishes it with a single directory rename, and writes an
-// install record with the executable's digest. It never runs the executable and
-// never edits the provider manifest.
+// install record with the executable's digest. Installs into one provider's
+// directory take turns on a lock file there, across processes. It never runs
+// the executable and never edits the provider manifest.
 package providerinstall
 
 import (
@@ -209,7 +210,13 @@ func (i Installer) readManifest(ctx context.Context, entry providercatalog.Entry
 
 // installChosen checks the chosen release's checksums, then publishes its
 // executable and the install record, unless the record already names it.
-func (i Installer) installChosen(ctx context.Context, entry providercatalog.Entry, choice chosen) (Result, error) {
+//
+// The store work runs under the install lock of the provider's directory, from
+// reading the record to writing it. Parallel installs of one release then
+// download it once: the first publishes it, and each later one finds the record
+// naming it. Without the lock each install replaces the record and the
+// installation that the others are reading, which Windows refuses.
+func (i Installer) installChosen(ctx context.Context, entry providercatalog.Entry, choice chosen) (result Result, err error) {
 	platform := i.platform()
 	artifact, found := choice.manifest.Artifact(platform)
 	if !found {
@@ -228,8 +235,18 @@ func (i Installer) installChosen(ctx context.Context, entry providercatalog.Entr
 	if err != nil {
 		return Result{}, err
 	}
+	dir := ProviderDir(i.Root, entry.ProviderID)
+	lock, err := lockProvider(ctx, dir)
+	if err != nil {
+		return Result{}, fail(entry, CodeStoreFailed, err, "cannot lock the provider store %s: %v", dir, err)
+	}
+	defer func() {
+		if releaseErr := lock.Close(); releaseErr != nil && err == nil {
+			result, err = Result{}, fail(entry, CodeStoreFailed, releaseErr, "cannot release the install lock in %s: %v", dir, releaseErr)
+		}
+	}()
 	target := Dir(i.Root, entry.ProviderID, choice.manifest.Version, platform)
-	result := Result{
+	result = Result{
 		EngineID: entry.EngineID, ProviderID: entry.ProviderID, Version: choice.manifest.Version,
 		MinContract: choice.manifest.MinContract, Platform: platform, Executable: filepath.Join(target, artifact.Executable),
 	}

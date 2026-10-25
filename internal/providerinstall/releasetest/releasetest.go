@@ -155,7 +155,9 @@ func (s *Server) Add(releases ...Release) {
 }
 
 // Handle answers every download of the asset called name with handler instead
-// of its bytes, so a test can cut a body short or fail a request.
+// of its bytes, so a test can cut a body short or fail a request. The handler
+// runs without the server's lock, so it may hold its answer back while the
+// server answers other requests.
 func (s *Server) Handle(name string, handler http.HandlerFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -179,11 +181,13 @@ func (s *Server) Requests() []string {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	if handler := s.note(r); handler != nil {
+		handler(w, r)
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.requests = append(s.requests, r.URL.Path)
 	listing := "/api/repos/" + s.owner + "/" + s.repo + "/releases"
-	downloads := "/download/" + s.owner + "/" + s.repo + "/releases/download/"
 	switch {
 	case r.Method != http.MethodGet:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -192,16 +196,31 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(s.refuseAPI), s.refuseAPI)
 	case r.URL.Path == listing:
 		s.list(w, r)
-	case strings.HasPrefix(r.URL.Path, downloads):
-		tag, name, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, downloads), "/")
-		if handler, found := s.handlers[name]; found {
-			handler(w, r)
-			return
-		}
+	case strings.HasPrefix(r.URL.Path, s.downloads()):
+		tag, name, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, s.downloads()), "/")
 		s.download(w, tag, name)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// note records the request and returns the handler a test installed for the
+// asset it downloads, or nil.
+func (s *Server) note(r *http.Request) http.HandlerFunc {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requests = append(s.requests, r.URL.Path)
+	rest, found := strings.CutPrefix(r.URL.Path, s.downloads())
+	if r.Method != http.MethodGet || !found {
+		return nil
+	}
+	_, name, _ := strings.Cut(rest, "/")
+	return s.handlers[name]
+}
+
+// downloads is the path prefix of the download layout, before <tag>/<asset>.
+func (s *Server) downloads() string {
+	return "/download/" + s.owner + "/" + s.repo + "/releases/download/"
 }
 
 type listedAsset struct {

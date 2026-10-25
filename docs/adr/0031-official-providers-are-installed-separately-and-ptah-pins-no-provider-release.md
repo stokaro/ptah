@@ -256,8 +256,11 @@ path: `<store>/<provider-id>/<version>/<os>_<arch>/<executable>`, directories
 `executable` is relative to `<store>/<provider-id>/` and must stay below it. Install
 writes the record through a temporary file and a rename in the same directory,
 after the executable is in place. An interrupted install leaves the previous
-record, which still names a complete installation. Two parallel installs each
-write a complete record, and the later rename decides.
+record, which still names a complete installation. Installs of one provider
+take turns on an exclusive file lock, `<store>/<provider-id>/.install.lock`,
+which each holds from reading the record to writing it, in one process or in
+several. The later install decides the record, and an install of the release
+the record already names downloads nothing.
 
 The record names the version selection uses. The most recent successful
 `providers install` sets it, including a `--version` that chooses an older

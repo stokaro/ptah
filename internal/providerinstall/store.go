@@ -73,17 +73,20 @@ func RecordPath(root, providerID string, platform providerrelease.Platform) stri
 // error wraps [os.ErrNotExist]; every other failure wraps [ErrInvalidRecord],
 // so a caller can tell an absent installation from a damaged one.
 func ReadRecord(root, providerID string, platform providerrelease.Platform) (Record, string, error) {
-	file, err := os.Open(RecordPath(root, providerID, platform))
+	name := RecordPath(root, providerID, platform)
+	file, err := os.Open(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return Record{}, "", err
 	}
 	if err != nil {
 		return Record{}, "", fmt.Errorf("%w: %v", ErrInvalidRecord, err)
 	}
-	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, maxRecordSize+1))
+	// Closed before decoding: on Windows an install cannot replace the record
+	// while it is open.
+	_ = file.Close()
 	if err != nil || len(data) > maxRecordSize {
-		return Record{}, "", fmt.Errorf("%w: cannot read %s", ErrInvalidRecord, file.Name())
+		return Record{}, "", fmt.Errorf("%w: cannot read %s", ErrInvalidRecord, name)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -126,7 +129,10 @@ func (r Record) validate(providerID string) error {
 // WriteRecord publishes record as the install record of its provider on
 // platform, replacing any earlier one. It writes a temporary file in the same
 // directory and renames it, so a reader sees the old record or the new one and
-// never a partial file.
+// never a partial file. A reader that holds the record open for a moment does
+// not make the write fail on any platform. WriteRecord takes no lock:
+// [Installer.Install] calls it under the install lock of the provider's
+// directory, and writers that run at once must be serialized by their caller.
 func WriteRecord(root string, platform providerrelease.Platform, record Record) error {
 	if err := record.validate(record.ProviderID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRecord, err)
@@ -154,5 +160,5 @@ func WriteRecord(root string, platform providerrelease.Platform, record Record) 
 	if err != nil {
 		return err
 	}
-	return os.Rename(temp.Name(), RecordPath(root, record.ProviderID, platform))
+	return replaceRecord(temp.Name(), RecordPath(root, record.ProviderID, platform))
 }
