@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/engine"
 )
@@ -158,4 +159,54 @@ func TestProviderFacetComparisonPreservesParentsAndExclusions(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Changes, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 0)
+}
+
+// writtenRotationRequest is an object comparison of one retention object that
+// both sides hold with the same value, so only a rotation request plans a
+// change.
+func writtenRotationRequest(c *qt.C, runtime *engine.Runtime) schemaext.ObjectComparisonRequest {
+	c.Helper()
+	subject := objectidentity.ID{Kind: objectidentity.Kind(comparisonNative), Name: objectidentity.Part{Source: "keep", Normalized: "keep"}}
+	desired, err := schemaext.NewObjects(schemaext.Object{Ref: subject, Value: comparisonModel(c, runtime, schemaext.Desired, comparisonNative, subject, `{"seconds":60}`)})
+	c.Assert(err, qt.IsNil)
+	current, err := schemaext.NewObjects(schemaext.Object{Ref: subject, Value: comparisonModel(c, runtime, schemaext.Observed, comparisonNative, subject, `{"seconds":60}`)})
+	c.Assert(err, qt.IsNil)
+	complete := schemaext.Knowledge{State: schemaext.Complete}
+	return schemaext.ObjectComparisonRequest{Target: "fixture", Identifiers: comparisonRules(),
+		Desired: schemaext.ObjectState{Objects: desired, Coverage: comparisonCoverage(c, runtime, comparisonNative, schemaext.Desired, complete)},
+		Current: schemaext.ObjectState{Objects: current, Coverage: comparisonCoverage(c, runtime, comparisonNative, schemaext.Observed, complete)}}
+}
+
+// TestProviderResolvesAWrittenRequest_HappyPath sends a rotation as the
+// operator wrote it. The provider reads the spelling, says which declared
+// object it names, and plans the rotation of that object.
+func TestProviderResolvesAWrittenRequest_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "comparison-models")
+	request := writtenRotationRequest(c, runtime)
+	request.Requests = []schemaext.ChangeRequest{{Written: "keep", Action: schemaext.RotateAction}}
+
+	result, err := runtime.CompareObjects(c.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	subject := objectidentity.ID{Kind: objectidentity.Kind(comparisonNative), Name: objectidentity.Part{Source: "keep", Normalized: "keep"}}
+	c.Assert(result.Resolved, qt.DeepEquals, []schemaext.ResolvedRequest{{Request: 0, Subject: subject}})
+	c.Assert(result.Changes, qt.HasLen, 1)
+	c.Assert(result.Changes[0].Subject, qt.DeepEquals, subject)
+}
+
+// TestProviderResolvesAWrittenRequest_FailurePath refuses, naming the
+// spelling, a written request the provider does not recognize, so a typo
+// cannot read as a rotation done.
+func TestProviderResolvesAWrittenRequest_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderCommand(c, "comparison-models")
+	request := writtenRotationRequest(c, runtime)
+	request.Requests = []schemaext.ChangeRequest{{Written: "kep", Action: schemaext.RotateAction}}
+
+	result, err := runtime.CompareObjects(c.Context(), request)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*no owner on "fixture" reads the "rotate" request "kep"`)
+	c.Assert(result, qt.DeepEquals, schemaext.ObjectComparisonResult{})
 }

@@ -28,8 +28,13 @@ import (
 
 // compatProviderBinaries are the two programs every row drives: ptah-compat as
 // shipped, and the independently built fixture provider that serves the engine
-// "fixture" (history, session locks and execution included).
-type compatProviderBinaries struct{ compat, provider string }
+// "fixture" (history, session locks and execution included). environment is
+// what the manifest passes the provider beside its process record, such as the
+// mode of a fixture program that has several.
+type compatProviderBinaries struct {
+	compat, provider string
+	environment      []string
+}
 
 func buildCompatProviderBinaries(c *qt.C) compatProviderBinaries {
 	c.Helper()
@@ -74,7 +79,7 @@ func (f compatProviderFixture) writeManifest(c *qt.C, sha256Hex string, disabled
 	c.Helper()
 	spec := providerhost.Spec{
 		Executable: f.binaries.provider, SHA256: sha256Hex, ProviderID: "example.org/fixture",
-		Environment: []string{"PTAH_FIXTURE_PID_FILE=" + f.pidFile},
+		Environment: append([]string{"PTAH_FIXTURE_PID_FILE=" + f.pidFile}, f.binaries.environment...),
 	}
 	manifest, err := json.Marshal(providerconfig.Configuration{
 		FormatVersion: providerconfig.FormatVersion,

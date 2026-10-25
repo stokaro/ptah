@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
@@ -28,7 +29,13 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	remote.Parents = comparisonParents(request.Parents)
 	remote.DeclaredRelations, remote.DeclaredRoles, remote.Required = comparisonIdentities(request.DeclaredRelations), comparisonIdentities(request.DeclaredRoles), comparisonIdentities(request.Required)
 	remote.DatabasePath = request.DatabasePath
-	for _, action := range request.Requests {
+	sent := s.writtenRequests(request.Requests)
+	for _, index := range sent {
+		action := request.Requests[index]
+		if action.Written != "" {
+			remote.Requests = append(remote.Requests, &protocol.RequestedChange{Written: action.Written, Action: action.Action})
+			continue
+		}
 		remote.Requests = append(remote.Requests, &protocol.RequestedChange{Subject: comparisonIdentity(action.Subject), Action: action.Action})
 	}
 	for _, exclusion := range request.Exclusions {
@@ -52,7 +59,26 @@ func (s modelComparer) CompareObjects(ctx context.Context, request schemaext.Obj
 	if err := ctx.Err(); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	return schemaext.ObjectComparisonResult{Complete: true, Desired: desired, Changes: changes, Undecided: boundUndecided(result.GetUndecided())}, nil
+	resolved := make([]schemaext.ResolvedRequest, len(result.GetResolvedRequests()))
+	for i, answer := range result.GetResolvedRequests() {
+		resolved[i] = schemaext.ResolvedRequest{Request: sent[answer.GetRequest()], Subject: boundIdentity(answer.GetSubject())}
+	}
+	return schemaext.ObjectComparisonResult{Complete: true, Desired: desired, Changes: changes, Undecided: boundUndecided(result.GetUndecided()), Resolved: resolved}, nil
+}
+
+// writtenRequests returns the indexes of the requests the provider receives,
+// in order. A request that names its subject always travels. A written one
+// travels only when the provider and the engine negotiated
+// provider.PlanningPolicyFeature: a provider that did not cannot resolve it,
+// and the runtime then refuses the spelling no owner resolved.
+func (s modelComparer) writtenRequests(requests []schemaext.ChangeRequest) []int {
+	sent := make([]int, 0, len(requests))
+	for i, change := range requests {
+		if change.Written == "" || s.target.negotiated(provider.PlanningPolicyFeature) {
+			sent = append(sent, i)
+		}
+	}
+	return sent
 }
 
 func (s modelComparer) CompareFacets(ctx context.Context, request schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {

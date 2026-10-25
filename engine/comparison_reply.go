@@ -51,7 +51,33 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 		}
 		diagnostics[key] = true
 	}
+	result.Resolved, err = comparisonResolved(request, result.Resolved)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	return result, nil
+}
+
+// comparisonResolved checks the written requests a comparer says it
+// recognized: each a written request of its batch, answered once, naming a
+// desired object the batch holds.
+func comparisonResolved(request schemaext.ObjectComparisonRequest, resolved []schemaext.ResolvedRequest) ([]schemaext.ResolvedRequest, error) {
+	answered := make(map[int]bool, len(resolved))
+	for _, answer := range resolved {
+		if answer.Request < 0 || answer.Request >= len(request.Requests) || request.Requests[answer.Request].Written == "" || answered[answer.Request] {
+			return nil, fmt.Errorf("%w: comparison resolved no written request of its batch, or one twice", schemaext.ErrInvalidValue)
+		}
+		answered[answer.Request] = true
+		_, found, err := request.Desired.Objects.Get(answer.Subject)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: comparison resolved %q to %s, which it compares no desired object as", schemaext.ErrInvalidValue,
+				request.Requests[answer.Request].Written, answer.Subject)
+		}
+	}
+	return slices.Clone(resolved), nil
 }
 
 func comparisonDesired(request schemaext.ObjectComparisonRequest, result schemaext.ObjectState) error {

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/featureplan"
 	"ptah.run/core/schemaext"
@@ -58,7 +59,7 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 	if request.Target != s.target.engine.GetId() {
 		return nil, fmt.Errorf("%w: planning target changed", schemaext.ErrInvalidValue)
 	}
-	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath"); err != nil {
+	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath", "Policy"); err != nil {
 		return nil, err
 	}
 	identifiers, err := comparisonIdentifiers(request.Identifiers)
@@ -107,7 +108,29 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		remote.CommonSteps = append(remote.CommonSteps, captured)
 	}
 	remote.TargetFeatures = slices.Clone(capture.request.GetTargetFeatures())
+	remote.Policy = s.target.planningPolicy(request.Policy)
 	return remote, nil
+}
+
+// planningPolicy is the policy a provider's planner receives: none unless the
+// provider and the engine list provider.PlanningPolicyFeature. A planner that
+// does not honor a policy plans as if none were set, which is how the host's
+// own planners treat a request they have no behavior for, so the host does
+// not refuse the operator's flags for it.
+func (t *target) planningPolicy(policy featureplan.Policy) *protocol.PlanningPolicy {
+	if !t.negotiated(provider.PlanningPolicyFeature) {
+		return nil
+	}
+	return &protocol.PlanningPolicy{
+		AllowTableRebuild:            policy.AllowTableRebuild,
+		TableRebuildRequest:          policy.TableRebuildRequest,
+		OnlineAlter:                  policy.OnlineAlter,
+		ConcurrentIndexBuilds:        policy.ConcurrentIndexBuilds,
+		ConcurrentIndexBuildSubjects: comparisonIdentities(policy.ConcurrentIndexBuildSubjects),
+		ConcurrentIndexDrops:         policy.ConcurrentIndexDrops,
+		ConcurrentIndexDropSubjects:  comparisonIdentities(policy.ConcurrentIndexDropSubjects),
+		OmitNullBackfill:             policy.OmitNullBackfill,
+	}
 }
 
 func planningTypes(types []schemaext.DefinedType) []*protocol.PlanningType {

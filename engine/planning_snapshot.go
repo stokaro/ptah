@@ -59,7 +59,27 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	if err != nil {
 		return featureplan.Request{}, err
 	}
+	request.Policy, err = snapshotPolicy(request.Policy)
+	if err != nil {
+		return featureplan.Request{}, err
+	}
 	return request, ctx.Err()
+}
+
+// snapshotPolicy copies a planning policy, refusing a subject that is not a
+// named index and an index named twice in one list.
+func snapshotPolicy(policy featureplan.Policy) (featureplan.Policy, error) {
+	policy = policy.Clone()
+	for _, subjects := range [][]objectidentity.ID{policy.ConcurrentIndexBuildSubjects, policy.ConcurrentIndexDropSubjects} {
+		seen := make(map[objectidentity.Key]bool, len(subjects))
+		for _, subject := range subjects {
+			if subject.Kind != objectidentity.KindIndex || subject.Name.Source == "" || seen[subject.Key()] {
+				return featureplan.Policy{}, fmt.Errorf("%w: invalid or duplicate planning policy index %s", schemaext.ErrInvalidValue, subject)
+			}
+			seen[subject.Key()] = true
+		}
+	}
+	return policy, nil
 }
 
 func snapshotDefinedTypes(types []schemaext.DefinedType) ([]schemaext.DefinedType, error) {

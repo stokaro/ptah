@@ -39,8 +39,13 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	}
 	// The statement style is accepted and changes nothing: the common
 	// statements below carry no comment, existence guard or CASCADE, and an
-	// owner operation keeps its own spelling in every style.
-	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements"); err != nil {
+	// owner operation keeps its own spelling in every style. The rest of the
+	// policy reaches the provider as a request (see policy); a provider
+	// without the behavior plans as it would without it, as the host's own
+	// planners do. Skipped change kinds are not a request a provider can
+	// honor, so they stay refused.
+	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
+		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err
 	}
 	// Matched counts the pairs a comparison made, for the drift report. It is
