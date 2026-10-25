@@ -425,8 +425,12 @@ in pages. `db verify` and the `-- +ptah check` assertions of a migration run
 through it: the host sends each check read-only, and the provider runs it only
 when it proves the check is one query that changes nothing and reads only the
 session's database, or refuses it with the reason. A check the database refuses
-reports the server's message. An engine that does not list the feature refuses
-the checks.
+reports the server's message. The `exec`, `assert` and `catch` steps of
+`migrations test`, and the scripts `ptah-compat script exec` and `script query`
+run, take the same route read-write. A provider reports a row count only when
+its engine measured one, so a script's `expect_rows` is refused on an engine
+that does not. An engine that does not list the feature refuses each of these,
+and a `catch` step fails there rather than passing on the refusal.
 
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions

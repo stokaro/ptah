@@ -108,6 +108,13 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 		return failAtlasCommand(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer func() { _ = conn.Close() }()
+	// A script runs SQL the operator wrote: on a provider's engine it goes
+	// through the provider's statement service.
+	statements, release, err := conn.OperatorStatements()
+	if err != nil {
+		return failAtlasCommand(cmd, err)
+	}
+	defer func() { _ = release() }()
 
 	runOpts := atlasscript.RunOptions{
 		Out:                 cmd.OutOrStdout(),
@@ -116,7 +123,7 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 	if !opts.quiet {
 		runOpts.Report = cmd.ErrOrStderr()
 	}
-	return runSelectedScript(cmd, conn, script, runOpts)
+	return runSelectedScript(cmd, statements, script, runOpts)
 }
 
 // rowCountsUnreported reports whether the driver for dialect answers a write
@@ -124,10 +131,10 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 // (descriptor.Scripts.RowCountsUnmeasured). A script then reads the count as
 // unreported, so expect_rows is refused rather than judged against it.
 //
-// An engine only an executable provider serves has no descriptor, and its
-// connection takes no database/sql call, so no script reaches a count there.
-// The fact a provider would state for its session, once the provider contract
-// carries script statements, is a session capability the provider reports.
+// An engine only an executable provider serves has no descriptor. Its
+// statement handle states the fact for each statement instead: the provider
+// reports a row count only when its engine measured one, and without it
+// sql.Result.RowsAffected is an error, which a script reads as unreported.
 func rowCountsUnreported(dialect string) bool {
 	described, _ := platform.Lookup(dialect)
 	return described.Scripts.RowCountsUnmeasured
@@ -135,7 +142,7 @@ func rowCountsUnreported(dialect string) bool {
 
 // runSelectedScript dispatches on the kind the block declared.
 func runSelectedScript(
-	cmd *cobra.Command, conn *dbschema.DatabaseConnection, script atlasscript.Script, runOpts atlasscript.RunOptions,
+	cmd *cobra.Command, conn dbschema.OperatorStatements, script atlasscript.Script, runOpts atlasscript.RunOptions,
 ) error {
 	ctx := cmd.Context()
 	switch script.Kind {

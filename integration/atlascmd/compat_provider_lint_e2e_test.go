@@ -258,3 +258,63 @@ func TestCompatSchemaPlanReadsTheManifestVariable(t *testing.T) {
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
 	c.Assert(out, qt.Contains, "Use \"ptah-compat schema [command] --help\" for more information about a command.\n")
 }
+
+// scriptFixture is a fixture database holding one note in "notes", and a
+// script file whose exec script sets it and asserts one row changed.
+func scriptFixture(c *qt.C, f compatProviderFixture) string {
+	c.Helper()
+	createSchemaInspectSQLiteDatabase(c, filepath.Join(f.dir, "notes.db"), `CREATE TABLE "notes" ("id" INTEGER, "note" TEXT)`,
+		`INSERT INTO "notes" VALUES (1, 'old')`)
+	scripts := filepath.Join(f.dir, "scripts.hcl")
+	c.Assert(os.WriteFile(scripts, []byte("script \"exec\" \"checked\" {\n  exec \"set\" {\n"+
+		"    sql         = \"UPDATE notes SET note = 'new' WHERE id = 1\"\n    expect_rows = 1\n  }\n}\n"+
+		"script \"query\" \"report\" {\n  query \"notes\" {\n    sql = \"SELECT note FROM notes\"\n  }\n}\n"), 0o600), qt.IsNil)
+	return scripts
+}
+
+// sqliteNote reads the note back through the test's own driver.
+func sqliteNote(c *qt.C, path string) string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+path)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	var note string
+	c.Assert(conn.QueryRowContext(c.Context(), `SELECT note FROM notes WHERE id = 1`).Scan(&note), qt.IsNil)
+	return note
+}
+
+// TestCompatScriptRunsThroughTheProvidersStatements runs an exec script that
+// asserts the row it changes, and a query script, on a database the fixture
+// provider serves. The provider measured the count, so the assertion is
+// judged; the transaction commits.
+func TestCompatScriptRunsThroughTheProvidersStatements(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+	scripts := scriptFixture(c, f)
+
+	_, stderr, code := f.run(f.withManifest(), "script", "exec", "--url", f.fixtureURL("notes.db"), "--file", scripts, "--run", "checked")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(stderr, qt.Contains, "1 rows affected")
+	c.Assert(sqliteNote(c, filepath.Join(f.dir, "notes.db")), qt.Equals, "new")
+	f.assertStopped(c)
+
+	out, stderr, code := f.run(f.withManifest(), "script", "query", "--url", f.fixtureURL("notes.db"), "--file", scripts, "--run", "report")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Contains, "new")
+	f.assertStopped(c)
+}
+
+// An engine that does not measure the count leaves expect_rows unjudged: the
+// script is refused and its transaction rolls back, as on YDB.
+func TestCompatScriptRunsThroughTheProvidersStatements_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatLintFixture(c, "devdb-lint", "example.org/fixture", "fixture")
+	scripts := scriptFixture(c, f)
+
+	_, stderr, code := f.run(f.withManifest(), "script", "exec", "--url", f.fixtureURL("notes.db")+"?fault=uncounted-rows", "--file", scripts, "--run", "checked")
+
+	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+	c.Assert(stderr, qt.Contains, "expect_rows is 1, and this driver does not report a row count, so the assertion cannot be made")
+	c.Assert(sqliteNote(c, filepath.Join(f.dir, "notes.db")), qt.Equals, "old")
+	f.assertStopped(c)
+}
