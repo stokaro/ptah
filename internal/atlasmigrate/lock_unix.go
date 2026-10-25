@@ -32,3 +32,7 @@ func unlockFile(file *os.File) error {
 func removeLockFileBeforeUnlock(path string) { _ = os.Remove(path) }
 
 func removeLockFileAfterClose(string) {}
+
+// lockFileInUse is false: opening a file another process holds never fails
+// here.
+func lockFileInUse(error) bool { return false }

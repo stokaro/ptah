@@ -14,3 +14,5 @@ func unlockFile(*os.File) error { return nil }
 func removeLockFileBeforeUnlock(path string) { _ = os.Remove(path) }
 
 func removeLockFileAfterClose(string) {}
+
+func lockFileInUse(error) bool { return false }
