@@ -69,7 +69,31 @@ func HCL() hclext.Extension {
 		Encoder:          hclEncoder{},
 		Unrecorded: []schemaext.Kind{ydbsecret.Kind, ydbtopic.Kind, ydbexternal.SourceKind, ydbexternal.TableKind,
 			ydbreplication.ReplicationKind, ydbreplication.TransferKind},
+		Split: hclSplitter{},
 	}
+}
+
+// hclSplitter carries a YDB document's account of its objects into each file a
+// writer cuts it into: every limit directive a YDB source reads, and the
+// coordination-node claim a captured header holds.
+type hclSplitter struct{}
+
+// Recognizes reports whether kind is a YDB source family's limit directive.
+func (hclSplitter) Recognizes(kind coverage.Kind) bool { return RecognizesLimit(kind) }
+
+// Restate rewrites the coordination-node claim of a captured header, read with
+// the document's coordination limits, and nothing for a document that
+// captured none.
+func (hclSplitter) Restate(captured []string, limits []coverage.Object) ([]string, error) {
+	var recorded Limits
+	for _, object := range limits {
+		recorded.Add(string(object.Kind), object.Name)
+	}
+	known, explicit, err := readHCLCoverage(captured, recorded)
+	if err != nil || !explicit {
+		return nil, err
+	}
+	return HCLCoordinationDirectives(known)
 }
 
 // sourceKindToken returns the header spelling of a source family's kind.

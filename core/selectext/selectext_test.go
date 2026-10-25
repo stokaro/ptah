@@ -242,3 +242,37 @@ func TestSet_SharedSelectorTypesRetainEveryModel(t *testing.T) {
 	c.Assert(set.ForType("domain")[0].Fields, qt.DeepEquals, []string{"comment"})
 	c.Assert(set.Selections()[1].Fields, qt.DeepEquals, []string{"comment"})
 }
+
+// grantReader owns the TOPIC grant type and reads a relative name as the
+// gizmo of that name.
+type grantReader struct{}
+
+func (grantReader) OwnsGrantType(objectType string) bool { return objectType == "TOPIC" }
+
+func (grantReader) GrantObject(objectType, objectName string) (objectidentity.ID, bool) {
+	if objectType != "TOPIC" || objectName == "" || objectName[0] == '/' {
+		return objectidentity.ID{}, false
+	}
+	return ref("example.org/gizmo", objectName), true
+}
+
+// A grant on an owner's object is read by that owner; a grant of a type no
+// owner owns, and any grant on a set without the owner, names none.
+func TestSet_GrantObject(t *testing.T) {
+	c := qt.New(t)
+	set := must.Must(selectext.NewSet(selectext.Extension{Owner: "example.org/owner", Grants: grantReader{}},
+		selectext.Extension{Owner: "example.org/other"}))
+
+	named, found := set.GrantObject("TOPIC", "events")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(named, qt.DeepEquals, ref("example.org/gizmo", "events"))
+	_, found = set.GrantObject("TOPIC", "/database/events")
+	c.Assert(found, qt.IsFalse)
+	c.Assert(set.OwnsGrantType("TOPIC"), qt.IsTrue)
+	_, found = set.GrantObject("TABLE", "events")
+	c.Assert(found, qt.IsFalse)
+	c.Assert(set.OwnsGrantType("TABLE"), qt.IsFalse)
+	_, found = selectext.None().GrantObject("TOPIC", "events")
+	c.Assert(found, qt.IsFalse)
+	c.Assert(selectext.None().OwnsGrantType("TOPIC"), qt.IsFalse)
+}

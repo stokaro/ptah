@@ -429,3 +429,65 @@ func claimNames(request hclext.Request) []string {
 	}
 	return names
 }
+
+// errRestate is the refusal recordingSplitter gives when asked to.
+var errRestate = errors.New("the captured claim names a node the limits leave out")
+
+// recordingSplitter recognizes the gizmo kind, records what it is handed, and
+// restates one line per entry, or refuses.
+type recordingSplitter struct {
+	captured *[]string
+	limits   *[]coverage.Object
+	refuse   bool
+}
+
+func (s recordingSplitter) Recognizes(kind coverage.Kind) bool { return kind == "gizmo" }
+
+func (s recordingSplitter) Restate(captured []string, limits []coverage.Object) ([]string, error) {
+	*s.captured, *s.limits = captured, limits
+	if s.refuse {
+		return nil, errRestate
+	}
+	lines := make([]string, 0, len(limits))
+	for _, limit := range limits {
+		lines = append(lines, "restated "+limit.Name)
+	}
+	return lines, nil
+}
+
+// TestSet_Split hands each splitter the captured bodies and the entries it
+// recognizes, collects what it restates, and recognizes an entry an owner reads
+// either through its splitter or as a limit on its own claim.
+func TestSet_Split(t *testing.T) {
+	c := qt.New(t)
+	var captured []string
+	var limits []coverage.Object
+	set := must.Must(hclext.NewSet(
+		hclext.Extension{Owner: "example.org/a", Split: recordingSplitter{captured: &captured, limits: &limits}},
+		hclext.Extension{Owner: "example.org/b", Header: []coverage.Kind{"widget"}},
+	))
+
+	lines, err := set.SplitRestate([]string{"ptah:feature-coverage {}"}, []coverage.Object{{Kind: "gizmo", Name: "g"}, {Kind: "widget", Name: "w"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(lines, qt.DeepEquals, []string{"restated g"})
+	c.Assert(captured, qt.DeepEquals, []string{"ptah:feature-coverage {}"})
+	c.Assert(limits, qt.DeepEquals, []coverage.Object{{Kind: "gizmo", Name: "g"}})
+	c.Assert(set.SplitRecognizes("gizmo"), qt.IsTrue)
+	c.Assert(set.SplitRecognizes("widget"), qt.IsTrue)
+	c.Assert(set.SplitRecognizes("other"), qt.IsFalse)
+	c.Assert(hclext.None().SplitRecognizes("gizmo"), qt.IsFalse)
+}
+
+// TestSet_Split_FailurePath returns an owner's refusal in its own words.
+func TestSet_Split_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	var captured []string
+	var limits []coverage.Object
+	set := must.Must(hclext.NewSet(hclext.Extension{Owner: "example.org/a", Split: recordingSplitter{captured: &captured, limits: &limits, refuse: true}}))
+
+	lines, err := set.SplitRestate(nil, []coverage.Object{{Kind: "gizmo", Name: "g"}})
+
+	c.Assert(err, qt.ErrorIs, errRestate)
+	c.Assert(lines, qt.IsNil)
+}

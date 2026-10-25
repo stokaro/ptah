@@ -14,8 +14,8 @@ import (
 
 // RotateAction is the [schemaext.ChangeRequest] action that gives a secret the
 // database holds the value its declared variable holds when the plan runs,
-// through ALTER SECRET.
-const RotateAction = "rotate"
+// through ALTER SECRET. It is [schemaext.RotateAction].
+const RotateAction = schemaext.RotateAction
 
 // ErrRotateUndeclared is the error a comparison wraps when a rotation request
 // names a secret the desired schema does not declare.

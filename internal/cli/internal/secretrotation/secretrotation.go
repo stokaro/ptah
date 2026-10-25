@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config"
-	"ptah.run/dialect/ydb/ydbsecret"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/cli/internal/cmdflags"
 )
 
@@ -41,12 +41,15 @@ func Requested(cmd *cobra.Command) ([]string, error) {
 }
 
 // Apply adds to opts a rotation request for each secret the operator asked
-// cmd to rotate (see [ydbsecret.WithRotations]). The comparison refuses a
-// path the declaration does not hold before it plans anything.
+// cmd to rotate, as written: the owner of the target's secrets reads the
+// path (see [schemaext.ChangeRequest.Written]). The comparison refuses a path
+// no owner reads, and one the declaration does not hold, before it plans
+// anything.
 func Apply(cmd *cobra.Command, opts *config.CompareOptions) error {
 	requested, err := Requested(cmd)
 	if err != nil {
 		return err
 	}
-	return ydbsecret.WithRotations(opts, requested)
+	opts.FeatureRequests = append(opts.FeatureRequests, schemaext.WrittenRequests(schemaext.RotateAction, requested)...)
+	return nil
 }

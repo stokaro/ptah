@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/ydb/ydbstreaming"
 	"ptah.run/dialect/ydb/ydbtopic"
 	"ptah.run/dialect/ydb/ydbworkload"
+	"ptah.run/internal/ydbacl"
 )
 
 // Selections is how a command's scope names the YDB owner's standalone
@@ -41,7 +42,23 @@ func Selections() selectext.Extension {
 			{Kind: ydbworkload.ClassifierKind, Type: "resource_pool_classifier", Naming: selectext.DatabaseWide},
 		},
 		Service: selectionService{},
+		Grants:  grantObjects{},
 	}
+}
+
+// grantObjects reads the scheme object a YDB grant names, such as a topic or
+// a directory, as internal/ydbacl spells the grant's target.
+type grantObjects struct{}
+
+// OwnsGrantType reports whether objectType is a YDB scheme object's.
+func (grantObjects) OwnsGrantType(objectType string) bool {
+	return ydbacl.IsSchemeObject(objectType)
+}
+
+// GrantObject reads the object with no database root, as a scope sees the
+// grants of one database.
+func (grantObjects) GrantObject(objectType, objectName string) (objectidentity.ID, bool) {
+	return ydbacl.ObjectRef(objectType, objectName, "")
 }
 
 // selectionService names the resource pools kept objects route to.

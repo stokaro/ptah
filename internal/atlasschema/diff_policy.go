@@ -8,8 +8,8 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/concurrentindex"
 )
 
@@ -45,20 +45,20 @@ type DiffPolicy struct {
 	// native flag. See [ptah.run/migration/planext.Options.TableRebuildRequest].
 	TableRebuildRequest string
 
-	// RotateSecrets names the YDB secrets, by path, the plan gives the value
-	// their declared variable holds now. A comparison cannot find a changed
-	// value, which the server never returns, so this is the only way one is
-	// planned. The native commands set it from --rotate-secret; see
-	// [ydbsecret.RotationRequests].
+	// RotateSecrets names the secrets, as the operator wrote them, the plan
+	// gives the value their declared variable holds now. A comparison cannot
+	// find a changed value, which the server never returns, so this is the
+	// only way one is planned. The native commands set it from
+	// --rotate-secret.
 	RotateSecrets []string
 }
 
 // withSecretRotation adds to opts a rotation request for each secret policy
-// names. The requests are part of the comparison's input: the secret's owner
-// decides whether each is a rotation, a creation, or undecided, and refuses a
-// name the declaration does not hold.
-func withSecretRotation(opts *config.CompareOptions, policy DiffPolicy) error {
-	return ydbsecret.WithRotations(opts, policy.RotateSecrets)
+// names, as written: the secret's owner reads the spelling, and decides
+// whether each is a rotation, a creation, or undecided, and the comparison
+// refuses a spelling no owner reads and a name the declaration does not hold.
+func withSecretRotation(opts *config.CompareOptions, policy DiffPolicy) {
+	opts.FeatureRequests = append(opts.FeatureRequests, schemaext.WrittenRequests(schemaext.RotateAction, policy.RotateSecrets)...)
 }
 
 // declaredConcurrentIndexRefs is the index additions the desired description

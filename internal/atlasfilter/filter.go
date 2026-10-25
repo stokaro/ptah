@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbacl"
 )
 
 // ExcludeDatabase returns a shallow copy of schema with resources matching
@@ -1163,10 +1162,11 @@ func excludedObjects(before, after schemaext.Objects) func(objectidentity.ID) bo
 	}
 }
 
-// objectGrantExcluded reports whether the scheme object a grant names, such as
-// a YDB topic, left with an exclusion: the grant rides its object.
-func objectGrantExcluded(excluded func(objectidentity.ID) bool, objectType, objectName string) bool {
-	ref, ok := ydbacl.ObjectRef(objectType, objectName, "")
+// objectGrantExcluded reports whether the owner's object a grant names, such
+// as a YDB topic, left with an exclusion: the grant rides its object. The
+// owner reads the grant's spelling; see [selectext.Set.GrantObject].
+func (v vocabulary) objectGrantExcluded(excluded func(objectidentity.ID) bool, objectType, objectName string) bool {
+	ref, ok := v.selections.GrantObject(objectType, objectName)
 	return ok && excluded(ref)
 }
 
@@ -1176,7 +1176,7 @@ func (s *exclusionState) filterGrants(grants []catalog.Grant, excluded func(obje
 		if strings.EqualFold(grant.ObjectType, "TABLE") && s.tableExcluded(grant.Schema, grant.ObjectName) {
 			return false
 		}
-		if objectGrantExcluded(excluded, grant.ObjectType, grant.QualifiedTarget()) {
+		if s.vocabulary.objectGrantExcluded(excluded, grant.ObjectType, grant.QualifiedTarget()) {
 			return false
 		}
 		if strings.EqualFold(grant.ObjectType, "SEQUENCE") && s.sequenceExcluded(grant.Schema, grant.ObjectName) {
@@ -1465,7 +1465,7 @@ func (s *exclusionState) filterGeneratedGrants(grants []schemamodel.Grant, exclu
 		if grant.OnTable != "" && generatedTableKeyExcluded(s, grant.OnTable) {
 			return false
 		}
-		if grant.OnObject != "" && (objectGrantExcluded(excluded, grant.ObjectKind, grant.OnObject) ||
+		if grant.OnObject != "" && (s.vocabulary.objectGrantExcluded(excluded, grant.ObjectKind, grant.OnObject) ||
 			s.qualifiedSchemaExcluded(grant.OnObject)) {
 			return false
 		}

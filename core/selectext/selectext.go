@@ -99,6 +99,23 @@ type Extension struct {
 	// Additive keeps additions inside mixed changes. It is required exactly
 	// when ChangeKinds is nonempty.
 	Additive AdditiveService
+	// Grants reads the object a grant names, for an owner whose objects a
+	// grant can name, such as a YDB topic. A grant rides that object: a scope
+	// that excludes the object excludes the grant, and one that keeps it keeps
+	// the grant. Without it no grant names the owner's objects.
+	Grants GrantService
+}
+
+// GrantService reads the owner's object a grant names.
+type GrantService interface {
+	// OwnsGrantType reports whether a grant of objectType, as the grant
+	// spells it, is on one of the owner's objects.
+	OwnsGrantType(objectType string) bool
+	// GrantObject returns the owner's object a grant on objectName of
+	// objectType names, as the grant spells both, and false when the grant
+	// names none: a type the owner does not own, or a name that names none of
+	// its objects.
+	GrantObject(objectType, objectName string) (objectidentity.ID, bool)
 }
 
 // Service is the owner's batched part of a scope, called once for each side
@@ -230,6 +247,30 @@ func validateSelection(extension Extension, selection Selection) error {
 		}
 	}
 	return nil
+}
+
+// OwnsGrantType reports whether a grant of objectType is on an owner's object
+// rather than a common one, as an extension's [GrantService] answers.
+func (s Set) OwnsGrantType(objectType string) bool {
+	return slices.ContainsFunc(s.extensions, func(extension Extension) bool {
+		return extension.Grants != nil && extension.Grants.OwnsGrantType(objectType)
+	})
+}
+
+// GrantObject returns the object a grant on objectName of objectType names,
+// as the first extension whose [GrantService] reads it answers, and false when
+// no extension's objects are named: a grant on a common object, or a set
+// without the owner.
+func (s Set) GrantObject(objectType, objectName string) (objectidentity.ID, bool) {
+	for _, extension := range s.extensions {
+		if extension.Grants == nil {
+			continue
+		}
+		if ref, named := extension.Grants.GrantObject(objectType, objectName); named {
+			return ref, true
+		}
+	}
+	return objectidentity.ID{}, false
 }
 
 // Selected reports whether the set was built, by [NewSet] or [None].

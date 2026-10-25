@@ -342,7 +342,7 @@ func newAtlasSchemaInspectTemplate(
 		"dbml":      atlasSchemaInspectDBML,
 		"sql":       atlasSchemaInspectSQL,
 		"split": func(args ...any) (schemaInspectArchive, error) {
-			return atlasSchemaInspectSplit(report.defaultSchemaName(), report.coverageVocabulary(), report.readsOwnedCoverage, args...)
+			return atlasSchemaInspectSplit(report.defaultSchemaName(), report.coverageVocabulary(), report.hclOwners(), args...)
 		},
 		"write": func(args ...any) (string, error) {
 			return atlasSchemaInspectWrite(files, args...)
@@ -366,10 +366,14 @@ func (r *SchemaInspectReport) coverageVocabulary() coverage.Vocabulary {
 	return r.runtime.CoverageVocabulary()
 }
 
-// readsOwnedCoverage recognizes headers whose semantics belong to a source
-// owner. Splitting transports these records without adding common claims.
-func (r *SchemaInspectReport) readsOwnedCoverage(kind coverage.Kind) bool {
-	return r != nil && r.runtime != nil && r.runtime.HCL().ReadsHeader(kind)
+// hclOwners is the HCL owners of the report's runtime, whose header records
+// splitting transports without adding common claims, or none for a report
+// built without one.
+func (r *SchemaInspectReport) hclOwners() hclext.Set {
+	if r == nil || r.runtime == nil {
+		return hclext.Set{}
+	}
+	return r.runtime.HCL()
 }
 
 func (r *SchemaInspectReport) defaultSchemaName() string {
