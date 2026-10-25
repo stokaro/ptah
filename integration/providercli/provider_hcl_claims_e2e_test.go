@@ -9,8 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/goschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/convert/goschematogo"
 	"ptah.run/internal/testutils"
 )
 
@@ -154,4 +156,31 @@ func TestProviderHCLExport_HappyPath(t *testing.T) {
 	db, err := atlashcl.ParseWithOptions(c.Context(), written, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":5}`, `index by_body {"seconds":9}`})
+}
+
+// TestProviderGoExport_HappyPath writes a provider's values as Go
+// annotations through EncodeSource: the table's retention as the provider's
+// own directive at the table, the column's and the index's as attributes of
+// the frontend's field and index directives, and the INTEGER column as the
+// int64 field the provider gives it. Reading the source back gives the same
+// values.
+func TestProviderGoExport_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
+	c.Assert(err, qt.IsNil)
+	want := scopedRetentions(c, runtime, db)
+
+	files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{Annotations: runtime.Annotations(), Runtime: runtime, PackageName: "models",
+		SingleFile: true, Dialect: "fixture"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	source := string(files[0].Data)
+	c.Assert(source, qt.Contains, "//ptah:fixture:retention seconds=\"5\"")
+	c.Assert(source, qt.Contains, "ID *int64")
+	again, err := goschema.ParseSource(runtime.Annotations(), files[0].Name, source)
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, again), qt.DeepEquals, want)
+	c.Assert(want, qt.DeepEquals, []string{`table records {"seconds":5}`, `column body {"seconds":7}`, `index by_body {"seconds":9}`})
 }

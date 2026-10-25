@@ -50,6 +50,11 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 	}
 	extension := claimedExtension(h.description.GetProviderId(), h.goSource.claims)
 	extension.File = func() annotation.FileDecoder { return &goFileDecoder{host: h} }
+	if slices.ContainsFunc(h.description.GetEngines(), func(engine *protocol.Engine) bool {
+		return h.targets[engine.GetId()].encodes() && len(engine.GetGoSourceDirectives()) > 0
+	}) {
+		extension.Encoder, extension.Encodes = goEncoder{host: h}, slices.Clone(extension.Kinds)
+	}
 	extension.Coverage = func([]coverage.Object) (schemaext.Coverage, error) { return h.goBaseCoverage() }
 	return []annotation.Extension{extension}
 }

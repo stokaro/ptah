@@ -10,9 +10,11 @@
 // A retention suits an ordered index only, so the program refuses one on an
 // index whose type says it is a hash index.
 //
-// It writes the retention of a table back as the block in the table, and of
-// an index as the index's attribute. HCL has no spelling it writes for a
-// column's retention, which it reports as a loss.
+// It writes the retention of a table back in HCL as the block in the table,
+// and of an index as the index's attribute; HCL has no spelling it writes for
+// a column's retention, which it reports as a loss. In Go annotations it
+// writes each as the directive or attribute it reads, and an INTEGER column
+// as an int64 field.
 package main
 
 import (
@@ -155,8 +157,11 @@ func (p *hclClaims) retention(ctx context.Context, document *protocol.SourceDocu
 // table's as a retention block in the table, an index's as its
 // retention_seconds attribute. A column's has no HCL spelling and is a loss.
 func (p *hclClaims) EncodeSource(_ context.Context, request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {
+	if request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS {
+		return encodeGo(request)
+	}
 	if request.GetFormat() != protocol.SourceDocument_HCL {
-		return nil, fmt.Errorf("the fixture writes HCL only")
+		return nil, fmt.Errorf("the fixture writes HCL and Go annotations only")
 	}
 	claims := make(map[protocol.HCLSourceBlock_Site]*protocol.HCLSourceBlock)
 	for _, block := range description().GetEngines()[0].GetHclSource().GetBlocks() {
@@ -190,6 +195,47 @@ func (p *hclClaims) EncodeSource(_ context.Context, request *protocol.EncodeSour
 		default:
 			result.Losses = append(result.Losses, &protocol.EncodeLoss{ValueId: value.GetValue().GetId(), Message: "the retention of " + owner.GetKind() + " " +
 				strconv.Quote(owner.GetName()) + " has no HCL spelling"})
+		}
+	}
+	return result, nil
+}
+
+// encodeGo writes each retention as a Go annotation the program reads back: a
+// table's with its own ptah:fixture:retention directive, a column's and an
+// index's as the seconds attribute of the frontend's field and index
+// directives. An INTEGER column is an int64 field.
+func encodeGo(request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {
+	claims := make(map[string]*protocol.GoSourceDirective)
+	for _, claim := range description().GetEngines()[0].GetGoSourceDirectives() {
+		claims[claim.GetDirective()] = claim
+	}
+	directives := map[string]string{"table": "ptah:fixture:retention", "column": "ptah:schema:field", "index": "ptah:schema:index"}
+	result := &protocol.EncodedSource{Complete: true}
+	for _, value := range request.GetValues() {
+		var seconds struct {
+			Seconds uint64 `json:"seconds"`
+		}
+		if err := json.Unmarshal(value.GetValue().GetCanonicalProjection(), &seconds); err != nil {
+			return nil, err
+		}
+		owner := value.GetValue().GetValue().GetOwner()
+		claim := claims[directives[owner.GetKind()]]
+		if claim == nil {
+			result.Losses = append(result.Losses, &protocol.EncodeLoss{ValueId: value.GetValue().GetId(), Message: "the retention of " + owner.GetKind() + " " +
+				strconv.Quote(owner.GetName()) + " has no Go spelling"})
+			continue
+		}
+		fragment := &protocol.SourceFragment{Id: strconv.Itoa(len(result.Fragments)), GoDirective: claim, Selector: claim.GetSelector(), BindingId: value.GetBindingId(),
+			Content: &protocol.SourceFragment_Value{Value: &protocol.SourceValue{Value: &protocol.SourceValue_Mapping{Mapping: &protocol.SourceMapping{Entries: []*protocol.SourceEntry{
+				{Key: "seconds", Value: &protocol.SourceValue{Value: &protocol.SourceValue_Text{Text: strconv.FormatUint(seconds.Seconds, 10)}}}}}}}}}
+		if owner.GetKind() != "table" {
+			fragment.Subject = proto.CloneOf(owner)
+		}
+		result.Fragments = append(result.Fragments, &protocol.EncodedFragment{Fragment: fragment, ValueIds: []string{value.GetValue().GetId()}})
+	}
+	for _, column := range request.GetColumns() {
+		if strings.EqualFold(column.GetType(), "INTEGER") {
+			result.FieldTypes = append(result.FieldTypes, &protocol.EncodedFieldType{BindingId: column.GetBindingId(), Column: column.GetName(), GoType: "int64"})
 		}
 	}
 	return result, nil

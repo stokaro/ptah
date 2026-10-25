@@ -746,6 +746,13 @@ key, a routine or a materialized view has no place in an encoding request and is
 reported as a loss too. The `ptah:not-described` entries the provider returns
 are written in the document's header.
 
+Ptah writes Go annotations, as `ptah introspect` does, through the same call.
+The provider writes a value as a directive of its own at the table or among
+the standalone objects, or as attributes of `ptah:schema:table`,
+`ptah:schema:field` or `ptah:schema:index`, and it may give a field the Go type
+of its engine type. A Go export takes no loss: a value the provider cannot
+write, and a `ptah:not-described` entry it returns, refuse the export.
+
 A provider can also claim the group of its own engine in a table's `platform`
 key, where the common syntax holds platform properties. The claim is a
 `TABLE` key `platform.<engine>`, and the engine is one the provider declares, by
