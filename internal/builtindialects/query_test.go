@@ -79,9 +79,12 @@ func TestDescriptors_QueryAgreesWithTheRetiredSwitches(t *testing.T) {
 			c.Assert(found, qt.IsTrue)
 			c.Assert(dialect.Query, qt.DeepEquals, expected.query)
 			// Bodies is internal/sqlcompound's, which
-			// TestDescriptors_BodiesAgreeWithTheSwitchTheyReplace pins.
+			// TestDescriptors_BodiesAgreeWithTheSwitchTheyReplace pins, and
+			// RowCountsUnmeasured the compatibility script runner's, which
+			// TestDescriptors_RowCountsAgreeWithTheSwitchTheyReplace pins.
 			scripts := dialect.Scripts
 			scripts.Bodies = ""
+			scripts.RowCountsUnmeasured = false
 			c.Assert(scripts, qt.DeepEquals, expected.scripts)
 		})
 	}

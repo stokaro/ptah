@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
@@ -573,7 +574,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 	// mismatch with the pinned dialect is answerable without provisioning, and
 	// answering it first keeps a refused run from paying for a container it
 	// would immediately throw away.
-	if err := s.ensureDevDialect(devURL, opts); err != nil {
+	if err := s.ensureDevDialect(ctx, devURL, opts); err != nil {
 		return err
 	}
 	// The operator's spelling decides whether this is a docker URL at all; the
@@ -685,8 +686,8 @@ func (s Set) DevState(ctx context.Context, conn *dbschema.DatabaseConnection, op
 	}, nil
 }
 
-func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
-	devDialect, err := atlasurl.DialectFromURL(devURL)
+func (s Set) ensureDevDialect(ctx context.Context, devURL string, opts ResolveOptions) error {
+	devDialect, err := providerurl.Dialect(ctx, devURL)
 	if err != nil {
 		return err
 	}

@@ -27,7 +27,14 @@ func check(c *qt.C, files ...lintext.File) []lintext.Finding {
 // opens.
 func checkOwned(c *qt.C, owner lintext.TransactionOwner, files ...lintext.File) []lintext.Finding {
 	c.Helper()
-	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"TX101", "TX201"}, Files: files,
+	return checkCodes(c, owner, []string{"TX101", "TX201"}, files...)
+}
+
+// checkCodes runs the owner's rules of codes over files, whose transactions
+// owner opens, and returns the findings.
+func checkCodes(c *qt.C, owner lintext.TransactionOwner, codes []string, files ...lintext.File) []lintext.Finding {
+	c.Helper()
+	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: codes, Files: files,
 		TransactionOwner: owner}
 	result, err := pglint.Service{}.CheckMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
@@ -64,8 +71,9 @@ func TestRules(t *testing.T) {
 
 // TX101 reports the first statement that needs autocommit in a file that also
 // holds transactional DDL, in either direction, and nothing in a file that
-// runs outside a transaction or holds nothing transactional; BEGIN and COMMIT
-// are neither side of the mix, which leaves TX201 to report them.
+// runs outside a transaction or holds nothing transactional. BEGIN and COMMIT
+// are neither side of the mix; TX201 judges them, and reports them here
+// because the migrator wraps the file.
 func TestService_CheckMigrations_TransactionMix(t *testing.T) {
 	const mixed = "CREATE TABLE t (id int);\nCREATE INDEX CONCURRENTLY idx ON t (id);\n"
 	noTransaction := file("1.up.sql", true, mixed)
@@ -84,8 +92,7 @@ func TestService_CheckMigrations_TransactionMix(t *testing.T) {
 		{"a file outside a transaction", noTransaction, nil},
 		{"nothing transactional", file("1.up.sql", true, "CREATE INDEX CONCURRENTLY idx ON t (id);\n"), nil},
 		{"transaction control alone around it", file("1.up.sql", true, "BEGIN;\nCREATE INDEX CONCURRENTLY idx ON t (id);\nCOMMIT;\n"),
-			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: "explicit transaction blocks conflict with the migrator's " +
-				"transaction management; remove BEGIN/COMMIT or mark the migration non-transactional"}}},
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: wrappedBlockMessage}}},
 		{"nothing that needs autocommit", file("1.up.sql", true, "CREATE TABLE t (id int);\n"), nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,20 +102,36 @@ func TestService_CheckMigrations_TransactionMix(t *testing.T) {
 	}
 }
 
-// TX201 reports an explicit transaction block in an up file, and leaves a
-// rollback alone.
+// wrappedBlockMessage is TX201 where the migrator wraps the file. It names a
+// remedy that works there: a file the migrator wraps runs in one transaction
+// already, while marking it non-transactional makes the migrator refuse the
+// block outright.
+const wrappedBlockMessage = "the migrator already runs this file in one transaction, so this BEGIN nests in it and " +
+	"the file's COMMIT ends the migrator's transaction early; remove BEGIN/COMMIT"
+
+// TX201 reports every explicit transaction block in an up file the migrator
+// wraps, with a remedy of its own for one that runs without a transaction,
+// and leaves a rollback alone.
 func TestService_CheckMigrations_EmbeddedTransaction(t *testing.T) {
-	const message = "explicit transaction blocks conflict with the migrator's transaction management; " +
-		"remove BEGIN/COMMIT or mark the migration non-transactional"
+	noTransaction := file("1.up.sql", true, "BEGIN;\nALTER TABLE t ADD COLUMN c int;\nCOMMIT;\n")
+	noTransaction.NoTransaction = true
 	for _, test := range []struct {
 		name string
 		file lintext.File
 		want []lintext.Finding
 	}{
 		{"BEGIN", file("1.up.sql", true, "BEGIN;\nALTER TABLE t ADD COLUMN c int;\nCOMMIT;\n"),
-			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: message}}},
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: wrappedBlockMessage}}},
 		{"START TRANSACTION", file("1.up.sql", true, "START TRANSACTION;\nALTER TABLE t ADD COLUMN c int;\nCOMMIT;\n"),
-			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: message}}},
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: wrappedBlockMessage}}},
+		{"two blocks", file("1.up.sql", true, "BEGIN;\nSELECT 1;\nCOMMIT;\nBEGIN;\nSELECT 2;\nCOMMIT;\n"),
+			[]lintext.Finding{
+				{Code: "TX201", File: 0, Statement: 0, Message: wrappedBlockMessage},
+				{Code: "TX201", File: 0, Statement: 3, Message: wrappedBlockMessage},
+			}},
+		{"a migration that runs without a transaction", noTransaction,
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: "the migrator refuses transaction control in a " +
+				"migration that runs without a transaction and commits each statement on its own; remove BEGIN/COMMIT"}}},
 		{"a down file", file("1.down.sql", false, "BEGIN;\nALTER TABLE t DROP COLUMN c;\nCOMMIT;\n"), nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -125,8 +148,7 @@ func TestService_CheckMigrations_EmbeddedTransaction(t *testing.T) {
 // concurrent index beside another statement in one query just as it refuses
 // it in the migrator's transaction.
 func TestService_CheckMigrations_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
-	const message = "explicit transaction blocks conflict with the migrator's transaction management; " +
-		"remove BEGIN/COMMIT or mark the migration non-transactional"
+	const message = wrappedBlockMessage
 	const block = "BEGIN;\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\nCOMMIT;\n"
 	for _, test := range []struct {
 		name  string
@@ -150,6 +172,73 @@ func TestService_CheckMigrations_EmbeddedTransactionFollowsTheTransactionOwner(t
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(checkOwned(c, test.owner, test.file), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// Under a runner that wraps nothing, TX201 reports only a block opened inside
+// another the file has not closed, which draws "there is already a transaction
+// in progress" there too. A block closed by COMMIT, END, ROLLBACK or ABORT
+// makes room for the next; a savepoint rollback and AND CHAIN keep the block
+// open.
+func TestService_CheckMigrations_NestedTransactionBlock(t *testing.T) {
+	const nested = "a transaction block is already open since the BEGIN on line 1; PostgreSQL ignores this " +
+		"BEGIN with a warning, and the first COMMIT ends both blocks"
+	for _, test := range []struct {
+		name string
+		sql  string
+		want []lintext.Finding
+	}{
+		{"a BEGIN inside an open block", "BEGIN;\nBEGIN;\nCREATE TABLE t (id int);\nCOMMIT;\n",
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 1, Message: nested}}},
+		{"START TRANSACTION inside an open block", "BEGIN;\nSTART TRANSACTION;\nCOMMIT;\n",
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 1, Message: nested}}},
+		{"a block that rolls back to a savepoint stays open", "BEGIN;\nSAVEPOINT s;\nROLLBACK TO SAVEPOINT s;\nBEGIN;\nCOMMIT;\n",
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 3, Message: nested}}},
+		{"a chained commit stays open", "BEGIN;\nCOMMIT AND CHAIN;\nBEGIN;\nCOMMIT;\n",
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 2, Message: nested}}},
+		{"two blocks one after the other", "BEGIN;\nSELECT 1;\nCOMMIT;\nBEGIN;\nSELECT 2;\nEND;\n", nil},
+		{"a block ended by ROLLBACK, then another", "BEGIN;\nROLLBACK;\nBEGIN;\nCOMMIT;\n", nil},
+		{"a block ended by ABORT, then another", "START TRANSACTION;\nABORT;\nSTART TRANSACTION;\nCOMMIT;\n", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(checkOwned(c, lintext.TransactionOwnerFile, file("1.up.sql", true, test.sql)), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// PG103 and PG103P do not report a file whose one statement is the build,
+// where the runner wraps nothing: the runner sends the statement on its own,
+// and PostgreSQL runs it outside a transaction. Beside another statement the
+// file is one implicit transaction again, so both rules report it, and so
+// does every file the migrator wraps.
+func TestService_CheckMigrations_ConcurrentBuildThatRunsAlone(t *testing.T) {
+	const concurrent = "CONCURRENTLY cannot run inside PostgreSQL's normal migration transaction; mark the migration non-transactional before applying"
+	const perChunk = "WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk, so TimescaleDB " +
+		"refuses it inside the migration's transaction; mark the migration non-transactional before applying"
+	const alone = "CREATE INDEX CONCURRENTLY t_id_idx ON t (id);\n"
+	const aloneChunk = "CREATE INDEX t_id_idx ON t (id) WITH (timescaledb.transaction_per_chunk);\n"
+	for _, test := range []struct {
+		name  string
+		owner lintext.TransactionOwner
+		sql   string
+		want  []lintext.Finding
+	}{
+		{"alone, where the runner wraps nothing", lintext.TransactionOwnerFile, alone, nil},
+		{"alone, with a comment", lintext.TransactionOwnerFile, "-- build it\n" + alone, nil},
+		{"a per-chunk build alone, where the runner wraps nothing", lintext.TransactionOwnerFile, aloneChunk, nil},
+		{"alone, where the migrator wraps the file", lintext.TransactionOwnerMigrator, alone,
+			[]lintext.Finding{{Code: "PG103", File: 0, Statement: 0, Message: concurrent}}},
+		{"a per-chunk build alone, where the migrator wraps the file", lintext.TransactionOwnerMigrator, aloneChunk,
+			[]lintext.Finding{{Code: "PG103P", File: 0, Statement: 0, Message: perChunk}}},
+		{"beside another statement, where the runner wraps nothing", lintext.TransactionOwnerFile,
+			"CREATE TABLE t (id int);\n" + alone, []lintext.Finding{{Code: "PG103", File: 0, Statement: 1, Message: concurrent}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := checkCodes(c, test.owner, []string{"PG103", "PG103P"}, file("1.up.sql", true, test.sql))
+			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }

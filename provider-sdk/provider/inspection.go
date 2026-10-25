@@ -27,7 +27,11 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if request.GetSessionId() == "" {
 		return nil, fmt.Errorf("%w: inspection session is missing", ErrProtocol)
 	}
-	if _, _, err := valueTarget(description, snapshot.GetEngine(), snapshot.GetTargetFeatures()); err != nil {
+	engine, _, err := valueTarget(description, snapshot.GetEngine(), snapshot.GetTargetFeatures())
+	if err != nil {
+		return nil, err
+	}
+	if err := validateObservedCommonObjects(engine, snapshot.GetCommonObjects()); err != nil {
 		return nil, err
 	}
 	coverage := snapshot.GetCoverage()

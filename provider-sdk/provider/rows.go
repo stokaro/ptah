@@ -432,6 +432,11 @@ func ValidateRenderRowWritesRequest(description *protocol.Description, request *
 	if err := dataEngine(description, RenderRowWritesFeature, request.GetEngine(), request.GetTargetFeatures()); err != nil {
 		return err
 	}
+	// dataEngine resolved the engine.
+	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err := validateUnitForm(description, engine, request.GetForm()); err != nil {
+		return err
+	}
 	ids := make(map[string]bool, len(request.GetWrites()))
 	for _, write := range request.GetWrites() {
 		if write.GetChangeId() == "" || ids[write.GetChangeId()] {
@@ -504,7 +509,8 @@ func ValidateRenderedRowWrites(description *protocol.Description, request *proto
 			return fmt.Errorf("%w: a refused row write batch exposes units", ErrProtocol)
 		}
 		named := slices.ContainsFunc(request.GetWrites(), func(write *protocol.RowWrite) bool { return write.GetChangeId() == refusal.GetChangeId() })
-		reason := refusal.GetReason() == protocol.RenderRefusal_UNSUPPORTED_MODE || refusal.GetReason() == protocol.RenderRefusal_UNSUPPORTED_VALUE
+		reason := refusal.GetReason() == protocol.RenderRefusal_UNSUPPORTED_MODE || refusal.GetReason() == protocol.RenderRefusal_UNSUPPORTED_VALUE ||
+			(refusal.GetReason() == protocol.RenderRefusal_NO_TEXT_FORM && request.GetForm() == protocol.RenderRequest_TEXT)
 		if !named || !reason || !diagnosticLine(refusal.GetMessage()) {
 			return fmt.Errorf("%w: a row write refusal needs a write, a reason, and one line of text", ErrProtocol)
 		}
@@ -512,6 +518,9 @@ func ValidateRenderedRowWrites(description *protocol.Description, request *proto
 	}
 	if !result.GetComplete() || len(result.GetUnits()) != len(request.GetWrites()) {
 		return fmt.Errorf("%w: incomplete row write render", ErrProtocol)
+	}
+	if err := validateTextUnits(request.GetForm(), result.GetUnits()); err != nil {
+		return err
 	}
 	for i, write := range request.GetWrites() {
 		unit := result.GetUnits()[i]

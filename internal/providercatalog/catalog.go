@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"ptah.run/core/platform"
 )
 
 // Entry contains recognition and setup metadata, never engine capabilities.
@@ -63,6 +65,23 @@ func (e Entry) GitHubRepository() (owner, repo string, ok bool) {
 		return "", "", false
 	}
 	return owner, repo, true
+}
+
+// ProviderOnly recognizes, as [Lookup] does, an official engine that no
+// built-in implementation of this process serves: the engine is reached only
+// through its provider, whether or not one is installed. An official engine
+// that still has a built-in dialect, such as YDB while it is embedded, is not
+// one. The answer is recognition and authorizes nothing.
+//
+// A policy that judges a name before any provider is selected, such as the
+// strict compatibility mode refusing an engine the community binary has no
+// driver for, reads it to tell an engine from a mistake.
+func ProviderOnly(selector string) (Entry, bool) {
+	entry, found := Lookup(selector)
+	if !found || platform.NormalizeDialect(entry.EngineID) != "" {
+		return Entry{}, false
+	}
+	return entry, true
 }
 
 // Lookup recognizes an explicit engine name, provider ID, database URL, or

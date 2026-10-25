@@ -30,6 +30,7 @@
 package atlassource
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -51,6 +52,7 @@ import (
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 )
 
@@ -622,9 +624,11 @@ func (s Set) ImpliedDialect() string {
 // first, then each set in argument order. Every later database source must
 // match the pinned dialect as atlasurl.SchemeDialectMatches compares them,
 // since every dialect here is read from a URL scheme. The returned flag names the pinning source for
-// error messages; the dialect is empty when nothing pins one.
-func PinDialect(devURL string, sets ...Set) (dialect, pinnedBy string, err error) {
-	dialect, err = atlasurl.DialectFromURL(devURL)
+// error messages; the dialect is empty when nothing pins one. A dev URL of an
+// engine only a provider serves pins the provider's target, as the selection
+// on ctx names it.
+func PinDialect(ctx context.Context, devURL string, sets ...Set) (dialect, pinnedBy string, err error) {
+	dialect, err = providerurl.Dialect(ctx, devURL)
 	if err != nil {
 		return "", "", err
 	}

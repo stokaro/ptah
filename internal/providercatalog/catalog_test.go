@@ -99,3 +99,21 @@ func TestOfficialOwnersRegisterWithTheEngineRuntime(t *testing.T) {
 	}
 	c.Assert(providercatalog.CheckOwnership("stokaro/ptah-ydb-plugin", "ydb", nil), qt.IsNotNil)
 }
+
+// An official engine is provider-only while no built-in dialect serves it.
+// YDB and Spanner keep their built-in implementations here, so they are not.
+func TestProviderOnly(t *testing.T) {
+	for _, test := range []struct{ selector, engine string }{
+		{"duckdb", "duckdb"}, {" DuckDB ", "duckdb"}, {"duckdb:///tmp/app.db", "duckdb"}, {"docker://duckdb/1", "duckdb"},
+		{"github.com/stokaro/ptah-duckdb-plugin", "duckdb"},
+		{"ydb", ""}, {"ydbs://host/db", ""}, {"docker://ydb/26", ""}, {"spanner", ""}, {"cloudspanner://host/db", ""},
+		{"postgres", ""}, {"sqlite:///tmp/app.db", ""}, {"unknown", ""}, {"", ""},
+	} {
+		t.Run(test.selector, func(t *testing.T) {
+			c := qt.New(t)
+			entry, found := providercatalog.ProviderOnly(test.selector)
+			c.Assert(found, qt.Equals, test.engine != "")
+			c.Assert(entry.EngineID, qt.Equals, test.engine)
+		})
+	}
+}

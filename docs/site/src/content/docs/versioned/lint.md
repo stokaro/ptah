@@ -142,9 +142,9 @@ Useful controls, all designed for CI:
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
   `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
   `yugabytedb`, `spanner`, and `ydb`, which reads YQL and adds the `YD` rules
-  [YDB](../../databases/ydb/#linting) describes. Every documented alias
-  resolves to the canonical name — see [Dialects and capabilities](../../concepts/dialects-and-capabilities/)
-  for the spelling table. `--dev-url` infers the dialect and replays the
+  [YDB](../../databases/ydb/#linting) describes, or an engine the selected
+  provider serves. Aliases resolve to the canonical name —
+  see [Dialects and capabilities](../../concepts/dialects-and-capabilities/). `--dev-url` infers the dialect and replays the
   directory on the dev database. Before each analyzed version
   the run reads the schema state that version starts from and hands it to
   the rules that ask for it: the columns with their type, nullability,

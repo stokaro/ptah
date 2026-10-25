@@ -1,6 +1,8 @@
 package pglint
 
 import (
+	"fmt"
+
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -31,7 +33,7 @@ func transactionRules() []lintkit.Rule {
 				Severity: lintext.Warning,
 				Targets:  []string{platform.Postgres},
 			},
-			Statement: checkEmbeddedTransaction,
+			File: checkEmbeddedTransaction,
 		},
 	}
 }
@@ -93,26 +95,91 @@ func checkTransactionMix(file *lintkit.File) []lintext.Violation {
 	}}
 }
 
-// checkEmbeddedTransaction reports an explicit transaction block in a file the
-// migrator wraps in a transaction of its own, which the block cannot nest in.
+// checkEmbeddedTransaction reports, in an up file, an explicit transaction
+// block the file cannot have where it runs.
+//
+// A migrator that wraps the file in a transaction of its own cannot nest the
+// block in it: PostgreSQL ignores the BEGIN with a warning, and the block's
+// COMMIT ends the migrator's transaction early, so what follows runs outside
+// any transaction. Every BEGIN and START TRANSACTION is reported there. A
+// migration that runs without a transaction is refused by the migrator when it
+// carries transaction control, and the message says so instead.
 //
 // A migrator that opens no transaction around a file leaves the block as the
-// only transaction the file gets, so the block is not reported there. Measured
-// with golang-migrate v4.20.1 on PostgreSQL 15.19 (stokaro/ptah#4953): by
-// default the tool sends a file as one query, which PostgreSQL runs as one
-// implicit transaction, so the block changes nothing; with
-// x-multi-statement=true it sends each statement on its own, and the block is
-// what keeps a file that fails midway from committing part of itself. The tool
-// has no marker for a non-transactional file either, so the remedy the message
-// names could not be followed.
-func checkEmbeddedTransaction(file *lintkit.File, statement *lintext.Statement) (bool, string) {
+// only transaction the file gets, so a block is reported there only when it
+// opens inside another the file has not closed. Measured with golang-migrate
+// v4.20.1 on PostgreSQL 15.19 (stokaro/ptah#4953): by default the tool sends a
+// file as one query, which PostgreSQL runs as one implicit transaction, so a
+// block changes nothing; with x-multi-statement=true it sends each statement
+// on its own, and the block is what keeps a file that fails midway from
+// committing part of itself. A second BEGIN inside an open block draws
+// "there is already a transaction in progress" in either mode.
+func checkEmbeddedTransaction(file *lintkit.File) []lintext.Violation {
+	if !file.IsUp {
+		return nil
+	}
 	if file.TransactionOwner == lintext.TransactionOwnerFile {
-		return false, ""
+		return nestedTransactionBlocks(file)
 	}
-	if !lintkit.HasWordPrefix(statement.Words, "BEGIN") && !lintkit.HasWordPrefix(statement.Words, "START", "TRANSACTION") {
-		return false, ""
+	message := "the migrator already runs this file in one transaction, so this BEGIN nests in it and the file's " +
+		"COMMIT ends the migrator's transaction early; remove BEGIN/COMMIT"
+	if file.NoTransaction {
+		message = "the migrator refuses transaction control in a migration that runs without a transaction and " +
+			"commits each statement on its own; remove BEGIN/COMMIT"
 	}
-	return true, "explicit transaction blocks conflict with the migrator's transaction management; remove BEGIN/COMMIT or mark the migration non-transactional"
+	var violations []lintext.Violation
+	for position := range file.Statements {
+		if opensTransactionBlock(file.Statements[position].Words) {
+			violations = append(violations, lintext.Violation{Statement: position, Message: message})
+		}
+	}
+	return violations
+}
+
+// nestedTransactionBlocks reports each BEGIN or START TRANSACTION that runs
+// while a block the file opened earlier is still open.
+func nestedTransactionBlocks(file *lintkit.File) []lintext.Violation {
+	var violations []lintext.Violation
+	open := -1
+	for position := range file.Statements {
+		words := file.Statements[position].Words
+		switch {
+		case opensTransactionBlock(words) && open >= 0:
+			violations = append(violations, lintext.Violation{
+				Statement: position,
+				Message: fmt.Sprintf("a transaction block is already open since the BEGIN on line %d; PostgreSQL ignores "+
+					"this BEGIN with a warning, and the first COMMIT ends both blocks", file.Statements[open].Line),
+			})
+		case opensTransactionBlock(words):
+			open = position
+		case closesTransactionBlock(words):
+			open = -1
+		}
+	}
+	return violations
+}
+
+// opensTransactionBlock reports a statement that opens a transaction block.
+func opensTransactionBlock(words []string) bool {
+	return lintkit.HasWordPrefix(words, "BEGIN") || lintkit.HasWordPrefix(words, "START", "TRANSACTION")
+}
+
+// closesTransactionBlock reports a statement that ends the open transaction
+// block: COMMIT, END, ROLLBACK or ABORT, unless it rolls back to a savepoint,
+// chains a new transaction, or settles a prepared one, and PREPARE
+// TRANSACTION, which detaches the transaction from the session.
+func closesTransactionBlock(words []string) bool {
+	if lintkit.HasWordPrefix(words, "PREPARE", "TRANSACTION") {
+		return true
+	}
+	if !lintkit.HasWordPrefix(words, "COMMIT") && !lintkit.HasWordPrefix(words, "END") &&
+		!lintkit.HasWordPrefix(words, "ROLLBACK") && !lintkit.HasWordPrefix(words, "ABORT") {
+		return false
+	}
+	if len(words) > 1 && words[1] == "PREPARED" {
+		return false
+	}
+	return !lintkit.HasWordSeq(words, "TO") && !lintkit.HasWordSeq(words, "AND", "CHAIN")
 }
 
 // transactionMixCapabilities is the server a file is judged against offline.

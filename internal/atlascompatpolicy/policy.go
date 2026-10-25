@@ -4,6 +4,7 @@
 package atlascompatpolicy
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -29,6 +30,7 @@ import (
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/envbool"
+	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/ptahdirective"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -445,7 +447,7 @@ func (p Policy) ValidateURL(rawURL string) error {
 		// answers `unsupported docker image "ydb"`. It is asked before the
 		// dialect, which reads "ydb" here and would answer as a ydb:// URL
 		// does.
-		if parsed.Scheme == "docker" && atlasurl.DockerEngineIsExtension(parsed.Host) {
+		if parsed.Scheme == "docker" && (atlasurl.DockerEngineIsExtension(parsed.Host) || providerOnly(parsed.Host)) {
 			return fmt.Errorf("unsupported docker image %q", parsed.Host)
 		}
 		dialect, err := atlasurl.DialectFromURL(rawURL)
@@ -454,28 +456,51 @@ func (p Policy) ValidateURL(rawURL string) error {
 		}
 		return p.ValidateDialect(dialect)
 	}
-	if platform.NormalizeDialect(parsed.Scheme) == platform.YDB {
+	if noAtlasDriver(parsed.Scheme) {
 		return strictUnknownDriver(parsed.Scheme)
 	}
 	return p.ValidateDialect(parsed.Scheme)
 }
 
+// noAtlasDriver reports whether name is an engine no Atlas edition has a
+// driver for, so the pinned binary refuses its URL as an unknown driver and its
+// docker image as unsupported, as it does every scheme and image it registers
+// none for: a built-in dialect whose descriptor says so
+// (descriptor.Atlas.Extension), or an official engine only an executable
+// provider serves, which no descriptor describes.
+func noAtlasDriver(name string) bool {
+	if described, found := platform.Lookup(name); found {
+		return described.Atlas.Extension
+	}
+	return providerOnly(name)
+}
+
+// providerOnly reports whether name, an engine ID, an alias or a URL scheme,
+// names an official engine only an executable provider serves.
+func providerOnly(name string) bool {
+	spelled := strings.ToLower(strings.TrimSpace(name))
+	entry, found := providercatalog.ProviderOnly(spelled)
+	return found && (spelled == entry.EngineID || slices.Contains(entry.Aliases, spelled) || slices.Contains(entry.URLSchemes, spelled))
+}
+
 // ValidateDialect applies the pinned CE database-family inventory. Empty and
 // unknown dialects remain the owning command's validation responsibility.
 //
-// YDB is refused in the pinned binary's own words, because no Atlas edition
-// has a YDB driver and a script that meets the refusal should read what that
-// binary prints. The other dialects keep the sentence that names the policy.
+// An engine no Atlas edition has a driver for, YDB and every engine only a
+// provider serves, is refused in the pinned binary's own words, because a
+// script that meets the refusal should read what that binary prints. The other
+// dialects keep the sentence that names the policy.
 func (p Policy) ValidateDialect(dialect string) error {
 	if !p.strictCE {
 		return nil
 	}
 	normalized := platform.NormalizeDialect(dialect)
+	if noAtlasDriver(dialect) {
+		return strictUnknownDriver(cmp.Or(normalized, strings.ToLower(strings.TrimSpace(dialect))))
+	}
 	switch normalized {
 	case "", platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite:
 		return nil
-	case platform.YDB:
-		return strictUnknownDriver(normalized)
 	default:
 		return fmt.Errorf(
 			"Atlas Community Edition strict compatibility does not support database dialect %q",

@@ -719,6 +719,41 @@ ptah-compat migrate apply --url "$DATABASE_URL" \
   --dir "file://migrations?format=goose"
 ```
 
+#### Transactions in a golang-migrate directory
+
+golang-migrate opens no transaction around a file; it sends the file as it is.
+A golang-migrate directory is applied the same way, instead of with a
+transaction of the migrator's around each file:
+
+- A PostgreSQL file that opens and closes its own transaction runs as written,
+  on one session, outside any transaction of the migrator's. Its revision row
+  is written after the file's last statement. Progress is recorded where the
+  file's transactions commit, so a failure records the statements that stayed
+  committed: in `BEGIN; CREATE TABLE t2 (id int); COMMIT; INSERT INTO
+  missing_table VALUES (1);` the first three. The session is rolled back
+  before the failure is recorded.
+- A file whose one statement PostgreSQL refuses inside a transaction, such as
+  `CREATE INDEX CONCURRENTLY`, runs without one.
+- Every other file keeps the per-file transaction. With `--tx-mode all`, a file
+  that opens its own transaction is refused before any migration runs.
+
+The reading of a file's own transactions is the one the dev database replay
+uses. A file that opens a transaction inside another, leaves one open, or uses
+`ROLLBACK`, `SAVEPOINT`, `AND CHAIN` or a prepared transaction is refused
+before any migration runs, naming the statement.
+
+The pinned community binary v1.3.0 wraps these files in a transaction of its
+own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
+`BEGIN; CREATE TABLE t1 (id int); INSERT INTO t1 VALUES (1); COMMIT;` the
+binary applies the block, records it, and then exits `1` with
+`pq: unexpected transaction status idle`, because the file's `COMMIT` already
+ended its transaction. It fails the lone `CREATE INDEX CONCURRENTLY` with
+`cannot run inside a transaction block`. Ptah does not copy that defect; see
+[A golang-migrate file that runs its own transaction](../retained-divergences/#a-golang-migrate-file-that-runs-its-own-transaction).
+Directories in Atlas's, Goose's, dbmate's, Flyway's and Liquibase's layouts
+keep the per-file transaction, which a file opts out of with its layout's own
+marker.
+
 Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
 before `V2`, `V1.10` after `V1.9`). Ptah gives each file two deliberately
 separate values:
@@ -1526,35 +1561,49 @@ rule, a file, and a line.
 
 ### Transaction blocks in a golang-migrate directory
 
-`TX201` reports a `BEGIN` or `START TRANSACTION` in a migration. The rule
-assumes a migrator that opens a transaction around each file and cannot nest
-another inside it. Atlas runs files that way, and so does Ptah's own migrator.
+`TX201` reports a `BEGIN` or `START TRANSACTION` in a migration that a
+migrator wraps in a transaction of its own, which the block cannot nest in.
+Atlas runs files that way, and so does Ptah's own migrator. The fix the rule
+names is to remove `BEGIN`/`COMMIT`: the migrator already runs the file in one
+transaction. Marking the file non-transactional is no fix, because apply
+refuses transaction control in a file that runs without a transaction.
 
-golang-migrate opens no transaction around a file, so `TX201` is not reported
-for a directory in its layout. This holds for each way of selecting the layout:
+golang-migrate opens no transaction around a file, so in a directory of its
+layout `TX201` reports only a `BEGIN` that opens inside another block the file
+has not closed. This holds for each way of selecting the layout:
 `?format=golang-migrate`, `--dir-format golang-migrate`, or
 `format = golang-migrate` in `atlas.hcl`. Measured with golang-migrate v4.20.1
 on PostgreSQL 15.19, through the `postgres://` and `pgx5://` drivers alike:
 
 | golang-migrate mode | without `BEGIN`/`COMMIT` | with `BEGIN`/`COMMIT` |
 | --- | --- | --- |
-| default | The file is sent as one query, and PostgreSQL runs it as one implicit transaction. A file that fails midway leaves nothing behind. | The same outcome. The block changes nothing. |
+| default | The file is sent as one query, and PostgreSQL runs it as one implicit transaction. A file that fails midway keeps none of its changes, and golang-migrate marks the version dirty. | The same outcome. The block changes nothing. |
 | `x-multi-statement=true` | Each statement is sent on its own. A file that fails midway keeps the statements before the failure. | The file is atomic. The block is what makes it so. |
 
+A second `BEGIN` inside an open block draws `there is already a transaction in
+progress` in both modes, and the first `COMMIT` ends both blocks.
 golang-migrate has no marker for a migration that must run outside a
-transaction, and its PostgreSQL driver documentation recommends wrapping a
-migration of several statements in `BEGIN`/`COMMIT`.
+transaction. Its PostgreSQL driver documentation tells users upgrading from v1
+to wrap existing migrations of several statements in `BEGIN`/`COMMIT`.
 
-Goose, dbmate, Flyway and Liquibase directories keep `TX201`. The rule assumes
-that their tools wrap each file, and each of them can mark a migration that
-must run outside a transaction. `TX101` is reported in every layout,
-golang-migrate included: the implicit transaction of the default mode refuses
-`CREATE INDEX CONCURRENTLY` beside another statement, as a migrator's
-transaction does.
+A golang-migrate file whose only statement is `CREATE INDEX CONCURRENTLY` gets
+no `PG103`: golang-migrate sends it on its own, and PostgreSQL runs it outside a
+transaction. `ptah-compat migrate apply` runs it the same way; see
+[Transactions in a golang-migrate directory](#transactions-in-a-golang-migrate-directory).
 
-Native `ptah migrations lint` reads Ptah and Atlas directories only. A migrator
-that wraps each file applies both, so the native surface reports `TX201` in
-every directory it reads.
+Goose, dbmate, Flyway and Liquibase directories keep `TX201` and `PG103`. The
+rules assume that their tools wrap each file, and each of them can mark a
+migration that must run outside a transaction. `TX101`, a concurrent index
+beside another statement, is reported in every layout, golang-migrate
+included. It holds for golang-migrate's default mode, whose implicit
+transaction refuses the mix as a migrator's transaction does; with
+`x-multi-statement=true` the statements are sent one by one and the mix
+applies.
+
+Native `ptah migrations lint` has no golang-migrate layout. It reads a
+golang-migrate directory as one of its own layouts, whose file names match, and
+keeps `TX201` there
+([stokaro/ptah#4955](https://github.com/stokaro/ptah/issues/4955)).
 
 ### Which objects are under review
 

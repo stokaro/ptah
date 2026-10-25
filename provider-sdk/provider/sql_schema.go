@@ -158,6 +158,7 @@ func ValidateSQLSchema(description *protocol.Description, request *protocol.Read
 		func() error { return validateSQLDeclarations(request, result) },
 		func() error { return validateSQLTables(rules, result) },
 		func() error { return validateSQLObjects(rules, result) },
+		func() error { return validateSQLCommonAdditions(engine, result) },
 		func() error {
 			return validateSQLNativeObjects(description, engine, features, result)
 		},
@@ -369,6 +370,26 @@ func validateSQLPrincipals(result *protocol.SQLSchema) error {
 		if strings.TrimSpace(grant.GetRole()) == "" || len(grant.GetPrivileges()) == 0 || strings.TrimSpace(grant.GetTarget().GetKind()) == "" ||
 			slices.ContainsFunc(grant.GetPrivileges(), func(privilege string) bool { return strings.TrimSpace(privilege) == "" }) {
 			return sqlSchemaError("grant needs a role, privileges and a target kind")
+		}
+	}
+	return nil
+}
+
+// validateSQLCommonAdditions refuses the fields contract 25.3 adds to a role
+// and a grant unless the host negotiated the common-object wire.
+func validateSQLCommonAdditions(engine *protocol.Engine, result *protocol.SQLSchema) error {
+	negotiated := engine.GetCommonObjects() != nil
+	for _, role := range result.GetRoles() {
+		if role.GetPasswordDeclared() && !negotiated {
+			return sqlSchemaError("a declared password needs " + CommonObjectsFeature)
+		}
+	}
+	for _, grant := range result.GetGrants() {
+		if len(grant.GetColumns()) != 0 && !negotiated {
+			return sqlSchemaError("grant columns need " + CommonObjectsFeature)
+		}
+		if err := validateColumnList(grant.GetColumns()); err != nil {
+			return err
 		}
 	}
 	return nil

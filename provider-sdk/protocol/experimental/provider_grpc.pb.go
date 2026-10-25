@@ -82,6 +82,8 @@ const (
 	Provider_CommitEmbeddingBatch_FullMethodName      = "/ptah.provider.experimental.Provider/CommitEmbeddingBatch"
 	Provider_ReadEmbeddingVerification_FullMethodName = "/ptah.provider.experimental.Provider/ReadEmbeddingVerification"
 	Provider_SearchEmbeddings_FullMethodName          = "/ptah.provider.experimental.Provider/SearchEmbeddings"
+	Provider_PrepareCommonObjects_FullMethodName      = "/ptah.provider.experimental.Provider/PrepareCommonObjects"
+	Provider_EncodeSource_FullMethodName              = "/ptah.provider.experimental.Provider/EncodeSource"
 )
 
 // ProviderClient is the client API for Provider service.
@@ -162,6 +164,11 @@ type ProviderClient interface {
 	CommitEmbeddingBatch(ctx context.Context, in *CommitEmbeddingBatchRequest, opts ...grpc.CallOption) (*EmbeddingWriteResult, error)
 	ReadEmbeddingVerification(ctx context.Context, in *ReadEmbeddingVerificationRequest, opts ...grpc.CallOption) (*EmbeddingVerificationPage, error)
 	SearchEmbeddings(ctx context.Context, in *SearchEmbeddingsRequest, opts ...grpc.CallOption) (*EmbeddingSearchResult, error)
+	// Contract 25.3. PrepareCommonObjects is used only when both sides list
+	// schema.common-objects; a host calls EncodeSource only when the provider
+	// lists source.encode.
+	PrepareCommonObjects(ctx context.Context, in *PrepareCommonObjectsRequest, opts ...grpc.CallOption) (*PreparedCommonObjects, error)
+	EncodeSource(ctx context.Context, in *EncodeSourceRequest, opts ...grpc.CallOption) (*EncodedSource, error)
 }
 
 type providerClient struct {
@@ -802,6 +809,26 @@ func (c *providerClient) SearchEmbeddings(ctx context.Context, in *SearchEmbeddi
 	return out, nil
 }
 
+func (c *providerClient) PrepareCommonObjects(ctx context.Context, in *PrepareCommonObjectsRequest, opts ...grpc.CallOption) (*PreparedCommonObjects, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreparedCommonObjects)
+	err := c.cc.Invoke(ctx, Provider_PrepareCommonObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) EncodeSource(ctx context.Context, in *EncodeSourceRequest, opts ...grpc.CallOption) (*EncodedSource, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EncodedSource)
+	err := c.cc.Invoke(ctx, Provider_EncodeSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderServer is the server API for Provider service.
 // All implementations must embed UnimplementedProviderServer
 // for forward compatibility.
@@ -880,6 +907,11 @@ type ProviderServer interface {
 	CommitEmbeddingBatch(context.Context, *CommitEmbeddingBatchRequest) (*EmbeddingWriteResult, error)
 	ReadEmbeddingVerification(context.Context, *ReadEmbeddingVerificationRequest) (*EmbeddingVerificationPage, error)
 	SearchEmbeddings(context.Context, *SearchEmbeddingsRequest) (*EmbeddingSearchResult, error)
+	// Contract 25.3. PrepareCommonObjects is used only when both sides list
+	// schema.common-objects; a host calls EncodeSource only when the provider
+	// lists source.encode.
+	PrepareCommonObjects(context.Context, *PrepareCommonObjectsRequest) (*PreparedCommonObjects, error)
+	EncodeSource(context.Context, *EncodeSourceRequest) (*EncodedSource, error)
 	mustEmbedUnimplementedProviderServer()
 }
 
@@ -1078,6 +1110,12 @@ func (UnimplementedProviderServer) ReadEmbeddingVerification(context.Context, *R
 }
 func (UnimplementedProviderServer) SearchEmbeddings(context.Context, *SearchEmbeddingsRequest) (*EmbeddingSearchResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchEmbeddings not implemented")
+}
+func (UnimplementedProviderServer) PrepareCommonObjects(context.Context, *PrepareCommonObjectsRequest) (*PreparedCommonObjects, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareCommonObjects not implemented")
+}
+func (UnimplementedProviderServer) EncodeSource(context.Context, *EncodeSourceRequest) (*EncodedSource, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EncodeSource not implemented")
 }
 func (UnimplementedProviderServer) mustEmbedUnimplementedProviderServer() {}
 func (UnimplementedProviderServer) testEmbeddedByValue()                  {}
@@ -2234,6 +2272,42 @@ func _Provider_SearchEmbeddings_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_PrepareCommonObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareCommonObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareCommonObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareCommonObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareCommonObjects(ctx, req.(*PrepareCommonObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_EncodeSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EncodeSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).EncodeSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_EncodeSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).EncodeSource(ctx, req.(*EncodeSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Provider_ServiceDesc is the grpc.ServiceDesc for Provider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2492,6 +2566,14 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SearchEmbeddings",
 			Handler:    _Provider_SearchEmbeddings_Handler,
+		},
+		{
+			MethodName: "PrepareCommonObjects",
+			Handler:    _Provider_PrepareCommonObjects_Handler,
+		},
+		{
+			MethodName: "EncodeSource",
+			Handler:    _Provider_EncodeSource_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

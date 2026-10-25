@@ -167,15 +167,26 @@ func validateEngineServices(description *protocol.Description, engine *protocol.
 	return validateSQLSchemaDeclaration(description, engine)
 }
 
-// validateEngineAdditions checks what contracts 25.1 and 25.2 add to an
-// engine: the data services it names, its statement facts, its query dialect
-// and its embedding store.
+// validateEngineAdditions checks what contracts 25.1 to 25.3 add to an
+// engine: the data services it names, its statement facts, its query dialect,
+// its embedding store, its common objects, its HCL claims and the features it
+// lists beside them.
 func validateEngineAdditions(description *protocol.Description, engine *protocol.Engine) error {
 	if err := validateDataServices(description, engine); err != nil {
 		return err
 	}
 	if err := validateEmbeddingEngine(description, engine); err != nil {
 		return err
+	}
+	for _, check := range []func(*protocol.Description, *protocol.Engine) error{validateCommonObjectSupport, validateHCLSource, validateEncodeEngine} {
+		if err := check(description, engine); err != nil {
+			return err
+		}
+	}
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature} {
+		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
+			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
+		}
 	}
 	if slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
 		return fmt.Errorf("%w: lint statement facts require engine lint", ErrProtocol)
@@ -216,6 +227,25 @@ func validateSemanticServices(value *protocol.Description) error {
 	}
 	if slices.Contains(value.GetFeatures(), ConvertValuesFeature) && !slices.Contains(value.GetFeatures(), NormalizeValuesFeature) {
 		return fmt.Errorf("%w: value conversion requires value normalization", ErrProtocol)
+	}
+	return validateContractAdditions(value)
+}
+
+// validateContractAdditions checks the services the features of contract 25.3
+// extend: text units extend rendering, the planning policy extends planning or
+// comparison, and every source claim and encoding extends source decoding.
+func validateContractAdditions(value *protocol.Description) error {
+	features := value.GetFeatures()
+	if slices.Contains(features, TextUnitsFeature) && !slices.Contains(features, RenderFeature) && !slices.Contains(features, RenderRowWritesFeature) {
+		return fmt.Errorf("%w: text units require rendering", ErrProtocol)
+	}
+	if slices.Contains(features, PlanningPolicyFeature) && !slices.Contains(features, PlanFeaturesFeature) && !slices.Contains(features, CompareModelsFeature) {
+		return fmt.Errorf("%w: a planning policy requires planning or comparison", ErrProtocol)
+	}
+	for _, feature := range []string{EntryKeysFeature, HCLSourceFeature, EncodeSourceFeature} {
+		if slices.Contains(features, feature) && !slices.Contains(features, DecodeSourceFeature) {
+			return fmt.Errorf("%w: %s requires source decoding", ErrProtocol, feature)
+		}
 	}
 	return nil
 }
@@ -302,11 +332,19 @@ func ValidateSchema(value *protocol.Schema) error {
 // ValidateRender checks completeness and input provenance. The result has no
 // valid executable prefix when this function returns an error.
 func ValidateRender(request *protocol.RenderRequest, result *protocol.RenderResult) error {
+	if result.GetRefusal() != nil && request.GetForm() == protocol.RenderRequest_TEXT {
+		return validateTextRefusal(result, func(id string) bool {
+			return slices.ContainsFunc(request.GetChanges(), func(change *protocol.Change) bool { return change.GetId() == id })
+		})
+	}
 	if request == nil || result == nil || !result.GetComplete() || len(result.GetUnits()) != len(request.GetChanges()) {
 		return fmt.Errorf("%w: incomplete render", ErrProtocol)
 	}
 	if result.GetRefusal() != nil {
-		return fmt.Errorf("%w: a schema render carries a row-write refusal", ErrProtocol)
+		return fmt.Errorf("%w: a schema render refuses only in the TEXT form", ErrProtocol)
+	}
+	if err := validateTextUnits(request.GetForm(), result.GetUnits()); err != nil {
+		return err
 	}
 	seen := make(map[string]bool)
 	for i, change := range request.GetChanges() {
@@ -318,6 +356,20 @@ func ValidateRender(request *protocol.RenderRequest, result *protocol.RenderResu
 		if err := ValidateUnit(unit); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateTextRefusal accepts a refusal of a change without a text form: no
+// unit, a change the request holds, the reason NO_TEXT_FORM and one line of
+// text.
+func validateTextRefusal(result *protocol.RenderResult, requested func(string) bool) error {
+	refusal := result.GetRefusal()
+	if result.GetComplete() || len(result.GetUnits()) != 0 {
+		return fmt.Errorf("%w: a refused render exposes units", ErrProtocol)
+	}
+	if refusal.GetReason() != protocol.RenderRefusal_NO_TEXT_FORM || !requested(refusal.GetChangeId()) || !diagnosticLine(refusal.GetMessage()) {
+		return fmt.Errorf("%w: a text refusal needs a change of the request, NO_TEXT_FORM and one line of text", ErrProtocol)
 	}
 	return nil
 }

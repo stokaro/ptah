@@ -910,7 +910,7 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 	if err != nil {
 		return preparedDiffSources{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	dialect, dialectFlag, err := atlassource.PinDialect(opts.DevURL, fromSet, toSet)
+	dialect, dialectFlag, err := atlassource.PinDialect(ctx, opts.DevURL, fromSet, toSet)
 	if err != nil {
 		return preparedDiffSources{}, err
 	}

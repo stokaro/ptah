@@ -269,7 +269,7 @@ func prepareReportOptions(
 		return migrationlintreport.Options{}, nil, errors.New("--attach requires an OCI migration source")
 	}
 	if !isOCI {
-		prepared, err := migrationlintreport.PrepareSourceOptions(opts, projectCfg)
+		prepared, err := migrationlintreport.PrepareSourceOptions(cmd.Context(), opts, projectCfg)
 		if err != nil {
 			return migrationlintreport.Options{}, nil, err
 		}
