@@ -20,11 +20,14 @@ import (
 //
 // The rows whose ON DELETE changes are the controls: their definitions differ
 // as well, so they are planned whatever decides the pairing.
+//
+// dropped is the key the plan drops. `migrate diff` writes it in the community
+// binary's statement style, without IF EXISTS; `schema apply` writes IF EXISTS.
 var foreignKeyRenames = []struct {
 	name      string
 	migration string
 	schema    string
-	wantDrop  string
+	dropped   string
 	wantAdd   string
 	want      string
 }{
@@ -35,9 +38,9 @@ CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL,
   CONSTRAINT c_p_fk FOREIGN KEY (p_id) REFERENCES p(id) ON DELETE CASCADE);`,
 		schema: `CREATE TABLE p (id bigint PRIMARY KEY);
 CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL REFERENCES p(id) ON DELETE CASCADE);`,
-		wantDrop: `DROP CONSTRAINT IF EXISTS "c_p_fk"`,
-		wantAdd:  `ADD CONSTRAINT "c_p_id_fkey"`,
-		want:     "c:c_p_id_fkey(p_id)->p CASCADE",
+		dropped: "c_p_fk",
+		wantAdd: `ADD CONSTRAINT "c_p_id_fkey"`,
+		want:    "c:c_p_id_fkey(p_id)->p CASCADE",
 	},
 	{
 		name: "a named key the schema renames on the column",
@@ -46,9 +49,9 @@ CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL,
   CONSTRAINT c_p_fk FOREIGN KEY (p_id) REFERENCES p(id) ON DELETE CASCADE);`,
 		schema: `CREATE TABLE p (id bigint PRIMARY KEY);
 CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL CONSTRAINT c_p_new REFERENCES p(id) ON DELETE CASCADE);`,
-		wantDrop: `DROP CONSTRAINT IF EXISTS "c_p_fk"`,
-		wantAdd:  `ADD CONSTRAINT "c_p_new"`,
-		want:     "c:c_p_new(p_id)->p CASCADE",
+		dropped: "c_p_fk",
+		wantAdd: `ADD CONSTRAINT "c_p_new"`,
+		want:    "c:c_p_new(p_id)->p CASCADE",
 	},
 	{
 		name: "a composite key the schema replaces with a key on its first column",
@@ -59,9 +62,9 @@ CREATE TABLE c (id bigint PRIMARY KEY, a bigint, b bigint,
 		schema: `CREATE TABLE p (id bigint PRIMARY KEY);
 CREATE TABLE q (a bigint, b bigint, UNIQUE (a, b));
 CREATE TABLE c (id bigint PRIMARY KEY, a bigint REFERENCES p(id), b bigint);`,
-		wantDrop: `DROP CONSTRAINT IF EXISTS "c_ab_fk"`,
-		wantAdd:  `ADD CONSTRAINT "c_a_fkey"`,
-		want:     "c:c_a_fkey(a)->p NO ACTION",
+		dropped: "c_ab_fk",
+		wantAdd: `ADD CONSTRAINT "c_a_fkey"`,
+		want:    "c:c_a_fkey(a)->p NO ACTION",
 	},
 	{
 		name: "the column key's ON DELETE changes",
@@ -69,9 +72,9 @@ CREATE TABLE c (id bigint PRIMARY KEY, a bigint REFERENCES p(id), b bigint);`,
 CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL REFERENCES p(id) ON DELETE CASCADE);`,
 		schema: `CREATE TABLE p (id bigint PRIMARY KEY);
 CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL REFERENCES p(id) ON DELETE RESTRICT);`,
-		wantDrop: `DROP CONSTRAINT IF EXISTS "c_p_id_fkey"`,
-		wantAdd:  `ADD CONSTRAINT "c_p_id_fkey"`,
-		want:     "c:c_p_id_fkey(p_id)->p RESTRICT",
+		dropped: "c_p_id_fkey",
+		wantAdd: `ADD CONSTRAINT "c_p_id_fkey"`,
+		want:    "c:c_p_id_fkey(p_id)->p RESTRICT",
 	},
 	{
 		name: "a named key the schema declares on the column with another ON DELETE",
@@ -80,9 +83,9 @@ CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL,
   CONSTRAINT c_p_fk FOREIGN KEY (p_id) REFERENCES p(id) ON DELETE CASCADE);`,
 		schema: `CREATE TABLE p (id bigint PRIMARY KEY);
 CREATE TABLE c (id bigint PRIMARY KEY, p_id bigint NOT NULL REFERENCES p(id) ON DELETE RESTRICT);`,
-		wantDrop: `DROP CONSTRAINT IF EXISTS "c_p_fk"`,
-		wantAdd:  `ADD CONSTRAINT "c_p_id_fkey"`,
-		want:     "c:c_p_id_fkey(p_id)->p RESTRICT",
+		dropped: "c_p_fk",
+		wantAdd: `ADD CONSTRAINT "c_p_id_fkey"`,
+		want:    "c:c_p_id_fkey(p_id)->p RESTRICT",
 	},
 }
 
@@ -136,7 +139,7 @@ func TestMigrateDiffReplacesAForeignKeyTheSchemaNamesOtherwiseE2E(t *testing.T) 
 				"--to", "file://"+schema, "--dev-url", dev, "--dry-run")
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
-			c.Assert(plan, qt.Contains, test.wantDrop)
+			c.Assert(plan, qt.Contains, `DROP CONSTRAINT "`+test.dropped+`"`)
 			c.Assert(plan, qt.Contains, test.wantAdd)
 			c.Assert(readForeignKeys(c, target), qt.Equals, test.want)
 			c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
@@ -159,7 +162,7 @@ func TestSchemaApplyReplacesAForeignKeyTheSchemaNamesOtherwiseE2E(t *testing.T) 
 			runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 			again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-			c.Assert(plan, qt.Contains, test.wantDrop)
+			c.Assert(plan, qt.Contains, `DROP CONSTRAINT IF EXISTS "`+test.dropped+`"`)
 			c.Assert(plan, qt.Contains, test.wantAdd)
 			c.Assert(readForeignKeys(c, target), qt.Equals, test.want)
 			c.Assert(again, qt.Contains, "Schema is synced")
