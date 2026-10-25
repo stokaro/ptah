@@ -35,6 +35,23 @@ single monochrome path, so the fill carries the brand's own hex (#6933FF) as
 that project's metadata records it. Nine coloured marks beside one black one
 would read as a distinction Ptah is not making.
 
+Third-party test data
+---------------------
+
+Some test fixtures come from OpenMeter, at commit
+f04b561f8dd2dafd1e77a02fb4258fab0edbef8f:
+
+  openmeterio/openmeter, Apache License 2.0
+  https://github.com/openmeterio/openmeter
+  https://www.apache.org/licenses/LICENSE-2.0
+    integration/testdata/openmeter/: the SQL its Ent schema exporter
+    writes, and a reduced copy of it. LICENSE there is OpenMeter's license
+    file, and README.md says what each file keeps.
+    integration/migrationreplay/testdata/openmeter/: two of its migration
+    files, unedited, which README.md there names.
+
+They are test inputs; no Ptah program or package contains them.
+
 Trademarks
 ----------
 

@@ -1097,6 +1097,9 @@ its location:
 warning: 3 atlas.hcl settings are ignored for Atlas compatibility and have no effect; PTAH_LOG_LEVEL=debug lists them
 ```
 
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses an ignored name instead of reporting it,
+naming the name and its location.
+
 ### Structured settings must be written as blocks
 
 A setting Atlas CE decodes into a structure takes a **block** body. The same

@@ -66,6 +66,36 @@ func TestReadStoredNames_ReportsWhatTheServerCuts(t *testing.T) {
 	}
 }
 
+// TestReadStoredNames_ReportsAConstraintsIndexOnce holds that a PRIMARY KEY or
+// UNIQUE constraint is one cut name. The server stores the constraint and the
+// index it builds under the same 63 bytes, but the statement wrote the name
+// once, so a run that counts cut names counts it once.
+func TestReadStoredNames_ReportsAConstraintsIndexOnce(t *testing.T) {
+	long := strings.Repeat("k", 70)
+	tests := []struct {
+		name string
+		sql  string
+		kind string
+	}{
+		{name: "a unique constraint", sql: `CREATE TABLE t (a int, CONSTRAINT "` + long + `" UNIQUE (a));`, kind: "unique constraint"},
+		{name: "a primary key", sql: `CREATE TABLE t (a int, CONSTRAINT "` + long + `" PRIMARY KEY (a));`, kind: "primary key"},
+		{name: "a unique constraint added", sql: "CREATE TABLE t (a int);\n" + `ALTER TABLE t ADD CONSTRAINT "` + long + `" UNIQUE (a);`, kind: "unique constraint"},
+		{name: "a primary key added", sql: "CREATE TABLE t (a int);\n" + `ALTER TABLE t ADD CONSTRAINT "` + long + `" PRIMARY KEY (a);`, kind: "primary key"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cut, err := readNotices(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cut, qt.DeepEquals, []sqlschema.StoredName{
+				{Kind: test.kind, Scope: `table "public.t"`, Written: long, Stored: long[:63], Limit: 63},
+			})
+		})
+	}
+}
+
 // TestReadStoredNames_KeepsLegitimateRepetition pins the namespaces the server
 // keeps apart, each measured on PostgreSQL 15.19 to accept the file.
 func TestReadStoredNames_KeepsLegitimateRepetition(t *testing.T) {

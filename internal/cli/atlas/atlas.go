@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/execpolicy"
+	"ptah.run/internal/rundiag"
 )
 
 type atlasVerb struct {
@@ -176,6 +177,11 @@ existing Ptah equivalent forward to that native command.`, policy)
 	// answer with the same prefix, instead of it depending on which file
 	// happened to override a printer.
 	cmdutil.SetErrorPrefixPolicy(cmd, atlasErrorPrefix)
+	// The strict profile refuses PTAH_LOG_LEVEL, so an aggregated warning
+	// there must not tell the reader to set it.
+	if policy.IsStrictCE() {
+		cmdutil.SetDiagnosticsListing(cmd, rundiag.ListedOutsideStrictCompat)
+	}
 	installAtlasProviderSession(cmd, policy)
 	// Last, so its pre-run wraps every other one and runs first.
 	installAtlasStrictConnectGate(cmd, policy)

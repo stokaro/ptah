@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
 	cliroot "ptah.run/internal/cli/root"
@@ -436,25 +437,43 @@ func assertStatusMatchesValidate(c *qt.C, tempDir, dir string) {
 }
 
 // A run reports the SQL files atlas.sum leaves out together: two nested
-// migrations are one line with how many.
+// migrations are one line with how many. The line says how to list them with
+// the switch the profile has: the strict profile refuses PTAH_LOG_LEVEL, so
+// there the line names the profile that lists them.
 func TestCompatMigrateStatus_RunReportsUnhashedFilesTogether(t *testing.T) {
-	c := qt.New(t)
-	tempDir := c.TempDir()
-	dir := filepath.Join(tempDir, "m_nested")
-	atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "a"), statusIntegrityMigration,
-		"CREATE TABLE nested_a (id INTEGER PRIMARY KEY);\n")
-	atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "b"), statusIntegrityMigration,
-		"CREATE TABLE nested_b (id INTEGER PRIMARY KEY);\n")
-	cmd := atlas.NewCompatCommand("atlas")
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
+	tests := []struct {
+		name    string
+		policy  atlascompatpolicy.Policy
+		listing string
+	}{
+		{name: "default profile", policy: atlascompatpolicy.Full(), listing: "PTAH_LOG_LEVEL=debug lists them"},
+		{
+			name:    "strict profile",
+			policy:  atlascompatpolicy.StrictCE(),
+			listing: "PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tempDir := c.TempDir()
+			dir := filepath.Join(tempDir, "m_nested")
+			atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "a"), statusIntegrityMigration,
+				"CREATE TABLE nested_a (id INTEGER PRIMARY KEY);\n")
+			atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "b"), statusIntegrityMigration,
+				"CREATE TABLE nested_b (id INTEGER PRIMARY KEY);\n")
+			cmd := atlas.NewCompatCommandWithPolicy("atlas", test.policy)
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
 
-	code := cliroot.RunContext(t.Context(), cmd, "migrate", "status",
-		"--url", "sqlite://"+filepath.Join(tempDir, "nested.db"), "--dir", "file://"+dir)
+			code := cliroot.RunContext(t.Context(), cmd, "migrate", "status",
+				"--url", "sqlite://"+filepath.Join(tempDir, "nested.db"), "--dir", "file://"+dir)
 
-	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
-	c.Assert(stderr.String(), qt.Equals,
-		"warning: 2 SQL files are not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql; "+
-			"PTAH_LOG_LEVEL=debug lists them\n")
+			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
+			c.Assert(stderr.String(), qt.Equals,
+				"warning: 2 SQL files are not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql; "+
+					test.listing+"\n")
+		})
+	}
 }

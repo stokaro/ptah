@@ -336,12 +336,15 @@ warning: 47 names are longer than 63 bytes; the server keeps their first 63 byte
 
 A warning that can concern many objects is reported once per run, with how
 many objects it concerns, after the command's own output. A run that reads the
-same source twice counts each object once. A warning that concerns one object
-is printed as that object's own line. `ptah` and `ptah-compat` follow the same
-rule. It covers names a PostgreSQL-family server cuts to 63 bytes, `atlas.hcl`
-settings Atlas compatibility ignores, schema-file constructs that are accepted
-and dropped, and SQL files in an Atlas migration directory that `atlas.sum`
-does not cover.
+same source twice counts each object once, and a `PRIMARY KEY` or `UNIQUE`
+constraint counts once, although the server stores its index under the same
+name. A warning that concerns one object is printed as that object's own line.
+`ptah` and `ptah-compat` follow the same rule on every command that reads such
+an object, whatever the command prints on stdout. It covers names a
+PostgreSQL-family server cuts to 63 bytes, constraints a SQL file drops and
+adds again with another definition, `atlas.hcl` settings Atlas compatibility
+ignores, schema-file constructs that are accepted and dropped, and SQL files in
+an Atlas migration directory that `atlas.sum` does not cover.
 
 A refusal is never folded into such a line. Two different names that the server
 would store as one still fail the command and name both.
@@ -351,9 +354,18 @@ would store as one still fail the command and name both.
 Set `PTAH_LOG_LEVEL=debug` to list the objects at debug level on stderr. Add
 `PTAH_LOG_FORMAT=json` to read them as JSON records, each with a `category`
 field and the object's own fields. The commands that take `--log-level` and
-`--log-format` read the same variables. The strict compatibility profile,
-`PTAH_ATLAS_STRICT_COMPAT=1`, refuses both variables, as the community binary
-has neither.
+`--log-format` read the same variables.
+
+The strict compatibility profile, `PTAH_ATLAS_STRICT_COMPAT=1`, refuses both
+variables, as the community binary has neither, and its warning says where the
+list is:
+
+```text
+warning: 47 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off
+```
+
+Run the command again without the profile and with `PTAH_LOG_LEVEL=debug`. The
+default profile reads the same objects and lists them.
 
 **Resolve**
 

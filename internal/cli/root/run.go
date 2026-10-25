@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/rundiag"
 )
@@ -24,9 +25,11 @@ import (
 // derives that context from the signal, so the CLI's behavior is unchanged.
 //
 // The run collects the warnings that concern many objects and writes one line
-// per kind when the command ends, whether it succeeded or not; see [rundiag].
+// per kind to cmd's error stream when the command ends, whether it succeeded
+// or not, in the words cmd's surface declares for listing them; see [rundiag]
+// and [cmdutil.SetDiagnosticsListing].
 func RunContext(ctx context.Context, cmd *cobra.Command, args ...string) int {
-	report := rundiag.New()
+	report := rundiag.New(cmd.ErrOrStderr(), cmdutil.DiagnosticsListing(cmd))
 	defer report.Flush()
 	cmd.SetArgs(args)
 	cmd.SetContext(rundiag.With(ctx, report))

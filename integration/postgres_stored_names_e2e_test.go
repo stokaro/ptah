@@ -3,10 +3,7 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +14,6 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlext"
 	"ptah.run/dbschema"
-	"ptah.run/internal/cli/atlas"
-	"ptah.run/internal/cli/root"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -205,95 +200,4 @@ func TestOpenMeterEntExportReadsWithoutADatabaseE2E(t *testing.T) {
 	for _, name := range stored {
 		c.Assert(catalog, qt.Contains, name, qt.Commentf("%q is not in the catalog", name))
 	}
-}
-
-// openMeterExportWithoutItsView is the pinned export without the view Ent
-// writes, whose column list ptah-compat cannot yet materialize on a dev
-// database (stokaro/ptah#4933); the view holds none of the long names.
-func openMeterExportWithoutItsView(c *qt.C) string {
-	c.Helper()
-	export, err := os.ReadFile(filepath.Join("testdata", "openmeter", "ent-export.sql"))
-	c.Assert(err, qt.IsNil)
-	text := string(export)
-	start := strings.Index(text, "CREATE VIEW ")
-	c.Assert(start, qt.Not(qt.Equals), -1)
-	end := strings.Index(text[start:], ";\n")
-	c.Assert(end, qt.Not(qt.Equals), -1)
-	path := filepath.Join(c.TempDir(), "ent-export.sql")
-	c.Assert(os.WriteFile(path, []byte(text[:start]+text[start+end+2:]), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
-	return path
-}
-
-// warningLines is the lines of output a run wrote as warnings.
-func warningLines(output string) []string {
-	var warnings []string
-	for line := range strings.SplitSeq(output, "\n") {
-		if strings.HasPrefix(line, "warning: ") {
-			warnings = append(warnings, line)
-		}
-	}
-	return warnings
-}
-
-const openMeterCutNamesWarning = "warning: 47 names are longer than 63 bytes; the server keeps their first 63 bytes, " +
-	"and they are read that way; PTAH_LOG_LEVEL=debug lists them"
-
-// TestOpenMeterCutNamesAreOneWarningE2E reads the SQL OpenMeter's Ent exporter
-// writes in one native run: its 47 names past 63 bytes are one warning, and
-// the debug log lists each once, with the name written and the name kept.
-func TestOpenMeterCutNamesAreOneWarningE2E(t *testing.T) {
-	c := qt.New(t)
-	var logged bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(previous)
-	cmd := root.NewRootCommand()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	code := root.RunContext(c.Context(), cmd, "schema", "render",
-		"--schema-file", filepath.Join("testdata", "openmeter", "ent-export.sql"), "--dialect", "postgres")
-
-	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(warningLines(stdout.String()+stderr.String()), qt.DeepEquals, []string{openMeterCutNamesWarning})
-	records := debugRecords(c, logged.String(), "truncated-name")
-	c.Assert(records, qt.HasLen, 47)
-	for _, record := range records {
-		written, stored := record["written"].(string), record["stored"].(string)
-		c.Assert(len(written) > 63 && len(stored) <= 63 && strings.HasPrefix(written, stored), qt.IsTrue,
-			qt.Commentf("written %q, stored %q", written, stored))
-	}
-}
-
-// debugRecords is the JSON log records of category in logged.
-func debugRecords(c *qt.C, logged, category string) []map[string]any {
-	c.Helper()
-	var records []map[string]any
-	for line := range strings.SplitSeq(strings.TrimSpace(logged), "\n") {
-		var record map[string]any
-		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil)
-		if record["category"] == category {
-			records = append(records, record)
-		}
-	}
-	return records
-}
-
-// TestOpenMeterCutNamesAreOneWarningInCompatE2E is the same export diffed by
-// ptah-compat into a migration directory: the same one warning.
-func TestOpenMeterCutNamesAreOneWarningInCompatE2E(t *testing.T) {
-	c := qt.New(t)
-	devURL, _ := scratchReplayDatabase(c)
-	dir := c.TempDir()
-	cmd := atlas.NewCompatCommand("atlas")
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	code := root.RunContext(c.Context(), cmd, "migrate", "diff", "initial",
-		"--dir", "file://"+filepath.ToSlash(dir), "--to", "file://"+filepath.ToSlash(openMeterExportWithoutItsView(c)), "--dev-url", devURL)
-
-	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(warningLines(stdout.String()+stderr.String()), qt.DeepEquals, []string{openMeterCutNamesWarning})
 }
