@@ -10,6 +10,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -245,31 +246,7 @@ func runAtlasMigrateLint(
 		return cmdutil.Fail(cmd, atlasMigrateLintDirCaptureError(localDir.Path, localDir.AllowedRoot, err))
 	}
 	dir := source.Display
-	lintOptions := migrationlintreport.Options{
-		DirFormat:     atlasDirFormatDefault,
-		AtlasEnv:      opts.atlasEnv,
-		DevURL:        opts.devURL,
-		GitBase:       opts.gitBase,
-		GitDir:        opts.gitDir,
-		FailOn:        migrationlintreport.FailOnError,
-		Latest:        opts.latest,
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		// What the operator declared about the server DevURL names; see
-		// devdocker.DisposableServerEnvVar.
-		DevServerDisposable: devServerDisposable,
-		// `.Schema.Current` and `.Schema.Desired` exist only in the templated
-		// output, so only a run that renders a template pays for reading them.
-		CaptureSchema: formatOutput,
-		Changed: migrationlintreport.ChangedOptions{
-			Dir:       true,
-			DirFormat: true,
-			AtlasEnv:  true,
-			DevURL:    true,
-			GitBase:   cmd.Flags().Changed("git-base"),
-			GitDir:    cmd.Flags().Changed("git-dir"),
-			Latest:    cmd.Flags().Changed("latest"),
-		},
-	}
+	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, devServerDisposable, formatOutput)
 	// The changeset selection is required, and requireAtlasMigrateLintScope
 	// above is the one place that asks. Asking again here, through
 	// migrationlintreport.SelectorConfigured, duplicates the requirement
@@ -393,6 +370,44 @@ func runAtlasMigrateLint(
 		return exitcode.New(1, errors.New(atlasMigrateLintFindingError))
 	}
 	return nil
+}
+
+// atlasMigrateLintReportOptions is what the verb hands the shared report
+// before the directory is read: the resolved flags, the Atlas surface, and
+// the transaction owner of the layout format names.
+func atlasMigrateLintReportOptions(
+	cmd *cobra.Command,
+	opts atlasMigrateLintOptions,
+	format atlasmigrateimport.Format,
+	devServerDisposable, captureSchema bool,
+) migrationlintreport.Options {
+	return migrationlintreport.Options{
+		DirFormat:     atlasDirFormatDefault,
+		AtlasEnv:      opts.atlasEnv,
+		DevURL:        opts.devURL,
+		GitBase:       opts.gitBase,
+		GitDir:        opts.gitDir,
+		FailOn:        migrationlintreport.FailOnError,
+		Latest:        opts.latest,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		// The transaction rules judge a file by the tool its layout is for.
+		TransactionOwner: format.TransactionOwner(),
+		// What the operator declared about the server DevURL names; see
+		// devdocker.DisposableServerEnvVar.
+		DevServerDisposable: devServerDisposable,
+		// `.Schema.Current` and `.Schema.Desired` exist only in the templated
+		// output, so only a run that renders a template pays for reading them.
+		CaptureSchema: captureSchema,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir:       true,
+			DirFormat: true,
+			AtlasEnv:  true,
+			DevURL:    true,
+			GitBase:   cmd.Flags().Changed("git-base"),
+			GitDir:    cmd.Flags().Changed("git-dir"),
+			Latest:    cmd.Flags().Changed("latest"),
+		},
+	}
 }
 
 func writeAtlasMigrateLintReplayError(

@@ -521,6 +521,11 @@ from another process:
 - `Service` checks the rules an owner publishes over a whole run, one call
   per run with every file. A `CheckResult` must be `Complete`; an error is
   never a clean run. A finding about a statement may name its `Subject`s.
+- `CheckRequest.TransactionOwner` says who opens the transaction each file of
+  the run runs in. The zero value, `TransactionOwnerMigrator`, is a migrator
+  that wraps each file unless the file opts out; `TransactionOwnerFile` is one
+  that opens none, as golang-migrate does. An owner judges a value it does not
+  know as the zero value.
 - A rule whose `Input` reads a baseline is served in two calls. The first
   carries no `CheckRequest.Baseline`, and the owner names, in
   `CheckResult.BaselineSubjects`, the statements it wants the schema state
@@ -4201,7 +4206,9 @@ own, then those the engine owners publish, which carry no checker because
 their owner checks them. A run asks the owners for their findings through
 `Runtime.CheckMigrations`, once per run, and applies one policy to every
 finding. `Options.ExtraRules` adds in-process rules to one run; there is no
-process-wide registry. The baseline types a run is handed (`BaselineColumn`,
+process-wide registry. `Options.TransactionOwner` is sent to the owners as
+`CheckRequest.TransactionOwner`; a caller that lints a directory written for a
+tool that opens no transaction around a file sets it. The baseline types a run is handed (`BaselineColumn`,
 `BaselineIndex`, `BaselineHypertable`, `BaselineDependent`) are
 `core/lintext`'s, because the owners read the same values.
 

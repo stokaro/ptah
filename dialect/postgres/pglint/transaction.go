@@ -18,8 +18,8 @@ func transactionRules() []lintkit.Rule {
 				Severity: lintext.Warning,
 				Targets:  []string{platform.Postgres},
 			},
-			// Either direction: the migrator wraps a down file in the same
-			// transaction it wraps an up file in, so a rollback that mixes
+			// Either direction, and whoever opens the transaction: a down
+			// file runs the way an up file does, so a rollback that mixes
 			// CREATE INDEX CONCURRENTLY with transactional DDL is refused by
 			// PostgreSQL exactly the same way.
 			File: checkTransactionMix,
@@ -46,9 +46,13 @@ func transactionRules() []lintkit.Rule {
 // then using it gets no TX101, and that is the file PostgreSQL refuses at apply
 // with `unsafe use of new value` (stokaro/ptah#996).
 //
-// Either direction is checked. The migrator wraps a down file in the same
-// transaction it wraps an up file in, so a rollback that mixes a concurrent
-// index with transactional DDL is refused the same way.
+// Either direction is checked, because a down file runs the way an up file
+// does. A migrator that wraps each file runs both inside its transaction. One
+// that opens none, as golang-migrate does by default, sends the file as one
+// query, and PostgreSQL runs that query as one implicit transaction, which
+// refuses a concurrent index beside another statement just the same. Only
+// golang-migrate's x-multi-statement mode, a setting of the database URL the
+// directory does not carry, sends the statements one by one.
 func checkTransactionMix(file *lintkit.File) []lintext.Violation {
 	if (!file.IsUp && !file.IsDown) || file.NoTransaction {
 		return nil
@@ -89,9 +93,22 @@ func checkTransactionMix(file *lintkit.File) []lintext.Violation {
 	}}
 }
 
-// checkEmbeddedTransaction reports an explicit transaction block, which the
-// migrator's own transaction management cannot nest.
-func checkEmbeddedTransaction(_ *lintkit.File, statement *lintext.Statement) (bool, string) {
+// checkEmbeddedTransaction reports an explicit transaction block in a file the
+// migrator wraps in a transaction of its own, which the block cannot nest in.
+//
+// A migrator that opens no transaction around a file leaves the block as the
+// only transaction the file gets, so the block is not reported there. Measured
+// with golang-migrate v4.20.1 on PostgreSQL 15.19 (stokaro/ptah#4953): by
+// default the tool sends a file as one query, which PostgreSQL runs as one
+// implicit transaction, so the block changes nothing; with
+// x-multi-statement=true it sends each statement on its own, and the block is
+// what keeps a file that fails midway from committing part of itself. The tool
+// has no marker for a non-transactional file either, so the remedy the message
+// names could not be followed.
+func checkEmbeddedTransaction(file *lintkit.File, statement *lintext.Statement) (bool, string) {
+	if file.TransactionOwner == lintext.TransactionOwnerFile {
+		return false, ""
+	}
 	if !lintkit.HasWordPrefix(statement.Words, "BEGIN") && !lintkit.HasWordPrefix(statement.Words, "START", "TRANSACTION") {
 		return false, ""
 	}

@@ -301,7 +301,8 @@ var atlasChecks = []AtlasCheck{
 	{Code: "CD103", Meaning: "a primary-key constraint was dropped", Pro: true, PtahRules: []string{"CD103"}, Status: StatusCovered},
 
 	{Code: "TX101", Meaning: "statements cannot run in a single transaction", Pro: true, PtahRules: []string{"TX101"}, Status: StatusCovered},
-	{Code: "TX201", Meaning: "a nested transaction was detected", Pro: true, PtahRules: []string{"TX201"}, Status: StatusCovered},
+	{Code: "TX201", Meaning: "a nested transaction was detected", Pro: true, PtahRules: []string{"TX201"}, Status: StatusCovered,
+		Note: "not reported in a golang-migrate directory, whose tool opens no transaction around a file"},
 
 	// The six naming rules read the convention a project configures, as the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block

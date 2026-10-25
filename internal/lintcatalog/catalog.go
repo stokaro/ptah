@@ -597,7 +597,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "TX101",
 	},
 	"TX201": {
-		Summary:   "an explicit BEGIN/COMMIT block fights the migrator's transaction management",
+		Summary:   "an explicit BEGIN/COMMIT block fights the transaction the migrator opens around each file; not reported for golang-migrate, which opens none",
 		AtlasCode: "TX201",
 	},
 	"YD101": {
