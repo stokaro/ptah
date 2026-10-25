@@ -375,3 +375,8 @@ These are for the future implementation. None holds today.
   service of their own, `embeddings.store`, and the embedded YDB engine is deleted
   only after a plugin release serves it and the host adapter is merged. Its YDB
   tests follow the rule above.
+- [ADR 0034](0034-a-provider-renders-text-units-where-the-host-writes-text.md)
+  gives the host a way to ask for the text that "migration files take text units
+  only" requires: the `TEXT` form of `Render` and `RenderRowWrites`, behind the
+  feature `render.text-units`, and the refusal reason `NO_TEXT_FORM` for a change
+  that has none.

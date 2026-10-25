@@ -112,3 +112,10 @@ they disagree. Rejected.
   is versioned MAJOR.MINOR, 25.1 today (ADR 0031), and its major version is
   stable from Ptah 1.0 on. Before that release an incompatible change may still
   raise it.
+- [ADR 0036](0036-a-provider-claims-yaml-entry-keys-and-hcl-blocks.md) is
+  the later record for HCL. It applies the claim pattern to HCL blocks and to
+  the frontend's own blocks at their sites, adds the `COLUMN` and `INDEX` scopes
+  to YAML claims, and lets a claim name the common attributes it reads.
+- [ADR 0037](0037-a-provider-encodes-the-source-it-decodes.md) adds the mirror
+  of decoding: the provider returns the fragments its claims read, and the host
+  writes the syntax.
