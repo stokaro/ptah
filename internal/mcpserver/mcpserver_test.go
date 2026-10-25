@@ -394,3 +394,23 @@ func TestServer_TheDatabaseToolSchemaCarriesNoConnectionURL(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_NoToolSchemaNamesAProvider(t *testing.T) {
+	// The operator selects the provider that serves a database when starting
+	// the server. A property naming a manifest, an engine or an executable
+	// would let a model choose which binary runs, and the provider's
+	// connection would then be the caller's rather than the operator's.
+	c := qt.New(t)
+
+	for _, tool := range tools(c, readOnlyConfig(c)) {
+		t.Run(tool.Name, func(t *testing.T) {
+			c := qt.New(t)
+			encoded, err := json.Marshal(tool.InputSchema)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Not(qt.Contains), "provider")
+			c.Assert(string(encoded), qt.Not(qt.Contains), "manifest")
+			c.Assert(string(encoded), qt.Not(qt.Contains), "executable")
+		})
+	}
+}

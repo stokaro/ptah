@@ -155,9 +155,11 @@ func (s *Session) openInference(
 
 // openInferenceDatabase opens the backend of the target the operator
 // configured, through the same function `ptah inference` opens its database
-// with, so both surfaces reach PostgreSQL and YDB alike. A target naming
-// another engine is refused before it is dialed, in the words `ptah inference`
-// uses for the same URL.
+// with, so both surfaces reach PostgreSQL, YDB and a provider engine alike. A
+// provider engine is reached through the provider the operator selected when
+// the server started, which ctx carries; no request field names one. A target
+// naming another engine is refused before it is dialed, in the words `ptah
+// inference` uses for the same URL.
 func openInferenceDatabase(ctx context.Context, target *agenttarget.Target) (embedbackend.Backend, error) {
 	if err := embedconnect.RefuseAnotherEngine(ctx, target.URL()); err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest, "target %s: %w", target.Name(), err)

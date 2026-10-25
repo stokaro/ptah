@@ -31,7 +31,9 @@ import (
 
 // Target is one explicit connection value of an invocation: the flag that
 // carried it and its text. The flags that select an engine are db-url, dialect
-// and dev-url.
+// and dev-url. A command that names its database under another flag, as `ptah
+// mcp` does with database-url, passes that name, and the value selects as a
+// db-url value does.
 type Target struct {
 	Flag  string
 	Value string

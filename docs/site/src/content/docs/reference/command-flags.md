@@ -639,6 +639,8 @@ Read the columns as follows.
 | `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
 | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--provider-config` | `string` | — | — | — |
+| `--provider-engine` | `string` | — | — | — |
 | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
 | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |

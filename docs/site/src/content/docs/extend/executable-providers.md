@@ -22,6 +22,7 @@ sourceOfTruth:
   - "integration/providercli/provider_data_e2e_test.go"
   - "internal/embedrpc"
   - "integration/providercli/provider_inference_e2e_test.go"
+  - "integration/providercli/provider_inference_mcp_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -46,6 +47,7 @@ Provider selection is available on these native commands:
 - Lint: `migrations lint` and `sql lint`.
 - Declared rows and seed files: `migrations data` and `seed`.
 - Inference: every `inference` verb except `probe`.
+- The MCP server: `ptah mcp`, for the database `--database-url` names.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -174,6 +176,10 @@ and the searches, and refuses what its engine cannot hold. `inference describe
 --provider-engine <engine>` asks it what a generation needs without a database.
 A provider without the feature serves every other command, and `ptah
 inference` refuses its engine by name.
+
+The `inference_plan` and `inference_status` tools of `ptah mcp` read the same
+store when the operator started the server with a provider flag. The flags are
+the server's, never a tool argument.
 
 `units.statement-timeout` carries a migration's statement timeout to the
 provider with each unit, and the provider stops a unit that runs longer. A

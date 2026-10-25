@@ -19,34 +19,30 @@ import (
 	"ptah.run/internal/providerselect"
 )
 
+// The flags every command that selects a provider declares, named here for the
+// commands that quote them in a refusal of their own.
 const (
-	configFlag = "provider-config"
-	engineFlag = "provider-engine"
+	ConfigFlag = "provider-config"
+	EngineFlag = "provider-engine"
 )
 
 // Configure selects one explicitly trusted provider before the command runs.
 // fail owns the command's error presentation, including machine-readable output.
 // Help and argument errors start no processes. Unselected installations remain
 // data: nothing executes from PATH, the working directory, or environment.
+//
+// The targets are the command's --db-url, --dialect and --dev-url flags, those
+// of them it defines. A command whose connection flags carry other names uses
+// [Register] and [Selection.Start] instead.
 func Configure(command *cobra.Command, fail func(*cobra.Command, error) error) *cobra.Command {
-	var path, selectedEngine string
-	command.Flags().StringVar(&path, configFlag, "", "Explicit trusted provider manifest (experimental JSON format)")
-	command.Flags().StringVar(&selectedEngine, engineFlag, "", "Engine required from an executable provider; never use a built-in implementation")
-	for _, name := range []string{configFlag, engineFlag} {
-		if err := cmdflags.DisableEnvBinding(command.Flags(), name); err != nil {
-			panic(err)
-		}
-	}
+	selection := Register(command)
 	run := command.RunE
 	command.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx, closeProvider, err := prepare(cmd, path, selectedEngine)
+		ctx, stop, err := selection.Start(cmd, targets(cmd))
 		if err != nil {
 			return fail(cmd, err)
 		}
-		if closeProvider == nil {
-			return run(cmd, args)
-		}
-		defer closeProvider()
+		defer stop()
 		previous := cmd.Context()
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(previous)
@@ -55,39 +51,69 @@ func Configure(command *cobra.Command, fail func(*cobra.Command, error) error) *
 	return command
 }
 
-func prepare(cmd *cobra.Command, path, selectedEngine string) (context.Context, func(), error) {
-	configured, explicit := cmd.Flags().Changed(configFlag), cmd.Flags().Changed(engineFlag)
-	if configured && strings.TrimSpace(path) == "" {
-		return nil, nil, fmt.Errorf("--%s requires a manifest path", configFlag)
+// Selection is what one command's provider flags hold.
+type Selection struct {
+	path, engine string
+}
+
+// Register declares --provider-config and --provider-engine on command and
+// returns what they hold. Neither flag reads an environment variable: a
+// variable exported once is not the operator naming a binary for this run.
+func Register(command *cobra.Command) *Selection {
+	selection := &Selection{}
+	command.Flags().StringVar(&selection.path, ConfigFlag, "", "Explicit trusted provider manifest (experimental JSON format)")
+	command.Flags().StringVar(&selection.engine, EngineFlag, "", "Engine required from an executable provider; never use a built-in implementation")
+	for _, name := range []string{ConfigFlag, EngineFlag} {
+		if err := cmdflags.DisableEnvBinding(command.Flags(), name); err != nil {
+			panic(err)
+		}
 	}
-	if explicit && strings.TrimSpace(selectedEngine) == "" {
-		return nil, nil, fmt.Errorf("--%s requires an engine ID", engineFlag)
+	return selection
+}
+
+// Start selects the provider the flags and targets name, starts it, and
+// returns the context the command runs under: it binds the provider's URL
+// schemes and its runtime, and carries the started provider. stop ends the
+// provider process. With no provider selected, Start returns cmd's context and
+// a stop that does nothing, and the built-in engines keep the invocation.
+//
+// targets are the connection values the command names, in the order selection
+// reads them. Each target's Flag is the flag that carried it, which a
+// provider_target_mismatch refusal names.
+func (s *Selection) Start(cmd *cobra.Command, targets []providerselect.Target) (context.Context, func(), error) {
+	noop := func() {}
+	configured, explicit := cmd.Flags().Changed(ConfigFlag), cmd.Flags().Changed(EngineFlag)
+	if configured && strings.TrimSpace(s.path) == "" {
+		return nil, noop, fmt.Errorf("--%s requires a manifest path", ConfigFlag)
 	}
-	request := providerselect.Request{Configured: configured, Engine: selectedEngine, Explicit: explicit, Targets: targets(cmd)}
+	if explicit && strings.TrimSpace(s.engine) == "" {
+		return nil, noop, fmt.Errorf("--%s requires an engine ID", EngineFlag)
+	}
+	request := providerselect.Request{Configured: configured, Engine: s.engine, Explicit: explicit, Targets: targets}
 	if configured {
 		var err error
-		request.Config, err = providerconfig.Load(path)
+		request.Config, err = providerconfig.Load(s.path)
 		if err != nil {
-			return nil, nil, err
+			return nil, noop, err
 		}
 	}
 	choice, err := providerselect.Choose(request)
 	if err != nil {
-		return nil, nil, err
+		return nil, noop, err
 	}
 	if choice == nil {
-		return cmd.Context(), nil, nil
+		return cmd.Context(), noop, nil
 	}
 	// A selected executable owns this runtime completely. In particular an
 	// official provider never inherits a built-in implementation on failure.
 	started, err := choice.Start(cmd.Context(), providerselect.Exclusive)
 	if err != nil {
-		return nil, nil, err
+		return nil, noop, err
 	}
 	ctx, err := apply(cmd.Context(), started)
 	if err != nil {
 		started.Close()
-		return nil, nil, err
+		return nil, noop, err
 	}
 	return ctx, started.Close, nil
 }

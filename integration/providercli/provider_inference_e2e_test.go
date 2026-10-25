@@ -3,9 +3,7 @@
 package providercli_test
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/providerhost"
-	"ptah.run/internal/testutils"
 )
 
 // inferenceFixture is a database the fixture's embedding store serves, the
@@ -27,6 +24,9 @@ import (
 type inferenceFixture struct {
 	cli      providerCLI
 	endpoint string
+	// spec is the fixture build the manifest selects, for a test that writes
+	// a manifest of its own for it.
+	spec providerhost.Spec
 	// refuse makes the endpoint refuse any input that mentions billing, so a
 	// backfill stops at the batch that holds one.
 	refuse *atomic.Bool
@@ -44,12 +44,8 @@ func newInferenceFixture(c *qt.C) inferenceFixture {
 // fixture serving the database.
 func newInferenceFixtureOf(c *qt.C, program string) inferenceFixture {
 	c.Helper()
-	binary := testutils.BuildFixtureProvider(c, program)
-	data, err := os.ReadFile(binary)
-	c.Assert(err, qt.IsNil)
-	digest := sha256.Sum256(data)
-	f := inferenceFixture{cli: newProviderCLI(c, providerhost.Spec{Executable: binary, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture"}),
-		refuse: &atomic.Bool{}}
+	spec := fixtureSpec(c, program)
+	f := inferenceFixture{cli: newProviderCLI(c, spec), spec: spec, refuse: &atomic.Bool{}}
 	db, err := sql.Open("sqlite", f.cli.databasePath)
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(db.Close(), qt.IsNil) }()
