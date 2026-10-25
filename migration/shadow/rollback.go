@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"ptah.run/dbschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -70,10 +69,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if opts.FS == nil {
 		return fmt.Errorf("rollback verification failed: a migration filesystem is required")
 	}
-	sameDatabase, err := atlasurl.MayAddressSameDatabase(
-		opts.TargetConnection.Info().URL,
-		opts.ShadowDatabaseURL,
-	)
+	sameDatabase, err := shadowdb.MayAddressSameDatabase(ctx, opts.TargetConnection, opts.ShadowDatabaseURL)
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: compare target and shadow databases: %w", err)
 	}

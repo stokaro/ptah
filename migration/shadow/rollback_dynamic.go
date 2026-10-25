@@ -13,7 +13,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devlock"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
@@ -168,8 +167,7 @@ func openDistinctDevDatabase(
 	ctx context.Context,
 	opts DynamicRollbackOptions,
 ) (*dbschema.DatabaseConnection, error) {
-	sameDatabase, err := atlasurl.MayAddressSameDatabase(
-		opts.TargetConnection.Info().URL, opts.DevDatabaseURL)
+	sameDatabase, err := shadowdb.MayAddressSameDatabase(ctx, opts.TargetConnection, opts.DevDatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"dynamic rollback planning failed: compare target and dev databases: %w", err)

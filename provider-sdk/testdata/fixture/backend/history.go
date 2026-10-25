@@ -28,6 +28,20 @@ func historyTable(scope *protocol.HistoryScope) (string, error) {
 	return quote(scope.GetTable()), nil
 }
 
+// HistoryStorage reports whether an inspected table is revision storage this
+// fixture created: its definition is exactly the native or the Atlas layout
+// PrepareHistory writes under the table's name. A table that only shares a
+// name with the storage is not.
+func HistoryStorage(table *protocol.Table) bool {
+	canonical, err := renderChange(&protocol.Change{Object: table.GetIdentity(), Operation: &protocol.Change_CreateTable{CreateTable: table}})
+	if err != nil {
+		return false
+	}
+	canonical = strings.TrimSuffix(canonical, ";")
+	name := quote(table.GetIdentity().GetName())
+	return canonical == historyDDL(name, protocol.HistoryScope_NATIVE) || canonical == historyDDL(name, protocol.HistoryScope_ATLAS)
+}
+
 func historyDDL(table string, format protocol.HistoryScope_Format) string {
 	if format == protocol.HistoryScope_ATLAS {
 		return atlasHistoryDDL(table)

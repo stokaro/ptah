@@ -21,6 +21,7 @@ import (
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 )
 
 // Provider provisions, cleans and guards fixture dev databases. A provisioned
@@ -75,6 +76,25 @@ func releaseLines() []*protocol.ReleaseLine {
 		{Line: "2.0", Label: "Fixture 2", Support: protocol.ReleaseLine_CERTIFIED, Image: "example.org/fixture:2.0"},
 		{Line: "1.0", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "the vendor ended support", Image: "example.org/fixture:1.0"},
 	}
+}
+
+// Inspect reports the revision storage the provider keeps as reserved, as the
+// contract asks of a provider's own history, so a run that reads a replayed
+// database back sees the schema the migrations built and nothing else.
+func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
+	snapshot, err := p.TransactionalProvider.Inspect(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.Tables = slices.DeleteFunc(snapshot.Tables, func(table *protocol.Table) bool {
+		if !backend.HistoryStorage(table) {
+			return false
+		}
+		snapshot.ReservedObjects = append(snapshot.ReservedObjects, &protocol.ReservedObject{Object: proto.CloneOf(table.GetIdentity()),
+			NormalizedObject: proto.CloneOf(table.GetNormalizedIdentity()), Purpose: protocol.ReservedObject_HISTORY, ConflictKinds: []string{"table"}})
+		return true
+	})
+	return snapshot, nil
 }
 
 // Open accepts a fixture address with the host localhost, which a realm
