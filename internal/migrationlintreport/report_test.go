@@ -14,6 +14,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/engine"
+	"ptah.run/engine/builtin"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/internal/migrationsnapshot"
 	migrationlint "ptah.run/migration/lint"
@@ -421,4 +425,91 @@ func TestWrite_GitHubActionsEscapesErrorReport(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(buf.String(), qt.Equals, "::error::bad%0Anews: 100%25\n")
+}
+
+// duckDBSchemes is a lookup that would serve the duckdb scheme, as a lazy
+// provider session lists the schemes of the engines it can start. Nothing here
+// connects.
+type duckDBSchemes struct{}
+
+func (duckDBSchemes) NativeRegistration(context.Context, string) (dbschema.NativeRegistration, bool, error) {
+	return dbschema.NativeRegistration{}, false, nil
+}
+
+func (duckDBSchemes) NativeSchemes() map[string]string { return map[string]string{"duckdb": "duckdb"} }
+
+// duckDBDev provisions duckdb dev databases, as a provider that owns the
+// engine's docker URLs does. Nothing here provisions one.
+type duckDBDev struct{}
+
+func (duckDBDev) DevEngines() []string { return []string{"duckdb"} }
+
+func (duckDBDev) ProvisionDev(context.Context, string) (string, func(), error) {
+	return "", func() {}, errors.New("not provisioned")
+}
+
+// servingDuckDB is a context whose provider selection serves the duckdb engine.
+func servingDuckDB(c *qt.C) context.Context {
+	c.Helper()
+	return devdocker.WithExternal(dbschema.WithNativeLookup(c.Context(), duckDBSchemes{}), duckDBDev{})
+}
+
+// duckDBRuntime is the bundled runtime beside a provider target duckdb, with
+// the alias duck, as a run that selected the provider holds it.
+func duckDBRuntime(c *qt.C) *engine.Runtime {
+	c.Helper()
+	runtime, err := builtin.New(engine.Provider{ID: "example.org/duckdb", Targets: []engine.Target{{Name: "duckdb", Aliases: []string{"duck"}}}})
+	c.Assert(err, qt.IsNil)
+	return runtime
+}
+
+// A dialect the run's runtime serves and a dev URL its selection serves name
+// an engine that is not a built-in dialect, and pass the checks that run
+// before the migration source is read, so a run reaches the provider that
+// splits and replays the files. The dialect resolves to the target's name.
+func TestPrepareSourceOptions_HappyPath_AProviderServedEngine(t *testing.T) {
+	for _, row := range []struct{ name, dialect, devURL, want string }{
+		{"a dev URL", "", "duckdb:///tmp/dev.db", ""},
+		{"a docker dev URL", "", "docker://duckdb/1/dev", ""},
+		{"a dialect and a dev URL", "duckdb", "duckdb:///tmp/dev.db", "duckdb"},
+		{"an alias", " Duck ", "", "duckdb"},
+		{"a built-in dialect beside it", "pgx", "", "postgres"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			opts, err := migrationlintreport.PrepareSourceOptions(servingDuckDB(c), migrationlintreport.Options{
+				Runtime: duckDBRuntime(c), Dir: t.TempDir(), DirFormat: string(migrationfile.DirFormatPtah),
+				Dialect: row.dialect, DevURL: row.devURL,
+			}, projectconfig.Config{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(opts.Dialect, qt.Equals, row.want)
+		})
+	}
+}
+
+// The selection and the runtime are what name the engine: a dev URL no
+// selection serves, and a dialect the runtime does not serve, are refused as
+// the built-in tables refuse them. A built-in dialect lint does not analyze
+// stays refused beside a runtime that registers it.
+func TestPrepareSourceOptions_FailurePath_AnEngineTheRunDoesNotServe(t *testing.T) {
+	for _, row := range []struct{ name, dialect, devURL, want string }{
+		{"a dev URL without a selection", "", "duckdb:///tmp/dev.db", `unsupported --dev-url dialect "duckdb:///tmp/dev.db"`},
+		{"a dev URL", "", "nosuch://host/dev", `unsupported --dev-url dialect "nosuch://host/dev"`},
+		{"a dialect the bundled runtime does not serve", "duckdb", "", `invalid --dialect value "duckdb": expected .*`},
+		{"a dialect", "nosuch", "", `invalid --dialect value "nosuch": expected .*`},
+		{"a built-in dialect lint does not analyze", "oracle", "", `invalid --dialect value "oracle": expected .*`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := migrationlintreport.PrepareSourceOptions(c.Context(), migrationlintreport.Options{
+				Runtime: selectedRuntime(c), Dir: t.TempDir(), DirFormat: string(migrationfile.DirFormatPtah),
+				Dialect: row.dialect, DevURL: row.devURL,
+			}, projectconfig.Config{})
+
+			c.Assert(err, qt.ErrorMatches, row.want)
+		})
+	}
 }

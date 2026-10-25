@@ -94,3 +94,24 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	c.Assert(stderr, qt.Contains, "\n  - DS107 error: ")
 	f.assertStopped(c)
 }
+
+// TestCompatMigrateLintReachesTheProviderOfADevURLOnlyItServes lints a
+// migration directory whose dev URL names the fixture engine, which no
+// built-in dialect is. The run reads the engine from the provider selection
+// rather than from the built-in URL table and takes it as the lint dialect, so
+// it reaches the provider's dev database. There it stops: the provider
+// contract has no check that a dev database is clean, and the replay refuses
+// to run on one it cannot check. The provider process ends with the command.
+func TestCompatMigrateLintReachesTheProviderOfADevURLOnlyItServes(t *testing.T) {
+	c := qt.New(t)
+	f := newCompatLintFixture(c, "lint", "example.org/fixture", "fixture")
+	dev := (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(f.dir, "dev.db")), "/")}).String()
+
+	out, stderr, code := f.run(f.withManifest(), "migrate", "lint", "--dir", f.migrationsURL, "--dev-url", dev, "--latest", "1")
+
+	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: error validating migration SQL on dev database: check that the dev database is clean: "+
+		"clean check: unsupported feature: the experimental provider contract does not support database cleanup\n")
+	f.assertStopped(c)
+}

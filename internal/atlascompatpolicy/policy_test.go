@@ -667,14 +667,20 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 // A docker engine Ptah starts and the pinned binary does not is refused in
 // that binary's words, and only in strict mode.
 func TestStrictCEDockerExtensionEnginePolicy(t *testing.T) {
-	for _, rawURL := range []string{"docker://ydb/26.2.1.14/local", "docker://ydb"} {
-		t.Run(rawURL, func(t *testing.T) {
+	for _, row := range []struct{ rawURL, image string }{
+		{"docker://ydb/26.2.1.14/local", "ydb"},
+		{"docker://ydb", "ydb"},
+		// An engine only a provider serves has no descriptor to say so; the
+		// provider catalog does.
+		{"docker://duckdb/1/dev", "duckdb"},
+	} {
+		t.Run(row.rawURL, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := atlascompatpolicy.StrictCE().ValidateURL(rawURL)
+			err := atlascompatpolicy.StrictCE().ValidateURL(row.rawURL)
 
-			c.Assert(err, qt.ErrorMatches, `unsupported docker image "ydb"`)
-			c.Assert(atlascompatpolicy.Full().ValidateURL(rawURL), qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, `unsupported docker image "`+row.image+`"`)
+			c.Assert(atlascompatpolicy.Full().ValidateURL(row.rawURL), qt.IsNil)
 		})
 	}
 }
@@ -692,6 +698,8 @@ func TestStrictCERefusesAYDBURLInTheBinarysWords(t *testing.T) {
 			want: `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url`},
 		{name: "TLS, spaced", rawURL: " ydbs://localhost:2135/local ",
 			want: `sql/sqlclient: unknown driver "ydbs". See: https://atlasgo.io/url`},
+		{name: "an engine only a provider serves", rawURL: "duckdb:///tmp/app.db",
+			want: `sql/sqlclient: unknown driver "duckdb". See: https://atlasgo.io/url`},
 	}
 
 	for _, test := range tests {
@@ -705,6 +713,18 @@ func TestStrictCERefusesAYDBURLInTheBinarysWords(t *testing.T) {
 
 // A connection's resolved dialect and a project env's URL meet the same
 // refusal, so a YDB URL that reaches strict mode by either path reads alike.
+func TestStrictCERefusesAProviderOnlyDialectInTheBinarysWords(t *testing.T) {
+	c := qt.New(t)
+	const want = `sql/sqlclient: unknown driver "duckdb". See: https://atlasgo.io/url`
+
+	c.Assert(atlascompatpolicy.StrictCE().ValidateDialect(" DuckDB "), qt.ErrorMatches, regexp.QuoteMeta(want))
+	c.Assert(atlascompatpolicy.Full().ValidateDialect("duckdb"), qt.IsNil)
+	// A name the pinned binary and the catalog both do not know stays the
+	// owning command's to report.
+	c.Assert(atlascompatpolicy.StrictCE().ValidateDialect("nosuch"), qt.IsNil)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateURL("nosuch://host/db"), qt.IsNil)
+}
+
 func TestStrictCERefusesYDBFromEveryCheck(t *testing.T) {
 	c := qt.New(t)
 	const want = `sql/sqlclient: unknown driver "ydb". See: https://atlasgo.io/url`

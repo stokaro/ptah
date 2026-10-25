@@ -48,6 +48,9 @@ func TestPrepareReportOptions_CapturesLocalDirectoryBeforeBuild(t *testing.T) {
 		qt.IsNil,
 	)
 	cmd := NewLintCommand()
+	// The command's context carries the run's provider selection; this run
+	// selects none, as an invocation with no provider configuration does.
+	cmd.SetContext(t.Context())
 	c.Assert(cmd.Flags().Set("dir", dir), qt.IsNil)
 
 	got, provenance, err := prepareReportOptions(
