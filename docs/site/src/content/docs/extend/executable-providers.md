@@ -28,6 +28,7 @@ sourceOfTruth:
   - "integration/providercli/provider_planning_policy_e2e_test.go"
   - "integration/providercli/provider_text_units_e2e_test.go"
   - "integration/providercli/provider_common_objects_e2e_test.go"
+  - "integration/providercli/provider_entry_keys_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -711,6 +712,16 @@ YAML loading accepts document and table keys explicitly declared by the selected
 provider. It preserves exact numbers and source locations and requires complete
 interpretation and coverage from the owner. Unknown keys and unsupported values
 are refused.
+
+`source.entry-keys` lets a provider claim keys of column and index entries too:
+`COLUMN` and `INDEX` keys, of a table's `columns`, `fields` and `indexes` and of
+the top-level `indexes`, whose `table` has to be one the document declares. A
+column or index key can list `inherited` keys of its entry, and a Go claim on
+`ptah:schema:table`, `ptah:schema:field` or `ptah:schema:index` can list
+attributes of that directive the same way. The provider receives them beside its
+own, such as an index's `type`, and they stay Ptah's. A value a column or index
+key declares belongs to that column or index. One a table key declares belongs
+to the table or to a column of it, and a document key's to a table.
 
 A provider can also claim the group of its own engine in a table's `platform`
 key, where the common syntax holds platform properties. The claim is a

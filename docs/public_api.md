@@ -3556,6 +3556,22 @@ under `overrides`, and every group nobody claims, stay in `Overrides`. Only a
 document owner can claim a group, and any other dotted table key is refused when
 the set is built.
 
+A document owner may also claim a key of a column or an index entry: an
+`EntrySection` with `Entry` set to `yamlext.EntryColumn` or
+`yamlext.EntryIndex`. Its fragment's path names the entry, as `Fragment`
+lists the shapes and `Fragment.Entry` reads them, a table's `columns` and
+`fields`, its `indexes` and the top-level `indexes` among them, and
+`Fragment.Name` is the name the entry declares. A top-level index key needs a
+table the document declares.
+
+`EntrySection.Reads` names keys of the entry itself the owner reads with its
+own, such as an index's `type`: a fragment carries the ones the entry writes in
+`Fragment.Inherited`, and each stays the frontend's key. A read that is not a
+key of the frontend's entry is refused when the document is parsed. A
+contribution's `Column` or `Index` attaches its facet to that column or index
+of its table, and one the table does not declare is refused. A key of a column
+entry that no selected owner reads is refused as unknown, naming its line.
+
 `DocumentResult` returns contributions and explicit desired coverage together.
 No objects does not imply absence, and no coverage record means uninspected.
 The set refuses undeclared model kinds, another owner's coverage, invalid table

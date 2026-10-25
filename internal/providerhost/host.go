@@ -83,6 +83,10 @@ var hostFeatures = []string{
 	// comparison and rendered by it; see target.declaredCommonObjects and
 	// target.commonObjectChange.
 	provider.CommonObjectsFeature,
+	// A provider's YAML keys of column and index entries, and the common
+	// keys and attributes of an entry its claim reads with its own; see
+	// Host.yamlExtension and claimedExtension.
+	provider.EntryKeysFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

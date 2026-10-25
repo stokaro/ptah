@@ -100,7 +100,12 @@ func claimedExtension(providerID string, claims map[string]providersource.GoClai
 				Description: "Attribute of " + name + ", read by provider " + providerID + "."})
 		}
 		if owned.Attributes {
-			extension.Attributes = append(extension.Attributes, annotation.DirectiveAttributes{Directive: name, Attributes: attributes, PerFile: true})
+			// The attributes of the directive the claim inherits reach the
+			// provider with its own: an index's type, say. The SDK keeps an
+			// inherited list only where both sides listed
+			// provider.EntryKeysFeature.
+			extension.Attributes = append(extension.Attributes, annotation.DirectiveAttributes{Directive: name, Attributes: attributes, PerFile: true,
+				Reads: slices.Clone(claim.GetInherited())})
 		} else {
 			extension.Directives = append(extension.Directives, goDirective(providerID, name, claim, attributes))
 		}

@@ -76,7 +76,14 @@ func YAML(ctx context.Context, engine *protocol.Engine, input yamlext.Document) 
 			if fragment.Table >= len(input.Tables) {
 				return nil, fmt.Errorf("YAML fragment has no table binding")
 			}
-			captured.BindingId = input.Tables[fragment.Table].Key
+			table := input.Tables[fragment.Table]
+			captured.BindingId = table.Key
+			if kind, entry := entrySubjects[claim.GetScope()]; entry {
+				captured.Subject = &protocol.Reference{Engine: engine.GetId(), Kind: kind, Schema: table.Schema, Path: []string{table.Name}, Name: fragment.Name}
+			}
+		}
+		if captured.InheritedAttributes, err = walk.inherited(claim, fragment); err != nil {
+			return nil, fmt.Errorf("YAML %s at %v: %w", document.GetFile(), fragment.Path, err)
 		}
 		document.Fragments = append(document.Fragments, captured)
 	}
@@ -90,19 +97,58 @@ func YAML(ctx context.Context, engine *protocol.Engine, input yamlext.Document) 
 	return request, nil
 }
 
+// yamlScopes is the claim scope of the key of each of the frontend's entries.
+var yamlScopes = map[string]protocol.YAMLSourceKey_Scope{
+	"":                  protocol.YAMLSourceKey_DOCUMENT,
+	yamlext.EntryTable:  protocol.YAMLSourceKey_TABLE,
+	yamlext.EntryColumn: protocol.YAMLSourceKey_COLUMN,
+	yamlext.EntryIndex:  protocol.YAMLSourceKey_INDEX,
+}
+
+// entrySubjects is the reference kind of the subject of a column or an index
+// key, which a table and a document key have none of.
+var entrySubjects = map[protocol.YAMLSourceKey_Scope]string{
+	protocol.YAMLSourceKey_COLUMN: "column",
+	protocol.YAMLSourceKey_INDEX:  "index",
+}
+
 func yamlClaim(engine *protocol.Engine, fragment yamlext.Fragment) *protocol.YAMLSourceKey {
-	scope := protocol.YAMLSourceKey_DOCUMENT
-	if fragment.Table >= 0 {
-		scope = protocol.YAMLSourceKey_TABLE
-	}
-	if len(fragment.Path) == 0 {
+	entry, key, valid := fragment.Entry()
+	scope, read := yamlScopes[entry]
+	if !valid || !read {
 		return nil
 	}
-	key := fragment.Path[len(fragment.Path)-1]
 	for _, claim := range engine.GetYamlSourceKeys() {
 		if claim.GetScope() == scope && claim.GetKey() == key {
 			return claim
 		}
 	}
 	return nil
+}
+
+// inherited is the mapping of the keys of its entry a fragment carries, in the
+// order its claim lists them, or nil when it carries none. A key the entry
+// leaves unwritten is absent.
+func (w *yamlWalk) inherited(claim *protocol.YAMLSourceKey, fragment yamlext.Fragment) (*protocol.SourceMapping, error) {
+	var mapping *protocol.SourceMapping
+	for _, name := range claim.GetInherited() {
+		node, written := fragment.Inherited[name]
+		if !written {
+			continue
+		}
+		value, err := w.value(node, 0)
+		if err != nil {
+			return nil, err
+		}
+		if mapping == nil {
+			mapping = &protocol.SourceMapping{}
+		}
+		mapping.Entries = append(mapping.Entries, &protocol.SourceEntry{Key: name, Value: value})
+	}
+	for name := range fragment.Inherited {
+		if !slices.Contains(claim.GetInherited(), name) {
+			return nil, fmt.Errorf("YAML fragment carries the key %q of its entry, which its claim does not inherit", name)
+		}
+	}
+	return mapping, nil
 }

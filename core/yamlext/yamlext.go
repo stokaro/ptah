@@ -46,7 +46,8 @@ type Extension struct {
 	// table and index entries.
 	EntryAttributes []EntryAttributes
 	// EntrySections are the keys the owner adds to the frontend's table
-	// entries whose value is not a scalar.
+	// entries whose value is not a scalar, and a document owner's keys of
+	// column and index entries.
 	EntrySections []EntrySection
 	// TargetScopes are the frontend's keys whose entries the owner reads
 	// where their target scope makes them its own.
@@ -128,20 +129,29 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if err := set.claimEntryKeys(index, extension); err != nil {
 			return Set{}, err
 		}
-		extension.Kinds = slices.Clone(extension.Kinds)
-		extension.Sections = slices.Clone(extension.Sections)
-		extension.TargetScopes = slices.Clone(extension.TargetScopes)
-		extension.EntrySections = slices.Clone(extension.EntrySections)
-		attributes := make([]EntryAttributes, 0, len(extension.EntryAttributes))
-		for _, group := range extension.EntryAttributes {
-			group.Attributes = slices.Clone(group.Attributes)
-			group.Reads = slices.Clone(group.Reads)
-			attributes = append(attributes, group)
-		}
-		extension.EntryAttributes = attributes
-		set.extensions = append(set.extensions, extension)
+		set.extensions = append(set.extensions, frozen(extension))
 	}
 	return set, nil
+}
+
+// frozen copies the lists of an extension, so a caller that changes them after
+// NewSet does not change the set.
+func frozen(extension Extension) Extension {
+	extension.Kinds = slices.Clone(extension.Kinds)
+	extension.Sections = slices.Clone(extension.Sections)
+	extension.TargetScopes = slices.Clone(extension.TargetScopes)
+	extension.EntrySections = slices.Clone(extension.EntrySections)
+	for i := range extension.EntrySections {
+		extension.EntrySections[i].Reads = slices.Clone(extension.EntrySections[i].Reads)
+	}
+	attributes := make([]EntryAttributes, 0, len(extension.EntryAttributes))
+	for _, group := range extension.EntryAttributes {
+		group.Attributes = slices.Clone(group.Attributes)
+		group.Reads = slices.Clone(group.Reads)
+		attributes = append(attributes, group)
+	}
+	extension.EntryAttributes = attributes
+	return extension
 }
 
 // Selected reports whether the set was built by [NewSet] or [None].

@@ -39,6 +39,10 @@ type Contribution struct {
 	// Table is the position of the table a facet belongs to, as
 	// [Tables.Find] returns it.
 	Table int
+	// Column names the column of that table a facet belongs to instead of
+	// the table, and Index the index. At most one is set, and only with a
+	// facet.
+	Column, Index string
 	// Label names what the contribution declares in a refusal, such as
 	// `row policy "tenant_rows" on table "orders"`.
 	Label string
@@ -156,7 +160,10 @@ func checkContributions(extension Extension, source string, contributions []Cont
 		value := contribution.Facet
 		if contribution.Object != nil {
 			value = contribution.Object.Value
-		} else if contribution.Table < 0 || contribution.Table >= tables {
+			if contribution.Column != "" || contribution.Index != "" {
+				return fmt.Errorf("%w: %s contributed an object to a column or an index", schemaext.ErrInvalidValue, source)
+			}
+		} else if contribution.Table < 0 || contribution.Table >= tables || (contribution.Column != "" && contribution.Index != "") {
 			return fmt.Errorf("%w: %s contributed a facet of no table the document declares", schemaext.ErrInvalidValue, source)
 		}
 		if value == nil || !slices.Contains(extension.Kinds, value.Kind()) {
