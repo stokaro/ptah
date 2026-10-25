@@ -154,3 +154,23 @@ func TestGolangMigrateOneQueryDevReplayLive(t *testing.T) {
 		c.Assert(applied, qt.Equals, 3)
 	})
 }
+
+// The replay commits the transaction a file's last statements run in, as the
+// end of golang-migrate's single query does, before the next file runs: the
+// lone concurrent build after it runs outside any transaction, where
+// PostgreSQL accepts it.
+func TestGolangMigrateOneQueryDevReplayCommitsTheEndOfTheFileLive(t *testing.T) {
+	c := qt.New(t)
+	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	dir := writeHashedLayoutDirectory(c, "golang-migrate", withGolangMigrateBase(map[string]string{
+		"20240830000000_t.up.sql":     "BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\nCREATE TABLE t2 (id int);\n",
+		"20240830000000_t.down.sql":   "DROP TABLE t2;\nDROP TABLE t1;\n",
+		"20240831000000_idx.up.sql":   "CREATE INDEX CONCURRENTLY t2_id_idx ON t2 (id);\n",
+		"20240831000000_idx.down.sql": "DROP INDEX CONCURRENTLY t2_id_idx;\n",
+	}))
+
+	out, err := runCompat(c, "migrate", "validate", "--dir", "file://"+dir+"?format=golang-migrate",
+		"--dev-url", newCleanGateDatabase(c, adminURL, nil))
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+}

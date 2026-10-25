@@ -567,6 +567,39 @@ func TestMigrateUpOwnTransactions_MarkBeforeCommitFailsLive(t *testing.T) {
 	}
 }
 
+// The checkpoint after the commit at the end of the file records the whole
+// file once that commit succeeded. When the checkpoint cannot be written, the
+// failure still records every statement as applied, because they committed,
+// and a retry has nothing left to run. The trigger refuses the first update
+// that reaches the last statement with no error, which is that checkpoint.
+func TestMigrateUpOwnTransactions_CheckpointAfterTheEndOfTheFileFailsLive(t *testing.T) {
+	c := qt.New(t)
+	run := newOwnTransactionsRun(c, postgresTestURL(t),
+		"BEGIN;\nCREATE TABLE owntx_b_%[1]s (id int);\nCOMMIT;\nCREATE TABLE owntx_a_%[1]s (id int);\n")
+	m := run.migrator(c, migrator.WithOwnTransactions())
+	c.Assert(m.Initialize(context.Background()), qt.IsNil)
+	c.Cleanup(func() {
+		_, _ = run.conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS owntx_refuse_"+run.suffix+"() CASCADE")
+	})
+	run.exec(c, "CREATE FUNCTION owntx_refuse_"+run.suffix+"() RETURNS trigger LANGUAGE plpgsql AS $$\n"+
+		"BEGIN\n"+
+		"  IF NEW.version = 2 AND NEW.applied = 4 AND OLD.applied <> 4 AND COALESCE(NEW.error, '') = '' THEN\n"+
+		"    RAISE EXCEPTION 'owntx: the checkpoint is refused';\n"+
+		"  END IF;\n"+
+		"  RETURN NEW;\n"+
+		"END $$")
+	run.exec(c, "CREATE TRIGGER owntx_refuse BEFORE UPDATE ON "+run.table+
+		" FOR EACH ROW EXECUTE FUNCTION owntx_refuse_"+run.suffix+"()")
+
+	err := m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*owntx: the checkpoint is refused.*`)
+	c.Assert(run.tables(c), qt.DeepEquals, []string{"a", "b"})
+	applied, failure := run.revision(c)
+	c.Assert(applied, qt.Equals, 4)
+	c.Assert(failure, qt.Contains, "the checkpoint is refused")
+}
+
 // Under tx-mode none a statement after the file's transaction commits on its
 // own, so its failure leaves no transaction open, and the migrator sends no
 // ROLLBACK, which PostgreSQL would answer with a warning. When the failure is
