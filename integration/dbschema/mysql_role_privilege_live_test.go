@@ -3,6 +3,7 @@
 package dbschema_test
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
 )
 
@@ -80,6 +82,52 @@ func TestMySQLLiveRoleReadDegradesWithoutPrivilege(t *testing.T) {
 	// And everything the account CAN see is still described. A degradation that
 	// dropped the rest would be no better than the failure it replaces.
 	c.Assert(tableNamesOf(described.Tables), qt.Contains, tableName)
+}
+
+// TestMySQLLiveSchemaSecurity_FailurePath_RefusesUnreadRoles connects as an
+// account that may work in its schema and may not read mysql.user. The read
+// describes the tables and records the roles as not described, so the
+// analysis refuses rather than report an access model with no role in it. The
+// administrator's analysis of the same database is the control: it runs.
+func TestMySQLLiveSchemaSecurity_FailurePath_RefusesUnreadRoles(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.MySQL)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	admin, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+	account := fmt.Sprintf("ptah_sec_%d", time.Now().UnixNano())
+	const password = "ptah_sec_password" // #nosec G101 -- the password of an account this test creates and drops
+	_, err = admin.ExecContext(ctx, fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", account, password))
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = admin.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", account))
+	}()
+	_, err = admin.ExecContext(ctx, fmt.Sprintf("GRANT SELECT ON %s.* TO '%s'@'%%'", databaseNameOf(c, dbURL), account))
+	c.Assert(err, qt.IsNil)
+
+	stdout, err := runSchemaSecurity(c, replaceCredentials(dbURL, account, password))
+	c.Assert(err, qt.ErrorMatches, `the analysis reads the database's roles, and this connection may not read them, .*`)
+	c.Assert(stdout, qt.Equals, "")
+
+	stdout, err = runSchemaSecurity(c, dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, `"findings"`)
+}
+
+// runSchemaSecurity runs `ptah schema security` in this process against
+// dbURL, as JSON, with no failure threshold, and returns its standard output.
+func runSchemaSecurity(c *qt.C, dbURL string) (string, error) {
+	c.Helper()
+	cmd := schema.NewSchemaSecurityCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetContext(c.Context())
+	cmd.SetArgs([]string{"--db-url", dbURL, "--format", "json", "--fail-on", "none"})
+	err := cmd.Execute()
+	return stdout.String(), err
 }
 
 // databaseNameOf returns the schema the connection URL selects.
