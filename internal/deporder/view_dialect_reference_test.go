@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/deporder"
 )
 
@@ -16,48 +17,22 @@ func viewNames(objects []deporder.ViewLike) []string {
 	return names
 }
 
-// TestViewLikesForCreateNeedsTheDialectToSeeAQuotedReference pins why a caller
-// must pass its dialect, in the one spelling that separates the two functions.
-//
-// A view body referring to `"analytics"."zbase"` is referring to the declaration
-// named `analytics.zbase`, and only the dialect-aware matcher knows that: the
-// bare matcher compares the text as written, finds no reference, derives no
-// dependency edge, and leaves the dependent first.
-//
-// The PostgreSQL planner asked the bare one for years, so a plan that read
-// perfectly failed on execution with `relation "analytics.zbase" does not
-// exist` (stokaro/ptah#1664).
-func TestViewLikesForCreateNeedsTheDialectToSeeAQuotedReference(t *testing.T) {
+// TestViewLikesForCreateForDialect_ReadsEachQuotingOfAQualifiedReference pins
+// that a view body naming analytics.zbase orders after it however the name is
+// quoted: wholly, part by part, or not at all. Created first, the reader fails
+// on execution with `relation "analytics.zbase" does not exist`
+// (stokaro/ptah#1664).
+func TestViewLikesForCreateForDialect_ReadsEachQuotingOfAQualifiedReference(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
-		want []string
 	}{
-		{
-			name: "a quoted qualified reference",
-			body: `SELECT id FROM "analytics"."zbase"`,
-			want: []string{"analytics.zbase", "analytics.asummary"},
-		},
-		{
-			name: "an unquoted qualified reference",
-			body: "SELECT id FROM analytics.zbase",
-			want: []string{"analytics.zbase", "analytics.asummary"},
-		},
-		{
-			// A KNOWN LIMITATION, pinned rather than hidden: the matcher
-			// recognizes a reference quoted wholly or not at all, and a mixed
-			// spelling resolves against neither. The order is therefore left
-			// as declared, and a plan built from it creates the dependent
-			// first.
-			//
-			// It is out of scope here -- this change makes the PostgreSQL
-			// planner ASK with its dialect, it does not rewrite the matcher --
-			// and the row exists so a later fix flips a visible assertion
-			// instead of quietly starting to work.
-			name: "a partly quoted reference is not recognized",
-			body: `SELECT id FROM analytics."zbase"`,
-			want: []string{"analytics.asummary", "analytics.zbase"},
-		},
+		{name: "a quoted qualified reference", body: `SELECT id FROM "analytics"."zbase"`},
+		{name: "an unquoted qualified reference", body: "SELECT id FROM analytics.zbase"},
+		{name: "a quoted name in an unquoted schema", body: `SELECT id FROM analytics."zbase"`},
+		{name: "an unquoted name in a quoted schema", body: `SELECT id FROM "analytics".zbase`},
+		{name: "a mixed-case reference", body: "SELECT id FROM Analytics.ZBase"},
+		{name: "spaces around the dot", body: "SELECT id FROM analytics . zbase"},
 	}
 
 	for _, test := range tests {
@@ -72,7 +47,128 @@ func TestViewLikesForCreateNeedsTheDialectToSeeAQuotedReference(t *testing.T) {
 
 			ordered := deporder.ViewLikesForCreateForDialect(objects, "postgres")
 
+			c.Assert(viewNames(ordered), qt.DeepEquals, []string{"analytics.zbase", "analytics.asummary"})
+		})
+	}
+}
+
+// TestViewLikesForCreateForDialect_ReadsTheDefaultSchema pins the default
+// schema in the creation order: an unqualified name is in it. A declaration
+// without a schema is read by a body that names it in public, and an
+// unqualified reference reads public.zbase where another schema has a zbase
+// too, which leaves the bare name ambiguous.
+func TestViewLikesForCreateForDialect_ReadsTheDefaultSchema(t *testing.T) {
+	tests := []struct {
+		name    string
+		objects []deporder.ViewLike
+		want    []string
+	}{
+		{
+			name: "a qualified reference to an object declared without a schema",
+			objects: []deporder.ViewLike{
+				{Name: "asummary", Body: "SELECT id FROM public.zbase"},
+				{Name: "zbase", Body: "SELECT id FROM events"},
+			},
+			want: []string{"zbase", "asummary"},
+		},
+		{
+			name: "an unqualified reference where two schemas have the name",
+			objects: []deporder.ViewLike{
+				{Name: "asummary", Body: "SELECT id FROM zbase"},
+				{Name: "public.zbase", Body: "SELECT id FROM events"},
+				{Name: "analytics.zbase", Body: "SELECT id FROM analytics.events"},
+			},
+			want: []string{"public.zbase", "asummary", "analytics.zbase"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			ordered := deporder.ViewLikesForCreateForDialect(test.objects, "postgres")
+
 			c.Assert(viewNames(ordered), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestViewLikesForCreateForDialect_ReadsBracketQuotedNames pins SQL Server's
+// quoting where two schemas hold the name: a part in brackets is a quoted
+// part, so `[sales].[zbase]` reads sales.zbase alone, and `dbo.[zbase]` reads
+// dbo.zbase alone. Read as two bare words, `[sales].[zbase]` also reads
+// dbo.zbase in the default schema, and the reader waits for it.
+func TestViewLikesForCreateForDialect_ReadsBracketQuotedNames(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "a bracketed reference into another schema", body: "SELECT id FROM [sales].[zbase]",
+			want: []string{"sales.zbase", "dbo.asummary", "dbo.zbase"},
+		},
+		{
+			name: "a partly bracketed reference", body: "SELECT id FROM dbo.[zbase]",
+			want: []string{"sales.zbase", "dbo.zbase", "dbo.asummary"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			objects := []deporder.ViewLike{
+				{Name: "dbo.asummary", Body: test.body},
+				{Name: "sales.zbase", Body: "SELECT 1 AS id"},
+				{Name: "dbo.zbase", Body: "SELECT 1 AS id"},
+			}
+
+			ordered := deporder.ViewLikesForCreateForDialect(objects, platform.SQLServer)
+
+			c.Assert(viewNames(ordered), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestViewLikesForCreateForDialect_KeepsOtherSchemasApart is the control for
+// both tests above: a reference into another schema, or an unqualified one,
+// reads no object of the same name in a schema it does not name, so the
+// declarations keep their order.
+func TestViewLikesForCreateForDialect_KeepsOtherSchemasApart(t *testing.T) {
+	tests := []struct {
+		name    string
+		objects []deporder.ViewLike
+	}{
+		{
+			name: "a reference into another schema",
+			objects: []deporder.ViewLike{
+				{Name: "asummary", Body: "SELECT id FROM analytics.zbase"},
+				{Name: "zbase", Body: "SELECT id FROM events"},
+			},
+		},
+		{
+			name: "a quoted reference into another schema",
+			objects: []deporder.ViewLike{
+				{Name: "public.asummary", Body: `SELECT id FROM "analytics"."zbase"`},
+				{Name: "public.zbase", Body: "SELECT id FROM events"},
+			},
+		},
+		{
+			name: "an unqualified reference to an object outside the default schema",
+			objects: []deporder.ViewLike{
+				{Name: "asummary", Body: "SELECT id FROM zbase"},
+				{Name: "analytics.zbase", Body: "SELECT id FROM analytics.events"},
+				{Name: "reporting.zbase", Body: "SELECT id FROM reporting.events"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			ordered := deporder.ViewLikesForCreateForDialect(test.objects, "postgres")
+
+			c.Assert(viewNames(ordered), qt.DeepEquals, viewNames(test.objects))
 		})
 	}
 }

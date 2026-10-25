@@ -49,7 +49,7 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 				continue
 			}
 			for _, relation := range dropped {
-				if !reader.ReadsRelation(relation) {
+				if !schemaext.ReadsRelationIn(reader, relation, diff.EffectiveIdentifierSemantics("").DefaultSchema) {
 					continue
 				}
 				if p.exact() {

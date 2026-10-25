@@ -327,7 +327,9 @@ func resolveRoutineArguments(
 // one CREATE in a rolled-back transaction and a probe too few is a view dropped
 // and created on every plan. A view and a materialized view share the
 // relation namespace, so either kind in the database makes a declaration of
-// either kind worth asking about.
+// either kind worth asking about. A materialized view is asked about its query,
+// [compare.MaterializedViewQuery], which is the body its comparison looks up: a
+// plain view does not take WITH NO DATA, and the server refuses the probe.
 func resolveViewBodies(
 	ctx context.Context,
 	conn Connection,
@@ -358,7 +360,7 @@ func resolveViewBodies(
 		ask(view.Name, view.Body)
 	}
 	for _, view := range desired.MaterializedViews {
-		ask(view.Name, view.Body)
+		ask(view.Name, compare.MaterializedViewQuery(view.Body))
 	}
 	if len(probes) == 0 {
 		return nil, nil

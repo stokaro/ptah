@@ -919,7 +919,8 @@ func MaterializedViewDefinitionsWithDialect(
 }
 
 // materializedViewDefinitions is [MaterializedViewDefinitionsWithDialect] with
-// the desired relations' columns; see viewDefinitions.
+// the desired relations' columns; see viewDefinitions. The bodies are compared
+// as queries, without a WITH [NO] DATA clause; see [MaterializedViewQuery].
 func materializedViewDefinitions(
 	genView schemamodel.MaterializedView,
 	dbView catalog.MaterializedView,
@@ -932,7 +933,8 @@ func materializedViewDefinitions(
 		Desired:  genView,
 	}
 
-	if !declaredBodyEqual(genView.Body, dbView.Body, dialect, dbView.Schema, bodies) {
+	declared, stored := MaterializedViewQuery(genView.Body), MaterializedViewQuery(dbView.Body)
+	if !declaredBodyEqual(declared, stored, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
