@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/testexternal"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
 	"ptah.run/migration/dbtest"
@@ -450,7 +451,7 @@ func resolveTestDesiredDatabase(
 	set atlassource.Set,
 	selection []string,
 ) (*schemamodel.Database, error) {
-	devDialect, err := ensureTestDevDialect(set, opts.dbURL, opts.sourceFlag())
+	devDialect, err := ensureTestDevDialect(ctx, set, opts.dbURL, opts.sourceFlag())
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +482,7 @@ func resolveTestDesiredDatabase(
 // sourceFlag is the selector the operator actually typed, so the refusal names
 // the flag they would edit rather than whichever one the resolver happened to
 // take the source from.
-func ensureTestDevDialect(set atlassource.Set, dbURL, sourceFlag string) (string, error) {
+func ensureTestDevDialect(ctx context.Context, set atlassource.Set, dbURL, sourceFlag string) (string, error) {
 	implied := set.ImpliedDialect()
 	if strings.TrimSpace(dbURL) == "" {
 		if implied == platform.SQLite || implied == "" {
@@ -492,7 +493,7 @@ func ensureTestDevDialect(set atlassource.Set, dbURL, sourceFlag string) (string
 				" because the default ephemeral test database is SQLite",
 			sourceFlag, implied, testDBURLFlag)
 	}
-	devDialect, err := atlasurl.DialectFromURL(dbURL)
+	devDialect, err := providerurl.Dialect(ctx, dbURL)
 	if err != nil {
 		return "", err
 	}
@@ -548,7 +549,7 @@ func countedNoun(count int, noun string) string {
 // File sources use the throwaway database's dialect and explicit root just as
 // a live source does. The URL is context; loading the file opens no connection.
 func loadTestSchemaFiles(ctx context.Context, opts testOptions, files []string) (*schemamodel.Database, error) {
-	dialect, err := ensureTestDevDialect(atlassource.Set{}, opts.dbURL, "--"+testSchemaFileFlag)
+	dialect, err := ensureTestDevDialect(ctx, atlassource.Set{}, opts.dbURL, "--"+testSchemaFileFlag)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,6 @@
 package migrate
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -17,14 +16,14 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/planartifact"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -108,10 +107,6 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
 	out := cmd.OutOrStdout()
 	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
@@ -158,11 +153,17 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
-	dialect, err := atlasurl.DialectFromURL(dbURL)
+	dialect, err := providerurl.Dialect(cmd.Context(), dbURL)
 	if err != nil {
 		return err
 	}
 	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return err
+	}
+	// The URL may come from the project file, so the runtime is resolved once
+	// it is known: an engine a provider serves starts that provider here.
+	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
+	if err != nil {
 		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
@@ -200,7 +201,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	// 1. Connect first: the server names the dialect a SQL schema file is read
 	// in, because a postgres:// URL reaches CockroachDB too (stokaro/ptah#3952).
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {

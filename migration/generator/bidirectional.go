@@ -104,9 +104,12 @@ type BidirectionalSchemaPlanOptions struct {
 	Diff          *difftypes.SchemaDiff
 	DesiredSchema *schemamodel.Database
 	CurrentSchema *catalog.Database
-	Dialect       string
-	Capabilities  capability.Capabilities
-	Policy        BidirectionalPlanPolicy
+	// Dialect names the target: a built-in dialect or one of its aliases, or
+	// an engine Runtime serves under that name, such as one an executable
+	// provider serves.
+	Dialect      string
+	Capabilities capability.Capabilities
+	Policy       BidirectionalPlanPolicy
 }
 
 // PlanBidirectionalSchemaDiff plans a forward schema diff and its exact
@@ -146,6 +149,11 @@ func PlanBidirectionalSchemaDiff(
 		return nil, fmt.Errorf("current schema is required")
 	}
 	dialect := platform.NormalizeDialect(opts.Dialect)
+	if selected, err := opts.Runtime.ResolveTarget(opts.Dialect); dialect == "" && err == nil {
+		// An engine an executable provider serves is named by the runtime
+		// that holds it, not by the built-in dialect table.
+		dialect = selected.Name()
+	}
 	if dialect == "" {
 		return nil, fmt.Errorf("dialect is required")
 	}

@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/fileplan"
 	"ptah.run/internal/hashshard"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -125,7 +126,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if conn == nil {
 		return InspectResult{}, errors.New("schema inspect requires database connection")
 	}
-	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return InspectResult{}, err
 	}
 

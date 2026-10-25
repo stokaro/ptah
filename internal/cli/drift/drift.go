@@ -17,9 +17,9 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/datamigrate"
@@ -215,7 +215,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}

@@ -17,10 +17,10 @@ import (
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
@@ -98,7 +98,7 @@ type CompareResult struct {
 func comparisonDialect(ctx context.Context, address string) (string, error) {
 	targets := dbschema.NativeTargets(ctx)
 	if len(targets) == 0 {
-		return atlasurl.DialectFromURL(address)
+		return providerurl.Dialect(ctx, address)
 	}
 	source, err := atlassource.Classify(address, targets)
 	if err != nil {

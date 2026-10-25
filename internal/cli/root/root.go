@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/introspect"
 	"ptah.run/internal/cli/license"
 	mcpcmd "ptah.run/internal/cli/mcp"
@@ -103,6 +104,9 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())
 
+	// After the tree is complete, so a verb that names a database or a dialect
+	// selects a provider whichever namespace added it.
+	providercommand.Install(cmd)
 	installProgramPolicy(cmd)
 	cmdflags.InstallEnvBinding(envPrefix, cmd)
 

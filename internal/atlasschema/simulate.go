@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -196,7 +197,7 @@ func connectSimulationDev(
 	// The dialect check reads the URL as written: a `docker://` value names its
 	// engine in the text, so a mismatch is answerable before a container is
 	// started and a refused run pays for none.
-	if err := validateDevDialect(ctx, devURL, targetInfo.Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, devURL, targetInfo.Dialect); err != nil {
 		return simulationDev{}, err
 	}
 	// The alias checks below ask whether the dev database IS the target or the
@@ -301,7 +302,7 @@ func connectSimulationDev(
 func refuseDevURLAliases(ctx context.Context, devURL, targetURL string, desiredURLs []string) error {
 	// A provider owns the grammar of its addresses, so two of them are
 	// compared by the databases their sessions select, once connected.
-	if _, served := providerDevTarget(ctx, devURL); served || devdocker.ResolvedPerRun(devURL) {
+	if _, served := providerurl.Provided(ctx, devURL); served || devdocker.ResolvedPerRun(devURL) {
 		return nil
 	}
 	for _, target := range urlAliasCandidates(devURL, []string{targetURL}) {

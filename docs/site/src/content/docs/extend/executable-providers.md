@@ -9,12 +9,14 @@ readerQuestion: "How do I test an independently built database provider through 
 goal: "Inspect a provider database, apply a saved schema plan, and verify convergence."
 sourceOfTruth:
   - "internal/cli/internal/providercommand"
+  - "internal/providerselect"
   - "internal/providerhost"
   - "internal/providerinstall"
   - "internal/providerrelease"
   - "internal/providercatalog"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
+  - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
@@ -37,17 +39,15 @@ versioned migrations. You need a provider built against the experimental SDK,
 its expected identity and SHA-256 checksum, and a disposable database address
 accepted by that provider.
 
-Provider selection is available on these native commands:
-
-- Schema changes: `schema inspect`, `schema plan`, and `schema apply`.
-- Migration execution and inspection: `migrations up`, `migrations down`,
-  `migrations status`, and `migrations log`.
-- Migration metadata: `migrations tag`, `migrations baseline`, `migrations set`,
-  and `migrations repair`.
-- Lint: `migrations lint` and `sql lint`.
-- Declared rows and seed files: `migrations data` and `seed`.
-- Inference: every `inference` verb except `probe`.
-- The MCP server: `ptah mcp`, for the database `--database-url` names.
+Every native command that names a database or a dialect selects a provider:
+it takes `--db-url`, `--dev-url`, `--dialect` or `--env`, and it declares
+`--provider-config` and `--provider-engine`. That covers the `schema`, `db`,
+`migrations`, `seed`, `sql lint`, `viz`, `introspect` and `inference` verbs and
+`project adopt`. `schema export` and `schema pull`, which load schema files with
+the selected provider's source syntax, declare them too. `ptah mcp` serves the
+database `--database-url` names through the selection. `ptah assist` selects no
+provider, because it runs the agent tools in process, and `project inspect`
+opens no database.
 
 The protocol is experimental. The adapter accepts common tables and columns
 whose provider declares `schema.common-table-identity.v1`; other semantics need
@@ -288,10 +288,11 @@ then takes the first candidate that exists. Later candidates are not consulted.
 3. None. The command fails with `provider_missing` and the instruction
    `ptah providers install <engine>`.
 
-A command asks for an executable provider with `--provider-engine`, or when a
-manifest entry claims the engine. An official engine that still has a built-in
-implementation, such as YDB, keeps it when the command does neither, and the
-presence of an installed provider changes nothing.
+A command asks for an executable provider with `--provider-engine`, when a
+manifest entry claims the engine, or when it names an official engine with no
+built-in implementation, such as DuckDB. An official engine that still has a
+built-in implementation, such as YDB, keeps it when the command does none of
+these, and the presence of an installed provider changes nothing.
 
 Rule 2 builds the installation in memory from the catalog and the install
 record: the provider ID and engines come from the catalog, and the expected
@@ -362,6 +363,24 @@ does not identify it through a URL. An explicit engine requires an executable
 provider. It never selects an embedded implementation. A manifest with multiple
 engines requires an unambiguous URL or `--provider-engine`. The declared engine
 IDs and aliases must match the executable's negotiated description.
+
+A provider the flags select owns the command's connections: a URL scheme it
+does not register is refused. When `--db-url`, `--dialect` and `--dev-url` name
+no engine a provider serves, the command runs on the built-in engines and still
+reaches a provider for a URL it learns later, from `ptah.yaml` or from a flag
+such as the `--from` and `--to` of `schema diff`. That provider starts at the
+first connection, dev database or plan that needs it, beside the built-in
+engines, and ends with the command. The manifest named with `--provider-config`
+or, without one, the user store decides which provider serves the URL, and a
+missing provider reports `ptah providers install <engine>`.
+
+A provider's connection takes no `database/sql` call: outside a plan, a
+migration and the services the provider declares, the host can neither query
+it nor run a statement on it. `db verify`, which queries the database for each
+check, `schema test`, which applies the desired schema that way, and
+`migrations checkpoint`, which drops the revision tables of its shadow replay
+that way, refuse a provider's database with "this connection does not expose
+database/sql operations".
 
 ## Use a provider from ptah-compat
 

@@ -23,7 +23,7 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/engine/builtin"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/migration/migrator"
@@ -140,7 +140,7 @@ func loadChecksFromArtifact(
 	if err != nil {
 		return nil, err
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
