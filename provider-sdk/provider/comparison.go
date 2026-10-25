@@ -47,6 +47,9 @@ func ValidateComparisonRequest(description *protocol.Description, request *proto
 	if err := validateComparisonContext(request, service); err != nil {
 		return err
 	}
+	if err := validateWrittenRequests(description, engine, request); err != nil {
+		return err
+	}
 	if err := validateComparisonState(description, request, service, protocol.ValueInput_DESIRED, request.GetDesired()); err != nil {
 		return err
 	}
@@ -70,6 +73,11 @@ func ValidateComparedModels(description *protocol.Description, request *protocol
 		return err
 	}
 	if err := validateComparedChanges(description, request, service, result.GetChanges()); err != nil {
+		return err
+	}
+	// ValidateComparisonRequest resolved the engine.
+	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err := validateResolvedRequests(description, engine, request, result); err != nil {
 		return err
 	}
 	for _, diagnostic := range result.GetUndecided() {

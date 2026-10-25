@@ -47,10 +47,47 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if err := validatePlanningContext(description, request); err != nil {
 		return err
 	}
+	if err := validatePlanningCommonObjects(engine, request); err != nil {
+		return err
+	}
+	if err := validatePlanningPolicy(description, engine, request.GetPolicy()); err != nil {
+		return err
+	}
 	if err := validatePlanningChanges(description, request, service); err != nil {
 		return err
 	}
 	return validatePlanningTables(description, request, engine)
+}
+
+// validatePlanningCommonObjects checks the common objects a planning request
+// carries as context, and the operand of each common step that changes one.
+func validatePlanningCommonObjects(engine *protocol.Engine, request *protocol.PlanFeaturesRequest) error {
+	kinds := engineCommonKinds(engine)
+	uses := request.GetDesiredCommon() != nil || request.GetCurrentCommon() != nil ||
+		slices.ContainsFunc(request.GetCommonSteps(), func(step *protocol.CommonPlanningStep) bool { return step.GetCommonObject() != nil })
+	if !uses {
+		return nil
+	}
+	if len(kinds) == 0 {
+		return commonObjectError("the engine carries no common object")
+	}
+	if err := validateDeclaredCommonObjects(request.GetIdentifiers(), kinds, request.GetDesiredCommon()); err != nil {
+		return err
+	}
+	if request.GetCurrentCommon() != nil {
+		if err := validateObservedCommonObjects(engine, request.GetCurrentCommon()); err != nil {
+			return err
+		}
+	}
+	for _, step := range request.GetCommonSteps() {
+		if step.GetCommonObject() == nil {
+			continue
+		}
+		if _, err := commonChangeSubject(engine.GetId(), kinds, step.GetCommonObject()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func hasPlanningActions(request *protocol.PlanFeaturesRequest) bool {

@@ -47,7 +47,13 @@ func validateComparisonContext(request *protocol.CompareModelsRequest, service *
 
 func validateComparisonDefinitions(request *protocol.CompareModelsRequest, service *protocol.ModelComparison) error {
 	for _, change := range request.GetRequests() {
-		if err := ValidateComparisonIdentity(change.GetSubject()); err != nil {
+		if change.GetWritten() != "" {
+			// The owner resolves the operator's spelling; the host sends no
+			// subject beside it.
+			if change.GetSubject() != nil || !diagnosticLine(change.GetWritten()) {
+				return fmt.Errorf("%w: a written request carries one line of text and no subject", ErrProtocol)
+			}
+		} else if err := ValidateComparisonIdentity(change.GetSubject()); err != nil {
 			return err
 		}
 		if !slices.Contains(service.GetActions(), change.GetAction()) {

@@ -43,6 +43,8 @@ type sourceWalk struct {
 	nodes  int
 	values map[*protocol.SourceValue]bool
 	blocks map[*protocol.SourceBlock]bool
+	// encoded walks fragments an owner wrote, which carry no position.
+	encoded bool
 }
 
 type sourceOrigin uint8
@@ -65,6 +67,9 @@ func (w *sourceWalk) document(document *protocol.SourceDocument) error {
 	case protocol.SourceDocument_SQL, protocol.SourceDocument_YAML, protocol.SourceDocument_HCL, protocol.SourceDocument_GO_ANNOTATIONS:
 	default:
 		return sourceError("unknown source format")
+	}
+	if len(document.GetLimits()) != 0 && document.GetFormat() != protocol.SourceDocument_HCL {
+		return sourceError("header limits on a document that is not HCL")
 	}
 	bindings := make(map[string]bool)
 	for _, binding := range document.GetBindings() {
@@ -112,7 +117,7 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 	}
 	switch content := fragment.GetContent().(type) {
 	case *protocol.SourceFragment_Value:
-		if content == nil || (format != protocol.SourceDocument_YAML && format != protocol.SourceDocument_GO_ANNOTATIONS) {
+		if content == nil || !valueContentFormat(format, fragment) {
 			return sourceError("value content does not match source format")
 		}
 		return w.value(content.Value, 0, authoredSource)
@@ -134,6 +139,20 @@ func (w *sourceWalk) fragment(format protocol.SourceDocument_Format, fragment *p
 	}
 }
 
+// valueContentFormat reports whether a fragment of format may carry value
+// content: a YAML or Go fragment, and an HCL attribute claim, which carries the
+// owner's attributes of the frontend's block as a mapping.
+func valueContentFormat(format protocol.SourceDocument_Format, fragment *protocol.SourceFragment) bool {
+	switch format {
+	case protocol.SourceDocument_YAML, protocol.SourceDocument_GO_ANNOTATIONS:
+		return true
+	case protocol.SourceDocument_HCL:
+		return fragment.GetHclBlock() != nil && !hclOwnBlock(fragment.GetHclBlock().GetSite())
+	default:
+		return false
+	}
+}
+
 // foreignGrammarClaim refuses a grammar claim on a source format it does not name.
 func foreignGrammarClaim(format protocol.SourceDocument_Format, fragment *protocol.SourceFragment) error {
 	if format != protocol.SourceDocument_YAML && fragment.GetYamlKey() != nil {
@@ -142,10 +161,19 @@ func foreignGrammarClaim(format protocol.SourceDocument_Format, fragment *protoc
 	if format != protocol.SourceDocument_GO_ANNOTATIONS && fragment.GetGoDirective() != nil {
 		return sourceError("Go directive claim on another source format")
 	}
+	if format != protocol.SourceDocument_HCL && fragment.GetHclBlock() != nil {
+		return sourceError("HCL block claim on another source format")
+	}
 	return nil
 }
 
 func (w *sourceWalk) span(span *protocol.SourceSpan, origin sourceOrigin) error {
+	if w.encoded {
+		if span != nil {
+			return sourceError("an encoded fragment carries a position")
+		}
+		return nil
+	}
 	if span == nil && origin == inheritedSource {
 		return nil
 	}
