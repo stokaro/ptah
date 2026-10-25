@@ -79,7 +79,7 @@ func sqliteTables(c *qt.C, path string) []string {
 	rows, err := conn.QueryContext(c.Context(), "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
-	names := []string{}
+	var names []string
 	for rows.Next() {
 		var name string
 		c.Assert(rows.Scan(&name), qt.IsNil)
@@ -169,7 +169,7 @@ func TestCompatMigrateLintReplaysOnTheProvidersDevDatabase(t *testing.T) {
 	c.Assert(out, qt.Contains, "  -- analyzing version 20240102000000\n")
 	c.Assert(out, qt.Contains, " [DS102]: DROP TABLE permanently deletes the table")
 	c.Assert(out, qt.Contains, " [FX101]: DROP TABLE removes every row\n")
-	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.DeepEquals, []string{})
+	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 	f.assertStopped(c)
 }
 
@@ -190,7 +190,7 @@ func TestCompatMigrateLintReplayFailsOnTheProvidersDevDatabase_FailurePath(t *te
 		c.Assert(out, qt.Equals, "")
 		c.Assert(stderr, qt.Contains, "Error: error validating migration SQL on dev database: replay migration 20240102000000 on dev database: ")
 		c.Assert(stderr, qt.Contains, "\nSQL: DROP TABLE \"gadgets\"\n")
-		c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.DeepEquals, []string{})
+		c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 		f.assertStopped(c)
 	})
 	t.Run("a dev database that is not clean", func(t *testing.T) {
@@ -239,7 +239,7 @@ func TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase(t *testing.T) {
 	f.assertStopped(c)
 
 	c.Assert(sqliteTables(c, target), qt.DeepEquals, []string{"gadgets", "widgets"})
-	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.DeepEquals, []string{})
+	c.Assert(sqliteTables(c, filepath.Join(f.dir, "dev.db")), qt.HasLen, 0)
 }
 
 // TestCompatSchemaPlanReadsTheManifestVariable holds where the provider
