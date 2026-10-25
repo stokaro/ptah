@@ -129,6 +129,8 @@ message ReadStatementRowsRequest {
   string session_id = 1;
   string page_token = 2;
   uint32 max_rows = 3;
+  // How many columns the result named, which every row of the page has.
+  uint32 column_count = 4;
 }
 message StatementRows {
   repeated Row rows = 1;
@@ -207,7 +209,8 @@ Both transport boundaries refuse:
   4 KiB or holding a NUL; an `error_code` over 64 bytes or holding a space;
 - a `refusal` on any outcome but `REFUSED`, a `REFUSED` without one, or one that
   is not one line;
-- a page of more rows than its request asked for.
+- a page of more rows than its request asked for, or a row whose length is not
+  the column count its request names.
 
 A reply the host cannot read leaves the outcome unknown. The host never sends a
 statement again after `UNKNOWN`.
