@@ -51,6 +51,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateGoSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
+		if err := validateHCLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
+			return err
+		}
 		if len(document.GetFragments()) != 0 && len(kinds) == 0 {
 			return sourceError("fragments require explicit model scope")
 		}
@@ -134,6 +137,9 @@ func validateSourceModelValue(
 	}
 	if fragment.GetGoDirective() != nil && !slices.Contains(fragment.GetGoDirective().GetModels(), envelope.GetKind()) {
 		return sourceError("decoded Go value is outside its directive claim")
+	}
+	if fragment.GetHclBlock() != nil && !slices.Contains(fragment.GetHclBlock().GetModels(), envelope.GetKind()) {
+		return sourceError("decoded HCL value is outside its block claim")
 	}
 	switch value.GetPlacement() {
 	case protocol.SourceModelValue_NATIVE_OBJECT:

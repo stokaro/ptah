@@ -78,6 +78,11 @@ service Provider {
   rpc CommitEmbeddingBatch(CommitEmbeddingBatchRequest) returns (EmbeddingWriteResult);
   rpc ReadEmbeddingVerification(ReadEmbeddingVerificationRequest) returns (EmbeddingVerificationPage);
   rpc SearchEmbeddings(SearchEmbeddingsRequest) returns (EmbeddingSearchResult);
+  // Contract 25.3. PrepareCommonObjects is used only when both sides list
+  // schema.common-objects; a host calls EncodeSource only when the provider
+  // lists source.encode.
+  rpc PrepareCommonObjects(PrepareCommonObjectsRequest) returns (PreparedCommonObjects);
+  rpc EncodeSource(EncodeSourceRequest) returns (EncodedSource);
 }
 
 message Empty {}
@@ -137,6 +142,102 @@ message Engine {
   // engine lists embeddings.store, and sent only to a host that lists it.
   // Contract 25.2.
   EmbeddingEngine embeddings = 15;
+  // Absent means the engine carries no common object beyond tables. Present
+  // exactly when the engine lists schema.common-objects, and sent only to a
+  // host that lists it. Contract 25.3.
+  CommonObjectSupport common_objects = 16;
+  // Absent means the engine claims no HCL syntax. Present exactly when the
+  // engine lists source.hcl, and sent only to a host that lists it. Contract
+  // 25.3.
+  HCLSourceDeclaration hcl_source = 17;
+}
+// CommonObjectSupport lists the common objects beyond tables an engine
+// carries on the common wire: inspected, validated, prepared for comparison
+// and rendered by the provider, and compared and ordered by the host.
+message CommonObjectSupport {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    VIEW = 1;
+    MATERIALIZED_VIEW = 2;
+    SEQUENCE = 3;
+    ROLE = 4;
+    GRANT = 5;
+    COMMENT = 6;
+  }
+  repeated Kind kinds = 1;
+}
+// HCLSourceDeclaration is an engine's claim on HCL syntax: the blocks and the
+// attributes of the frontend's own blocks it reads, and the header kinds it
+// reads as limits on its own claim. The host evaluates every block and sends
+// the owner data, never HCL text.
+message HCLSourceDeclaration {
+  repeated HCLSourceBlock blocks = 1;
+  repeated string header_kinds = 2;
+}
+// HCLSourceBlock is one block shape, with the meaning of the host's HCL
+// extension contract. At TOP_LEVEL and IN_TABLE the owner reads a block of its
+// own; at the attribute sites it adds attributes to the frontend's table,
+// index, routine or materialized view block, whose type the claim names.
+message HCLSourceBlock {
+  enum Site {
+    SITE_UNSPECIFIED = 0;
+    TOP_LEVEL = 1;
+    TABLE_ATTRIBUTES = 2;
+    IN_TABLE = 3;
+    INDEX_ATTRIBUTES = 4;
+    ROUTINE_ATTRIBUTES = 5;
+    MATERIALIZED_VIEW_ATTRIBUTES = 6;
+  }
+  // How the labels of a TOP_LEVEL block name the object it declares. Every
+  // other site takes none.
+  enum Naming {
+    NAMING_UNSPECIFIED = 0;
+    UNLABELED = 1;
+    SCHEMA_AND_NAME = 2;
+    SCHEMA_AND_QUALIFIED_NAME = 3;
+    JOINED_NAME = 4;
+  }
+  Site site = 1;
+  string type = 2;
+  Naming naming = 3;
+  repeated HCLSourceAttribute attributes = 4;
+  // Blocks nested one level deep. Only TOP_LEVEL and IN_TABLE take them.
+  repeated HCLSourceChild children = 5;
+  // The labels name a type that a column type may reference. TOP_LEVEL only.
+  bool declares_type = 6;
+  // The kind a permission block names an object of this block as. TOP_LEVEL
+  // only.
+  string grant_kind = 7;
+  string selector = 8;
+  // DESIRED models whose source formats include HCL.
+  repeated string models = 9;
+  // Common attributes of the frontend's block the owner reads too, sent in
+  // SourceFragment.inherited_attributes. Attribute sites only.
+  repeated string inherited = 10;
+}
+message HCLSourceAttribute {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    STRING = 1;
+    TEXT = 2;
+    TEXT_LIST = 3;
+    BOOL = 4;
+    REFERENCE = 5;
+    REFERENCES = 6;
+    SQL = 7;
+    TYPE_NAME = 8;
+  }
+  string name = 1;
+  Kind kind = 2;
+  // The block type a REFERENCE or REFERENCES attribute refers to.
+  string refers = 3;
+  // A REFERENCE a block may leave out.
+  bool optional = 4;
+}
+message HCLSourceChild {
+  string type = 1;
+  bool unlabeled = 2;
+  repeated HCLSourceAttribute attributes = 3;
 }
 // QueryDialect is the spelling the host's query builder reads for an engine,
 // as data: the builder renders statements offline and never calls the
@@ -209,11 +310,18 @@ message ReleaseLine {
 // Models name desired value kinds that this key can declare. They are not
 // inferred from the key, selector, or owner-specific JSON definition.
 message YAMLSourceKey {
-  enum Scope { SCOPE_UNSPECIFIED = 0; DOCUMENT = 1; TABLE = 2; }
+  // COLUMN and INDEX are contract 25.3 and are used only when both sides list
+  // source.entry-keys. A COLUMN key is a key of a column entry of a table, an
+  // INDEX key a key of an index entry.
+  enum Scope { SCOPE_UNSPECIFIED = 0; DOCUMENT = 1; TABLE = 2; COLUMN = 3; INDEX = 4; }
   Scope scope = 1;
   string key = 2;
   string selector = 3;
   repeated string models = 4;
+  // Common keys of the claim's entry the owner reads too, such as an index's
+  // type and ops, sent in SourceFragment.inherited_attributes. COLUMN and
+  // INDEX scopes only. Contract 25.3, under source.entry-keys.
+  repeated string inherited = 5;
 }
 // GoSourceDirective is an explicit owner claim on Go annotation syntax. The
 // host lexes a Go comment into a directive name and key/value attributes, checks
@@ -229,6 +337,10 @@ message GoSourceDirective {
   string selector = 3;
   repeated string attributes = 4;
   repeated string models = 5;
+  // Common attributes of the frontend's directive the owner reads too, sent in
+  // SourceFragment.inherited_attributes. Contract 25.3, under
+  // source.entry-keys.
+  repeated string inherited = 6;
 }
 // IdentifierRules are owner-supplied comparison facts. Missing or unknown
 // values are refused; the host must not borrow rules from a built-in engine.
@@ -314,6 +426,84 @@ message Schema {
   // Positively identified operational storage, outside desired schema management.
   // Omission from tables or native_objects never makes these names available.
   repeated ReservedObject reserved_objects = 9;
+  // The common objects beyond tables, with coverage for each kind the engine
+  // declares. Contract 25.3, under schema.common-objects.
+  ObservedCommonObjects common_objects = 10;
+}
+// ObservedCommonObjects is what a read established about the common objects
+// of the kinds its engine declares. A kind is complete or uninspected; an
+// uninspected kind lists nothing and is never evidence of absence.
+message ObservedCommonObjects {
+  repeated ObservedView views = 1;
+  repeated ObservedSequence sequences = 2;
+  repeated ObservedRole roles = 3;
+  repeated ObservedGrant grants = 4;
+  repeated ObjectComment comments = 5;
+  // Exactly one entry for each kind the engine declares.
+  repeated CommonObjectCoverage coverage = 6;
+  // Roles the server holds that this read does not describe, so a role
+  // absent from roles is not taken for one the server does not have.
+  repeated string roles_out_of_scope = 7;
+}
+message CommonObjectCoverage {
+  CommonObjectSupport.Kind kind = 1;
+  // COMPLETE, or UNINSPECTED with a reason.
+  ModelKnowledge knowledge = 2;
+}
+message ObservedView {
+  // Kind "view" or "materialized_view".
+  Reference identity = 1;
+  // The query as the server stores it.
+  string body = 2;
+  string check_option = 3;
+  repeated string attributes = 4;
+}
+message ObservedSequence {
+  // Kind "sequence".
+  Reference identity = 1;
+  string data_type = 2;
+  optional int64 start = 3;
+  optional int64 increment = 4;
+  optional int64 min_value = 5;
+  optional int64 max_value = 6;
+  optional int64 cache = 7;
+  bool cycle = 8;
+  // The column that owns the sequence, with its table as the only path
+  // component, for a sequence a column owns.
+  Reference owned_by = 9;
+}
+message ObservedRole {
+  enum Password { PASSWORD_UNKNOWN = 0; PASSWORD_NONE = 1; PASSWORD_SET = 2; }
+  string name = 1;
+  bool login = 2;
+  bool superuser = 3;
+  bool create_db = 4;
+  bool create_role = 5;
+  bool inherit = 6;
+  bool replication = 7;
+  // A principal of its own kind that never logs in and has members.
+  bool group = 8;
+  repeated string member_of = 9;
+  Password password = 10;
+}
+// ObservedGrant is one privilege a role holds on one object.
+message ObservedGrant {
+  string role = 1;
+  string privilege = 2;
+  // Kind "table", "schema", "database", "sequence", "routine" or the kind of an
+  // owner's object. A database grant may leave the name empty.
+  Reference target = 3;
+  bool with_grant_option = 4;
+  string granted_by = 5;
+  repeated string columns = 6;
+  // A privilege the object holds by default rather than by a grant.
+  bool implicit = 7;
+}
+// ObjectComment is the comment of one object. A column or an index has its
+// table as the only path component. An object without a comment has no entry.
+message ObjectComment {
+  Reference object = 1;
+  string text = 2;
 }
 message Table {
   Reference identity = 1;
@@ -354,7 +544,62 @@ message Change {
     Column add_column = 5;
     string drop_column = 6;
     NativeOperation native = 7;
+    // Contract 25.3, under schema.common-objects.
+    CommonObjectChange common_object = 8;
   }
+}
+// CommonObjectChange is one change to a common object beyond tables, as a
+// typed operand. The owner renders the statement; the host never sends SQL.
+message CommonObjectChange {
+  oneof operation {
+    ViewCreation create_view = 1;
+    Reference drop_view = 2;
+    SQLSequence create_sequence = 3;
+    SequenceAlteration alter_sequence = 4;
+    Reference drop_sequence = 5;
+    RoleCreation create_role = 6;
+    RoleAlteration alter_role = 7;
+    // Kind "role" or "group".
+    Reference drop_role = 8;
+    SQLGrant grant = 9;
+    // with_grant_option revokes the grant option only.
+    SQLGrant revoke = 10;
+    RoleMembership add_member = 11;
+    RoleMembership remove_member = 12;
+    // An empty text removes the comment.
+    ObjectComment set_comment = 13;
+  }
+}
+message ViewCreation {
+  SQLView view = 1;
+  bool replace = 2;
+}
+message SequenceAlteration {
+  // The identity the read reported.
+  Reference sequence = 1;
+  SQLSequence desired = 2;
+  // The attributes that change: as_type, start, increment, min_value,
+  // max_value, cache, cycle or owned_by.
+  repeated string changed = 3;
+  bool restart = 4;
+}
+// RoleCreation carries the password the unit has to set. Diagnostics never
+// repeat it.
+message RoleCreation {
+  SQLRole role = 1;
+  string password = 2;
+}
+message RoleAlteration {
+  SQLRole desired = 1;
+  // The attributes that change: login, password, superuser, create_db,
+  // create_role, inherit or replication.
+  repeated string changed = 2;
+  // The new password, when changed lists password. Empty removes it.
+  string password = 3;
+}
+message RoleMembership {
+  string group = 1;
+  string member = 2;
 }
 // NativeOperation retains the grammatical context of a captured OPERATION.
 // The owner revalidates its payload before rendering; metadata is not authority.
@@ -370,11 +615,19 @@ message NativeOperation {
   Reference parent = 3;
 }
 message RenderRequest {
+  // The units a host needs. TEXT asks for SQL text units only: portable
+  // statements the same provider's Execute accepts read back from a file.
+  // Sent only when both sides list render.text-units. Contract 25.3.
+  enum Form {
+    ANY = 0;
+    TEXT = 1;
+  }
   string engine = 1;
   repeated Change changes = 2;
   repeated string target_features = 3;
   // Established false and absent capability facts remain distinct.
   map<string, bool> capabilities = 4;
+  Form form = 5;
 }
 message Unit {
   string change_id = 1;
@@ -386,8 +639,9 @@ message Unit {
 message RenderResult {
   bool complete = 1;
   repeated Unit units = 2;
-  // Set only by RenderRowWrites when it refuses the batch: complete is false
-  // and there is no unit. Render never sets it. Contract 25.1.
+  // Set by RenderRowWrites when it refuses the batch, and by Render only in the
+  // TEXT form with the reason NO_TEXT_FORM: complete is false and there is no
+  // unit. Contract 25.1; Render's use is contract 25.3.
   RenderRefusal refusal = 3;
 }
 message ExecuteRequest {
@@ -619,6 +873,9 @@ message SourceFragment {
   YAMLSourceKey yaml_key = 10;
   // Frozen negotiated directive claim, required for Go annotation fragments.
   GoSourceDirective go_directive = 11;
+  // Frozen negotiated block claim, required for the HCL fragments of an
+  // engine that declares HCL claims. Contract 25.3, under source.hcl.
+  HCLSourceBlock hcl_block = 12;
   string id = 1;
   string selector = 2;
   // The shared frontend's attachment context, if already known. An owner may
@@ -652,6 +909,10 @@ message SourceDocument {
   // Explicit scope, frozen before dispatch. Only DESIRED models supporting
   // this document format may be enrolled. Empty means no owner models.
   repeated ValueModel models = 7;
+  // HCL only: the document's ptah:not-described header entries of the kinds
+  // the engine declares in hcl_source.header_kinds, in written order.
+  // Contract 25.3, under source.hcl.
+  repeated SchemaCoverageLimit limits = 8;
 }
 // SourcePathStep distinguishes a mapping key from a sequence index. A trace
 // follows the explicit fragment content tree, not an encoded Go field name.
@@ -866,6 +1127,9 @@ message SQLRole {
   // A principal of its own kind that never logs in and has members.
   bool group = 9;
   repeated string member_of = 10;
+  // The declaration gives the role a password. The password never travels in
+  // a declaration. Contract 25.3, under schema.common-objects.
+  bool password_declared = 11;
 }
 // SQLGrant is one GRANT or REVOKE. A REVOKE asserts the privilege absent, which
 // is a statement of its own and not the absence of a grant.
@@ -879,6 +1143,35 @@ message SQLGrant {
   bool with_grant_option = 4;
   bool revoked = 5;
   string comment = 6;
+  // The columns of a table target the privileges are limited to. Empty means
+  // the whole table. Contract 25.3, under schema.common-objects.
+  repeated string columns = 7;
+}
+// DeclaredCommonObjects are the declared common objects beyond tables, in the
+// shapes ReadSQLSchema returns. A comment stays in the comment field of the
+// object it belongs to. Contract 25.3, under schema.common-objects.
+message DeclaredCommonObjects {
+  // Materialized views set materialized.
+  repeated SQLView views = 1;
+  repeated SQLSequence sequences = 2;
+  repeated SQLRole roles = 3;
+  // Revoked grants set revoked.
+  repeated SQLGrant grants = 4;
+}
+// PrepareCommonObjects returns a declaration in the engine's own spelling, so
+// the host compares it with what a read reports. It is offline and atomic.
+message PrepareCommonObjectsRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  DeclaredCommonObjects declared = 5;
+}
+message PreparedCommonObjects {
+  bool complete = 1;
+  // Each collection has the request's length and order, and each entry keeps
+  // its identity; only the spelling of its values may change.
+  DeclaredCommonObjects prepared = 2;
 }
 // SQLObjectTrace points one declared object at its text. The collection and
 // index select the object, so objects without a unique name are addressable.
@@ -1043,6 +1336,9 @@ message ComparisonParent {
 message RequestedChange {
   ComparisonIdentity subject = 1;
   string action = 2;
+  // The object as the operator wrote it, for the owner to resolve, set
+  // instead of subject. Contract 25.3, under planning.policy.
+  string written = 3;
 }
 message ComparisonExclusion {
   string kind = 1;
@@ -1131,6 +1427,14 @@ message ComparedModels {
   ComparisonState desired = 2;
   repeated ComparedChange changes = 3;
   repeated ComparisonUndecided undecided = 4;
+  // The desired object each written request named, for the requests this
+  // service recognized. Contract 25.3, under planning.policy.
+  repeated ResolvedRequest resolved_requests = 5;
+}
+message ResolvedRequest {
+  // Index into CompareModelsRequest.requests.
+  uint32 request = 1;
+  ComparisonIdentity subject = 2;
 }
 
 // OperationSemantics carries local safety facts without rendering or I/O.
@@ -1172,6 +1476,9 @@ message CommonPlanningStep {
   // The actual operand, when this step adds a column. No host AST is sent.
   PlanningColumn added_column = 3;
   ComparisonIdentity parent = 4;
+  // The operand, when this step changes a common object beyond tables.
+  // Contract 25.3, under schema.common-objects.
+  CommonObjectChange common_object = 5;
 }
 message PlanningOperation {
   NativeOperation.Role role = 1;
@@ -1237,6 +1544,33 @@ message PlanFeaturesRequest {
   repeated CommonPlanningStep common_steps = 10;
   repeated string parent_kinds = 11;
   string database_path = 12;
+  // The declared and observed common objects beyond tables, as context.
+  // Contract 25.3, under schema.common-objects.
+  DeclaredCommonObjects desired_common = 13;
+  ObservedCommonObjects current_common = 14;
+  // The operator's planning policy. Contract 25.3, under planning.policy.
+  PlanningPolicy policy = 15;
+}
+// PlanningPolicy is a request, not a prediction: an engine without the
+// behavior plans as it would without it.
+message PlanningPolicy {
+  // Plan a change the engine cannot make in place as an explicit rebuild of
+  // its table, rather than refuse it.
+  bool allow_table_rebuild = 1;
+  // How the operator asks for allow_table_rebuild, for a refusal to name, such
+  // as "--allow-table-rebuild". Always set.
+  string table_rebuild_request = 2;
+  // Apply without blocking the writes already running, where the engine has a
+  // way to, and fail at the statement where it cannot.
+  bool online_alter = 3;
+  // Build every added index, or the listed ones, without blocking writes.
+  bool concurrent_index_builds = 4;
+  repeated ComparisonIdentity concurrent_index_build_subjects = 5;
+  // Drop every removed index, or the listed ones, without blocking writes.
+  bool concurrent_index_drops = 6;
+  repeated ComparisonIdentity concurrent_index_drop_subjects = 7;
+  // Make a column NOT NULL without filling its NULL rows first.
+  bool omit_null_backfill = 8;
 }
 message PlannedFeatures {
   bool complete = 1;
@@ -1817,6 +2151,8 @@ message ValidateSchemaRequest {
   bool no_skipped = 9;
   repeated SchemaCoverageLimit not_described = 10;
   map<string, SchemaDependencies> dependencies = 11;
+  // Contract 25.3, under schema.common-objects.
+  DeclaredCommonObjects common_objects = 12;
 }
 message ValidationTable {
   ComparisonIdentity subject = 1;
@@ -2321,6 +2657,8 @@ message RenderRowWritesRequest {
   map<string, bool> capabilities = 2;
   repeated string target_features = 3;
   repeated RowWrite writes = 4;
+  // Sent only when both sides list render.text-units. Contract 25.3.
+  RenderRequest.Form form = 5;
 }
 // RowWrite is one row operation. UPSERT is a mode of the operation, not a
 // word of one dialect: an owner whose engine has none refuses it.
@@ -2340,7 +2678,9 @@ message RowWrite {
 // RenderRefusal names the write a refused batch stopped at and why, in one
 // line that names no value.
 message RenderRefusal {
-  enum Reason { REASON_UNSPECIFIED = 0; UNSUPPORTED_MODE = 1; UNSUPPORTED_VALUE = 2; }
+  // NO_TEXT_FORM refuses, in the TEXT form, a change or a write the engine
+  // performs only through a native call. Contract 25.3.
+  enum Reason { REASON_UNSPECIFIED = 0; UNSUPPORTED_MODE = 1; UNSUPPORTED_VALUE = 2; NO_TEXT_FORM = 3; }
   string change_id = 1;
   Reason reason = 2;
   string message = 3;
@@ -3023,4 +3363,78 @@ message EmbeddingSearchResult {
   repeated EmbeddingKey exact = 4;
   // An index served the first list.
   bool index_used = 5;
+}
+
+// EncodeSource writes a provider's DESIRED values as the fragments its claims
+// read, offline: the mirror of DecodeSource. The host writes the syntax of the
+// format; the owner never writes text of it. Contract 25.3, under
+// source.encode.
+message EncodeSourceRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  // YAML, HCL or GO_ANNOTATIONS.
+  SourceDocument.Format format = 3;
+  // The document's tables, with the frontend naming they are written with.
+  repeated SourceBinding bindings = 4;
+  repeated EncodeSourceValue values = 5;
+  // What the document knows of the provider's models, DESIRED.
+  ModelCoverage coverage = 6;
+  // GO_ANNOTATIONS only: the columns of the bound tables, for their Go types.
+  repeated EncodeSourceColumn columns = 7;
+}
+message EncodeSourceValue {
+  SourceModelValue.Placement placement = 1;
+  // DESIRED; the envelope's owner is the object or the facet's subject.
+  NormalizedValue value = 2;
+  // The table binding of a facet. Empty for a native object.
+  string binding_id = 3;
+}
+message EncodeSourceColumn {
+  string binding_id = 1;
+  string name = 2;
+  // The engine type.
+  string type = 3;
+  bool nullable = 4;
+  bool primary_key = 5;
+}
+// EncodedSource accounts for every input value once: written by one fragment
+// or reported as one loss. A refused call is an error and returns nothing.
+message EncodedSource {
+  bool complete = 1;
+  repeated EncodedFragment fragments = 2;
+  repeated EncodeLoss losses = 3;
+  // The ptah:not-described entries the document has to carry.
+  repeated SchemaCoverageLimit limits = 4;
+  // GO_ANNOTATIONS only.
+  repeated EncodedFieldType field_types = 5;
+}
+message EncodedFragment {
+  // The claim, selector, binding, subject and content as DecodeSource
+  // receives them, with no position.
+  SourceFragment fragment = 1;
+  // The IDs of the input values the fragment writes.
+  repeated string value_ids = 2;
+  // Where an HCL TOP_LEVEL or IN_TABLE block stands among the writer's own.
+  enum Placement {
+    PLACEMENT_UNSPECIFIED = 0;
+    BEFORE_TYPES = 1;
+    USER_TYPES = 2;
+    AFTER_TABLES = 3;
+    AFTER_TRIGGERS = 4;
+    WITHIN_TABLE = 5;
+  }
+  Placement placement = 3;
+}
+// EncodeLoss is a value the format cannot say, in one line that names it and
+// never its content.
+message EncodeLoss {
+  string value_id = 1;
+  string message = 2;
+}
+message EncodedFieldType {
+  string binding_id = 1;
+  string column = 2;
+  // Such as "uint64" or "time.Time".
+  string go_type = 3;
+  string go_import = 4;
 }

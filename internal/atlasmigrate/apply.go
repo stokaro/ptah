@@ -87,6 +87,11 @@ type ApplyOptions struct {
 	// Atlas's own help surface), so the compat command resolves it from
 	// PTAH_SKIP_CHECKS rather than from the Atlas flag surface.
 	SkipChecks bool
+	// OwnTransactions applies the directory the way a runner that opens no
+	// transaction around a file applies it, as golang-migrate does; see
+	// [migrator.Migrator.WithOwnTransactions]. The converted layout carries
+	// no trace of the runner, so the caller that read the source layout says.
+	OwnTransactions bool
 }
 
 // ApplyPlan is the selected Atlas migrate apply work prepared from the
@@ -163,6 +168,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		migrationLockName:    opts.MigrationLockName,
 		skipMigrationLock:    opts.SkipMigrationLock,
 		skipChecks:           opts.SkipChecks,
+		ownTransactions:      opts.OwnTransactions,
 	})
 	if err != nil {
 		return ApplyPlan{}, err
@@ -473,6 +479,7 @@ type applyMigratorOptions struct {
 	migrationLockName    string
 	skipMigrationLock    bool
 	skipChecks           bool
+	ownTransactions      bool
 }
 
 func newApplyMigrator(
@@ -502,6 +509,7 @@ func newApplyMigrator(
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
+		WithOwnTransactions(opts.ownTransactions).
 		WithLogger(compatMigratorLogger())
 	if opts.skipMigrationLock {
 		mig = mig.WithoutMigrationLock()

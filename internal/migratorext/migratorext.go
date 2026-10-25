@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"ptah.run/core/dataext"
+	"ptah.run/internal/filetx"
 	"ptah.run/internal/lexer"
 	"ptah.run/migration/migrationfile"
 )
@@ -190,6 +191,11 @@ type Services struct {
 	// Indexes guards the revision table against an index a failed build
 	// left unusable. Nil means the engine leaves none.
 	Indexes IndexGuard
+	// OwnTransactions reads a migration body, split into statements, for the
+	// transactions it opens and closes itself; see internal/filetx. Nil reads
+	// none, so a migrator that runs such bodies as written wraps every body of
+	// the engine as usual.
+	OwnTransactions func(statements []string) (filetx.Blocks, error)
 	// TriggerGrant reports that the catalog shows a table's triggers only to
 	// an account holding the TRIGGER privilege, so a run that must prove a
 	// table has no hidden writer proves the privilege first.

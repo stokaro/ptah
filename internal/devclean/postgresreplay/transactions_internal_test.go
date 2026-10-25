@@ -12,59 +12,18 @@ import (
 	"ptah.run/internal/devclean/replay"
 )
 
+// The guard reads a file through filetx, whose tests hold the full grammar,
+// and answers the boundaries as indexes. A file with no transaction control
+// answers none.
 func TestTransactionBoundaries_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		statements []string
 		want       []int
 	}{
-		{
-			name:       "no transaction control",
-			statements: []string{"CREATE TABLE a (id int)", "INSERT INTO a VALUES (1)"},
-			want:       nil,
-		},
-		{
-			name:       "file wrapped in one transaction",
-			statements: []string{"BEGIN", "CREATE TABLE a (id int)", "COMMIT"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "start transaction and end",
-			statements: []string{"START TRANSACTION", "CREATE TABLE a (id int)", "END"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "work and transaction noise words",
-			statements: []string{"BEGIN WORK", "SELECT 1", "COMMIT TRANSACTION"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "modes",
-			statements: []string{"BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY, NOT DEFERRABLE", "SELECT 1", "COMMIT WORK"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "serializable deferrable",
-			statements: []string{"START TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE", "SELECT 1", "COMMIT"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "two transactions in one file with work between",
-			statements: []string{"BEGIN", "SELECT 1", "COMMIT", "CREATE TABLE a (id int)", "BEGIN", "SELECT 2", "COMMIT"},
-			want:       []int{0, 2, 4, 6},
-		},
-		{
-			name:       "lower case",
-			statements: []string{"begin", "select 1", "commit"},
-			want:       []int{0, 2},
-		},
-		{
-			name:       "begin inside a routine body is not a boundary",
-			statements: []string{"CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $$ BEGIN RETURN 1; END $$"},
-			want:       nil,
-		},
+		{name: "no transaction control", statements: []string{"CREATE TABLE a (id int)"}, want: nil},
+		{name: "two transactions", statements: []string{"BEGIN", "SELECT 1", "COMMIT", "SELECT 2", "BEGIN", "COMMIT"}, want: []int{0, 2, 4, 5}},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -75,128 +34,16 @@ func TestTransactionBoundaries_HappyPath(t *testing.T) {
 	}
 }
 
+// A file filetx refuses is refused as the replay's own structure error, which
+// names the replay and the statement.
 func TestTransactionBoundaries_FailurePath(t *testing.T) {
-	tests := []struct {
-		name       string
-		statements []string
-		wantIndex  int
-		wantReason string
-	}{
-		{
-			name:       "transaction never closed",
-			statements: []string{"BEGIN", "CREATE TABLE a (id int)"},
-			wantIndex:  0,
-			wantReason: "never closed",
-		},
-		{
-			name:       "commit without begin",
-			statements: []string{"CREATE TABLE a (id int)", "COMMIT"},
-			wantIndex:  1,
-			wantReason: "no transaction is open",
-		},
-		{
-			name:       "end without begin",
-			statements: []string{"END"},
-			wantIndex:  0,
-			wantReason: "no transaction is open",
-		},
-		{
-			name:       "nested begin",
-			statements: []string{"BEGIN", "BEGIN", "COMMIT", "COMMIT"},
-			wantIndex:  1,
-			wantReason: "already open since statement 1",
-		},
-		{
-			name:       "second commit",
-			statements: []string{"BEGIN", "COMMIT", "COMMIT"},
-			wantIndex:  2,
-			wantReason: "no transaction is open",
-		},
-		{
-			name:       "rollback",
-			statements: []string{"BEGIN", "CREATE TABLE a (id int)", "ROLLBACK"},
-			wantIndex:  2,
-			wantReason: "ROLLBACK takes the file's own work back",
-		},
-		{
-			name:       "abort",
-			statements: []string{"BEGIN", "ABORT"},
-			wantIndex:  1,
-			wantReason: "ABORT takes the file's own work back",
-		},
-		{
-			name:       "rollback outside a transaction",
-			statements: []string{"ROLLBACK"},
-			wantIndex:  0,
-			wantReason: "ROLLBACK takes the file's own work back",
-		},
-		{
-			name:       "savepoint",
-			statements: []string{"BEGIN", "SAVEPOINT s", "COMMIT"},
-			wantIndex:  1,
-			wantReason: "SAVEPOINT is partial transaction state",
-		},
-		{
-			name:       "release savepoint",
-			statements: []string{"BEGIN", "RELEASE SAVEPOINT s", "COMMIT"},
-			wantIndex:  1,
-			wantReason: "RELEASE is partial transaction state",
-		},
-		{
-			name:       "rollback to savepoint",
-			statements: []string{"BEGIN", "SAVEPOINT s", "ROLLBACK TO SAVEPOINT s", "COMMIT"},
-			wantIndex:  1,
-			wantReason: "SAVEPOINT is partial transaction state",
-		},
-		{
-			name:       "commit and chain",
-			statements: []string{"BEGIN", "COMMIT AND CHAIN"},
-			wantIndex:  1,
-			wantReason: "AND [NO] CHAIN",
-		},
-		{
-			name:       "commit and no chain",
-			statements: []string{"BEGIN", "COMMIT AND NO CHAIN"},
-			wantIndex:  1,
-			wantReason: "AND [NO] CHAIN",
-		},
-		{
-			name:       "prepare transaction",
-			statements: []string{"BEGIN", "PREPARE TRANSACTION 'x'"},
-			wantIndex:  1,
-			wantReason: "PREPARE TRANSACTION leaves a prepared transaction",
-		},
-		{
-			name:       "commit prepared",
-			statements: []string{"COMMIT PREPARED 'x'"},
-			wantIndex:  0,
-			wantReason: "COMMIT PREPARED leaves a prepared transaction",
-		},
-		{
-			name:       "unknown begin mode",
-			statements: []string{"BEGIN SNAPSHOT 'abc'", "COMMIT"},
-			wantIndex:  0,
-			wantReason: "not a transaction mode",
-		},
-		{
-			name:       "trailing words after commit",
-			statements: []string{"BEGIN", "COMMIT garbage"},
-			wantIndex:  1,
-			wantReason: "which the replay does not read",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := guard{dialect: platform.Postgres}.TransactionBoundaries(test.statements)
-			c.Assert(got, qt.IsNil)
-			var structure *replay.TransactionStructureError
-			c.Assert(err, qt.ErrorAs, &structure)
-			c.Assert(structure.Index, qt.Equals, test.wantIndex)
-			c.Assert(structure.Reason, qt.Contains, test.wantReason)
-		})
-	}
+	c := qt.New(t)
+	got, err := guard{dialect: platform.Postgres}.TransactionBoundaries([]string{"BEGIN", "BEGIN", "COMMIT", "COMMIT"})
+	c.Assert(got, qt.IsNil)
+	var structure *replay.TransactionStructureError
+	c.Assert(err, qt.ErrorAs, &structure)
+	c.Assert(structure.Index, qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, `postgres migration replay rejects transaction control at statement 2: a transaction is already open since statement 1`)
 }
 
 // A dialect of the family other than PostgreSQL reads none: the words carry

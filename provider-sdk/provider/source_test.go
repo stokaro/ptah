@@ -61,6 +61,7 @@ func TestSourceDocumentsRefuseAmbiguousOrLostProvenance(t *testing.T) {
 		{"duplicate fragment", func(d *protocol.SourceDocument) { d.Fragments = append(d.Fragments, proto.CloneOf(d.Fragments[0])) }},
 		{"missing selector", func(d *protocol.SourceDocument) { d.Fragments[0].Selector = "" }},
 		{"missing content", func(d *protocol.SourceDocument) { d.Fragments[0].Content = nil }},
+		{"typed nil content", func(d *protocol.SourceDocument) { d.Fragments[0].Content = (*protocol.SourceFragment_Value)(nil) }},
 		{"wrong format", func(d *protocol.SourceDocument) { d.Format = protocol.SourceDocument_HCL }},
 		{"missing location", func(d *protocol.SourceDocument) { d.Fragments[0].Span = nil }},
 		{"outside file", func(d *protocol.SourceDocument) { d.ByteLength = 99 }},

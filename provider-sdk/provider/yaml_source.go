@@ -8,6 +8,38 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// EntryKeysFeature enables the COLUMN and INDEX scopes of YAML claims and the
+// inherited lists of YAML and Go claims: the common keys of an entry the owner
+// reads with its own. It is a two-way feature. A provider lists it, and so does
+// each engine that uses it, beside DecodeSourceFeature. Contract 25.3.
+const EntryKeysFeature = "source.entry-keys"
+
+// validateInheritedNames refuses an invalid or repeated inherited name and one
+// the claim owns itself.
+func validateInheritedNames(inherited, owned []string) error {
+	for i, name := range inherited {
+		if !validGoSourceName(name) || slices.Contains(inherited[:i], name) || slices.Contains(owned, name) {
+			return sourceError("invalid, repeated or owned inherited attribute")
+		}
+	}
+	return nil
+}
+
+// validateInheritedAttributes requires a fragment of a claim with an
+// inherited list to carry only those attributes. A claim without one keeps the
+// rule of contract 25.2.
+func validateInheritedAttributes(inherited []string, fragment *protocol.SourceFragment) error {
+	if len(inherited) == 0 {
+		return nil
+	}
+	for _, entry := range fragment.GetInheritedAttributes().GetEntries() {
+		if !slices.Contains(inherited, entry.GetKey()) {
+			return sourceError("inherited attribute is outside its claim")
+		}
+	}
+	return nil
+}
+
 func validateYAMLSourceKeys(description *protocol.Description, engine *protocol.Engine) error {
 	claimed := make(map[struct {
 		scope protocol.YAMLSourceKey_Scope
@@ -16,6 +48,9 @@ func validateYAMLSourceKeys(description *protocol.Description, engine *protocol.
 	covered := make(map[string]bool)
 	for _, claim := range engine.GetYamlSourceKeys() {
 		if err := validateYAMLSourceKey(description, engine.GetId(), claim); err != nil {
+			return err
+		}
+		if err := validateYAMLEntryKey(engine, claim); err != nil {
 			return err
 		}
 		identity := struct {
@@ -46,7 +81,7 @@ func validateYAMLSourceKey(description *protocol.Description, engine string, cla
 		return sourceError("incomplete YAML key claim")
 	}
 	switch claim.GetScope() {
-	case protocol.YAMLSourceKey_DOCUMENT, protocol.YAMLSourceKey_TABLE:
+	case protocol.YAMLSourceKey_DOCUMENT, protocol.YAMLSourceKey_TABLE, protocol.YAMLSourceKey_COLUMN, protocol.YAMLSourceKey_INDEX:
 	default:
 		return sourceError("unknown YAML key scope")
 	}
@@ -59,6 +94,19 @@ func validateYAMLSourceKey(description *protocol.Description, engine string, cla
 		seen[kind] = true
 	}
 	return nil
+}
+
+// validateYAMLEntryKey requires the feature for an entry scope and for an
+// inherited list, which only an entry scope takes.
+func validateYAMLEntryKey(engine *protocol.Engine, claim *protocol.YAMLSourceKey) error {
+	entry := claim.GetScope() == protocol.YAMLSourceKey_COLUMN || claim.GetScope() == protocol.YAMLSourceKey_INDEX
+	if (entry || len(claim.GetInherited()) != 0) && !slices.Contains(engine.GetFeatures(), EntryKeysFeature) {
+		return sourceError("a YAML entry key needs " + EntryKeysFeature)
+	}
+	if len(claim.GetInherited()) != 0 && !entry {
+		return sourceError("only a column or index key inherits")
+	}
+	return validateInheritedNames(claim.GetInherited(), []string{claim.GetKey()})
 }
 
 func validateYAMLSourceFragments(description *protocol.Description, engine string, document *protocol.SourceDocument, models map[string]bool) error {
@@ -84,6 +132,9 @@ func validateYAMLSourceFragments(description *protocol.Description, engine strin
 		if err := validateYAMLSourceBinding(document, fragment); err != nil {
 			return err
 		}
+		if err := validateInheritedAttributes(claim.GetInherited(), fragment); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -104,6 +155,17 @@ func validateYAMLSourceBinding(document *protocol.SourceDocument, fragment *prot
 			}
 		}
 		return sourceError("table YAML key has no common table binding")
+	case protocol.YAMLSourceKey_COLUMN, protocol.YAMLSourceKey_INDEX:
+		subject := map[protocol.YAMLSourceKey_Scope]string{protocol.YAMLSourceKey_COLUMN: "column", protocol.YAMLSourceKey_INDEX: "index"}[fragment.GetYamlKey().GetScope()]
+		if fragment.GetSubject().GetKind() != subject || len(fragment.GetSubject().GetPath()) != 1 {
+			return sourceError("entry YAML key subject does not match its scope")
+		}
+		for _, binding := range document.GetBindings() {
+			if binding.GetId() == fragment.GetBindingId() && binding.GetObject().GetKind() == "table" && binding.GetEntryKey() != "" {
+				return nil
+			}
+		}
+		return sourceError("entry YAML key has no common table binding")
 	default:
 		return sourceError("unknown YAML key scope")
 	}

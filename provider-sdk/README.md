@@ -51,8 +51,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.2. `provider-sdk/v0.3.0` speaks contract 25.1, and
-`provider-sdk/v0.2.0` speaks 25.0.
+speaks contract 25.3. `provider-sdk/v0.4.0` speaks contract 25.2,
+`provider-sdk/v0.3.0` speaks 25.1, and `provider-sdk/v0.2.0` speaks 25.0.
 
 **What changes which number.** The minor counts compatible additions within a
 major. The major changes only with an incompatible change, and the minor then
@@ -63,7 +63,11 @@ returns to 0.
   25.1 adds, for example, the RPC `ReadRows`, the field
   `ExecuteRequest.statement_timeout_nanoseconds`, the enum value
   `LINT_FACT_STATEMENT_KIND` and the feature `database.dev-cleanup`. Contract
-  25.2 adds the [embedding store](#embedding-store).
+  25.2 adds the [embedding store](#embedding-store). Contract 25.3 adds the
+  [common-object wire](#common-objects), [text units](#text-units), the
+  [planning policy](#planning-policy), [YAML entry keys and HCL
+  claims](#yaml-entry-keys-and-hcl-claims) and
+  [source encoding](#source-encoding).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -83,8 +87,10 @@ does not oblige a peer to use it.
   or a request field the provider would have to honor, is used only when both
   sides list its feature. `provider.TwoWayFeatures()` returns those features:
   `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
-  `query.dialect` and `embeddings.store`. The embedding store's calls are new,
-  and its engine declaration is an addition to `Engine`, so a host lists the
+  `query.dialect`, `embeddings.store`, `schema.common-objects`,
+  `render.text-units`, `planning.policy`, `source.entry-keys` and
+  `source.hcl`. The embedding store's calls and `PrepareCommonObjects` are
+  new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
   `provider.NegotiatedDescription`, so neither side sends an addition the other
@@ -131,14 +137,16 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `Open` | A session handle for the requested engine, identifier rules, and established server capabilities. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
-| `Render` | One executable unit for every input change, in input order. A refused batch exposes no executable prefix. |
+| `Render` | One executable unit for every input change, in input order, or, in the `TEXT` form, a refusal of a change without a text form. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
+| `EncodeSource` | Offline: every value written by one fragment its claims read, with no position, or reported as one loss. |
 | `ReadSQLSchema` | A complete offline reading of every SQL schema document of an engine that declares the `DOCUMENT` mode: declared objects, per-document declarations, coverage and positioned diagnostics, or an error and no schema. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `PrepareTables` | Complete prepared key membership and declared facet adjustments from captured table state. |
+| `PrepareCommonObjects` | Offline: the declared views, sequences, roles and grants in the engine's spelling, each entry keeping its identity. |
 | `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
 | `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
 | `SplitLintStatements` | Complete statement boundaries for migration sources under the engine's own lexing, with the facts the split judges. |
@@ -191,10 +199,11 @@ validates its capability vocabulary and dependencies. Invalid session replies
 return no usable handle; both transport boundaries attempt to close a returned
 handle before refusing the reply.
 
-Common records represent tables and columns explicitly. Native records use a
-versioned provider-owned envelope. Structured references keep database, schema,
-path, kind, name, and overload components separate. The transport does not fold
-names or concatenate components into identity strings.
+Common records represent tables and columns explicitly, and, under
+`schema.common-objects`, views, sequences, roles, grants and comments. Native
+records use a versioned provider-owned envelope. Structured references keep
+database, schema, path, kind, name, and overload components separate. The
+transport does not fold names or concatenate components into identity strings.
 
 The fixture accepts a narrow table grammar. It refuses views, triggers, indexes,
 and table definitions it cannot reconstruct exactly. Its coverage does not
@@ -1019,7 +1028,8 @@ mode, not a word of one dialect: an engine without one refuses it. Rendering is
 deterministic, so a saved plan and a migration file cannot disagree about a
 row. A native unit must name the write's table as its owner; text units are
 the owner's promise. Execution uses `Execute` and the transaction service as
-for any other unit. A migration file accepts text units only.
+for any other unit. A migration file accepts text units only, which a host asks
+for with the `TEXT` form (see [Text units](#text-units)).
 
 The seed service acts on live sessions. The host discovers files, computes the
 checksum, selects them by environment and applies the protected-table check
@@ -1242,3 +1252,139 @@ and the process tests in `integration` run against it: prepare, scan and
 resume, a batch commit and a conflicting one, verification paging, an
 exhaustive search, structure and counts, retirement with an ownership refusal,
 and a crash after a commit whose checkpoint the next read shows.
+
+## Common objects
+
+[ADR 0033](../docs/adr/0033-common-objects-reach-a-provider-through-the-common-wire.md)
+decides this wire. `schema.common-objects` carries the objects the host models
+for every engine beyond tables: views, materialized views, sequences, roles,
+grants and comments. They travel in common messages, as tables do, and never as
+models a provider defines for itself. It is a two-way feature. The provider
+lists it, and each supporting engine lists it beside `Engine.common_objects`,
+the kinds it carries (`VIEW`, `MATERIALIZED_VIEW`, `SEQUENCE`, `ROLE`, `GRANT`,
+`COMMENT`), each once. A host that does not list it gets no declaration and no
+field below.
+
+The host keeps the comparison, policy and ordering; the provider inspects,
+validates, spells and renders:
+
+- **Declared** objects are the shapes `ReadSQLSchema` returns, in
+  `DeclaredCommonObjects`: `SQLView` (with `materialized`), `SQLSequence`,
+  `SQLRole` and `SQLGrant` (with `revoked`). `SQLRole.password_declared` says a
+  password is declared without carrying it, and `SQLGrant.columns` limits a
+  grant to columns of its table. A comment stays in the `comment` field of its
+  object. `ValidateSchemaRequest.common_objects` and
+  `PlanFeaturesRequest.desired_common` carry them.
+- **Observed** objects are `ObservedCommonObjects`, in
+  `Schema.common_objects` and `PlanFeaturesRequest.current_common`: views and
+  sequences by `Reference`, roles with their password state, one privilege per
+  `ObservedGrant`, and one `ObjectComment` per object that has a comment, a
+  column or an index with its table as the only path component. Each kind the
+  engine carries has exactly one `CommonObjectCoverage`, `COMPLETE` or
+  `UNINSPECTED` with a reason, and an object appears only for a kind the read
+  covered completely. `roles_out_of_scope` names the roles the server holds
+  that the read does not describe.
+- **`PrepareCommonObjects`** is offline. It returns the declaration in the
+  engine's spelling, such as a view body as the server stores it or a
+  privilege by its permission name, with every collection of the request's
+  length and order. A view keeps its schema, name and kind, a sequence its
+  schema and name, a role its name and kind, and a grant its role, target and
+  whether it revokes. The host compares the prepared declaration and renders
+  the authored one.
+- **Rendering**: `Change.common_object` is a `CommonObjectChange`: a view
+  created or dropped, a sequence created, altered or dropped, a role created,
+  altered or dropped, a grant or a revocation, a membership added or removed,
+  and a comment set. `Change.object` names its subject. A role's password
+  travels only in `RoleCreation` and `RoleAlteration`, and a diagnostic never
+  repeats it. `CommonPlanningStep.common_object` carries the same operand to a
+  planner.
+
+Both transport boundaries refuse a kind the engine does not carry, an empty
+name, a grant without a role, privileges or a target, a role that is a member
+of itself, an identity repeated under the engine's identifier rules, and a
+prepared entry that changed its identity or its collection's length. The
+fixture does not serve this wire.
+
+## Text units
+
+[ADR 0034](../docs/adr/0034-a-provider-renders-text-units-where-the-host-writes-text.md)
+decides this form. A host writes text where a migration file, `schema render`, a
+SQL diff or a SQL inspection needs it, and asks for it with `RenderRequest.form`
+or `RenderRowWritesRequest.form` set to `TEXT`. Every unit of the reply is then
+`Unit.sql`: a portable statement the same provider's `Execute` accepts read back
+from a file, with no envelope and no session state. A change the engine performs
+only through a native call refuses the whole batch with `RenderResult.refusal`,
+the reason `NO_TEXT_FORM`, a change of the request and one line of text, and no
+unit. `Render` sets a refusal only in the `TEXT` form.
+
+`render.text-units` is a two-way feature. The provider lists it, and so does
+each engine whose changes it can write as text. Without it the host sends the
+`ANY` form, which is the behavior of earlier minors.
+
+## Planning policy
+
+[ADR 0035](../docs/adr/0035-the-operators-planning-policy-reaches-the-provider.md)
+decides this feature. `planning.policy` carries the operator's planning policy,
+a two-way feature an engine lists beside planning or comparison:
+
+- `PlanFeaturesRequest.policy` is a `PlanningPolicy`: whether a change the
+  engine cannot make in place may be planned as a rebuild of its table, and the
+  words a refusal names to ask for it (`table_rebuild_request`, always set),
+  online alteration, concurrent index builds and drops for every index or the
+  listed ones, and making a column `NOT NULL` without filling its rows. A policy
+  is a request: an engine without the behavior plans as it would without it.
+- `RequestedChange.written` carries an object as the operator wrote it, such as
+  a secret's path for a rotation, set instead of `subject`. A comparison service
+  that recognizes the spelling answers it once in
+  `ComparedModels.resolved_requests` with a desired object it compares, and acts
+  on it as on a request with a subject. The host refuses a written request no
+  service resolved.
+
+## YAML entry keys and HCL claims
+
+[ADR 0036](../docs/adr/0036-a-provider-claims-yaml-entry-keys-and-hcl-blocks.md)
+decides these claims. `source.entry-keys` adds the `COLUMN` and `INDEX` scopes
+to `YAMLSourceKey`: a key of a column entry or of an index entry. Such a
+fragment carries a common table binding with an entry key and a `subject` of
+kind `column` or `index` with its table as the only path component. A YAML claim
+of either scope and a Go claim can list `inherited`, the common keys of the
+entry the owner reads too, such as an index's `type` and `ops`; the host sends
+them in `inherited_attributes`, and a fragment of such a claim carries no other.
+A host that does not list the feature gets no claim that needs it, and a model
+left with no YAML claim drops YAML from its source formats.
+
+`source.hcl` adds `Engine.hcl_source`: the HCL blocks an engine reads at the top
+level and inside a table, and the attributes it adds to the frontend's table,
+index, routine and materialized view blocks, with their attribute kinds,
+children, inherited attributes and the header kinds it reads as limits. The
+fields have the meaning of the host's HCL extension contract. A fragment carries
+its frozen claim in `hcl_block`: a `SourceBlock` of the claim's type at the top
+level and in a table, and a mapping of the owner's attributes at an attribute
+site, with the binding and subject the site needs. `SourceDocument.limits`
+carries an HCL document's header entries of the declared kinds. An engine that
+declares no HCL claim keeps accepting HCL fragments without one, as earlier
+minors do. Both features are two-way and need `source.decode`.
+
+## Source encoding
+
+[ADR 0037](../docs/adr/0037-a-provider-encodes-the-source-it-decodes.md)
+decides this service. `EncodeSource` is the mirror of `DecodeSource`. The host
+sends DESIRED values, native objects and facets with their table binding, in a
+format it writes (YAML, HCL or Go annotations), and the provider returns
+`EncodedFragment` entries: the fragments its claims read, each naming the values
+it writes, with no position, and for an HCL block of its own the placement among
+the writer's blocks. Every value is written once or reported once as an
+`EncodeLoss` with one line of text. A Go export also carries the bound tables'
+columns, and the reply may give a field the Go type of its engine type. The
+provider never writes text of a format; the host writes the syntax.
+
+`source.encode` is a provider service, listed by the provider and each
+supporting engine beside `source.decode`. It adds no field to an existing
+message, so it is not two-way; its fragments use only the claims the host
+negotiated.
+
+The SDK conformance tests in `runtime` negotiate each 25.3 addition in both
+directions, prepare a declaration, render text and refuse a change without a
+text form, refuse a native unit in the `TEXT` form from a peer that is not the
+SDK server, and decode what an owner encoded back to the same canonical
+projection.
