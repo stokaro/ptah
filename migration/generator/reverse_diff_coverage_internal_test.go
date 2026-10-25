@@ -124,6 +124,17 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredIndexes" || field.Name == "DeclaredGrants" || field.Name == "DeclaredTriggers" {
+		// OUTPUTS of the reverse, for the reason DeclaredViewLikes is. A
+		// rollback that rebuilds a view puts back what the PRE-CHANGE database
+		// held on it, so the indexes, privileges and triggers come from that
+		// database; the forward value describes the document the change was
+		// moving to and cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackRebuildPutsBackThePriorDependents is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredFunctions" {
 		// An OUTPUT of the reverse, for the reason the five below are. A
 		// rollback creates the functions the PRE-CHANGE database held, and
@@ -1127,4 +1138,59 @@ func TestReverseSchemaDiff_ARolledBackSequenceChangeKeepsTheRestart(t *testing.T
 	column := reversed.TablesModified[0].ColumnsModified[0]
 	c.Assert(column.Changes, qt.DeepEquals, map[string]string{"identity_increment": "10 -> 5"})
 	c.Assert(column.CurrentSequenceRestart, qt.Equals, "100")
+}
+
+// TestReverseSchemaDiff_ARolledBackRebuildPutsBackThePriorDependents is the
+// rollback's half of stokaro/ptah#4976. A rebuild puts back the indexes,
+// privileges and triggers of the objects it drops and creates again, and in a
+// rollback those are what the pre-change database held: the reverse reads them
+// off that database rather than inheriting the forward declaration's.
+func TestReverseSchemaDiff_ARolledBackRebuildPutsBackThePriorDependents(t *testing.T) {
+	c := qt.New(t)
+
+	schema := &schemamodel.Database{
+		Tables:  []schemamodel.Table{{StructName: "Host", Name: "rev_dep_host"}},
+		Fields:  []schemamodel.Field{{StructName: "Host", Name: "id", Type: "BIGINT", Primary: true}},
+		Indexes: []schemamodel.Index{{Name: "rev_dep_desired_idx", TableName: "rev_dep_host", Fields: []string{"id"}}},
+		Grants:  []schemamodel.Grant{{Role: "rev_dep_desired", Privileges: []string{"SELECT"}, OnTable: "rev_dep_host"}},
+		Triggers: []schemamodel.Trigger{{Name: "rev_dep_desired_trg", Table: "rev_dep_host", Timing: "BEFORE",
+			Event: "INSERT", ForEach: "ROW", ExecuteFunction: "noop"}},
+	}
+	schemamodel.Finalize(schema)
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "rev_dep_host", Type: "TABLE", Columns: []catalog.Column{
+			{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+		}}},
+		MatViews: []catalog.MaterializedView{{Name: "rev_dep_counts", Body: "SELECT count(*) AS n FROM rev_dep_host"}},
+		Indexes:  []catalog.Index{{Name: "rev_dep_prior_idx", TableName: "rev_dep_counts", Columns: []string{"n"}}},
+		Grants:   []catalog.Grant{{Role: "rev_dep_prior", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "rev_dep_counts"}},
+		Triggers: []catalog.Trigger{{Name: "rev_dep_prior_trg", Table: "rev_dep_host", Timing: "BEFORE", Event: "INSERT",
+			ForEach: "ROW", ExecuteFunction: "noop"}},
+	}
+	forward := &difftypes.SchemaDiff{
+		DeclaredIndexes:  difftypes.IndexDeclarationsOf(schema),
+		DeclaredGrants:   difftypes.GrantDeclarationsOf(schema),
+		DeclaredTriggers: schema.Triggers,
+	}
+
+	reversed := reverseForTest(t, forward, schema, dbSchema, "postgres")
+
+	indexes := make([]string, 0, len(reversed.DeclaredIndexes))
+	for _, index := range reversed.DeclaredIndexes {
+		indexes = append(indexes, index.TableName+"/"+index.Index.Name)
+	}
+	grants := make([]string, 0, len(reversed.DeclaredGrants))
+	for _, grant := range reversed.DeclaredGrants {
+		grants = append(grants, grant.Role+"/"+grant.ObjectName)
+	}
+	triggers := make([]string, 0, len(reversed.DeclaredTriggers))
+	for _, trigger := range reversed.DeclaredTriggers {
+		triggers = append(triggers, trigger.Name)
+	}
+	c.Assert(indexes, qt.Contains, "rev_dep_counts/rev_dep_prior_idx")
+	c.Assert(indexes, qt.Not(qt.Contains), "rev_dep_host/rev_dep_desired_idx")
+	c.Assert(grants, qt.Contains, "rev_dep_prior/rev_dep_counts")
+	c.Assert(grants, qt.Not(qt.Contains), "rev_dep_desired/rev_dep_host")
+	c.Assert(triggers, qt.Contains, "rev_dep_prior_trg")
+	c.Assert(triggers, qt.Not(qt.Contains), "rev_dep_desired_trg")
 }

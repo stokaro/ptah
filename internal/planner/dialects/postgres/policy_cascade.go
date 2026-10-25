@@ -3,6 +3,7 @@ package postgres
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/ptaherr"
@@ -34,7 +35,7 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 	if diff.TablePreparation == nil {
 		return nil
 	}
-	dropped := relationsDroppedWithCascade(diff)
+	dropped := droppedReadables(diff)
 	if len(dropped) == 0 {
 		return nil
 	}
@@ -49,52 +50,52 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 				continue
 			}
 			for _, relation := range dropped {
-				if !reader.ReadsRelation(relation) {
-					continue
+				if reader.ReadsRelation(relation.name) {
+					return p.lostReaderRefusal(relation, fmt.Sprint(object.Ref))
 				}
-				if p.exact() {
-					return fmt.Errorf("%w: the plan drops %s, which %s reads, and PostgreSQL refuses the drop while it does; "+
-						"nothing recreates it, so change it so it no longer reads %s first, then change %s",
-						ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
-				}
-				return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
-					"and nothing recreates it; change it so it no longer reads %s first, then change %s",
-					ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
 			}
 		}
 	}
 	return nil
 }
 
-// relationsDroppedWithCascade names every view and materialized view the plan
-// drops with CASCADE: a view it cannot replace in place, the view-like objects
-// that read one, the ones a view rebuild takes out, and the ones it changes or
-// removes.
-func relationsDroppedWithCascade(diff *difftypes.SchemaDiff) []string {
-	var dropped []string
+// lostReaderRefusal is the refusal of a plan whose drop of relation would take
+// the captured object reader with it, or stop on it.
+func (p *Planner) lostReaderRefusal(relation droppedReadable, reader string) error {
+	if relation.routine {
+		return fmt.Errorf("%w: the plan drops and creates again the routine %s, which %s calls, and PostgreSQL refuses the drop "+
+			"while it does; change it so it no longer calls %s first, then change what %s depends on",
+			ptaherr.ErrUnsupportedFeature, relation.name, reader, relation.name, relation.name)
+	}
+	if p.exact() {
+		return fmt.Errorf("%w: the plan drops %s, which %s reads, and PostgreSQL refuses the drop while it does; "+
+			"nothing recreates it, so change it so it no longer reads %s first, then change %s",
+			ptaherr.ErrUnsupportedFeature, relation.name, reader, relation.name, relation.name)
+	}
+	return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
+		"and nothing recreates it; change it so it no longer reads %s first, then change %s",
+		ptaherr.ErrUnsupportedFeature, relation.name, reader, relation.name, relation.name)
+}
+
+// droppedReadable is an object the plan drops that a captured object may read
+// or call.
+type droppedReadable struct {
+	name    string
+	routine bool
+}
+
+// droppedReadables names every view, materialized view and routine the plan
+// drops while the database still holds the captured objects of the tables it
+// keeps: the ones a view rebuild takes out, and the view-likes it removes. A
+// routine is dropped without CASCADE in either style.
+func droppedReadables(diff *difftypes.SchemaDiff) []droppedReadable {
+	var dropped []droppedReadable
 	for _, object := range planViewRebuild(diff).dropped() {
-		dropped = append(dropped, object.Name)
+		dropped = append(dropped, droppedReadable{name: object.Name, routine: object.Routine})
 	}
-	for _, viewDiff := range diff.ViewsModified {
-		if viewDiff.Desired.Name != "" && !viewReplaceKeepsDependents(viewDiff, viewDiff.Desired.Body) {
-			dropped = append(dropped, viewDiff.Desired.Name)
-		}
+	for _, object := range removedViewLikes(diff) {
+		dropped = append(dropped, droppedReadable{name: object.Name})
 	}
-	semantics := diff.EffectiveIdentifierSemantics("")
-	for _, lost := range viewLikesLostToCascade(diff.DeclaredViewLikes, slices.Clone(dropped), semantics) {
-		dropped = append(dropped, lost.Name)
-	}
-	for _, viewDiff := range diff.MaterializedViewsModified {
-		if viewDiff.Desired.Name != "" {
-			dropped = append(dropped, viewDiff.Desired.Name)
-		}
-	}
-	for _, view := range diff.ViewsRemoved {
-		dropped = append(dropped, view.Name)
-	}
-	for _, view := range diff.MaterializedViewsRemoved {
-		dropped = append(dropped, view.Name)
-	}
-	slices.Sort(dropped)
+	slices.SortFunc(dropped, func(a, b droppedReadable) int { return strings.Compare(a.name, b.name) })
 	return slices.Compact(dropped)
 }

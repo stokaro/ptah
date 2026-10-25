@@ -3311,7 +3311,8 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 			c.relname AS view_name,
 			pg_get_viewdef(c.oid, true) AS view_definition,
 			COALESCE(v.check_option, 'NONE') AS check_option,
-			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
+			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment,
+			COALESCE(array_to_json(c.reloptions)::text, '[]') AS options
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		LEFT JOIN information_schema.views v
@@ -3330,9 +3331,13 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 	var views []catalog.View
 	for rows.Next() {
 		var view catalog.View
-		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.CheckOption, &view.Comment)
+		var options string
+		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.CheckOption, &view.Comment, &options)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan view: %w", err)
+		}
+		if view.Options, err = relationOptions(options); err != nil {
+			return nil, fmt.Errorf("failed to read the options of view %s: %w", view.Name, err)
 		}
 		view.Schema = r.outputSchema(view.Schema)
 		views = append(views, view)
@@ -3361,7 +3366,8 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 			n.nspname AS schema_name,
 			c.relname AS view_name,
 			pg_get_viewdef(c.oid, true) AS view_definition,
-			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
+			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment,
+			COALESCE(array_to_json(c.reloptions)::text, '[]') AS options
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1
@@ -3377,9 +3383,13 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 	var views []catalog.MaterializedView
 	for rows.Next() {
 		var view catalog.MaterializedView
-		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.Comment)
+		var options string
+		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.Comment, &options)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan materialized view: %w", err)
+		}
+		if view.Options, err = relationOptions(options); err != nil {
+			return nil, fmt.Errorf("failed to read the options of materialized view %s: %w", view.Name, err)
 		}
 		view.Schema = r.outputSchema(view.Schema)
 		views = append(views, view)
@@ -3388,6 +3398,23 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 		return nil, fmt.Errorf("failed to read materialized views for schema %s: %w", schemaName, err)
 	}
 	return views, nil
+}
+
+// relationOptions decodes a relation's pg_class.reloptions, read as a JSON
+// array, leaving out a view's check_option, which the reader takes from
+// information_schema.views and the comparison models.
+func relationOptions(encoded string) ([]string, error) {
+	var options []string
+	if err := json.Unmarshal([]byte(encoded), &options); err != nil {
+		return nil, err
+	}
+	options = slices.DeleteFunc(options, func(option string) bool {
+		return strings.HasPrefix(strings.ToLower(option), "check_option=")
+	})
+	if len(options) == 0 {
+		return nil, nil
+	}
+	return options, nil
 }
 
 func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {

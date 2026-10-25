@@ -1065,6 +1065,52 @@ type SchemaDiff struct {
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
 
+	// DeclaredIndexes is every index the declaration holds, with the relation
+	// it belongs to resolved, carried once for the whole diff and off the
+	// wire.
+	//
+	// A planner that drops a materialized view and creates it again, to change
+	// it or a column under it, takes the view's indexes with it, and those
+	// indexes are usually ones this diff does not touch. This is how the
+	// planner puts them back.
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredIndexes IndexChanges `json:"-"`
+
+	// DeclaredGrants is every privilege the declaration grants, one entry per
+	// privilege and column, carried once for the whole diff and off the wire.
+	//
+	// A planner that drops a view, a materialized view or a routine and
+	// creates it again takes the privileges granted on it with it, and the
+	// diff lists only the grants that differ. This is how the planner grants
+	// the ones that agree again.
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredGrants []GrantRef `json:"-"`
+
+	// DeclaredTriggers is every trigger the declaration holds, carried once
+	// for the whole diff and off the wire, for a planner that drops a view
+	// and creates it again: the drop takes the view's INSTEAD OF triggers.
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredTriggers []schemamodel.Trigger `json:"-"`
+
+	// RoutinesKept is every declared routine the database holds as declared,
+	// with the argument list a DROP addresses it by, carried off the wire.
+	//
+	// A comparison plans only the routines that differ. A planner that drops
+	// a view and creates it again also has to drop a routine whose
+	// parameters or result name the view's row type, and create it again
+	// after the view, and that routine is usually one this diff does not
+	// touch.
+	//
+	// An unchanged routine is the same in both directions, so a reversal
+	// carries the same list.
+	RoutinesKept FunctionChanges `json:"-"`
+
 	// CurrentNotDescribed is what the read of the database this plan runs
 	// against declined to describe, carried once for the whole diff and off
 	// the wire.
@@ -1105,6 +1151,21 @@ type SchemaDiff struct {
 	//
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`
+
+	// CurrentViewOptions is the options the read reported on each view and
+	// materialized view that has any, keyed by the object's name without its
+	// schema and folded to lower case, carried off the wire: a view's
+	// security_invoker or security_barrier, a materialized view's storage
+	// parameters.
+	//
+	// Ptah declares none of them, so a comparison ignores them. A planner
+	// that drops a view and creates it again from the declaration would
+	// create it without them -- a security_invoker view would start running
+	// with its owner's privileges -- and refuses instead.
+	//
+	// A reversal runs against the same database and carries the same
+	// options.
+	CurrentViewOptions map[string][]string `json:"-"`
 
 	// Features is every named feature object on each side, changed or not,
 	// carried once for the whole diff and off the wire. A planner reads it

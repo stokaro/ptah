@@ -182,12 +182,12 @@ func droppedEnum() styleChange {
 // no guard and no CASCADE the plan does not rely on.
 //
 // A removed view goes before the column it reads, so neither drop needs
-// CASCADE or a guard. Two rows keep what the plan relies on, each because of a
-// step that runs later in the plan. A CHECK on a dropped column is gone with
-// the column when its drop runs, so that drop keeps IF EXISTS. A view dropped
-// under a declared reader relies on CASCADE to take the reader, which the plan
-// puts back with CREATE OR REPLACE. The skip row pins that a comment reporting
-// what the plan left out is written in this style too. Every other reason to
+// CASCADE or a guard, and a view dropped under a declared reader goes after
+// that reader, which comes back after it. One row keeps what the plan relies
+// on, because of a step that runs later in the plan: a CHECK on a dropped
+// column is gone with the column when its drop runs, so that drop keeps IF
+// EXISTS. The skip row pins that a comment reporting what the plan left out is
+// written in this style too. Every other reason to
 // keep CASCADE or a guard has a row in
 // [TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath].
 func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyle_HappyPath(t *testing.T) {
@@ -216,9 +216,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyle_HappyPath(t *test
 			`ALTER TABLE "public"."owners" DROP CONSTRAINT IF EXISTS "owners_email_check"`,
 		}},
 		{name: "a view dropped under a declared reader", change: viewDroppedUnderADeclaredReader(), want: []string{
-			`DROP VIEW "owner_names" CASCADE`,
+			`DROP VIEW "owner_ids"`,
+			`DROP VIEW "owner_names"`,
 			"CREATE VIEW \"owner_names\" AS\nSELECT name, id FROM owners",
-			"CREATE OR REPLACE VIEW \"owner_ids\" AS\nSELECT id FROM owner_names",
+			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owner_names",
 		}},
 		{name: "a skipped table drop", change: skippedTableDrop(), want: []string{
 			"-- SKIP: DROP TABLE of public.archive omitted by diff policy (skip: drop_table)",

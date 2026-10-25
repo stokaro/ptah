@@ -237,6 +237,9 @@ func compareReportingUndecidedAdditions(
 	// table and must give the table its grants back.
 	diff.CurrentDatabasePath = database.DatabasePath
 	diff.CurrentGrants = compare.CurrentGrants(database)
+	// And the options of each view and materialized view, which a plan that
+	// recreates one must not drop without a word.
+	diff.CurrentViewOptions = currentViewOptions(database)
 
 	// Comments on the objects that take theirs through a statement of its
 	// own, compared only where the target stores and reports them.
@@ -548,4 +551,24 @@ func loweringSemantics(opts *config.CompareOptions) identifier.Semantics {
 		return identifier.ForDialect(opts.Dialect)
 	}
 	return opts.IdentifierSemantics.Normalize(opts.Dialect)
+}
+
+// currentViewOptions is the options the read reported on each view and
+// materialized view, keyed as [difftypes.SchemaDiff.CurrentViewOptions] is.
+func currentViewOptions(database *catalog.Database) map[string][]string {
+	options := make(map[string][]string)
+	for _, view := range database.Views {
+		if len(view.Options) > 0 {
+			options[strings.ToLower(view.Name)] = slices.Clone(view.Options)
+		}
+	}
+	for _, view := range database.MatViews {
+		if len(view.Options) > 0 {
+			options[strings.ToLower(view.Name)] = slices.Clone(view.Options)
+		}
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
 }

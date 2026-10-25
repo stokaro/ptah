@@ -216,8 +216,9 @@ func matviewUnderViewDroppedWithCascade() styleChange {
 // A column that leaves an enum takes its declared default again, so the enum's
 // drop finds nothing that uses it; one that becomes an enum drops its default
 // around the TYPE clause. An index on a materialized view the rebuild dropped
-// keeps IF EXISTS, and so does a materialized view put back after a CASCADE
-// that took it.
+// keeps IF EXISTS. A routine that returns the rows of a view the rebuild
+// drops is dropped before it, so neither needs CASCADE, and so is a
+// materialized view over a view the plan cannot replace in place.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath(t *testing.T) {
 	setof := styleRoutine("list_skus", "", "SETOF item_skus", "SELECT * FROM item_skus")
 	rowParameter := styleRoutine("sku_of", "r item_skus", "character varying", "SELECT r.sku")
@@ -242,17 +243,17 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a view a column type change rebuilds, with a removed routine that returns its rows",
 			change: retypedUnderViewWithRoutine(setof),
 			want: []string{
-				`DROP VIEW "item_skus" CASCADE`,
+				`DROP FUNCTION "public"."list_skus"()`,
+				`DROP VIEW "item_skus"`,
 				`ALTER TABLE "items" ALTER COLUMN "sku" TYPE VARCHAR(128)`,
 				"CREATE VIEW \"item_skus\" AS\nSELECT id, sku FROM items",
-				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
 			}},
-		{name: "a view the view step drops, with a removed routine that returns its rows",
+		{name: "a view the plan cannot replace, with a removed routine that returns its rows",
 			change: viewDroppedWithRoutine(setof),
 			want: []string{
-				`DROP VIEW "item_skus" CASCADE`,
+				`DROP FUNCTION "public"."list_skus"()`,
+				`DROP VIEW "item_skus"`,
 				"CREATE VIEW \"item_skus\" AS\nSELECT sku, id FROM items",
-				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
 			}},
 		{name: "a table removed with a routine that returns its rows",
 			change: removedTableWithRoutine(styleRoutine("list_archive", "", "SETOF archive", "SELECT * FROM archive")),
@@ -314,10 +315,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			"CREATE MATERIALIZED VIEW \"sku_counts\" AS\nSELECT sku, count(*) AS n FROM items GROUP BY sku",
 			`DROP INDEX IF EXISTS "public"."sku_counts_n_idx"`,
 		}},
-		{name: "a materialized view put back after a CASCADE that took it", change: matviewUnderViewDroppedWithCascade(), want: []string{
-			`DROP VIEW "owner_names" CASCADE`,
+		{name: "a materialized view over a view the plan cannot replace", change: matviewUnderViewDroppedWithCascade(), want: []string{
+			`DROP MATERIALIZED VIEW "owner_counts"`,
+			`DROP VIEW "owner_names"`,
 			"CREATE VIEW \"owner_names\" AS\nSELECT name, id FROM owners",
-			`DROP MATERIALIZED VIEW IF EXISTS "owner_counts" CASCADE`,
 			"CREATE MATERIALIZED VIEW \"owner_counts\" AS\nSELECT count(*) AS n FROM owner_names",
 		}},
 	}

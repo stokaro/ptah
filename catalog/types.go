@@ -1184,6 +1184,13 @@ type View struct {
 	// body, and nothing kept this, so a replayed view came back unbound with
 	// no diagnostic anywhere (stokaro/ptah#2125).
 	Attributes []string `json:"attributes,omitempty"`
+
+	// Options is the view's own options other than its check option, as the
+	// server holds them, `name=value`: PostgreSQL's security_invoker and
+	// security_barrier. Ptah declares and compares none of them. A planner
+	// that drops the view and creates it again reads them to refuse, since the
+	// new view would not have them.
+	Options []string `json:"options,omitempty"`
 }
 
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.
@@ -1201,6 +1208,11 @@ type MaterializedView struct {
 	Schema  string           `json:"schema"`  // Schema where the materialized view is defined
 	Body    string           `json:"body"`    // SELECT query used as the materialized view definition
 	Comment string           `json:"comment"` // Materialized view comment/description
+
+	// Options is the materialized view's storage parameters as the server
+	// holds them, `name=value`, such as fillfactor or an autovacuum setting.
+	// Ptah declares and compares none of them; see [View.Options].
+	Options []string `json:"options,omitempty"`
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

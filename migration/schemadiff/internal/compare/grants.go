@@ -314,47 +314,7 @@ func coversAll(refs []difftypes.GrantRef) bool {
 }
 
 func grantRefsFromGenerated(grant schemamodel.Grant) []difftypes.GrantRef {
-	grant.Canonicalize()
-	objectType := "TABLE"
-	objectName := grant.OnTable
-	arguments := ""
-	switch {
-	case grant.OnDatabase:
-		objectType = grantObjectTypeDatabase
-		objectName = ""
-	case grant.OnObject != "":
-		objectType = grant.ObjectKind
-		objectName = grant.OnObject
-	case grant.OnSchema != "":
-		objectType = grantObjectTypeSchema
-		objectName = grant.OnSchema
-	case grant.OnSequence != "":
-		objectType = "SEQUENCE"
-		objectName = grant.OnSequence
-	case grant.OnRoutine != "":
-		objectType = grant.RoutineKind
-		objectName = grant.OnRoutine
-		arguments = grant.RoutineArguments
-	}
-	columns := grant.Columns
-	if len(columns) == 0 {
-		columns = []string{""}
-	}
-	refs := make([]difftypes.GrantRef, 0, len(grant.Privileges)*len(columns))
-	for _, privilege := range grant.Privileges {
-		for _, column := range columns {
-			refs = append(refs, difftypes.GrantRef{
-				Role:       grant.Role,
-				Privilege:  strings.ToUpper(strings.TrimSpace(privilege)),
-				ObjectType: objectType,
-				ObjectName: objectName,
-				Arguments:  arguments,
-				Column:     column,
-				WithOption: grant.WithOption,
-			})
-		}
-	}
-	return refs
+	return difftypes.GrantRefsOf(grant)
 }
 
 // CurrentGrants returns every grant the read of the database reported, as the

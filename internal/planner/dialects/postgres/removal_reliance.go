@@ -58,11 +58,14 @@ func removedRoutineMatches(diff *difftypes.SchemaDiff, match func(difftypes.Rout
 // server parses such a body when the routine is created and records what it
 // reads; a body in quotes is a string it records nothing for.
 func sqlStandardBodyReads(body, relation string) bool {
+	return sqlStandardBody(body) && deporder.ReferencesIdentifier(body, unqualified(relation))
+}
+
+// sqlStandardBody reports whether body is a SQL-standard routine body,
+// `BEGIN ATOMIC ... END` or `RETURN expression`, rather than a string.
+func sqlStandardBody(body string) bool {
 	head := strings.ToUpper(strings.Join(strings.Fields(body), " "))
-	if !strings.HasPrefix(head, "BEGIN ATOMIC") && !strings.HasPrefix(head, "RETURN ") {
-		return false
-	}
-	return deporder.ReferencesIdentifier(body, unqualified(relation))
+	return strings.HasPrefix(head, "BEGIN ATOMIC") || strings.HasPrefix(head, "RETURN ")
 }
 
 // removedTableReads reports whether a captured object of a table the plan

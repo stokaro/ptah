@@ -1695,6 +1695,14 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.refusePoliciesLostToCascade(diff); err != nil {
 		return nil, err
 	}
+	// The views, materialized views and routines a column type change, a
+	// materialized view change or a view change the server cannot make in
+	// place drops and creates again. Every step below that would plan one of
+	// them leaves it to the rebuild.
+	rebuild := planViewRebuild(diff)
+	if err := refuseUnrebuildable(diff, rebuild); err != nil {
+		return nil, err
+	}
 	// Hand-built diffs may lack identities. Resolve them before either the
 	// early dependency releases or the later replacement pairing uses them.
 	constraintscope.Normalize(diff, semantics)
@@ -1720,6 +1728,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	placements, err := p.routinePlacements(diff)
 	if err != nil {
 		return nil, err
+	}
+	for name := range placements {
+		if rebuild.ownsRoutine(name) {
+			placements[name] = routineInRebuild
+		}
 	}
 	relationPlaced := p.relationRoutines(diff, placements)
 	result = p.addNewFunctions(result, diff, placements, deporder.RoutineBeforeTypes)
@@ -1768,9 +1781,9 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.releaseKeyNames(result, diff, released)
 
 	// 5c. Views that read a column whose type changes leave first: PostgreSQL
-	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes
-	// leaves with everything that reads it. Step 6.6 puts them back.
-	rebuild := planViewRebuild(diff)
+	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes,
+	// and a view the server cannot replace in place, leaves with everything
+	// that depends on it. Step 6.6 puts them back.
 	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
@@ -1899,7 +1912,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeSequences(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
-	result = p.removeFunctions(result, diff)
+	result = p.removeFunctions(result, diff, rebuild)
 
 	// 14. Remove roles (must be done after removing functions and policies that depend on them)
 	result = p.removeRoles(result, diff)
@@ -2199,12 +2212,17 @@ func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
 
-func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+// removeFunctions drops the routines the declaration no longer holds, other
+// than the ones a view rebuild dropped already.
+func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	// The signature is what makes the statement addressable. A name alone is
 	// refused with `function name "f" is not unique` on any schema that
 	// overloads, and IF EXISTS does not help because the refusal is about
 	// ambiguity rather than existence (stokaro/ptah#2296).
 	for _, removal := range diff.FunctionsRemoved.Removals() {
+		if rebuild.ownsRoutine(removal.Name) {
+			continue
+		}
 		dropFunctionNode := ast.NewDropFunction(removal.Name).
 			SetIfExists()
 		if p.describes() {
@@ -2223,6 +2241,9 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 	// so the kind the comparator kept is what makes the statement run
 	// (stokaro/ptah#1722).
 	for _, removal := range diff.ProceduresRemoved.Removals() {
+		if rebuild.ownsRoutine(removal.Name) {
+			continue
+		}
 		dropProcedureNode := ast.NewDropFunction(removal.Name).
 			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists()
@@ -2427,9 +2448,9 @@ func (p *Planner) addNewViewLikeObjects(
 // PostgreSQL accepts CREATE OR REPLACE VIEW only for appending trailing columns;
 // dropping, renaming or retyping a projected column is refused at execution
 // time, so the replace can render perfectly and fail when it runs. The drop
-// always applies, but it carries CASCADE: it takes dependent views and
-// materialized views with it, along with the privileges granted on the view
-// itself, none of which the replace disturbs.
+// applies once everything that depends on the view is dropped before it, and
+// each of those has to be created again, with its privileges; the replace
+// disturbs none of them.
 //
 // So the choice is made per view from what viewReplaceLegality can prove, and
 // the undecidable case is resolved by the direction being planned:
@@ -2449,47 +2470,37 @@ func (p *Planner) addNewViewLikeObjects(
 //	                   the incident it was meant to end -- so it takes the
 //	                   statement that always applies.
 //
-// Whatever the drop path takes with it, this step puts back: every declared view
-// and materialized view that reads a dropped view, transitively, is recreated
-// after it. Without that the plan silently left the database short of the schema
-// it was generated from, and re-planning did not converge (issue #1287). What
-// CASCADE removes and this cannot rebuild is anything Ptah does not declare -- a
-// hand-made view, a rule, privileges on the view -- which is why the drop is
-// taken only where it buys something.
+// Whatever the drop path takes with it comes back: every declared view and
+// materialized view that reads a dropped view, transitively, the routines that
+// use its row type, and the indexes, triggers and privileges on them. Without
+// that the plan silently left the database short of the schema it was
+// generated from, and re-planning did not converge (issue #1287). What CASCADE
+// removes in Ptah's own style and nothing can rebuild is anything Ptah does not
+// declare -- a hand-made view, a rule -- which is why the drop is taken only
+// where it buys something.
 //
-// The drop and the create are emitted from inside the modify step, not by
-// pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
-// before removals, so a modification expressed from outside comes out
-// create-then-drop and ends with no view at all.
+// A view on the drop path is rebuilt, with everything that depends on it; see
+// [viewRebuild]. This step replaces the views on the replace path that the
+// rebuild neither owns nor replaced before its drops, in creation order.
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	changes := modifiedViewPaths(diff)
-	// A view the rebuild owns is absent while this step runs. This step
-	// neither drops it nor creates it, and the same holds for everything that
-	// reads it, which the rebuild owns too.
 	owned := rebuild.owns()
-	cleared := make([]string, 0, len(changes.dropped))
-	for _, name := range changes.dropped {
-		if owned.has(deporder.ViewLike{Name: name}) {
-			continue
-		}
-		cleared = append(cleared, name)
-		result = append(result, p.dropViewNode(name, p.cascades(p.viewDropRelies(diff, name, owned))))
+	for _, object := range rebuild.replaceFirst {
+		owned[viewLikeKey(object)] = true
 	}
-
-	for _, object := range deporder.ViewLikesForCreateForDialect(changes.recreate(diff, semantics), p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForCreateForDialect(modifiedViewPaths(diff).replaced, p.targetDialect()) {
 		if !owned.has(object) {
-			result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, cleared, semantics)
+			result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, nil, semantics)
 		}
 	}
 	return result
 }
 
 // viewPaths is the split [Planner.modifyExistingViews] makes of the modified
-// views: the ones it drops and creates again, and the ones it replaces in
-// place.
+// views: the ones the rebuild drops and creates again, and the ones this step
+// replaces in place.
 type viewPaths struct {
-	dropped  []string
+	dropped  []deporder.ViewLike
 	replaced []deporder.ViewLike
 }
 
@@ -2502,60 +2513,14 @@ func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
 		if view.Name == "" {
 			continue
 		}
+		object := deporder.ViewLike{Name: view.Name, Body: view.Body}
 		if viewReplaceKeepsDependents(viewDiff, view.Body) {
-			paths.replaced = append(paths.replaced, deporder.ViewLike{Name: view.Name, Body: view.Body})
+			paths.replaced = append(paths.replaced, object)
 			continue
 		}
-		paths.dropped = append(paths.dropped, view.Name)
+		paths.dropped = append(paths.dropped, object)
 	}
 	return paths
-}
-
-// recreate is every object the view step writes: what the drops take with
-// them, and the views replaced in place.
-func (v viewPaths) recreate(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []deporder.ViewLike {
-	// A view on the replace path can also be a dependent of one on the drop
-	// path, in which case it is on both lists and must still be rendered once.
-	recreate := viewLikesLostToCascade(diff.DeclaredViewLikes, v.dropped, semantics)
-	named := make(map[string]bool, len(recreate))
-	for _, object := range recreate {
-		named[object.Name] = true
-	}
-	for _, object := range v.replaced {
-		if !named[object.Name] {
-			recreate = append(recreate, object)
-		}
-	}
-	return recreate
-}
-
-// viewDropRelies reports whether dropping the modified view name relies on
-// CASCADE: an object that depends on it is still in the database when the
-// drop runs. That is a declared view or materialized view that reads it,
-// which the view step puts back after the drop, a view or materialized view
-// the declaration removes, which the removal step drops only later, and a
-// removed routine or a policy of a removed table, dropped later still. A
-// reader the view rebuild owns is absent by then.
-func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, owned viewLikeSet) bool {
-	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	for _, object := range viewLikesLostToCascade(diff.DeclaredViewLikes, []string{name}, semantics) {
-		if object.Name != name && !owned.has(object) {
-			return true
-		}
-	}
-	return removedReaderRemains(diff, name, owned) || removalOutlivesDrop(diff, name)
-}
-
-// removedReaderRemains reports whether a view or materialized view the
-// declaration removes reads relation and is still in the database when a
-// step before the removal step drops relation.
-func removedReaderRemains(diff *difftypes.SchemaDiff, relation string, owned viewLikeSet) bool {
-	for _, object := range removedViewLikes(diff) {
-		if !owned.has(object) && object.Name != relation && deporder.ReferencesIdentifier(object.Body, relation) {
-			return true
-		}
-	}
-	return false
 }
 
 // appendViewLikeRecreate renders the CREATE that puts one view-like object back.
@@ -2609,67 +2574,6 @@ func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) 
 	default:
 		return !viewDiff.Rollback
 	}
-}
-
-// viewLikesLostToCascade returns the declared views and materialized views that
-// DROP VIEW ... CASCADE removes when it drops the named views, the dropped views
-// themselves included, so the caller can put every one of them back.
-//
-// Dependency is read off the declared bodies, the same test that orders view
-// creation, and it is applied transitively: dropping a view takes the view that
-// reads it, and the view that reads that one.
-//
-// The test reads the code of those bodies and not their text. A name inside a
-// string literal or a comment reads nothing, and putting it on this list is not
-// a harmless over-approximation: everything on the list is answered with a
-// statement, and for a materialized view that statement is
-// DROP MATERIALIZED VIEW ... CASCADE. On PostgreSQL 17.10 that took a hand-made
-// dependent view, a unique index and a GRANT off an object no part of the
-// migration touched -- none of them declared, so nothing put them back.
-func viewLikesLostToCascade(
-	declared difftypes.ViewLikeVocabulary,
-	dropped []string,
-	semantics identifier.Semantics,
-) []deporder.ViewLike {
-	if len(dropped) == 0 {
-		return nil
-	}
-
-	candidates := make([]deporder.ViewLike, 0, len(declared.Views)+len(declared.MaterializedViews))
-	for _, view := range declared.Views {
-		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
-	}
-	for _, view := range declared.MaterializedViews {
-		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
-	}
-
-	lost := make([]deporder.ViewLike, 0, len(dropped))
-	taken := make(map[string]bool, len(dropped))
-	frontier := make([]string, 0, len(dropped))
-	for _, name := range dropped {
-		if taken[name] {
-			continue
-		}
-		taken[name] = true
-		frontier = append(frontier, name)
-		if view := objectlookup.View(declared.Views, name, semantics); view != nil {
-			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
-		}
-	}
-
-	for len(frontier) > 0 {
-		gone := frontier[0]
-		frontier = frontier[1:]
-		for _, candidate := range candidates {
-			if taken[candidate.Name] || !deporder.ReferencesIdentifier(candidate.Body, gone) {
-				continue
-			}
-			taken[candidate.Name] = true
-			frontier = append(frontier, candidate.Name)
-			lost = append(lost, candidate)
-		}
-	}
-	return lost
 }
 
 // removeViewLikes drops the views and materialized views the declaration no

@@ -4,6 +4,7 @@ package generator
 // forward diff a caller still holds has to be a different object.
 
 import (
+	"maps"
 	"slices"
 
 	"ptah.run/core/difftypes"
@@ -54,6 +55,11 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.RoleMembershipsAdded = slices.Clone(diff.RoleMembershipsAdded)
 	clone.RoleMembershipsRemoved = slices.Clone(diff.RoleMembershipsRemoved)
 	clone.CurrentGrants = slices.Clone(diff.CurrentGrants)
+	clone.CurrentViewOptions = maps.Clone(diff.CurrentViewOptions)
+	clone.DeclaredIndexes = slices.Clone(diff.DeclaredIndexes)
+	clone.DeclaredGrants = slices.Clone(diff.DeclaredGrants)
+	clone.DeclaredTriggers = slices.Clone(diff.DeclaredTriggers)
+	clone.RoutinesKept = slices.Clone(diff.RoutinesKept)
 	clone.GrantsAdded = slices.Clone(diff.GrantsAdded)
 	clone.GrantsRemoved = slices.Clone(diff.GrantsRemoved)
 	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
