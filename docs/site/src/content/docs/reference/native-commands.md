@@ -693,6 +693,14 @@ because a rule that quietly did not run is indistinguishable from one that found
 nothing. Row-level security has no meaning on a target that does not model it,
 so `PRV01` reports itself skipped on MySQL and SQLite.
 
+A connection that may not read the server's roles is refused rather than
+analyzed, on every engine: every rule about roles would answer over an empty
+set and report an access model nobody saw. The read decides, when the server
+refuses the role catalog: YDB's `.sys/auth_*` tables, MySQL's and MariaDB's
+`mysql.user`, ClickHouse's `system.roles` and Oracle's role views, or a
+provider's read that leaves roles uninspected. Connect as an account that may
+read them.
+
 PostgreSQL's own `USAGE` on schema `public` to `PUBLIC` is excluded by name,
 because a finding present in every database is one a reader learns to skip.
 `CREATE` on that schema is not excluded — PostgreSQL 15 revoked it from `PUBLIC`
