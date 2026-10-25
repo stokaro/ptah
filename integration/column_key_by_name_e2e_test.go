@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -114,6 +115,16 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 	},
 }
 
+// migrateDiffSpelling rewrites a statement `schema apply` writes as `migrate
+// diff` writes it. The diff follows the community binary's statement style,
+// which drops a PostgreSQL constraint or index without IF EXISTS; on MySQL and
+// MariaDB both commands write the same statement.
+var migrateDiffSpelling = map[string]*strings.Replacer{
+	"MySQL":      strings.NewReplacer(),
+	"MariaDB":    strings.NewReplacer(),
+	"PostgreSQL": strings.NewReplacer(" IF EXISTS ", " "),
+}
+
 // TestMigrateDiffRenamesAColumnKeyUnderAnotherNameE2E plans the directory
 // against the schema file, writes the plan into the directory, applies the
 // directory to an empty database and diffs again: the directory the plan
@@ -138,7 +149,7 @@ func TestMigrateDiffRenamesAColumnKeyUnderAnotherNameE2E(t *testing.T) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
 				for _, statement := range test.want[engine.name] {
-					c.Assert(plan, qt.Contains, statement)
+					c.Assert(plan, qt.Contains, migrateDiffSpelling[engine.name].Replace(statement))
 				}
 				c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
 			})
