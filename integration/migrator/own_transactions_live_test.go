@@ -5,6 +5,7 @@ package migrator_test
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -75,6 +76,22 @@ func (r *ownTransactionsRun) exec(c *qt.C, query string) {
 	c.Helper()
 	_, err := r.conn.ExecContext(context.Background(), query)
 	c.Assert(err, qt.IsNil)
+}
+
+// texts returns the one text column query selects, each value trimmed.
+func (r *ownTransactionsRun) texts(c *qt.C, query string) []string {
+	c.Helper()
+	rows, err := r.conn.QueryContext(context.Background(), query)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var texts []string
+	for rows.Next() {
+		var text string
+		c.Assert(rows.Scan(&text), qt.IsNil)
+		texts = append(texts, strings.TrimSpace(text))
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return texts
 }
 
 // tableExists reports whether the run's table with prefix exists.
@@ -349,6 +366,46 @@ func TestMigrateUpOwnTransactions_MarkBeforeCommitFailsLive(t *testing.T) {
 		"SELECT count(*), COALESCE(max(open_sessions), 0) FROM owntx_c_"+run.suffix).Scan(&checks, &open), qt.IsNil)
 	c.Assert(checks > 0, qt.IsTrue, qt.Commentf("the failure was never recorded through the trigger"))
 	c.Assert(open, qt.Equals, 0)
+}
+
+// A failure outside the file's transactions leaves none open, so the migrator
+// sends no ROLLBACK, which PostgreSQL would answer with a warning. When the
+// failure is recorded, the trigger reads the last statement of every other
+// session of the run, the run's connections being the ones named by its
+// application_name: the body's session last sent the failed INSERT.
+func TestMigrateUpOwnTransactions_FailureOutsideTheFilesTransactionSendsNoRollbackLive(t *testing.T) {
+	c := qt.New(t)
+	application := fmt.Sprintf("owntx_%d", time.Now().UnixNano())
+	dbURL, err := url.Parse(postgresTestURL(t))
+	c.Assert(err, qt.IsNil)
+	query := dbURL.Query()
+	query.Set("application_name", application)
+	dbURL.RawQuery = query.Encode()
+	run := newOwnTransactionsRun(c, dbURL.String(),
+		"BEGIN;\nCREATE TABLE owntx_a_%[1]s (id int);\nCOMMIT;\nINSERT INTO owntx_missing_%[1]s VALUES (1);\n")
+	m := run.migrator(c, migrator.WithOwnTransactions())
+	c.Assert(m.Initialize(context.Background()), qt.IsNil)
+	c.Cleanup(func() {
+		_, _ = run.conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS owntx_last_"+run.suffix+"() CASCADE")
+	})
+	run.exec(c, "CREATE TABLE owntx_c_"+run.suffix+" (last_statement text)")
+	run.exec(c, "CREATE FUNCTION owntx_last_"+run.suffix+"() RETURNS trigger LANGUAGE plpgsql AS $$\n"+
+		"BEGIN\n"+
+		"  IF NEW.error LIKE '%does not exist%' THEN\n"+
+		"    INSERT INTO owntx_c_"+run.suffix+" SELECT query FROM pg_stat_activity\n"+
+		"      WHERE application_name = '"+application+"' AND pid <> pg_backend_pid();\n"+
+		"  END IF;\n"+
+		"  RETURN NEW;\n"+
+		"END $$")
+	run.exec(c, "CREATE TRIGGER owntx_last BEFORE UPDATE ON "+run.table+
+		" FOR EACH ROW EXECUTE FUNCTION owntx_last_"+run.suffix+"()")
+
+	err = m.MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*relation "owntx_missing_\d+" does not exist.*`)
+	statements := run.texts(c, "SELECT last_statement FROM owntx_c_"+run.suffix)
+	c.Assert(statements, qt.Any(qt.Matches), `INSERT INTO owntx_missing_\d+ VALUES \(1\)`)
+	c.Assert(statements, qt.Not(qt.Any(qt.Equals)), "ROLLBACK")
 }
 
 // A statement observer that refuses a statement after it ran stops the file.
