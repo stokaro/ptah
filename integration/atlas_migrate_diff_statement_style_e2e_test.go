@@ -440,3 +440,96 @@ CREATE VIEW reporting.charges_copy AS SELECT id FROM public.charges_search;`)
 	).Scan(&copies), qt.IsNil)
 	c.Assert(copies, qt.Equals, 1)
 }
+
+// materializedViewFixture is stokaro/ptah#4964 as filed: a materialized view
+// whose body changes, and a view that reads it.
+var materializedViewFixture = []statementStyleStep{
+	{
+		name: "base",
+		schema: `CREATE TABLE orders (id integer PRIMARY KEY, amount numeric NOT NULL);
+CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total FROM orders;
+CREATE VIEW order_report AS SELECT total FROM order_totals;
+`,
+	},
+	{
+		name: "count_orders",
+		schema: `CREATE TABLE orders (id integer PRIMARY KEY, amount numeric NOT NULL);
+CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total, count(*) AS n FROM orders;
+CREATE VIEW order_report AS SELECT total FROM order_totals;
+`,
+		up: `-- drop "order_report" view
+DROP VIEW "order_report";
+-- drop "order_totals" materialized view
+DROP MATERIALIZED VIEW "order_totals";
+-- create "order_totals" materialized view
+CREATE MATERIALIZED VIEW "order_totals" AS
+SELECT sum(amount) AS total, count(*) AS n FROM orders;
+-- create "order_report" view
+CREATE VIEW "order_report" AS
+SELECT total FROM order_totals;
+`,
+		down: `-- reverse: create "order_report" view
+DROP VIEW "order_report";
+-- reverse: create "order_totals" materialized view
+DROP MATERIALIZED VIEW "order_totals";
+-- reverse: drop "order_totals" materialized view
+CREATE MATERIALIZED VIEW "order_totals" AS
+SELECT sum(amount) AS total
+   FROM orders;
+-- reverse: drop "order_report" view
+CREATE VIEW "order_report" AS
+SELECT total
+   FROM order_totals;
+`,
+	},
+}
+
+// TestCompatMigrateDiffStatementStyleE2E_AMaterializedViewChangeKeepsItsReaders
+// diffs stokaro/ptah#4964 as filed and runs the files on PostgreSQL. The plan
+// drops the view that reads the materialized view before it and creates the
+// view again after it, both directions without CASCADE, so the database holds
+// the view after the change and after its rollback, and a run after the change
+// finds the directory in sync.
+func TestCompatMigrateDiffStatementStyleE2E_AMaterializedViewChangeKeepsItsReaders(t *testing.T) {
+	c := qt.New(t)
+
+	dir := diffStatementStyleSteps(c, materializedViewFixture)
+
+	pairs := readMigrationPairs(c, dir)
+	c.Assert(pairs[1:], qt.DeepEquals, wantPairs(materializedViewFixture[1:]))
+	target := statementStyleTarget(c)
+	for _, pair := range pairs {
+		_, err := target.ExecContext(c.Context(), pair.Up)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", pair.Up))
+	}
+	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "orders"})
+	_, err := target.ExecContext(c.Context(), pairs[1].Down)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", pairs[1].Down))
+	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "orders"})
+}
+
+// TestCompatMigrateDiffStatementStyleE2E_RefusesARetypeThatDropsAPolicy diffs
+// stokaro/ptah#4965 as filed. The column type change drops the view a policy
+// reads, so `migrate diff` refuses it and names the policy, where the file it
+// would write stops at the drop on PostgreSQL. The directory keeps the first
+// step only.
+func TestCompatMigrateDiffStatementStyleE2E_RefusesARetypeThatDropsAPolicy(t *testing.T) {
+	c := qt.New(t)
+	const schema = `CREATE TABLE tenants (id %s PRIMARY KEY, active boolean NOT NULL);
+CREATE VIEW active_tenants AS SELECT id FROM tenants WHERE active;
+CREATE TABLE orders (id integer PRIMARY KEY, tenant_id integer NOT NULL);
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_visible ON orders USING (tenant_id IN (SELECT id FROM active_tenants));
+`
+	dir := diffStatementStyleSteps(c, []statementStyleStep{{name: "base", schema: strings.Replace(schema, "%s", "integer", 1)}})
+	retyped := filepath.Join(c.TempDir(), "retyped.sql")
+	c.Assert(os.WriteFile(retyped, []byte(strings.Replace(schema, "%s", "bigint", 1)), 0o600), qt.IsNil)
+
+	output, err := runCompatVerb("migrate", "diff", "widen_tenant_id",
+		"--dir", "file://"+filepath.ToSlash(dir)+"?format=golang-migrate",
+		"--to", "file://"+filepath.ToSlash(retyped),
+		"--dev-url", pinnedDevURL(c, postgresScratchDevURL(c, "ptah_style_dev"), "public"))
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`, qt.Commentf("%s", output))
+	c.Assert(readMigrationPairs(c, dir), qt.HasLen, 1)
+}

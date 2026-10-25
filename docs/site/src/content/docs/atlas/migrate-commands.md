@@ -1255,9 +1255,15 @@ On a PostgreSQL-family dev database the statements carry no `IF EXISTS` or
 A file run against a database in another state than the one it was planned
 against then stops, where a guard would make a statement do nothing. A column
 whose type changes under a view is the common case: the plan drops the view,
-changes the column and creates the view again, all without `CASCADE`. When a
-view in a schema the run leaves out reads that view, the migration stops at
-the drop, where `CASCADE` would drop the reader in silence.
+changes the column and creates the view again, all without `CASCADE`. A
+materialized view whose body changes is the other: the plan drops the views
+and materialized views that read it, then the materialized view, and creates
+them again in the reverse order.
+
+When a view in a schema the run leaves out reads a dropped view, the migration
+stops at the drop, where `CASCADE` would drop the reader in silence. A plan
+that would drop a view a row-level security policy reads is refused and names
+the policy, as it is in Ptah's own style.
 
 The plan relies on `CASCADE` where it removes a dependent only after the drop:
 

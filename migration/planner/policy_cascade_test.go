@@ -8,7 +8,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -22,14 +24,15 @@ import (
 // active_tenants, as the catalog prints it.
 const tenantVisibility = "(tenant_id IN ( SELECT active_tenants.id FROM active_tenants))"
 
-// policyCascadeSchemas declares a view active_tenants with body, and a policy
-// on orders that reads it; the database holds the view as
-// `SELECT id, name FROM tenants WHERE active` and the same policy.
-func policyCascadeSchemas(body string) (*schemamodel.Database, *catalog.Database) {
+// policyCascadeSchemas declares a view active_tenants with body, tenants.id
+// of type idType, and a policy on orders that reads the view; the database
+// holds the view as `SELECT id, name FROM tenants WHERE active`, tenants.id as
+// integer, and the same policy.
+func policyCascadeSchemas(body, idType string) (*schemamodel.Database, *catalog.Database) {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "tenants", StructName: "Tenant"}, {Name: "orders", StructName: "Order"}},
 		Fields: []schemamodel.Field{
-			{StructName: "Tenant", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Tenant", Name: "id", Type: idType, Primary: true},
 			{StructName: "Tenant", Name: "name", Type: "TEXT", Nullable: true},
 			{StructName: "Tenant", Name: "active", Type: "BOOLEAN", Nullable: true},
 			{StructName: "Order", Name: "id", Type: "INTEGER", Primary: true},
@@ -68,9 +71,30 @@ func policyCascadeSchemas(body string) (*schemamodel.Database, *catalog.Database
 // planPolicyCascade plans the change from the database to the declaration.
 func planPolicyCascade(c *qt.C, body string) (string, error) {
 	c.Helper()
-	desired, current := policyCascadeSchemas(body)
+	desired, current := policyCascadeSchemas(body, "INTEGER")
 	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, current, platform.Postgres, must.Must(builtin.New())))
 	return planner.GenerateSchemaDiffSQL(context.Background(), must.Must(builtin.New()), diff, platform.Postgres)
+}
+
+// planPolicyCascadeInStyle plans the change from current to desired in the
+// statement style.
+func planPolicyCascadeInStyle(c *qt.C, desired *schemamodel.Database, current *catalog.Database, style planext.StatementStyle) ([]string, error) {
+	c.Helper()
+	diff := must.Must(schemadiff.CompareWithDialect(c.Context(), desired, current, platform.Postgres, must.Must(builtin.New())))
+	return planner.GenerateSchemaDiffSQLStatementsWithOptions(context.Background(), must.Must(builtin.New()), diff, platform.Postgres,
+		planext.Options{Capabilities: capability.ForDialect(platform.Postgres), Statements: style})
+}
+
+// materializedPolicyCascadeSchemas declares a materialized view tenant_flags
+// over tenants with body, a view active_tenants that reads it, and a policy on
+// orders that reads the view; the database holds the materialized view as
+// `SELECT id, active FROM tenants` and the rest as declared.
+func materializedPolicyCascadeSchemas(body string) (*schemamodel.Database, *catalog.Database) {
+	desired, current := policyCascadeSchemas("SELECT id FROM tenant_flags WHERE active", "INTEGER")
+	desired.MaterializedViews = []schemamodel.MaterializedView{{Name: "tenant_flags", Body: body}}
+	current.Views = []catalog.View{{Name: "active_tenants", Body: "SELECT id FROM tenant_flags WHERE active"}}
+	current.MatViews = []catalog.MaterializedView{{Name: "tenant_flags", Body: "SELECT id, active FROM tenants"}}
+	return desired, current
 }
 
 // TestGenerateSchemaDiffSQL_RefusesACascadeThatDropsAPolicy_FailurePath pins
@@ -99,4 +123,74 @@ func TestGenerateSchemaDiffSQL_ReplacesAViewAPolicyReads_HappyPath(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE OR REPLACE VIEW "active_tenants"`)
 	c.Assert(sql, qt.Not(qt.Contains), "CASCADE")
+}
+
+// policyLossStyles is both statement styles. The refusal holds in each: Ptah's
+// own style would drop the view with CASCADE and lose the policy, and the
+// exact style would drop it without CASCADE, which the server refuses while the
+// policy reads it.
+var policyLossStyles = []struct {
+	name  string
+	style planext.StatementStyle
+}{
+	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
+	{name: "the exact style", style: planext.StatementStyleExact},
+}
+
+// TestGenerateSchemaDiffSQL_RefusesARetypeThatDropsAPolicy_FailurePath pins
+// stokaro/ptah#4965. A column type change under a view drops the view before
+// the ALTER and creates it after, and the drop takes the policy that reads
+// the view. The owner plans no change for the policy, so the plan is refused,
+// naming it, as a view change that drops the view is.
+func TestGenerateSchemaDiffSQL_RefusesARetypeThatDropsAPolicy_FailurePath(t *testing.T) {
+	for _, test := range policyLossStyles {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := policyCascadeSchemas("SELECT id, name FROM tenants WHERE active", "BIGINT")
+
+			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQL_RefusesAMaterializedViewChangeThatDropsAPolicy_FailurePath
+// pins the policy half of stokaro/ptah#4964. A materialized view change drops
+// the view that reads it, and the drop takes the policy that reads that view.
+func TestGenerateSchemaDiffSQL_RefusesAMaterializedViewChangeThatDropsAPolicy_FailurePath(t *testing.T) {
+	for _, test := range policyLossStyles {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := materializedPolicyCascadeSchemas("SELECT id, active, name FROM tenants")
+
+			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQL_KeepsAPolicyNoRebuildReaches_HappyPath is the
+// control for both refusals: with the column type and the materialized view
+// unchanged the plan drops nothing the policy reads, and a change to a
+// column nothing reads goes ahead.
+func TestGenerateSchemaDiffSQL_KeepsAPolicyNoRebuildReaches_HappyPath(t *testing.T) {
+	for _, test := range policyLossStyles {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := materializedPolicyCascadeSchemas("SELECT id, active FROM tenants")
+			desired.Fields[2].Nullable = false
+
+			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.HasLen, 1)
+			c.Assert(statements[0], qt.Contains, `ALTER COLUMN "active" SET NOT NULL`)
+		})
+	}
 }

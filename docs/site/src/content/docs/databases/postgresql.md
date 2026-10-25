@@ -815,12 +815,34 @@ declaration no longer holds is dropped at the same point, because the removal
 step comes after the column step. The rollback migration does the same in the
 other direction.
 
-The drop is `DROP VIEW ... CASCADE`, so grants on a dropped view and any object
-that depends on it and that the schema does not declare go with it. A plan with
-no retyped column keeps `CREATE OR REPLACE VIEW`, which leaves both alone. The
-plan check rates the `DROP VIEW ... CASCADE` destructive although the plan
-creates the view again, so `--check-destructive` refuses the plan; a
-`CREATE OR REPLACE VIEW` is a warning.
+## Changing a materialized view
+
+PostgreSQL has no in-place change for a materialized view, so a changed body is
+a `DROP MATERIALIZED VIEW` and a `CREATE MATERIALIZED VIEW`. The drop also
+removes every view and materialized view that reads it. Ptah drops the declared
+readers first, each after the objects that read it, and creates them again
+after the materialized view, in dependency order. A reader the declaration no
+longer holds is dropped at the same point. A view the plan adds that reads the
+materialized view is created after it, and so is a function the plan adds
+whose result type is such a view. The rollback migration does the same in the
+other direction.
+
+## What a view rebuild keeps
+
+Both rebuilds drop each object by name, readers first. In Ptah's own statement
+style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
+CASCADE`, so grants on a dropped object and any object that depends on it and
+that the schema does not declare go with it. In the exact style that `ptah-compat
+migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
+stops the migration at the drop instead. A plan with no retyped column and no
+changed materialized view keeps `CREATE OR REPLACE VIEW`, which leaves both
+alone. The plan check rates a `DROP VIEW ... CASCADE` and every `DROP
+MATERIALIZED VIEW` destructive although the plan creates the object again, so
+`--check-destructive` refuses the plan; a `CREATE OR REPLACE VIEW` is a
+warning.
+
+A plan that would drop a view or a materialized view that a row-level security
+policy reads is refused; see [Row-level security](#row-level-security).
 
 ## Materialized view refresh
 
@@ -1300,10 +1322,17 @@ applied; a migration that runs without one keeps the statements that ran
 before it. Change the policy in one migration and the column, the function or
 the type in the next. Measured on PostgreSQL 17.
 
-A view that has to be dropped and created again is dropped with `CASCADE`,
-which removes a policy that reads the view, and the migration does not create
-that policy again
-([stokaro/ptah#4305](https://github.com/stokaro/ptah/issues/4305)).
+A plan that drops a view or a materialized view a policy reads is refused. The
+drop would remove the policy, or, without `CASCADE`, the server would refuse
+the drop, and the plan does not create the policy again. That covers a view
+change `CREATE OR REPLACE VIEW` cannot make
+([stokaro/ptah#4305](https://github.com/stokaro/ptah/issues/4305)), a column
+type change under the view
+([stokaro/ptah#4965](https://github.com/stokaro/ptah/issues/4965)), and a
+change to a materialized view the view reads
+([stokaro/ptah#4964](https://github.com/stokaro/ptah/issues/4964)). The error
+names the policy. Change the policy so it no longer reads the view in one
+migration, and the view or the column in the next.
 
 Both ways of taking the protection away are lint findings at error severity:
 `DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is
