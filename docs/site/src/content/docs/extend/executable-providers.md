@@ -129,8 +129,9 @@ the check for the provider, with no finding of its rules, because the request
 cannot tell the provider that the SQL may be another engine's. The provider
 still annotates that split. A lint run takes an engine the selected provider
 serves as its `--dialect`, and reads it from a dev URL the provider serves. It
-cannot replay migrations on the provider's dev database yet: the provider
-contract has no check that a dev database is clean, and the replay stops there.
+replays the migrations on that dev database when the engine declares the dev
+database services below, and refuses the dev database at the clean check when
+it declares no `database.dev-cleanup`.
 
 `lint.statement-facts` lets `sql lint` read a provider's SQL. To a host that
 lists the feature, the provider's split says what each statement is, which
@@ -154,7 +155,9 @@ the run's own inside the database a `--dev-url` names, created and removed by
 the provider, for a database the operator cannot create.
 
 A provider's dev database is cleaned and guarded by the provider, so
-`schema apply --dev-url` rehearses a plan on it:
+`schema apply --dev-url` rehearses a plan on it, `migrations lint --dev-url`
+replays a migration directory on it, and `ptah-compat schema plan lint` and
+`schema plan validate` replay a saved plan on it:
 
 - `database.dev-cleanup` lists what the dev database holds and empties it. The
   host judges the database clean when the list is empty, refuses one that is
@@ -402,7 +405,8 @@ first needs it, and it ends when the command returns, fails or is interrupted. A
 command that names only built-in engines starts no process. `migrate lint`,
 `schema plan lint` and the lint pass of `schema apply` lint with the same
 runtime, so the provider of the engine their URLs name splits and checks the
-SQL.
+SQL. A plan of a provider's database is saved in the native JSON plan format,
+because the `.plan.hcl` format cannot record which provider planned it.
 
 On this surface a provider adds to the built-in engines. A URL scheme the
 provider serves goes to the provider, and every other scheme keeps its built-in

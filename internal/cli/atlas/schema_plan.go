@@ -478,15 +478,16 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 
 // ensureAtlasPlanDatabaseURL requires the plan source to be a database URL:
 // the plan's whole value is binding its statements to the fingerprint of the
-// live database it will later be applied to.
+// live database it will later be applied to. A scheme an executable provider
+// serves under the command's session names a database too.
 //
 // Atlas documents `--from file://schema.hcl` on `schema plan validate`
 // (https://atlasgo.io/cli-reference, retrieved 2026-08-02), so this is a
 // divergence, not parity: a fingerprint over a file has nothing to be stale
 // against.
-func ensureAtlasPlanDatabaseURL(verb, raw string) error {
+func ensureAtlasPlanDatabaseURL(ctx context.Context, verb, raw string) error {
 	trimmed := strings.TrimSpace(raw)
-	source, err := atlassource.Classify(trimmed, nil)
+	source, err := atlassource.Classify(trimmed, dbschema.NativeSources(ctx))
 	if err != nil || source.Kind != atlassource.KindDatabase {
 		return fmt.Errorf("%s requires --from to be the target database URL the plan will be applied to "+
 			"(got %q); local desired-state schema files belong in --to", verb, raw)
