@@ -280,7 +280,11 @@ whole file is refused, with the statement named, when it:
 - asks for `-- atlas:txmode file` and opens its own transaction.
 
 This holds for PostgreSQL only, and only where Ptah replays an existing
-migration directory. Elsewhere each of these statements is refused on its own.
+migration directory. Elsewhere in a replay each of these statements is refused
+on its own. `ptah-compat migrate apply` reads the files of a golang-migrate
+directory the same way and runs a file that opens its own transaction as
+written; see
+[Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory).
 `LOCK TABLE` is accepted for the same reason as `SET LOCAL`; a lock on a table in
 a protected namespace is refused.
 

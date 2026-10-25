@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
@@ -389,6 +390,9 @@ func runAtlasMigrateApplyTarget(
 		DiscardRolledBackFailure: true,
 		BaselineVersion:          runOpts.baselineVersion,
 		SkipChecks:               runOpts.skipChecks,
+		// A golang-migrate file runs the way golang-migrate runs it, which
+		// opens no transaction around a file.
+		OwnTransactions: resolvedDirFormat.TransactionOwner() == lintext.TransactionOwnerFile,
 	})
 	if err != nil {
 		return formatOutput, remapAtlasExactIdentityError(err, linearity.sourceVersions)
