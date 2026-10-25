@@ -9,6 +9,7 @@ goal: "Configure explicit read and write authority for one agent session."
 sourceOfTruth:
   - "internal/agentpolicy"
   - "internal/mcpserver"
+  - "internal/cli/mcp"
 generated: false
 searchAliases:
   - MCP approval policy
@@ -75,6 +76,36 @@ Without an explicit override, database classes resolve as follows:
 Ptah does not infer the class from a database or hostname. Approval binds to the
 exact configured target, not to every database with the same class.
 `--auto-approve` applies to artifact patches and grants no database access.
+
+## Serve a database through a provider
+
+A database whose engine an executable provider serves is read through that
+provider. Name it when you start the server, with the flags the native commands
+use:
+
+```bash
+ptah mcp \
+  --database-url "ydb://ydb.internal:2136/app" \
+  --database-class dev \
+  --allow-database-inspect ask \
+  --provider-engine ydb
+```
+
+`--provider-engine ydb` selects the provider `ptah providers install ydb`
+installed. `--provider-config` names a manifest of trusted provider builds
+instead, for a build of your own; [Test an executable
+provider](../../extend/executable-providers/) describes both. Ptah selects the
+provider for the `--database-url` address, verifies and starts it before the
+client connects, and stops it when the session ends. A provider flag without
+`--database-url` is refused, because no tool would use the process. Neither
+flag reads an environment variable.
+
+`read_database`, `inference_plan` and `inference_status` then reach the
+database through the provider. The inference tools read the run state from its
+embedding store, and a provider whose engine keeps none is refused by name. No
+tool argument names a manifest, an engine or an executable. A call that adds
+one is refused against the tool's input schema, so a model cannot start a
+process or choose the one that serves it.
 
 ## Understand `allow`, `ask`, and `deny`
 

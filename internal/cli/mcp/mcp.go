@@ -7,11 +7,13 @@ import (
 
 	"ptah.run/internal/cli/internal/agentflags"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/providercommand"
 )
 
 // NewCommand returns the MCP server command.
 func NewCommand() *cobra.Command {
 	var opts *agentflags.Options
+	var provider *providercommand.Selection
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve Ptah's operations over the Model Context Protocol",
@@ -53,6 +55,13 @@ nothing here.
   production    denied, and no flag on this surface widens it
   unclassified  denied; classify the database to change that
 
+A database whose engine an executable provider serves is read through that
+provider. --provider-config names the manifest and --provider-engine the
+engine, as they do for ptah schema and ptah inference, and both need
+--database-url. The provider starts before the client connects and stops when
+the session ends. The inference tools then reach the provider's embedding
+store. No tool argument names a manifest, an engine or an executable.
+
 Three of Ptah's own reading verbs are deliberately absent -- schema inspect,
 schema diff and migrations lint -- because each needs a scratch database it
 resets destructively, and a destructive capability must not sit behind a
@@ -89,10 +98,11 @@ sends nothing anywhere: it runs locally and talks to whatever the caller names.`
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd, opts)
+			return run(cmd, opts, provider)
 		},
 	}
 	opts = agentflags.Register(cmd)
+	provider = providercommand.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }

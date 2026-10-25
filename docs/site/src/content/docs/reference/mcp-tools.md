@@ -78,7 +78,9 @@ the matching Ptah document and heading with its answer.
 | `schemas` | array | Schemas to inspect; empty uses the connection default. |
 
 There is no URL argument. The operator configures the connection when starting
-the process.
+the process, and for an engine an executable provider serves, the provider too.
+No tool argument names a manifest, an engine or an executable. A call that adds
+one is refused against the tool's input schema.
 
 `inference_plan` and `inference_status` use the argument schemas advertised by
 the running server. Their responses distinguish measured state, inferred state,

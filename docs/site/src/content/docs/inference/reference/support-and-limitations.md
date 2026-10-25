@@ -14,13 +14,15 @@ sourceOfTruth:
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_ydb_cli_e2e_test.go"
   - "integration/providercli/provider_inference_e2e_test.go"
+  - "integration/providercli/provider_inference_mcp_e2e_test.go"
 generated: false
-lastVerified: "2026-10-24"
+lastVerified: "2026-10-25"
 evidence:
   - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_ydb_cli_e2e_test.go"
   - "integration/providercli/provider_inference_e2e_test.go"
+  - "integration/providercli/provider_inference_mcp_e2e_test.go"
 overlaps: []
 disposition: keep
 ---
@@ -41,8 +43,8 @@ The `--db-url` scheme decides the engine: a `postgres://` URL, or a
 keyword/value DSN with no scheme, is PostgreSQL, a `ydb://` or `ydbs://` URL is
 YDB, and a scheme an executable provider serves is that provider's engine. Every
 verb runs the same lifecycle on each. The `inference_plan` and
-`inference_status` tools of `ptah mcp` select no provider, so they reach
-PostgreSQL and YDB.
+`inference_status` tools of `ptah mcp` reach the same engines for the database
+the operator configured.
 
 **A provider engine.** `--provider-config` or `--provider-engine` selects the
 provider, as for every native command; see [Test an executable
@@ -53,6 +55,13 @@ owns the vector storage, the index and the searches; Ptah keeps every
 lifecycle decision and every refusal for a lifecycle reason. `inference
 describe` takes `--provider-engine` to describe the target objects of a
 provider engine.
+
+`ptah mcp` takes the same two flags beside `--database-url`, and its inference
+tools then read the plan and the run state through the provider's embedding
+store. The operator names the provider when starting the server. No tool
+argument names a manifest, an engine or an executable, and a call that adds one
+is refused; see [Configure agent
+permissions](../../../operate/ai-agent-permissions/#serve-a-database-through-a-provider).
 
 **YDB through its provider.** Without a provider flag, `ydb://` uses the YDB
 engine built into Ptah. With `--provider-engine ydb`, the provider that

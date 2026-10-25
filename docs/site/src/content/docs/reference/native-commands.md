@@ -440,6 +440,11 @@ Three of Ptah's own reading verbs are absent — `schema inspect`, `schema diff`
 and `migrations lint` — because each needs a scratch database Ptah resets
 destructively. Run those from the CLI; the guide linked below states the rule.
 
+`--provider-config` and `--provider-engine` serve the configured database
+through an executable provider, as they do for the native commands, and the
+inference tools then read the provider's embedding store. No tool argument
+names a provider.
+
 `--workspace` adds three artifact tools -- `read_artifact`, `preview_patch`
 and `apply_patch` -- confined to the directories `--migrations-dir`,
 `--schema-dir` and `--tests-dir` name.

@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerinstall"
 	"ptah.run/internal/providerrelease"
+	"ptah.run/internal/providerselect"
 )
 
 func TestProviderSelectionRequiresAnExplicitFlag(t *testing.T) {
@@ -59,6 +60,47 @@ func TestDockerDevURLOfAnotherEngineIsNotOwnedBySelectedProvider(t *testing.T) {
 	cmd.SetArgs([]string{"--provider-config", dockerDevURLManifest(c), "--provider-engine", "fixture", "--dev-url", "docker://other/1"})
 	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*not owned by the selected provider.*`)
 	c.Assert(calls, qt.Equals, 0)
+}
+
+// startWith runs a command that declares only the provider flags and starts
+// the selection for targets, and returns whether a provider was started.
+func startWith(c *qt.C, targets []providerselect.Target, args ...string) (bool, error) {
+	c.Helper()
+	var started bool
+	cmd := &cobra.Command{Use: "test"}
+	selection := providercommand.Register(cmd)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx, stop, err := selection.Start(cmd, targets)
+		defer stop()
+		started = providerselect.StartedFrom(ctx) != nil
+		return err
+	}
+	cmd.SetArgs(args)
+	err := cmd.ExecuteContext(c.Context())
+	return started, err
+}
+
+// A command that names its database under a flag of its own passes it as the
+// target. A manifest that claims another engine then leaves a PostgreSQL
+// database to the built-in engine and starts nothing.
+func TestStart_HappyPath_ATargetOfAnotherEngineKeepsTheBuiltInEngine(t *testing.T) {
+	c := qt.New(t)
+	started, err := startWith(c,
+		[]providerselect.Target{{Flag: "database-url", Value: "postgres://u@127.0.0.1:1/app"}},
+		"--provider-config", dockerDevURLManifest(c))
+	c.Assert(err, qt.IsNil)
+	c.Assert(started, qt.IsFalse)
+}
+
+// The same target with the engine named explicitly is refused before anything
+// starts, and the refusal names the flag the command carried it under.
+func TestStart_FailurePath_AnExplicitEngineRefusesAnotherEnginesTarget(t *testing.T) {
+	c := qt.New(t)
+	started, err := startWith(c,
+		[]providerselect.Target{{Flag: "database-url", Value: "postgres://u@127.0.0.1:1/app"}},
+		"--provider-config", dockerDevURLManifest(c), "--provider-engine", "fixture")
+	c.Assert(err, qt.ErrorMatches, `(?s).*The --database-url target is not owned by the selected provider engine.*`)
+	c.Assert(started, qt.IsFalse)
 }
 
 // isolateStore points the user cache at an empty directory, so the user store
