@@ -302,9 +302,9 @@ func writeRewrittenMigrationProject(c *qt.C, migration, schema string) (dir, sch
 	root := c.TempDir()
 	dir = filepath.Join(root, "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_init.sql"), []byte(migration+"\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_init.sql"), []byte(migration+"\n"), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	schemaPath = filepath.Join(root, "schema.sql")
-	c.Assert(os.WriteFile(schemaPath, []byte(schema+"\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(schemaPath, []byte(schema+"\n"), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	out, err := runCompatVerb("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	return dir, schemaPath
