@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/planner"
@@ -867,7 +868,7 @@ func readReplayedSchema(ctx context.Context,
 func renderMigrationDiffSQL(dialect string, statements []Statement, format FileFormat) (string, error) {
 	changes := make([]atlasreport.SchemaChange, 0, len(statements))
 	for _, statement := range statements {
-		changes = append(changes, atlasreport.SchemaChange{Cmd: statement.SQL, Comment: statement.Change})
+		changes = append(changes, atlasreport.SchemaChange{Cmd: endCommentLine(statement.SQL), Comment: statement.Change})
 	}
 	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
 		Dialect:           dialect,
@@ -879,6 +880,18 @@ func renderMigrationDiffSQL(dialect string, statements []Statement, format FileF
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// endCommentLine is statement with a line break after it when it is only
+// comments, such as a planner's note. A template that writes the statements on
+// one line, such as `{{ range .Changes }}{{ .Cmd }}; {{ end }}`, would
+// otherwise put the next statement inside the note's line comment, where the
+// server never runs it.
+func endCommentLine(statement string) string {
+	if sqlscript.CommentOnly(statement) && !strings.HasSuffix(statement, "\n") {
+		return statement + "\n"
+	}
+	return statement
 }
 
 // verifyDir returns the integrity predicate this run re-checks the locked

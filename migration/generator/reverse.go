@@ -134,7 +134,7 @@ func reverseSchemaDiffWithPrior(
 		// Reverse function operations. A removed routine of either kind comes
 		// back as an addition carrying its own kind, so the two removal lists
 		// merge into one addition list without losing which was which.
-		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
+		FunctionsAdded:    routineAdditionsFromRemovals(append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema, prior),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, dbSchema, prior),
 		// A removed procedure comes back as an addition, and the planner reads

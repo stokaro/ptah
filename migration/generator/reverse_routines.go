@@ -4,6 +4,7 @@ package generator
 // as well as its name, which is what a reversal has to carry.
 
 import (
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -128,6 +129,23 @@ func sameDropIdentity(left, right *string) bool {
 		return left == nil && right == nil
 	}
 	return *left == *right
+}
+
+// routineAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, each with the declaration the pre-change database
+// held: the routine read and converted with every property it has, its
+// settings, STRICT, LEAKPROOF, PARALLEL and SECURITY, which the removal's own
+// operand does not carry. A SECURITY DEFINER function that came back without
+// its pinned search_path would run with the caller's. A removal the prior
+// schema does not hold keeps its operand.
+func routineAdditionsFromRemovals(removals difftypes.FunctionChanges, current *catalog.Database, prior *schemamodel.Database) difftypes.FunctionChanges {
+	additions := slices.Clone(removals)
+	for i, removal := range additions {
+		if held := priorFunction(current, prior, removal.Name, removal.Signature); held.Name != "" {
+			additions[i].Function = held
+		}
+	}
+	return additions
 }
 
 // priorFunction is the function the pre-change database held, as a declaration

@@ -289,7 +289,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
-	column.EnumType = declaredEnum(declaredType, enums) != nil
+	column.EnumType = declaredEnum(strings.TrimSuffix(strings.TrimSpace(declaredType), "[]"), enums) != nil
 
 	// Set nullable - only override default if explicitly set to false
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
@@ -395,7 +395,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
-	column.EnumType = declaredEnum(declaredType, enums) != nil
+	column.EnumType = declaredEnum(strings.TrimSuffix(strings.TrimSpace(declaredType), "[]"), enums) != nil
 
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
@@ -1171,10 +1171,35 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 		SetSettings(function.Settings).
 		SetBody(function.Body).
 		SetComment(function.Comment)
+	// A SQL-standard body is SQL rather than a string, and PostgreSQL refuses
+	// it in dollar quotes (stokaro/ptah#4981). A read reports it as the
+	// server prints it, starting at its keyword.
+	switch body := strings.TrimSpace(function.Body); {
+	case hasKeyword(body, "BEGIN ATOMIC"):
+		functionNode.SetAtomicBody(body)
+	case hasKeyword(body, "RETURN"):
+		functionNode.SetReturnBody(strings.TrimSpace(body[len("RETURN"):]))
+	}
 
 	functionNode.Facets = function.Facets
 
 	return functionNode
+}
+
+// hasKeyword reports whether text starts with keyword, in any case, followed
+// by white space or nothing.
+func hasKeyword(text, keyword string) bool {
+	words := strings.Fields(text)
+	want := strings.Fields(keyword)
+	if len(words) < len(want) {
+		return false
+	}
+	for i, word := range want {
+		if !strings.EqualFold(words[i], word) {
+			return false
+		}
+	}
+	return true
 }
 
 // FromSequence converts a schemamodel.Sequence into a CreateSequenceNode.

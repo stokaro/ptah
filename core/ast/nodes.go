@@ -309,11 +309,13 @@ type ColumnNode struct {
 	// a database that already has one (stokaro/ptah#2040).
 	TypeIsDeclaredText bool
 	// EnumType records that the column's declared type names an enum the schema
-	// declares, rather than a built-in type.
+	// declares, an array of one, or a domain over one, rather than a built-in
+	// type.
 	//
-	// PostgreSQL needs this to attach `USING <column>::<type>` when an existing
-	// column changes type into an enum: without the cast the server refuses the
-	// migration with `column ... cannot be cast automatically` (SQLSTATE 42804).
+	// PostgreSQL needs this to attach `USING <column>::text::<type>` when an
+	// existing column changes type into an enum: without the cast the server
+	// refuses the migration with `column ... cannot be cast automatically`
+	// (SQLSTATE 42804).
 	// Identity comes from the declaration and never from the type's spelling --
 	// an enum called "status_kind" is exactly as much an enum as one called
 	// "enum_status" (stokaro/ptah#931 item 1).

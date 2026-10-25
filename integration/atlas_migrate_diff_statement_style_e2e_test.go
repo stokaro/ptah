@@ -531,6 +531,6 @@ CREATE POLICY tenant_visible ON orders USING (tenant_id IN (SELECT id FROM activ
 		"--to", "file://"+filepath.ToSlash(retyped),
 		"--dev-url", pinnedDevURL(c, postgresScratchDevURL(c, "ptah_style_dev"), "public"))
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants, which ptah\.run/pgpolicy/policy public\.orders\.tenant_visible reads, and PostgreSQL refuses the drop while it does.*`, qt.Commentf("%s", output))
+	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants, which ptah\.run/pgpolicy/policy public\.orders\.tenant_visible reads, and nothing recreates it: PostgreSQL refuses the drop while it does, and a drop with CASCADE takes it too.*`, qt.Commentf("%s", output))
 	c.Assert(readMigrationPairs(c, dir), qt.HasLen, 1)
 }

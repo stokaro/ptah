@@ -25,6 +25,10 @@ import (
 // type's spelling alone: `enum_status` applies and `status_kind` aborts. The
 // two rows below are that discriminating pair, with the name as the only
 // difference (stokaro/ptah#931 item 1).
+//
+// The cast goes through text, because no cast reaches an enum from another
+// enum: `USING "s"::status2` on a status column fails with `cannot cast type
+// status to status2`. An array of an enum goes through text[].
 func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -34,12 +38,17 @@ func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
 		{
 			name:   "enum whose name has no prefix",
 			column: enumColumn("s", "status_kind"),
-			want:   `ALTER TABLE "a" ALTER COLUMN "s" TYPE status_kind USING "s"::status_kind;`,
+			want:   `ALTER TABLE "a" ALTER COLUMN "s" TYPE status_kind USING "s"::text::status_kind;`,
 		},
 		{
 			name:   "enum whose name has the historical prefix",
 			column: enumColumn("s", "enum_status"),
-			want:   `ALTER TABLE "a" ALTER COLUMN "s" TYPE enum_status USING "s"::enum_status;`,
+			want:   `ALTER TABLE "a" ALTER COLUMN "s" TYPE enum_status USING "s"::text::enum_status;`,
+		},
+		{
+			name:   "an array of an enum",
+			column: enumColumn("s", "status_kind[]"),
+			want:   `ALTER TABLE "a" ALTER COLUMN "s" TYPE status_kind[] USING "s"::text[]::status_kind[];`,
 		},
 	}
 

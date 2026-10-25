@@ -3607,8 +3607,41 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read functions for schema %s: %w", schemaName, err)
 	}
+	if err := r.readSQLStandardBodies(ctx, schemaName, functions); err != nil {
+		return nil, err
+	}
 
 	return functions, nil
+}
+
+// readSQLStandardBodies reads the body of every SQL routine in functions whose
+// pg_proc.prosrc is empty: one with a SQL-standard body, `BEGIN ATOMIC ...
+// END` or `RETURN expression`, which PostgreSQL 14 and later keep parsed in
+// prosqlbody instead. pg_get_function_sqlbody prints it on every version that
+// has one, and a server without SQL-standard bodies never leaves prosrc empty,
+// so no other server is asked.
+//
+// A body read as the empty string reads nothing: a plan could not tell what
+// the routine depends on, and a rollback would create it with an empty one.
+func (r *Reader) readSQLStandardBodies(ctx context.Context, schemaName string, functions []catalog.Function) error {
+	for i, fn := range functions {
+		if fn.Body != "" || !strings.EqualFold(fn.Language, "sql") || fn.IdentityArguments == nil {
+			continue
+		}
+		var body sql.NullString
+		err := r.db.QueryRowContext(ctx, `
+			SELECT pg_get_function_sqlbody(p.oid)
+			FROM pg_proc p
+			JOIN pg_namespace n ON n.oid = p.pronamespace
+			WHERE n.nspname = $1 AND p.proname = $2
+			AND pg_get_function_identity_arguments(p.oid) = $3`,
+			schemaName, fn.Name, *fn.IdentityArguments).Scan(&body)
+		if err != nil {
+			return fmt.Errorf("failed to read the body of %s: %w", fn.Name, err)
+		}
+		functions[i].Body = strings.TrimSpace(body.String)
+	}
+	return nil
 }
 
 // rolesInScopeClauses returns the branches of the role-scoping union, one per

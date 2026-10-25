@@ -23,6 +23,7 @@ package atlaschange
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -53,10 +54,19 @@ func Undone(node ast.Node) (string, bool) {
 // Rollback returns the namer for the statements of a rollback planned against
 // forward: [Undone], except that a statement that drops or creates an object
 // forward only modifies undoes that modification.
+//
+// Objects compare by kind and name without case, and by the schema, or for an
+// object named within its table, by the table, where both statements name
+// one, so a view of one schema is not taken for a view of the same name in
+// another.
 func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
 	type object struct{ kind, name string }
-	modified := make(map[object]change)
-	rebuilt := make(map[object]bool)
+	type seen struct {
+		change change
+		scope  scope
+	}
+	modified := make(map[object][]seen)
+	rebuilt := make(map[object][]scope)
 	for _, node := range forward {
 		c, ok := describe(node)
 		if !ok {
@@ -65,9 +75,9 @@ func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
 		key := object{c.kind, strings.ToLower(c.name)}
 		switch c.verb {
 		case modify:
-			modified[key] = c
+			modified[key] = append(modified[key], seen{c, scopeOf(node)})
 		case create, drop:
-			rebuilt[key] = true
+			rebuilt[key] = append(rebuilt[key], scopeOf(node))
 		}
 	}
 	return func(node ast.Node) (string, bool) {
@@ -75,12 +85,90 @@ func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
 		if !ok {
 			return "", false
 		}
+		if c.verb != create && c.verb != drop {
+			return c.inverse().String(), true
+		}
 		key := object{c.kind, strings.ToLower(c.name)}
-		if forward, replaced := modified[key]; replaced && !rebuilt[key] && (c.verb == create || c.verb == drop) {
-			return forward.String(), true
+		at := scopeOf(node)
+		if slices.ContainsFunc(rebuilt[key], at.overlaps) {
+			return c.inverse().String(), true
+		}
+		for _, forward := range modified[key] {
+			if forward.scope.overlaps(at) {
+				return forward.change.String(), true
+			}
 		}
 		return c.inverse().String(), true
 	}
+}
+
+// scope is what qualifies the name of an object a statement changes: the
+// schema of an object named within a schema, and the table, with its schema,
+// of one named within its table. An empty part is one the statement does not
+// name.
+type scope struct{ schema, table string }
+
+// overlaps reports whether s and other may name the same place: every part
+// both name is equal.
+func (s scope) overlaps(other scope) bool {
+	return (s.schema == "" || other.schema == "" || s.schema == other.schema) &&
+		(s.table == "" || other.table == "" || s.table == other.table)
+}
+
+// scopeOf is the scope of the object node changes.
+func scopeOf(node ast.Node) scope {
+	switch n := node.(type) {
+	case *ast.CreateViewNode:
+		return schemaScope(n.Name)
+	case *ast.DropViewNode:
+		return schemaScope(n.Name)
+	case *ast.CreateMaterializedViewNode:
+		return schemaScope(n.Name)
+	case *ast.DropMaterializedViewNode:
+		return schemaScope(n.Name)
+	case *ast.CreateFunctionNode:
+		return schemaScope(n.Name)
+	case *ast.DropFunctionNode:
+		return schemaScope(n.Name)
+	case *ast.CreateTableNode:
+		return schemaScope(n.Name)
+	case *ast.DropTableNode:
+		if names := n.TableNames(); len(names) > 0 {
+			return schemaScope(names[0])
+		}
+	case *ast.AlterTableNode:
+		return schemaScope(n.Name)
+	case *ast.CreateTriggerNode:
+		return tableScope(n.Table)
+	case *ast.DropTriggerNode:
+		return tableScope(n.Table)
+	case *ast.CreatePolicyNode:
+		return tableScope(n.Table)
+	case *ast.DropPolicyNode:
+		return tableScope(n.Table)
+	}
+	return scope{}
+}
+
+// schemaScope is the scope of an object named name within a schema.
+func schemaScope(name string) scope {
+	if ref, ok := tableref.Parse(name); ok && ref.Qualified {
+		return scope{schema: strings.ToLower(ref.Schema)}
+	}
+	return scope{}
+}
+
+// tableScope is the scope of an object named within table.
+func tableScope(table string) scope {
+	ref, ok := tableref.Parse(table)
+	if !ok {
+		return scope{}
+	}
+	at := scope{table: strings.ToLower(ref.Name)}
+	if ref.Qualified {
+		at.schema = strings.ToLower(ref.Schema)
+	}
+	return at
 }
 
 type verb int

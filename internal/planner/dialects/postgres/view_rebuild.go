@@ -254,7 +254,7 @@ func retypedTables(diff *difftypes.SchemaDiff) []string {
 // routine or a policy of a removed table; see [removalOutlivesDrop].
 func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	for _, object := range deporder.ViewLikesForDropIn(rebuild.dropped(), p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
-		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name, routinesAhead{}))))
 	}
 	return result
 }
