@@ -20,7 +20,15 @@ func file(name string, up bool, sql string) lintext.File {
 // check runs the owner's rules over files and returns the findings.
 func check(c *qt.C, files ...lintext.File) []lintext.Finding {
 	c.Helper()
-	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"TX101", "TX201"}, Files: files}
+	return checkOwned(c, lintext.TransactionOwnerMigrator, files...)
+}
+
+// checkOwned is [check] for a run whose files run in transactions owner
+// opens.
+func checkOwned(c *qt.C, owner lintext.TransactionOwner, files ...lintext.File) []lintext.Finding {
+	c.Helper()
+	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"TX101", "TX201"}, Files: files,
+		TransactionOwner: owner}
 	result, err := pglint.Service{}.CheckMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lintext.ValidateCheck(request, result), qt.IsNil)
@@ -106,6 +114,42 @@ func TestService_CheckMigrations_EmbeddedTransaction(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(check(c, test.file), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TX201 asks who opens the transaction a file runs in. A migrator that opens
+// none, as golang-migrate does, leaves the block as the file's only
+// transaction, so nothing is reported; a value the owner does not know is
+// judged as the migrator's. TX101 does not ask: the server refuses a
+// concurrent index beside another statement in one query just as it refuses
+// it in the migrator's transaction.
+func TestService_CheckMigrations_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
+	const message = "explicit transaction blocks conflict with the migrator's transaction management; " +
+		"remove BEGIN/COMMIT or mark the migration non-transactional"
+	const block = "BEGIN;\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\nCOMMIT;\n"
+	for _, test := range []struct {
+		name  string
+		owner lintext.TransactionOwner
+		file  lintext.File
+		want  []lintext.Finding
+	}{
+		{"the migrator wraps the file", lintext.TransactionOwnerMigrator, file("1.up.sql", true, block),
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: message}}},
+		{"the file opens its own", lintext.TransactionOwnerFile, file("1.up.sql", true, block), nil},
+		{"START TRANSACTION in a file that opens its own", lintext.TransactionOwnerFile,
+			file("1.up.sql", true, "START TRANSACTION;\nCREATE TABLE t (id int);\nCOMMIT;\n"), nil},
+		{"an owner the rule does not know", lintext.TransactionOwner("savepoint"), file("1.up.sql", true, block),
+			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: message}}},
+		{"a mix in a file that opens its own", lintext.TransactionOwnerFile,
+			file("1.up.sql", true, "CREATE TABLE t (id int);\nCREATE INDEX CONCURRENTLY idx ON t (id);\n"),
+			[]lintext.Finding{{Code: "TX101", File: 0, Statement: 1,
+				Message: "this migration mixes PostgreSQL statements that require autocommit with transactional DDL: " +
+					"CREATE or DROP INDEX CONCURRENTLY is refused inside a transaction block; split them into separate migrations"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(checkOwned(c, test.owner, test.file), qt.DeepEquals, test.want)
 		})
 	}
 }

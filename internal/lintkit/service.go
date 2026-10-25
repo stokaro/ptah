@@ -23,10 +23,12 @@ type File struct {
 	NoTransaction bool
 	// Statements are the file's statements as the request carries them.
 	Statements []lintext.Statement
-	// Target is the server the run plans against, and Compatibility the
-	// surface it reports on.
-	Target        lintext.Target
-	Compatibility string
+	// Target is the server the run plans against, Compatibility the surface
+	// it reports on, and TransactionOwner who opens the transaction each file
+	// runs in.
+	Target           lintext.Target
+	Compatibility    string
+	TransactionOwner lintext.TransactionOwner
 	// Baseline is the schema state the file's version starts from, as the
 	// request carries it. Its zero value resolves nothing, which is what a
 	// rule meets on the first of the two calls a baseline rule is served in.
@@ -117,16 +119,17 @@ func (r Rules) CheckMigrations(ctx context.Context, request lintext.CheckRequest
 		}
 		requested := &request.Files[index]
 		file := File{
-			Name:          requested.Name,
-			Version:       requested.Version,
-			IsUp:          requested.Up,
-			IsDown:        requested.Down,
-			HasPair:       requested.HasPair,
-			NoTransaction: requested.NoTransaction,
-			Statements:    requested.Statements,
-			Target:        request.Target,
-			Compatibility: request.Compatibility,
-			Baseline:      states[requested.Version],
+			Name:             requested.Name,
+			Version:          requested.Version,
+			IsUp:             requested.Up,
+			IsDown:           requested.Down,
+			HasPair:          requested.HasPair,
+			NoTransaction:    requested.NoTransaction,
+			Statements:       requested.Statements,
+			Target:           request.Target,
+			Compatibility:    request.Compatibility,
+			TransactionOwner: request.TransactionOwner,
+			Baseline:         states[requested.Version],
 		}
 		for _, rule := range enabled {
 			result.Findings = append(result.Findings, rule.findings(&file, index)...)

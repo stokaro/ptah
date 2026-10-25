@@ -142,6 +142,12 @@ type Options struct {
 	Changed          ChangedOptions
 	// Compatibility selects native or command-surface-specific lint semantics.
 	Compatibility lint.CompatibilityProfile
+	// TransactionOwner says who opens the transaction each migration runs in
+	// when the tool that applies the directory runs it; see
+	// [lint.Options.TransactionOwner]. A caller that reads a directory in a
+	// layout of another tool takes it from that layout. The zero value, a
+	// migrator that wraps each file, is right for Ptah's and Atlas's layouts.
+	TransactionOwner lintext.TransactionOwner
 	// CaptureSchema asks the replay to also read the dev database before the
 	// first analyzed version and after the last one, and to report the pair as
 	// HCL in [Report.SchemaCurrent] and [Report.SchemaDesired]. Only a caller
@@ -302,6 +308,9 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// reported a blocking migration clean, and a `migrations up` that
 		// refused it, is the pair an operator cannot act on.
 		RequireOnline: cfg.RequiresOnline(),
+		// The directory reaches this layer in Ptah's or Atlas's layout, so
+		// only the caller knows which tool the files were written for.
+		TransactionOwner: opts.TransactionOwner,
 	})
 	analysis, schemas := outcome.analysis, outcome.schemas
 	findings := analysis.Findings()

@@ -178,6 +178,10 @@ type lintService struct {
 // bundled YDB owner answers for its YD rules. The run still reaches the owner
 // through AnnotateStatements, which is how a run that names no target learns
 // the facts only the owner recognizes.
+//
+// The wire request has no field for [lintext.CheckRequest.TransactionOwner],
+// so the owner judges every file as one its migrator wraps, which is the
+// request's zero value (stokaro/ptah#4956).
 func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
 	name := s.target.engine.GetId()
 	if request.Target.Name == "" {

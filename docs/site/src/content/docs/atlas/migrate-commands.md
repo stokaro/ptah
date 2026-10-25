@@ -1454,6 +1454,38 @@ per-object finding names its object in the native message, which is also what
 keeps each SARIF result's fingerprint distinct when several of them share a
 rule, a file, and a line.
 
+### Transaction blocks in a golang-migrate directory
+
+`TX201` reports a `BEGIN` or `START TRANSACTION` in a migration. The rule
+assumes a migrator that opens a transaction around each file and cannot nest
+another inside it. Atlas runs files that way, and so does Ptah's own migrator.
+
+golang-migrate opens no transaction around a file, so `TX201` is not reported
+for a directory in its layout. This holds for each way of selecting the layout:
+`?format=golang-migrate`, `--dir-format golang-migrate`, or
+`format = golang-migrate` in `atlas.hcl`. Measured with golang-migrate v4.20.1
+on PostgreSQL 15.19, through the `postgres://` and `pgx5://` drivers alike:
+
+| golang-migrate mode | without `BEGIN`/`COMMIT` | with `BEGIN`/`COMMIT` |
+| --- | --- | --- |
+| default | The file is sent as one query, and PostgreSQL runs it as one implicit transaction. A file that fails midway leaves nothing behind. | The same outcome. The block changes nothing. |
+| `x-multi-statement=true` | Each statement is sent on its own. A file that fails midway keeps the statements before the failure. | The file is atomic. The block is what makes it so. |
+
+golang-migrate has no marker for a migration that must run outside a
+transaction, and its PostgreSQL driver documentation recommends wrapping a
+migration of several statements in `BEGIN`/`COMMIT`.
+
+Goose, dbmate, Flyway and Liquibase directories keep `TX201`. The rule assumes
+that their tools wrap each file, and each of them can mark a migration that
+must run outside a transaction. `TX101` is reported in every layout,
+golang-migrate included: the implicit transaction of the default mode refuses
+`CREATE INDEX CONCURRENTLY` beside another statement, as a migrator's
+transaction does.
+
+Native `ptah migrations lint` reads Ptah and Atlas directories only. A migrator
+that wraps each file applies both, so the native surface reports `TX201` in
+every directory it reads.
+
 ### Which objects are under review
 
 The dev database is what a lint run compares against, so it also decides which

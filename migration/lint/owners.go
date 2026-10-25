@@ -49,11 +49,12 @@ func checkOwnedRules(
 		return ownerAnswer{}, nil
 	}
 	request := lintext.CheckRequest{
-		Target:        lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.Capabilities},
-		Codes:         codes,
-		Files:         checkFiles(files),
-		Compatibility: string(opts.Compatibility),
-		Baseline:      requestBaseline(opts),
+		Target:           lintext.Target{Name: opts.Dialect, Version: target.Version, Capabilities: target.Capabilities},
+		Codes:            codes,
+		Files:            checkFiles(files),
+		Compatibility:    string(opts.Compatibility),
+		TransactionOwner: opts.TransactionOwner,
+		Baseline:         requestBaseline(opts),
 	}
 	result, err := runtime.CheckMigrations(ctx, request)
 	if err != nil {

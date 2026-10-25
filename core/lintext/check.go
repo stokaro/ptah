@@ -61,11 +61,35 @@ type CheckRequest struct {
 	// Ptah's own, "atlas" for the Atlas-compatible one. A rule whose report
 	// differs between the two reads it.
 	Compatibility string `json:"compatibility,omitempty"`
+	// TransactionOwner says who opens the transaction each file of the run
+	// runs in. The zero value is the migrator, which is what a host that does
+	// not know the tool that applies the files sends.
+	TransactionOwner TransactionOwner `json:"transaction_owner,omitempty"`
 	// Baseline is the schema state the versions a host read start from, nil
 	// on a call made without one. The package documentation says when a
 	// host reads it.
 	Baseline *Baseline `json:"baseline,omitempty"`
 }
+
+// TransactionOwner is who opens the transaction a migration file runs in. A
+// rule about transaction control reads it, because a BEGIN that would nest
+// inside a migrator's transaction is the file's only transaction under a tool
+// that opens none.
+type TransactionOwner string
+
+const (
+	// TransactionOwnerMigrator is a migrator that opens a transaction around
+	// each file and commits it after the file's last statement, unless the
+	// file opts out ([File.NoTransaction]). Ptah's migrator and Atlas's run
+	// files this way. It is the zero value, and an owner judges a value it
+	// does not know the same way.
+	TransactionOwnerMigrator TransactionOwner = ""
+	// TransactionOwnerFile is a migrator that opens no transaction around a
+	// file. The file runs in a transaction it opens itself, in the one the
+	// server opens around a single query, or in none. golang-migrate runs
+	// files this way.
+	TransactionOwnerFile TransactionOwner = "file"
+)
 
 // SubjectKind is the kind of schema object a finding is about.
 type SubjectKind string

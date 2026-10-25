@@ -166,6 +166,15 @@ That leaves one thing to know about a clean lint result: it means every builtin
 rule looked and found nothing. It does not mean a routine body was read — see
 `AC101` and `SQL004`, which exist to keep those two apart.
 
+`TX201` judges a file by the tool that applies the directory. A migrator that
+opens a transaction around each file, as Atlas and Ptah do, cannot nest a
+`BEGIN` inside it, so the rule reports one. golang-migrate opens no transaction
+around a file, so `ptah-compat migrate lint` does not report `TX201` in a
+directory of that layout;
+[Transaction blocks in a golang-migrate directory](../../atlas/migrate-commands/#transaction-blocks-in-a-golang-migrate-directory)
+has the measurement. Every other layout is judged as one whose tool wraps each
+file.
+
 <!-- BEGIN GENERATED LINT RULES -->
 ## Identifier families
 
@@ -315,7 +324,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG314` | REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table | both | Atlas |
 | `PG320` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | Atlas |
 | `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
-| `TX201` | an explicit BEGIN/COMMIT block fights the migrator's transaction management | both | Atlas |
+| `TX201` | an explicit BEGIN/COMMIT block fights the transaction the migrator opens around each file; not reported for golang-migrate, which opens none | both | Atlas |
 
 ### postgres, cockroachdb, yugabytedb, spanner
 
@@ -502,7 +511,7 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 | `CD102` | a check constraint was dropped | yes | `CD102` | covered |
 | `CD103` | a primary-key constraint was dropped | yes | `CD103` | covered |
 | `TX101` | statements cannot run in a single transaction | yes | `TX101` | covered |
-| `TX201` | a nested transaction was detected | yes | `TX201` | covered |
+| `TX201` | a nested transaction was detected | yes | `TX201` | covered — not reported in a golang-migrate directory, whose tool opens no transaction around a file |
 | `NM101` | a schema name violates the naming convention | no | `NM101` | covered — needs a configured naming convention |
 | `NM102` | a table name violates the naming convention | no | `NM102` | covered — needs a configured naming convention |
 | `NM103` | a column name violates the naming convention | no | `NM103` | covered — needs a configured naming convention |
