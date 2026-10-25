@@ -818,19 +818,27 @@ other direction.
 ## Changing a column to or from an enum
 
 A column that becomes an enum is changed with `ALTER COLUMN ... TYPE status
-USING s::status`. PostgreSQL has no automatic cast from the old default to the
-enum either, so a column with a default loses it before the `TYPE` clause and
-takes it back after.
+USING s::text::status`. The cast goes through text because every type a column
+can leave casts to text, and no cast leads from one enum to another. An array
+of an enum casts through `text[]`, `USING s::text[]::status[]`, and a domain
+over an enum takes the same cast as its enum. PostgreSQL has no automatic cast
+from the old default to the enum either, so a column with a default loses it
+before the `TYPE` clause and takes the declared one back after, if it declares
+one.
 
-A column that leaves an enum takes its declared default again after the
-`TYPE` clause. PostgreSQL converts the stored default to the new type and keeps
-the enum inside it, `('a'::status)::text`, and refuses to drop the enum while
-that default uses it:
+A column that leaves an enum, an array of one or a domain over one takes its
+declared default again after the `TYPE` clause. PostgreSQL converts the stored
+default to the new type and keeps the old type inside it,
+`('a'::status)::text`, and refuses to drop the enum while that default uses
+it:
 
 ```text
 ERROR:  cannot drop type status because other objects depend on it
 DETAIL:  default value for column s of table t depends on type status
 ```
+
+The default is set again whenever the old type is not one of PostgreSQL's own,
+which covers a composite or range type too.
 
 ## Changing a materialized view
 
@@ -864,9 +872,12 @@ style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
 CASCADE`, so grants on a dropped object and any object that depends on it and
 that the schema does not declare go with it. In the exact style that `ptah-compat
 migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
-stops the migration at the drop instead. The exception is an object a routine
-the plan removes takes or returns, or a policy of a table the plan removes
-reads: both are dropped later, so the drop relies on `CASCADE`.
+stops the migration at the drop instead. The exception is an object whose row
+type a routine the plan removes takes or returns, or that a policy of a table
+the plan removes reads: both are dropped later, so the drop relies on
+`CASCADE`. A removed view or table goes after the routines that name its row
+type; see the exact style in the
+[`migrate diff` documentation](../../atlas/migrate-commands/).
 
 A plan with no retyped column and no
 changed materialized view keeps `CREATE OR REPLACE VIEW`, which leaves both

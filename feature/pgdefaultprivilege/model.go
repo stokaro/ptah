@@ -41,6 +41,12 @@ func (*Desired) Kind() schemaext.Kind { return DefaultPrivilegeKind }
 // Kind returns the model's owner-qualified kind.
 func (*Observed) Kind() schemaext.Kind { return DefaultPrivilegeKind }
 
+// ReadsRelation reports false: a default privilege applies to objects created
+// later and depends on no table or view, so a plan that drops one before
+// revoking it relies on nothing for it. It implements
+// [schemaext.RelationReader].
+func (*Observed) ReadsRelation(string) bool { return false }
+
 // Clone returns an independent declaration; a nil receiver remains nil.
 func (v *Desired) Clone() schemaext.Value { return v.Copy() }
 

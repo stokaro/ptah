@@ -265,6 +265,10 @@ func schemaChangesSQLText(changes []SchemaChange, spell func(string) string) str
 			fmt.Fprintf(&sql, "-- %s\n", spell(change.Comment))
 		}
 		cmd := strings.TrimSuffix(change.Cmd, ";")
+		if sqlscript.CommentOnly(cmd) {
+			// A note ends its own line; the script adds the line break.
+			cmd = strings.TrimRight(cmd, "\n")
+		}
 		fmt.Fprintf(&sql, "%s%s\n", cmd, sqlscript.Terminator(cmd))
 	}
 	return sql.String()

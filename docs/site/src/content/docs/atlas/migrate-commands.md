@@ -1297,7 +1297,9 @@ stay above the statements they name.
 
 A comment that reports what the plan left out or cannot do is a statement of
 its own, with no change comment above it, so it never reads as part of the
-change after it.
+change after it. It ends its line, so a `--format` template that writes the
+statements on one line, such as `{{ range .Changes }}{{ .Cmd }}; {{ end }}`,
+does not turn the statement after it into part of the comment.
 
 Views, routines, triggers, sequences and roles, which the community binary does
 not plan, follow the same pattern: `create "v" view`, `modify "v" view` for
@@ -1320,35 +1322,56 @@ them again in the reverse order.
 When a view in a schema the run leaves out reads a dropped view, the migration
 stops at the drop, where `CASCADE` would drop the reader in silence. A plan
 that would drop a view a row-level security policy reads is refused and names
-the policy, as it is in Ptah's own style.
+the policy, as it is in Ptah's own style, unless the plan removes the policy
+too.
 
 The plan drops the views, materialized views and triggers the declaration
 removes before the columns and tables they read, and a generated column before
-the columns it reads. It relies on `CASCADE` only where it removes a dependent
-after the drop:
+the columns it reads. A routine the plan removes that takes or returns the row
+type of a removed view or table, such as `RETURNS SETOF v`, or reads it in a
+SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is dropped right
+ahead of it. A removed table a policy of another removed table reads is
+dropped after the table that holds the policy, and two removed tables whose
+policies read each other are dropped in one `DROP TABLE`. The plan relies on
+`CASCADE` only where it removes a dependent after the drop:
 
-- a view or table whose row type a routine the plan removes takes or returns,
-  such as `RETURNS SETOF v`, since routines are removed last;
-- a view a row-level security policy of a removed table reads, since views are
-  dropped before tables. A removed table such a policy reads is dropped after
-  the table that holds the policy, and needs `CASCADE` only on a cycle;
-- a column or table a routine the plan removes reads in a SQL-standard
-  `BEGIN ATOMIC` body;
-- a column or table while a feature owner drops an object in a later step;
+- a view or table whose row type a removed routine names, when another object
+  the plan removes calls the routine or the routine names more than one
+  relation the plan drops; the routine is then removed after every table and
+  view;
+- a view or a column a row-level security policy of a removed table reads,
+  since views and columns are dropped before tables;
+- a column a routine the plan removes reads in a SQL-standard body;
+- a table whose row type a type the plan removes names, such as
+  `CREATE TYPE wrap AS (r t, n int)`. A removed domain, composite type or
+  range type that names no such table, a removed extension and a removed
+  default privilege hold no drop back. An object a feature owner removes and
+  cannot describe holds back every column and table drop;
 - a view dropped and created again under a declared view that reads it, which
   the plan puts back with `CREATE OR REPLACE VIEW` after the drop.
 
+Such a `CASCADE` also drops a reader the declaration does not hold, such as a
+view in a schema the run leaves out, and the file applies without an error.
+[stokaro/ptah#5007](https://github.com/stokaro/ptah/issues/5007) tracks the
+policy and SQL-standard body cases.
+
 A guard stays where an earlier statement of the same file may already have
-removed the object or created it: a view a `CASCADE` above it may have taken, a
-constraint of a table whose column the file drops before it, an index on a
-view the file drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well,
-because the plan writes it for every schema an added object names, whether or
-not that schema exists.
+removed the object: a view a `CASCADE` above it may have taken, a constraint
+of a table whose column the file drops before it, an index on a view the file
+drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
+writes it for every schema an added object names, whether or not that schema
+exists.
+
+A statement a feature owner renders keeps its own spelling in the exact style
+too. The drop of a domain, a composite type or a range type keeps `IF EXISTS`
+and `CASCADE`, so it also drops a column of an undeclared table that uses the
+type, with its data, and the drop of an extension keeps `IF EXISTS`.
+[stokaro/ptah#5000](https://github.com/stokaro/ptah/issues/5000) tracks this.
+A drop after a statement an owner renders keeps its guard, since that
+statement may have removed objects the plan cannot name.
 
 The MySQL-family planner leaves out its descriptive comments and keeps its
-guards. The SQLite, SQL Server and ClickHouse planners keep both. A statement
-an owner renders, such as a row-security policy or an extension, keeps its own
-spelling. Native `ptah
+guards. The SQLite, SQL Server and ClickHouse planners keep both. Native `ptah
 migrations generate` keeps Ptah's own comments, guards and `CASCADE`. The files
 still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;

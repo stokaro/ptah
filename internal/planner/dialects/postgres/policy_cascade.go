@@ -5,8 +5,10 @@ import (
 	"slices"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemapreparation"
 )
 
 // refusePoliciesLostToCascade refuses a plan whose DROP ... CASCADE of a view
@@ -19,13 +21,15 @@ import (
 // still declares (stokaro/ptah#4305). A lost permissive policy hides the rows
 // it admitted; a lost restrictive one reveals the rows it hid. The plan is
 // refused and names the object, and changing the object so it no longer reads
-// the relation first is the way through.
+// the relation first is the way through. An object the plan removes too is
+// not lost, so it is not a reason to refuse.
 //
 // The refusal holds in both statement styles. A view rebuild drops its objects
 // with CASCADE only in Ptah's own style; the exact style drops them without
 // it, and the server refuses that drop while the policy reads the relation, so
-// the plan could not apply either (stokaro/ptah#4965). The error says which of
-// the two the plan would run into.
+// the plan could not apply either (stokaro/ptah#4965). The exact style keeps
+// CASCADE on a drop that relies on it, which takes the policy as Ptah's own
+// style does, so its error names both outcomes.
 //
 // The objects answer for themselves through [schemaext.RelationReader], so
 // this planner names no owner. A diff built without a comparison carries no
@@ -45,7 +49,7 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 		}
 		for _, object := range objects {
 			reader, ok := object.Value.(schemaext.RelationReader)
-			if !ok {
+			if !ok || removedByPlan(table, object) {
 				continue
 			}
 			for _, relation := range dropped {
@@ -53,8 +57,9 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 					continue
 				}
 				if p.exact() {
-					return fmt.Errorf("%w: the plan drops %s, which %s reads, and PostgreSQL refuses the drop while it does; "+
-						"nothing recreates it, so change it so it no longer reads %s first, then change %s",
+					return fmt.Errorf("%w: the plan drops %s, which %s reads, and nothing recreates it: "+
+						"PostgreSQL refuses the drop while it does, and a drop with CASCADE takes it too; "+
+						"change it so it no longer reads %s first, then change %s",
 						ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
 				}
 				return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
@@ -64,6 +69,16 @@ func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error 
 		}
 	}
 	return nil
+}
+
+// removedByPlan reports whether the plan removes object, a captured object of
+// table: the declaration holds no object of that identity, so the object is
+// not lost to a drop that takes it, and nothing needs to recreate it.
+func removedByPlan(table schemapreparation.Table, object schemaext.Object) bool {
+	key := object.Ref.Key()
+	return !slices.ContainsFunc(table.Desired.OwnedObjects.Refs(), func(ref objectidentity.ID) bool {
+		return ref.Key() == key
+	})
 }
 
 // relationsDroppedWithCascade names every view and materialized view the plan

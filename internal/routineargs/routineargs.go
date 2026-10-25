@@ -404,6 +404,22 @@ func SplitTarget(value string) (name, arguments string, ok bool) {
 	return strings.TrimSpace(value[:open]), strings.TrimSpace(value[open+1 : len(value)-1]), true
 }
 
+// ArgumentTypes returns the type of each argument of an argument list, OUT and
+// INOUT ones included, without its mode, its name or its default, spelled as
+// the list writes it. A routine depends on every one of these types: a
+// parameter of a table's row type holds that table, whatever its mode.
+func ArgumentTypes(arguments string) []string {
+	var types []string
+	for _, part := range splitTopLevel(arguments) {
+		text, _, _ := CutDefault(part)
+		_, rest := splitArgumentMode(strings.TrimSpace(text))
+		if rest = strings.TrimSpace(withoutParameterName(strings.TrimSpace(rest))); rest != "" {
+			types = append(types, rest)
+		}
+	}
+	return types
+}
+
 // Split returns the arguments of an argument list one entry each, split on
 // the commas outside parentheses and string literals, so `numeric(10,2)`
 // stays one argument. Each entry is trimmed and empty entries are dropped;

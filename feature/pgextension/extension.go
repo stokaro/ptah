@@ -74,6 +74,11 @@ func (v *DesiredExtension) Guarded() bool { return v != nil && v.IfNotExists }
 // Kind returns the model identity.
 func (*ObservedExtension) Kind() schemaext.Kind { return ExtensionKind }
 
+// ReadsRelation reports false: an installed extension depends on no table or
+// view of the schema, so a plan that drops one before removing the extension
+// relies on nothing for it. It implements [schemaext.RelationReader].
+func (*ObservedExtension) ReadsRelation(string) bool { return false }
+
 // Clone returns an independent declaration.
 func (v *DesiredExtension) Clone() schemaext.Value { return v.Copy() }
 

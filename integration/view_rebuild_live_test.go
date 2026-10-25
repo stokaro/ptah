@@ -37,7 +37,7 @@ var viewRebuildStyles = []struct {
 	{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
 		refusal: `(?s).*drops %[1]s with CASCADE, which also drops %[2]s, whose definition reads it.*`},
 	{name: "the exact style", style: planext.StatementStyleExact,
-		refusal: `(?s).*drops %[1]s, which %[2]s reads, and PostgreSQL refuses the drop while it does.*`},
+		refusal: `(?s).*drops %[1]s, which %[2]s reads, and nothing recreates it: PostgreSQL refuses the drop while it does, and a drop with CASCADE takes it too.*`},
 }
 
 // viewRebuildTarget is a scratch PostgreSQL database built from schema.

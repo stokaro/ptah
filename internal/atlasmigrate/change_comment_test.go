@@ -59,6 +59,16 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 				"-- drop \"archive\" table\n" +
 				"DROP TABLE \"archive\";\n",
 		},
+		{
+			// The note ends its line, so the statement after it is not part
+			// of its line comment.
+			name:   "a template that writes every statement on one line",
+			format: atlasmigrate.FileFormat{Template: atlasreport.NormalizeMigrateDiffFormat(`{{ range .Changes }}{{ .Cmd }}; {{ end }}`)},
+			want: "CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n); " +
+				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\"); " +
+				"-- NOTE: archive is dropped by request\n; " +
+				"DROP TABLE \"archive\"; ",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
