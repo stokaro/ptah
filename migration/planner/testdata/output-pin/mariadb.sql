@@ -1,5 +1,4 @@
 -- render: the desired schema
--- MARIADB TABLE: orders --
 CREATE TABLE `orders` (
   `id` BIGINT PRIMARY KEY,
   `user_id` BIGINT NOT NULL,
@@ -7,7 +6,6 @@ CREATE TABLE `orders` (
 );
 
 
--- MARIADB TABLE: users --
 CREATE TABLE `users` (
   `id` BIGINT PRIMARY KEY,
   `email` VARCHAR(255) NOT NULL,
@@ -22,7 +20,6 @@ CREATE INDEX `users_created_ix` ON `users` (`created_at`);
 
 CREATE INDEX `orders_user_ix` ON `orders` (`user_id`);
 -- plan: the current schema to the desired one
--- MARIADB TABLE: orders --
 CREATE TABLE `orders` (
   `id` BIGINT PRIMARY KEY,
   `user_id` BIGINT NOT NULL,
@@ -30,7 +27,6 @@ CREATE TABLE `orders` (
 );
 
 -- Modify table: users
--- ALTER statements: --
 ALTER TABLE `users` ADD COLUMN `created_at` TIMESTAMP;
 
 CREATE INDEX `orders_user_ix` ON `orders` (`user_id`);

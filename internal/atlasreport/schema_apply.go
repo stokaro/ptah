@@ -156,7 +156,7 @@ func (r SchemaApply) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	sql := schemaChangesSQLText(r.Changes)
+	sql := schemaChangesSQLText(r.Changes, capitalized)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}

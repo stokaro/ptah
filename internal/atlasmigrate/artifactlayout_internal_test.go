@@ -57,8 +57,8 @@ func TestComposeMigrationArtifactsAreCoveredAndLoadable(t *testing.T) {
 			artifacts, err := composeMigrationArtifacts(tt.format, "addcol", 20240102030405, []MigrationFileContent{{
 				SQL:               "CREATE TABLE widgets (id INTEGER);",
 				DownSQL:           "DROP TABLE widgets;",
-				Statements:        []string{"CREATE TABLE widgets (id INTEGER)"},
-				ReverseStatements: []string{"DROP TABLE widgets"},
+				Statements:        sqlStatements("CREATE TABLE widgets (id INTEGER)"),
+				ReverseStatements: sqlStatements("DROP TABLE widgets"),
 			}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(artifacts, qt.HasLen, tt.files)
@@ -112,8 +112,8 @@ func TestComposeMigrationArtifactsCarriesTheRollbackHalf(t *testing.T) {
 			artifacts, err := composeMigrationArtifacts(tt.format, "addcol", 20240102030405, []MigrationFileContent{{
 				SQL:               "CREATE TABLE widgets (id INTEGER);",
 				DownSQL:           "DROP TABLE widgets;",
-				Statements:        []string{"CREATE TABLE widgets (id INTEGER)"},
-				ReverseStatements: []string{"DROP TABLE widgets"},
+				Statements:        sqlStatements("CREATE TABLE widgets (id INTEGER)"),
+				ReverseStatements: sqlStatements("DROP TABLE widgets"),
 			}})
 
 			c.Assert(err, qt.IsNil)
@@ -266,8 +266,8 @@ func TestComposeMigrationArtifacts_LiquibaseMarksTheChangeset(t *testing.T) {
 				"widgets",
 				20240102030405,
 				[]MigrationFileContent{{
-					Statements:           []string{"CREATE TABLE widgets (id INTEGER)"},
-					ReverseStatements:    []string{"DROP TABLE widgets"},
+					Statements:           sqlStatements("CREATE TABLE widgets (id INTEGER)"),
+					ReverseStatements:    sqlStatements("DROP TABLE widgets"),
 					NoTransaction:        test.noTransaction,
 					ReverseNoTransaction: test.reverseNoTransaction,
 				}},
@@ -436,11 +436,11 @@ func TestComposeMigrationArtifacts_LiquibaseRollbackIsOneLiquibaseReads(t *testi
 		"widgets",
 		20240102030405,
 		[]MigrationFileContent{{
-			Statements: []string{"DROP TABLE widgets"},
-			ReverseStatements: []string{
+			Statements: sqlStatements("DROP TABLE widgets"),
+			ReverseStatements: sqlStatements(
 				"CREATE TABLE widgets (\n  id INTEGER PRIMARY KEY,\n  name TEXT\n)",
 				"CREATE INDEX widgets_name ON widgets (name)",
-			},
+			),
 		}},
 	)
 
@@ -481,11 +481,11 @@ func TestComposeMigrationArtifacts_LiquibaseEndsANoteWithoutASemicolon(t *testin
 		[]MigrationFileContent{{
 			SQL:        "DROP POLICY p ON t;\n" + note + "\n",
 			DownSQL:    "CREATE POLICY p ON t;\n" + note + "\n",
-			Statements: []string{"DROP POLICY p ON t", note},
-			ReverseStatements: []string{
+			Statements: sqlStatements("DROP POLICY p ON t", note),
+			ReverseStatements: sqlStatements(
 				"CREATE POLICY p ON t",
 				note,
-			},
+			),
 		}},
 	)
 

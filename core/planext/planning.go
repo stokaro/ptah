@@ -31,6 +31,36 @@ const (
 	DropEnum ChangeKind = "drop_enum"
 )
 
+// StatementStyle selects how a plan spells what its statements carry beyond
+// the change itself: comments, existence guards and CASCADE. The style never
+// changes which objects a plan creates, changes or drops on a database in the
+// state the plan was made against.
+type StatementStyle uint8
+
+const (
+	// StatementStyleAnnotated is the zero value and Ptah's own style. A plan
+	// writes comments that describe its statements, guards a drop with IF
+	// EXISTS and a new index with IF NOT EXISTS, and drops with CASCADE where
+	// the target accepts it.
+	StatementStyleAnnotated StatementStyle = iota
+	// StatementStyleExact writes a plan that runs only against the database it
+	// was made against. It leaves out the comments that only describe the
+	// statements beside them (see [ast.CommentNode]), the IF EXISTS and IF
+	// NOT EXISTS guards no earlier statement of the plan makes necessary, and
+	// every CASCADE the plan does not rely on to remove a dependent it does
+	// not drop itself. A statement run against a database in another state
+	// then fails, where a guard would make it do nothing and CASCADE would
+	// remove an object nobody named.
+	//
+	// A comment that reports what the plan left out or cannot do is written
+	// in this style too. The PostgreSQL-family and MySQL-family planners mark
+	// their descriptive comments, and the PostgreSQL-family planner also
+	// settles guards and CASCADE; the other built-in planners plan as in the
+	// annotated style. An owner operation renders its own statement and keeps
+	// its own spelling.
+	StatementStyleExact
+)
+
 // Planner defines the interface for database-specific migration planning.
 //
 // Implementations of this interface are responsible for converting schema differences
@@ -152,6 +182,11 @@ type Options struct {
 	// native --allow-table-rebuild flag; a surface that has no such flag, such
 	// as ptah-compat, passes the spelling it reads instead.
 	TableRebuildRequest string
+	// Statements selects the statement style. The zero value is
+	// [StatementStyleAnnotated]. ptah-compat `migrate diff` selects
+	// [StatementStyleExact], which is how the Atlas CLI writes a migration
+	// file.
+	Statements StatementStyle
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the

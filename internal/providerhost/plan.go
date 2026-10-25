@@ -37,7 +37,10 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if !p.commonTables && !p.assessParents && (len(diff.TablesAdded) > 0 || len(diff.TablesModified) > 0 || len(diff.TablesRemoved) > 0) {
 		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
-	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities"); err != nil {
+	// The statement style is accepted and changes nothing: the common
+	// statements below carry no comment, existence guard or CASCADE, and an
+	// owner operation keeps its own spelling in every style.
+	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements"); err != nil {
 		return nil, err
 	}
 	// Matched counts the pairs a comparison made, for the drift report. It is

@@ -97,6 +97,6 @@ func TestAssessRendered_DefaultOnlyChangeIsOneSafeStatement(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(assessments, qt.HasLen, 1)
-	c.Assert(assessments[0].Statement, qt.Equals, "-- ALTER statements: --\nALTER TABLE \"flags\" ALTER COLUMN \"fresh\" SET DEFAULT true")
+	c.Assert(assessments[0].Statement, qt.Equals, "ALTER TABLE \"flags\" ALTER COLUMN \"fresh\" SET DEFAULT true")
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Safe)
 }

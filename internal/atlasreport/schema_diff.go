@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"text/template"
+	"unicode"
+	"unicode/utf8"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -53,10 +55,21 @@ type SchemaDiff struct {
 	// Atlas has no such template field, and a field only Ptah offers would let
 	// a template succeed here that the community binary refuses.
 	dialect string
+	// commentsAsWritten is [SchemaDiffOptions.CommentsAsWritten].
+	commentsAsWritten bool
 }
 
+// SchemaChange is one planned statement. Its fields are those of the community
+// binary's template data that Ptah fills, under the same names, so a
+// `--format` template that reads them reads them on both binaries.
 type SchemaChange struct {
+	// Cmd is the statement, without its terminating semicolon.
 	Cmd string
+	// Comment names the change Cmd makes, the way the community binary names
+	// it: `create "users" table`. It is empty for a change nothing names and
+	// for every change of a `schema diff`, and the `json` helper leaves an
+	// empty one out.
+	Comment string `json:",omitempty"`
 }
 
 type SchemaDiffChange = SchemaChange
@@ -74,16 +87,34 @@ type SchemaDiffOptions struct {
 	To   *schemamodel.Database
 	// Statements is the ordered plan.
 	Statements []string
+	// Changes is the ordered plan with the comment that names each change.
+	// It is read in place of Statements when it is set.
+	Changes []SchemaChange
+	// CommentsAsWritten makes the `sql` helper write each change's comment
+	// as the change carries it. Without it the helper writes the comment's
+	// first letter in upper case, as the community binary's helper does:
+	// `-- Create "users" table`. A migration file of a layout another tool
+	// reads, such as golang-migrate, is written by that binary through a
+	// template of its own, which writes the comment unchanged.
+	CommentsAsWritten bool
 }
 
 // NewSchemaDiff builds the template payload of `schema diff` and `migrate
 // diff`.
 func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
+	changes := schemaChanges(opts.Statements)
+	if opts.Changes != nil {
+		changes = make([]SchemaChange, 0, len(opts.Changes))
+		for _, change := range opts.Changes {
+			changes = append(changes, SchemaChange{Cmd: schemaStatement(change.Cmd), Comment: change.Comment})
+		}
+	}
 	return SchemaDiff{
-		From:    opts.From,
-		To:      opts.To,
-		Changes: schemaChanges(opts.Statements),
-		dialect: opts.Dialect,
+		From:              opts.From,
+		To:                opts.To,
+		Changes:           changes,
+		dialect:           opts.Dialect,
+		commentsAsWritten: opts.CommentsAsWritten,
 	}
 }
 
@@ -207,7 +238,11 @@ func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	sql := schemaChangesSQLText(r.Changes)
+	spell := capitalized
+	if r.commentsAsWritten {
+		spell = asWritten
+	}
+	sql := schemaChangesSQLText(r.Changes, spell)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
@@ -219,15 +254,34 @@ func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
 }
 
 // schemaChangesSQLText writes the changes as the script the `sql` template
-// function returns. A change that is only comments -- a planner's note with
-// nothing to run after it -- ends without a semicolon; see [sqlscript].
-func schemaChangesSQLText(changes []SchemaChange) string {
+// function returns: each change's comment on a line of its own, spelled by
+// spell, then the statement. A change that is only comments -- a planner's
+// note with nothing to run after it -- ends without a semicolon; see
+// [sqlscript].
+func schemaChangesSQLText(changes []SchemaChange, spell func(string) string) string {
 	var sql strings.Builder
 	for _, change := range changes {
+		if change.Comment != "" {
+			fmt.Fprintf(&sql, "-- %s\n", spell(change.Comment))
+		}
 		cmd := strings.TrimSuffix(change.Cmd, ";")
 		fmt.Fprintf(&sql, "%s%s\n", cmd, sqlscript.Terminator(cmd))
 	}
 	return sql.String()
+}
+
+// asWritten is text as it is.
+func asWritten(text string) string {
+	return text
+}
+
+// capitalized is text with its first letter in upper case.
+func capitalized(text string) string {
+	first, size := utf8.DecodeRuneInString(text)
+	if first == utf8.RuneError {
+		return text
+	}
+	return string(unicode.ToUpper(first)) + text[size:]
 }
 
 func schemaStatement(statement string) string {

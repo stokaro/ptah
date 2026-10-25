@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -85,6 +86,25 @@ type Planner struct {
 	// defaults to mysql so the zero value and New stay backwards-identical for
 	// the MySQL-family planner.
 	dialect string
+	// statements is the statement style. This planner reads it for one
+	// decision: whether a drop carries the line comment that only describes
+	// it, which the renderer writes and a descriptive comment node cannot
+	// stand in for.
+	statements planext.StatementStyle
+}
+
+// WithStatementStyle returns a copy of the planner that spells its statements
+// in style. The receiver is not modified.
+func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
+	cp := *p
+	cp.statements = style
+	return &cp
+}
+
+// describes reports whether the plan writes the comments that only describe
+// its statements.
+func (p *Planner) describes() bool {
+	return p.statements != planext.StatementStyleExact
 }
 
 // New returns a planner configured with the current MySQL line preset
@@ -494,7 +514,7 @@ func (p *Planner) modifyExistingColumns(
 		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
 			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
 		}
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
+		astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 		result = append(result, astCommentNode)
 
 		// Generate ALTER COLUMN statements using AST
@@ -702,7 +722,7 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: column.Name}},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, column.Name))
+		astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, column.Name))
 		result = append(result, astCommentNode)
 	}
 	return result, nil
@@ -774,7 +794,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) (_, columnDrops []ast.Node, _ error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
-		header := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
+		header := ast.NewDescriptiveComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 
 		// The table's own comment is a table option here, so it needs a
 		// statement of its own. A column's does not: MySQL restates the whole
@@ -1288,8 +1308,10 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved.Names(), diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
-			SetCascade().
-			SetComment("WARNING: This will delete all data!")
+			SetCascade()
+		if p.describes() {
+			dropTableNode.SetComment("WARNING: This will delete all data!")
+		}
 
 		result = append(result, dropTableNode)
 	}

@@ -21,7 +21,7 @@ import (
 func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.T) {
 	const header = "-- Add/modify columns for table: flags\n" +
 		"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false\n" +
-		"-- ALTER statements: --\n"
+		""
 	tests := []struct {
 		name    string
 		dialect string
@@ -54,7 +54,6 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.
 			omit:    true,
 			want: []string{"-- Modify table: flags\n" +
 				"-- Modify column flags.c: default_expr:  -> 9, nullable: true -> false\n" +
-				"-- ALTER statements: --\n" +
 				"ALTER TABLE `flags` MODIFY COLUMN `c` INTEGER NOT NULL DEFAULT 9"},
 		},
 	}

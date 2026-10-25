@@ -66,7 +66,7 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 				Name:       "users",
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("email", "VARCHAR(255)")}},
 			},
-			want: "-- ALTER statements: --\nALTER TABLE `users` ADD COLUMN `email` VARCHAR(255);\n\n",
+			want: "ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255);\n\n",
 		},
 		{
 			kind: "AlterTypeNode",
@@ -132,7 +132,7 @@ func mysqlRenderedKinds() []mysqlCensusRow {
 		{
 			kind: "CreateTableNode",
 			node: mysqlCensusTable(),
-			want: "-- MYSQL TABLE: users --\nCREATE TABLE `users` (\n  `id` INT\n);\n\n",
+			want: "CREATE TABLE `users` (\n  `id` INT\n);\n\n",
 		},
 		{
 			kind: "CreateTriggerNode",

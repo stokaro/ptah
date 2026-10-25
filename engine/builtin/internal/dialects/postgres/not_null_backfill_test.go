@@ -11,8 +11,7 @@ import (
 // setNotNull is the plan for a column that becomes NOT NULL and declares no
 // default, whatever its type: a comment saying the statement fails on a NULL
 // row, then the statement.
-const setNotNull = "-- ALTER statements: --\n" +
-	"-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; the column declares no default to fill it with.\n" +
+const setNotNull = "-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; the column declares no default to fill it with.\n" +
 	"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n"
 
 // A column that becomes NOT NULL and declares no default is not filled with a
@@ -67,8 +66,7 @@ func TestPostgres_SetNotNull_BackfillsWithTheDeclaredDefault(t *testing.T) {
 
 			got := renderPostgres(c, modifyColumn(test.column, ast.ColumnProperties{Nullability: true}, true))
 
-			c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-				"UPDATE \"t\" SET \"c\" = "+test.value+" WHERE \"c\" IS NULL;\n"+
+			c.Assert(got, qt.Equals, "UPDATE \"t\" SET \"c\" = "+test.value+" WHERE \"c\" IS NULL;\n"+
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
 		})
 	}
@@ -82,8 +80,7 @@ func TestPostgres_RestatedNotNullColumn_InventsNoBackfillValue(t *testing.T) {
 
 	got := renderPostgres(c, modifyColumn(column, ast.ColumnProperties{}, false))
 
-	c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-		"ALTER TABLE \"t\" ALTER COLUMN \"c\" TYPE INTEGER;\n"+
+	c.Assert(got, qt.Equals, "ALTER TABLE \"t\" ALTER COLUMN \"c\" TYPE INTEGER;\n"+
 		"-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; the column declares no default to fill it with.\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n"+
 		"ALTER TABLE \"t\" ALTER COLUMN \"c\" DROP DEFAULT;\n\n")
@@ -125,8 +122,7 @@ func TestPostgres_SetNotNull_OmittedBackfill(t *testing.T) {
 
 			got := renderPostgres(c, alter)
 
-			c.Assert(got, qt.Equals, "-- ALTER statements: --\n"+
-				"-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; "+test.reason+".\n"+
+			c.Assert(got, qt.Equals, "-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NULL in \"c\"; "+test.reason+".\n"+
 				"ALTER TABLE \"t\" ALTER COLUMN \"c\" SET NOT NULL;\n\n")
 		})
 	}

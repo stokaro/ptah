@@ -518,6 +518,7 @@ func planCompatBidirectionalSchemaDiff(
 			OmitNullBackfill:    input.OmitNullBackfill,
 			AllowTableRebuild:   input.AllowTableRebuild,
 			TableRebuildRequest: input.TableRebuildRequest,
+			Statements:          input.Statements,
 		},
 	})
 	if err != nil {

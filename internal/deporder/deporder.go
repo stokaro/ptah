@@ -584,19 +584,54 @@ func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 	if len(objects) < 2 {
 		return append([]ViewLike(nil), objects...)
 	}
+	graph := newViewLikeGraph(objects, dialect)
+	return graph.ordered(StableTopologicalSort(graph.ids, graph.reads))
+}
 
-	ids := make([]string, 0, len(objects))
-	byID := make(map[string]ViewLike, len(objects))
+// ViewLikesForDropForDialect returns view-like objects in an order they can be
+// dropped one at a time without CASCADE: an object comes after every object
+// of the set that reads it. Objects with no such reader keep the order they
+// arrived in. Dependency is read as [ViewLikesForCreateForDialect] reads it,
+// so for the edges it finds this order is the mirror of that one.
+//
+// A dependency cycle cannot be dropped one object at a time; the objects on
+// it keep their arrival order, as they do in the creation order.
+func ViewLikesForDropForDialect(objects []ViewLike, dialect string) []ViewLike {
+	if len(objects) < 2 {
+		return append([]ViewLike(nil), objects...)
+	}
+	graph := newViewLikeGraph(objects, dialect)
+	readers := make(map[string][]string, len(graph.reads))
+	for _, reader := range graph.ids {
+		for _, read := range graph.reads[reader] {
+			readers[read] = append(readers[read], reader)
+		}
+	}
+	return graph.ordered(StableTopologicalSort(graph.ids, readers))
+}
+
+// viewLikeGraph is a set of view-like objects and the edges between them:
+// reads[id] holds the objects the one with that id reads.
+type viewLikeGraph struct {
+	ids   []string
+	byID  map[string]ViewLike
+	reads map[string][]string
+}
+
+func newViewLikeGraph(objects []ViewLike, dialect string) viewLikeGraph {
+	graph := viewLikeGraph{
+		ids:   make([]string, 0, len(objects)),
+		byID:  make(map[string]ViewLike, len(objects)),
+		reads: make(map[string][]string, len(objects)),
+	}
 	idsByName := make(map[string][]string, len(objects))
 	for i, object := range objects {
 		id := viewLikeID(object, i)
-		ids = append(ids, id)
-		byID[id] = object
+		graph.ids = append(graph.ids, id)
+		graph.byID[id] = object
 		idsByName[object.Name] = append(idsByName[object.Name], id)
 	}
 	bareNameCounts := viewLikeBareNameCounts(idsByName)
-
-	dependencies := make(map[string][]string, len(objects))
 	for i, object := range objects {
 		id := viewLikeID(object, i)
 		for candidateName, candidateIDs := range idsByName {
@@ -604,15 +639,17 @@ func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, bareNameCounts) {
 				continue
 			}
-			dependencies[id] = append(dependencies[id], candidateIDs...)
+			graph.reads[id] = append(graph.reads[id], candidateIDs...)
 		}
-		dependencies[id] = append(dependencies[id], declaredViewLikeEdges(object, idsByName)...)
+		graph.reads[id] = append(graph.reads[id], declaredViewLikeEdges(object, idsByName)...)
 	}
+	return graph
+}
 
-	orderedIDs := StableTopologicalSort(ids, dependencies)
-	ordered := make([]ViewLike, 0, len(orderedIDs))
-	for _, id := range orderedIDs {
-		ordered = append(ordered, byID[id])
+func (g viewLikeGraph) ordered(ids []string) []ViewLike {
+	ordered := make([]ViewLike, 0, len(ids))
+	for _, id := range ids {
+		ordered = append(ordered, g.byID[id])
 	}
 	return ordered
 }

@@ -370,13 +370,6 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 	// declared partitioning produces one ordinary table here: every row
 	// lands in the same place.
 	r.sink.RecordLostTableStorage(node)
-	// Table comment
-	if node.Comment != "" {
-		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- %s TABLE: %s --", r.dialectUpper, node.Name)
-	}
-
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -1210,7 +1203,6 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 
 // VisitAlterTableWithEnums renders MariaDB-specific ALTER TABLE statements with enum support
 func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[string][]string) error {
-	r.w.WriteLine("-- ALTER statements: --")
 	if handled, err := r.writePrimaryKeyReplacement(node); handled {
 		return err
 	}

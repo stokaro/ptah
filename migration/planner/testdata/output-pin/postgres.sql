@@ -1,5 +1,4 @@
 -- render: the desired schema
--- POSTGRES TABLE: orders --
 CREATE TABLE "orders" (
   "id" BIGINT PRIMARY KEY NOT NULL,
   "user_id" BIGINT NOT NULL,
@@ -7,7 +6,6 @@ CREATE TABLE "orders" (
 );
 
 
--- POSTGRES TABLE: users --
 CREATE TABLE "users" (
   "id" BIGINT PRIMARY KEY NOT NULL,
   "email" VARCHAR(255) NOT NULL,
@@ -22,7 +20,6 @@ CREATE INDEX IF NOT EXISTS "users_created_ix" ON "users" ("created_at");
 
 CREATE INDEX IF NOT EXISTS "orders_user_ix" ON "orders" ("user_id");
 -- plan: the current schema to the desired one
--- POSTGRES TABLE: orders --
 CREATE TABLE "orders" (
   "id" BIGINT PRIMARY KEY NOT NULL,
   "user_id" BIGINT NOT NULL,
@@ -30,7 +27,6 @@ CREATE TABLE "orders" (
 );
 
 -- Add/modify columns for table: users
--- ALTER statements: --
 ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS "orders_user_ix" ON "orders" ("user_id");
@@ -38,7 +34,6 @@ CREATE INDEX IF NOT EXISTS "users_created_ix" ON "users" ("created_at");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_email_uq" ON "users" ("email");
 DROP INDEX IF EXISTS "users_name_ix";
 -- render: a covering index
--- POSTGRES TABLE: users --
 CREATE TABLE "users" (
   "id" BIGINT PRIMARY KEY NOT NULL,
   "email" VARCHAR(255) NOT NULL,

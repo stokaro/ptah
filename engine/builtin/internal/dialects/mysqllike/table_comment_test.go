@@ -11,16 +11,13 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/mysqllike"
 )
 
-// TestVisitNode_CreateTableCarriesTheTableComment pins where a table's comment goes.
+// TestVisitNode_CreateTableCarriesTheTableComment pins where a table's comment goes:
+// into the statement, as the COMMENT table option.
 //
-// It went above the statement, as an SQL line comment the server never reads:
-//
-//	-- MYSQL TABLE: customers (people who buy) --
-//	CREATE TABLE `customers` (...);
-//
-// so the comment did not survive a replay. Measured on MariaDB 12.3, source
-// against the replay of Ptah's own description read back with an independent
-// reader:
+// Written only as an SQL line comment above the statement, which the server
+// never reads, the comment does not survive a replay. Measured on MariaDB 12.3,
+// source against the replay of Ptah's own description read back with an
+// independent reader:
 //
 //	-CREATE TABLE `customers` (...) COMMENT "people who buy";
 //	+CREATE TABLE `customers` (...);

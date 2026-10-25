@@ -279,7 +279,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
 			driver:   "pgx",
-			contains: []string{"SERIAL", "POSTGRES TABLE"},
+			contains: []string{"SERIAL"},
 			excludes: []string{"AUTO_INCREMENT", "ENGINE"},
 		},
 		{
@@ -287,7 +287,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 			dialect:  "mysql",
 			skipFunc: skipIfNoMySQLRenderer,
 			driver:   "mysql",
-			contains: []string{"AUTO_INCREMENT", "ENGINE", "MYSQL TABLE"},
+			contains: []string{"AUTO_INCREMENT", "ENGINE"},
 			excludes: []string{"SERIAL"},
 		},
 		{
@@ -295,7 +295,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 			dialect:  "mariadb",
 			skipFunc: skipIfNoMariaDBRenderer,
 			driver:   "mysql",
-			contains: []string{"AUTO_INCREMENT", "ENGINE", "MARIADB TABLE"},
+			contains: []string{"AUTO_INCREMENT", "ENGINE"},
 			excludes: []string{"SERIAL"},
 		},
 	}

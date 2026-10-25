@@ -32,7 +32,6 @@ func TestAssessRendered_SetNotNullWithoutDefaultWarnsAndRewritesNothing(t *testi
 	c.Assert(assessments, qt.HasLen, 1)
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Warning)
 	c.Assert(assessments[0].Reason, qt.Equals, "SET NOT NULL can fail when existing rows contain NULL")
-	c.Assert(assessments[0].Statement, qt.Equals, "-- ALTER statements: --\n"+
-		"-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"qty\"; the column declares no default to fill it with.\n"+
+	c.Assert(assessments[0].Statement, qt.Equals, "-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"qty\"; the column declares no default to fill it with.\n"+
 		`ALTER TABLE "flags" ALTER COLUMN "qty" SET NOT NULL`)
 }

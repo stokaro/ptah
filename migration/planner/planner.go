@@ -144,6 +144,12 @@ func GenerateSchemaDiffASTWithOptions(
 		// a pass over the result reaches every column modification.
 		omitNullBackfill(nodes)
 	}
+	if opts.Statements == planext.StatementStyleExact {
+		// After the dialect planner too: every planner marks its descriptive
+		// comments where it writes them, and one pass over the result leaves
+		// them out whichever planner wrote them.
+		nodes = withoutDescriptiveComments(nodes)
+	}
 	if err := requireIsolatedOwnerOperations(nodes); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}

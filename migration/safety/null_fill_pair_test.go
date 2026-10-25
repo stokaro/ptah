@@ -72,7 +72,7 @@ func TestAssessRendered_NullFillPair(t *testing.T) {
 			name:       "a declared default fills the NULL rows",
 			operations: []ast.AlterOperation{notNullModification(ast.NewColumn("c", "INTEGER").SetNotNull().SetDefault("9"), false)},
 			want: []judged{
-				{Severity: safety.Warning, Reason: fillReason, Statement: "-- ALTER statements: --\n" + fillStatement("c")},
+				{Severity: safety.Warning, Reason: fillReason, Statement: fillStatement("c")},
 				{Severity: safety.Safe, Reason: afterFillReason, Statement: `ALTER TABLE "flags" ALTER COLUMN "c" SET NOT NULL`},
 			},
 		},
@@ -82,8 +82,7 @@ func TestAssessRendered_NullFillPair(t *testing.T) {
 			want: []judged{{
 				Severity: safety.Warning,
 				Reason:   setNotNullReason,
-				Statement: "-- ALTER statements: --\n" +
-					"-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"c\"; this plan does not fill it with the column's default.\n" +
+				Statement: "-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"c\"; this plan does not fill it with the column's default.\n" +
 					`ALTER TABLE "flags" ALTER COLUMN "c" SET NOT NULL`,
 			}},
 		},
@@ -94,13 +93,12 @@ func TestAssessRendered_NullFillPair(t *testing.T) {
 				notNullModification(ast.NewColumn("b", "INTEGER").SetNotNull(), false),
 			},
 			want: []judged{
-				{Severity: safety.Warning, Reason: fillReason, Statement: "-- ALTER statements: --\n" + fillStatement("a")},
+				{Severity: safety.Warning, Reason: fillReason, Statement: fillStatement("a")},
 				{Severity: safety.Safe, Reason: afterFillReason, Statement: `ALTER TABLE "flags" ALTER COLUMN "a" SET NOT NULL`},
 				{
 					Severity: safety.Warning,
 					Reason:   setNotNullReason,
-					Statement: "-- ALTER statements: --\n" +
-						"-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"b\"; the column declares no default to fill it with.\n" +
+					Statement: "-- POSTGRES: SET NOT NULL fails if any row of \"flags\" holds NULL in \"b\"; the column declares no default to fill it with.\n" +
 						`ALTER TABLE "flags" ALTER COLUMN "b" SET NOT NULL`,
 				},
 			},
@@ -135,7 +133,7 @@ func TestAssessRendered_NullFillPairIsPostgreSQLOnly(t *testing.T) {
 			want: []judged{{
 				Severity:  safety.Warning,
 				Reason:    modifyNotNullReason,
-				Statement: "-- ALTER statements: --\nALTER TABLE `flags` MODIFY COLUMN `c` INTEGER NOT NULL DEFAULT 9",
+				Statement: "ALTER TABLE `flags` MODIFY COLUMN `c` INTEGER NOT NULL DEFAULT 9",
 			}},
 		},
 		{
@@ -145,7 +143,7 @@ func TestAssessRendered_NullFillPairIsPostgreSQLOnly(t *testing.T) {
 				notNullModification(ast.NewColumn("b", "INTEGER").SetNotNull(), false),
 			},
 			want: []judged{
-				{Severity: safety.Warning, Reason: modifyNotNullReason, Statement: "-- ALTER statements: --\nALTER TABLE `flags` MODIFY COLUMN `a` INTEGER NOT NULL DEFAULT 9"},
+				{Severity: safety.Warning, Reason: modifyNotNullReason, Statement: "ALTER TABLE `flags` MODIFY COLUMN `a` INTEGER NOT NULL DEFAULT 9"},
 				{Severity: safety.Warning, Reason: modifyNotNullReason, Statement: "ALTER TABLE `flags` MODIFY COLUMN `b` INTEGER NOT NULL"},
 			},
 		},

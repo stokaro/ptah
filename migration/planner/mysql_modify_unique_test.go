@@ -77,7 +77,7 @@ func TestGenerateSchemaDiffSQLStatements_MySQLFamilyModifyStatesUniqueOnlyWhenIt
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(got, qt.HasLen, 1)
-				c.Assert(got[0], qt.Matches, `(?s).*-- ALTER statements: --\n`+regexp.QuoteMeta(test.want))
+				c.Assert(got[0], qt.Matches, `(?s).*`+regexp.QuoteMeta(test.want))
 			})
 		}
 	}

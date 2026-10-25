@@ -1180,6 +1180,76 @@ Desired SQL uses a separate, non-executing reader. It supports
 and includes their selected roles in the diff. This does not relax the
 server-level authorization required to replay migration history.
 
+### The statements of a generated file
+
+Each statement of a file `migrate diff` writes sits under a comment that names
+its change, in the words the pinned community binary v1.3.0 writes:
+
+```sql
+-- create "owners" table
+CREATE TABLE "owners" (
+  "id" bigint PRIMARY KEY NOT NULL,
+  "name" varchar
+);
+-- create index "owners_name_idx" to table: "owners"
+CREATE INDEX "owners_name_idx" ON "owners" ("name");
+```
+
+A rollback writes `reverse: ` and the forward change each statement undoes:
+`-- reverse: create "owners" table` above `DROP TABLE "owners";`. That is the
+`.down.sql` file of golang-migrate and flyway and the down section of goose
+and dbmate. Ptah plans the rollback on its own rather than by reversing the
+forward plan, so each of these comments is read off the statement it heads.
+
+In a native Atlas directory the `sql` template helper writes the comment with
+its first letter in upper case, `-- Create "owners" table`, as the community
+binary's helper does. A `--format` template reads the comment as `.Comment`,
+beside the statement in `.Cmd`. A Liquibase changeset carries the comments
+above its statements and none on its rollback lines.
+
+Views, routines, triggers, sequences and roles, which the community binary does
+not plan, follow the same pattern: `create "v" view`, `modify "v" view` for
+`CREATE OR REPLACE VIEW`, and `drop "v" view`. The comments that only describe
+Ptah's plan, such as `-- Add/modify columns for table: owners` and the
+warnings above a drop, are left out. A comment that reports what the plan left
+out or cannot do stays, such as a change a `diff` policy skips or a step a
+person has to take.
+
+On a PostgreSQL-family dev database the statements carry no `IF EXISTS` or
+`IF NOT EXISTS`, and a drop carries `CASCADE` only where the plan relies on it.
+A file run against a database in another state than the one it was planned
+against then stops, where a guard would make a statement do nothing. A column
+whose type changes under a view is the common case: the plan drops the view,
+changes the column and creates the view again, all without `CASCADE`. When a
+view in a schema the run leaves out reads that view, the migration stops at
+the drop, where `CASCADE` would drop the reader in silence.
+
+The plan relies on `CASCADE` where it removes a dependent only after the drop:
+
+- a column dropped while a view or trigger the declaration removes reads its
+  table, or while the plan removes a routine or a feature object that may read
+  it;
+- a table dropped while the plan removes a routine or a feature object that may
+  use its row type;
+- a view dropped and created again under a declared view that reads it, which
+  the plan puts back with `CREATE OR REPLACE VIEW` after the drop.
+
+A guard stays where an earlier statement of the same file may already have
+removed the object or created it: a view a `CASCADE` above it may have taken, a
+constraint of a table whose column the file drops before it, an index on a
+view the file drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well,
+because the plan writes it for every schema an added object names, whether or
+not that schema exists.
+
+The MySQL-family planner leaves out its descriptive comments and keeps its
+guards. The SQLite, SQL Server and ClickHouse planners keep both. A statement
+an owner renders, such as a row-security policy or an extension, keeps its own
+spelling. Native `ptah
+migrations generate` keeps Ptah's own comments, guards and `CASCADE`. The files
+still differ from the community binary's in how statements are grouped and
+ordered, in type spelling, and in where the keys of a new table are written;
+[stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.
+
 ### A dev database from a named image
 
 `docker://<engine>/<tag>[/<database>]` starts an engine's own image:
@@ -2113,6 +2183,8 @@ Ptah-native migrations instead; see
 **`ptah-compat migrate diff --format`**
 
 - `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL.
+- Each change: `.Cmd`, the statement, and `.Comment`, the change comment
+  written above it.
 
 **`ptah-compat migrate lint --format`**
 

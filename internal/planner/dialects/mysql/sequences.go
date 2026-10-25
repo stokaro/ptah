@@ -44,8 +44,10 @@ func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff) [
 			continue
 		}
 		node := alterSequenceFromDiff(sequence, sequenceDiff.Changes)
-		node.SetComment(fmt.Sprintf("Modify sequence %s: %s",
-			sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
+		if p.describes() {
+			node.SetComment(fmt.Sprintf("Modify sequence %s: %s",
+				sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
+		}
 		result = append(result, node)
 	}
 	return result
@@ -61,8 +63,10 @@ func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff)
 	for _, sequence := range diff.SequencesRemoved {
 		schemaName, sequenceName := splitQualifiedSequenceName(sequence.QualifiedName())
 		node := ast.NewDropSequence(sequenceName).
-			SetIfExists().
-			SetComment("WARNING: Ensure no column default still draws from this sequence")
+			SetIfExists()
+		if p.describes() {
+			node.SetComment("WARNING: Ensure no column default still draws from this sequence")
+		}
 		if schemaName != "" {
 			node.SetSchema(schemaName)
 		}

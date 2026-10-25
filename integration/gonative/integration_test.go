@@ -55,7 +55,6 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					pgSQL = legacyRenderedSQL(pgSQL)
 
 					// Verify PostgreSQL SQL contains expected elements
-					c.Assert(pgSQL, qt.Contains, fmt.Sprintf("-- POSTGRES TABLE: %s --", table.Name))
 					c.Assert(pgSQL, qt.Contains, fmt.Sprintf("CREATE TABLE %s (", table.Name))
 
 					// For PostgreSQL, enums are created separately, so generate them if they exist
@@ -73,8 +72,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					c.Assert(err, qt.IsNil)
 					mySQL = legacyRenderedSQL(mySQL)
 
-					// Verify MySQL SQL contains expected elements (may include table comment from overrides)
-					c.Assert(mySQL, qt.Contains, fmt.Sprintf("-- MYSQL TABLE: %s", table.Name))
+					// Verify MySQL SQL contains expected elements
 					c.Assert(mySQL, qt.Contains, fmt.Sprintf("CREATE TABLE %s (", table.Name))
 
 					// Verify enums are handled in MySQL (they may be inlined or referenced by type name)
@@ -101,9 +99,6 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					mariaSQL, err := builtin.RenderSQL("mariadb", createTableNodeMariaDB)
 					c.Assert(err, qt.IsNil)
 					mariaSQL = legacyRenderedSQL(mariaSQL)
-
-					// Verify MariaDB SQL has correct header
-					c.Assert(mariaSQL, qt.Contains, fmt.Sprintf("-- MARIADB TABLE: %s", table.Name))
 
 					// Verify MariaDB SQL contains the table structure (but may have different constraints due to platform overrides)
 					c.Assert(mariaSQL, qt.Contains, fmt.Sprintf("CREATE TABLE %s", table.Name))

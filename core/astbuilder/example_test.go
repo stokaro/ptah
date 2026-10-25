@@ -30,14 +30,12 @@ func ExampleNewTable() {
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "email" VARCHAR(255) UNIQUE NOT NULL,
 	//   "created_at" TIMESTAMP NOT NULL DEFAULT NOW()
 	// );
 	//
-	// -- MYSQL TABLE: users --
 	// CREATE TABLE `users` (
 	//   `id` SERIAL PRIMARY KEY,
 	//   `email` VARCHAR(255) NOT NULL UNIQUE,
@@ -63,7 +61,6 @@ func ExampleNewTable_tableLevelConstraints() {
 	fmt.Print(must.Must(r.Render(table)))
 
 	// Output:
-	// -- MYSQL TABLE: order_items --
 	// CREATE TABLE `order_items` (
 	//   `order_id` BIGINT NOT NULL,
 	//   `sku` VARCHAR(50) NOT NULL,
@@ -110,7 +107,6 @@ func ExampleNewTable_mixedWithAst() {
 	fmt.Print(must.Must(r.Render(table)))
 
 	// Output:
-	// -- POSTGRES TABLE: bookings --
 	// CREATE TABLE "bookings" (
 	//   "room_id" INTEGER NOT NULL,
 	//   "during" TSRANGE NOT NULL
@@ -137,14 +133,12 @@ func ExampleNewTable_generatedColumn() {
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: order_lines --
 	// CREATE TABLE "order_lines" (
 	//   "price" NUMERIC(10,2) NOT NULL CHECK (price >= 0),
 	//   "quantity" INTEGER NOT NULL DEFAULT 1,
 	//   "total" NUMERIC(10,2) GENERATED ALWAYS AS (price * quantity) STORED
 	// );
 	//
-	// -- MYSQL TABLE: order_lines --
 	// CREATE TABLE `order_lines` (
 	//   `price` NUMERIC(10,2) NOT NULL CHECK (price >= 0),
 	//   `quantity` INTEGER NOT NULL DEFAULT 1,
@@ -185,13 +179,11 @@ func ExampleNewSchema() {
 	// *ast.CreateTableNode
 	// *ast.IndexNode
 	// CREATE TYPE "user_status" AS ENUM ('active', 'suspended');
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "status" user_status NOT NULL DEFAULT 'active'
 	// );
 	//
-	// -- POSTGRES TABLE: posts --
 	// CREATE TABLE "posts" (
 	//   "id" SERIAL PRIMARY KEY NOT NULL,
 	//   "user_id" INTEGER NOT NULL,

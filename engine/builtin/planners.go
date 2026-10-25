@@ -28,7 +28,8 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 			plan := postgres.NewForDialect(name, opts.CapabilitiesFor(name)).
 				WithConcurrentIndexRefs(opts.ConcurrentIndexRefs...).
 				WithConcurrentIndexDropRefs(opts.ConcurrentIndexDropRefs...).
-				WithSkipChangeKinds(opts.SkipChangeKinds...)
+				WithSkipChangeKinds(opts.SkipChangeKinds...).
+				WithStatementStyle(opts.Statements)
 			if opts.ConcurrentIndexes {
 				plan = plan.WithConcurrentIndexes()
 			}
@@ -39,7 +40,7 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 		}, true
 	case dialect.Family == platform.MySQL:
 		return func(opts planext.Options) planext.Planner {
-			return mysql.NewForDialect(name, opts.CapabilitiesFor(name))
+			return mysql.NewForDialect(name, opts.CapabilitiesFor(name)).WithStatementStyle(opts.Statements)
 		}, true
 	case name == platform.SQLServer:
 		return func(opts planext.Options) planext.Planner {

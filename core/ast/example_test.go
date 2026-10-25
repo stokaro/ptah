@@ -40,7 +40,6 @@ func ExampleNewCreateTable() {
 	}
 
 	// Output:
-	// -- POSTGRES TABLE: users --
 	// CREATE TABLE "users" (
 	//   "id" INTEGER PRIMARY KEY NOT NULL,
 	//   "email" VARCHAR(255) NOT NULL,
@@ -48,7 +47,6 @@ func ExampleNewCreateTable() {
 	//   CONSTRAINT "uk_users_email" UNIQUE ("email")
 	// );
 	//
-	// -- MYSQL TABLE: users --
 	// CREATE TABLE `users` (
 	//   `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
 	//   `email` VARCHAR(255) NOT NULL,
@@ -82,12 +80,10 @@ func ExampleAlterTableNode() {
 	}
 
 	// Output:
-	// -- ALTER statements: --
 	// ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(64) NOT NULL;
 	// ALTER TABLE "users" DROP COLUMN "legacy_flags";
 	// ALTER TABLE "users" ADD CONSTRAINT "uk_users_nickname" UNIQUE ("nickname");
 	//
-	// -- ALTER statements: --
 	// ALTER TABLE `users` ADD COLUMN `nickname` VARCHAR(64) NOT NULL;
 	// ALTER TABLE `users` DROP COLUMN `legacy_flags`;
 	// ALTER TABLE `users` ADD CONSTRAINT `uk_users_nickname` UNIQUE (`nickname`);

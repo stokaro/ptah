@@ -51,11 +51,11 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 	}{
 		{
 			dialect: platform.MySQL,
-			want:    "-- MYSQL TABLE: t --\nCREATE TABLE `t` (\n  `id` BIGINT PRIMARY KEY,\n  `s` ENUM('draft', 'live')\n);\n\n",
+			want:    "CREATE TABLE `t` (\n  `id` BIGINT PRIMARY KEY,\n  `s` ENUM('draft', 'live')\n);\n\n",
 		},
 		{
 			dialect: platform.MariaDB,
-			want:    "-- MARIADB TABLE: t --\nCREATE TABLE `t` (\n  `id` BIGINT PRIMARY KEY,\n  `s` ENUM('draft', 'live')\n);\n\n",
+			want:    "CREATE TABLE `t` (\n  `id` BIGINT PRIMARY KEY,\n  `s` ENUM('draft', 'live')\n);\n\n",
 		},
 		{
 			dialect: platform.SQLite,
@@ -75,7 +75,7 @@ func TestGetOrderedCreateStatements_AValuedEnumColumnIsBuiltInline(t *testing.T)
 		},
 		{
 			dialect: platform.Spanner,
-			want: "-- SPANNER TABLE: t --\nCREATE TABLE \"t\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL,\n" +
+			want: "CREATE TABLE \"t\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL,\n" +
 				"  \"s\" TEXT CONSTRAINT \"t_s_check\" CHECK (s IN ('draft', 'live'))\n);\n\n",
 		},
 	}

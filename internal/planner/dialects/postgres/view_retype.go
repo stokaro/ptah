@@ -22,13 +22,18 @@ import (
 // exists in its final shape.
 //
 // Dependency is read the way the cascade logic reads it, off the bodies, so a
-// view that reads another view that reads the table is found too. The result
-// holds only objects the live database has: a view this plan adds does not exist
-// yet, and the plan creates it after the columns anyway.
+// view that reads another view that reads the table is found too, whether the
+// declaration keeps it or not. The result holds only objects the live database
+// has: a view this plan adds does not exist yet, and the plan creates it after
+// the columns anyway.
 //
 // The second list is the live views the declaration no longer holds. They also
-// block the ALTER, and the removal step runs after it, so they are dropped here
-// and need no recreate.
+// block the ALTER, or block the drop of a view that does, and the removal step
+// runs after it, so they are dropped here and need no recreate.
+//
+// Every reader is on one of the two lists, so the drops can run without
+// CASCADE once each reader goes before what it reads; see
+// [Planner.dropViewsBeforeRetype].
 func viewsReadingRetypedColumns(diff *difftypes.SchemaDiff) (recreate, removeOnly []deporder.ViewLike) {
 	tables := retypedTables(diff)
 	if len(tables) == 0 {
@@ -43,27 +48,60 @@ func viewsReadingRetypedColumns(diff *difftypes.SchemaDiff) (recreate, removeOnl
 		added[view.Name] = true
 	}
 
-	declared := make([]deporder.ViewLike, 0, len(diff.DeclaredViewLikes.Views)+len(diff.DeclaredViewLikes.MaterializedViews))
+	candidates := make([]deporder.ViewLike, 0, len(diff.DeclaredViewLikes.Views)+len(diff.DeclaredViewLikes.MaterializedViews))
 	for _, view := range diff.DeclaredViewLikes.Views {
 		if !added[view.Name] {
-			declared = append(declared, deporder.ViewLike{Name: view.Name, Body: view.Body})
+			candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}
 	for _, view := range diff.DeclaredViewLikes.MaterializedViews {
 		if !added[view.Name] {
-			declared = append(declared, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+			candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 		}
 	}
+	declared := len(candidates)
+	candidates = append(candidates, removedViewLikes(diff)...)
 
-	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
-	for _, view := range diff.ViewsRemoved {
-		removed = append(removed, deporder.ViewLike{Name: view.Name, Body: view.Body})
+	removed := make(map[string]bool, len(candidates)-declared)
+	for _, object := range candidates[declared:] {
+		removed[object.Name] = true
 	}
+	for _, object := range readersOf(candidates, tables) {
+		if removed[object.Name] {
+			removeOnly = append(removeOnly, object)
+			continue
+		}
+		recreate = append(recreate, object)
+	}
+	return recreate, removeOnly
+}
+
+// removedViewLikes is the views and materialized views the declaration no
+// longer holds, with the bodies the database holds them with.
+func removedViewLikes(diff *difftypes.SchemaDiff) []deporder.ViewLike {
+	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
 	for _, view := range diff.MaterializedViewsRemoved {
 		removed = append(removed, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 	}
+	for _, view := range diff.ViewsRemoved {
+		removed = append(removed, deporder.ViewLike{Name: view.Name, Body: view.Body})
+	}
+	return removed
+}
 
-	return readersOf(declared, tables), readersOf(removed, tables)
+// retypeDropped names every object [Planner.dropViewsBeforeRetype] drops. A
+// later step that would drop one of them again leaves it out, and one that
+// creates it again creates it outright: it is gone when that step runs.
+func retypeDropped(diff *difftypes.SchemaDiff) map[string]bool {
+	recreate, removeOnly := viewsReadingRetypedColumns(diff)
+	gone := make(map[string]bool, len(recreate)+len(removeOnly))
+	for _, object := range recreate {
+		gone[object.Name] = true
+	}
+	for _, object := range removeOnly {
+		gone[object.Name] = true
+	}
+	return gone
 }
 
 // readersOf returns the candidates that read one of the named relations,
@@ -103,14 +141,18 @@ func retypedTables(diff *difftypes.SchemaDiff) []string {
 
 // dropViewsBeforeRetype renders the drops that clear the way for a column type
 // change. It runs before the column step.
+//
+// Each object is dropped after every object on the lists that reads it, so no
+// drop relies on CASCADE to take a reader the plan knows of: that reader went
+// first. CASCADE is then written only in Ptah's own statement style, where it
+// also takes the readers the plan does not know of, such as a view in a
+// schema the run leaves out; the exact style leaves the server to refuse
+// those.
 func (p *Planner) dropViewsBeforeRetype(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	recreate, removeOnly := viewsReadingRetypedColumns(diff)
-	for _, object := range append(append([]deporder.ViewLike(nil), recreate...), removeOnly...) {
-		if object.Materialized {
-			result = append(result, ast.NewDropMaterializedView(object.Name).SetIfExists().SetCascade())
-			continue
-		}
-		result = append(result, p.dropViewNode(object.Name))
+	objects := append(append([]deporder.ViewLike(nil), recreate...), removeOnly...)
+	for _, object := range deporder.ViewLikesForDropForDialect(objects, p.targetDialect()) {
+		result = append(result, p.dropViewLikeNode(object, p.cascades(false)))
 	}
 	return result
 }
@@ -118,7 +160,10 @@ func (p *Planner) dropViewsBeforeRetype(result []ast.Node, diff *difftypes.Schem
 // recreateViewsAfterRetype puts back what dropViewsBeforeRetype took. It runs
 // after the view step, in creation order, and skips an object that step already
 // renders: a modified view or materialized view is written there from the same
-// declared body.
+// declared body, and so is a view that step puts back after one it dropped.
+//
+// Each object is created outright rather than re-asserted with CREATE OR
+// REPLACE: dropViewsBeforeRetype dropped it by name, so it is known to be gone.
 func (p *Planner) recreateViewsAfterRetype(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	recreate, _ := viewsReadingRetypedColumns(diff)
@@ -126,22 +171,29 @@ func (p *Planner) recreateViewsAfterRetype(result []ast.Node, diff *difftypes.Sc
 		return result
 	}
 
-	rendered := make(map[string]bool)
-	for _, viewDiff := range diff.ViewsModified {
-		rendered[viewDiff.Desired.Name] = true
-	}
+	rendered := p.viewStepRenders(diff)
 	for _, viewDiff := range diff.MaterializedViewsModified {
 		rendered[viewDiff.Desired.Name] = true
 	}
 	pending := make([]deporder.ViewLike, 0, len(recreate))
+	dropped := make([]string, 0, len(recreate))
 	for _, object := range recreate {
 		if !rendered[object.Name] {
 			pending = append(pending, object)
+			dropped = append(dropped, object.Name)
 		}
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(pending, p.targetDialect()) {
-		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, nil, semantics)
+		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, dropped, semantics)
 	}
 	return result
+}
+
+// dropViewLikeNode is the statement that drops one view or materialized view.
+func (p *Planner) dropViewLikeNode(object deporder.ViewLike, cascade bool) ast.Node {
+	if object.Materialized {
+		return dropMaterializedViewNode(object.Name, cascade)
+	}
+	return p.dropViewNode(object.Name, cascade)
 }

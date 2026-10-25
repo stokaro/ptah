@@ -197,6 +197,9 @@ type BidirectionalPlanInput struct {
 	// to the injected planner.
 	AllowTableRebuild   bool
 	TableRebuildRequest string
+	// Statements is the statement style both directions are planned in; see
+	// [migrateDiffStatements].
+	Statements planext.StatementStyle
 }
 
 // BidirectionalPlan is the primitive output internal migrate-diff rendering
@@ -601,6 +604,15 @@ func resolveDesiredState(
 	return state, nil
 }
 
+// migrateDiffStatements is the statement style of a migration `migrate diff`
+// writes. The community binary writes a migration with no IF EXISTS or IF NOT
+// EXISTS, no CASCADE, and a comment naming each change in place of Ptah's own
+// descriptive ones, and the files this one writes sit beside the files that
+// binary wrote. A migration run against a database in another state than the
+// one it was planned against then stops where a guard would let it do nothing
+// and CASCADE would remove an object nobody named.
+const migrateDiffStatements = planext.StatementStyleExact
+
 // planDiffFileContents plans the migration AST, applies the typed qualifier,
 // and renders the migration file contents for one diff run — both directions.
 func planDiffFileContents(
@@ -624,6 +636,7 @@ func planDiffFileContents(
 				OmitNullBackfill:     opts.OmitNullBackfill,
 				AllowTableRebuild:    opts.Policy.AllowTableRebuild,
 				TableRebuildRequest:  opts.Policy.TableRebuildRequest,
+				Statements:           migrateDiffStatements,
 			},
 		)
 
@@ -644,6 +657,7 @@ func planDiffFileContents(
 			OmitNullBackfill:      opts.OmitNullBackfill,
 			AllowTableRebuild:     opts.Policy.AllowTableRebuild,
 			TableRebuildRequest:   opts.Policy.TableRebuildRequest,
+			Statements:            migrateDiffStatements,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generate migration plan: %w", err)
@@ -652,18 +666,19 @@ func planDiffFileContents(
 	if err := opts.Qualifier.ApplyToPlan(info.Dialect, desired, planned.ForwardNodes); err != nil {
 		return nil, err
 	}
+	fileFormat := FileFormat{Template: format, Foreign: !ReadsNativeAtlasDir(opts.dirFormat())}
 	contents, err := BuildMigrationFileContents(
 		ctx, opts.Runtime,
 		info.Dialect,
 		info.Capabilities,
-		format,
+		fileFormat,
 		planned.ForwardNodes,
 	)
 	if err != nil {
 		return nil, err
 	}
 	if opts.dirFormat() == atlasmigrateimport.FormatGolangMigrate {
-		contents, err = splitNoTransactionStatements(contents, info.Dialect, format)
+		contents, err = splitNoTransactionStatements(contents, info.Dialect, fileFormat)
 		if err != nil {
 			return nil, err
 		}
@@ -681,7 +696,7 @@ func planDiffFileContents(
 	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, planned.ReverseNodes); err != nil {
 		return nil, err
 	}
-	reverse, err := renderMigrationStatements(ctx, opts.Runtime, info.Dialect, info.Capabilities, planned.ReverseNodes)
+	reverse, err := renderMigrationStatements(ctx, opts.Runtime, info.Dialect, info.Capabilities, planned.ReverseNodes, reverseChange)
 	if err != nil {
 		return nil, fmt.Errorf("generate rollback SQL: %w", err)
 	}
@@ -689,7 +704,7 @@ func planDiffFileContents(
 		contents,
 		info.Dialect,
 		reverse,
-		format,
+		fileFormat,
 		planned.ReverseRequiresNoTransaction,
 	)
 	if err != nil {
@@ -836,10 +851,18 @@ func readReplayedSchema(ctx context.Context,
 	return withoutRevisionTable(current), nil
 }
 
-func renderMigrationDiffSQL(dialect string, statements []string, format string) (string, error) {
-	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Dialect: dialect, Statements: statements})
+func renderMigrationDiffSQL(dialect string, statements []Statement, format FileFormat) (string, error) {
+	changes := make([]atlasreport.SchemaChange, 0, len(statements))
+	for _, statement := range statements {
+		changes = append(changes, atlasreport.SchemaChange{Cmd: statement.SQL, Comment: statement.Change})
+	}
+	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
+		Dialect:           dialect,
+		Changes:           changes,
+		CommentsAsWritten: format.Foreign,
+	})
 	var out bytes.Buffer
-	if err := atlasreport.WriteMigrateDiff(&out, format, report); err != nil {
+	if err := atlasreport.WriteMigrateDiff(&out, format.Template, report); err != nil {
 		return "", err
 	}
 	return out.String(), nil
