@@ -93,6 +93,25 @@ func (b Blocks) opening(index int) (int, bool) {
 	return 0, false
 }
 
+// RunsAlone reports a file of exactly one statement, comments and empty
+// statements aside. A runner that opens no transaction around a file and sends
+// it as it is sends that statement on its own, and PostgreSQL runs a statement
+// sent on its own outside a transaction, so a statement it refuses inside one
+// applies: measured with golang-migrate, a file holding only CREATE INDEX
+// CONCURRENTLY applies, and the same statement beside a second one is refused
+// (stokaro/ptah#4962). Every reader of such a directory that decides whether a
+// file runs inside a transaction asks this: the apply, the dev database
+// replay, lint and the writer of new files.
+func RunsAlone(statements []string) bool {
+	count := 0
+	for _, statement := range statements {
+		if len(significantTokens(statement)) > 0 {
+			count++
+		}
+	}
+	return count == 1
+}
+
 // StructureError refuses a file whose transaction control [Read] cannot
 // account for in full.
 type StructureError struct {
@@ -126,7 +145,8 @@ func (e *StructureError) StatementIndex() int { return e.Index }
 //     cannot be recorded as a history of what it did;
 //   - SAVEPOINT, RELEASE and ROLLBACK TO: partial rollback has the same
 //     problem, and a savepoint that outlives its statement is session state;
-//   - AND CHAIN, which opens a transaction nothing in the file names, and
+//   - AND CHAIN, which opens a transaction nothing in the file names (AND NO
+//     CHAIN is a plain COMMIT and is accepted), and
 //     PREPARE TRANSACTION, COMMIT PREPARED and ROLLBACK PREPARED, which leave
 //     a transaction on the server after the session ends.
 //
@@ -272,16 +292,19 @@ func classifyBegin(tokens []lexer.Token, at int) (transactionControl, string) {
 }
 
 // classifyEnd reads the words after COMMIT or END: an optional WORK or
-// TRANSACTION, and nothing else. AND CHAIN would start a transaction the file
-// does not name.
+// TRANSACTION, and AND NO CHAIN, which is a plain COMMIT, and nothing else.
+// AND CHAIN would start a transaction the file does not name.
 func classifyEnd(tokens []lexer.Token, word string) (transactionControl, string) {
 	at := 1
 	if wordsAt(tokens, at, "WORK") || wordsAt(tokens, at, "TRANSACTION") {
 		at++
 	}
+	if wordsAt(tokens, at, "AND", "NO", "CHAIN") {
+		at += 3
+	}
 	if at < len(tokens) {
-		if wordsAt(tokens, at, "AND") {
-			return transactionNone, word + " AND [NO] CHAIN starts a transaction the file does not name"
+		if wordsAt(tokens, at, "AND", "CHAIN") {
+			return transactionNone, word + " AND CHAIN starts a transaction the file does not name"
 		}
 		return transactionNone, word + " carries " + strings.TrimSpace(tokens[at].Value) + ", which Ptah does not read"
 	}

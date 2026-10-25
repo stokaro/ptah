@@ -606,6 +606,9 @@ type Migration struct {
 	// closes itself; see [TransactionBoundaryValidator]. It is nil for a
 	// migration loaded without such a validator.
 	upOwnsTransactions func(conn *dbschema.DatabaseConnection) (bool, error)
+	// ownTransactions marks a migration of a directory written for a runner
+	// that opens no transaction around a file; see [WithOwnTransactions].
+	ownTransactions bool
 	// atlasCheckFiles are raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They are parsed with the live connection dialect before `-- +ptah check`
 	// directives in UpSQL, preventing dialect-blind boundary decisions.
@@ -780,6 +783,11 @@ func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConn
 		if owns {
 			return m.replayOwnTransactions(ctx, conn, txMode)
 		}
+	}
+	// The same file a migrate apply of its directory runs without a
+	// transaction; see [WithOwnTransactions].
+	if mode == migrationExecutionTransactional && m.upRunsAloneOutsideATransaction(conn) {
+		mode = migrationExecutionNoTransaction
 	}
 	return m.replayInExecutionMode(ctx, conn, mode, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return m.upSQLFunc(ctx, conn, mode)

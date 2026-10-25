@@ -64,6 +64,12 @@ type Options struct {
 	// that the connected product does not own -- and replaying first would
 	// destroy and rebuild a database to report an input that was already wrong.
 	ObserveServer func(info catalog.ServerInfo) error
+	// OwnTransactions replays the directory as one written for a runner that
+	// opens no transaction around a file, the way a migrate apply of it runs
+	// each file; see [migrator.WithOwnTransactions]. A compatibility adapter
+	// sets it for a golang-migrate directory, which reaches the replay
+	// converted to Atlas's layout.
+	OwnTransactions bool
 }
 
 // Replay connects to the configured dev database and replays the migration
@@ -115,7 +121,11 @@ func Replay(ctx context.Context, opts Options) error {
 		opts.DirFormat,
 		opts.AtlasTemplateData,
 		opts.RevisionVersions,
-		replayHooks{observeVersion: opts.ObserveVersion, consume: observerConsumer(opts.ObserveReplayed)},
+		replayHooks{
+			observeVersion:  opts.ObserveVersion,
+			consume:         observerConsumer(opts.ObserveReplayed),
+			ownTransactions: opts.OwnTransactions,
+		},
 	)
 }
 
@@ -175,6 +185,18 @@ func ReplaySnapshotOnConnection(
 // migration planned from the comparison does not remove it.
 type Consumer func(conn *dbschema.DatabaseConnection, baseline devclean.Baseline) error
 
+// SnapshotOption adjusts how [WithReplayedSnapshot] and
+// [WithReplayedSnapshotLocked] load the snapshot they replay.
+type SnapshotOption func(*replayHooks)
+
+// OwnTransactions loads the snapshot as a directory written for a runner that
+// opens no transaction around a file; see [Options.OwnTransactions].
+func OwnTransactions() SnapshotOption {
+	return func(hooks *replayHooks) {
+		hooks.ownTransactions = true
+	}
+}
+
 // WithReplayedSnapshot replays one immutable migration filesystem, invokes
 // consume while the replayed database is bound to the same physical session,
 // and cleans the database realm before returning.
@@ -184,6 +206,7 @@ func WithReplayedSnapshot(
 	snapshot fs.FS,
 	dirFormat migrationfile.DirFormat,
 	consume Consumer,
+	options ...SnapshotOption,
 ) error {
 	if consume == nil {
 		return fmt.Errorf("consume replayed database callback is nil")
@@ -192,7 +215,7 @@ func WithReplayedSnapshot(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil, nil, snapshotHooks(consume, options))
 }
 
 // WithReplayedSnapshotLocked performs the same replay as
@@ -204,6 +227,7 @@ func WithReplayedSnapshotLocked(
 	snapshot fs.FS,
 	dirFormat migrationfile.DirFormat,
 	consume Consumer,
+	options ...SnapshotOption,
 ) error {
 	if consume == nil {
 		return fmt.Errorf("consume replayed database callback is nil")
@@ -212,17 +236,30 @@ func WithReplayedSnapshotLocked(
 	if err != nil {
 		return fmt.Errorf("capture migration snapshot: %w", err)
 	}
-	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, nil, replayHooks{consume: consume})
+	return replayOnLockedConnection(ctx, conn, snapshot, dirFormat, nil, nil, snapshotHooks(consume, options))
+}
+
+// snapshotHooks are the hooks of a snapshot replay that consumes the replayed
+// database with consume, adjusted by options.
+func snapshotHooks(consume Consumer, options []SnapshotOption) replayHooks {
+	hooks := replayHooks{consume: consume}
+	for _, option := range options {
+		option(&hooks)
+	}
+	return hooks
 }
 
 // replayHooks are the optional callbacks a replay runs alongside the
-// migrations. The zero value replays and observes nothing.
+// migrations, and how it loads them. The zero value replays and observes
+// nothing.
 type replayHooks struct {
 	// observeVersion runs before each migration, with the connection bound to
 	// the state that migration starts from.
 	observeVersion func(context.Context, *migrator.Migration, *dbschema.DatabaseConnection) error
 	// consume runs once after every migration, before the realm is cleaned.
 	consume Consumer
+	// ownTransactions loads the directory with [migrator.WithOwnTransactions].
+	ownTransactions bool
 }
 
 func replayOnConnection(
@@ -261,8 +298,7 @@ func replayOnLockedConnection(
 		return fmt.Errorf("replay migrations: nil database connection")
 	}
 	return conn.WithSession(ctx, func(replayConn *dbschema.DatabaseConnection) (resultErr error) {
-		provider, err := migrator.NewFSMigrationProvider(
-			fsys,
+		options := []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(dirFormat),
 			migrator.WithAtlasTemplateData(atlasTemplateData),
 			migrator.WithAtlasRevisionVersions(revisionVersions),
@@ -272,7 +308,11 @@ func replayOnLockedConnection(
 			// pinned session, which it then cleans.
 			migrator.WithStatementValidator(
 				devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions()),
-		)
+		}
+		if hooks.ownTransactions {
+			options = append(options, migrator.WithOwnTransactions())
+		}
+		provider, err := migrator.NewFSMigrationProvider(fsys, options...)
 		if err != nil {
 			return fmt.Errorf("load migration directory: %w", err)
 		}

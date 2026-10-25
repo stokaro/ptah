@@ -134,7 +134,7 @@ func TestPostgresOwnTransactionReplay_MalformedBoundariesAreRefused(t *testing.T
 		{
 			name:    "commit and chain",
 			sql:     "BEGIN;\nCREATE TABLE leaked (id integer);\nCOMMIT AND CHAIN;\n",
-			wantErr: "AND [NO] CHAIN",
+			wantErr: "COMMIT AND CHAIN starts a transaction",
 		},
 		{
 			name:    "prepared transaction",

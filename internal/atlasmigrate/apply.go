@@ -89,7 +89,7 @@ type ApplyOptions struct {
 	SkipChecks bool
 	// OwnTransactions applies the directory the way a runner that opens no
 	// transaction around a file applies it, as golang-migrate does; see
-	// [migrator.Migrator.WithOwnTransactions]. The converted layout carries
+	// [migrator.WithOwnTransactions]. The converted layout carries
 	// no trace of the runner, so the caller that read the source layout says.
 	OwnTransactions bool
 }
@@ -487,15 +487,17 @@ func newApplyMigrator(
 	fsys fs.FS,
 	opts applyMigratorOptions,
 ) (*migrator.Migrator, error) {
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		fsys,
+	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(opts.revisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.revisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.revisionTypes),
 		migrator.WithAtlasRepeatableVersions(opts.repeatableVersions),
-	)
+	}
+	if opts.ownTransactions {
+		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+	}
+	mig, err := migrator.NewFSMigrator(conn, fsys, providerOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("error registering migrations: %w", err)
 	}
@@ -509,7 +511,6 @@ func newApplyMigrator(
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
-		WithOwnTransactions(opts.ownTransactions).
 		WithLogger(compatMigratorLogger())
 	if opts.skipMigrationLock {
 		mig = mig.WithoutMigrationLock()

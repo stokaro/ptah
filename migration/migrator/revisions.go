@@ -383,20 +383,22 @@ func migrationExecutionProgress(
 	dialect string,
 	txMode MigrationTxMode,
 ) migrationProgress {
+	// A body that runs its own transactions knows which of its statements
+	// stayed committed. It is read first: what stopped the body, a failed
+	// statement or a progress mark that could not be written, says only where
+	// the body stopped, and a mark before the statement that closes one of
+	// its transactions would claim the transaction the rollback took back.
+	if owned, ok := errors.AsType[*ownTransactionFailure](err); ok {
+		progress := migrationExecutionProgress(owned.err, dialect, txMode)
+		progress.Applied = owned.applied
+		return progress
+	}
 	if progressErr, ok := errors.AsType[*statementProgressError](err); ok {
 		event := progressErr.event
 		return migrationProgress{
 			Applied: progressErr.applied, Total: event.Total,
 			Statement: event.Statement, FailedIndex: event.Index,
 		}
-	}
-
-	// A body that runs its own transactions knows which of its statements
-	// stayed committed; the statement that failed says only where it stopped.
-	if owned, ok := errors.AsType[*ownTransactionFailure](err); ok {
-		progress := migrationExecutionProgress(owned.err, dialect, txMode)
-		progress.Applied = owned.applied
-		return progress
 	}
 
 	if observationErr, ok := errors.AsType[*StatementObservationError](err); ok {

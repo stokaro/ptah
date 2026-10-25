@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/filetx"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/migratorext/builtin"
@@ -265,6 +266,7 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	migration *Migration,
 	resumeFrom int,
 	txMode MigrationTxMode,
+	blocks filetx.Blocks,
 ) error {
 	if m.conn == nil || m.conn.Writer().IsDryRun() {
 		return nil
@@ -275,14 +277,14 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
 		executionConn := scoped.noTransactionConnection()
 		if txMode == MigrationTxModeNone {
-			return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn, migration, resumeFrom)
+			return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn, migration, resumeFrom, blocks)
 		}
 		tx, err := executionConn.SchemaWriter().BeginTransaction(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to open PostgreSQL index recovery preflight: %w", err)
 		}
 		defer func() { _ = tx.Rollback() }()
-		return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn.WithExecutor(tx), migration, resumeFrom)
+		return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn.WithExecutor(tx), migration, resumeFrom, blocks)
 	})
 }
 
@@ -291,8 +293,9 @@ func (m *Migrator) refuseUpOverUnsafeIndexOn(
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	resumeFrom int,
+	blocks filetx.Blocks,
 ) error {
-	unsafe, err := m.postgresIndexStatesBlockingAttempt(ctx, conn, migration.UpSQL, resumeFrom)
+	unsafe, err := m.postgresIndexStatesBlockingAttempt(ctx, conn, migration.UpSQL, resumeFrom, blocks)
 	if err != nil || len(unsafe) == 0 {
 		return err
 	}
@@ -435,12 +438,15 @@ func indexQueryer(conn *dbschema.DatabaseConnection) migratorext.RowsQueryer {
 // an attempted CREATE INDEX from leaving a usable index on its target. A DROP
 // suppresses a conflict only after PostgreSQL's catalog and search path resolve
 // it to the same schema-level relation name. Statements before resumeFrom were
-// committed by an earlier attempt and are deliberately excluded.
+// committed by an earlier attempt and are deliberately excluded. blocks are
+// the transactions a body that runs them as written opens itself: the session
+// state that ends with one of them, such as LOCK, is not replayed.
 func (m *Migrator) postgresIndexStatesBlockingAttempt(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
 	resumeFrom int,
+	blocks filetx.Blocks,
 ) ([]migratorext.IndexState, error) {
 	if builtin.Lookup(conn.Info().Dialect).Indexes == nil {
 		return nil, nil
@@ -450,7 +456,7 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 	seen := make(map[migratorext.IndexName]struct{})
 	var unsafe []migratorext.IndexState
 	for i, statement := range statements {
-		if noTransactionResumeAction(statement, conn.Info().Dialect) == noTransactionPrefixReplay {
+		if ownTransactionResumeAction(i, statement, conn.Info().Dialect, blocks) == noTransactionPrefixReplay {
 			if err := executeSQLOn(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)
 			}

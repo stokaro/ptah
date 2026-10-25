@@ -50,6 +50,11 @@ func TestRead_HappyPath(t *testing.T) {
 			want:       []int{0, 2, 4, 6},
 		},
 		{
+			name:       "and no chain is a plain commit",
+			statements: []string{"BEGIN", "SELECT 1", "COMMIT AND NO CHAIN", "BEGIN", "END TRANSACTION AND NO CHAIN"},
+			want:       []int{0, 2, 3, 4},
+		},
+		{
 			name:       "lower case and a terminator",
 			statements: []string{"begin;", "select 1;", "commit;"},
 			want:       []int{0, 2},
@@ -100,8 +105,8 @@ func TestRead_FailurePath(t *testing.T) {
 		{name: "savepoint", statements: []string{"BEGIN", "SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "SAVEPOINT is partial transaction state"},
 		{name: "release savepoint", statements: []string{"BEGIN", "RELEASE SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "RELEASE is partial transaction state"},
 		{name: "rollback to savepoint", statements: []string{"BEGIN", "SAVEPOINT s", "ROLLBACK TO SAVEPOINT s", "COMMIT"}, wantIndex: 1, wantReason: "SAVEPOINT is partial transaction state"},
-		{name: "commit and chain", statements: []string{"BEGIN", "COMMIT AND CHAIN"}, wantIndex: 1, wantReason: "AND [NO] CHAIN"},
-		{name: "commit and no chain", statements: []string{"BEGIN", "COMMIT AND NO CHAIN"}, wantIndex: 1, wantReason: "AND [NO] CHAIN"},
+		{name: "commit and chain", statements: []string{"BEGIN", "COMMIT AND CHAIN"}, wantIndex: 1, wantReason: "COMMIT AND CHAIN starts a transaction"},
+		{name: "end and chain", statements: []string{"BEGIN", "END WORK AND CHAIN"}, wantIndex: 1, wantReason: "END AND CHAIN starts a transaction"},
 		{name: "prepare transaction", statements: []string{"BEGIN", "PREPARE TRANSACTION 'x'"}, wantIndex: 1, wantReason: "PREPARE TRANSACTION leaves a prepared transaction"},
 		{name: "commit prepared", statements: []string{"COMMIT PREPARED 'x'"}, wantIndex: 0, wantReason: "COMMIT PREPARED leaves a prepared transaction"},
 		{name: "unknown begin mode", statements: []string{"BEGIN SNAPSHOT 'abc'", "COMMIT"}, wantIndex: 0, wantReason: "not a transaction mode"},
@@ -128,6 +133,29 @@ func TestStructureError_Error(t *testing.T) {
 	_, err := filetx.Read([]string{"SELECT 1", "COMMIT"})
 	c.Assert(err, qt.ErrorMatches,
 		`the file controls its own transactions in a form Ptah does not run, at statement 2: no transaction is open to close`)
+}
+
+// RunsAlone counts the statements that hold something to run: a comment or an
+// empty statement beside the one statement leaves the file one that runs
+// alone, and a second statement does not.
+func TestRunsAlone(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		statements []string
+		want       bool
+	}{
+		{"one statement", []string{"CREATE INDEX CONCURRENTLY i ON t (id)"}, true},
+		{"one statement after a comment", []string{"-- build it\nCREATE INDEX CONCURRENTLY i ON t (id)"}, true},
+		{"one statement beside empty and comment-only ones", []string{"", "CREATE INDEX CONCURRENTLY i ON t (id)", "-- done", ";"}, true},
+		{"two statements", []string{"CREATE TABLE t (id int)", "CREATE INDEX CONCURRENTLY i ON t (id)"}, false},
+		{"no statement", []string{"-- nothing"}, false},
+		{"none at all", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(filetx.RunsAlone(test.statements), qt.Equals, test.want)
+		})
+	}
 }
 
 // Each statement of a file with a statement before, inside, between and after

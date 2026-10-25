@@ -536,6 +536,8 @@ func lintDirectory(
 		ObserveVersion:      replayVersionObserver(baseline, capture),
 		ObserveReplayed:     capture.replayedObserver(ctx),
 		ObserveServer:       server.observe,
+		// The replay runs each file the way the rules judge it.
+		OwnTransactions: lintOptions.TransactionOwner == lintext.TransactionOwnerFile,
 	}); err != nil {
 		// A version the connection refused is reported as itself: the replay
 		// error that follows it is downstream of an input that was already

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/filetx"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/planner"
@@ -338,15 +339,17 @@ func formatExpressesNoTransaction(format atlasmigrateimport.Format) bool {
 // The two directions are separate files here, so each is judged on its own
 // count. A migration that needs several statements outside a transaction still
 // fails closed: writing it would produce a file the source tool cannot run.
+// The count is [filetx.RunsAlone], the rule the apply, the dev database replay
+// and lint read such a file by.
 func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
-	if content.NoTransaction && len(content.Statements) > 1 {
+	if content.NoTransaction && len(content.Statements) > 1 && !runsAlone(content.Statements) {
 		return fmt.Errorf(
 			"migration directory format %q runs a migration outside a transaction only when it holds one "+
 				"statement, and this forward migration holds %d; no migration files or atlas.sum were written",
 			atlasmigrateimport.FormatGolangMigrate, len(content.Statements),
 		)
 	}
-	if content.ReverseNoTransaction && len(content.ReverseStatements) > 1 {
+	if content.ReverseNoTransaction && len(content.ReverseStatements) > 1 && !runsAlone(content.ReverseStatements) {
 		return fmt.Errorf(
 			"migration directory format %q runs a migration outside a transaction only when it holds one "+
 				"statement, and this rollback holds %d; no migration files or atlas.sum were written",
@@ -354,6 +357,15 @@ func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
 		)
 	}
 	return nil
+}
+
+// runsAlone is [filetx.RunsAlone] over planned statements.
+func runsAlone(statements []Statement) bool {
+	texts := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		texts = append(texts, statement.SQL)
+	}
+	return filetx.RunsAlone(texts)
 }
 
 // splitNoTransactionStatements writes each statement of a file that must run
@@ -367,7 +379,7 @@ func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
 func splitNoTransactionStatements(contents []MigrationFileContent, dialect string, format FileFormat) ([]MigrationFileContent, error) {
 	split := make([]MigrationFileContent, 0, len(contents))
 	for _, content := range contents {
-		if !content.NoTransaction || len(content.Statements) < 2 {
+		if !content.NoTransaction || len(content.Statements) < 2 || runsAlone(content.Statements) {
 			split = append(split, content)
 			continue
 		}

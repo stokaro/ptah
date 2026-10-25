@@ -727,20 +727,45 @@ transaction of the migrator's around each file:
 
 - A PostgreSQL file that opens and closes its own transaction runs as written,
   on one session, outside any transaction of the migrator's. Its revision row
-  is written after the file's last statement. Progress is recorded where the
-  file's transactions commit, so a failure records the statements that stayed
-  committed: in `BEGIN; CREATE TABLE t2 (id int); COMMIT; INSERT INTO
-  missing_table VALUES (1);` the first three. The session is rolled back
-  before the failure is recorded.
+  is written after the file's last statement. This holds under the default
+  `--tx-mode file`, under `--tx-mode none`, and in a file that carries
+  `-- atlas:txmode none`.
 - A file whose one statement PostgreSQL refuses inside a transaction, such as
-  `CREATE INDEX CONCURRENTLY`, runs without one.
-- Every other file keeps the per-file transaction. With `--tx-mode all`, a file
-  that opens its own transaction is refused before any migration runs.
+  `CREATE INDEX CONCURRENTLY`, runs without one, unless the file asks for a
+  transaction with `-- atlas:txmode file`.
+- Every other file keeps the per-file transaction. A file that opens its own
+  transaction is refused before any migration runs under `--tx-mode all`, and
+  when it carries `-- atlas:txmode file`.
+
+In a file that opens its own transactions, each statement outside them runs
+and commits on its own, as in golang-migrate's `x-multi-statement=true` mode.
+golang-migrate's default mode sends the file as one query, and PostgreSQL runs
+the statements outside the file's transactions together, in one implicit
+transaction. The two differ when such a statement fails. Measured on
+PostgreSQL 15.19 with
+`BEGIN; CREATE TABLE t2 (id int); COMMIT; CREATE TABLE t3 (id int); INSERT INTO missing_table VALUES (1);`
+sent as one query, `t2` stays and the failed `INSERT` takes `t3` back. Ptah
+keeps both.
+
+Progress is recorded where the file's transactions commit. The revision row of
+a failed file records the statements that stayed committed, four in the
+example above. A transaction the failure interrupted is rolled back on the
+session first, and none of its statements count. The next `migrate apply`
+refuses the failed revision, as it does after any failure. With
+`--allow-dirty` it resumes after the committed statements, on a fresh session.
+It first replays the `SET` and `RESET` statements among them, those inside a
+committed transaction included, and skips `SET LOCAL` and `LOCK`, which ended
+with their transaction. A failure that left nothing of the file committed,
+such as a failed statement in its first transaction, removes the revision row
+instead, as a file that failed in the migrator's transaction does, and the
+next apply runs the file from its start.
 
 The reading of a file's own transactions is the one the dev database replay
-uses. A file that opens a transaction inside another, leaves one open, or uses
-`ROLLBACK`, `SAVEPOINT`, `AND CHAIN` or a prepared transaction is refused
-before any migration runs, naming the statement.
+uses, so `migrate lint`, `migrate validate` and `migrate diff` read each file
+the way apply runs it. A file that opens a transaction inside another, leaves
+one open, or uses `ROLLBACK`, `SAVEPOINT`, `AND CHAIN` or a prepared
+transaction is refused before any migration runs, naming the statement.
+`COMMIT AND NO CHAIN` is a plain `COMMIT`.
 
 The pinned community binary v1.3.0 wraps these files in a transaction of its
 own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
@@ -1575,8 +1600,10 @@ transaction. Marking the file non-transactional is no fix, because apply
 refuses transaction control in a file that runs without a transaction.
 
 golang-migrate opens no transaction around a file, so in a directory of its
-layout `TX201` reports only a `BEGIN` that opens inside another block the file
-has not closed. This holds for each way of selecting the layout:
+layout `TX201` is not reported for a block the file opens and closes. A `BEGIN`
+inside a block the file has not closed is refused instead: the dev database
+replay that `migrate lint` runs stops at it, with the reason `migrate apply`
+gives. This holds for each way of selecting the layout:
 `?format=golang-migrate`, `--dir-format golang-migrate`, or
 `format = golang-migrate` in `atlas.hcl`. Measured with golang-migrate v4.20.1
 on PostgreSQL 15.19, through the `postgres://` and `pgx5://` drivers alike:
@@ -1594,8 +1621,10 @@ to wrap existing migrations of several statements in `BEGIN`/`COMMIT`.
 
 A golang-migrate file whose only statement is `CREATE INDEX CONCURRENTLY` gets
 no `PG103`: golang-migrate sends it on its own, and PostgreSQL runs it outside a
-transaction. `ptah-compat migrate apply` runs it the same way; see
+transaction. `ptah-compat migrate apply` runs it the same way, and
+`migrate validate` and `migrate diff` replay it without a transaction; see
 [Transactions in a golang-migrate directory](#transactions-in-a-golang-migrate-directory).
+A file that asks for a transaction with `-- atlas:txmode file` keeps `PG103`.
 
 Goose, dbmate, Flyway and Liquibase directories keep `TX201` and `PG103`. The
 rules assume that their tools wrap each file, and each of them can mark a
