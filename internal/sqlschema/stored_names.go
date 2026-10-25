@@ -182,13 +182,30 @@ func (s *storedNames) declare(space, owner, kind, raw string, rule onExisting) (
 // declareName is [storedNames.declare] for a name already read the way the
 // server reads it, as [storedNames.relation] reads one.
 func (s *storedNames) declareName(space, owner, kind, written string, rule onExisting) (existed bool, err error) {
-	stored := storedIdentifier(s.sourcePlatform, written)
-	if written != stored {
+	if stored := storedIdentifier(s.sourcePlatform, written); written != stored {
 		s.cut = append(s.cut, StoredName{
 			Kind: kind, Scope: scopeLabel(space, owner), Written: written, Stored: stored,
 			Limit: factsOf(s.sourcePlatform).identifierLimit.Max,
 		})
 	}
+	return s.claimName(space, owner, kind, written, rule)
+}
+
+// claim takes a name in a second namespace for an object [storedNames.declare]
+// has already recorded, such as the index a PRIMARY KEY or UNIQUE constraint
+// builds under the constraint's name. The statement wrote the name once, so a
+// cut is reported once, for the declaration.
+func (s *storedNames) claim(space, owner, kind, raw string, rule onExisting) (existed bool, err error) {
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
+	return s.claimName(space, owner, kind, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)), rule)
+}
+
+// claimName enters written in a namespace and refuses a second declaration
+// the server refuses.
+func (s *storedNames) claimName(space, owner, kind, written string, rule onExisting) (existed bool, err error) {
+	stored := storedIdentifier(s.sourcePlatform, written)
 	key := spaceKey(space, owner)
 	names := s.spaces[key]
 	if names == nil {
@@ -403,12 +420,13 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 }
 
 // indexConstraint records a constraint that builds an index of its own name,
-// which lives in the schema's relation namespace as well as on the table.
+// which lives in the schema's relation namespace as well as on the table. A cut
+// name is the constraint's, reported once.
 func (s *storedNames) indexConstraint(table relation, kind, name string) error {
 	if _, err := s.declare(constraintSpace, table.tableKey(), kind, name, refuseExisting); err != nil {
 		return err
 	}
-	_, err := s.declare(relationSpace, table.schema, "index of "+kind, name, refuseExisting)
+	_, err := s.claim(relationSpace, table.schema, "index of "+kind, name, refuseExisting)
 	return err
 }
 

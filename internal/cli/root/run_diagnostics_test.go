@@ -10,7 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/rundiag"
 )
 
 // longName is the i-th index name of a schema file: 68 bytes, distinct in its
@@ -32,22 +35,29 @@ func longNamesSchema(c *qt.C, names ...string) string {
 	return path
 }
 
-// render runs `schema render` on path as one run and returns its exit code
-// and what it wrote.
-func render(c *qt.C, path string) (int, string) {
+// run runs args on the native tree as one run and returns its exit code and
+// what it wrote.
+func run(c *qt.C, args ...string) (int, string) {
 	c.Helper()
 	cmd := root.NewRootCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	code := root.RunContext(c.Context(), cmd, "schema", "render", "--schema-file", path, "--dialect", "postgres")
+	code := root.RunContext(c.Context(), cmd, args...)
 	return code, stdout.String() + stderr.String()
 }
 
-// renderWarnings is the warning lines of a successful render.
-func renderWarnings(c *qt.C, path string) []string {
+// render runs `schema render` on path as one run and returns its exit code
+// and what it wrote.
+func render(c *qt.C, path string) (int, string) {
 	c.Helper()
-	code, output := render(c, path)
+	return run(c, "schema", "render", "--schema-file", path, "--dialect", "postgres")
+}
+
+// runWarnings is the warning lines of a successful run of args.
+func runWarnings(c *qt.C, args ...string) []string {
+	c.Helper()
+	code, output := run(c, args...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("output:\n%s", output))
 	var warnings []string
 	for line := range strings.SplitSeq(output, "\n") {
@@ -58,16 +68,79 @@ func renderWarnings(c *qt.C, path string) []string {
 	return warnings
 }
 
-// Names PostgreSQL cuts are one warning for the run, with how many, and the
-// names themselves go to the debug log.
-func TestRunContext_ReportsCutNamesTogether(t *testing.T) {
-	c := qt.New(t)
+// renderWarnings is the warning lines of a successful render.
+func renderWarnings(c *qt.C, path string) []string {
+	c.Helper()
+	return runWarnings(c, "schema", "render", "--schema-file", path, "--dialect", "postgres")
+}
 
-	warnings := renderWarnings(c, longNamesSchema(c, longName(0), longName(1), longName(2)))
+// Names PostgreSQL cuts are one warning for the run, with how many, and the
+// names themselves go to the debug log. Every command that loads a desired
+// schema says so the same way, whatever it prints on its standard output:
+// the loader raises the names for the run, not for the command.
+func TestRunContext_ReportsCutNamesTogether(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "schema render", args: []string{"schema", "render", "--dialect", "postgres"}},
+		{name: "schema validate", args: []string{"schema", "validate", "--dialect", "postgres"}},
+		{name: "schema lineage", args: []string{"schema", "lineage", "--dialect", "postgres"}},
+		{name: "viz", args: []string{"viz", "--dialect", "postgres"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := longNamesSchema(c, longName(0), longName(1), longName(2))
+
+			warnings := runWarnings(c, append(test.args, "--schema-file", path)...)
+
+			c.Assert(warnings, qt.DeepEquals, []string{
+				"warning: 3 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; PTAH_LOG_LEVEL=debug lists them",
+			})
+		})
+	}
+}
+
+// A PRIMARY KEY or UNIQUE constraint builds an index under its own name, and
+// the server stores both under the same 63 bytes. The file wrote one name, so
+// the run reports one, as itself.
+func TestRunContext_ReportsAConstraintNameOnce(t *testing.T) {
+	c := qt.New(t)
+	long := strings.Repeat("k", 70)
+	path := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`CREATE TABLE t (a int, CONSTRAINT "`+long+`" PRIMARY KEY (a));`+"\n"), 0o600), qt.IsNil)
+
+	warnings := renderWarnings(c, path)
+
+	c.Assert(warnings, qt.HasLen, 1)
+	c.Assert(warnings[0], qt.Matches, `warning: schema file .*schema\.sql: primary key "`+long+
+		`" in table "public\.t" is 70 bytes; the server keeps its first 63: "`+long[:63]+`"`)
+}
+
+// What a DBML document declares and the schema model drops is reported by the
+// native commands too, one line for the run.
+func TestRunContext_ReportsDroppedDBMLConstructsTogether(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "schema.dbml")
+	c.Assert(os.WriteFile(path, []byte("Project shop {\n  database_type: 'PostgreSQL'\n}\n"+
+		"TableGroup g {\n  users\n}\nTable users {\n  id int [pk]\n}\n"), 0o600), qt.IsNil)
+
+	warnings := renderWarnings(c, path)
 
 	c.Assert(warnings, qt.DeepEquals, []string{
-		"warning: 3 names are longer than 63 bytes; the server keeps their first 63 bytes, and they are read that way; PTAH_LOG_LEVEL=debug lists them",
+		"warning: 2 schema file constructs are ignored and have no effect; PTAH_LOG_LEVEL=debug lists them",
 	})
+}
+
+// The words a summary uses to list its objects name the switches they mean,
+// so renaming a variable cannot leave a summary pointing at the old name.
+func TestDiagnosticsListings_NameTheirSwitches(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(string(rundiag.ListedAtDebugLevel), qt.Equals, cliobs.LogLevelEnvVar+"=debug lists them")
+	c.Assert(string(rundiag.ListedOutsideStrictCompat), qt.Equals,
+		cliobs.LogLevelEnvVar+"=debug lists them when "+atlascompatpolicy.StrictCompatEnvVar+" is off")
 }
 
 // One cut name is reported as itself, with the name written and the name kept.

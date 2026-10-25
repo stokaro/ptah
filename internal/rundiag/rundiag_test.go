@@ -44,11 +44,11 @@ func TestWarn_WithoutARunReturnsTheWriteError(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, refused)
 }
 
-// A nil writer is a caller that wants no warning of the kind, such as the
-// strict compatibility profile; a run does not override it.
+// A nil writer is a caller that wants no warning of the kind; a run does not
+// override it.
 func TestWarn_NilWriterRaisesNothing(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New()
+	report := rundiag.New(&bytes.Buffer{}, rundiag.ListedAtDebugLevel)
 
 	c.Assert(rundiag.Warn(context.Background(), nil, widgets, record("a")), qt.IsNil)
 	c.Assert(rundiag.Warn(rundiag.With(context.Background(), report), nil, widgets, record("a")), qt.IsNil)
@@ -60,7 +60,7 @@ func TestWarn_NilWriterRaisesNothing(t *testing.T) {
 // that object's own line, so a lone typo keeps its location.
 func TestReport_OneObjectWritesItsLine(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New()
+	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 
@@ -76,7 +76,7 @@ func TestReport_OneObjectWritesItsLine(t *testing.T) {
 // once.
 func TestReport_SeveralObjectsAreOneSummary(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New()
+	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 
@@ -91,7 +91,7 @@ func TestReport_SeveralObjectsAreOneSummary(t *testing.T) {
 
 func TestReport_FlushKeepsTheOrderCategoriesWereRaisedIn(t *testing.T) {
 	c := qt.New(t)
-	report := rundiag.New()
+	report := rundiag.New(nil, rundiag.ListedAtDebugLevel)
 	ctx := rundiag.With(context.Background(), report)
 	var out bytes.Buffer
 	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
@@ -112,13 +112,69 @@ func TestReport_LogsEachObjectOnceAtDebug(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	defer slog.SetDefault(previous)
-	ctx := rundiag.With(context.Background(), rundiag.New())
+	ctx := rundiag.With(context.Background(), rundiag.New(nil, rundiag.ListedAtDebugLevel))
 
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
 
 	c.Assert(strings.Count(logged.String(), "\n"), qt.Equals, 1)
 	c.Assert(logged.String(), qt.Contains, `level=DEBUG msg="widget a" category=widget key=a`)
+}
+
+// A summary says how to list its objects in the words of the surface the run
+// is on, and a run that names none lists them at debug level.
+func TestReport_SummaryNamesTheListing(t *testing.T) {
+	tests := []struct {
+		name    string
+		listing rundiag.Listing
+		want    string
+	}{
+		{name: "none", want: "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n"},
+		{name: "at debug level", listing: rundiag.ListedAtDebugLevel, want: "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n"},
+		{
+			name:    "outside the strict compatibility profile",
+			listing: rundiag.ListedOutsideStrictCompat,
+			want:    "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			report := rundiag.New(nil, test.listing)
+			ctx := rundiag.With(context.Background(), report)
+			var out bytes.Buffer
+
+			c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+			c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+			report.Flush()
+
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}
+
+// A run hands its diagnostics stream to a loader with no writer of its own,
+// so what the loader raises is reported by the run.
+func TestStream_IsTheRunsDiagnosticsStream(t *testing.T) {
+	c := qt.New(t)
+	var stream bytes.Buffer
+	report := rundiag.New(&stream, rundiag.ListedAtDebugLevel)
+	ctx := rundiag.With(context.Background(), report)
+
+	c.Assert(rundiag.Warn(ctx, rundiag.Stream(ctx), widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, rundiag.Stream(ctx), widgets, record("b")), qt.IsNil)
+	report.Flush()
+
+	c.Assert(stream.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n")
+}
+
+// Outside a run, or in a run given no stream, there is none, so a loader that
+// has no writer of its own stays quiet.
+func TestStream_IsNilWithoutARun(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(rundiag.Stream(context.Background()), qt.IsNil)
+	c.Assert(rundiag.Stream(rundiag.With(context.Background(), rundiag.New(nil, rundiag.ListedAtDebugLevel))), qt.IsNil)
 }
 
 func TestTruncatedNames_SummaryNamesTheLimitTheRecordsShare(t *testing.T) {

@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
@@ -96,7 +97,9 @@ type Options struct {
 	PlainHTTP bool
 	// Logf, when non-nil, receives human-readable progress messages. Commands
 	// that emit machine-readable output (SQL, safety reports) leave it nil so the
-	// resolver stays quiet.
+	// resolver stays quiet. It does not decide the readers' warnings, such as a
+	// name the server cuts: a load inside a run raises those for the run to
+	// report, and only a load outside one writes them here.
 	Logf func(format string, args ...any)
 }
 
@@ -121,9 +124,16 @@ func (o Options) logf(format string, args ...any) {
 	}
 }
 
-// notices is where a reader's warnings go: the same messages a load reports
-// its progress to, or nowhere when it reports none.
-func (o Options) notices() io.Writer {
+// notices is where a reader's warnings go. Inside a run they go to the run,
+// which reports each kind once when the command ends, so every command that
+// loads a desired schema reports what the readers found the same way, as
+// ptah-compat does, whatever the command prints on its standard output. A
+// load outside a run writes them with its progress messages, or nowhere when
+// it reports none.
+func (o Options) notices(ctx context.Context) io.Writer {
+	if stream := rundiag.Stream(ctx); stream != nil {
+		return stream
+	}
 	if o.Logf == nil {
 		return nil
 	}
@@ -370,7 +380,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
 	formats := sourceformats.NewWithNotices(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations(),
-		o.notices(), "schema command "+commandDisplay(command))
+		o.notices(ctx), "schema command "+commandDisplay(command))
 	return schemasource.Run(ctx, formats, command)
 }
 
@@ -543,7 +553,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		Relations:          o.relations(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
-		Notices:            o.notices(),
+		Notices:            o.notices(ctx),
+		// HCL tolerance is off here, so an unknown HCL name is refused and
+		// this carries what a DBML document declares and the model drops.
+		ReportIgnored: o.notices(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)

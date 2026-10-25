@@ -11,7 +11,9 @@
 // The objects are logged as they are recorded, through log/slog at debug
 // level with the category and the record's fields, so the existing
 // PTAH_LOG_LEVEL=debug lists them and PTAH_LOG_FORMAT=json lists them as
-// records. The summary is written when the run ends, by [Report.Flush].
+// records. The summary is written when the run ends, by [Report.Flush], and
+// says how to list the objects in the words of the surface the run is on; see
+// [Listing].
 //
 // Aggregation never hides a refusal: an error is returned, not recorded here.
 package rundiag
@@ -44,9 +46,31 @@ type Record struct {
 	Attrs []slog.Attr
 }
 
+// A Listing is how a summary tells its reader to list the objects it counts.
+// A surface picks the one its own switches make true; the words are defined
+// here, once, so every command of a surface says the same.
+type Listing string
+
+const (
+	// ListedAtDebugLevel names PTAH_LOG_LEVEL, which native ptah and the
+	// default ptah-compat profile read on every command, before the command
+	// starts: it sets the default logger, and the --log-level flag of the
+	// commands that have one is bound to it. The flag alone is not named,
+	// because those commands read a project file before they start their
+	// logger, and no command that reads a SQL schema file has the flag.
+	ListedAtDebugLevel Listing = "PTAH_LOG_LEVEL=debug lists them"
+	// ListedOutsideStrictCompat is for the strict compatibility profile,
+	// which refuses PTAH_LOG_LEVEL because the community binary has no such
+	// setting. A run outside the profile raises the same objects and lists
+	// them.
+	ListedOutsideStrictCompat Listing = "PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off"
+)
+
 // Report collects the records of one run.
 type Report struct {
 	mu      sync.Mutex
+	stream  io.Writer
+	listing Listing
 	buckets []*bucket
 }
 
@@ -61,9 +85,15 @@ type bucket struct {
 	records  []Record
 }
 
-// New returns an empty report.
-func New() *Report {
-	return &Report{}
+// New returns an empty report for a run whose diagnostics stream is stream and
+// whose summaries list their objects as listing says; the zero Listing is
+// [ListedAtDebugLevel]. A nil stream is a run whose loaders get no writer from
+// [Stream].
+func New(stream io.Writer, listing Listing) *Report {
+	if listing == "" {
+		listing = ListedAtDebugLevel
+	}
+	return &Report{stream: stream, listing: listing}
 }
 
 type reportKey struct{}
@@ -82,13 +112,24 @@ func From(ctx context.Context) *Report {
 	return report
 }
 
+// Stream returns the diagnostics stream of the run ctx carries, or nil without
+// a run. A loader with no writer of its own raises its warnings there, so a run
+// reports what a reader found whichever command read it, and a load outside a
+// run stays as quiet as its caller made it.
+func Stream(ctx context.Context) io.Writer {
+	report := From(ctx)
+	if report == nil {
+		return nil
+	}
+	return report.stream
+}
+
 // Warn raises record for the run ctx carries.
 //
-// A nil out means the caller wants no warning of this kind, as the strict
-// compatibility profile does, and Warn does nothing. Without a run -- a library
-// caller, or a test that drives a loader directly -- the record's line is
-// written to out at once, as the loaders wrote it before runs aggregated them,
-// and the error is the write's.
+// A nil out means the caller wants no warning of this kind, and Warn does
+// nothing. Without a run -- a library caller, or a test that drives a loader
+// directly -- the record's line is written to out at once, and the error is
+// the write's.
 func Warn(ctx context.Context, out io.Writer, category *Category, record Record) error {
 	if out == nil {
 		return nil
@@ -129,7 +170,7 @@ func (r *Report) bucket(category *Category, out io.Writer) *bucket {
 // Flush writes one warning per category to the writer its first record was
 // raised for, in the order the categories were first raised, and empties the
 // report. A category with one object writes that object's line; one with
-// several writes its summary and how to list them.
+// several writes its summary and the report's [Listing].
 func (r *Report) Flush() {
 	r.mu.Lock()
 	buckets := r.buckets
@@ -141,7 +182,7 @@ func (r *Report) Flush() {
 		case 1:
 			fmt.Fprintf(target.out, "warning: %s\n", target.records[0].Line)
 		default:
-			fmt.Fprintf(target.out, "warning: %s; PTAH_LOG_LEVEL=debug lists them\n", target.category.Summary(target.records))
+			fmt.Fprintf(target.out, "warning: %s; %s\n", target.category.Summary(target.records), r.listing)
 		}
 	}
 }

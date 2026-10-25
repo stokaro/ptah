@@ -93,11 +93,12 @@ type Options struct {
 
 	// ReportIgnored receives one warning line per top-level name accepted and
 	// dropped under [Options.IgnoreUnknownHCLNames], naming the construct and
-	// the line it was written on.
+	// the line it was written on, and one per construct a DBML document
+	// declares and the schema model drops (see loadDBMLFile).
 	//
-	// nil discards them, which is what the community binary does and what the
-	// native surface needs -- there the tolerance is off, so an unmodeled name
-	// is refused and there is nothing to report.
+	// nil discards them, which is what the community binary does. Where the
+	// tolerance is off, as on the native surface, an unmodeled HCL name is
+	// refused, so only the DBML constructs reach this writer there.
 	//
 	// The wording matches the project-file channel
 	// (dbcli.ReportIgnoredAtlasConstructs) on purpose: the same product should
