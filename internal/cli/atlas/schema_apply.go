@@ -427,8 +427,8 @@ func checkAtlasSchemaApplyDevURL(ctx context.Context, devURL string) error {
 // classifiedAtlasApplyTo classifies --to for a refusal decided before the dev
 // database is contacted. validateAtlasSchemaApplyOptions refused a source that
 // does not classify already, so an error here classifies as nothing.
-func classifiedAtlasApplyTo(opts atlasSchemaApplyOptions, projectEnv atlassource.ProjectEnv) atlassource.Set {
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+func classifiedAtlasApplyTo(ctx context.Context, opts atlasSchemaApplyOptions, projectEnv atlassource.ProjectEnv) atlassource.Set {
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(ctx))
 	if err != nil {
 		return atlassource.Set{}
 	}
@@ -545,7 +545,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	migrationSourceValidator := opts.policy.MigrationSourceValidator(opts.devURL)
 	var preparedTo *atlassource.Set
 	if migrationSourceValidator != nil {
-		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+		toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(cmd.Context()))
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -580,7 +580,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err := checkAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := ensureAtlasSchemaApplyDevURL(opts, projectEnv); err != nil {
+	if err := ensureAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// A SQLite --url names a file, and opening it creates the file. The pinned
@@ -1383,8 +1383,9 @@ func validateAtlasSchemaApplyOptions(
 	}
 	// Classification rejects unsupported schemes and source conflicts before
 	// the target database is contacted. The dev-database requirement is
-	// [ensureAtlasSchemaApplyDevURL]'s, after the flag values are parsed.
-	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+	// [ensureAtlasSchemaApplyDevURL]'s, after the flag values are parsed. A
+	// scheme an executable provider serves under the session names a database.
+	_, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(contextOrBackground(cmd)))
 	return err
 }
 
@@ -1416,7 +1417,7 @@ func checkAtlasApplyTarget(
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
-	if err := atlasschema.RefuseServerDevDatabase(cmd.Context(), conn.Info(), opts.devURL, classifiedAtlasApplyTo(opts, projectEnv), opts.runtime.HCL()); err != nil {
+	if err := atlasschema.RefuseServerDevDatabase(cmd.Context(), conn.Info(), opts.devURL, classifiedAtlasApplyTo(cmd.Context(), opts, projectEnv), opts.runtime.HCL()); err != nil {
 		return err
 	}
 	if opts.policy.IsStrictCE() {
@@ -1472,6 +1473,7 @@ func checkAtlasApplyTarget(
 // directory still has to be replayed on a dev database, so under the variable
 // it keeps [atlassource.Set.EnsureDevDatabase]'s sentence, which says why.
 func ensureAtlasSchemaApplyDevURL(
+	ctx context.Context,
 	opts atlasSchemaApplyOptions,
 	projectEnv atlassource.ProjectEnv,
 ) error {
@@ -1487,7 +1489,7 @@ func ensureAtlasSchemaApplyDevURL(
 	if strings.TrimSpace(opts.devURL) != "" {
 		return nil
 	}
-	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, nil)
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv, dbschema.NativeSources(ctx))
 	if err != nil || set.Kind == atlassource.KindDatabase || len(set.Sources) == 0 ||
 		set.DeclarativeLocalFiles() {
 		// A classification error was already refused by
