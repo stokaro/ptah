@@ -763,18 +763,23 @@ on its own, as golang-migrate's `x-multi-statement=true` mode runs the file.
 Progress is recorded where a transaction commits. The revision row of a failed
 file records the statements that stayed committed, four in the first row of
 the table. A transaction the failure interrupted is rolled back on the session
-first, and none of its statements count. The next `migrate apply` refuses the
-failed revision, as it does after any failure. With `--allow-dirty` it resumes
-after the committed statements, on a fresh session. It first replays the `SET`
-and `RESET` statements among them, those inside a committed transaction
-included, and skips `SET LOCAL` and `LOCK`, which ended with their
-transaction. A failure that left nothing of the file committed, such as one
-in its first transaction, removes the revision row instead, as a file that
-failed in the migrator's transaction does, and the next apply runs the file
-from its start. golang-migrate marks the version dirty in both cases and
-refuses the next `up` until `migrate force`, after which it runs the whole file
-again: measured, the first row's file then fails at `CREATE TABLE a`, which
-already exists.
+first, and none of its statements count. What the next `migrate apply` does
+depends on what committed:
+
+- After a failure that left statements committed, it refuses the failed
+  revision, as it does after any failure. With `--allow-dirty` it resumes
+  after the committed statements, on a fresh session. It first replays the
+  `SET` and `RESET` statements among them, those inside a committed
+  transaction included, and skips `SET LOCAL` and `LOCK`, which ended with
+  their transaction.
+- A failure that left nothing of the file committed, such as one in its first
+  transaction, removes the revision row instead, as a file that failed in the
+  migrator's transaction does, and the next apply runs the file from its
+  start.
+
+golang-migrate marks the version dirty in both cases and refuses the next `up`
+until `migrate force`, after which it runs the whole file again. Measured, the
+first row's file then fails at `CREATE TABLE a`, which already exists.
 
 The reading of a file's own transactions is the one the dev database replay
 uses, so `migrate lint`, `migrate validate` and `migrate diff` read each file
