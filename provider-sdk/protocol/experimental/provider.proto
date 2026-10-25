@@ -83,6 +83,11 @@ service Provider {
   // lists source.encode.
   rpc PrepareCommonObjects(PrepareCommonObjectsRequest) returns (PreparedCommonObjects);
   rpc EncodeSource(EncodeSourceRequest) returns (EncodedSource);
+  // Contract 25.4. A host calls these only when the provider and the engine
+  // list sessions.statements.
+  rpc RunStatement(RunStatementRequest) returns (StatementResult);
+  rpc ReadStatementRows(ReadStatementRowsRequest) returns (StatementRows);
+  rpc CloseStatement(CloseStatementRequest) returns (Empty);
 }
 
 message Empty {}
@@ -150,6 +155,47 @@ message Engine {
   // engine lists source.hcl, and sent only to a host that lists it. Contract
   // 25.3.
   HCLSourceDeclaration hcl_source = 17;
+  // How a command's scope names the engine's objects, and which grants name
+  // them. Empty means a scope names none of them. Non-empty only when the
+  // engine lists scope.selections, and sent only to a host that lists it.
+  // Contract 25.4.
+  repeated ScopeSelection scope_selections = 18;
+}
+// ScopeSelection is how the --include, --exclude and --schema selectors name
+// the engine's objects of one model kind. The host reads a selector's name
+// with the naming the selection declares; the owner never parses a selector.
+message ScopeSelection {
+  // A model kind of the engine with a DESIRED and an OBSERVED value model.
+  string kind = 1;
+  // The selector type that names an object of the kind, such as "topic" in
+  // `*[type=topic]`: lower-case letters, digits and underscores, starting
+  // with a letter.
+  string selector_type = 2;
+  enum Naming {
+    NAMING_UNSPECIFIED = 0;
+    // Named by its schema and its name, as a table is. Its identity carries a
+    // schema and a name, and no database, catalog or path.
+    IN_SCHEMA = 1;
+    // Named by its name alone, which is unique in the database; a dot is part
+    // of the name. Its identity carries a name only.
+    DATABASE_WIDE = 2;
+    // In a schema, named as IN_SCHEMA names it, or on the database itself
+    // with no schema, named by its name alone.
+    SCHEMA_OR_DATABASE = 3;
+  }
+  Naming naming = 3;
+  // The object's name is a relation's name: excluding the object excludes a
+  // table of its name too. IN_SCHEMA only.
+  bool relation = 4;
+  // The object type a grant spells for an object of the kind, such as TOPIC:
+  // upper-case words separated by single spaces. Empty when no grant names
+  // one. Its YAML and annotation attribute is "on_" and the type in lower case
+  // with underscores for spaces, such as on_topic.
+  string grant_object_type = 5;
+  // Kinds of the engine's other selections whose objects a kept object of
+  // this kind keeps when its normalized value requires them, unless an
+  // exclusion names them.
+  repeated string keeps_required = 6;
 }
 // CommonObjectSupport lists the common objects beyond tables an engine
 // carries on the common wire: inspected, validated, prepared for comparison
@@ -3437,4 +3483,96 @@ message EncodedFieldType {
   // Such as "uint64" or "time.Time".
   string go_type = 3;
   string go_import = 4;
+}
+
+// RunStatementRequest runs one statement the operator wrote, such as a check,
+// a test assertion or a script step, on a live session. The host composes no
+// statement it sends here. Contract 25.4, under sessions.statements.
+message RunStatementRequest {
+  string session_id = 1;
+  // Correlation only, as for Execute. The reply echoes it.
+  string request_id = 2;
+  // Empty runs outside an explicit transaction. Otherwise the handle must
+  // belong to session_id and remain active. Never set with READ_ONLY.
+  string transaction_id = 3;
+  // One statement, as the operator wrote it.
+  string sql = 4;
+  // Bound in the order the statement's placeholders take them, in the
+  // engine's own placeholder syntax. Every argument is set; null is a value.
+  repeated DataValue arguments = 5;
+  enum Access {
+    ACCESS_UNSPECIFIED = 0;
+    // Run the statement as written.
+    READ_WRITE = 1;
+    // Run it only when the provider proves, before running it, that it is one
+    // query that changes nothing and reads only objects of the session's
+    // database, and run it where a write is refused. Otherwise refuse it.
+    READ_ONLY = 2;
+  }
+  Access access = 6;
+  // From 1 to 10,000: the rows of the first page. A page also stays within
+  // the message limit.
+  uint32 max_rows = 7;
+}
+// StatementResult is what one statement did. A reply the host cannot read
+// leaves the outcome unknown, and the host never sends the statement again.
+message StatementResult {
+  string request_id = 1;
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // The statement ran. columns, rows and rows_affected say what it did.
+    SUCCEEDED = 1;
+    // The engine refused the statement and it changed nothing. error says
+    // why.
+    FAILED = 2;
+    // The provider ran nothing: a READ_ONLY statement it cannot prove, or a
+    // statement its engine cannot run here. refusal says why.
+    REFUSED = 3;
+    // The provider cannot say whether the statement ran.
+    UNKNOWN = 4;
+  }
+  Outcome outcome = 2;
+  // The result's columns, in order, with their engine types. Empty for a
+  // statement that returns no rows. SUCCEEDED only.
+  repeated DataColumn columns = 3;
+  // The first page. Every value is set; null is a value. SUCCEEDED only.
+  repeated Row rows = 4;
+  // Present only when the engine measured how many rows the statement
+  // changed. SUCCEEDED only.
+  optional uint64 rows_affected = 5;
+  // Empty exactly when every row is in this reply. The result stays open on
+  // the provider's side until its last page is read, CloseStatement releases
+  // it, or the transaction or the session it was read in ends. SUCCEEDED
+  // only.
+  string next_page_token = 6;
+  // FAILED only: the server's message for the statement, at most 4 KiB, with
+  // what the transport adds removed and never a credential; and the server's
+  // code for it, such as an SQLSTATE.
+  string error = 7;
+  string error_code = 8;
+  // REFUSED only: one line naming what stopped the statement.
+  string refusal = 9;
+}
+// ReadStatementRowsRequest reads the next page of an open result.
+message ReadStatementRowsRequest {
+  string session_id = 1;
+  // The next_page_token the previous page returned.
+  string page_token = 2;
+  // From 1 to 10,000.
+  uint32 max_rows = 3;
+  // How many columns the result named, which every row of the page has.
+  uint32 column_count = 4;
+}
+// StatementRows is one page of an open result, in the columns the result
+// named. A read that cannot finish is an error and no page.
+message StatementRows {
+  repeated Row rows = 1;
+  // Empty exactly when this page is the last one, which releases the result.
+  string next_page_token = 2;
+}
+// CloseStatementRequest releases an open result before its last page. A
+// token whose result is already released succeeds.
+message CloseStatementRequest {
+  string session_id = 1;
+  string page_token = 2;
 }

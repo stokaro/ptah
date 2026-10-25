@@ -247,16 +247,25 @@ func validateTypedColumns(columns []*protocol.DataColumn, names []string) error 
 		if column.GetName() != names[i] {
 			return fmt.Errorf("%w: typed columns do not answer the requested columns", ErrProtocol)
 		}
-		_, known := protocol.DataKind_name[int32(column.GetKind())]
-		typed := column.GetType() != ""
-		unspecified := column.GetKind() == protocol.DataKind_DATA_KIND_UNSPECIFIED
-		if !known || typed == unspecified || typed && !utf8.ValidString(column.GetType()) {
-			return fmt.Errorf("%w: a typed column needs a type and a kind, or neither", ErrProtocol)
+		if err := validateColumnType(column); err != nil {
+			return err
 		}
-		native := column.GetKind() == protocol.DataKind_DATA_KIND_NATIVE
-		if native != (column.GetNativeType() != "") || native && !comparisonReason(column.GetNativeType()) {
-			return fmt.Errorf("%w: only a native column names a native type", ErrProtocol)
-		}
+	}
+	return nil
+}
+
+// validateColumnType checks that a column has a type and a kind or neither,
+// and a native type exactly when its kind is native.
+func validateColumnType(column *protocol.DataColumn) error {
+	_, known := protocol.DataKind_name[int32(column.GetKind())]
+	typed := column.GetType() != ""
+	unspecified := column.GetKind() == protocol.DataKind_DATA_KIND_UNSPECIFIED
+	if !known || typed == unspecified || typed && !utf8.ValidString(column.GetType()) {
+		return fmt.Errorf("%w: a typed column needs a type and a kind, or neither", ErrProtocol)
+	}
+	native := column.GetKind() == protocol.DataKind_DATA_KIND_NATIVE
+	if native != (column.GetNativeType() != "") || native && !comparisonReason(column.GetNativeType()) {
+		return fmt.Errorf("%w: only a native column names a native type", ErrProtocol)
 	}
 	return nil
 }

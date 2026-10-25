@@ -51,8 +51,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.3, as `provider-sdk/v0.5.0` does. `provider-sdk/v0.4.0`
-speaks contract 25.2, `provider-sdk/v0.3.0` speaks 25.1, and
+speaks contract 25.4. `provider-sdk/v0.5.0` speaks contract 25.3,
+`provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0` speaks 25.1, and
 `provider-sdk/v0.2.0` speaks 25.0.
 
 **What changes which number.** The minor counts compatible additions within a
@@ -68,7 +68,9 @@ returns to 0.
   [common-object wire](#common-objects), [text units](#text-units), the
   [planning policy](#planning-policy), [YAML entry keys and HCL
   claims](#yaml-entry-keys-and-hcl-claims) and
-  [source encoding](#source-encoding).
+  [source encoding](#source-encoding). Contract 25.4 adds
+  [operator statements](#operator-statements) and
+  [scope selections](#scope-selections).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -89,8 +91,8 @@ does not oblige a peer to use it.
   sides list its feature. `provider.TwoWayFeatures()` returns those features:
   `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
   `query.dialect`, `embeddings.store`, `schema.common-objects`,
-  `render.text-units`, `planning.policy`, `source.entry-keys` and
-  `source.hcl`. The embedding store's calls and `PrepareCommonObjects` are
+  `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`
+  and `scope.selections`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
@@ -193,6 +195,9 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `CheckLock` | Current ownership evidence, confirmed loss, or uncertainty for that exact handle. |
 | `ReleaseLock` | Confirmed release or fenced absence, without retrying an uncertain operation. |
 | `Execute` | A terminal outcome and the number of consecutive units confirmed applied. Request IDs do not enable automatic retries. |
+| `RunStatement` | What one statement the operator wrote did: its columns and first page of rows, a row count only when the engine measured one, the server's message for a statement it refused, a refusal that ran nothing, or an explicit unknown outcome. |
+| `ReadStatementRows` | The next bounded page of an open result, or an error and no rows. |
+| `CloseStatement` | Release of an open result. A result already released succeeds. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -1389,3 +1394,82 @@ directions, prepare a declaration, render text and refuse a change without a
 text form, refuse a native unit in the `TEXT` form from a peer that is not the
 SDK server, and decode what an owner encoded back to the same canonical
 projection.
+
+## Operator statements
+
+[ADR 0038](../docs/adr/0038-a-provider-runs-the-operators-statements-and-returns-what-they-read.md)
+decides this service. `sessions.statements` runs a statement the operator
+wrote, such as a `db verify` check, a test assertion or a script step, on a live
+session, and returns what it read. The host composes none of these statements;
+a plan's units still go through `Execute`. The provider lists the feature, and
+each engine that supports it lists it too. It adds RPCs and no field to an
+existing message, so it is not two-way.
+
+- `RunStatement` takes one statement, its arguments as `DataValue` in the
+  order the statement's placeholders take them, an access, an optional
+  transaction and a page bound from 1 to 10,000. `READ_WRITE` runs the
+  statement as written. `READ_ONLY` runs it only when the owner proves, before
+  running it, that it is one query that changes nothing and reads only objects
+  of the session's database, and runs it where a write is refused; otherwise
+  the reply is `REFUSED` and nothing ran. A read-only statement never names a
+  transaction.
+- A `SUCCEEDED` reply carries the result's columns as `DataColumn`, the first
+  page of rows, and `rows_affected` only when the engine measured how many rows
+  the statement changed: its absence means the count is not reported, which a
+  host never reads as zero. `FAILED` carries the server's message for the
+  statement, at most 4 KiB, with what the transport adds removed and never a
+  credential, and the server's code. `UNKNOWN` says the provider cannot tell
+  whether the statement ran; the host never sends it again.
+- A result larger than one page stays open. `ReadStatementRows` takes its next
+  page token and the result's column count, and `CloseStatement` releases it
+  before the last page. The last page, the end of the transaction and the end
+  of the session release it too.
+
+Both transport boundaries refuse a statement without a session, a request ID or
+UTF-8 text, an unset argument, a read-only statement in a transaction, and a
+reply that changed its request ID, carries rows or a token on an outcome other
+than `SUCCEEDED`, a message on one other than `FAILED`, a refusal on one other
+than `REFUSED`, or a row that does not fit its columns or its bound. A reply to
+a statement that may write, when it does not arrive or cannot be read, is an
+unknown outcome; to a read-only one, it is an error.
+
+## Scope selections
+
+[ADR 0039](../docs/adr/0039-a-provider-declares-how-a-scope-names-its-objects-and-which-grants-name-them.md)
+decides these declarations. `scope.selections` adds `Engine.scope_selections`:
+how the `--include`, `--exclude` and `--schema` selectors name the engine's
+objects. It is a two-way feature; the provider lists it and so does each engine
+that declares selections. A host that does not list it gets none and reads the
+provider's objects as an earlier minor does.
+
+Each `ScopeSelection` names a model kind with a DESIRED and an OBSERVED model,
+the selector type that names it, such as `topic` in `*[type=topic]`, and its
+naming. The host reads a selector's name with the naming; the owner never
+parses a selector.
+
+- `IN_SCHEMA` names an object by its schema and name, as a table is named, and
+  its identity carries no database, catalog or path. `DATABASE_WIDE` names it
+  by its name alone, in which a dot is a character. `SCHEMA_OR_DATABASE` names
+  one in a schema as `IN_SCHEMA` does and one on the database by its name.
+- `relation` says the object's name is a relation's, so excluding it excludes a
+  table of its name.
+- `grant_object_type`, such as `TOPIC`, is the object type a grant spells for
+  an object of the kind, so a grant rides that object through a scope. Its
+  YAML and annotation attribute is `on_` and the type in lower case with
+  underscores, such as `on_topic`.
+- `keeps_required` lists the kinds of the engine's other selections whose
+  objects a kept object keeps when its normalized value requires them, unless
+  an exclusion names them.
+
+Both transport boundaries refuse a selection of a kind the engine does not
+model as desired and observed, a kind selected twice, an unknown naming, a
+selector type that is not lower-case letters, digits and underscores starting
+with a letter or that two selections define with different naming or relation,
+a relation that is not in a schema, a grant object type that is not upper-case
+words, is a common target such as `TABLE`, or names two selections, and a kept
+requirement that names no other selection.
+
+The SDK conformance tests in `runtime` page a statement's result, release one
+before its last page, refuse a malformed reply from a peer that is not the SDK
+server, leave a write whose reply cannot be read unknown, and negotiate the
+scope selections in both directions.
