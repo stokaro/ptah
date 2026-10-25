@@ -48,7 +48,8 @@ func New(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage
 // line to notices for each name a SQL document writes longer than the
 // identifier limit of a server that cuts it, naming source as what was read.
 // The document's objects are recorded under the name the server keeps either
-// way. A nil notices writes nothing, as [New] does.
+// way. A nil notices behaves as [New] does: a read inside a run raises the
+// warnings for the run, and a read outside one writes nothing.
 func NewWithNotices(owners yamlext.Set, sql sqlext.Set, hcl hclext.Set, vocabulary coverage.Vocabulary, relations Relations, notices io.Writer, source string) schemasource.Formats {
 	r := readers{owners: owners, sql: sql, hcl: hcl, vocabulary: vocabulary, relations: relations}
 	r.notices, r.source = notices, source
@@ -74,12 +75,18 @@ func (r readers) ReadYAML(ctx context.Context, data []byte) (*schemamodel.Databa
 func (r readers) ReadSQL(ctx context.Context, data []byte, dialect string) (*schemamodel.Database, error) {
 	// The command deadline includes interpretation by selected owners.
 	opts := sqlschema.Options{Owners: r.sql, Vocabulary: r.vocabulary, Relations: r.relations, Source: r.source}
-	if r.notices != nil {
+	// The writer the caller named, or else the run's diagnostics stream, so
+	// a program's output read inside a run is reported like a schema file.
+	notices := r.notices
+	if notices == nil {
+		notices = rundiag.Stream(ctx)
+	}
+	if notices != nil {
 		opts.StoredNames = func(name sqlschema.StoredName) {
-			_ = rundiag.Warn(ctx, r.notices, rundiag.TruncatedNames, sqlschema.StoredNameRecord(r.source, name))
+			_ = rundiag.Warn(ctx, notices, rundiag.TruncatedNames, sqlschema.StoredNameRecord(r.source, name))
 		}
 		opts.Redeclared = func(redeclared sqlschema.Redeclaration) {
-			_ = rundiag.Warn(ctx, r.notices, rundiag.RedeclaredConstraints, sqlschema.RedeclarationRecord(r.source, redeclared))
+			_ = rundiag.Warn(ctx, notices, rundiag.RedeclaredConstraints, sqlschema.RedeclarationRecord(r.source, redeclared))
 		}
 	}
 	db, _, err := sqlschema.ReadWith(ctx, data, dialect, nil, opts)

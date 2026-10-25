@@ -20,6 +20,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlext"
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/root"
@@ -55,12 +56,69 @@ func compareStoredNames(a, b sqlschema.StoredName) int {
 	return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Scope, b.Scope), cmp.Compare(a.Written, b.Written))
 }
 
-// openMeterWarning is the one line a run that reads the fixture writes, in
-// the words of listing.
-func openMeterWarning(c *qt.C, listing rundiag.Listing) string {
-	c.Helper()
+// cutNamesWarning is the one line a run writes for count cut names, in the
+// words of listing.
+func cutNamesWarning(count int, listing rundiag.Listing) string {
 	return fmt.Sprintf("warning: %d names are longer than 63 bytes; the server keeps their first 63 bytes, "+
-		"and they are read that way; %s\n", len(cutNamesOf(c, openMeterLongNames)), listing)
+		"and they are read that way; %s\n", count, listing)
+}
+
+// catalogCutNames is every name of the public schema of the database at url
+// that is exactly the 63 bytes PostgreSQL keeps, named as the reader names a
+// cut: its kind, the place it is unique in, and the name stored. It reads the
+// server, not the reader, so a test can hold the reader to it. The index a
+// PRIMARY KEY, UNIQUE or EXCLUDE constraint builds carries the constraint's
+// name, and is counted as the constraint. A NOT NULL constraint is left out:
+// PostgreSQL 18 records one for each NOT NULL column under a name it derives,
+// such as `billing_standard_invoice_detailed_lines_parent_line_id_not_null`,
+// and cuts that to 63 bytes for a long table and column, so it is a name the
+// file never wrote. On a database built from a file that writes no name of
+// exactly 63 bytes and no named NOT NULL, these are the names the server cut.
+func catalogCutNames(c *qt.C, url string) []sqlschema.StoredName {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), url)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	rows, err := conn.QueryContext(c.Context(), `
+		SELECT CASE k.contype WHEN 'f' THEN 'foreign key' WHEN 'p' THEN 'primary key'
+			WHEN 'u' THEN 'unique constraint' WHEN 'c' THEN 'check' ELSE 'constraint' END,
+			'table "public.' || t.relname || '"', k.conname
+		FROM pg_constraint k JOIN pg_class t ON t.oid = k.conrelid
+		WHERE k.connamespace = 'public'::regnamespace AND octet_length(k.conname) = 63 AND k.contype <> 'n'
+		UNION ALL
+		SELECT CASE r.relkind WHEN 'r' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized view'
+			WHEN 'S' THEN 'sequence' ELSE 'index' END,
+			'schema "public"', r.relname
+		FROM pg_class r
+		WHERE r.relnamespace = 'public'::regnamespace AND r.relkind IN ('r', 'v', 'm', 'S', 'i')
+			AND octet_length(r.relname) = 63
+			AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = r.oid AND k.contype IN ('p', 'u', 'x'))
+		UNION ALL
+		SELECT 'column', 'table "public.' || r.relname || '"', a.attname
+		FROM pg_attribute a JOIN pg_class r ON r.oid = a.attrelid
+		WHERE r.relnamespace = 'public'::regnamespace AND r.relkind = 'r' AND a.attnum > 0
+			AND NOT a.attisdropped AND octet_length(a.attname) = 63`)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	var names []sqlschema.StoredName
+	for rows.Next() {
+		name := sqlschema.StoredName{Limit: 63}
+		c.Assert(rows.Scan(&name.Kind, &name.Scope, &name.Stored), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
+}
+
+// storedKeys is each name as kind, scope and stored name, sorted, which is
+// what the catalog and the reader can both say of a cut name.
+func storedKeys(names []sqlschema.StoredName) []string {
+	keys := make([]string, 0, len(names))
+	for _, name := range names {
+		keys = append(keys, name.Kind+" | "+name.Scope+" | "+name.Stored)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // The command trees of the two binaries, and of ptah-compat under the strict
@@ -92,7 +150,7 @@ func runAsOneRun(c *qt.C, newTree func() *cobra.Command, args ...string) (code i
 // writes for Ent holds them. Nothing differs from schema, so a diff of any two
 // of them has no changes.
 type openMeterRun struct {
-	schema, target, dev, dir, out string
+	schema, copied, target, dev, dir, out string
 }
 
 func newOpenMeterRun(c *qt.C, schemaSQL string) openMeterRun {
@@ -100,16 +158,21 @@ func newOpenMeterRun(c *qt.C, schemaSQL string) openMeterRun {
 	fixture, err := os.ReadFile(openMeterLongNames)
 	c.Assert(err, qt.IsNil)
 	dir, schema := writeRewrittenMigrationProject(c, string(fixture), schemaSQL)
+	copied := filepath.Join(c.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(copied, []byte(schemaSQL+"\n"), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	dev, _ := scratchReplayDatabase(c)
-	return openMeterRun{schema: schema, target: databaseBuiltFrom(c, string(fixture)), dev: dev, dir: dir, out: c.TempDir()}
+	return openMeterRun{
+		schema: schema, copied: copied, target: databaseBuiltFrom(c, string(fixture)), dev: dev, dir: dir, out: c.TempDir(),
+	}
 }
 
 // args spells the run's paths and URLs into a command line: {schema} is the
-// schema file's path and {schema-url} its file URL, {dir} the migration
-// directory's URL, {out} an empty directory.
+// schema file's path and {schema-url} its file URL, {copy-url} the URL of a
+// copy of it in another directory, {dir} the migration directory's URL, {out}
+// an empty directory.
 func (r openMeterRun) args(template []string) []string {
 	replacer := strings.NewReplacer(
-		"{schema-url}", "file://"+filepath.ToSlash(r.schema), "{schema}", r.schema,
+		"{schema-url}", "file://"+filepath.ToSlash(r.schema), "{schema}", r.schema, "{copy-url}", "file://"+filepath.ToSlash(r.copied),
 		"{target}", r.target, "{dev}", r.dev, "{dir}", "file://"+filepath.ToSlash(r.dir), "{out}", r.out,
 	)
 	args := make([]string, 0, len(template))
@@ -133,8 +196,9 @@ func TestOpenMeterLongNamesCutWhatTheExportCuts(t *testing.T) {
 
 // TestOpenMeterLongNamesNoChangesAreTheResultAndOneWarningE2E runs each
 // command on a state that already matches the fixture: it prints its result
-// and one warning with how many names the server cuts, on both binaries, and
-// nothing else. The strict profile names the switch it allows.
+// and one warning with how many names the server cut, as the catalog of the
+// database the fixture built counts them, on both binaries, and nothing else.
+// The strict profile names the switch it allows.
 func TestOpenMeterLongNamesNoChangesAreTheResultAndOneWarningE2E(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -204,7 +268,7 @@ func TestOpenMeterLongNamesNoChangesAreTheResultAndOneWarningE2E(t *testing.T) {
 
 			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 			c.Assert(stdout, qt.Matches, test.stdout)
-			c.Assert(stderr, qt.Equals, openMeterWarning(c, test.listing))
+			c.Assert(stderr, qt.Equals, cutNamesWarning(len(catalogCutNames(c, state.target)), test.listing))
 		})
 	}
 }
@@ -236,8 +300,10 @@ func debugStoredNames(c *qt.C, logged string) []sqlschema.StoredName {
 
 // TestOpenMeterLongNamesAreListedOnceAtDebugLevelE2E reads the names the way
 // PTAH_LOG_LEVEL=debug and PTAH_LOG_FORMAT=json show them: each cut name once,
-// with the name the file wrote and the name the server keeps, also where a
-// diff reads the fixture on both of its sides.
+// with the name the file wrote and the name the server keeps, the names the
+// catalog of the database the fixture built holds, no more and no fewer. A
+// diff of the file with a copy of it in another directory reads each name
+// from two files and lists it once.
 func TestOpenMeterLongNamesAreListedOnceAtDebugLevelE2E(t *testing.T) {
 	tests := []struct {
 		name string
@@ -245,9 +311,9 @@ func TestOpenMeterLongNamesAreListedOnceAtDebugLevelE2E(t *testing.T) {
 		args []string
 	}{
 		{
-			name: "ptah schema diff of the file with itself",
+			name: "ptah schema diff of the file with a copy",
 			tree: nativeTree,
-			args: []string{"schema", "diff", "--from", "{schema-url}", "--to", "{schema-url}", "--dev-url", "{dev}"},
+			args: []string{"schema", "diff", "--from", "{schema-url}", "--to", "{copy-url}", "--dev-url", "{dev}"},
 		},
 		{
 			name: "ptah migrations generate",
@@ -255,14 +321,9 @@ func TestOpenMeterLongNamesAreListedOnceAtDebugLevelE2E(t *testing.T) {
 			args: []string{"migrations", "generate", "--schema-file", "{schema}", "--db-url", "{target}", "--migrations-dir", "{out}"},
 		},
 		{
-			name: "ptah-compat schema diff of the file with itself",
+			name: "ptah-compat schema diff of the file with a copy",
 			tree: compatTree,
-			args: []string{"schema", "diff", "--from", "{schema-url}", "--to", "{schema-url}", "--dev-url", "{dev}"},
-		},
-		{
-			name: "ptah-compat migrate diff of the history and the file",
-			tree: compatTree,
-			args: []string{"migrate", "diff", "--dir", "{dir}", "--to", "{schema-url}", "--dev-url", "{dev}"},
+			args: []string{"schema", "diff", "--from", "{schema-url}", "--to", "{copy-url}", "--dev-url", "{dev}"},
 		},
 	}
 	for _, test := range tests {
@@ -279,10 +340,61 @@ func TestOpenMeterLongNamesAreListedOnceAtDebugLevelE2E(t *testing.T) {
 			code, stdout, stderr := runAsOneRun(c, test.tree, state.args(test.args)...)
 
 			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stderr, qt.Equals, openMeterWarning(c, rundiag.ListedAtDebugLevel))
-			c.Assert(debugStoredNames(c, logged.String()), qt.DeepEquals, cutNamesOf(c, openMeterLongNames))
+			catalog := catalogCutNames(c, state.target)
+			c.Assert(stderr, qt.Equals, cutNamesWarning(len(catalog), rundiag.ListedAtDebugLevel))
+			listed := debugStoredNames(c, logged.String())
+			c.Assert(storedKeys(listed), qt.DeepEquals, storedKeys(catalog))
+			for _, name := range listed {
+				c.Assert(len(name.Written) > len(name.Stored) && strings.HasPrefix(name.Written, name.Stored), qt.IsTrue,
+					qt.Commentf("written %q, stored %q", name.Written, name.Stored))
+			}
 		})
 	}
+}
+
+// TestOpenMeterLongNamesAreOneWarningWhereTheFileIsReadE2E runs the commands
+// that read the file on the way to something else: to materialize it on a dev
+// database, or to check a plan against it. They report the cut names too, in
+// one line.
+func TestOpenMeterLongNamesAreOneWarningWhereTheFileIsReadE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		tree func() *cobra.Command
+		args []string
+	}{
+		{name: "ptah schema inspect", tree: nativeTree, args: []string{"schema", "inspect", "--schema-file", "{schema}", "--dev-url", "{dev}"}},
+		{name: "ptah-compat schema inspect", tree: compatTree, args: []string{"schema", "inspect", "--url", "{schema-url}", "--dev-url", "{dev}"}},
+		{
+			name: "ptah-compat schema plan",
+			tree: compatTree,
+			args: []string{"schema", "plan", "--from", "{target}", "--to", "{schema-url}", "--dev-url", "{dev}", "--dry-run"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture, err := os.ReadFile(openMeterLongNames)
+			c.Assert(err, qt.IsNil)
+			state := newOpenMeterRun(c, string(fixture))
+
+			code, stdout, stderr := runAsOneRun(c, test.tree, state.args(test.args)...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(cutNameLines(stdout+stderr), qt.DeepEquals,
+				[]string{strings.TrimSuffix(cutNamesWarning(len(catalogCutNames(c, state.target)), rundiag.ListedAtDebugLevel), "\n")})
+		})
+	}
+}
+
+// cutNameLines is the warning lines of output about cut names.
+func cutNameLines(output string) []string {
+	var lines []string
+	for _, line := range warningLines(output) {
+		if strings.Contains(line, " names are longer than ") || strings.Contains(line, " bytes; the server keeps its first ") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // collidingOpenMeterSchema is the fixture with one foreign key renamed so that

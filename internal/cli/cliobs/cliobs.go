@@ -105,6 +105,14 @@ func EnvironmentDefaultLogger() {
 	installDefaultLogger(os.Stderr, slog.LevelInfo)
 }
 
+// JSONLog reports whether PTAH_LOG_FORMAT makes the default logger JSON, as
+// [EnvironmentDefaultLogger] and [QuietDefaultLogger] read it. A run whose log
+// is JSON writes its warnings about many objects as JSON records too, so its
+// error stream stays JSON lines.
+func JSONLog() bool {
+	return strings.ToLower(strings.TrimSpace(os.Getenv(LogFormatEnvVar))) == logFormatJSON
+}
+
 // installDefaultLogger installs a text or JSON logger on out at level, with
 // the level and the format the environment names in place of the defaults. A
 // value the commands' flags would refuse is reported and not used.

@@ -29,7 +29,6 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/ociartifact"
-	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
@@ -124,16 +123,13 @@ func (o Options) logf(format string, args ...any) {
 	}
 }
 
-// notices is where a reader's warnings go. Inside a run they go to the run,
-// which reports each kind once when the command ends, so every command that
-// loads a desired schema reports what the readers found the same way, as
-// ptah-compat does, whatever the command prints on its standard output. A
-// load outside a run writes them with its progress messages, or nowhere when
-// it reports none.
-func (o Options) notices(ctx context.Context) io.Writer {
-	if stream := rundiag.Stream(ctx); stream != nil {
-		return stream
-	}
+// notices is the writer a load names for its readers' warnings: the messages
+// it reports its progress to, or none. With none, a reader raises them for the
+// run the load's context carries, which reports each kind once when the
+// command ends, so every command that loads a desired schema reports what the
+// readers found, whatever it prints on its standard output; see
+// [ptah.run/internal/rundiag.Stream].
+func (o Options) notices() io.Writer {
 	if o.Logf == nil {
 		return nil
 	}
@@ -380,7 +376,7 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 		return nil, fmt.Errorf("schema command: %w", yamlext.ErrUnselected)
 	}
 	formats := sourceformats.NewWithNotices(o.Owners.YAML(), o.Owners.SQL(), o.Owners.HCL(), o.Owners.CoverageVocabulary(), o.relations(),
-		o.notices(ctx), "schema command "+commandDisplay(command))
+		o.notices(), "schema command "+commandDisplay(command))
 	return schemasource.Run(ctx, formats, command)
 }
 
@@ -553,10 +549,10 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 		Relations:          o.relations(),
 		Vars:               o.Vars,
 		VarValues:          o.VarValues,
-		Notices:            o.notices(ctx),
+		Notices:            o.notices(),
 		// HCL tolerance is off here, so an unknown HCL name is refused and
 		// this carries what a DBML document declares and the model drops.
-		ReportIgnored: o.notices(ctx),
+		ReportIgnored: o.notices(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)

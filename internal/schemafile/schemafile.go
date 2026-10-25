@@ -96,9 +96,11 @@ type Options struct {
 	// the line it was written on, and one per construct a DBML document
 	// declares and the schema model drops (see loadDBMLFile).
 	//
-	// nil discards them, which is what the community binary does. Where the
-	// tolerance is off, as on the native surface, an unmodeled HCL name is
-	// refused, so only the DBML constructs reach this writer there.
+	// nil sends them to the run ctx carries, as every reader warning goes,
+	// and discards them outside a run, which is what the community binary
+	// does; see [warningsTo]. Where the tolerance is off, as on the native
+	// surface, an unmodeled HCL name is refused, so only the DBML constructs
+	// are reported there.
 	//
 	// The wording matches the project-file channel
 	// (dbcli.ReportIgnoredAtlasConstructs) on purpose: the same product should
@@ -108,8 +110,10 @@ type Options struct {
 
 	// Notices receives one warning line per name a SQL file writes longer than
 	// the identifier limit of a server that cuts it, such as a 64-byte foreign
-	// key name on PostgreSQL. The read records the object under the name the
-	// server keeps either way; nil only leaves the reader unaware of it.
+	// key name on PostgreSQL, and per constraint it drops and adds again
+	// differently. The read records the object under the name the server keeps
+	// either way. nil sends them to the run ctx carries, and outside a run
+	// leaves the reader unaware of them; see [warningsTo].
 	Notices io.Writer
 
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
@@ -507,9 +511,10 @@ func loadDBMLFile(ctx context.Context, resolved string, opts Options) (*schemamo
 }
 
 // dbmlLossReporter adapts the parser's diagnostics onto the loader's writer,
-// and returns nil when nobody is listening so the parse does no work for a
-// report that goes nowhere.
+// or the run's (see [warningsTo]), and returns nil when nobody is listening so
+// the parse does no work for a report that goes nowhere.
 func dbmlLossReporter(ctx context.Context, out io.Writer) func(string) {
+	out = warningsTo(ctx, out)
 	if out == nil {
 		return nil
 	}
@@ -920,13 +925,14 @@ func sourceDatabasePath(opts Options) (string, error) {
 }
 
 // ignoredNameReporter turns the writer into the callback the HCL parser takes,
-// or nil when there is nowhere to write.
+// or nil when there is nowhere to write; see [warningsTo].
 //
 // Returning nil rather than a no-op function is what keeps the parser's own
 // documented behavior -- "nil discards them, which is what the community binary
 // does" -- reachable, and keeps a caller that wants silence from paying for a
 // formatted string it throws away.
 func ignoredNameReporter(ctx context.Context, out io.Writer) func(atlashcl.IgnoredName) {
+	out = warningsTo(ctx, out)
 	if out == nil {
 		return nil
 	}
@@ -1017,10 +1023,23 @@ func rootReaderOf(dialect string) (dburlext.RootReader, error) {
 	return reader, err
 }
 
+// warningsTo is where a reader's warnings go: out when the caller names a
+// writer, and otherwise the diagnostics stream of the run ctx carries, so a
+// load inside a run reports what the readers find whichever command loads it
+// ([rundiag.Stream]). With neither there is nowhere to write, and the reader
+// skips the work.
+func warningsTo(ctx context.Context, out io.Writer) io.Writer {
+	if out != nil {
+		return out
+	}
+	return rundiag.Stream(ctx)
+}
+
 // redeclarationReporter turns the writer into the callback the SQL reader
 // takes for a constraint dropped and added again differently, or nil when
-// there is nowhere to write. source names what was read.
+// there is nowhere to write; see [warningsTo]. source names what was read.
 func redeclarationReporter(ctx context.Context, out io.Writer, source string) func(sqlschema.Redeclaration) {
+	out = warningsTo(ctx, out)
 	if out == nil {
 		return nil
 	}
@@ -1030,9 +1049,11 @@ func redeclarationReporter(ctx context.Context, out io.Writer, source string) fu
 }
 
 // storedNameReporter turns the writer into the callback the SQL reader takes,
-// or nil when there is nowhere to write. source names what was read. The run
-// ctx carries counts the names and lists them at debug level; see [rundiag].
+// or nil when there is nowhere to write; see [warningsTo]. source names what
+// was read. The run ctx carries counts the names and lists them at debug
+// level; see [rundiag].
 func storedNameReporter(ctx context.Context, out io.Writer, source string) func(sqlschema.StoredName) {
+	out = warningsTo(ctx, out)
 	if out == nil {
 		return nil
 	}

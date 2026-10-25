@@ -29,9 +29,9 @@ import (
 //
 //   - A guard is honored rather than executed. `CREATE TABLE IF NOT EXISTS`
 //     twice is exit 0 on that binary, measured, so a guarded redeclaration is
-//     admitted instead of refused. Which of the two definitions survives the
-//     merge is unchanged by this file and still differs from that binary; the
-//     exit code, which is what the compatibility rule is about, now agrees.
+//     admitted instead of refused. The SQL reader skips the guarded statement
+//     whole, as the server does, so the first file's definition stands; see
+//     internal/sqlschema/guarded_declarations.go.
 //   - An ALTER is not replayed. A file that alters what an earlier file created
 //     declares nothing, so it neither refuses nor contributes -- the same as
 //     before this file existed.

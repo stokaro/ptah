@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/rundiag"
@@ -26,10 +27,13 @@ import (
 //
 // The run collects the warnings that concern many objects and writes one line
 // per kind to cmd's error stream when the command ends, whether it succeeded
-// or not, in the words cmd's surface declares for listing them; see [rundiag]
-// and [cmdutil.SetDiagnosticsListing].
+// or not, in the words cmd's surface declares for listing them, and as JSON
+// records when PTAH_LOG_FORMAT makes the log JSON; see [rundiag],
+// [cmdutil.SetDiagnosticsListing] and [cliobs.JSONLog].
 func RunContext(ctx context.Context, cmd *cobra.Command, args ...string) int {
-	report := rundiag.New(cmd.ErrOrStderr(), cmdutil.DiagnosticsListing(cmd))
+	report := rundiag.New(rundiag.Options{
+		Stream: cmd.ErrOrStderr(), Listing: cmdutil.DiagnosticsListing(cmd), Records: cliobs.JSONLog(),
+	})
 	defer report.Flush()
 	cmd.SetArgs(args)
 	cmd.SetContext(rundiag.With(ctx, report))

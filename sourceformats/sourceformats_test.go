@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/rundiag"
 	"ptah.run/sourceformats"
 )
 
@@ -74,4 +75,23 @@ func TestNewWithNotices_NilNoticesWritesNothing(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
+}
+
+// TestNewWithNotices_NilNoticesRaisesForTheRun pins that readers given no
+// writer raise a cut name for the run the context carries, so a program's
+// output read by a command that names no writer is reported like a schema
+// file.
+func TestNewWithNotices_NilNoticesRaisesForTheRun(t *testing.T) {
+	c := qt.New(t)
+	runtime := builtintest.Runtime()
+	var stream strings.Builder
+	report := rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedAtDebugLevel})
+	formats := sourceformats.NewWithNotices(runtime.YAML(), runtime.SQL(), runtime.HCL(), coverage.Vocabulary{}, runtime, nil, "schema command ./export")
+	long := strings.Repeat("t", 70)
+
+	_, err := formats.ReadSQL(rundiag.With(t.Context(), report), []byte("CREATE TABLE "+long+" (id int);"), "postgres")
+	report.Flush()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stream.String(), qt.Equals, "warning: schema command ./export: table \""+long+"\" in schema \"public\" is 70 bytes; the server keeps its first 63: \""+long[:63]+"\"\n")
 }
