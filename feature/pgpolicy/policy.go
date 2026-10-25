@@ -11,7 +11,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/deporder"
-	"ptah.run/internal/tableref"
 )
 
 // Command is the class of statement a policy applies to.
@@ -169,24 +168,38 @@ func (v *DesiredPolicy) Equal(other schemaext.Value) bool {
 		v.Comment == right.Comment && v.StructName == right.StructName && v.Normalized.equal(right.Normalized)
 }
 
-// ReadsRelation reports whether either expression names relation, by its full
-// name or, for a schema-qualified one, by its bare name. It implements
-// [schemaext.RelationReader]: PostgreSQL records a dependency from a policy to
-// each relation its expressions read, so dropping one with CASCADE drops the
-// policy.
+// ReadsRelation is [ObservedPolicy.ReadsRelationIn] with the default schema not
+// known: an unqualified name, in relation or in an expression, may then be in
+// any schema, so `reporting.item_skus` reads item_skus, while it never reads
+// public.item_skus. It implements [schemaext.RelationReader].
 func (v *ObservedPolicy) ReadsRelation(relation string) bool {
-	names := []string{relation}
-	if ref, ok := tableref.Parse(relation); ok && ref.Qualified {
-		names = append(names, ref.Name)
+	return v.ReadsRelationIn(relation, "")
+}
+
+// ReadsRelationIn reports whether either expression names relation, an
+// unqualified name of either resolving in defaultSchema. It implements
+// [schemaext.RelationReaderInSchema]: PostgreSQL records a dependency from a
+// policy to each relation its expressions read, so dropping one with CASCADE
+// drops the policy.
+//
+// Each part of a qualified name may be quoted or not, so
+// `"reporting"."order_report"` reads reporting.order_report. A name in another
+// schema reads nothing: with public the default, a policy reading
+// `reporting.item_skus` does not read item_skus or public.item_skus, and an
+// unqualified `item_skus` does not read reporting.item_skus. An unqualified name
+// is put in defaultSchema alone, as the planner resolves one, and a search path
+// that names further schemas is not consulted.
+//
+// The test is the one view rebuilds use to find what reads a dropped relation,
+// [deporder.ReferencesRelation], so the plan refuses exactly the policies on
+// relations it rebuilds. A nil policy reads nothing.
+func (v *ObservedPolicy) ReadsRelationIn(relation, defaultSchema string) bool {
+	if v == nil {
+		return false
 	}
 	for _, clause := range []*string{v.Using, v.WithCheck} {
-		if clause == nil {
-			continue
-		}
-		for _, name := range names {
-			if deporder.ReferencesIdentifier(*clause, strings.Trim(name, `"`)) {
-				return true
-			}
+		if clause != nil && deporder.ReferencesRelation(*clause, relation, defaultSchema) {
+			return true
 		}
 	}
 	return false

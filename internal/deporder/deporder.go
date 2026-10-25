@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dialectlexer"
@@ -704,6 +705,19 @@ func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {
 	return counts
 }
 
+// referencesViewLikeIdentifier is the creation order's test of whether body
+// reads the object called name.
+//
+// It reads names part by part, as [ReferencesRelation] does, so
+// `analytics."zbase"` reads analytics.zbase, and it puts an unqualified name in
+// the dialect's default schema, so `public.zbase` reads a zbase declared
+// without one. Unlike [ReferencesRelation] it never guesses a schema it does
+// not know: an edge decides which object is created first, and an edge to an
+// object of another schema that has the same name reorders the creation or
+// closes a cycle, while a missing one leaves the arrival order. An unqualified
+// reference to a qualified object counts only where no other object of the
+// set has that bare name. The dialect's quoted spellings are asked too, which
+// is what reads a SQL Server name in brackets.
 func referencesViewLikeIdentifier(body, name, dialect string, bareNameCounts map[string]int) bool {
 	if dialect == "" {
 		return ReferencesIdentifier(body, name)
@@ -725,6 +739,13 @@ func referencesViewLikeIdentifier(body, name, dialect string, bareNameCounts map
 		tableref.Canonical("", ref.Name),
 		sqlident.Quote(dialect, ref.Name),
 	}, dialect) {
+		return true
+	}
+	defaultSchema := identifier.ForDialect(dialect).DefaultSchema
+	inDefault := func(schema string) bool {
+		return defaultSchema != "" && strings.EqualFold(schema, defaultSchema)
+	}
+	if namesRead(codeNames(body, dialect), ref, inDefault) {
 		return true
 	}
 
@@ -999,50 +1020,6 @@ func viewLikeID(object ViewLike, index int) string {
 	return kind + ":" + object.Name + ":" + strconv.Itoa(index)
 }
 
-// ReferencesIdentifier reports whether the SQL body references name as a
-// standalone or qualified identifier. It backs view-like dependency ordering
-// and the schema-scope cross-reference diagnostics.
-//
-// Only the code of the body counts. A name that appears inside a string
-// literal, a dollar-quoted string, a line comment or a block comment names
-// nothing, and treating it as a reference is not a harmless over-approximation:
-// the PostgreSQL planner asks this question to work out what
-// DROP VIEW ... CASCADE takes with it, and an answer of "yes" there puts a
-// DROP MATERIALIZED VIEW ... CASCADE into the plan. Measured on PostgreSQL
-// 17.10, a materialized view whose body is
-// "SELECT 'base_view' AS label, count(*) AS total FROM accounts" -- which reads
-// no view at all -- was dropped and recreated when base_view was modified,
-// taking a hand-made dependent view, a unique index on the materialized view
-// and the privileges granted on it, none of which the plan rebuilds.
-//
-// Quoted identifiers are code and still match, because "base_view" is a
-// reference to base_view. Their contents are opaque, so a quotation mark or a
-// comment marker inside one cannot open a literal or a comment.
-func ReferencesIdentifier(body, name string) bool {
-	body = strings.ToLower(body)
-	name = strings.ToLower(strings.TrimSpace(name))
-	if body == "" || name == "" {
-		return false
-	}
-
-	code := sqlCodeMask(body)
-	for start := 0; start < len(body); {
-		index := strings.Index(body[start:], name)
-		if index < 0 {
-			return false
-		}
-		index += start
-		end := index + len(name)
-		if spanIsCode(code, index, end) &&
-			(isIdentifierBoundary(body, index-1) || isQualifiedIdentifierTail(body, index-1)) &&
-			isIdentifierBoundary(body, end) {
-			return true
-		}
-		start = end
-	}
-	return false
-}
-
 // spanIsCode reports whether every byte of body[start:end] is SQL code.
 func spanIsCode(code []bool, start, end int) bool {
 	for i := start; i < end; i++ {
@@ -1053,21 +1030,16 @@ func spanIsCode(code []bool, start, end int) bool {
 	return true
 }
 
-// sqlCodeMask marks the byte offsets of body that are SQL code: everything
-// outside string literals, dollar-quoted strings, line comments and block
-// comments. Quoted identifiers are code, but their contents are copied through
-// without being re-scanned, so "a--b" is one identifier rather than the start of
-// a comment.
+// sqlMasksForDialect marks the byte offsets of body that are SQL code:
+// everything outside string literals, dollar-quoted strings, line comments and
+// block comments. Quoted identifiers are code, but their contents are copied
+// through without being re-scanned, so "a--b" is one identifier rather than
+// the start of a comment. The masks are computed over the same string the
+// caller searches, so no offset can slide out from under them.
 //
-// The mask is computed over the same string the caller searches, so no offset
-// can slide out from under it.
-func sqlCodeMask(body string) []bool {
-	return sqlMasksForDialect(body, "").code
-}
-
-// sqlMasksForDialect adds the target's nonstandard lexical forms, as its
-// descriptor states them, without changing the generic PostgreSQL-oriented
-// scanner: the line comments it opens beside -- and /* ... */, such as the #
+// The scanner is PostgreSQL-oriented. It adds the target's nonstandard lexical
+// forms, as its descriptor states them, without changing those rules: the line
+// comments it opens beside -- and /* ... */, such as the #
 // of the MySQL family and ClickHouse's # and //, and the backslash escapes of
 // its strings and of its quoted names. MySQL's catalog writes a view's
 // strings that way, as 'it\'s'. A target whose descriptor names a lexer of
@@ -1075,14 +1047,18 @@ func sqlCodeMask(body string) []bool {
 func sqlMasksForDialect(body, dialect string) sqlMasks {
 	described, _ := platform.Lookup(dialect)
 	lexical := described.Lexical
+	brackets := described.Quoting.Style == descriptor.QuoteBracket
 	if lexical.Lexer != "" {
-		return lexerMasks(body, dialectlexer.FromDescriptor(described))
+		masks := lexerMasks(body, dialectlexer.FromDescriptor(described))
+		masks.bracketNames = brackets
+		return masks
 	}
 	masks := sqlMasks{
 		code:             make([]bool, len(body)),
 		quotedIdentifier: make([]bool, len(body)),
 		quoteOpen:        make([]bool, len(body)),
 		quoteClose:       make([]bool, len(body)),
+		bracketNames:     brackets,
 	}
 	opensLineComment := func(rest string) bool {
 		return slices.ContainsFunc(lexical.LineComments, func(marker string) bool {
@@ -1130,6 +1106,10 @@ type sqlMasks struct {
 	quotedIdentifier []bool
 	quoteOpen        []bool
 	quoteClose       []bool
+	// bracketNames reports that the target quotes a name in brackets, as SQL
+	// Server writes [dbo].[orders]. The masks mark no bracket: the spellings
+	// match one as written, and [dottedNames] reads it as a quoted part.
+	bracketNames bool
 }
 
 // lexerMasks marks a body by the tokens of the lexer its dialect's
@@ -1273,10 +1253,6 @@ func isIdentifierBoundary(value string, index int) bool {
 	}
 	r, _ := utf8.DecodeRuneInString(value[index:])
 	return !isSQLIdentifierRune(r)
-}
-
-func isQualifiedIdentifierTail(value string, index int) bool {
-	return index >= 0 && index < len(value) && value[index] == '.'
 }
 
 func isSQLIdentifierRune(r rune) bool {

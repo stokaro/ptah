@@ -844,6 +844,19 @@ materialized view is created after it, and so is a function the plan adds
 whose result type is such a view. The rollback migration does the same in the
 other direction.
 
+Both rebuilds find a reader by the names its body uses, each part quoted or
+not: `"reporting"."order_totals"`, `"reporting".order_totals` and
+`reporting.order_totals` all read the materialized view
+`reporting.order_totals`. A name with a schema reads only that schema's object.
+A name without one may read an object of that name in any schema, so a view
+that reads a namesake in another schema is rebuilt too.
+
+A materialized view declared `WITH NO DATA` is compared by its query, because
+the server does not store the clause. An unchanged declaration plans nothing. A
+plan that creates the view again creates it `WITH NO DATA`, so it is empty until
+a `REFRESH MATERIALIZED VIEW`. The rollback migration creates it from the
+definition the server reports, which has no clause, so the rollback fills it.
+
 ## What a view rebuild keeps
 
 Both rebuilds drop each object by name, readers first. In Ptah's own statement
@@ -876,8 +889,8 @@ is a statement someone runs, and `CONCURRENTLY` is an option of that statement;
 neither is state the database holds, so nothing Ptah reads back could report a
 refresh policy or diff one. What Ptah does manage keeps the view current on its
 own terms: `CREATE MATERIALIZED VIEW` populates the view, and a changed body is
-reconciled as a `DROP` and a `CREATE` that populates it again. Measured on
-PostgreSQL 18.
+reconciled as a `DROP` and a `CREATE` that populates it again, unless the
+declaration says `WITH NO DATA`. Measured on PostgreSQL 18.
 
 The case that is left over is a view no schema change touched, going stale
 because its **source data** moved. Schema reconciliation cannot observe that,
@@ -1354,6 +1367,13 @@ change to a materialized view the view reads
 ([stokaro/ptah#4964](https://github.com/stokaro/ptah/issues/4964)). The error
 names the policy. Change the policy so it no longer reads the view in one
 migration, and the view or the column in the next.
+
+A policy reads a view by the names in its expressions, each part quoted or not.
+A name without a schema is read in the connection's default schema, the first
+schema of its `search_path` that exists; the schemas after it are not
+consulted. With `public` the default, a policy that reads `reporting.item_skus`
+does not stop a plan that rebuilds `item_skus`, and a policy that reads
+`item_skus` does not stop a plan that rebuilds `reporting.item_skus`.
 
 Both ways of taking the protection away are lint findings at error severity:
 `DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is
