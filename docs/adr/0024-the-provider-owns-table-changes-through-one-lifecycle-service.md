@@ -118,3 +118,7 @@ coverage table in the working notes tracks which files remain.
   and its major version is stable from Ptah 1.0 on. Before that release an
   incompatible change may still raise it. A facet model added later is a
   compatible addition and raises the minor version.
+- [ADR 0035](0035-the-operators-planning-policy-reaches-the-provider.md)
+  carries the table-rebuild input: `PlanFeaturesRequest.policy` with
+  `allow_table_rebuild` and the words a refusal names, behind the feature
+  `planning.policy`.

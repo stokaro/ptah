@@ -42,6 +42,11 @@ a new record that names it, and its own status line is updated to point there.
 | [0030](0030-ptah-compat-resolves-providers-through-the-native-pipeline.md) | ptah-compat resolves providers through the native pipeline | Accepted |
 | [0031](0031-official-providers-are-installed-separately-and-ptah-pins-no-provider-release.md) | Official providers are installed separately, and Ptah pins no provider release | Accepted |
 | [0032](0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md) | The embedding store is a provider service, and the host keeps the lifecycle | Accepted |
+| [0033](0033-common-objects-reach-a-provider-through-the-common-wire.md) | Common objects reach a provider through the common wire | Accepted |
+| [0034](0034-a-provider-renders-text-units-where-the-host-writes-text.md) | A provider renders text units where the host writes text | Accepted |
+| [0035](0035-the-operators-planning-policy-reaches-the-provider.md) | The operator's planning policy reaches the provider | Accepted |
+| [0036](0036-a-provider-claims-yaml-entry-keys-and-hcl-blocks.md) | A provider claims YAML entry keys and HCL blocks | Accepted |
+| [0037](0037-a-provider-encodes-the-source-it-decodes.md) | A provider encodes the source it decodes | Accepted |
 
 ## Writing one
 

@@ -290,3 +290,10 @@ These are for the future implementation. None holds today.
   current Ptah, and it runs the dev-database provisioning criterion as well.
   The criteria about provider selection, process lifetime and strict mode are
   host behavior, and Ptah's CI proves them on the fixture provider.
+- [ADR 0035](0035-the-operators-planning-policy-reaches-the-provider.md)
+  decides the four YDB behaviors "The built-in YDB implementation goes" leaves
+  open. The table-rebuild input travels in `PlanFeaturesRequest.policy`, and
+  secret rotation in a `RequestedChange` the owner resolves from the operator's
+  spelling, both behind `planning.policy`. The migrate timeout and the dev
+  snapshot realm need no contract change: the host reads the session's timeout
+  capabilities and the provider's `database.dev-realms` declaration.

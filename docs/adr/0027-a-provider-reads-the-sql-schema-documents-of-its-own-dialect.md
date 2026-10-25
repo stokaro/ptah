@@ -302,3 +302,10 @@ These are for the future implementation. None holds today.
   corpus, the mutation test and the host end-to-end test therefore run in the
   plugin's CI. The SDK conformance tests in `provider-sdk/integration` stay in
   Ptah's CI, on the fixture provider.
+- [ADR 0033](0033-common-objects-reach-a-provider-through-the-common-wire.md)
+  uses `SQLView`, `SQLSequence`, `SQLRole` and `SQLGrant` as the declared shapes
+  of the common-object wire outside `ReadSQLSchema` too. It adds
+  `SQLRole.password_declared` and `SQLGrant.columns`, which a `SQLSchema` reply
+  carries only when both sides list `schema.common-objects`.
+- [ADR 0036](0036-a-provider-claims-yaml-entry-keys-and-hcl-blocks.md) decides
+  the HCL question that "Decided questions" leaves to a later record.
