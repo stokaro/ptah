@@ -394,8 +394,8 @@ func TestNativeVerbsReportAMissingProviderInTheirJSON(t *testing.T) {
 
 // TestNativeVerbsStopAtSQLAProviderConnectionDoesNotTake holds the limit the
 // provider page states: a provider's connection takes no database/sql call, so
-// a verb that queries the database or runs a statement of its own on it is
-// refused once it reaches the provider, and says why.
+// a verb that runs a statement of its own on it is refused once it reaches the
+// provider, and says why. schema test applies the desired schema that way.
 func TestNativeVerbsStopAtSQLAProviderConnectionDoesNotTake(t *testing.T) {
 	c := qt.New(t)
 	f := newDevCLI(c)
@@ -405,7 +405,6 @@ func TestNativeVerbsStopAtSQLAProviderConnectionDoesNotTake(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"db verify", []string{"db", "verify", "--db-url", "{db}", "--checks", "{checks}"}},
 		{"schema test", []string{"schema", "test", "--db-url", "{scratch}", "--dir", "{cases}", "--schema-file", "{schema}"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {

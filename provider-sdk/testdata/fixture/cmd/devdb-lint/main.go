@@ -11,6 +11,7 @@ import (
 
 	"example.com/ptah-fixture-provider/backend"
 	"example.com/ptah-fixture-provider/devdb"
+	"example.com/ptah-fixture-provider/statements"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
 )
@@ -36,7 +37,7 @@ func main() {
 	err := runtime.Serve(runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Transactions: owner, History: owner, Locks: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner,
-		DevProvisioner: owner, DevCleaner: owner, ReplayGuard: owner, Linter: backend.Linter{},
+		DevProvisioner: owner, DevCleaner: owner, ReplayGuard: owner, Statements: &statements.Service{Sessions: owner}, Linter: backend.Linter{},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

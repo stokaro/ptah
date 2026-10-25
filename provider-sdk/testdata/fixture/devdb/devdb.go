@@ -1,7 +1,9 @@
 // Package devdb serves the fixture's dev databases on SQLite with the
 // services contract 25.1 adds: their cleanup, the replay guard, realms in a
-// database the operator names, and a statement timeout on Execute. It lives
-// apart from package backend, which keeps to contract 25.0.
+// database the operator names, and a statement timeout on Execute. Its
+// provider also declares the operator statements of contract 25.4, which
+// package statements serves. It lives apart from package backend, which keeps
+// to contract 25.0.
 package devdb
 
 import (
@@ -41,7 +43,7 @@ type Provider struct {
 // the provider's, and dev realms are the engine's alone.
 func Features() (providerFeatures, engineFeatures []string) {
 	services := []string{provider.TransactionsFeature, provider.HistoryFeature, provider.LocksFeature, provider.DevDatabaseFeature,
-		provider.DevCleanupFeature, provider.ReplayGuardFeature}
+		provider.DevCleanupFeature, provider.ReplayGuardFeature, provider.StatementsFeature}
 	return append(slices.Clone(services), provider.StatementTimeoutFeature), append(services, provider.DevRealmsFeature)
 }
 
@@ -59,14 +61,16 @@ func Description() *protocol.Description {
 }
 
 // BareDescription is Description with an engine that declares none of the dev
-// database services the provider declares: a provider of several engines may
-// clean and guard the dev databases of one and not of another.
+// database services and no operator statements, which the provider declares: a
+// provider of several engines may clean, guard and run statements on one and
+// not on another.
 func BareDescription() *protocol.Description {
 	description := Description()
 	description.SemanticIdentity += "-bare"
 	engine := description.Engines[0]
 	engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool {
-		return feature == provider.DevCleanupFeature || feature == provider.ReplayGuardFeature || feature == provider.DevRealmsFeature
+		return feature == provider.DevCleanupFeature || feature == provider.ReplayGuardFeature || feature == provider.DevRealmsFeature ||
+			feature == provider.StatementsFeature
 	})
 	return description
 }
