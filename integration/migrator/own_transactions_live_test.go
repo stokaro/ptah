@@ -310,7 +310,9 @@ func TestMigrateUpOwnTransactions_RetryAfterTheFilesTransactionCommittedLive(t *
 // is never sent: the migrator rolls the transaction back and records the
 // statements before it as applied, not the transaction. The trigger refuses
 // exactly that mark, so a mark that names COMMIT, or counts the transaction,
-// lets the run succeed.
+// lets the run succeed. When the failure is recorded, the trigger also counts
+// the sessions still inside the file's transaction into owntx_c: the rollback
+// comes first, so there are none.
 func TestMigrateUpOwnTransactions_MarkBeforeCommitFailsLive(t *testing.T) {
 	c := qt.New(t)
 	run := newOwnTransactionsRun(c, postgresTestURL(t),
@@ -320,10 +322,14 @@ func TestMigrateUpOwnTransactions_MarkBeforeCommitFailsLive(t *testing.T) {
 	c.Cleanup(func() {
 		_, _ = run.conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS owntx_refuse_"+run.suffix+"() CASCADE")
 	})
+	run.exec(c, "CREATE TABLE owntx_c_"+run.suffix+" (open_sessions bigint)")
 	run.exec(c, "CREATE FUNCTION owntx_refuse_"+run.suffix+"() RETURNS trigger LANGUAGE plpgsql AS $$\n"+
 		"BEGIN\n"+
 		"  IF NEW.error_stmt = 'BEGIN' AND NEW.applied = 1 AND NEW.error LIKE 'statement execution outcome is unknown%' THEN\n"+
 		"    RAISE EXCEPTION 'owntx: the mark is refused';\n"+
+		"  ELSIF NEW.error LIKE '%the mark is refused%' THEN\n"+
+		"    INSERT INTO owntx_c_"+run.suffix+" SELECT count(*) FROM pg_stat_activity\n"+
+		"      WHERE state LIKE 'idle in transaction%' AND query LIKE '%owntx_b_"+run.suffix+"%';\n"+
 		"  END IF;\n"+
 		"  RETURN NEW;\n"+
 		"END $$")
@@ -338,6 +344,11 @@ func TestMigrateUpOwnTransactions_MarkBeforeCommitFailsLive(t *testing.T) {
 	applied, failure := run.revision(c)
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(failure, qt.Contains, "the mark is refused")
+	var checks, open int
+	c.Assert(run.conn.QueryRowContext(context.Background(),
+		"SELECT count(*), COALESCE(max(open_sessions), 0) FROM owntx_c_"+run.suffix).Scan(&checks, &open), qt.IsNil)
+	c.Assert(checks > 0, qt.IsTrue, qt.Commentf("the failure was never recorded through the trigger"))
+	c.Assert(open, qt.Equals, 0)
 }
 
 // A statement observer that refuses a statement after it ran stops the file.
