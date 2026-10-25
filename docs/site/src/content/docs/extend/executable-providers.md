@@ -29,6 +29,7 @@ sourceOfTruth:
   - "integration/providercli/provider_text_units_e2e_test.go"
   - "integration/providercli/provider_common_objects_e2e_test.go"
   - "integration/providercli/provider_entry_keys_e2e_test.go"
+  - "integration/providercli/provider_hcl_claims_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -722,6 +723,19 @@ attributes of that directive the same way. The provider receives them beside its
 own, such as an index's `type`, and they stay Ptah's. A value a column or index
 key declares belongs to that column or index. One a table key declares belongs
 to the table or to a column of it, and a document key's to a table.
+
+`source.hcl` lets an engine claim HCL: top-level blocks, blocks in a `table`,
+and attributes of the `table`, `index`, routine and `materialized` blocks. Ptah
+checks and evaluates each block as it does its own, then sends the provider the
+values, never HCL text, with the index's `type` or `ops` where an index claim
+inherits them. A value belongs to what its block is about: the index, the
+table, the routine or the view. A top-level block's value is a setting of the
+table it names. The provider also states what the document holds of its models,
+from the claims and from the `ptah:not-described` entries of the kinds the
+engine lists in `header_kinds`. A captured `ptah:feature-coverage` header is
+read by Ptah with the provider's model definitions. A decode reply records no
+subject a header leaves undescribed, so a provider can refuse a document by such
+an entry but cannot record the limit.
 
 A provider can also claim the group of its own engine in a table's `platform`
 key, where the common syntax holds platform properties. The claim is a

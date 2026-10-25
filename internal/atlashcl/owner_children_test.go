@@ -20,7 +20,7 @@ type shapeDecoder struct {
 }
 
 func (d shapeDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	return hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}, nil
 }
 

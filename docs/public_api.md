@@ -3896,7 +3896,10 @@ shape. `schema inspect` writes its document for the inspected target.
   and struct identity in `Claim.Table`. Returned facets attach to that exact
   table, so equal names in different schemas stay separate. An `InTable` claim carries its table
   in `Claim.Table`, and its `Facets` go to that table. `Claim.At` says where a
-  block stands, for a refusal that names two blocks.
+  block stands, for a refusal that names two blocks, and `Claim.Range` and
+  `ClaimChild.Range` give the file, the first byte and the byte after the
+  last, each with its line and column, for an owner that positions what it
+  reads.
 - A `ClaimError` refuses one block, positioned at it. Of an owner's refusal and
   the reader's own, the reader reports the one earlier in the document, so the
   result does not depend on when the owner runs. A refusal that names no
@@ -3908,7 +3911,9 @@ shape. `schema inspect` writes its document for the inspected target.
   the extension lists in `Header`, and, when `CapturedCoverage` is set, the
   bodies of the document's `ptah:feature-coverage` header. A document with
   that header is refused when no selected owner reads it. `Declared` holds
-  the objects the document declares.
+  the objects the document declares, and `Claims` the owner's claims of the
+  document, as its decoder received them, which `Set.Coverage` takes from
+  the document's `Matches`.
 
 `engine.Provider.HCL` registers an extension, and `engine.Runtime.HCL` returns
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and

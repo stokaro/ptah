@@ -87,6 +87,10 @@ var hostFeatures = []string{
 	// keys and attributes of an entry its claim reads with its own; see
 	// Host.yamlExtension and claimedExtension.
 	provider.EntryKeysFeature,
+	// A provider's HCL blocks and the attributes it adds to the frontend's
+	// blocks, read by the frontend and decoded by the provider; see
+	// Host.hclExtensions.
+	provider.HCLSourceFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
@@ -118,6 +122,10 @@ func Start(ctx context.Context, spec Spec) (*Host, error) {
 		return nil, fmt.Errorf("%w: %w", provider.ErrProtocol, err)
 	}
 	if err = checkSQLHeaderKinds(host.description); err != nil {
+		client.Close()
+		return nil, err
+	}
+	if err = checkHCLSource(host.description); err != nil {
 		client.Close()
 		return nil, err
 	}
