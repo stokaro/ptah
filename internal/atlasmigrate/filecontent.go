@@ -435,8 +435,10 @@ func withTxModeNoneDirective(content MigrationFileContent) MigrationFileContent 
 //
 // The comment heads the first statement a node renders, and the node's other
 // statements follow under it, as the community binary writes the statements
-// of one change. A comment-only piece, such as a planner's note, is joined to
-// the statement after it and takes that statement's node.
+// of one change. A node that renders only a comment, such as a planner's note
+// about a change it cannot make, is a statement of its own with no change
+// comment: [planner.RenderedPlan.PlannedStatements] joins it to the statement
+// after it, which would put it under that statement's change.
 //
 // [planner.RenderedPlan.PlannedStatements] runs without a dialect here, which
 // leaves the boundaries to the generic splitter. The dialect's own grammar
@@ -464,11 +466,19 @@ func renderMigrationStatements(
 	if err != nil {
 		return nil, err
 	}
+	fragments, err := output.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
 	statements := make([]Statement, 0, len(planned))
 	named := -1
 	for _, piece := range planned {
 		statement := Statement{SQL: piece.SQL}
 		if piece.Node >= 0 && piece.Node != named {
+			if note, rest, ok := cutCarriedNote(piece.SQL, fragments[named+1:piece.Node]); ok {
+				statements = append(statements, Statement{SQL: note})
+				statement.SQL = rest
+			}
 			named = piece.Node
 			statement.Change, _ = name(nodes[piece.Node])
 		}
@@ -477,14 +487,44 @@ func renderMigrationStatements(
 	return statements, nil
 }
 
-// reverseChange names, for a statement of a rollback, the forward change it
-// undoes, written the way the community binary writes a rollback file.
-func reverseChange(node ast.Node) (string, bool) {
-	undone, ok := atlaschange.Undone(node)
-	if !ok {
-		return "", false
+// cutCarriedNote splits off the start of sql the comment-only fragments
+// between rendered, the nodes that rendered no statement of their own before
+// it, contributed. It reports false when they contributed nothing or sql does
+// not start with them.
+func cutCarriedNote(sql string, between []string) (note, rest string, ok bool) {
+	parts := make([]string, 0, len(between))
+	for _, fragment := range between {
+		if text := strings.TrimSpace(fragment); text != "" {
+			parts = append(parts, text)
+		}
 	}
-	return "reverse: " + undone, true
+	note = strings.Join(parts, "\n")
+	if note == "" || !sqlscript.CommentOnly(note) {
+		return "", "", false
+	}
+	body := strings.TrimLeft(sql, " \t\r\n")
+	if !strings.HasPrefix(body, note) {
+		return "", "", false
+	}
+	rest = strings.TrimLeft(body[len(note):], " \t\r\n")
+	if rest == "" {
+		return "", "", false
+	}
+	return note, rest, true
+}
+
+// reverseChange returns the namer for the statements of a rollback planned
+// against forward: the forward change each statement undoes, written the way
+// the community binary writes a rollback file.
+func reverseChange(forward []ast.Node) func(ast.Node) (string, bool) {
+	undone := atlaschange.Rollback(forward)
+	return func(node ast.Node) (string, bool) {
+		change, ok := undone(node)
+		if !ok {
+			return "", false
+		}
+		return "reverse: " + change, true
+	}
 }
 
 // splitNoTransactionPlanNodes partitions the planned nodes into statements

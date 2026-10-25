@@ -250,10 +250,11 @@ func retypedTables(diff *difftypes.SchemaDiff) []string {
 // went first. CASCADE is then written only in Ptah's own statement style, where
 // it also takes the readers the plan does not know of, such as a view in a
 // schema the run leaves out; the exact style leaves the server to refuse
-// those.
-func (p *Planner) dropRebuiltViewLikes(result []ast.Node, rebuild viewRebuild) []ast.Node {
+// those. The exception is an object a later removal depends on, a removed
+// routine or a policy of a removed table; see [removalOutlivesDrop].
+func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	for _, object := range deporder.ViewLikesForDropForDialect(rebuild.dropped(), p.targetDialect()) {
-		result = append(result, p.dropViewLikeNode(object, p.cascades(false)))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
 	}
 	return result
 }

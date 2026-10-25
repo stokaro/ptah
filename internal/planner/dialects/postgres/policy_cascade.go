@@ -24,12 +24,13 @@ import (
 // The refusal holds in both statement styles. A view rebuild drops its objects
 // with CASCADE only in Ptah's own style; the exact style drops them without
 // it, and the server refuses that drop while the policy reads the relation, so
-// the plan could not apply either (stokaro/ptah#4965).
+// the plan could not apply either (stokaro/ptah#4965). The error says which of
+// the two the plan would run into.
 //
 // The objects answer for themselves through [schemaext.RelationReader], so
 // this planner names no owner. A diff built without a comparison carries no
 // observation and is not checked.
-func refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
+func (p *Planner) refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
 	if diff.TablePreparation == nil {
 		return nil
 	}
@@ -48,11 +49,17 @@ func refusePoliciesLostToCascade(diff *difftypes.SchemaDiff) error {
 				continue
 			}
 			for _, relation := range dropped {
-				if reader.ReadsRelation(relation) {
-					return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
-						"and nothing recreates it; change it so it no longer reads %s first, then change %s",
+				if !reader.ReadsRelation(relation) {
+					continue
+				}
+				if p.exact() {
+					return fmt.Errorf("%w: the plan drops %s, which %s reads, and PostgreSQL refuses the drop while it does; "+
+						"nothing recreates it, so change it so it no longer reads %s first, then change %s",
 						ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
 				}
+				return fmt.Errorf("%w: the plan drops %s with CASCADE, which also drops %s, whose definition reads it, "+
+					"and nothing recreates it; change it so it no longer reads %s first, then change %s",
+					ptaherr.ErrUnsupportedFeature, relation, object.Ref, relation, relation)
 			}
 		}
 	}

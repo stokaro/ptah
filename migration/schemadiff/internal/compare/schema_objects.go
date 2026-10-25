@@ -315,15 +315,17 @@ func FunctionsWithSemantics(
 			// `function name "f" is not unique` whenever the schema holds more
 			// than one, and IF EXISTS does not help because the refusal is
 			// about ambiguity rather than existence (stokaro/ptah#2296).
-			removal := difftypes.RoutineRemoval{
-				Name:      databaseNames[identity],
-				Signature: routine.DropIdentity(),
-			}
+			//
+			// And so does the definition the database holds: what the routine's
+			// parameters and result name is what a drop before it has to wait
+			// for, and a rollback creates the routine again from it.
+			removed := reportedRoutine(routine)
+			removed.Name = databaseNames[identity]
 			if identity.Kind() == objectidentity.KindProcedure {
-				diff.ProceduresRemoved = append(diff.ProceduresRemoved, routineFromRemoval(removal))
+				diff.ProceduresRemoved = append(diff.ProceduresRemoved, removed)
 				continue
 			}
-			diff.FunctionsRemoved = append(diff.FunctionsRemoved, routineFromRemoval(removal))
+			diff.FunctionsRemoved = append(diff.FunctionsRemoved, removed)
 		}
 	}
 
@@ -1143,14 +1145,6 @@ func reportedRoutine(reported catalog.Function) difftypes.RoutineChange {
 			Comment:    reported.Comment,
 		},
 		Signature: reported.DropIdentity(),
-	}
-}
-
-// routineFromRemoval carries what the overload pairing already resolved.
-func routineFromRemoval(removal difftypes.RoutineRemoval) difftypes.RoutineChange {
-	return difftypes.RoutineChange{
-		Function:  schemamodel.Function{Name: removal.Name},
-		Signature: removal.Signature,
 	}
 }
 

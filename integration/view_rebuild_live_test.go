@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,13 +26,18 @@ import (
 	"ptah.run/migration/schemadiff"
 )
 
-// viewRebuildStyles is both statement styles a plan is spelled in.
+// viewRebuildStyles is both statement styles a plan is spelled in, each with
+// the refusal it writes for a lost policy, as a pattern of the dropped
+// relation and the policy.
 var viewRebuildStyles = []struct {
-	name  string
-	style planext.StatementStyle
+	name    string
+	style   planext.StatementStyle
+	refusal string
 }{
-	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
-	{name: "the exact style", style: planext.StatementStyleExact},
+	{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
+		refusal: `(?s).*drops %[1]s with CASCADE, which also drops %[2]s, whose definition reads it.*`},
+	{name: "the exact style", style: planext.StatementStyleExact,
+		refusal: `(?s).*drops %[1]s, which %[2]s reads, and PostgreSQL refuses the drop while it does.*`},
 }
 
 // viewRebuildTarget is a scratch PostgreSQL database built from schema.
@@ -218,6 +224,7 @@ func TestViewRebuildRefusesALostPolicyLive(t *testing.T) {
 		name     string
 		live     string
 		declared string
+		relation string
 		policy   string
 		want     []string
 	}{
@@ -235,8 +242,9 @@ CREATE TABLE orders (id integer PRIMARY KEY, tenant_id integer NOT NULL);
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_visible ON orders USING (tenant_id IN (SELECT id FROM active_tenants));
 `,
-			policy: `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`,
-			want:   []string{"orders/tenant_visible"},
+			relation: "active_tenants",
+			policy:   `ptah\.run/pgpolicy/policy public\.orders\.tenant_visible`,
+			want:     []string{"orders/tenant_visible"},
 		},
 		{
 			name: "a materialized view change under a view a policy reads",
@@ -248,8 +256,9 @@ CREATE POLICY audit_visible ON audit USING (EXISTS (SELECT 1 FROM order_report))
 ALTER TABLE audit ENABLE ROW LEVEL SECURITY;
 CREATE POLICY audit_visible ON audit USING (EXISTS (SELECT 1 FROM order_report));
 `,
-			policy: `(?s).*drops order_report with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.audit\.audit_visible, whose definition reads it.*`,
-			want:   []string{"audit/audit_visible"},
+			relation: "order_report",
+			policy:   `ptah\.run/pgpolicy/policy public\.audit\.audit_visible`,
+			want:     []string{"audit/audit_visible"},
 		},
 	}
 	for _, test := range tests {
@@ -261,7 +270,7 @@ CREATE POLICY audit_visible ON audit USING (EXISTS (SELECT 1 FROM order_report))
 				statements, err := planRebuildLive(c, url, test.declared, style.style)
 
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(err, qt.ErrorMatches, test.policy)
+				c.Assert(err, qt.ErrorMatches, fmt.Sprintf(style.refusal, test.relation, test.policy))
 				c.Assert(statements, qt.IsNil)
 				c.Assert(publicPolicies(c, db), qt.DeepEquals, test.want)
 			})

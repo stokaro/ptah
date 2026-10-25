@@ -28,8 +28,9 @@ func changeCommentNodes() []ast.Node {
 // pinned community binary v1.3.0 writes: capitalized by the `sql` helper of a
 // native file, as the change names it in a file of a layout another tool
 // reads. The comment heads the statement a node renders. A planner's own note
-// is a report, not a change: it gets no change comment and stays with the
-// statement after it.
+// is a report, not a change: it is a statement of its own with no change
+// comment, so it does not land under the change of the statement after it,
+// which may be another change altogether.
 func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -43,8 +44,8 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 				"CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n);\n" +
 				"-- Create index \"owners_id_idx\" to table: \"owners\"\n" +
 				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\");\n" +
-				"-- Drop \"archive\" table\n" +
 				"-- NOTE: archive is dropped by request\n" +
+				"-- Drop \"archive\" table\n" +
 				"DROP TABLE \"archive\";\n",
 		},
 		{
@@ -54,8 +55,8 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 				"CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n);\n" +
 				"-- create index \"owners_id_idx\" to table: \"owners\"\n" +
 				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\");\n" +
-				"-- drop \"archive\" table\n" +
 				"-- NOTE: archive is dropped by request\n" +
+				"-- drop \"archive\" table\n" +
 				"DROP TABLE \"archive\";\n",
 		},
 	}
