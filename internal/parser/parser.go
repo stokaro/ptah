@@ -571,11 +571,11 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	if orMode == "ALTER" {
 		switch {
 		case p.current.MatchIdentifierValue("FUNCTION"):
-			return p.parseCreateRoutine("FUNCTION", statementStart)
+			return replacingRoutine(p.parseCreateRoutine("FUNCTION", statementStart))
 		case p.current.MatchIdentifierValue("PROC"):
-			return p.parseCreateRoutine("PROC", statementStart)
+			return replacingRoutine(p.parseCreateRoutine("PROC", statementStart))
 		case p.current.MatchIdentifierValue("PROCEDURE"):
-			return p.parseCreateRoutine("PROCEDURE", statementStart)
+			return replacingRoutine(p.parseCreateRoutine("PROCEDURE", statementStart))
 		default:
 			return nil, fmt.Errorf("unsupported CREATE OR ALTER target: %s at position %d", p.current.Value, p.current.Start)
 		}
@@ -590,7 +590,7 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return replacingRoutine(p.parseCreateRoutine("PROCEDURE", statementStart))
 	}
 	if p.current.MatchIdentifierValue("DEFINER") {
-		return p.parseCreateDefinerRoutine(statementStart)
+		return replacingRoutine(p.parseCreateDefinerRoutine(statementStart))
 	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
 		node, err := p.parseCreateTrigger(statementStart)
@@ -606,15 +606,23 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
 }
 
-// replacingRoutine keeps OR REPLACE on a routine parsed into a
-// CreateFunctionNode. Without it the node renders as a plain CREATE, which
-// fails on a routine that exists instead of replacing it. A routine kept as
-// raw SQL carries its own text and is returned unchanged.
+// replacingRoutine keeps OR REPLACE, or SQL Server's OR ALTER, on a routine
+// parsed into a CreateFunctionNode or a RoutineNode. Without it the first node
+// renders as a plain CREATE, which fails on a routine that exists instead of
+// replacing it, and the reader keeps the first of two definitions where the
+// server keeps the second. A routine kept as raw SQL carries its own text and
+// is returned unchanged.
 func replacingRoutine(node ast.Node, err error) (ast.Node, error) {
-	if function, ok := node.(*ast.CreateFunctionNode); ok && err == nil {
-		return function.SetReplace(), nil
+	if err != nil {
+		return node, err
 	}
-	return node, err
+	switch routine := node.(type) {
+	case *ast.CreateFunctionNode:
+		return routine.SetReplace(), nil
+	case *ast.RoutineNode:
+		routine.Replace = true
+	}
+	return node, nil
 }
 
 // advance moves to the next token.

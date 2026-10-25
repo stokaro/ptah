@@ -184,8 +184,26 @@ func TestRunContext_CountsCutNamesByObject(t *testing.T) {
 	}
 }
 
-// With PTAH_LOG_FORMAT=json the summary is a JSON record at warning level
-// beside the objects' records, so the error stream holds no text line.
+// recordLevels is the level, category and count of each JSON record in
+// logged, in order.
+func recordLevels(c *qt.C, logged string) []string {
+	c.Helper()
+	var levels []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logged), "\n") {
+		var record struct {
+			Level    string  `json:"level"`
+			Category string  `json:"category"`
+			Count    float64 `json:"count"`
+		}
+		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil, qt.Commentf("%s", line))
+		levels = append(levels, record.Level+" "+record.Category+" "+strconv.Itoa(int(record.Count)))
+	}
+	return levels
+}
+
+// With PTAH_LOG_FORMAT=json the summary is a JSON record at warning level on
+// the error stream, beside the objects' records in the log, so neither holds
+// a text line.
 func TestRunContext_ReportsCutNamesAsRecordsInAJSONLog(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(cliobs.LogFormatEnvVar, "json")
@@ -202,19 +220,54 @@ func TestRunContext_ReportsCutNamesAsRecordsInAJSONLog(t *testing.T) {
 	code := root.RunContext(c.Context(), cmd, "schema", "validate", "--dialect", "postgres", "--schema-file", path)
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stderr.String(), qt.Equals, "")
-	var levels []string
-	for line := range strings.SplitSeq(strings.TrimSpace(logged.String()), "\n") {
-		var record struct {
-			Level    string  `json:"level"`
-			Category string  `json:"category"`
-			Count    float64 `json:"count"`
-			Message  string  `json:"msg"`
+	c.Assert(recordLevels(c, logged.String()), qt.DeepEquals, []string{"DEBUG truncated-name 0", "DEBUG truncated-name 0", "DEBUG truncated-name 0"})
+	c.Assert(recordLevels(c, stderr.String()), qt.DeepEquals, []string{"WARN truncated-name 3"})
+}
+
+// --log-format json on a command that takes it makes the summary a JSON
+// record too: `migrations status` reading a project file that holds two
+// settings Atlas ignores.
+func TestRunContext_ReportsRecordsUnderTheLogFormatFlag(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	t.Chdir(dir)
+	c.Assert(os.Mkdir("migrations", 0o755), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url     = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "status.db"))+`"
+  project = "ignored"
+  owner   = "ignored"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	cmd := root.NewRootCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	code := root.RunContext(c.Context(), cmd, "migrations", "status", "--config", "atlas.hcl", "--env", "local", "--log-format", "json")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
+	c.Assert(warningLinesOf(stdout.String()+stderr.String()), qt.HasLen, 0)
+	c.Assert(recordLevels(c, lastLine(stderr.String())), qt.DeepEquals, []string{"WARN ignored-atlas-hcl 2"})
+}
+
+// warningLinesOf is the text warning lines of output.
+func warningLinesOf(output string) []string {
+	var warnings []string
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(line, "warning: ") {
+			warnings = append(warnings, line)
 		}
-		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil, qt.Commentf("%s", line))
-		levels = append(levels, record.Level+" "+record.Category+" "+strconv.Itoa(int(record.Count)))
 	}
-	c.Assert(levels, qt.DeepEquals, []string{"DEBUG truncated-name 0", "DEBUG truncated-name 0", "DEBUG truncated-name 0", "WARN truncated-name 3"})
+	return warnings
+}
+
+// lastLine is the last line of output.
+func lastLine(output string) string {
+	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	return lines[len(lines)-1]
 }
 
 // The words a summary uses to list its objects name the switches they mean,

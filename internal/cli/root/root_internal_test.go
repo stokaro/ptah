@@ -156,7 +156,7 @@ func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
 			cmd.SetErr(&stderr)
 			tt.declare(cmd)
 
-			err := executeWithRecovery(cmd)
+			_, err := executeWithRecovery(cmd)
 
 			c.Assert(err, qt.ErrorMatches, "internal error: bad annotation")
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
@@ -315,6 +315,6 @@ func executeRoot(args ...string) (stdout, stderr string, err error) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs(args)
-	err = executeWithRecovery(cmd)
+	_, err = executeWithRecovery(cmd)
 	return out.String(), errOut.String(), err
 }
