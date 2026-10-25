@@ -33,12 +33,12 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/migration/lint"
@@ -102,6 +102,9 @@ type Report struct {
 // and the routine body reading the baseline's dependents are resolved with.
 type Runtime interface {
 	lintext.Runtime
+	// TargetResolver names the engines the runtime serves, through which a
+	// dialect of an engine only a provider serves is accepted.
+	schemaext.TargetResolver
 	schemalineage.Bodies
 	goschematodb.Runtime
 	schemacomparison.Runtime
@@ -245,7 +248,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return Report{}, err
 	}
-	prepared, err := prepareSourceOptions(opts, projectCfg)
+	prepared, err := prepareSourceOptions(ctx, opts, projectCfg)
 	if err != nil {
 		return Report{}, err
 	}
@@ -344,9 +347,11 @@ type preparedSourceOptions struct {
 }
 
 // PrepareSourceOptions resolves project-backed values and validates every
-// option whose error precedes migration source capture in Build.
-func PrepareSourceOptions(opts Options, projectCfg projectconfig.Config) (Options, error) {
-	prepared, err := prepareSourceOptions(opts, projectCfg)
+// option whose error precedes migration source capture in Build. ctx carries
+// the run's provider selection, which names the engine of a dev URL only a
+// provider serves.
+func PrepareSourceOptions(ctx context.Context, opts Options, projectCfg projectconfig.Config) (Options, error) {
+	prepared, err := prepareSourceOptions(ctx, opts, projectCfg)
 	if err != nil {
 		return Options{}, err
 	}
@@ -354,6 +359,7 @@ func PrepareSourceOptions(opts Options, projectCfg projectconfig.Config) (Option
 }
 
 func prepareSourceOptions(
+	ctx context.Context,
 	opts Options,
 	projectCfg projectconfig.Config,
 ) (preparedSourceOptions, error) {
@@ -365,7 +371,10 @@ func prepareSourceOptions(
 	if err != nil {
 		return preparedSourceOptions{}, err
 	}
-	devDialect, err := atlasurl.DialectFromURL(opts.DevURL)
+	// The engine, not only a built-in dialect: a dev URL of an engine only a
+	// provider serves names the provider's target, and is replayed on through
+	// that provider.
+	devDialect, err := providerurl.Dialect(ctx, opts.DevURL)
 	if err != nil {
 		return preparedSourceOptions{}, err
 	}
@@ -383,7 +392,7 @@ func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, e
 	if err := ValidateFailOn(opts.FailOn); err != nil {
 		return Options{}, err
 	}
-	dialect, err := canonicalDialect(opts.Dialect)
+	dialect, err := canonicalDialect(opts.Dialect, opts.Runtime)
 	if err != nil {
 		return Options{}, err
 	}
@@ -464,7 +473,7 @@ func loadEffectiveConfig(
 	// The policy file was canonicalized when it parsed, but a dialect taken
 	// from ptah.yaml above never passed through that reader, so it is resolved
 	// here. Both spellings reach the same exact-comparison engine.
-	canonical, ok := lintdialect.Canonical(cfg.Dialect)
+	canonical, ok := lintdialect.CanonicalIn(cfg.Dialect, opts.Runtime)
 	if !ok {
 		msg := fmt.Sprintf("invalid dialect %q in lint config: expected %s", cfg.Dialect, lintdialect.Expected)
 		return nil, errors.New(msg)
@@ -478,7 +487,7 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 	if opts.Changed.Dialect {
 		dialect = opts.Dialect
 	}
-	if err := validateDevURLDialect(dialect, devDialect); err != nil {
+	if err := validateDevURLDialect(dialect, devDialect, opts.Runtime); err != nil {
 		return "", err
 	}
 	if dialect == "" {
@@ -865,8 +874,8 @@ func (c *baselineCollector) observe(
 // question with two comparisons, `ptah migrations lint` accepted policy files
 // that `ptah migrations up` then refused, which is the inconsistency
 // stokaro/ptah#270 asked to remove.
-func validateDevURLDialect(dialect, devDialect string) error {
-	if lintdialect.Compatible(dialect, devDialect) {
+func validateDevURLDialect(dialect, devDialect string, served schemaext.TargetResolver) error {
+	if lintdialect.CompatibleIn(dialect, devDialect, served) {
 		return nil
 	}
 	return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
@@ -1811,8 +1820,8 @@ func ValidateFailOn(failOn string) error {
 // in place is deliberate: lint matches Rule.Dialects and picks its lexer by
 // exact comparison, so `--dialect pgx` left as written would run every check
 // except the PostgreSQL ones and still exit 0.
-func canonicalDialect(dialect string) (string, error) {
-	canonical, ok := lintdialect.Canonical(dialect)
+func canonicalDialect(dialect string, served schemaext.TargetResolver) (string, error) {
+	canonical, ok := lintdialect.CanonicalIn(dialect, served)
 	if !ok {
 		return "", fmt.Errorf("invalid --dialect value %q: expected %s", dialect, lintdialect.Expected)
 	}
@@ -1878,6 +1887,14 @@ func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration
 	if version != "" && deferred.dialect {
 		deferred.version = version
 		return declaration{deferred: deferred}, nil
+	}
+	if _, builtIn := lintdialect.Canonical(dialect); !builtIn && version == "" {
+		// An engine that is not a built-in lint dialect reached here through
+		// the run's runtime or its provider selection, which accepted it. This
+		// linter holds no capability ladder for it, so the target names the
+		// engine and leaves the capabilities to its owner, which judges the
+		// statements.
+		return declaration{resolved: lint.Target{Dialect: dialect}, deferred: deferred}, nil
 	}
 	target, err := lint.ResolveTarget(dialect, version)
 	if err != nil {

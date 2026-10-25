@@ -3,7 +3,10 @@
 package lintdialect
 
 import (
+	"strings"
+
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 )
 
 // Expected is the user-facing list of supported lint dialects.
@@ -54,6 +57,26 @@ func Canonical(dialect string) (string, bool) {
 	return described.Name, true
 }
 
+// CanonicalIn is [Canonical] for a run whose runtime may serve engines that are
+// not built-in dialects, such as one an executable provider serves. A name
+// Canonical refuses is supported when served registers it, and resolves to the
+// target name it selects: that target's owner splits and judges the
+// statements. A built-in dialect lint does not analyze, such as Oracle, stays
+// refused whatever served holds, and a nil served adds nothing.
+func CanonicalIn(dialect string, served schemaext.TargetResolver) (string, bool) {
+	if canonical, ok := Canonical(dialect); ok {
+		return canonical, true
+	}
+	if _, builtIn := platform.Lookup(dialect); builtIn || served == nil {
+		return "", false
+	}
+	selected, err := served.ResolveTarget(strings.ToLower(strings.TrimSpace(dialect)))
+	if err != nil {
+		return "", false
+	}
+	return selected.Name(), true
+}
+
 // Valid reports whether dialect is supported. The empty value means that the
 // hybrid lint scanner should run every dialect-independent rule.
 func Valid(dialect string) bool {
@@ -94,7 +117,22 @@ func Valid(dialect string) bool {
 // directory, and refusing it is cheap and high-signal. That refusal is what
 // this predicate keeps.
 func Compatible(policyDialect, databaseDialect string) bool {
-	policy, policyOK := Canonical(policyDialect)
+	return compatible(policyDialect, databaseDialect, Canonical)
+}
+
+// CompatibleIn is [Compatible] over the names [CanonicalIn] accepts. An
+// engine that is not a built-in dialect is a family of its own, so a policy
+// that names one governs migrations of that engine alone.
+func CompatibleIn(policyDialect, databaseDialect string, served schemaext.TargetResolver) bool {
+	return compatible(policyDialect, databaseDialect, func(dialect string) (string, bool) {
+		return CanonicalIn(dialect, served)
+	})
+}
+
+// compatible is the comparison of [Compatible], resolving each side with
+// canonical.
+func compatible(policyDialect, databaseDialect string, canonical func(string) (string, bool)) bool {
+	policy, policyOK := canonical(policyDialect)
 	if !policyOK {
 		return false
 	}
@@ -105,7 +143,7 @@ func Compatible(policyDialect, databaseDialect string) bool {
 	if policy == "" {
 		return true
 	}
-	database, databaseOK := Canonical(databaseDialect)
+	database, databaseOK := canonical(databaseDialect)
 	if !databaseOK {
 		return false
 	}

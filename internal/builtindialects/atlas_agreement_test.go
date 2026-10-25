@@ -36,6 +36,10 @@ var switchExtensionImages = []string{"ydb"}
 // dialect DialectFromURL read through platform.NormalizeDialect.
 var switchDockerDrivers = []string{"postgres", "mysql", "maria", "mariadb", "clickhouse", "sqlserver"}
 
+// switchUnmeasuredRowCounts is rowCountsUnreported of internal/cli/atlas: the
+// dialects whose driver answers a write with a row count it did not measure.
+var switchUnmeasuredRowCounts = []string{"ydb"}
+
 // switchDefaultPorts is defaultPorts of internal/atlasurl.
 var switchDefaultPorts = map[string]uint16{
 	"postgres": 5432, "cockroachdb": 26257, "yugabytedb": 5433,
@@ -140,6 +144,24 @@ func TestDescriptors_DockerNamesAgreeWithTheMapsTheyReplace(t *testing.T) {
 		c.Assert(found, qt.IsTrue, qt.Commentf("docker driver %q", driver))
 		c.Assert(described.Atlas.DockerDrivers, qt.Contains, driver)
 	}
+}
+
+func TestDescriptors_RowCountsAgreeWithTheSwitchTheyReplace(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(statedUnmeasuredRowCounts(), qt.DeepEquals, switchUnmeasuredRowCounts)
+}
+
+// statedUnmeasuredRowCounts lists, sorted, the built-in dialects whose
+// descriptor says the driver's row count is not a measurement.
+func statedUnmeasuredRowCounts() []string {
+	var unmeasured []string
+	for _, described := range platform.Dialects().Dialects() {
+		if described.Scripts.RowCountsUnmeasured {
+			unmeasured = append(unmeasured, described.Name)
+		}
+	}
+	slices.Sort(unmeasured)
+	return unmeasured
 }
 
 // statedDockerNames collects the docker names every built-in descriptor

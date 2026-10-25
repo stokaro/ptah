@@ -73,7 +73,11 @@ func ydb() descriptor.Dialect {
 		// No YDB client writes a delimiter directive, and the shared rewriter
 		// reads strings and comments by rules YQL does not share: it would
 		// rewrite a delimiter inside an @@...@@ literal.
-		Scripts: descriptor.Scripts{ClientDelimiters: false, Bodies: descriptor.BodiesYQL},
+		// ydb-go-sdk answers a write with a row count it did not measure:
+		// measured on 26.2.1.14, an UPDATE by key that changed one row inside
+		// a transaction reported zero rows, and migration/migrator records a
+		// DELETE by key reporting one row for a key no row held.
+		Scripts: descriptor.Scripts{ClientDelimiters: false, Bodies: descriptor.BodiesYQL, RowCountsUnmeasured: true},
 
 		// Migrations: what the migrator reads.
 		DDLTransactions: "no_transaction",

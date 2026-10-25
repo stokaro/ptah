@@ -120,13 +120,17 @@ func runAtlasScript(cmd *cobra.Command, kind atlasscript.Kind, opts *scriptOptio
 }
 
 // rowCountsUnreported reports whether the driver for dialect answers a write
-// with a row count it did not measure. ydb-go-sdk does on YDB: measured on
-// 26.2.1.14, an UPDATE by key that changed one row inside a transaction
-// reported zero rows, and migration/migrator records a DELETE by key reporting
-// one row for a key no row held. A script then reads the count as unreported,
-// so expect_rows is refused rather than judged against it.
+// with a row count it did not measure, as the engine's descriptor states it
+// (descriptor.Scripts.RowCountsUnmeasured). A script then reads the count as
+// unreported, so expect_rows is refused rather than judged against it.
+//
+// An engine only an executable provider serves has no descriptor, and its
+// connection takes no database/sql call, so no script reaches a count there.
+// The fact a provider would state for its session, once the provider contract
+// carries script statements, is a session capability the provider reports.
 func rowCountsUnreported(dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.YDB
+	described, _ := platform.Lookup(dialect)
+	return described.Scripts.RowCountsUnmeasured
 }
 
 // runSelectedScript dispatches on the kind the block declared.

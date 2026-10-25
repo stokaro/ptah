@@ -97,6 +97,12 @@ type Scripts struct {
 	// dialect-blind CREATE FUNCTION, PROCEDURE or TRIGGER whose body runs
 	// from BEGIN to the matching END.
 	Bodies Bodies `json:"bodies,omitempty"`
+	// RowCountsUnmeasured reports that the engine's driver answers a write
+	// with a row count it did not measure, so a script reads the count of an
+	// exec step as not reported and refuses an assertion on it rather than
+	// judging the number. False means the count the driver reports is the
+	// number of rows the statement changed.
+	RowCountsUnmeasured bool `json:"row_counts_unmeasured,omitempty"`
 }
 
 // Bodies is a grammar of statement-holding bodies; see [Scripts.Bodies].

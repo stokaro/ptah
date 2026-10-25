@@ -180,7 +180,7 @@ func (o InspectSourceOptions) sourceFlag() string {
 	return o.URLFlag
 }
 
-func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
+func ValidateNonDatabaseInspectPreconditions(ctx context.Context, opts InspectSourceOptions) error {
 	if err := ValidateInspectOptions(opts); err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
 	if err := refuseInspectDevURL(opts.DevURL, atlassource.Set{}, opts.DevURLDiagnostic); err != nil {
 		return err
 	}
-	return refuseInspectDevURLForm(opts.DevURL)
+	return refuseInspectDevURLForm(ctx, opts.DevURL)
 }
 
 // refuseInspectDevURLForm answers every dev database URL verdict that is
@@ -224,11 +224,11 @@ func ValidateNonDatabaseInspectPreconditions(opts InspectSourceOptions) error {
 // The value is NOT trimmed here. It is normalized once, by the command, so that
 // every consumer judges the same bytes; trimming again would let the next
 // caller reintroduce the disagreement that normalization removed.
-func refuseInspectDevURLForm(devURL string) error {
+func refuseInspectDevURLForm(ctx context.Context, devURL string) error {
 	// No sets are passed: a caller reaching this has a source that is not a
 	// database URL, so it contributes no dialect, and this computes exactly the
 	// --dev-url half inspectOnDev computes from the same value.
-	if _, _, err := atlassource.PinDialect(devURL); err != nil {
+	if _, _, err := atlassource.PinDialect(ctx, devURL); err != nil {
 		return err
 	}
 	if !devdocker.IsURL(devURL) {
@@ -335,7 +335,7 @@ func inspectOnDev(
 	devURL := strings.TrimSpace(opts.DevURL)
 	// Pinned from the value as written: atlasurl trims any other URL itself,
 	// and reads a docker URL as written, as the provisioner does.
-	dialect, _, err := atlassource.PinDialect(opts.DevURL, set)
+	dialect, _, err := atlassource.PinDialect(ctx, opts.DevURL, set)
 	if err != nil {
 		return InspectResult{}, err
 	}

@@ -12,7 +12,6 @@ import (
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/devsnapshot"
@@ -20,6 +19,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/migrationlintreport"
+	"ptah.run/internal/providerurl"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -268,7 +268,7 @@ func runAtlasMigrateLint(
 	}
 	if integrity.Failed() {
 		if formatOutput {
-			driver, err := atlasurl.DialectFromURL(opts.devURL)
+			driver, err := providerurl.Dialect(cmd.Context(), opts.devURL)
 			if err != nil {
 				return cmdutil.Fail(cmd, err)
 			}
@@ -419,7 +419,7 @@ func writeAtlasMigrateLintReplayError(
 	revisionVersions map[int64]string,
 	replayErr error,
 ) error {
-	driver, err := atlasurl.DialectFromURL(opts.devURL)
+	driver, err := providerurl.Dialect(cmd.Context(), opts.devURL)
 	if err != nil {
 		return err
 	}

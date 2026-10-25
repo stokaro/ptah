@@ -59,6 +59,12 @@ has no driver for. It is not a boolean, so it is refused by presence and by
 name, and a strict run starts no provider. See
 [Executable providers](../../extend/executable-providers/#use-a-provider-from-ptah-compat).
 
+An engine no Atlas edition has a driver for is refused in the pinned binary's
+own words: a URL with `sql/sqlclient: unknown driver "<scheme>"`, and a
+`docker://` dev URL with `unsupported docker image "<engine>"`. That covers
+YDB and every official engine only an executable provider serves, such as
+DuckDB.
+
 ## Content strict mode refuses
 
 Strict mode rejects content Atlas CE cannot represent safely instead of

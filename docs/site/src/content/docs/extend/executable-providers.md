@@ -127,9 +127,10 @@ the engine's capabilities and sends them with each check.
 A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request
 cannot tell the provider that the SQL may be another engine's. The provider
-still annotates that split. A lint run cannot replay migrations on a provider's
-dev database yet: lint does not take an engine that only a provider serves as
-its dialect.
+still annotates that split. A lint run takes an engine the selected provider
+serves as its `--dialect`, and reads it from a dev URL the provider serves. It
+cannot replay migrations on the provider's dev database yet: the provider
+contract has no check that a dev database is clean, and the replay stops there.
 
 `lint.statement-facts` lets `sql lint` read a provider's SQL. To a host that
 lists the feature, the provider's split says what each statement is, which
