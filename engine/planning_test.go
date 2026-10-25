@@ -189,6 +189,13 @@ func TestPlanningPreflightsAllInputsBeforeCallingAService(t *testing.T) {
 		{"wrong declaration", func(_ *engine.Provider, r *featureplan.Request) { r.Tables[0].Desired.Table.Name = "other" }, schemaext.ErrInvalidValue},
 		{"wrong observation", func(_ *engine.Provider, r *featureplan.Request) { r.Tables[0].Current.Table.Name = "other" }, schemaext.ErrInvalidValue},
 		{"non-table parent", func(_ *engine.Provider, r *featureplan.Request) { r.Tables[0].Subject = r.Changes[0].Subject }, schemaext.ErrInvalidValue},
+		{"a policy index that is a table", func(_ *engine.Provider, r *featureplan.Request) {
+			r.Policy.ConcurrentIndexBuildSubjects = []objectidentity.ID{r.Tables[0].Subject}
+		}, schemaext.ErrInvalidValue},
+		{"a policy index named twice", func(_ *engine.Provider, r *featureplan.Request) {
+			index := objectidentity.NewBuilder(r.Identifiers).IndexParts("", "items", "by_name")
+			r.Policy.ConcurrentIndexDropSubjects = []objectidentity.ID{index, index}
+		}, schemaext.ErrInvalidValue},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -337,4 +344,26 @@ func TestPlanningKeepsTheOperationPhase(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Contributions[0].Steps[0].Payload.Phase, qt.Equals, featureplan.PhaseDependent)
+}
+
+// TestPlanningCarriesThePolicyToTheOwner hands the owner the operator's
+// planning policy as a copy it cannot change for the caller.
+func TestPlanningCarriesThePolicyToTheOwner(t *testing.T) {
+	c := qt.New(t)
+	var received featureplan.Policy
+	p := planningProvider(planningFunc(func(ctx context.Context, r featureplan.Request) (featureplan.Result, error) {
+		received = r.Policy
+		r.Policy.ConcurrentIndexBuildSubjects[0] = r.Tables[0].Subject
+		return plannedFixture(ctx, r)
+	}))
+	request := planningRequest()
+	index := objectidentity.NewBuilder(request.Identifiers).IndexParts("", "items", "by_name")
+	request.Policy = featureplan.Policy{AllowTableRebuild: true, TableRebuildRequest: "--allow-table-rebuild", ConcurrentIndexBuildSubjects: []objectidentity.ID{index}}
+
+	_, err := mustRuntime(c, p).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(received.AllowTableRebuild, qt.IsTrue)
+	c.Assert(received.TableRebuildRequest, qt.Equals, "--allow-table-rebuild")
+	c.Assert(request.Policy.ConcurrentIndexBuildSubjects, qt.DeepEquals, []objectidentity.ID{index})
 }

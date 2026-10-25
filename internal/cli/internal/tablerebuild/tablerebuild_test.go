@@ -6,16 +6,19 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/planext"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/planner/dialects/ydb"
 )
 
-// The planner's refusal tells the operator which flag asks for a rebuild, so
-// the two spellings are one: a renamed flag would leave the refusal pointing
-// at a flag no command has.
+// A planner's refusal tells the operator which flag asks for a rebuild, so
+// the spellings are one: a renamed flag would leave the refusal pointing at a
+// flag no command has. The built-in YDB planner names its constant, and a
+// provider receives the shared default in its planning policy.
 func TestFlagName_IsTheOneThePlannerNames(t *testing.T) {
 	c := qt.New(t)
 	c.Assert("--"+tablerebuild.FlagName, qt.Equals, ydb.TableRebuildFlag)
+	c.Assert("--"+tablerebuild.FlagName, qt.Equals, planext.DefaultTableRebuildRequest)
 }
 
 func TestRequested_HappyPath(t *testing.T) {

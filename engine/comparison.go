@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
@@ -90,12 +91,10 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	request.Target = target.name
-	requests, err := r.resolveWrittenRequests(ctx, request.Target, request.Requests)
-	if err != nil {
-		return schemaext.ObjectComparisonResult{}, err
-	}
-	request.Requests = requests
-	request, err = r.snapshotComparison(ctx, request)
+	// A resolution names a request by its place in the caller's list, which
+	// the snapshot sorts.
+	asked := slices.Clone(request.Requests)
+	request, err := r.snapshotComparison(ctx, request)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
@@ -112,7 +111,7 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		batch.Kinds = kinds
 		batch.Desired = selectObjectState(request.Desired, kinds)
 		batch.Current = selectObjectState(request.Current, kinds)
-		batch.Requests = selectRequests(request.Requests, kinds)
+		batch.Requests = selectRequests(request.Requests, kinds, r.comparisonServices[service].Actions)
 		// The host's validation copy never aliases service-owned slices or maps.
 		sent, err := r.snapshotComparison(ctx, batch)
 		if err != nil {
@@ -136,10 +135,21 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		}
 		result.Changes = append(result.Changes, reply.Changes...)
 		result.Undecided = append(result.Undecided, reply.Undecided...)
+		for _, answer := range reply.Resolved {
+			answered := batch.Requests[answer.Request]
+			index := slices.IndexFunc(asked, func(change schemaext.ChangeRequest) bool {
+				return change.Written == answered.Written && change.Action == answered.Action
+			})
+			result.Resolved = append(result.Resolved, schemaext.ResolvedRequest{Request: index, Subject: answer.Subject})
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	if err := requireResolved(request.Target, asked, result.Resolved); err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
+	slices.SortFunc(result.Resolved, func(a, b schemaext.ResolvedRequest) int { return cmp.Compare(a.Request, b.Request) })
 	slices.SortFunc(result.Changes, func(a, b schemaext.ChangeRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	slices.SortFunc(result.Undecided, func(a, b schemaext.UndecidedChange) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), schemaext.CompareRefs(a.Subject, b.Subject))
@@ -273,6 +283,14 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 		comparisonCoverageRequirements(state.Coverage, kinds, required)
 	}
 	for _, change := range request.Requests {
+		if change.Written != "" {
+			// A spelling nobody can read is the first thing wrong with the
+			// request, whatever else the states hold.
+			if !r.acceptsAction(request.Target, change.Action) {
+				return nil, nil, fmt.Errorf("%w: no owner on %q reads the %q request %q", ptaherr.ErrUnsupportedFeature, request.Target, change.Action, change.Written)
+			}
+			continue
+		}
 		kind := schemaext.Kind(change.Subject.Kind)
 		kinds[kind], required[kind] = true, true
 	}
@@ -290,6 +308,10 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 		batches[service] = append(batches[service], kind)
 	}
 	for _, change := range request.Requests {
+		if change.Written != "" {
+			r.offerWritten(request.Target, change, batches)
+			continue
+		}
 		service := r.comparisons[conversionKey{target: request.Target, kind: schemaext.Kind(change.Subject.Kind)}]
 		if !slices.Contains(r.comparisonServices[service].Actions, change.Action) {
 			return nil, nil, fmt.Errorf("%w: the owner of %q accepts no %q request, for %s", ptaherr.ErrUnsupportedFeature, change.Subject.Kind, change.Action, change.Subject)
@@ -298,85 +320,59 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 	return batches, inactive, nil
 }
 
-// resolveWrittenRequests replaces each written request with the subject the
-// comparison of target that resolves its spelling names; see
-// [schemaext.ChangeRequest.Written]. Every comparison that accepts the action
-// and implements [schemaext.WrittenResolver] is asked. A spelling none of them
-// resolves, or two resolve, is refused, so a misspelled object never reads as
-// a change made; a resolution of a kind its comparison does not own is a
-// broken owner. Two requests that name one subject for one action ask once.
-// Requests that carry a subject pass through unchanged.
-func (r *Runtime) resolveWrittenRequests(ctx context.Context, target string, requests []schemaext.ChangeRequest) ([]schemaext.ChangeRequest, error) {
-	if !slices.ContainsFunc(requests, func(change schemaext.ChangeRequest) bool { return change.Written != "" }) {
-		return requests, nil
-	}
-	type requestKey struct {
-		subject objectidentity.Key
-		action  string
-	}
-	asked := make(map[requestKey]bool, len(requests))
-	resolved := make([]schemaext.ChangeRequest, 0, len(requests))
-	for _, change := range requests {
-		if change.Written == "" {
-			asked[requestKey{change.Subject.Key(), change.Action}] = true
-			resolved = append(resolved, change)
-		}
-	}
-	for _, change := range requests {
-		if change.Written == "" {
-			continue
-		}
-		if change.Subject.Kind != "" || change.Subject.Name.Source != "" {
-			return nil, fmt.Errorf("%w: change request %q names its subject both as %s and as written %q", schemaext.ErrInvalidValue, change.Action, change.Subject, change.Written)
-		}
-		subject, err := r.resolveWritten(ctx, target, change)
-		if err != nil {
-			return nil, err
-		}
-		key := requestKey{subject.Key(), change.Action}
-		if asked[key] {
-			continue
-		}
-		asked[key] = true
-		resolved = append(resolved, schemaext.ChangeRequest{Subject: subject, Action: change.Action})
-	}
-	return resolved, nil
+// acceptsAction reports whether a comparison on target accepts action.
+func (r *Runtime) acceptsAction(target, action string) bool {
+	return slices.ContainsFunc(r.comparisonServices, func(declaration ObjectComparison) bool {
+		return declaration.Target == target && slices.Contains(declaration.Actions, action)
+	})
 }
 
-// resolveWritten asks every comparison of target that accepts change's action
-// to read its spelling, and returns the one subject they name.
-func (r *Runtime) resolveWritten(ctx context.Context, target string, change schemaext.ChangeRequest) (objectidentity.ID, error) {
-	var subjects []objectidentity.ID
-	for _, comparison := range r.comparisonServices {
-		resolver, reads := comparison.Service.(schemaext.WrittenResolver)
-		if comparison.Target != target || !reads || !slices.Contains(comparison.Actions, change.Action) {
+// offerWritten adds to batches every kind of each service on target that
+// accepts the action of a written request, so each of them can resolve it
+// against the desired objects it compares.
+func (r *Runtime) offerWritten(target string, change schemaext.ChangeRequest, batches [][]schemaext.Kind) {
+	for service, declaration := range r.comparisonServices {
+		if declaration.Target != target || !slices.Contains(declaration.Actions, change.Action) {
 			continue
 		}
-		subject, found, err := resolver.ResolveWritten(ctx, change.Action, change.Written)
-		if err != nil {
-			return objectidentity.ID{}, err
+		for _, kind := range declaration.Kinds {
+			if !slices.Contains(batches[service], kind) {
+				batches[service] = append(batches[service], kind)
+			}
 		}
-		if !found {
-			continue
-		}
-		if !slices.Contains(comparison.Kinds, schemaext.Kind(subject.Kind)) {
-			return objectidentity.ID{}, fmt.Errorf("%w: the %q request %q resolved to %s, a kind its owner does not compare", ErrInvalidRegistration, change.Action, change.Written, subject)
-		}
-		subjects = append(subjects, subject)
-	}
-	switch len(subjects) {
-	case 0:
-		return objectidentity.ID{}, fmt.Errorf("%w: no owner on %q reads the %q request %q", ptaherr.ErrUnsupportedFeature, target, change.Action, change.Written)
-	case 1:
-		return subjects[0], nil
-	default:
-		return objectidentity.ID{}, fmt.Errorf("%w: %d owners on %q read the %q request %q", schemaext.ErrInvalidValue, len(subjects), target, change.Action, change.Written)
+		slices.Sort(batches[service])
 	}
 }
 
-// snapshotRequests copies the change requests in subject and action order. A
-// request needs a named subject of a valid kind and an action, and asking for
-// one action on one subject twice is refused rather than merged.
+// requireResolved refuses a written request that no owner resolved, or that
+// more than one resolved, naming the operator's spelling: a spelling no owner
+// reads must not read as a change done.
+func requireResolved(target string, requests []schemaext.ChangeRequest, resolved []schemaext.ResolvedRequest) error {
+	for index, change := range requests {
+		if change.Written == "" {
+			continue
+		}
+		owners := 0
+		for _, answer := range resolved {
+			if answer.Request == index {
+				owners++
+			}
+		}
+		switch {
+		case owners == 0:
+			return fmt.Errorf("%w: no owner on %q reads the %q request %q", ptaherr.ErrUnsupportedFeature, target, change.Action, change.Written)
+		case owners > 1:
+			return fmt.Errorf("%w: %d owners on %q read the %q request %q", schemaext.ErrInvalidValue, owners, target, change.Action, change.Written)
+		}
+	}
+	return nil
+}
+
+// snapshotRequests copies the change requests in subject, action and
+// spelling order. A request needs an action and either a named subject of a
+// valid kind or a written spelling of one line with no surrounding space, and
+// asking for one action on one subject, or on one spelling, twice is refused
+// rather than merged.
 func snapshotRequests(requests []schemaext.ChangeRequest) ([]schemaext.ChangeRequest, error) {
 	if len(requests) == 0 {
 		return nil, nil
@@ -384,26 +380,44 @@ func snapshotRequests(requests []schemaext.ChangeRequest) ([]schemaext.ChangeReq
 	type requestKey struct {
 		subject objectidentity.Key
 		action  string
+		written string
 	}
 	seen := make(map[requestKey]bool, len(requests))
 	for _, change := range requests {
-		key := requestKey{change.Subject.Key(), change.Action}
-		if !schemaext.Kind(change.Subject.Kind).Valid() || change.Subject.Name.Source == "" || !reversalText(change.Action) || seen[key] {
-			return nil, fmt.Errorf("%w: invalid or duplicate change request %q for %s", schemaext.ErrInvalidValue, change.Action, change.Subject)
+		key := requestKey{change.Subject.Key(), change.Action, change.Written}
+		if change.Written != "" && (change.Subject.Kind != "" || change.Subject.Name.Source != "") {
+			return nil, fmt.Errorf("%w: change request %q names its subject both as %s and as written %q", schemaext.ErrInvalidValue, change.Action, change.Subject, change.Written)
+		}
+		named := schemaext.Kind(change.Subject.Kind).Valid() && change.Subject.Name.Source != ""
+		if change.Written != "" {
+			named = reversalText(change.Written)
+		}
+		if !named || !reversalText(change.Action) || seen[key] {
+			return nil, fmt.Errorf("%w: invalid or duplicate change request %q for %s", schemaext.ErrInvalidValue, change.Action, requestName(change))
 		}
 		seen[key] = true
 	}
 	requests = slices.Clone(requests)
 	slices.SortFunc(requests, func(a, b schemaext.ChangeRequest) int {
-		return cmp.Or(schemaext.CompareRefs(a.Subject, b.Subject), cmp.Compare(a.Action, b.Action))
+		return cmp.Or(schemaext.CompareRefs(a.Subject, b.Subject), cmp.Compare(a.Action, b.Action), cmp.Compare(a.Written, b.Written))
 	})
 	return requests, nil
 }
 
-func selectRequests(requests []schemaext.ChangeRequest, kinds []schemaext.Kind) []schemaext.ChangeRequest {
+// requestName is how a message names the object of a request.
+func requestName(change schemaext.ChangeRequest) string {
+	if change.Written != "" {
+		return strconv.Quote(change.Written)
+	}
+	return change.Subject.String()
+}
+
+// selectRequests returns the requests of a batch: those that name a subject
+// of its kinds, and the written ones whose action its service accepts.
+func selectRequests(requests []schemaext.ChangeRequest, kinds []schemaext.Kind, actions []string) []schemaext.ChangeRequest {
 	var selected []schemaext.ChangeRequest
 	for _, change := range requests {
-		if slices.Contains(kinds, schemaext.Kind(change.Subject.Kind)) {
+		if change.Written != "" && slices.Contains(actions, change.Action) || change.Written == "" && slices.Contains(kinds, schemaext.Kind(change.Subject.Kind)) {
 			selected = append(selected, change)
 		}
 	}

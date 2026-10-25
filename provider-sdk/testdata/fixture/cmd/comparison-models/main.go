@@ -47,8 +47,11 @@ type comparer struct {
 func comparisonDescription() *protocol.Description {
 	description := backend.Description()
 	description.SemanticIdentity += "-contextual-comparison"
-	description.Features = append(description.Features, provider.CompareModelsFeature)
+	// The planning policy lets the host send a rotation as the operator
+	// wrote it; the objects comparison reads the object's name from it.
+	description.Features = append(description.Features, provider.CompareModelsFeature, provider.PlanningPolicyFeature)
 	engine := description.Engines[0]
+	engine.Features = append(engine.Features, provider.PlanningPolicyFeature)
 	for _, model := range engine.GetValueModels() {
 		native := proto.CloneOf(model)
 		native.Kind, native.SourceFormats = nativeKind, nil

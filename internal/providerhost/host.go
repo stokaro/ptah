@@ -70,6 +70,10 @@ var hostFeatures = []string{
 	// `ptah inference` keeps a generation's run state and vectors in a
 	// provider's embedding store; see EmbeddingSession.
 	provider.EmbeddingStoreFeature,
+	// A provider's planner receives the operator's planning policy, and its
+	// comparisons resolve the requests the operator spells, such as
+	// --rotate-secret; see target.planningPolicy and writtenRequests.
+	provider.PlanningPolicyFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

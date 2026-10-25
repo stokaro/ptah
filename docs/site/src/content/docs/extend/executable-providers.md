@@ -25,6 +25,7 @@ sourceOfTruth:
   - "internal/embedrpc"
   - "integration/providercli/provider_inference_e2e_test.go"
   - "integration/providercli/provider_inference_mcp_e2e_test.go"
+  - "integration/providercli/provider_planning_policy_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -189,6 +190,18 @@ the server's, never a tool argument.
 provider with each unit, and the provider stops a unit that runs longer. A
 migration's lock timeout is refused: the protocol has nothing that bounds a lock
 wait.
+
+`planning.policy` hands the provider's planner the operator's planning policy:
+whether to rebuild a table, with the words a refusal names to say how to ask
+(`--allow-table-rebuild`, or `PTAH_ALLOW_TABLE_REBUILD=1` on `ptah-compat`),
+and the plan's online-alteration, concurrent-index and NOT NULL backfill
+settings. A provider that lists the feature plans a change its engine makes
+only by rebuilding the table when the operator asks, and refuses it in those
+words when the operator does not. A provider without the feature receives no
+policy and plans as if none were set. The feature also lets a comparison read a
+request the operator wrote: Ptah sends each `--rotate-secret` value as written
+to every comparison of the engine whose actions include `rotate`, and refuses a
+value that no comparison resolves, or that two resolve, naming the value.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line

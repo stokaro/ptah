@@ -5,6 +5,7 @@ package featureplan
 
 import (
 	"context"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
@@ -70,6 +71,48 @@ type Request struct {
 	// database. An owner reads a path its operation writes absolute against
 	// it, to name the object the path holds in an effect.
 	DatabasePath string
+	// Policy is the operator's planning policy for this plan, as the planner
+	// that builds the request received it. The zero value asks for nothing.
+	Policy Policy
+}
+
+// Policy is how the operator asked one plan to be made. It is a request, not a
+// prediction: an owner without a behavior plans as it would without the
+// request, and refuses a change it cannot make in its own words. Each field
+// has the meaning of the planext.Options field of the same name.
+type Policy struct {
+	// AllowTableRebuild plans a change the target cannot make in place as an
+	// explicit rebuild of its table, rather than refuse it.
+	AllowTableRebuild bool
+	// TableRebuildRequest is how the operator asks for AllowTableRebuild, such
+	// as --allow-table-rebuild, for a refusal to name. A planner that fills a
+	// policy sets it whether or not the operator asked, because the refusal is
+	// what an operator who did not ask reads.
+	TableRebuildRequest string
+	// OnlineAlter applies the plan without blocking the writes already running,
+	// where the target has a way to, and fails at the statement where it
+	// cannot.
+	OnlineAlter bool
+	// ConcurrentIndexBuilds builds every added index without blocking writes.
+	// ConcurrentIndexBuildSubjects names the indexes to build that way when it
+	// is false.
+	ConcurrentIndexBuilds        bool
+	ConcurrentIndexBuildSubjects []objectidentity.ID
+	// ConcurrentIndexDrops drops every removed index without blocking writes.
+	// ConcurrentIndexDropSubjects names the indexes to drop that way when it is
+	// false.
+	ConcurrentIndexDrops        bool
+	ConcurrentIndexDropSubjects []objectidentity.ID
+	// OmitNullBackfill makes a column NOT NULL without filling its NULL rows
+	// first.
+	OmitNullBackfill bool
+}
+
+// Clone returns a policy that shares no slice with p.
+func (p Policy) Clone() Policy {
+	p.ConcurrentIndexBuildSubjects = slices.Clone(p.ConcurrentIndexBuildSubjects)
+	p.ConcurrentIndexDropSubjects = slices.Clone(p.ConcurrentIndexDropSubjects)
+	return p
 }
 
 // ParentAction identifies a common table operation. It does not grant

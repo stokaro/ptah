@@ -903,6 +903,15 @@ footprint; its logical write actions must remain in the replacement. The owner
 supplies the replacement's complete semantics, risk, and transaction assessment.
 Combining steps does not establish transactional execution.
 
+`featureplan.Request.Policy` is the operator's planning policy, as the planner
+that builds the request received it in `planext.Options`: a table rebuild with
+the words that ask for one (`planext.DefaultTableRebuildRequest` on the native
+commands), online alteration, concurrent index builds and drops, and NOT NULL
+without a backfill. It is a request, not a prediction: an owner without a
+behavior plans as it would without it. The runtime copies it into each batch and
+refuses an index subject that is not a named index, or one named twice in a
+list, with `schemaext.ErrInvalidValue`.
+
 `featureplan.Request.CommonSteps` exposes accepted common operations with their
 identities, effects, and available column-addition operands. Each selected service
 receives an independent snapshot. `Result.Rewrites` claims source steps by identity
@@ -1124,6 +1133,18 @@ subject's named-object kind, in subject and action order, and refuses a
 request no owner accepts, a duplicate, and one naming a facet model before any
 service runs. `config.CompareOptions.FeatureRequests` is how a migration
 comparison receives them.
+
+A request may name its object as the operator wrote it instead, in
+`ChangeRequest.Written`, for an owner to read with its own rules: the
+`--rotate-secret` path does. `schemaext.WrittenRequests` builds them. The
+runtime offers a written request to every owner on the target that accepts its
+action, and an owner that reads the spelling answers it once in
+`ObjectComparisonResult.Resolved` with the desired object it names. The runtime
+refuses, naming the spelling, a written request no owner reads
+(`ptaherr.ErrUnsupportedFeature`) and one two owners read
+(`schemaext.ErrInvalidValue`), and refuses a resolution of a request that names
+its subject or of an object the owner's batch does not hold as desired.
+`Resolved` indexes the caller's request list.
 
 Before table preparation, comparison binds table and index coverage claims to the
 same identifier semantics and default database as their common owners. Explicit schemas
