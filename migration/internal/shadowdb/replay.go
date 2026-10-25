@@ -104,11 +104,20 @@ func ResetSchemas(ctx context.Context, conn *dbschema.DatabaseConnection, schema
 // Every one of them, which is why this takes a list: a replay that left one
 // behind would hand the comparison a table no migration declares, and the
 // mismatch reads as a schema difference rather than as Ptah's own bookkeeping.
+//
+// On an engine an executable provider serves, the bookkeeping is the
+// provider's storage, and Ptah writes no SQL of its own there. The provider's
+// inspection reports that storage as reserved, outside the schema a replay
+// reads, and its dev database cleanup removes it with the rest of the
+// database, so there is nothing for this to drop.
 func DropMigrationMetadata(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	tableIdentifiers ...string,
 ) error {
+	if !conn.Info().Provider.IsZero() {
+		return nil
+	}
 	for _, identifier := range tableIdentifiers {
 		if identifier == "" {
 			continue

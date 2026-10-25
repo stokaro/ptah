@@ -381,10 +381,17 @@ missing provider reports `ptah providers install <engine>`.
 A provider's connection takes no `database/sql` call: outside a plan, a
 migration and the services the provider declares, the host can neither query
 it nor run a statement on it. `db verify`, which queries the database for each
-check, `schema test`, which applies the desired schema that way, and
-`migrations checkpoint`, which drops the revision tables of its shadow replay
-that way, refuse a provider's database with "this connection does not expose
-database/sql operations".
+check, and `schema test`, which applies the desired schema that way, refuse a
+provider's database with "this connection does not expose database/sql
+operations".
+
+`migrations checkpoint`, and the rollback `migrations down --shadow-db`
+verifies or plans, replay the directory on a database the provider provisions
+or names, and Ptah runs no SQL of its own there. The provider reports its
+revision storage as reserved storage, so the schema read back holds only what
+the migrations built, and its dev database cleanup removes that storage with
+the rest. The shadow database and the target are told apart by the databases
+their sessions select.
 
 ## Use a provider from ptah-compat
 
