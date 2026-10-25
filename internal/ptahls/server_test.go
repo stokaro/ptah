@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/schemaext"
 )
 
 func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
@@ -75,6 +76,45 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 	clearParams := decodeDiagnostics(c, messages[2])
 	c.Assert(clearParams.Diagnostics, qt.HasLen, 0)
 	c.Assert(string(messages[2].Params), qt.Contains, `"diagnostics":[]`)
+}
+
+// The server knows the directives of the further sets it is given beside its
+// runtime's: a directive only such a set declares is not reported as unknown,
+// while a server without the set reports it.
+func TestRunKnowsTheDirectivesOfFurtherSets(t *testing.T) {
+	gadget, err := annotation.NewSet(annotation.Extension{
+		Owner:      "example.org/gadget",
+		Coverage:   annotation.Unlimited(func() (schemaext.Coverage, error) { return schemaext.Coverage{}, nil }),
+		Directives: []annotation.Directive{{Name: "ptah:schema:gadget", Scopes: []annotation.Scope{annotation.ScopeStruct}}},
+		Decode:     func(annotation.Declaration) ([]annotation.Contribution, error) { return nil, nil },
+	})
+	qt.New(t).Assert(err, qt.IsNil)
+	for _, row := range []struct {
+		name        string
+		more        []annotation.Set
+		diagnostics int
+	}{
+		{"with the set", []annotation.Set{gadget}, 0},
+		{"without it", nil, 1},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			input := framedMessage(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": make(map[string]any)}) +
+				framedMessage(map[string]any{"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": map[string]any{
+					"textDocument": map[string]any{"uri": "file:///workspace/model.go", "text": "//ptah:schema:gadget\ntype Gadget struct{}"},
+				}}) +
+				framedMessage(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": make(map[string]any)}) +
+				framedMessage(map[string]any{"jsonrpc": "2.0", "method": "exit"})
+			var out bytes.Buffer
+
+			err := RunWithOptions(c.Context(), strings.NewReader(input), &out, ServerOptions{Annotations: annotation.None(), More: row.more})
+
+			c.Assert(err, qt.IsNil)
+			messages := readFramedMessages(c, out.String())
+			c.Assert(messages, qt.HasLen, 3)
+			c.Assert(decodeDiagnostics(c, messages[1]).Diagnostics, qt.HasLen, row.diagnostics)
+		})
+	}
 }
 
 func TestRunReturnsErrorWhenExitArrivesBeforeShutdown(t *testing.T) {

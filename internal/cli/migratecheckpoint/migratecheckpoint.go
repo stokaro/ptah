@@ -13,12 +13,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/editor"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/devdocker"
@@ -201,15 +201,15 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	// Provisioned here, after every refusal decidable from the flags and the
 	// directory, so a run that was going to be refused never starts a
 	// container. A directly connectable URL passes through untouched.
-	runtime, err := builtin.New()
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer releaseShadow()
+	runtime, err := engineruntime.Resolve(ctx)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	upSQL, downSQL, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
 		Runtime:              runtime,

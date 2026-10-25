@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/providerselect"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
@@ -83,7 +84,17 @@ per problem otherwise, so a pre-commit hook can use the status alone.`,
 }
 
 func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
-	dialects := schemavalidate.Dialects(opts.dialects)
+	// Resolved first: a dialect a provider serves is a target only the runtime
+	// knows, so the provider of each named engine starts here.
+	targets := make([]providerselect.Target, 0, len(opts.dialects))
+	for _, dialect := range opts.dialects {
+		targets = append(targets, engineruntime.Dialect(dialect))
+	}
+	runtime, err := engineruntime.Resolve(cmd.Context(), targets...)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	dialects := schemavalidate.Dialects(opts.dialects, runtime)
 	if len(dialects) == 0 {
 		return cmdutil.Fail(cmd, fmt.Errorf(
 			"--%s is required: validation is per target, and a declaration valid for one dialect can be invalid for another",
@@ -118,10 +129,6 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	runtime, err := engineruntime.Resolve(cmd.Context())
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	var problems []schemavalidate.Problem
 	for _, dialect := range dialects {
 		// Loaded once per dialect on purpose: loading is dialect-aware, so a

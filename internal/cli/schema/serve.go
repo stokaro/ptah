@@ -114,7 +114,7 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw,
 		dbcli.JoinSchemasValue(projectCfg.SchemasValue()))
 
-	runtime, err := engineruntime.Resolve(cmd.Context())
+	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -152,6 +152,10 @@ func serveUntilDone(ctx context.Context, listener net.Listener, handler http.Han
 		// header timeout is the one that guards the socket rather than the
 		// handler.
 		ReadHeaderTimeout: 10 * time.Second,
+		// Each request reads the database under the command's provider
+		// selection, which its context carries. Its cancellation is not
+		// inherited: shutting down still lets a request being answered finish.
+		BaseContext: func(net.Listener) context.Context { return context.WithoutCancel(ctx) },
 	}
 	errs := make(chan error, 1)
 	go func() { errs <- server.Serve(listener) }()

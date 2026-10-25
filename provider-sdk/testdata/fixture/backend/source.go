@@ -55,7 +55,7 @@ func (p *Provider) decodeRetention(ctx context.Context, document *protocol.Sourc
 	input := &protocol.ValueInput{Id: fragment.GetId(), Representation: protocol.ValueInput_DESIRED, Value: &protocol.Envelope{
 		ProviderId: Description().GetProviderId(), Kind: model.GetKind(), SchemaVersion: model.GetSchemaVersion(), Encoding: model.GetEncoding(), DefinitionSha256: model.GetDefinitionSha256(), Owner: fields.subject, Payload: fields.payload,
 	}}
-	normalized, err := p.NormalizeValues(ctx, &protocol.NormalizeValuesRequest{Engine: "fixture", Values: []*protocol.ValueInput{input}})
+	normalized, err := p.NormalizeValues(ctx, &protocol.NormalizeValuesRequest{Engine: p.engine(), Values: []*protocol.ValueInput{input}})
 	if err != nil {
 		return nil, 0, err
 	}

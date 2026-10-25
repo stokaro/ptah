@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemavalidate"
@@ -196,7 +197,24 @@ func TestCollect_ANilSchemaIsReportedRatherThanPanicking(t *testing.T) {
 func TestDialects_NormalizesAndDeduplicatesPreservingOrder(t *testing.T) {
 	c := qt.New(t)
 
-	got := schemavalidate.Dialects([]string{"postgres", " mysql ", "postgres", "", "mysql"})
+	got := schemavalidate.Dialects([]string{"postgres", " mysql ", "postgres", "", "mysql", "nosuch"}, must.Must(builtin.New()))
 
 	c.Assert(got, qt.DeepEquals, []string{"postgres", "mysql"})
+}
+
+// servedFixture resolves the one name a provider would serve.
+type servedFixture struct{}
+
+func (servedFixture) ResolveTarget(string) (schemaext.TargetSelection, error) {
+	return schemaext.NewTargetSelection("fixture", "fix")
+}
+
+// A name no built-in dialect has is kept when the runtime serves it, as the
+// target it resolves to, and a name nothing serves is still left out.
+func TestDialects_KeepsATargetTheRuntimeServes(t *testing.T) {
+	c := qt.New(t)
+
+	got := schemavalidate.Dialects([]string{"fix", "postgres", "fixture"}, servedFixture{})
+
+	c.Assert(got, qt.DeepEquals, []string{"fixture", "postgres"})
 }

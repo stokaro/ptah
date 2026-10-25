@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemaload"
 )
@@ -71,7 +71,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
-	owners, err := builtin.Bundled()
+	owners, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
 	}

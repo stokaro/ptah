@@ -270,11 +270,13 @@ type CompareOptions struct {
 
 	// FeatureRequests asks feature owners for changes the comparison cannot
 	// find by itself, such as a new value for a YDB secret, which the server
-	// never returns (see [ptah.run/dialect/ydb/ydbsecret.RotationRequests]).
-	// Each request belongs to this comparison alone: neither schema state
-	// carries it. It goes to the owner of its subject's kind, which may refuse
-	// it, and a request no owner accepts is refused, as is any request on a
-	// comparison without a target dialect.
+	// never returns. A request names its subject, or carries it as the
+	// operator wrote it for the owner to read (see
+	// [ptah.run/core/schemaext.ChangeRequest]). Each request belongs to this
+	// comparison alone: neither schema state carries it. It goes to the owner
+	// of its subject's kind, which may refuse it, and a request no owner
+	// accepts or reads is refused, as is any request on a comparison without a
+	// target dialect.
 	FeatureRequests []schemaext.ChangeRequest
 }
 

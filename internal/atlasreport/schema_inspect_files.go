@@ -12,9 +12,10 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
 	"ptah.run/core/coverage"
+	"ptah.run/core/hclext"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/sqlscript"
-	"ptah.run/internal/ydbsource"
 )
 
 // Split modes mirror the documented Atlas schema inspect split strategies:
@@ -55,7 +56,7 @@ func (a schemaInspectArchive) String() string {
 	return out.String()
 }
 
-func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabulary, readsOwned func(coverage.Kind) bool, args ...any) (schemaInspectArchive, error) {
+func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabulary, owners hclext.Set, args ...any) (schemaInspectArchive, error) {
 	opts, input, err := atlasSchemaInspectSplitArgs(args...)
 	if err != nil {
 		return schemaInspectArchive{}, err
@@ -70,7 +71,7 @@ func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabular
 	// from a parsed block, and a leading comment belongs to no block. Read it
 	// from the input before the split so each member can carry it
 	// (stokaro/ptah#1276).
-	directives, err := splitCoverageDirectives(input, vocabulary, readsOwned)
+	directives, err := splitCoverageDirectives(input, vocabulary, owners)
 	if err != nil {
 		return schemaInspectArchive{}, fmt.Errorf("split schema output: %w", err)
 	}
@@ -97,36 +98,28 @@ func atlasSchemaInspectSplit(defaultSchema string, vocabulary coverage.Vocabular
 
 // splitCoverageDirectives transports validated owner records without adding
 // them to the common coverage set. Reason, provenance, and exact names survive
-// even though the splitter does not interpret their schema semantics.
-func splitCoverageDirectives(input string, vocabulary coverage.Vocabulary, readsOwned func(coverage.Kind) bool) ([]string, error) {
+// even though the splitter does not interpret their schema semantics. Which
+// entries belong to an owner, and what an owner restates from a captured
+// header, the owners say; see [hclext.HeaderSplitter].
+func splitCoverageDirectives(input string, vocabulary coverage.Vocabulary, owners hclext.Set) ([]string, error) {
 	var directives []string
-	var limits ydbsource.Limits
+	var owned []coverage.Object
 	common, err := coverage.DecodeHeader(input, vocabulary, func(object coverage.Object) (bool, error) {
-		if !ydbsource.RecognizesLimit(object.Kind) {
-			if readsOwned == nil || !readsOwned(object.Kind) {
-				return false, nil
-			}
-			directives = append(directives, object.Directive())
-			return true, nil
+		if !owners.SplitRecognizes(object.Kind) {
+			return false, nil
 		}
 		directives = append(directives, object.Directive())
-		limits.Add(string(object.Kind), object.Name)
+		owned = append(owned, object)
 		return true, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	known, explicit, err := ydbsource.ReadHCLCoverage(input, limits)
+	restated, err := owners.SplitRestate(schemaext.CoverageHeaderBodies(input), owned)
 	if err != nil {
 		return nil, err
 	}
-	if explicit {
-		owned, err := ydbsource.HCLCoordinationDirectives(known)
-		if err != nil {
-			return nil, err
-		}
-		directives = append(directives, owned...)
-	}
+	directives = append(directives, restated...)
 	directives = append(directives, common.Directives()...)
 	slices.Sort(directives)
 	return slices.Compact(directives), nil

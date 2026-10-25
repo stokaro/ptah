@@ -28,9 +28,23 @@ import (
 
 // Provider owns isolated session pools for the fixture engine.
 type Provider struct {
+	// Engine is the engine the provider serves and the URL scheme of the
+	// addresses it opens. Empty is fixture. A program that serves the fixture
+	// under the identity of an official provider names that provider's engine.
+	Engine string
+
 	mu       sync.Mutex
 	sessions map[string]*session
 }
+
+// engine returns the engine the provider serves.
+func (p *Provider) engine() string {
+	if p.Engine == "" {
+		return "fixture"
+	}
+	return p.Engine
+}
+
 type session struct {
 	mu              sync.Mutex
 	closed          bool
@@ -77,7 +91,7 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 	if runtime.GOOS == "windows" && len(path) > 3 && path[0] == '\\' && path[2] == ':' {
 		path = path[1:]
 	}
-	if u.Scheme != "fixture" || u.Host != "" || !filepath.IsAbs(path) {
+	if u.Scheme != p.engine() || u.Host != "" || !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("fixture requires an absolute database file")
 	}
 	database, err := sql.Open("sqlite", path)
@@ -96,7 +110,7 @@ func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*pr
 		p.sessions = make(map[string]*session)
 	}
 	p.sessions[id] = &session{db: database, path: path, fault: u.Query().Get("fault")}
-	return &protocol.Session{Id: id, Engine: "fixture", Database: path, ServerVersion: "fixture-1", DefaultSchema: "main", Identifiers: identifierRules()}, nil
+	return &protocol.Session{Id: id, Engine: p.engine(), Database: path, ServerVersion: "fixture-1", DefaultSchema: "main", Identifiers: identifierRules()}, nil
 }
 
 func (p *Provider) lookup(id string) (*session, error) {
@@ -155,13 +169,13 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 	if err != nil {
 		return nil, err
 	}
-	result := &protocol.Schema{Complete: true, Engine: "fixture", Coverage: &protocol.ModelCoverage{Representation: protocol.ValueInput_OBSERVED}}
+	result := &protocol.Schema{Complete: true, Engine: p.engine(), Coverage: &protocol.ModelCoverage{Representation: protocol.ValueInput_OBSERVED}}
 	for _, name := range names {
 		columns, err := tableColumns(ctx, s.db, name)
 		if err != nil {
 			return nil, err
 		}
-		table := &protocol.Table{Identity: &protocol.Reference{Engine: "fixture", Database: s.path, Kind: "table", Name: name, DisplayName: name}, Columns: columns}
+		table := &protocol.Table{Identity: &protocol.Reference{Engine: p.engine(), Database: s.path, Kind: "table", Name: name, DisplayName: name}, Columns: columns}
 		canonical, err := renderChange(&protocol.Change{Object: table.Identity, Operation: &protocol.Change_CreateTable{CreateTable: table}})
 		if err != nil {
 			return nil, err

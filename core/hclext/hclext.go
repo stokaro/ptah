@@ -453,6 +453,27 @@ type Extension struct {
 	// record, of an object the document does not hold, as a loss. The
 	// provider that registers the extension owns their desired codecs.
 	Unrecorded []schemaext.Kind
+	// Split carries the owner's account of a document into every file a
+	// writer cuts the document into; see [HeaderSplitter]. It is optional:
+	// without it, a file carries the owner's Header entries as the document
+	// wrote them and nothing else of the owner's.
+	Split HeaderSplitter
+}
+
+// HeaderSplitter is an owner's part in cutting one HCL document into several
+// files, each read on its own later: every file keeps the account the document
+// gave of the owner's objects, so a file applied back to the database it was
+// read from does not read the owner's unmanaged objects as absent.
+type HeaderSplitter interface {
+	// Recognizes reports whether the owner reads a `ptah:not-described`
+	// entry of kind, so that every file carries the entry as the document
+	// wrote it.
+	Recognizes(kind coverage.Kind) bool
+	// Restate returns the header lines that carry the owner's claim from the
+	// bodies of the document's captured `ptah:feature-coverage` header, read
+	// with the not-described entries the owner recognized, and none when the
+	// document captured no claim of the owner's.
+	Restate(captured []string, limits []coverage.Object) ([]string, error)
 }
 
 // CoverageRequest is what a document says to one owner's claim.
@@ -918,6 +939,36 @@ func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 // kind as a limit on its own claim; see [Extension.Header].
 func (s Set) ReadsHeader(kind coverage.Kind) bool {
 	return slices.ContainsFunc(s.extensions, func(extension Extension) bool { return containsKind(extension.Header, kind) })
+}
+
+// SplitRecognizes reports whether an extension of the set reads a
+// `ptah:not-described` entry of kind when a writer cuts a document into files:
+// as a limit on its own claim (see [Extension.Header]), or through its
+// splitter (see [HeaderSplitter.Recognizes]).
+func (s Set) SplitRecognizes(kind coverage.Kind) bool {
+	return s.ReadsHeader(kind) || slices.ContainsFunc(s.extensions, func(extension Extension) bool {
+		return extension.Split != nil && extension.Split.Recognizes(kind)
+	})
+}
+
+// SplitRestate returns, in extension order, the header lines each extension's
+// splitter restates from the bodies of a document's captured coverage header;
+// see [HeaderSplitter.Restate]. Each splitter is handed the entries of limits
+// it recognizes. An owner's refusal is returned in the owner's words.
+func (s Set) SplitRestate(captured []string, limits []coverage.Object) ([]string, error) {
+	var lines []string
+	for _, extension := range s.extensions {
+		if extension.Split == nil {
+			continue
+		}
+		recognized := slices.DeleteFunc(slices.Clone(limits), func(object coverage.Object) bool { return !extension.Split.Recognizes(object.Kind) })
+		restated, err := extension.Split.Restate(slices.Clone(captured), recognized)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, restated...)
+	}
+	return lines, nil
 }
 
 // Unrecorded reports whether an extension of the set says an HCL document

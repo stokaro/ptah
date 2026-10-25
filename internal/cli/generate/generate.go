@@ -18,9 +18,9 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/servertarget"
@@ -136,14 +136,16 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	// The render dialect also hints SQL parsing for both schema files and command
-	// output, so the two SQL sources are treated consistently.
-	owners, err := builtin.Bundled()
+	// output, so the two SQL sources are treated consistently. The runtime
+	// loads and renders, so a provider --dialect selected supplies both its
+	// source syntax and its renderer.
+	runtime, err := engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return err
 	}
 	result, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
-		Owners:      owners,
+		Owners:      runtime,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    commands,
 		Dialect:     opts.dialect,
@@ -170,18 +172,17 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 		dialects = []string{opts.dialect}
 	}
 
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
 	var rendered bytes.Buffer
 	for _, d := range dialects {
-		renderDialect := platform.NormalizeDialect(d)
+		renderDialect := engineruntime.TargetName(runtime, d)
 		if renderDialect == "" {
 			return fmt.Errorf("error rendering %s schema: %w: %s", d, ptaherr.ErrUnsupportedDialect, d)
 		}
 		selected, err := runtime.ResolveTarget(d)
 		if err != nil {
+			return err
+		}
+		if err := refuseProviderServerVersion(opts, renderDialect); err != nil {
 			return err
 		}
 		if err := reportDialectScopeOmissions(stderr, result, selected, runtime); err != nil {
@@ -207,6 +208,18 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	return nil
+}
+
+// refuseProviderServerVersion refuses --server-version for an engine a
+// provider serves. The version selects a capability preset of a built-in
+// dialect, and a provider's engine has none, so the value would describe
+// nothing and be dropped in silence.
+func refuseProviderServerVersion(opts *options, target string) error {
+	if opts.serverVersion == "" || platform.NormalizeDialect(target) != "" {
+		return nil
+	}
+	return fmt.Errorf("--%s selects a capability preset of a built-in dialect, and the %s engine is served by a provider, which declares none",
+		serverversion.FlagName, target)
 }
 
 // reportDialectScopeOmissions names, on stderr, every declared object this

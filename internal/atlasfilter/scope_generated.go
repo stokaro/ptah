@@ -185,7 +185,7 @@ func (s *scopeSelection) generatedGrantSelected(
 			return function.Name == grant.OnRoutine
 		})
 	case grant.OnObject != "":
-		return objectGrantKept(out.FeatureObjects, grant.ObjectKind, grant.OnObject)
+		return s.vocabulary.objectGrantKept(out.FeatureObjects, grant.ObjectKind, grant.OnObject)
 	case grant.OnSchema != "":
 		if !s.schemaAllowed(grant.OnSchema) {
 			return false

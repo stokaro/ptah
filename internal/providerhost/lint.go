@@ -23,15 +23,23 @@ func (t *target) supportsLint() bool {
 
 // lint publishes the engine's rules and the service that checks them.
 func (t *target) lint() engine.Lint {
+	return engine.Lint{Rules: PublishedLintRules(t.engine), Service: lintService{target: t}}
+}
+
+// PublishedLintRules returns the lint rules an engine's description publishes,
+// as a runtime lists them: each rule targets the engine. It is the conversion a
+// started provider's rules go through, for a caller that reads a description
+// recorded from a provider without starting one.
+func PublishedLintRules(declared *protocol.Engine) []lintext.Rule {
 	severities := map[protocol.LintRule_Severity]lintext.Severity{
 		protocol.LintRule_INFO: lintext.Info, protocol.LintRule_WARNING: lintext.Warning, protocol.LintRule_ERROR: lintext.Error,
 	}
-	rules := make([]lintext.Rule, 0, len(t.engine.GetLintRules()))
-	for _, rule := range t.engine.GetLintRules() {
+	rules := make([]lintext.Rule, 0, len(declared.GetLintRules()))
+	for _, rule := range declared.GetLintRules() {
 		rules = append(rules, lintext.Rule{Code: rule.GetCode(), Title: rule.GetTitle(), Severity: severities[rule.GetSeverity()],
-			Targets: []string{t.engine.GetId()}, AppliesToDown: rule.GetAppliesToDown(), Subsumes: slices.Clone(rule.GetSubsumes())})
+			Targets: []string{declared.GetId()}, AppliesToDown: rule.GetAppliesToDown(), Subsumes: slices.Clone(rule.GetSubsumes())})
 	}
-	return engine.Lint{Rules: rules, Service: lintService{target: t}}
+	return rules
 }
 
 var (

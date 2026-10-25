@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/sqllint"
 )
@@ -21,7 +20,7 @@ import (
 // stand behind would turn a broken catalog into documentation instead of into a
 // failure.
 func WriteMarkdown(w io.Writer) error {
-	runtime, err := builtin.New()
+	runtime, err := documented()
 	if err != nil {
 		return err
 	}

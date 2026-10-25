@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/openapirender"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/protobufrender"
+	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/schemadoc"
 	"ptah.run/internal/schemaexport"
 )
@@ -136,37 +137,44 @@ in the separate ptah-compat binary.`,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	cmd.AddCommand(newSchemaAnnotationsCommand())
-	cmd.AddCommand(newSchemaExportCommand())
-	cmd.AddCommand(providercommand.Configure(newSchemaApplyCommand(), reportProviderFailure))
-	cmd.AddCommand(providercommand.Configure(newSchemaPlanCommand(), reportProviderFailure))
-	cmd.AddCommand(newSchemaApproveCommand())
-	cmd.AddCommand(newSchemaVerifyApprovalCommand())
-	cmd.AddCommand(newSchemaValidateCommand())
-	cmd.AddCommand(newSchemaStatsCommand())
-	cmd.AddCommand(newSchemaLineageCommand())
-	cmd.AddCommand(newSchemaSecurityCommand())
-	cmd.AddCommand(newSchemaServeCommand())
-	cmd.AddCommand(providercommand.Configure(newSchemaInspectCommand(), reportProviderFailure))
-	cmd.AddCommand(newSchemaDiffCommand())
-	cmd.AddCommand(newSchemaFmtCommand())
-	cmd.AddCommand(schemapush.NewSchemaPushCommand())
-	cmd.AddCommand(schemapull.NewSchemaPullCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
 	renderCmd.Long = "Render desired schema SQL from SQL, YAML, HCL, or DBML files, Go annotations, OCI artifacts, or an external schema command."
-	cmd.AddCommand(renderCmd)
 
 	compareCmd := compare.NewCompareCommand()
 	compareCmd.Short = "Compare desired schema with a live database"
 	compareCmd.Long = "Compare desired schema with a live database."
-	cmd.AddCommand(compareCmd)
 
 	driftCmd := drift.NewDriftCommand()
 	driftCmd.Short = "Check live database drift against desired schema"
 	driftCmd.Long = "Check live database drift against desired schema."
-	cmd.AddCommand(driftCmd)
 
-	cmd.AddCommand(NewSchemaTestCommand())
+	// Every verb that loads a schema, reads a database or names a dialect
+	// selects a provider for the engine it names, and reports a selection that
+	// fails before the verb runs in the verb's own output shape.
+	for _, verb := range []*cobra.Command{
+		newSchemaExportCommand(),
+		newSchemaApplyCommand(),
+		newSchemaPlanCommand(),
+		newSchemaValidateCommand(),
+		newSchemaStatsCommand(),
+		newSchemaLineageCommand(),
+		newSchemaSecurityCommand(),
+		newSchemaServeCommand(),
+		newSchemaInspectCommand(),
+		newSchemaDiffCommand(),
+		schemapush.NewSchemaPushCommand(),
+		schemapull.NewSchemaPullCommand(),
+		renderCmd,
+		compareCmd,
+		driftCmd,
+		NewSchemaTestCommand(),
+	} {
+		cmd.AddCommand(providercommand.Configure(verb, reportProviderFailure))
+	}
+	cmd.AddCommand(newSchemaApproveCommand())
+	cmd.AddCommand(newSchemaVerifyApprovalCommand())
+	cmd.AddCommand(newSchemaFmtCommand())
 	return cmd
 }
 
@@ -204,7 +212,14 @@ func runAnnotations(cmd *cobra.Command, format, outPath string) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	catalog, err := annotationmeta.NewCatalog(runtime.Annotations())
+	// The directives official providers published for the engines the
+	// runtime does not serve join the schema, so an editor validates a model
+	// written for such an engine without its provider installed.
+	published, err := providerpublished.AnnotationSet(runtime)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	catalog, err := annotationmeta.NewCatalog(runtime.Annotations(), published)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

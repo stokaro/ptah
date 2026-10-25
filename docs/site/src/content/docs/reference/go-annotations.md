@@ -25,7 +25,11 @@ document by `ptah schema annotations`, and that document is published at
 declares as its own `$id`. Point an editor's JSON Schema setting at that URL to
 get completion and validation for `//ptah` directives. Each published version
 also serves its own copy, so `/edge/ptah-annotations.schema.json` is the one
-built from the development source.
+built from the development source. The schema and the `ptah-ls` language
+server also list the directives an official provider claims for an engine the
+binary does not serve, read from a copy recorded from a provider build, so an
+editor completes them without the provider installed. Ptah reads such a
+directive in a model only when the command selects the provider.
 For the workflow — modeling, rendering, and generating migrations from
 annotated structs — see [Go annotations](../../schema/go-annotations/).
 

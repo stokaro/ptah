@@ -14,11 +14,10 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasmigrate"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
@@ -29,6 +28,7 @@ import (
 	"ptah.run/internal/migrationreplay"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -420,10 +420,6 @@ func resolveGenerateDatabases(
 }
 
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
 	variables, err := resolveGenerateVariables()
 	if err != nil {
 		return err
@@ -586,11 +582,18 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if replay {
 		targetURL = devURL
 	}
-	dialect, err := atlasurl.DialectFromURL(targetURL)
+	dialect, err := providerurl.Dialect(cmd.Context(), targetURL)
 	if err != nil {
 		return err
 	}
 	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return err
+	}
+	// The URLs may come from the project file, and a docker dev URL is a real
+	// address only now, so the runtime is resolved once they are known: an
+	// engine a provider serves starts that provider here.
+	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL), engineruntime.DatabaseURL(devURL))
+	if err != nil {
 		return err
 	}
 	if migrationsDir == "" {
@@ -624,7 +627,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	// server speaks, and after the integrity gate, which refuses a drifted
 	// directory before any database is reached (stokaro/ptah#3952).
 	loadDesired := func(dialect, databaseURL string) (*schemamodel.Database, error) {
-		return loadGenerateSchema(cmd, rootDirs, schemaFiles, commands, dialect, databaseURL)
+		return loadGenerateSchema(cmd, runtime, rootDirs, schemaFiles, commands, dialect, databaseURL)
 	}
 
 	ignoreExtensions, err := cmd.Flags().GetStringArray(dbcli.IgnoreExtensionFlagName)
@@ -756,15 +759,12 @@ func reportGeneratedMigrationFiles(out io.Writer, targetURL string, files *gener
 // stay in one place.
 func loadGenerateSchema(
 	cmd *cobra.Command,
+	owners schemaload.Owners,
 	rootDirs, schemaFiles []string,
 	commands []schemasource.Command,
 	dialect, databaseURL string,
 ) (*schemamodel.Database, error) {
 	plainHTTP, err := cmd.Flags().GetBool(dbcli.PlainHTTPFlagName)
-	if err != nil {
-		return nil, err
-	}
-	owners, err := builtin.Bundled()
 	if err != nil {
 		return nil, err
 	}

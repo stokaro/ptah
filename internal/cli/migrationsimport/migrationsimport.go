@@ -14,9 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/core/platform"
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/servertarget"
 	"ptah.run/migration/importer"
@@ -193,7 +192,11 @@ func runImport(cmd *cobra.Command, opts *options) error {
 // the dialect's default, chosen by nobody; the resolver's note says so when a
 // version resolved to something other than the release line it named.
 func renderingParser(cmd *cobra.Command, parser importer.Parser, opts *options) (importer.Parser, error) {
-	dialect := platform.NormalizeDialect(opts.dialect)
+	runtime, err := engineruntime.Resolve(cmd.Context())
+	if err != nil {
+		return nil, err
+	}
+	dialect := engineruntime.TargetName(runtime, opts.dialect)
 	if dialect == "" {
 		return nil, fmt.Errorf("--dialect: unsupported dialect %q", opts.dialect)
 	}
@@ -204,10 +207,6 @@ func renderingParser(cmd *cobra.Command, parser importer.Parser, opts *options) 
 	}
 	if target.Note != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", target.Note)
-	}
-	runtime, err := builtin.New()
-	if err != nil {
-		return nil, err
 	}
 	rendering, err := importer.WithRendering(parser, dialect, target.Capabilities, runtime)
 	if err != nil {

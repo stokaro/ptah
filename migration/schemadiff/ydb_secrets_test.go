@@ -149,12 +149,41 @@ func TestCompare_YDBSecretRotatedOnlyWhenAsked(t *testing.T) {
 			desired := declaredSecrets()
 			desired.FeatureObjects = must.Must(desired.FeatureObjects.With(ydbsecret.DesiredObject("", "new_one", "", "PTAH_SECRET_NEW")))
 			held := heldSecrets(ydbsecret.ObservedObject("", "pg_password"), ydbsecret.ObservedObject("ext", "s3"))
-			opts := &config.CompareOptions{Dialect: platform.YDB, FeatureRequests: must.Must(ydbsecret.RotationRequests(test.requested))}
+			// As the commands send them: the secret's owner reads each path.
+			opts := &config.CompareOptions{Dialect: platform.YDB, FeatureRequests: schemaext.WrittenRequests(schemaext.RotateAction, test.requested)}
 
 			diff, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), desired, held, opts, must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.FeatureChanges, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestCompare_YDBSecretWrittenRotationFailurePath refuses a path as the
+// operator wrote it that the secret's owner cannot read, and one on a target
+// whose engine has no secrets, so neither reads as a rotation done.
+func TestCompare_YDBSecretWrittenRotationFailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		path    string
+		wantErr string
+	}{
+		{name: "a path the owner refuses", dialect: platform.YDB, path: "ext//s3",
+			wantErr: `rotate secret: "ext//s3" is not a secret path \(dir/name\): .*`},
+		{name: "a target with no secrets", dialect: platform.Postgres, path: "ext/s3",
+			wantErr: `.*no owner on "postgres" reads the "rotate" request "ext/s3"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			opts := &config.CompareOptions{Dialect: test.dialect, FeatureRequests: schemaext.WrittenRequests(schemaext.RotateAction, []string{test.path})}
+
+			diff, _, err := schemadiff.CompareReportingUndecidedAdditions(t.Context(), declaredSecrets(), heldSecrets(ydbsecret.ObservedObject("ext", "s3")), opts, must.Must(builtin.New()))
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(diff, qt.IsNil)
 		})
 	}
 }

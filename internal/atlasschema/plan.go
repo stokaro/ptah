@@ -25,6 +25,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemafingerprint"
 	"ptah.run/internal/schemascope"
@@ -231,7 +232,7 @@ func PreparePlanFileReportingUndecided(
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
-	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
