@@ -1183,10 +1183,11 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
 			consume migrationreplay.Consumer,
+			options ...migrationreplay.SnapshotOption,
 		) error {
 			cleanupCalls++
 			return errors.Join(
-				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume),
+				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume, options...),
 				cleanupErr,
 			)
 		},
@@ -1221,10 +1222,11 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
 			consume migrationreplay.Consumer,
+			options ...migrationreplay.SnapshotOption,
 		) error {
 			cleanupCalls++
 			return errors.Join(
-				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume),
+				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume, options...),
 				cleanupErr,
 			)
 		},
@@ -1252,6 +1254,7 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 			snapshot fs.FS,
 			format migrationfile.DirFormat,
 			consume migrationreplay.Consumer,
+			options ...migrationreplay.SnapshotOption,
 		) error {
 			cleanupCalls++
 			return migrationreplay.WithReplayedSnapshotLocked(
@@ -1264,6 +1267,7 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 					cancel()
 					return errors.Join(consumeErr, replayCtx.Err())
 				},
+				options...,
 			)
 		},
 	})

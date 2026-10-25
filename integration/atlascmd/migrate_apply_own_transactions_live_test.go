@@ -33,18 +33,41 @@ import (
 // output and its error.
 func applyGolangMigrateDirectory(c *qt.C, adminURL string, files map[string]string) (*sql.DB, string, error) {
 	c.Helper()
+	run := newGolangMigrateApply(c, adminURL, files)
+	out, err := run.apply()
+	return run.db, out, err
+}
+
+// golangMigrateApply is a golang-migrate directory and the fresh database it
+// is applied to, for a test that applies it more than once.
+type golangMigrateApply struct {
+	db     *sql.DB
+	dirURL string
+	dbURL  string
+}
+
+// newGolangMigrateApply hashes files as a golang-migrate directory and creates
+// the database it is applied to.
+func newGolangMigrateApply(c *qt.C, adminURL string, files map[string]string) *golangMigrateApply {
+	c.Helper()
 	dir := writeHashedLayoutDirectory(c, "golang-migrate", files)
 	dbURL := newCleanGateDatabase(c, adminURL, nil)
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
+	return &golangMigrateApply{db: db, dirURL: "file://" + dir + "?format=golang-migrate", dbURL: dbURL}
+}
+
+// apply runs `migrate apply` over the directory with flags, and returns the
+// command's output and its error.
+func (r *golangMigrateApply) apply(flags ...string) (string, error) {
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "apply", "--dir", "file://" + dir + "?format=golang-migrate", "--url", dbURL})
+	cmd.SetArgs(append([]string{"migrate", "apply", "--dir", r.dirURL, "--url", r.dbURL}, flags...))
 	err := cmd.Execute()
-	db, openErr := sql.Open("pgx", dbURL)
-	c.Assert(openErr, qt.IsNil)
-	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	return db, out.String(), err
+	return out.String(), err
 }
 
 // latestRevision returns what the revision row of version records: how many
@@ -112,6 +135,87 @@ func TestMigrateApplyGolangMigrateOwnTransactions_FailureAfterTheFileCommitsLive
 	applied, failure := latestRevision(c, db, "20240828000000")
 	c.Assert(applied, qt.Equals, 3)
 	c.Assert(failure, qt.Matches, `ERROR: relation "missing_table" does not exist.*`)
+}
+
+// The next apply after that failure resumes after the statements that
+// committed, on a fresh session, and runs the statement that failed. It needs
+// --allow-dirty, as every retry over a failed revision does.
+func TestMigrateApplyGolangMigrateOwnTransactions_RetryAfterTheFileCommitsLive(t *testing.T) {
+	c := qt.New(t)
+	run := newGolangMigrateApply(c, dbtarget.URL(c, dbtarget.PostgreSQL), withGolangMigrateBase(map[string]string{
+		"20240828000000_fail.up.sql":   "BEGIN;\nCREATE TABLE t2 (id int);\nCOMMIT;\nINSERT INTO t3 VALUES (1);\n",
+		"20240828000000_fail.down.sql": "DROP TABLE t2;\n",
+	}))
+	out, err := run.apply()
+	c.Assert(err, qt.ErrorMatches, `(?s).*relation "t3" does not exist.*`, qt.Commentf("output:\n%s", out))
+	_, err = run.db.ExecContext(context.Background(), "CREATE TABLE t3 (id int)")
+	c.Assert(err, qt.IsNil)
+
+	out, err = run.apply("--allow-dirty")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	var rows int
+	c.Assert(run.db.QueryRowContext(context.Background(), "SELECT count(*) FROM t3").Scan(&rows), qt.IsNil)
+	c.Assert(rows, qt.Equals, 1)
+	applied, failure := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, 4)
+	c.Assert(failure, qt.Equals, "")
+}
+
+// A statement after the file's COMMIT runs in the transaction golang-migrate's
+// default mode runs it in, the one the end of the file would commit, so the
+// failure after it takes it back: a and b stay, c does not, as golang-migrate
+// v4.20.1 leaves them (measured on PostgreSQL 15.19, stokaro/ptah#4979). The
+// revision row records the four statements that committed, and the retry
+// resumes at the fifth.
+func TestMigrateApplyGolangMigrateOwnTransactions_DefaultModeLive(t *testing.T) {
+	c := qt.New(t)
+	run := newGolangMigrateApply(c, dbtarget.URL(c, dbtarget.PostgreSQL), withGolangMigrateBase(map[string]string{
+		"20240828000000_mixed.up.sql": "CREATE TABLE a (id int);\nBEGIN;\nCREATE TABLE b (id int);\nCOMMIT;\n" +
+			"CREATE TABLE c (id int);\nINSERT INTO missing_table VALUES (1);\n",
+		"20240828000000_mixed.down.sql": "DROP TABLE c, b, a;\n",
+	}))
+
+	out, err := run.apply()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*relation "missing_table" does not exist.*`, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "a"), qt.IsTrue)
+	c.Assert(tableExistsIn(c, run.db, "b"), qt.IsTrue)
+	c.Assert(tableExistsIn(c, run.db, "c"), qt.IsFalse)
+	applied, _ := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, 4)
+	_, err = run.db.ExecContext(context.Background(), "CREATE TABLE missing_table (id int)")
+	c.Assert(err, qt.IsNil)
+	out, err = run.apply("--allow-dirty")
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "c"), qt.IsTrue)
+	applied, failure := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, 6)
+	c.Assert(failure, qt.Equals, "")
+}
+
+// A failure inside the file's first transaction leaves nothing of the file
+// committed. The run discards the revision row it wrote, as it does for a file
+// the migrator's transaction rolled back, so the next apply runs the file from
+// its start without --allow-dirty.
+func TestMigrateApplyGolangMigrateOwnTransactions_FailureWithNothingCommittedLive(t *testing.T) {
+	c := qt.New(t)
+	run := newGolangMigrateApply(c, dbtarget.URL(c, dbtarget.PostgreSQL), withGolangMigrateBase(map[string]string{
+		"20240828000000_fail.up.sql":   "BEGIN;\nCREATE TABLE t2 (id int);\nINSERT INTO t3 VALUES (1);\nCOMMIT;\n",
+		"20240828000000_fail.down.sql": "DROP TABLE t2;\n",
+	}))
+
+	out, err := run.apply()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*relation "t3" does not exist.*`, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "t2"), qt.IsFalse)
+	applied, _ := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, -1)
+	_, err = run.db.ExecContext(context.Background(), "CREATE TABLE t3 (id int)")
+	c.Assert(err, qt.IsNil)
+	out, err = run.apply()
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "t2"), qt.IsTrue)
 }
 
 func TestMigrateApplyGolangMigrateLoneConcurrentIndexLive(t *testing.T) {

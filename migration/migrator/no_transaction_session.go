@@ -84,6 +84,27 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 	direction MigrationDirection,
 	resumeFrom int,
 ) error {
+	return m.restoreSessionPrefix(ctx, migration, direction, resumeFrom, ownTransactionRun{})
+}
+
+// restoreSessionPrefix replays, on a fresh session, the session state the
+// committed prefix of a resumed migration left, and refuses a prefix whose
+// session state it cannot restore.
+//
+// run describes a body that opens and closes its own transactions. A resumed
+// attempt starts after a committed point, so every transaction of the prefix
+// committed. The body's BEGIN and COMMIT change no session state, and neither
+// do SET LOCAL, SET TRANSACTION, SET CONSTRAINTS and LOCK inside a
+// transaction, which ended with it; replaying LOCK outside a transaction is
+// refused by the server. A plain SET or RESET inside one outlives the
+// transaction, and is replayed as it is outside one.
+func (m *Migrator) restoreSessionPrefix(
+	ctx context.Context,
+	migration *Migration,
+	direction MigrationDirection,
+	resumeFrom int,
+	run ownTransactionRun,
+) error {
 	m.startPostgresIndexObservation()
 	if resumeFrom <= 1 {
 		return nil
@@ -105,7 +126,7 @@ func (m *Migrator) restoreNoTransactionSessionPrefix(
 				err,
 			)
 		}
-		switch noTransactionResumeAction(statement, m.connectionDialect()) {
+		switch ownTransactionResumeAction(i, statement, m.connectionDialect(), run) {
 		case noTransactionPrefixDurable:
 			continue
 		case noTransactionPrefixReplay:
@@ -145,6 +166,27 @@ func searchPathChange(guard migratorext.IndexGuard, statement string) (changed, 
 		return false, false
 	}
 	return guard.SearchPath(statement)
+}
+
+// ownTransactionResumeAction is [noTransactionResumeAction] for the statement
+// at index of a committed prefix of a body run describes; see
+// [Migrator.restoreSessionPrefix].
+func ownTransactionResumeAction(index int, statement, dialect string, run ownTransactionRun) noTransactionPrefixAction {
+	if _, inside := run.transactions.Opening(index); !inside {
+		return noTransactionResumeAction(statement, dialect)
+	}
+	if opened, ok := run.blocks.Opening(index); ok && (opened == index || run.blocks.Closes(index)) {
+		return noTransactionPrefixDurable
+	}
+	tokens := significantSQLTokens(statement, dialect)
+	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("LOCK") {
+		return noTransactionPrefixDurable
+	}
+	if len(tokens) > 1 && tokens[0].MatchIdentifierValue("SET") &&
+		matchesAnyKeyword(tokens[1], "LOCAL", "TRANSACTION", "CONSTRAINTS") {
+		return noTransactionPrefixDurable
+	}
+	return noTransactionResumeAction(statement, dialect)
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {

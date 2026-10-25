@@ -142,6 +142,10 @@ type FSMigrationProvider struct {
 	// numeric version. A native revision table stores only the number, and
 	// this is how a row read from one finds the key its file compares under.
 	atlasSpellings map[int64]string
+	// ownTransactions marks every loaded migration as one of a directory
+	// written for a runner that opens no transaction around a file; see
+	// [WithOwnTransactions].
+	ownTransactions bool
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -265,6 +269,9 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	}
 	if err := p.load(); err != nil {
 		return nil, err
+	}
+	for _, migration := range p.migrations {
+		migration.ownTransactions = p.ownTransactions
 	}
 	return p, nil
 }

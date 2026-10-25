@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/atlasargs"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrate"
@@ -177,6 +178,8 @@ func replayAtlasMigrateSource(
 		DevURL:              source.devURL,
 		DevServerDisposable: devServerDisposable,
 		FS:                  converted,
+		// A golang-migrate directory replays the way apply runs it.
+		OwnTransactions: source.format.TransactionOwner() == lintext.TransactionOwnerFile,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("error validating migration SQL on dev database: %w", err))

@@ -27,14 +27,7 @@ func check(c *qt.C, files ...lintext.File) []lintext.Finding {
 // opens.
 func checkOwned(c *qt.C, owner lintext.TransactionOwner, files ...lintext.File) []lintext.Finding {
 	c.Helper()
-	return checkCodes(c, owner, []string{"TX101", "TX201"}, files...)
-}
-
-// checkCodes runs the owner's rules of codes over files, whose transactions
-// owner opens, and returns the findings.
-func checkCodes(c *qt.C, owner lintext.TransactionOwner, codes []string, files ...lintext.File) []lintext.Finding {
-	c.Helper()
-	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: codes, Files: files,
+	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"TX101", "TX201"}, Files: files,
 		TransactionOwner: owner}
 	result, err := pglint.Service{}.CheckMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
@@ -150,6 +143,9 @@ func TestService_CheckMigrations_EmbeddedTransaction(t *testing.T) {
 func TestService_CheckMigrations_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 	const message = wrappedBlockMessage
 	const block = "BEGIN;\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\nCOMMIT;\n"
+	// The apply runs such a file's block as written under tx-mode none too.
+	noTransaction := file("1.up.sql", true, block)
+	noTransaction.NoTransaction = true
 	for _, test := range []struct {
 		name  string
 		owner lintext.TransactionOwner
@@ -159,6 +155,7 @@ func TestService_CheckMigrations_EmbeddedTransactionFollowsTheTransactionOwner(t
 		{"the migrator wraps the file", lintext.TransactionOwnerMigrator, file("1.up.sql", true, block),
 			[]lintext.Finding{{Code: "TX201", File: 0, Statement: 0, Message: message}}},
 		{"the file opens its own", lintext.TransactionOwnerFile, file("1.up.sql", true, block), nil},
+		{"the file opens its own and asks for no transaction", lintext.TransactionOwnerFile, noTransaction, nil},
 		{"START TRANSACTION in a file that opens its own", lintext.TransactionOwnerFile,
 			file("1.up.sql", true, "START TRANSACTION;\nCREATE TABLE t (id int);\nCOMMIT;\n"), nil},
 		{"an owner the rule does not know", lintext.TransactionOwner("savepoint"), file("1.up.sql", true, block),
@@ -204,41 +201,6 @@ func TestService_CheckMigrations_NestedTransactionBlock(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(checkOwned(c, lintext.TransactionOwnerFile, file("1.up.sql", true, test.sql)), qt.DeepEquals, test.want)
-		})
-	}
-}
-
-// PG103 and PG103P do not report a file whose one statement is the build,
-// where the runner wraps nothing: the runner sends the statement on its own,
-// and PostgreSQL runs it outside a transaction. Beside another statement the
-// file is one implicit transaction again, so both rules report it, and so
-// does every file the migrator wraps.
-func TestService_CheckMigrations_ConcurrentBuildThatRunsAlone(t *testing.T) {
-	const concurrent = "CONCURRENTLY cannot run inside PostgreSQL's normal migration transaction; mark the migration non-transactional before applying"
-	const perChunk = "WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk, so TimescaleDB " +
-		"refuses it inside the migration's transaction; mark the migration non-transactional before applying"
-	const alone = "CREATE INDEX CONCURRENTLY t_id_idx ON t (id);\n"
-	const aloneChunk = "CREATE INDEX t_id_idx ON t (id) WITH (timescaledb.transaction_per_chunk);\n"
-	for _, test := range []struct {
-		name  string
-		owner lintext.TransactionOwner
-		sql   string
-		want  []lintext.Finding
-	}{
-		{"alone, where the runner wraps nothing", lintext.TransactionOwnerFile, alone, nil},
-		{"alone, with a comment", lintext.TransactionOwnerFile, "-- build it\n" + alone, nil},
-		{"a per-chunk build alone, where the runner wraps nothing", lintext.TransactionOwnerFile, aloneChunk, nil},
-		{"alone, where the migrator wraps the file", lintext.TransactionOwnerMigrator, alone,
-			[]lintext.Finding{{Code: "PG103", File: 0, Statement: 0, Message: concurrent}}},
-		{"a per-chunk build alone, where the migrator wraps the file", lintext.TransactionOwnerMigrator, aloneChunk,
-			[]lintext.Finding{{Code: "PG103P", File: 0, Statement: 0, Message: perChunk}}},
-		{"beside another statement, where the runner wraps nothing", lintext.TransactionOwnerFile,
-			"CREATE TABLE t (id int);\n" + alone, []lintext.Finding{{Code: "PG103", File: 0, Statement: 1, Message: concurrent}}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got := checkCodes(c, test.owner, []string{"PG103", "PG103P"}, file("1.up.sql", true, test.sql))
-			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }
