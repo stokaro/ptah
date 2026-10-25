@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/dialect/ydb/ydbsecret"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
@@ -164,11 +163,12 @@ type DiffPolicy struct {
 	// explicit table rebuild, in both directions of the migration. See
 	// [planext.Options.AllowTableRebuild].
 	AllowTableRebuild bool
-	// RotateSecrets names the YDB secrets, by path, the up migration gives the
-	// value their declared variable holds when it runs. The down migration
-	// does not restore the earlier value, which was never read. Each path is
-	// sent to the comparison as a rotation request; see
-	// [ydbsecret.RotationRequests].
+	// RotateSecrets names the secrets, by path as the operator wrote it, the up
+	// migration gives the value their declared variable holds when it runs.
+	// The down migration does not restore the earlier value, which was never
+	// read. Each path is sent to the comparison as a written request with the
+	// action [schemaext.RotateAction], which the owner of the engine's secrets
+	// resolves.
 	RotateSecrets []string
 }
 
@@ -386,9 +386,7 @@ func compareForPlan(
 	opts GenerateMigrationOptions,
 ) (*difftypes.SchemaDiff, schemadiff.Diagnostics, error) {
 	compareOpts := compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy)
-	if err := ydbsecret.WithRotations(compareOpts, opts.DiffPolicy.RotateSecrets); err != nil {
-		return nil, schemadiff.Diagnostics{}, err
-	}
+	compareOpts.FeatureRequests = append(compareOpts.FeatureRequests, schemaext.WrittenRequests(schemaext.RotateAction, opts.DiffPolicy.RotateSecrets)...)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx, conn, desired, dbSchema, compareOpts, opts.Runtime,
 	)

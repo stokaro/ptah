@@ -26,6 +26,10 @@ type owner struct {
 	nativeUnits       bool
 	transactionalDDL  bool
 	ownedLifecycle    bool
+	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
+	// place, as a rebuild of its table when the host's planning policy asks
+	// for one, and refuses it in the words of that policy when it does not.
+	rebuilds bool
 }
 
 func main() {
@@ -39,7 +43,7 @@ func main() {
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "owned" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "owned" && mode != "policy" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -49,7 +53,7 @@ func main() {
 		d.Features = append(d.Features, provider.TransactionsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
 	}
-	if mode == "native-cli" {
+	if mode == "native-cli" || mode == "policy" {
 		d.Features = append(d.Features, provider.LocksFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.LocksFeature)
 	}
@@ -58,10 +62,40 @@ func main() {
 		// table operation, and the provider claims each column step itself.
 		d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
 	}
+	actions, rebuild := `"create", "rename", "drop", "add-column", "drop-column"`, ""
+	if mode == "policy" {
+		// The provider honors the planning policy: it replaces the common
+		// step that adds a NOT NULL column with a rebuild of its table when
+		// the operator asks for one. The native commands apply it under the
+		// session lock native-cli also takes.
+		d.Features = append(d.Features, provider.PlanningPolicyFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.PlanningPolicyFeature)
+		actions += `, "rebuild"`
+		rebuild = `"rebuild": {
+				"additionalProperties": false,
+				"properties": {
+					"columns": {"items": {
+						"additionalProperties": false,
+						"properties": {
+							"name": {"type": "string"},
+							"type": {"enum": ["INTEGER", "TEXT", "REAL", "BLOB"]},
+							"nullable": {"type": "boolean"},
+							"primaryKey": {"type": "boolean"}
+						},
+						"required": ["name", "type", "nullable", "primaryKey"],
+						"type": "object"
+					}, "type": "array"},
+					"copy": {"items": {"type": "string"}, "type": "array"}
+				},
+				"required": ["columns", "copy"],
+				"type": "object"
+			},`
+	}
 	definition, err := modeljson.Canonical([]byte(`{
 		"additionalProperties": false,
 		"properties": {
-			"action": {"enum": ["create", "rename", "drop", "add-column", "drop-column"]},
+			` + rebuild + `
+			"action": {"enum": [` + actions + `]},
 			"dropColumn": {"type": "string"},
 			"column": {
 				"additionalProperties": false,
@@ -91,14 +125,14 @@ func main() {
 	d.Engines[0].ValueModels = append(d.Engines[0].ValueModels, change)
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
-	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned", ownedLifecycle: mode == "owned", transactionalDDL: mode == "native-transactional", operationEnvelope: &protocol.Envelope{
-		ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:]),
-	}}
+	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
+	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned" && mode != "policy", ownedLifecycle: mode == "owned",
+		rebuilds: mode == "policy", transactionalDDL: mode == "native-transactional", operationEnvelope: envelope}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if p.transactionalDDL {
 		server.Transactions = p
 	}
-	if mode == "native-cli" {
+	if mode == "native-cli" || mode == "policy" {
 		server.Locks = p
 	}
 	if err := runtime.Serve(server); err != nil {

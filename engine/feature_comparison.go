@@ -26,9 +26,6 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		return schemaext.ComparisonResult{}, err
 	}
 	request.Target = selected.Name()
-	if request.Requests, err = r.resolveWrittenRequests(ctx, request.Target, request.Requests); err != nil {
-		return schemaext.ComparisonResult{}, err
-	}
 	if err := r.validateExclusions(request.Exclusions); err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
@@ -177,9 +174,13 @@ func (r *Runtime) featureComparisonKinds(request schemaext.ComparisonRequest) (f
 
 // requestKinds adds the kind of each change request's subject to all. A
 // request names a named-object model; one that names a facet model is
-// refused, since a facet owner takes no request.
+// refused, since a facet owner takes no request. A written request names no
+// kind; the object comparison offers it to every owner of its action.
 func (r *Runtime) requestKinds(request schemaext.ComparisonRequest, facets, all map[schemaext.Kind]bool) error {
 	for _, change := range request.Requests {
+		if change.Written != "" {
+			continue
+		}
 		kind := schemaext.Kind(change.Subject.Kind)
 		if _, found := r.facetComparisons[conversionKey{target: request.Target, kind: kind}]; found || facets[kind] {
 			return fmt.Errorf("%w: a change request names facet model %q", schemaext.ErrInvalidValue, kind)

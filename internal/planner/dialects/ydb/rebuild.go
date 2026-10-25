@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacapture"
@@ -76,7 +77,7 @@ import (
 // refusal names it so the operator learns how to ask, unless the caller named
 // its own request with [Planner.WithTableRebuildRequest]; the command packages
 // declare their flag with this spelling.
-const TableRebuildFlag = "--allow-table-rebuild"
+const TableRebuildFlag = planext.DefaultTableRebuildRequest
 
 // tableRebuild is one table the plan recreates.
 type tableRebuild struct {

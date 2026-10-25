@@ -13,7 +13,8 @@ import (
 // SecretService compares YDB secrets by path alone. The server never returns a
 // secret's value and a declaration never holds one, so a secret both sides hold
 // is equal by its presence; a changed value is planned only when the caller
-// requests a rotation (see [ydbsecret.RotationRequests]).
+// requests a rotation (see [ydbsecret.RotationRequests]), by path or as the
+// operator wrote the path.
 type SecretService struct{}
 
 type secret struct {
@@ -21,19 +22,6 @@ type secret struct {
 	desired *ydbsecret.Desired
 	current *ydbsecret.Observed
 	rotate  bool
-}
-
-// ResolveWritten reads a secret's path, as `--rotate-secret` takes it, into
-// the secret it names; see [schemaext.WrittenResolver]. The runtime asks only
-// for the rotate action, the one action the comparison accepts. Every path
-// names a secret, so a spelling [ydbsecret.ParsePath] refuses is an error
-// rather than a request for another owner.
-func (SecretService) ResolveWritten(_ context.Context, _, written string) (objectidentity.ID, bool, error) {
-	ref, err := ydbsecret.ParsePath(written)
-	if err != nil {
-		return objectidentity.ID{}, false, fmt.Errorf("rotate secret: %w", err)
-	}
-	return ref, true, nil
 }
 
 // CompareObjects plans a creation only where the read established absence,
@@ -48,7 +36,8 @@ func (SecretService) CompareObjects(ctx context.Context, request schemaext.Objec
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	if err := requestRotations(request.Requests, secrets); err != nil {
+	resolved, err := requestRotations(request.Requests, secrets)
+	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	values := make([]standalonePresence, 0, len(secrets))
@@ -85,29 +74,44 @@ func (SecretService) CompareObjects(ctx context.Context, request schemaext.Objec
 			return schemaext.ObjectComparisonResult{}, err
 		}
 	}
+	result.Resolved = resolved
 	return result, nil
 }
 
-// requestRotations marks each secret a request asks to rotate. A request that
-// names a secret the desired source does not declare is refused, so a typo
-// cannot read as a rotation done.
-func requestRotations(requests []schemaext.ChangeRequest, secrets map[objectidentity.Key]secret) error {
-	for _, requested := range requests {
+// requestRotations marks each secret a request asks to rotate, and returns the
+// written requests it resolved: a path as the operator wrote it, read by
+// [ydbsecret.ParsePath]. A request that names a secret the desired source
+// does not declare is refused, so a typo cannot read as a rotation done, and
+// so is a written path that names no secret.
+func requestRotations(requests []schemaext.ChangeRequest, secrets map[objectidentity.Key]secret) ([]schemaext.ResolvedRequest, error) {
+	var resolved []schemaext.ResolvedRequest
+	for i, requested := range requests {
 		if requested.Action != ydbsecret.RotateAction {
-			return fmt.Errorf("%w: a secret accepts no %q request", schemaext.ErrInvalidValue, requested.Action)
+			return nil, fmt.Errorf("%w: a secret accepts no %q request", schemaext.ErrInvalidValue, requested.Action)
 		}
-		if err := ydbsecret.ValidateIdentity(requested.Subject); err != nil {
-			return err
+		subject := requested.Subject
+		if requested.Written != "" {
+			ref, err := ydbsecret.ParsePath(requested.Written)
+			if err != nil {
+				return nil, fmt.Errorf("rotate secret: %w", err)
+			}
+			subject = ref
 		}
-		value, found := secrets[requested.Subject.Key()]
+		if err := ydbsecret.ValidateIdentity(subject); err != nil {
+			return nil, err
+		}
+		value, found := secrets[subject.Key()]
 		if !found || value.desired == nil {
-			return fmt.Errorf("rotate secret %q: %w",
-				ydbsecret.Display(requested.Subject.Schema.Source, requested.Subject.Name.Source), ydbsecret.ErrRotateUndeclared)
+			return nil, fmt.Errorf("rotate secret %q: %w",
+				ydbsecret.Display(subject.Schema.Source, subject.Name.Source), ydbsecret.ErrRotateUndeclared)
 		}
 		value.rotate = true
-		secrets[requested.Subject.Key()] = value
+		secrets[subject.Key()] = value
+		if requested.Written != "" {
+			resolved = append(resolved, schemaext.ResolvedRequest{Request: i, Subject: value.ref})
+		}
 	}
-	return nil
+	return resolved, nil
 }
 
 func compareSecret(request schemaext.ObjectComparisonRequest, value secret, result *schemaext.ObjectComparisonResult) error {

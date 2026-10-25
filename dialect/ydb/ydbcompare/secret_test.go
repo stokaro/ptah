@@ -150,6 +150,22 @@ func TestSecretComparison_ComparesByPresenceAndEvidence(t *testing.T) {
 	}
 }
 
+// TestSecretComparison_ResolvesAWrittenPath reads a rotation request that
+// names its secret as the operator wrote the path, with YDB's path rules, and
+// says which declared secret it named.
+func TestSecretComparison_ResolvesAWrittenPath(t *testing.T) {
+	c := qt.New(t)
+	declared, observed := &ydbsecret.Desired{ValueEnv: "PTAH_SECRET_PW"}, &ydbsecret.Observed{}
+	request := secretRequest(c, secretState(c, schemaext.Desired, schemaext.Complete, declared), secretState(c, schemaext.Observed, schemaext.Complete, observed))
+	request.Requests = []schemaext.ChangeRequest{{Written: "ext/pw", Action: schemaext.RotateAction}}
+
+	result, err := secretRuntime(c).CompareObjects(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Changes, qt.DeepEquals, []schemaext.ChangeRecord{{Subject: ydbsecret.Ref("ext", "pw"), Value: &ydbdiff.Secret{Before: observed, After: declared}}})
+	c.Assert(result.Resolved, qt.DeepEquals, []schemaext.ResolvedRequest{{Request: 0, Subject: ydbsecret.Ref("ext", "pw")}})
+}
+
 // TestSecretComparison_KeepsTheHeldSecretAsADeclaration adopts a secret the
 // source does not describe as a declaration that names no variable, which
 // selects the default one for its path.
@@ -205,8 +221,9 @@ func TestSecretComparison_PlansNothingOnALineWithoutSecrets(t *testing.T) {
 // TestSecretComparison_FailurePath refuses a request it cannot answer
 // without returning part of an answer: a target without the secrets
 // capability, named by the secret's path, another target, a rotation of a
-// secret the source does not declare, a request the owner does not know, and
-// a canceled context.
+// secret the source does not declare, a request the owner does not know, a
+// written path that names no secret or one the source does not declare, and a
+// canceled context.
 func TestSecretComparison_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -226,6 +243,12 @@ func TestSecretComparison_FailurePath(t *testing.T) {
 		{name: "an unknown request", target: "ydb", caps: capability.YDB262(),
 			requests: []schemaext.ChangeRequest{{Subject: ydbsecret.Ref("ext", "pw"), Action: "reset"}},
 			wantErr:  `.*a secret accepts no "reset" request`, wantIs: schemaext.ErrInvalidValue},
+		{name: "a written path that names no secret", target: "ydb", caps: capability.YDB262(),
+			requests: []schemaext.ChangeRequest{{Written: "ext//pw", Action: ydbsecret.RotateAction}},
+			wantErr:  `rotate secret: "ext//pw" is not a secret path \(dir/name\): .*`, wantIs: schemaext.ErrInvalidValue},
+		{name: "a written path of an undeclared secret", target: "ydb", caps: capability.YDB262(),
+			requests: []schemaext.ChangeRequest{{Written: "ext.pw", Action: ydbsecret.RotateAction}},
+			wantErr:  `rotate secret "ext.pw": the desired schema declares no such secret`, wantIs: ydbsecret.ErrRotateUndeclared},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

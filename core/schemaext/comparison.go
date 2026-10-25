@@ -113,11 +113,15 @@ type UndecidedChange struct {
 // all remaining knowledge limits. Parent creation/removal owns its child state;
 // Changes contains no duplicate child operation for those parent transitions.
 // A successful reply sets Complete, including a completed no-op or diagnostics.
+// Resolved lists the written requests the comparer recognized, each once, with
+// the desired object each names; a comparer leaves out a spelling it does not
+// recognize rather than refusing it.
 type ObjectComparisonResult struct {
 	Complete  bool
 	Desired   ObjectState
 	Changes   []ChangeRecord
 	Undecided []UndecidedChange
+	Resolved  []ResolvedRequest
 }
 
 // ObjectComparisonService compares named feature objects as a contextual batch.

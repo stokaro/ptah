@@ -15,7 +15,7 @@ func (p *comparer) CompareModels(ctx context.Context, request *protocol.CompareM
 	if err := validateRequestedSubjects(request); err != nil {
 		return nil, err
 	}
-	result := &protocol.ComparedModels{Complete: true, Desired: proto.CloneOf(request.GetDesired())}
+	result := &protocol.ComparedModels{Complete: true, Desired: proto.CloneOf(request.GetDesired()), ResolvedRequests: resolveWritten(request)}
 	for _, desired := range request.GetDesired().GetRecords() {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -39,8 +39,8 @@ func (p *comparer) CompareModels(ctx context.Context, request *protocol.CompareM
 		if parentTransition(request, desired.GetSubject()) {
 			continue
 		}
-		forced := slices.ContainsFunc(request.GetRequests(), func(action *protocol.RequestedChange) bool {
-			return provider.CompareIdentities(action.GetSubject(), desired.GetSubject()) == 0 && action.GetAction() == "rotate"
+		forced := slices.ContainsFunc(requestedSubjects(request, result.GetResolvedRequests()), func(subject *protocol.ComparisonIdentity) bool {
+			return provider.CompareIdentities(subject, desired.GetSubject()) == 0
 		})
 		if before == after && !forced {
 			continue
@@ -126,8 +126,45 @@ func known(coverage *protocol.ComparisonCoverage, subject *protocol.ComparisonRe
 	return false
 }
 
+// resolveWritten reads a written rotation as the name of a declared retention
+// object. A spelling that names none is left unresolved, and the host refuses
+// it.
+func resolveWritten(request *protocol.CompareModelsRequest) []*protocol.ResolvedRequest {
+	var resolved []*protocol.ResolvedRequest
+	for i, action := range request.GetRequests() {
+		if action.GetWritten() == "" {
+			continue
+		}
+		for _, record := range request.GetDesired().GetRecords() {
+			if record.GetValue() != nil && record.GetKind() == nativeKind && record.GetSubject().GetName().GetSource() == action.GetWritten() {
+				resolved = append(resolved, &protocol.ResolvedRequest{Request: uint32(i), Subject: proto.CloneOf(record.GetSubject())}) // #nosec G115 -- the index is below the length of a request list
+				break
+			}
+		}
+	}
+	return resolved
+}
+
+// requestedSubjects lists the objects the requests ask to rotate: those a
+// request names, and those a written request was resolved to.
+func requestedSubjects(request *protocol.CompareModelsRequest, resolved []*protocol.ResolvedRequest) []*protocol.ComparisonIdentity {
+	var subjects []*protocol.ComparisonIdentity
+	for _, action := range request.GetRequests() {
+		if action.GetSubject() != nil {
+			subjects = append(subjects, action.GetSubject())
+		}
+	}
+	for _, answer := range resolved {
+		subjects = append(subjects, answer.GetSubject())
+	}
+	return subjects
+}
+
 func validateRequestedSubjects(request *protocol.CompareModelsRequest) error {
 	for _, action := range request.GetRequests() {
+		if action.GetWritten() != "" {
+			continue
+		}
 		found := slices.ContainsFunc(request.GetDesired().GetRecords(), func(record *protocol.ComparisonRecord) bool {
 			return record.GetValue() != nil && provider.CompareIdentities(record.GetSubject(), action.GetSubject()) == 0
 		})

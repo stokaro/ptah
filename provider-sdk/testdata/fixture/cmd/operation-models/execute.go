@@ -40,7 +40,7 @@ func nativeRefusal() *protocol.Execution {
 func (p *owner) executableNative(value *protocol.Envelope, transactionID string) (string, error) {
 	expected := proto.CloneOf(p.operationEnvelope)
 	expected.Owner, expected.Payload = value.GetOwner(), value.GetPayload()
-	if !p.nativeUnits || !proto.Equal(value, expected) {
+	if !p.nativeUnits && !p.rebuilds || !proto.Equal(value, expected) {
 		return "", fmt.Errorf("unknown native execution model")
 	}
 	normalized, err := normalize(&protocol.ValueInput{Representation: protocol.ValueInput_OPERATION, Value: value})
@@ -50,6 +50,9 @@ func (p *owner) executableNative(value *protocol.Envelope, transactionID string)
 	var op operation
 	if err := json.Unmarshal(normalized.GetValue().GetPayload(), &op); err != nil {
 		return "", err
+	}
+	if !p.nativeUnits && op.Action != "rebuild" {
+		return "", fmt.Errorf("unknown native execution model")
 	}
 	if op.Transaction == "required" && transactionID == "" {
 		return "", fmt.Errorf("native operation requires a transaction")

@@ -179,14 +179,29 @@ type Options struct {
 	AllowTableRebuild bool
 	// TableRebuildRequest is how the caller asks for AllowTableRebuild, and a
 	// refusal of a change only a rebuild can make names it. Empty names the
-	// native --allow-table-rebuild flag; a surface that has no such flag, such
-	// as ptah-compat, passes the spelling it reads instead.
+	// native flag, [DefaultTableRebuildRequest]; a surface that has no such
+	// flag, such as ptah-compat, passes the spelling it reads instead.
 	TableRebuildRequest string
 	// Statements selects the statement style. The zero value is
 	// [StatementStyleAnnotated]. ptah-compat `migrate diff` selects
 	// [StatementStyleExact], which is how the Atlas CLI writes a migration
 	// file.
 	Statements StatementStyle
+}
+
+// DefaultTableRebuildRequest is how the native commands ask for
+// [Options.AllowTableRebuild]: the --allow-table-rebuild flag. An empty
+// [Options.TableRebuildRequest] means it.
+const DefaultTableRebuildRequest = "--allow-table-rebuild"
+
+// TableRebuildWords returns how the caller asks for AllowTableRebuild, for a
+// refusal to name: [Options.TableRebuildRequest], or
+// [DefaultTableRebuildRequest] when it is empty.
+func (o Options) TableRebuildWords() string {
+	if o.TableRebuildRequest != "" {
+		return o.TableRebuildRequest
+	}
+	return DefaultTableRebuildRequest
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the

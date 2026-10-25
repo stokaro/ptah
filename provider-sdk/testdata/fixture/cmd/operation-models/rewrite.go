@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/proto"
@@ -12,6 +14,9 @@ import (
 // A parent assessment can replace a common operand without a native change.
 // This fixture deliberately supports only plain column additions.
 func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, error) {
+	if added := addedNotNull(request, table); p.rebuilds && added != "" {
+		return p.planRebuild(request, table, added)
+	}
 	var steps []*protocol.PlanningStep
 	var rewrites []*protocol.PlanningRewrite
 	for i, common := range request.GetCommonSteps() {
@@ -135,4 +140,79 @@ func (p *owner) planTableDrop(request *protocol.PlanFeaturesRequest, table *prot
 	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: id}, Metadata: metadata,
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
 	return step, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(common.GetId())}, Replacement: proto.CloneOf(step.Id)}, nil
+}
+
+// addedNotNull names the first NOT NULL column the common steps add to table,
+// or is empty when they add none. SQLite refuses to add such a column in
+// place.
+func addedNotNull(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable) string {
+	for _, common := range request.GetCommonSteps() {
+		if column := common.GetAddedColumn(); column != nil && !column.GetNullable() && proto.Equal(common.GetParent(), table.GetSubject()) {
+			return column.GetName()
+		}
+	}
+	return ""
+}
+
+// planRebuild replaces every column step of table with one rebuild that
+// writes the declared table, when the policy asks for rebuilds. Without the
+// request it refuses the change in the policy's words, so the operator learns
+// how to ask; a host that sends no policy gets the refusal without them.
+func (p *owner) planRebuild(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable, added string) ([]*protocol.PlanningStep, []*protocol.PlanningRewrite, error) {
+	policy := request.GetPolicy()
+	if !policy.GetAllowTableRebuild() {
+		ask := "a rebuild of the table"
+		if policy != nil {
+			ask += "; ask for one with " + policy.GetTableRebuildRequest()
+		}
+		return nil, nil, fmt.Errorf("adding NOT NULL column %q to table %q needs %s", added, table.GetSubject().GetName().GetSource(), ask)
+	}
+	declared, observed := table.GetDesired(), table.GetCurrent()
+	if table.GetAction() != protocol.PlanningTable_ALTER || declared == nil || observed == nil {
+		return nil, nil, fmt.Errorf("a rebuild requires both captured table states")
+	}
+	held := make(map[string]bool, len(observed.GetColumns()))
+	for _, column := range observed.GetColumns() {
+		held[column.GetName()] = true
+	}
+	// The copy list is required, so a rebuild that keeps no column still
+	// writes an empty one.
+	rebuild := &rebuiltTable{Copy: make([]string, 0, len(declared.GetColumns()))}
+	for _, column := range declared.GetColumns() {
+		primary := column.GetPrimary() || slices.Contains(declared.GetPrimaryKey(), column.GetName())
+		rebuild.Columns = append(rebuild.Columns, rebuiltColumn{Name: column.GetName(), Type: strings.ToUpper(column.GetType()), Nullable: column.GetNullable() && !primary, PrimaryKey: primary})
+		if held[column.GetName()] {
+			rebuild.Copy = append(rebuild.Copy, column.GetName())
+		}
+	}
+	payload, err := json.Marshal(operation{Action: "rebuild", Rebuild: rebuild})
+	if err != nil {
+		return nil, nil, err
+	}
+	envelope := proto.CloneOf(p.operationEnvelope)
+	envelope.Payload = payload
+	envelope.Owner = &protocol.Reference{Engine: request.GetEngine(), Kind: "table", Schema: declared.GetSchema(), Name: declared.GetName()}
+	id := "rebuild/" + declared.GetName()
+	value, err := normalize(&protocol.ValueInput{Id: id, Representation: protocol.ValueInput_OPERATION, Value: envelope})
+	if err != nil {
+		return nil, nil, err
+	}
+	metadata := &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.GetOperationSemantics().GetImpact(), Reason: value.GetOperationSemantics().GetReason(),
+		Effects: []*protocol.PlanningEffect{{Subject: proto.CloneOf(table.GetSubject()), Action: protocol.PlanningEffect_ALTER}}}
+	rewrite := &protocol.PlanningRewrite{}
+	for _, common := range request.GetCommonSteps() {
+		if !proto.Equal(common.GetParent(), table.GetSubject()) {
+			continue
+		}
+		rewrite.Sources = append(rewrite.Sources, proto.CloneOf(common.GetId()))
+		for _, effect := range common.GetMetadata().GetEffects() {
+			if !proto.Equal(effect.GetSubject(), table.GetSubject()) {
+				metadata.Effects = append(metadata.Effects, proto.CloneOf(effect))
+			}
+		}
+	}
+	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: id}, Metadata: metadata,
+		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT}}
+	rewrite.Replacement = proto.CloneOf(step.Id)
+	return []*protocol.PlanningStep{step}, []*protocol.PlanningRewrite{rewrite}, nil
 }

@@ -13,11 +13,49 @@ import (
 )
 
 type operation struct {
-	Action      string       `json:"action"`
-	Transaction string       `json:"transaction,omitempty"`
-	To          *string      `json:"to,omitempty"`
-	Column      *addedColumn `json:"column,omitempty"`
-	DropColumn  string       `json:"dropColumn,omitempty"`
+	Action      string        `json:"action"`
+	Transaction string        `json:"transaction,omitempty"`
+	To          *string       `json:"to,omitempty"`
+	Column      *addedColumn  `json:"column,omitempty"`
+	DropColumn  string        `json:"dropColumn,omitempty"`
+	Rebuild     *rebuiltTable `json:"rebuild,omitempty"`
+}
+
+// rebuiltTable is the table a rebuild writes: every column of the
+// declaration, and the columns whose rows it copies from the table it
+// replaces.
+type rebuiltTable struct {
+	Columns []rebuiltColumn `json:"columns"`
+	Copy    []string        `json:"copy"`
+}
+
+type rebuiltColumn struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Nullable   bool   `json:"nullable"`
+	PrimaryKey bool   `json:"primaryKey"`
+}
+
+func (t *rebuiltTable) validate() error {
+	if t == nil || len(t.Columns) == 0 {
+		return fmt.Errorf("rebuild requires the columns of its table")
+	}
+	declared := make(map[string]bool, len(t.Columns))
+	for _, column := range t.Columns {
+		if column.Name == "" || strings.ContainsRune(column.Name, 0) || declared[column.Name] || (column.PrimaryKey && column.Nullable) {
+			return fmt.Errorf("rebuild requires distinct, complete columns")
+		}
+		if err := (&addedColumn{Name: column.Name, Type: column.Type, Nullable: new(column.Nullable)}).validate(); err != nil {
+			return err
+		}
+		declared[column.Name] = true
+	}
+	for _, name := range t.Copy {
+		if !declared[name] {
+			return fmt.Errorf("rebuild copies only columns it declares")
+		}
+	}
+	return nil
 }
 
 type addedColumn struct {
@@ -68,8 +106,18 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	if _, present := fields["dropColumn"]; present && op.Action != "drop-column" {
 		return nil, fmt.Errorf("only drop-column accepts a column name")
 	}
+	if _, present := fields["rebuild"]; present && op.Action != "rebuild" {
+		return nil, fmt.Errorf("only rebuild accepts a table")
+	}
 	impact := protocol.ChangeSemantics_ADDITIVE
 	switch op.Action {
+	case "rebuild":
+		if err := op.Rebuild.validate(); err != nil {
+			return nil, err
+		}
+		// A rebuild copies the rows and swaps the tables in steps a
+		// concurrent write can fall between.
+		impact = protocol.ChangeSemantics_BEHAVIORAL
 	case "drop-column":
 		if op.DropColumn == "" || strings.ContainsRune(op.DropColumn, 0) {
 			return nil, fmt.Errorf("drop-column requires a column name")
@@ -161,7 +209,7 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 		if err != nil {
 			return nil, err
 		}
-		if p.nativeUnits {
+		if p.nativeUnits || p.rebuilds && rebuildOperation(change.GetNative()) {
 			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Native{Native: proto.CloneOf(change.GetNative().GetValue().GetValue())}})
 		} else {
 			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: sql}})
@@ -205,6 +253,11 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 			return "", fmt.Errorf("rename requires its actual table parent")
 		}
 		return "ALTER TABLE " + name + " RENAME TO " + quote(*op.To) + ";", nil
+	case "rebuild":
+		if native.GetRole() != protocol.NativeOperation_STATEMENT {
+			return "", fmt.Errorf("standalone table operation required")
+		}
+		return renderRebuild(subject.GetName(), op.Rebuild), nil
 	case "create", "drop":
 		if native.GetRole() != protocol.NativeOperation_STATEMENT {
 			return "", fmt.Errorf("standalone table operation required")
@@ -217,4 +270,42 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 		return "", fmt.Errorf("unknown action")
 	}
 }
+
+// rebuildOperation reports whether native rebuilds a table. A rebuild runs as
+// a native unit: its statements are the fixture's own, which only its
+// executor reads.
+func rebuildOperation(native *protocol.NativeOperation) bool {
+	var op operation
+	return json.Unmarshal(native.GetValue().GetValue().GetPayload(), &op) == nil && op.Action == "rebuild"
+}
+
+// renderRebuild writes the new table under a scratch name, copies the kept
+// columns, drops the old table and gives the new one its name. SQLite keeps
+// the definition with the new name quoted, which is the text the fixture's
+// inspection reconstructs.
+func renderRebuild(table string, rebuild *rebuiltTable) string {
+	scratch := table + "__rebuild"
+	columns := make([]string, len(rebuild.Columns))
+	for i, column := range rebuild.Columns {
+		columns[i] = quote(column.Name) + " " + column.Type
+		if !column.Nullable {
+			columns[i] += " NOT NULL"
+		}
+		if column.PrimaryKey {
+			columns[i] += " PRIMARY KEY"
+		}
+	}
+	copied := make([]string, len(rebuild.Copy))
+	for i, name := range rebuild.Copy {
+		copied[i] = quote(name)
+	}
+	statements := []string{"CREATE TABLE " + quote(scratch) + " (" + strings.Join(columns, ", ") + ");"}
+	if len(copied) > 0 {
+		list := strings.Join(copied, ", ")
+		statements = append(statements, "INSERT INTO "+quote(scratch)+" ("+list+") SELECT "+list+" FROM "+quote(table)+";")
+	}
+	statements = append(statements, "DROP TABLE "+quote(table)+";", "ALTER TABLE "+quote(scratch)+" RENAME TO "+quote(table)+";")
+	return strings.Join(statements, " ")
+}
+
 func quote(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
