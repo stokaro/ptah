@@ -267,7 +267,8 @@ func (l *Lazy) devOwnerLocked(ctx context.Context, rawURL string) (*Started, err
 // Runtime returns the built-in runtime extended with every provider this Lazy
 // has started, after starting the providers the targets name. A command that
 // builds its planning runtime before it connects names its URLs here, so the
-// provider is already running when the runtime is built.
+// provider is already running when the runtime is built. While no provider has
+// started it is the shared [builtin.Bundled] runtime.
 func (l *Lazy) Runtime(ctx context.Context, targets ...Target) (*engine.Runtime, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -291,6 +292,9 @@ func (l *Lazy) Runtime(ctx context.Context, targets ...Target) (*engine.Runtime,
 		if _, err := l.startLocked(ctx, choice); err != nil {
 			return nil, err
 		}
+	}
+	if len(l.order) == 0 {
+		return builtin.Bundled()
 	}
 	providers := make([]engine.Provider, 0, len(l.order))
 	for _, name := range l.order {

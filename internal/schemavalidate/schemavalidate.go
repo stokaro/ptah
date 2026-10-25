@@ -242,11 +242,19 @@ func indexName(index schemamodel.Index, position int) string {
 }
 
 // Dialects normalizes and de-duplicates the dialects a run validates against,
-// preserving the order they were given in.
-func Dialects(requested []string) []string {
+// preserving the order they were given in. A name no built-in dialect has is
+// kept as the target served resolves it to, which is how an engine an
+// executable provider serves is named; a name neither knows is left out.
+func Dialects(requested []string, served schemaext.TargetResolver) []string {
 	out := make([]string, 0, len(requested))
 	for _, dialect := range requested {
-		normalized := platform.NormalizeDialect(strings.TrimSpace(dialect))
+		name := strings.TrimSpace(dialect)
+		normalized := platform.NormalizeDialect(name)
+		if normalized == "" && name != "" {
+			if selected, err := served.ResolveTarget(name); err == nil {
+				normalized = selected.Name()
+			}
+		}
 		if normalized == "" || slices.Contains(out, normalized) {
 			continue
 		}

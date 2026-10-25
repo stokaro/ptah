@@ -303,6 +303,12 @@ func answer(key capability.Capability, preset bool, readings []Reading) (value b
 // and it reports exactly that.
 func For(dialect, banner, productVersion string) Profile {
 	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		// An engine an executable provider serves is named by its provider,
+		// not by the built-in dialect table, and has no ladder to resolve: its
+		// capabilities are the ones its session reports.
+		normalized = strings.TrimSpace(dialect)
+	}
 	resolution := capability.ResolveServerVersion(normalized, banner)
 
 	// The ladder that answered decides how the banner is read, not the dialect

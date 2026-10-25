@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
+	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
@@ -22,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/featurejson"
+	"ptah.run/internal/providerselect"
 )
 
 const (
@@ -129,11 +132,11 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	default:
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --%s %q: expected sql or json", diffFormatFlag, opts.format))
 	}
-	runtime, err := engineruntime.Resolve(cmd.Context())
+	runtime, err := engineruntime.Resolve(cmd.Context(), diffTargets(opts)...)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateSchemaDiffSources(opts, runtime.Selections()); err != nil {
+	if err := validateSchemaDiffSources(opts, runtime.Selections(), dbschema.NativeSources(cmd.Context())); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
@@ -173,7 +176,20 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	return nil
 }
 
-func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set) error {
+// diffTargets names every URL the diff reads, so the runtime holds the provider
+// of each engine they name. A file source names no engine.
+func diffTargets(opts schemaDiffOptions) []providerselect.Target {
+	targets := []providerselect.Target{engineruntime.DevURL(opts.devURL)}
+	for _, raw := range append(slices.Clone(opts.fromURLs), opts.toURLs...) {
+		targets = append(targets, engineruntime.DatabaseURL(raw))
+	}
+	return targets
+}
+
+// validateSchemaDiffSources refuses what the diff cannot read before any
+// database is contacted. databaseTargets are the URL schemes a provider serves
+// for this invocation, which classify as database URLs.
+func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set, databaseTargets map[string]string) error {
 	if len(opts.fromURLs) == 0 {
 		return fmt.Errorf("--%s is required", diffFromFlag)
 	}
@@ -188,14 +204,14 @@ func validateSchemaDiffSources(opts schemaDiffOptions, selections selectext.Set)
 	// Classification rejects unsupported schemes and source conflicts, and
 	// migration-directory sources require a dev database, before any database
 	// is contacted. --from is validated first, then --to.
-	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{}, nil)
+	fromSet, err := atlassource.ClassifySet("--"+diffFromFlag, opts.fromURLs, atlassource.ProjectEnv{}, databaseTargets)
 	if err != nil {
 		return err
 	}
 	if err := fromSet.EnsureDevDatabase(opts.devURL); err != nil {
 		return err
 	}
-	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{}, nil)
+	toSet, err := atlassource.ClassifySet("--"+diffToFlag, opts.toURLs, atlassource.ProjectEnv{}, databaseTargets)
 	if err != nil {
 		return err
 	}

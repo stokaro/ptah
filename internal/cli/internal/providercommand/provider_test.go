@@ -12,6 +12,7 @@ import (
 
 	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/providercatalog"
+	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerinstall"
 	"ptah.run/internal/providerrelease"
 	"ptah.run/internal/providerselect"
@@ -169,5 +170,129 @@ func TestExplicitProviderEngineRefusesACorruptStoreCopy(t *testing.T) {
 	cmd := newProbe(&calls)
 	cmd.SetArgs([]string{"--provider-engine", "ydb"})
 	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `(?s).*installed provider executable does not match the SHA-256 digest its install record holds.*ptah providers install ydb.*`)
+	c.Assert(calls, qt.Equals, 0)
+}
+
+// With no flag naming a provider engine, the command runs under a lazy
+// session over the user store: an engine a provider serves by default is
+// served, nothing has started, and stop closes the session.
+func TestStart_HappyPath_NoSelectionRunsUnderALazySession(t *testing.T) {
+	c := qt.New(t)
+	isolateStore(c)
+	var session *providerselect.Lazy
+	var started bool
+	cmd := &cobra.Command{Use: "test"}
+	selection := providercommand.Register(cmd)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx, stop, err := selection.Start(cmd, []providerselect.Target{{Flag: "db-url", Value: "sqlite:///x.db"}})
+		session = providerselect.FromContext(ctx)
+		started = providerselect.StartedFrom(ctx) != nil
+		stop()
+		return err
+	}
+	cmd.SetArgs(nil)
+
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.IsNil)
+
+	c.Assert(started, qt.IsFalse)
+	c.Assert(session.Serves("duckdb"), qt.IsTrue)
+	c.Assert(session.Serves("sqlite"), qt.IsFalse)
+	_, _, err := session.NativeRegistration(c.Context(), "duckdb")
+	c.Assert(err, qt.ErrorIs, providerselect.ErrClosed)
+}
+
+// sessionUnder runs a command with args under a context carrying enclosing,
+// and returns the session the command's selection hands its verb.
+func sessionUnder(c *qt.C, enclosing *providerselect.Lazy, args ...string) *providerselect.Lazy {
+	c.Helper()
+	var session *providerselect.Lazy
+	cmd := &cobra.Command{Use: "test"}
+	selection := providercommand.Register(cmd)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx, stop, err := selection.Start(cmd, []providerselect.Target{{Flag: "db-url", Value: "sqlite:///x.db"}})
+		defer stop()
+		session = providerselect.FromContext(ctx)
+		return err
+	}
+	cmd.SetArgs(args)
+	c.Assert(cmd.ExecuteContext(enclosing.With(c.Context())), qt.IsNil)
+	return session
+}
+
+// A command that runs under a session an enclosing surface installed, as
+// ptah-compat does before it forwards to a native command, keeps that session:
+// its own would start a second provider process for the same engine.
+func TestStart_HappyPath_AnEnclosingSessionIsKept(t *testing.T) {
+	c := qt.New(t)
+	isolateStore(c)
+	enclosing := providerselect.NewLazy(providerconfig.Configuration{}, false, nil)
+	c.Cleanup(enclosing.Close)
+
+	session := sessionUnder(c, enclosing)
+
+	c.Assert(session, qt.Equals, enclosing)
+}
+
+// A manifest the command names replaces the enclosing session with one over
+// that manifest.
+func TestStart_HappyPath_AManifestReplacesAnEnclosingSession(t *testing.T) {
+	c := qt.New(t)
+	isolateStore(c)
+	enclosing := providerselect.NewLazy(providerconfig.Configuration{}, false, nil)
+	c.Cleanup(enclosing.Close)
+
+	session := sessionUnder(c, enclosing, "--provider-config", dockerDevURLManifest(c))
+
+	c.Assert(session, qt.Not(qt.Equals), enclosing)
+	c.Assert(session.Serves("fixture"), qt.IsTrue)
+	c.Assert(enclosing.Serves("fixture"), qt.IsFalse)
+}
+
+// A manifest whose engine no flag names leaves the session to serve it when the
+// command names it later, from a project file or a flag of its own.
+func TestStart_HappyPath_AManifestNoFlagNamesIsServedLater(t *testing.T) {
+	c := qt.New(t)
+	var session *providerselect.Lazy
+	cmd := &cobra.Command{Use: "test"}
+	selection := providercommand.Register(cmd)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		ctx, stop, err := selection.Start(cmd, []providerselect.Target{{Flag: "db-url", Value: "postgres://u@127.0.0.1:1/app"}})
+		defer stop()
+		session = providerselect.FromContext(ctx)
+		return err
+	}
+	cmd.SetArgs([]string{"--provider-config", dockerDevURLManifest(c)})
+
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.IsNil)
+
+	c.Assert(session.Serves("fixture"), qt.IsTrue)
+}
+
+// A connection flag nobody set names no engine. `schema lineage` defaults
+// --dialect to postgres and ignores it for a live read, so the default must not
+// be read as the operator naming another engine than the database's.
+func TestConfigure_ADefaultFlagValueNamesNoEngine(t *testing.T) {
+	c := qt.New(t)
+	calls := 0
+	cmd := providercommand.Configure(&cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { calls++; return nil }}, func(_ *cobra.Command, err error) error { return err })
+	cmd.Flags().String("db-url", "", "")
+	cmd.Flags().String("dialect", "postgres", "")
+	cmd.SetArgs([]string{"--provider-config", dockerDevURLManifest(c), "--db-url", "fixture:///tmp/x.db"})
+
+	// The provider of the database's engine is selected, so its missing
+	// executable stops the command; the default dialect is not a mismatch.
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `The configured provider executable was not found.*`)
+	c.Assert(calls, qt.Equals, 0)
+}
+
+// A repeatable connection flag names an engine with each value it holds.
+func TestConfigure_ARepeatableFlagNamesItsValues(t *testing.T) {
+	c := qt.New(t)
+	calls := 0
+	cmd := providercommand.Configure(&cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { calls++; return nil }}, func(_ *cobra.Command, err error) error { return err })
+	cmd.Flags().StringArray("dialect", nil, "")
+	cmd.SetArgs([]string{"--provider-config", dockerDevURLManifest(c), "--dialect", "fixture"})
+
+	c.Assert(cmd.ExecuteContext(c.Context()), qt.ErrorMatches, `The configured provider executable was not found.*`)
 	c.Assert(calls, qt.Equals, 0)
 }

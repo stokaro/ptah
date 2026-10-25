@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/protectedtable"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -942,7 +943,7 @@ func PrepareApply(
 	if conn == nil {
 		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
 	}
-	if err := validateDevDialect(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
 	if err := RefuseServerDevDatabase(ctx, conn.Info(), opts.DevURL, desiredApplySet(ctx, opts), opts.Runtime.HCL()); err != nil {

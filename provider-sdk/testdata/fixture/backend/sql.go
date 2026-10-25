@@ -13,8 +13,8 @@ import (
 // AnalyzeSQL tokenizes the fixture's deliberately narrow SQL grammar. It
 // refuses comments, expressions, and native statements; it never guesses that
 // unknown SQL is a harmless common operation.
-func (*Provider) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
-	if request.GetEngine() != "fixture" {
+func (p *Provider) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLRequest) (*protocol.SQLAnalysis, error) {
+	if request.GetEngine() != p.engine() {
 		return nil, fmt.Errorf("unsupported fixture engine")
 	}
 	result := &protocol.SQLAnalysis{Complete: true}

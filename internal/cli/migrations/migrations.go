@@ -48,15 +48,15 @@ separate ptah-compat binary.`,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 
-	cmd.AddCommand(migrationCommand(migrate.NewMigrateCommand(), "Plan migration SQL from schema differences", "Plan migration SQL from schema differences without writing migration files."))
-	cmd.AddCommand(migrationCommand(migrate.NewMigrateGenerateCommand(), "Generate migration files from schema differences", "Generate migration files from schema differences and write them to the migrations directory."))
+	cmd.AddCommand(providerMigrationCommand(migrate.NewMigrateCommand(), "Plan migration SQL from schema differences", "Plan migration SQL from schema differences without writing migration files."))
+	cmd.AddCommand(providerMigrationCommand(migrate.NewMigrateGenerateCommand(), "Generate migration files from schema differences", "Generate migration files from schema differences and write them to the migrations directory."))
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateCreateCommand(), "Create empty migration files for manual SQL", "Create empty migration files for manual SQL."))
 	// Registered with its own help. The text beside the flags is the one that
 	// says which of them gate the generated migration, and a namespace summary
 	// written apart from them said the command gated nothing while it refused
 	// destructive and protected-table changes.
 	cmd.AddCommand(providercommand.Configure(migratedata.NewMigrateDataCommand(), cmdutil.Fail))
-	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format."))
+	cmd.AddCommand(providerMigrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format."))
 	cmd.AddCommand(migrationCommand(migrationspush.NewMigrationsPushCommand(), "Push a migration directory to an OCI registry", "Push a migration directory to an OCI-compliant registry as an immutable artifact."))
 	cmd.AddCommand(migrationCommand(migrationspull.NewMigrationsPullCommand(), "Pull a migration directory from an OCI registry", "Pull and reconstruct a migration directory from an OCI-compliant registry."))
 	cmd.AddCommand(providerMigrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))
@@ -72,20 +72,28 @@ separate ptah-compat binary.`,
 		"Show what happened to this database: one line per attempt, newest first, with what it was about and how it ended.",
 	))
 	cmd.AddCommand(providerMigrationCommand(migrateset.NewMigrateSetCommand(), "Set the revision boundary to a version", "Move the revision boundary to an arbitrary migration version in both directions without executing migration SQL."))
-	cmd.AddCommand(migrationCommand(migratecheckpoint.NewMigrateCheckpointCommand(), "Squash history into a checkpoint", "Squash a migration directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from."))
+	cmd.AddCommand(providerMigrationCommand(
+		migratecheckpoint.NewMigrateCheckpointCommand(),
+		"Squash history into a checkpoint",
+		"Squash a migration directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from.",
+	))
 	cmd.AddCommand(providerMigrationCommand(migraterepair.NewMigrateRepairCommand(), "Repair migration revision metadata", "Repair migration revision metadata after a dirty or partial migration state."))
 	cmd.AddCommand(migrationCommand(migratehash.NewMigrateHashCommand(), "Write or update migration directory integrity", "Write or update the migration directory integrity file."))
-	cmd.AddCommand(migrationCommand(migratevalidate.NewMigrateValidateCommand(), "Validate migration directory integrity", "Validate the migration directory against its integrity file."))
+	cmd.AddCommand(providerMigrationCommand(migratevalidate.NewMigrateValidateCommand(), "Validate migration directory integrity", "Validate the migration directory against its integrity file."))
 	// Lint reports a provider that did not start in its own error report,
 	// which carries --format and --fail-on rather than --json.
 	cmd.AddCommand(providercommand.Configure(
 		migrationCommand(lint.NewLintCommand(), "Lint migration files", "Lint migration files for production-unsafe patterns."),
 		lint.ReportSetupFailure,
 	))
-	cmd.AddCommand(migrationCommand(migrateedit.NewMigrateEditCommand(), "Edit a migration and re-hash", "Edit a migration's SQL and rewrite the integrity file, refusing already-applied migrations."))
-	cmd.AddCommand(migrationCommand(migraterebase.NewMigrateRebaseCommand(), "Move a migration to the end of history", "Re-timestamp a migration to the end of history and rewrite the integrity file, refusing already-applied migrations."))
-	cmd.AddCommand(migrationCommand(migraterm.NewMigrateRmCommand(), "Delete a migration and re-hash", "Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations."))
-	cmd.AddCommand(migrationstest.NewMigrationsTestCommand())
+	cmd.AddCommand(providerMigrationCommand(migrateedit.NewMigrateEditCommand(), "Edit a migration and re-hash", "Edit a migration's SQL and rewrite the integrity file, refusing already-applied migrations."))
+	cmd.AddCommand(providerMigrationCommand(
+		migraterebase.NewMigrateRebaseCommand(),
+		"Move a migration to the end of history",
+		"Re-timestamp a migration to the end of history and rewrite the integrity file, refusing already-applied migrations.",
+	))
+	cmd.AddCommand(providerMigrationCommand(migraterm.NewMigrateRmCommand(), "Delete a migration and re-hash", "Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations."))
+	cmd.AddCommand(providercommand.Configure(migrationstest.NewMigrationsTestCommand(), reportProviderFailure))
 
 	return cmd
 }

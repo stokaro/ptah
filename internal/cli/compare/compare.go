@@ -22,17 +22,17 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
-	"ptah.run/engine/builtin"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/genexprprobe"
+	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
@@ -104,10 +104,6 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func compareCommand(cmd *cobra.Command, opts *options) error {
-	runtime, err := builtin.New()
-	if err != nil {
-		return err
-	}
 	out := cmd.OutOrStdout()
 
 	if err := sqlitevirtual.ValidateExplicitURLToggle(opts.dbURL); err != nil {
@@ -146,7 +142,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	dialect, err := atlasurl.DialectFromURL(dbURL)
+	dialect, err := providerurl.Dialect(cmd.Context(), dbURL)
+	if err != nil {
+		return err
+	}
+	// The URL may come from the project file, so the runtime is resolved once
+	// it is known: an engine a provider serves starts that provider here.
+	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
 	if err != nil {
 		return err
 	}
@@ -182,7 +184,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// CockroachDB file loses what only CockroachDB spells, such as an index's
 	// NOT VISIBLE, which then reads as part of its WHERE condition. `schema
 	// apply` and `schema plan` read the file the same way.
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {

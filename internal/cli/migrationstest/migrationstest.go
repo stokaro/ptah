@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/testexternal"
 	"ptah.run/internal/devdocker"
@@ -112,7 +112,7 @@ The command exits non-zero if any case fails.`,
 }
 
 func run(ctx context.Context, out, notice io.Writer, opts options) error {
-	runtime, err := builtin.New()
+	runtime, err := engineruntime.Resolve(ctx)
 	if err != nil {
 		return err
 	}

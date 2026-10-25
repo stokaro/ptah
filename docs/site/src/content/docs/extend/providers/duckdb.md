@@ -78,10 +78,13 @@ correct the reported installation state, then repeat the check above.
 
 ## Use the selected provider
 
-Pass `--provider-config providers.json --provider-engine duckdb` to supported
-native schema commands. This explicitly requires the executable provider;
-an absent or failed installation cannot select an embedded implementation.
+Pass `--provider-config providers.json` to a native command that names a
+database or a dialect, and add `--provider-engine duckdb` when the command names
+no `duckdb://` URL. A `duckdb://` URL or the `duckdb` dialect needs neither flag
+once `ptah providers install duckdb` has installed a release. An absent or
+failed installation cannot select an embedded implementation.
 
 The [native provider workflow](../../executable-providers/) describes inspection,
-saved plans, application, and its protocol limitations. The catalog does not add
-provider selection to Atlas-compatible commands or the language server.
+saved plans, application, and its protocol limitations. `ptah-compat` reads the
+manifest from `PTAH_PROVIDER_CONFIG`, and the language server selects no
+provider.

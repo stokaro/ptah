@@ -468,3 +468,16 @@ func TestFor_ReportsAbsentCapabilities(t *testing.T) {
 	// documentation states a refusal without saying what was refused.
 	c.Assert(docs, qt.Not(qt.Contains), "")
 }
+
+// An engine an executable provider serves has no built-in dialect and no
+// ladder. Its profile still names it, so a report of the capabilities its
+// session read does not open with an empty dialect.
+func TestFor_AnEngineAProviderServesIsNamed(t *testing.T) {
+	c := qt.New(t)
+
+	profile := serverprofile.For(" fixture ", "fixture-1", "")
+
+	c.Assert(profile.Dialect, qt.Equals, "fixture")
+	c.Assert(profile.Preset.Dialect, qt.Equals, "fixture")
+	c.Assert(profile.Server.Banner, qt.Equals, "fixture-1")
+}
