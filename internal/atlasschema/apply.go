@@ -456,9 +456,7 @@ func computeApplyPlan(
 	// (stokaro/ptah#1028).
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
-	if err := withSecretRotation(compareOpts, opts.Policy); err != nil {
-		return applyComputation{}, err
-	}
+	withSecretRotation(compareOpts, opts.Policy)
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)

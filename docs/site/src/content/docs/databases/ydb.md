@@ -1741,7 +1741,9 @@ ALTER SECRET `ext/pg_password` WITH (value = $PTAH_SECRET_PG_PASSWORD);
 
 The flag is repeatable and reads no environment variable. The request belongs
 to that one comparison: no schema file holds it, so a rotation cannot stay on
-and reach every later plan. A name the declaration does not hold is refused. A
+and reach every later plan. The engine's owner of secrets reads the path, so on
+an engine with no secrets the flag is refused. A name the declaration does not
+hold is refused. A
 secret the database does not hold is created rather than rotated, and one whose
 presence the read did not establish is reported rather than rotated. A
 rollback drops a secret the change created, and creates a dropped one again

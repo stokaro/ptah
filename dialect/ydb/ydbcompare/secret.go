@@ -23,6 +23,19 @@ type secret struct {
 	rotate  bool
 }
 
+// ResolveWritten reads a secret's path, as `--rotate-secret` takes it, into
+// the secret it names; see [schemaext.WrittenResolver]. The runtime asks only
+// for the rotate action, the one action the comparison accepts. Every path
+// names a secret, so a spelling [ydbsecret.ParsePath] refuses is an error
+// rather than a request for another owner.
+func (SecretService) ResolveWritten(_ context.Context, _, written string) (objectidentity.ID, bool, error) {
+	ref, err := ydbsecret.ParsePath(written)
+	if err != nil {
+		return objectidentity.ID{}, false, fmt.Errorf("rotate secret: %w", err)
+	}
+	return ref, true, nil
+}
+
 // CompareObjects plans a creation only where the read established absence,
 // since CREATE SECRET carries no guard, and a removal only where the desired
 // source claims to describe the secret. An incomplete observation never

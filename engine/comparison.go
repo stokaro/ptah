@@ -90,7 +90,12 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	request.Target = target.name
-	request, err := r.snapshotComparison(ctx, request)
+	requests, err := r.resolveWrittenRequests(ctx, request.Target, request.Requests)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
+	request.Requests = requests
+	request, err = r.snapshotComparison(ctx, request)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
@@ -291,6 +296,82 @@ func (r *Runtime) comparisonBatches(request schemaext.ObjectComparisonRequest) (
 		}
 	}
 	return batches, inactive, nil
+}
+
+// resolveWrittenRequests replaces each written request with the subject the
+// comparison of target that resolves its spelling names; see
+// [schemaext.ChangeRequest.Written]. Every comparison that accepts the action
+// and implements [schemaext.WrittenResolver] is asked. A spelling none of them
+// resolves, or two resolve, is refused, so a misspelled object never reads as
+// a change made; a resolution of a kind its comparison does not own is a
+// broken owner. Two requests that name one subject for one action ask once.
+// Requests that carry a subject pass through unchanged.
+func (r *Runtime) resolveWrittenRequests(ctx context.Context, target string, requests []schemaext.ChangeRequest) ([]schemaext.ChangeRequest, error) {
+	if !slices.ContainsFunc(requests, func(change schemaext.ChangeRequest) bool { return change.Written != "" }) {
+		return requests, nil
+	}
+	type requestKey struct {
+		subject objectidentity.Key
+		action  string
+	}
+	asked := make(map[requestKey]bool, len(requests))
+	resolved := make([]schemaext.ChangeRequest, 0, len(requests))
+	for _, change := range requests {
+		if change.Written == "" {
+			asked[requestKey{change.Subject.Key(), change.Action}] = true
+			resolved = append(resolved, change)
+		}
+	}
+	for _, change := range requests {
+		if change.Written == "" {
+			continue
+		}
+		if change.Subject.Kind != "" || change.Subject.Name.Source != "" {
+			return nil, fmt.Errorf("%w: change request %q names its subject both as %s and as written %q", schemaext.ErrInvalidValue, change.Action, change.Subject, change.Written)
+		}
+		subject, err := r.resolveWritten(ctx, target, change)
+		if err != nil {
+			return nil, err
+		}
+		key := requestKey{subject.Key(), change.Action}
+		if asked[key] {
+			continue
+		}
+		asked[key] = true
+		resolved = append(resolved, schemaext.ChangeRequest{Subject: subject, Action: change.Action})
+	}
+	return resolved, nil
+}
+
+// resolveWritten asks every comparison of target that accepts change's action
+// to read its spelling, and returns the one subject they name.
+func (r *Runtime) resolveWritten(ctx context.Context, target string, change schemaext.ChangeRequest) (objectidentity.ID, error) {
+	var subjects []objectidentity.ID
+	for _, comparison := range r.comparisonServices {
+		resolver, reads := comparison.Service.(schemaext.WrittenResolver)
+		if comparison.Target != target || !reads || !slices.Contains(comparison.Actions, change.Action) {
+			continue
+		}
+		subject, found, err := resolver.ResolveWritten(ctx, change.Action, change.Written)
+		if err != nil {
+			return objectidentity.ID{}, err
+		}
+		if !found {
+			continue
+		}
+		if !slices.Contains(comparison.Kinds, schemaext.Kind(subject.Kind)) {
+			return objectidentity.ID{}, fmt.Errorf("%w: the %q request %q resolved to %s, a kind its owner does not compare", ErrInvalidRegistration, change.Action, change.Written, subject)
+		}
+		subjects = append(subjects, subject)
+	}
+	switch len(subjects) {
+	case 0:
+		return objectidentity.ID{}, fmt.Errorf("%w: no owner on %q reads the %q request %q", ptaherr.ErrUnsupportedFeature, target, change.Action, change.Written)
+	case 1:
+		return subjects[0], nil
+	default:
+		return objectidentity.ID{}, fmt.Errorf("%w: %d owners on %q read the %q request %q", schemaext.ErrInvalidValue, len(subjects), target, change.Action, change.Written)
+	}
 }
 
 // snapshotRequests copies the change requests in subject and action order. A

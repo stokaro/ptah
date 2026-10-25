@@ -26,6 +26,9 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		return schemaext.ComparisonResult{}, err
 	}
 	request.Target = selected.Name()
+	if request.Requests, err = r.resolveWrittenRequests(ctx, request.Target, request.Requests); err != nil {
+		return schemaext.ComparisonResult{}, err
+	}
 	if err := r.validateExclusions(request.Exclusions); err != nil {
 		return schemaext.ComparisonResult{}, err
 	}
