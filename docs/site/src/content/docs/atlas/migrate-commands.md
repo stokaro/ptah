@@ -1281,12 +1281,23 @@ A rollback writes `reverse: ` and the forward change each statement undoes:
 `.down.sql` file of golang-migrate and flyway and the down section of goose
 and dbmate. Ptah plans the rollback on its own rather than by reversing the
 forward plan, so each of these comments is read off the statement it heads.
+The exception is an object the forward plan changes in place and the rollback
+drops and creates again, such as a view the forward plan changes with
+`CREATE OR REPLACE VIEW`: both rollback statements carry
+`-- reverse: modify "v" view`.
 
 In a native Atlas directory the `sql` template helper writes the comment with
 its first letter in upper case, `-- Create "owners" table`, as the community
 binary's helper does. A `--format` template reads the comment as `.Comment`,
 beside the statement in `.Cmd`. A Liquibase changeset carries the comments
-above its statements and none on its rollback lines.
+above its statements as SQL comments and none on its rollback lines. The
+community binary writes one changeset per statement, with the comment on a
+`--comment:` line; Ptah writes one changeset per migration, so the comments
+stay above the statements they name.
+
+A comment that reports what the plan left out or cannot do is a statement of
+its own, with no change comment above it, so it never reads as part of the
+change after it.
 
 Views, routines, triggers, sequences and roles, which the community binary does
 not plan, follow the same pattern: `create "v" view`, `modify "v" view` for
@@ -1311,13 +1322,19 @@ stops at the drop, where `CASCADE` would drop the reader in silence. A plan
 that would drop a view a row-level security policy reads is refused and names
 the policy, as it is in Ptah's own style.
 
-The plan relies on `CASCADE` where it removes a dependent only after the drop:
+The plan drops the views, materialized views and triggers the declaration
+removes before the columns and tables they read, and a generated column before
+the columns it reads. It relies on `CASCADE` only where it removes a dependent
+after the drop:
 
-- a column dropped while a view or trigger the declaration removes reads its
-  table, or while the plan removes a routine or a feature object that may read
-  it;
-- a table dropped while the plan removes a routine or a feature object that may
-  use its row type;
+- a view or table whose row type a routine the plan removes takes or returns,
+  such as `RETURNS SETOF v`, since routines are removed last;
+- a view a row-level security policy of a removed table reads, since views are
+  dropped before tables. A removed table such a policy reads is dropped after
+  the table that holds the policy, and needs `CASCADE` only on a cycle;
+- a column or table a routine the plan removes reads in a SQL-standard
+  `BEGIN ATOMIC` body;
+- a column or table while a feature owner drops an object in a later step;
 - a view dropped and created again under a declared view that reads it, which
   the plan puts back with `CREATE OR REPLACE VIEW` after the drop.
 

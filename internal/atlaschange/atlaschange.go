@@ -15,7 +15,10 @@
 // undoes, which is the forward change's comment. A rollback here is planned on
 // its own rather than by inverting the forward plan, so [Undone] reads that
 // comment off the rollback statement itself: a DROP TABLE undoes
-// `create "users" table`.
+// `create "users" table`. A rollback may rebuild an object the forward plan
+// replaced in place, such as a view the forward plan changed with CREATE OR
+// REPLACE VIEW and the rollback drops and creates; [Rollback] names both of its
+// statements after the forward `modify "v" view`.
 package atlaschange
 
 import (
@@ -45,6 +48,39 @@ func Undone(node ast.Node) (string, bool) {
 		return "", false
 	}
 	return c.inverse().String(), true
+}
+
+// Rollback returns the namer for the statements of a rollback planned against
+// forward: [Undone], except that a statement that drops or creates an object
+// forward only modifies undoes that modification.
+func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
+	type object struct{ kind, name string }
+	modified := make(map[object]change)
+	rebuilt := make(map[object]bool)
+	for _, node := range forward {
+		c, ok := describe(node)
+		if !ok {
+			continue
+		}
+		key := object{c.kind, strings.ToLower(c.name)}
+		switch c.verb {
+		case modify:
+			modified[key] = c
+		case create, drop:
+			rebuilt[key] = true
+		}
+	}
+	return func(node ast.Node) (string, bool) {
+		c, ok := describe(node)
+		if !ok {
+			return "", false
+		}
+		key := object{c.kind, strings.ToLower(c.name)}
+		if forward, replaced := modified[key]; replaced && !rebuilt[key] && (c.verb == create || c.verb == drop) {
+			return forward.String(), true
+		}
+		return c.inverse().String(), true
+	}
 }
 
 type verb int

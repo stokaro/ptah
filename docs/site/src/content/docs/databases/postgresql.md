@@ -815,6 +815,23 @@ declaration no longer holds is dropped at the same point, because the removal
 step comes after the column step. The rollback migration does the same in the
 other direction.
 
+## Changing a column to or from an enum
+
+A column that becomes an enum is changed with `ALTER COLUMN ... TYPE status
+USING s::status`. PostgreSQL has no automatic cast from the old default to the
+enum either, so a column with a default loses it before the `TYPE` clause and
+takes it back after.
+
+A column that leaves an enum takes its declared default again after the
+`TYPE` clause. PostgreSQL converts the stored default to the new type and keeps
+the enum inside it, `('a'::status)::text`, and refuses to drop the enum while
+that default uses it:
+
+```text
+ERROR:  cannot drop type status because other objects depend on it
+DETAIL:  default value for column s of table t depends on type status
+```
+
 ## Changing a materialized view
 
 PostgreSQL has no in-place change for a materialized view, so a changed body is
@@ -834,7 +851,11 @@ style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
 CASCADE`, so grants on a dropped object and any object that depends on it and
 that the schema does not declare go with it. In the exact style that `ptah-compat
 migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
-stops the migration at the drop instead. A plan with no retyped column and no
+stops the migration at the drop instead. The exception is an object a routine
+the plan removes takes or returns, or a policy of a table the plan removes
+reads: both are dropped later, so the drop relies on `CASCADE`.
+
+A plan with no retyped column and no
 changed materialized view keeps `CREATE OR REPLACE VIEW`, which leaves both
 alone. The plan check rates a `DROP VIEW ... CASCADE` and every `DROP
 MATERIALIZED VIEW` destructive although the plan creates the object again, so

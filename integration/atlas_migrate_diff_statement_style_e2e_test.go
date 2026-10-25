@@ -178,7 +178,9 @@ SELECT id, namespace, feature_key, 'usage_based' AS type, status_detailed FROM c
 // chargesFixture is the OpenMeter shapes of stokaro/ptah#4921, each as a step
 // of its own: a column a table gains, a column a view gains, and a column a
 // view reads changing its type. The last step removes the view together with
-// a column it reads, the one shape here where the plan relies on CASCADE.
+// a column it reads; the view goes first, so neither drop relies on CASCADE.
+// The rollback of the second step rebuilds the view the step replaced in
+// place, and both of its statements undo that `modify`.
 var chargesFixture = []statementStyleStep{
 	{
 		name: "base",
@@ -207,9 +209,9 @@ ALTER TABLE "tax_codes" DROP COLUMN "external_reference";
 		up: `-- modify "charges_search" view
 CREATE OR REPLACE VIEW "charges_search" AS
 ` + chargesSearchDeclared,
-		down: `-- reverse: create "charges_search" view
+		down: `-- reverse: modify "charges_search" view
 DROP VIEW "charges_search";
--- reverse: drop "charges_search" view
+-- reverse: modify "charges_search" view
 CREATE VIEW "charges_search" AS
 SELECT charge_flat_fees.id,
     charge_flat_fees.namespace,
@@ -248,10 +250,10 @@ CREATE VIEW "charges_search" AS
 CREATE TABLE charge_flat_fees (id character(26) PRIMARY KEY, namespace character varying NOT NULL, status_detailed character varying);
 CREATE TABLE charge_usage_based (id character(26) PRIMARY KEY, namespace character varying NOT NULL, feature_key character varying, status_detailed character varying);
 `,
-		up: `-- modify "charge_flat_fees" table
-ALTER TABLE "charge_flat_fees" DROP COLUMN "feature_key" CASCADE;
--- drop "charges_search" view
-DROP VIEW IF EXISTS "charges_search";
+		up: `-- drop "charges_search" view
+DROP VIEW "charges_search";
+-- modify "charge_flat_fees" table
+ALTER TABLE "charge_flat_fees" DROP COLUMN "feature_key";
 `,
 		down: `-- reverse: modify "charge_flat_fees" table
 ALTER TABLE "charge_flat_fees" ADD COLUMN "feature_key" VARCHAR(128);
@@ -381,9 +383,8 @@ func TestCompatMigrateDiffStatementStyleE2E_WritesTheCommunityBinarysStatements(
 // shapes and runs the files on PostgreSQL. The view that a column type change
 // runs under is dropped without CASCADE, and the column a rollback drops is
 // dropped without it: the plan drops and recreates every object it knows reads
-// them. The last step drops a column a view the declaration removes still
-// reads, and only there does the plan rely on CASCADE, and on IF EXISTS for the
-// view the CASCADE has already taken.
+// them. The last step drops a column a view the declaration removes reads, and
+// drops the view first, so it needs neither CASCADE nor a guard.
 func TestCompatMigrateDiffStatementStyleE2E_TheOpenMeterShapes(t *testing.T) {
 	c := qt.New(t)
 
@@ -530,6 +531,6 @@ CREATE POLICY tenant_visible ON orders USING (tenant_id IN (SELECT id FROM activ
 		"--to", "file://"+filepath.ToSlash(retyped),
 		"--dev-url", pinnedDevURL(c, postgresScratchDevURL(c, "ptah_style_dev"), "public"))
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants with CASCADE, which also drops ptah\.run/pgpolicy/policy public\.orders\.tenant_visible, whose definition reads it.*`, qt.Commentf("%s", output))
+	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants, which ptah\.run/pgpolicy/policy public\.orders\.tenant_visible reads, and PostgreSQL refuses the drop while it does.*`, qt.Commentf("%s", output))
 	c.Assert(readMigrationPairs(c, dir), qt.HasLen, 1)
 }

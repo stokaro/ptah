@@ -190,3 +190,35 @@ func TestOfAndUndone_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestRollback_HappyPath pins the namer of a rollback's statements. A view the
+// forward plan replaces in place and the rollback drops and creates again
+// undoes `modify "v" view` with both statements. A view the forward plan
+// drops and creates itself keeps the comment each statement undoes, and a
+// statement on another object keeps [atlaschange.Undone]'s answer.
+func TestRollback_HappyPath(t *testing.T) {
+	replaced := []ast.Node{ast.NewCreateView("v").SetReplace()}
+	rebuilt := []ast.Node{ast.NewDropView("v"), ast.NewCreateView("v")}
+	tests := []struct {
+		name    string
+		forward []ast.Node
+		node    ast.Node
+		want    string
+	}{
+		{name: "a drop of a view the forward plan replaced", forward: replaced, node: ast.NewDropView("v"), want: `modify "v" view`},
+		{name: "a create of a view the forward plan replaced", forward: replaced, node: ast.NewCreateView("public.v"), want: `modify "v" view`},
+		{name: "a drop of a view the forward plan rebuilt", forward: rebuilt, node: ast.NewDropView("v"), want: `create "v" view`},
+		{name: "a create of a view the forward plan rebuilt", forward: rebuilt, node: ast.NewCreateView("v"), want: `drop "v" view`},
+		{name: "a drop of another view", forward: replaced, node: ast.NewDropView("w"), want: `create "w" view`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, ok := atlaschange.Rollback(test.forward)(test.node)
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

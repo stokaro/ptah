@@ -129,7 +129,7 @@ func retypedUnderViews() styleChange {
 }
 
 // droppedUnderRemovedView drops items.sku, which a view the declaration
-// removes reads. The removal step drops the view after the column.
+// removes reads. The removal step drops the view before the column.
 func droppedUnderRemovedView() styleChange {
 	return styleChange{declared: styleDeclaredWith(func(d *schemamodel.Database) {
 		d.Fields = d.Fields[:3]
@@ -181,14 +181,15 @@ func droppedEnum() styleChange {
 // statements of the exact style: no comment that only describes a statement,
 // no guard and no CASCADE the plan does not rely on.
 //
-// Three rows keep what the plan relies on, each because of a step that runs
-// later in the plan. A column a removed view reads is dropped with CASCADE,
-// and the view's own drop after it keeps IF EXISTS. A CHECK on a dropped
-// column is gone with the column when its drop runs, so that drop keeps IF
-// EXISTS. A view dropped under a declared reader relies on CASCADE to take the
-// reader, which the plan puts back with CREATE OR REPLACE. The skip row pins
-// that a comment reporting what the plan left out is written in this style
-// too.
+// A removed view goes before the column it reads, so neither drop needs
+// CASCADE or a guard. Two rows keep what the plan relies on, each because of a
+// step that runs later in the plan. A CHECK on a dropped column is gone with
+// the column when its drop runs, so that drop keeps IF EXISTS. A view dropped
+// under a declared reader relies on CASCADE to take the reader, which the plan
+// puts back with CREATE OR REPLACE. The skip row pins that a comment reporting
+// what the plan left out is written in this style too. Every other reason to
+// keep CASCADE or a guard has a row in
+// [TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath].
 func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyle_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -207,8 +208,8 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyle_HappyPath(t *test
 			"CREATE VIEW \"item_sku_count\" AS\nSELECT sku, count(*) AS n FROM item_skus GROUP BY sku",
 		}},
 		{name: "a column dropped under a removed view", change: droppedUnderRemovedView(), want: []string{
-			`ALTER TABLE "items" DROP COLUMN "sku" CASCADE`,
-			`DROP VIEW IF EXISTS "public"."old_skus"`,
+			`DROP VIEW "public"."old_skus"`,
+			`ALTER TABLE "items" DROP COLUMN "sku"`,
 		}},
 		{name: "a check dropped with its column", change: checkDroppedWithItsColumn(), want: []string{
 			`ALTER TABLE "owners" DROP COLUMN "email"`,

@@ -194,9 +194,9 @@ func TestPlanner_PlacesDependentFeatureOperations(t *testing.T) {
 		{name: "a dependent creation", phase: featureplan.PhaseDependent, diff: created,
 			want: []string{"create view", "alter role", "owner creates", "grant"}},
 		{name: "a default removal", phase: featureplan.PhaseDefault, diff: dropped,
-			want: []string{"drop column", "drop constraint", "drop view", "owner drops", "drop function", "drop role"}},
+			want: []string{"drop view", "drop column", "drop constraint", "owner drops", "drop function", "drop role"}},
 		{name: "a dependent removal", phase: featureplan.PhaseDependent, diff: dropped,
-			want: []string{"owner drops", "drop column", "drop constraint", "drop view", "drop function", "drop role"}},
+			want: []string{"owner drops", "drop view", "drop column", "drop constraint", "drop function", "drop role"}},
 		{name: "a default exchange", phase: featureplan.PhaseDefault, diff: exchanged, want: []string{"owner creates", "owner drops"}},
 	}
 	for _, test := range tests {
