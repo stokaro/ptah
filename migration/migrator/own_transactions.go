@@ -47,8 +47,12 @@ func (m *Migrator) upOwnTransactions(migration *Migration) (filetx.Blocks, error
 	if !m.ownTransactions || migration.upSQLFunc == nil {
 		return filetx.Blocks{}, nil
 	}
+	read := m.services().OwnTransactions
+	if read == nil {
+		return filetx.Blocks{}, nil
+	}
 	statements := splitSQLStatementsForConnection(m.conn, migration.UpSQL)
-	blocks, err := filetx.Read(m.connectionDialect(), statements)
+	blocks, err := read(statements)
 	if err == nil {
 		return blocks, nil
 	}

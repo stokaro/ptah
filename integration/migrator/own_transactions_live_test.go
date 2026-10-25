@@ -240,7 +240,7 @@ func TestMigrateUpOwnTransactions_FailurePathLive(t *testing.T) {
 			name:            "transaction control the migrator does not follow",
 			txMode:          migrator.MigrationTxModeFile,
 			body:            "BEGIN;\nCREATE TABLE owntx_a_%[1]s (id int);\nROLLBACK;\n",
-			wantErr:         `(?s).*migration 2: postgres migration file controls its own transactions in a form Ptah does not run, at statement 3: ROLLBACK .*`,
+			wantErr:         `(?s).*migration 2: the file controls its own transactions in a form Ptah does not run, at statement 3: ROLLBACK .*`,
 			wantTable:       "owntx_a_",
 			wantTableExists: false,
 			wantApplied:     -1,

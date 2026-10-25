@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/filetx"
 )
 
@@ -75,7 +74,7 @@ func TestRead_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := filetx.Read(platform.Postgres, test.statements)
+			got, err := filetx.Read(test.statements)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Boundaries(), qt.DeepEquals, test.want)
 			c.Assert(got.Empty(), qt.Equals, test.want == nil)
@@ -112,7 +111,7 @@ func TestRead_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got, err := filetx.Read(platform.Postgres, test.statements)
+			got, err := filetx.Read(test.statements)
 			c.Assert(got.Empty(), qt.IsTrue)
 			var structure *filetx.StructureError
 			c.Assert(err, qt.ErrorAs, &structure)
@@ -123,25 +122,12 @@ func TestRead_FailurePath(t *testing.T) {
 	}
 }
 
-// The structure error names the dialect and the statement, counted from one.
+// The structure error names the statement, counted from one.
 func TestStructureError_Error(t *testing.T) {
 	c := qt.New(t)
-	_, err := filetx.Read(platform.Postgres, []string{"SELECT 1", "COMMIT"})
+	_, err := filetx.Read([]string{"SELECT 1", "COMMIT"})
 	c.Assert(err, qt.ErrorMatches,
-		`postgres migration file controls its own transactions in a form Ptah does not run, at statement 2: no transaction is open to close`)
-}
-
-// A dialect of the family other than PostgreSQL reads none: the words carry
-// other semantics there.
-func TestRead_OtherDialectsReadNone(t *testing.T) {
-	for _, dialect := range []string{platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.MySQL} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := filetx.Read(dialect, []string{"BEGIN", "SELECT 1", "COMMIT"})
-			c.Assert(err, qt.IsNil)
-			c.Assert(got.Empty(), qt.IsTrue)
-		})
-	}
+		`the file controls its own transactions in a form Ptah does not run, at statement 2: no transaction is open to close`)
 }
 
 // Each statement of a file with a statement before, inside, between and after
@@ -157,7 +143,7 @@ func TestRead_OtherDialectsReadNone(t *testing.T) {
 //	7 DROP     outside
 func TestBlocks_Positions(t *testing.T) {
 	c := qt.New(t)
-	blocks, err := filetx.Read(platform.Postgres, []string{
+	blocks, err := filetx.Read([]string{
 		"CREATE TABLE a (id int)", "BEGIN", "INSERT INTO a VALUES (1)", "COMMIT",
 		"UPDATE a SET id = 2", "BEGIN", "COMMIT", "DROP TABLE b",
 	})

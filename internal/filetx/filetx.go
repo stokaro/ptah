@@ -1,5 +1,5 @@
 // Package filetx reads the transactions a migration file opens and closes
-// itself.
+// itself, in PostgreSQL's spelling of transaction control.
 //
 // A history written for a runner that sends each file as it is, as
 // golang-migrate does, has files that begin with BEGIN and end with COMMIT. The
@@ -7,9 +7,11 @@
 // without a transaction of their own, and both decide which files qualify
 // with [Read], so the two cannot disagree about a file.
 //
-// Only PostgreSQL is read. CockroachDB, YugabyteDB and Spanner take the same
-// words with other transaction semantics, and [Read] reports no transaction
-// for them.
+// [Read] knows no dialect. The engine whose transactions it describes offers
+// it: PostgreSQL's replay guard calls it, and PostgreSQL's migrator services
+// carry it (internal/migratorext/postgres). CockroachDB, YugabyteDB and
+// Spanner take the same words with other transaction semantics and offer
+// nothing, so on them no file is read as one with transactions of its own.
 package filetx
 
 import (
@@ -17,7 +19,6 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 )
 
@@ -95,8 +96,6 @@ func (b Blocks) opening(index int) (int, bool) {
 // StructureError refuses a file whose transaction control [Read] cannot
 // account for in full.
 type StructureError struct {
-	// Dialect is the engine the file was read for.
-	Dialect string
 	// Index is the position, in the file's statements, of the statement the
 	// refusal names.
 	Index int
@@ -105,8 +104,8 @@ type StructureError struct {
 }
 
 func (e *StructureError) Error() string {
-	return fmt.Sprintf("%s migration file controls its own transactions in a form Ptah does not run, at statement %d: %s",
-		e.Dialect, e.Index+1, e.Reason)
+	return fmt.Sprintf("the file controls its own transactions in a form Ptah does not run, at statement %d: %s",
+		e.Index+1, e.Reason)
 }
 
 // StatementIndex returns the zero-based position of the statement the refusal
@@ -131,12 +130,9 @@ func (e *StructureError) StatementIndex() int { return e.Index }
 //     PREPARE TRANSACTION, COMMIT PREPARED and ROLLBACK PREPARED, which leave
 //     a transaction on the server after the session ends.
 //
-// A file of a dialect other than PostgreSQL reads as one with no transaction
-// of its own.
-func Read(dialect string, statements []string) (Blocks, error) {
-	if dialect != platform.Postgres {
-		return Blocks{}, nil
-	}
+// The words are PostgreSQL's; see the package documentation for which engines
+// offer the reading.
+func Read(statements []string) (Blocks, error) {
 	var boundaries []int
 	openAt := -1
 	for index, statement := range statements {
@@ -146,13 +142,13 @@ func Read(dialect string, statements []string) (Blocks, error) {
 		}
 		kind, reason := classifyTransactionControl(tokens)
 		if reason != "" {
-			return Blocks{}, &StructureError{Dialect: dialect, Index: index, Reason: reason}
+			return Blocks{}, &StructureError{Index: index, Reason: reason}
 		}
 		switch kind {
 		case transactionBegin:
 			if openAt >= 0 {
 				return Blocks{}, &StructureError{
-					Dialect: dialect, Index: index,
+					Index:  index,
 					Reason: fmt.Sprintf("a transaction is already open since statement %d", openAt+1),
 				}
 			}
@@ -160,7 +156,7 @@ func Read(dialect string, statements []string) (Blocks, error) {
 			boundaries = append(boundaries, index)
 		case transactionEnd:
 			if openAt < 0 {
-				return Blocks{}, &StructureError{Dialect: dialect, Index: index, Reason: "no transaction is open to close"}
+				return Blocks{}, &StructureError{Index: index, Reason: "no transaction is open to close"}
 			}
 			openAt = -1
 			boundaries = append(boundaries, index)
@@ -168,7 +164,7 @@ func Read(dialect string, statements []string) (Blocks, error) {
 		}
 	}
 	if openAt >= 0 {
-		return Blocks{}, &StructureError{Dialect: dialect, Index: openAt, Reason: "the transaction is never closed by the file"}
+		return Blocks{}, &StructureError{Index: openAt, Reason: "the transaction is never closed by the file"}
 	}
 	return Blocks{boundaries: boundaries}, nil
 }

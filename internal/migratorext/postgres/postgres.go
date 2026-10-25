@@ -2,7 +2,8 @@
 // YugabyteDB do differently from what their descriptors state: the catalog
 // queries about the migrator's own tables, written around current_schema(),
 // the widening of an older revision table's version column, the owner check
-// and the spelling of a migration's timeouts.
+// and the spelling of a migration's timeouts. PostgreSQL alone also gives the
+// reading of a body's own transactions.
 package postgres
 
 import (
@@ -11,16 +12,19 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/filetx"
 	"ptah.run/internal/migratorext"
 	"ptah.run/migration/migrationfile"
 )
 
-// Postgres returns PostgreSQL's services: the family's, and the guard
-// against an index a failed concurrent build left unusable.
+// Postgres returns PostgreSQL's services: the family's, the guard against an
+// index a failed concurrent build left unusable, and the reading of a body's
+// own transactions, whose words are PostgreSQL's.
 func Postgres() migratorext.Services {
 	services := Family()
 	services.Dialects = []string{platform.Postgres}
 	services.Indexes = indexGuard{}
+	services.OwnTransactions = filetx.Read
 	return services
 }
 

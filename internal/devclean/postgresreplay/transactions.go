@@ -3,6 +3,7 @@ package postgresreplay
 import (
 	"errors"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/filetx"
 )
@@ -25,9 +26,12 @@ import (
 // The statement that fails inside a transaction is not part of this reading:
 // the replay rolls the session back when a file fails.
 func (g guard) TransactionBoundaries(statements []string) ([]int, error) {
-	blocks, err := filetx.Read(g.dialect, statements)
+	if g.dialect != platform.Postgres {
+		return nil, nil
+	}
+	blocks, err := filetx.Read(statements)
 	if structure, ok := errors.AsType[*filetx.StructureError](err); ok {
-		return nil, &replay.TransactionStructureError{Dialect: structure.Dialect, Index: structure.Index, Reason: structure.Reason}
+		return nil, &replay.TransactionStructureError{Dialect: g.dialect, Index: structure.Index, Reason: structure.Reason}
 	}
 	if err != nil {
 		return nil, err
