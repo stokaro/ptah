@@ -63,7 +63,10 @@ func (c *planningCapture) validation(source *schemamodel.Database) (*protocol.Va
 	}
 	// Declared rows are not schema: the provider types and writes them through
 	// the data services, so validation leaves ManagedData to them.
-	if err := onlyFields(*source, "Tables", "Fields", "Indexes", "Constraints", "Enums", "Triggers", "Schemas", "FeatureObjects", "FeatureCoverage", "NotDescribed", "Dependencies", "EmbeddedFields", "EmbeddedSources", "ManagedData"); err != nil {
+	if err := onlyFields(*source,
+		"Tables", "Fields", "Indexes", "Constraints", "Enums", "Triggers", "Schemas", "FeatureObjects",
+		"FeatureCoverage", "NotDescribed", "Dependencies", "EmbeddedFields", "EmbeddedSources", "ManagedData",
+	); err != nil {
 		return nil, err
 	}
 	if err := validateCapturedChildren(source); err != nil {
