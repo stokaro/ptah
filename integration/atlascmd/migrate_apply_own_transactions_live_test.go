@@ -162,6 +162,38 @@ func TestMigrateApplyGolangMigrateOwnTransactions_RetryAfterTheFileCommitsLive(t
 	c.Assert(failure, qt.Equals, "")
 }
 
+// A statement after the file's COMMIT runs in the transaction golang-migrate's
+// default mode runs it in, the one the end of the file would commit, so the
+// failure after it takes it back: a and b stay, c does not, as golang-migrate
+// v4.20.1 leaves them (measured on PostgreSQL 15.19, stokaro/ptah#4979). The
+// revision row records the four statements that committed, and the retry
+// resumes at the fifth.
+func TestMigrateApplyGolangMigrateOwnTransactions_DefaultModeLive(t *testing.T) {
+	c := qt.New(t)
+	run := newGolangMigrateApply(c, dbtarget.URL(c, dbtarget.PostgreSQL), withGolangMigrateBase(map[string]string{
+		"20240828000000_mixed.up.sql": "CREATE TABLE a (id int);\nBEGIN;\nCREATE TABLE b (id int);\nCOMMIT;\n" +
+			"CREATE TABLE c (id int);\nINSERT INTO missing_table VALUES (1);\n",
+		"20240828000000_mixed.down.sql": "DROP TABLE c, b, a;\n",
+	}))
+
+	out, err := run.apply()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*relation "missing_table" does not exist.*`, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "a"), qt.IsTrue)
+	c.Assert(tableExistsIn(c, run.db, "b"), qt.IsTrue)
+	c.Assert(tableExistsIn(c, run.db, "c"), qt.IsFalse)
+	applied, _ := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, 4)
+	_, err = run.db.ExecContext(context.Background(), "CREATE TABLE missing_table (id int)")
+	c.Assert(err, qt.IsNil)
+	out, err = run.apply("--allow-dirty")
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+	c.Assert(tableExistsIn(c, run.db, "c"), qt.IsTrue)
+	applied, failure := latestRevision(c, run.db, "20240828000000")
+	c.Assert(applied, qt.Equals, 6)
+	c.Assert(failure, qt.Equals, "")
+}
+
 // A failure inside the file's first transaction leaves nothing of the file
 // committed. The run discards the revision row it wrote, as it does for a file
 // the migrator's transaction rolled back, so the next apply runs the file from

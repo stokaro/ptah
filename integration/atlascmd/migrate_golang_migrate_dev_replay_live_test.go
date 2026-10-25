@@ -114,3 +114,43 @@ func TestGolangMigrateNestedTransactionDevReplayLive(t *testing.T) {
 		c.Assert(tableExistsIn(c, db, "t1"), qt.IsFalse)
 	})
 }
+
+// The replay runs a file that opens its own transactions in the transactions
+// apply runs it in, golang-migrate's default mode: the concurrent build after
+// the file's COMMIT runs in the transaction the end of the file commits, where
+// PostgreSQL refuses it, as golang-migrate v4.20.1 leaves it refused (measured
+// on PostgreSQL 15.19, stokaro/ptah#4979). Lint, validate and apply stop at the
+// same statement.
+func TestGolangMigrateOneQueryDevReplayLive(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	files := withGolangMigrateBase(map[string]string{
+		"20240830000000_idx.up.sql":   "BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\nCREATE INDEX CONCURRENTLY base_id_idx ON base (id);\n",
+		"20240830000000_idx.down.sql": "DROP INDEX base_id_idx;\nDROP TABLE t1;\n",
+	})
+	const refusal = `(?s).*CREATE INDEX CONCURRENTLY cannot run inside a transaction block.*`
+	for _, command := range [][]string{
+		{"migrate", "lint", "--latest", "1"},
+		{"migrate", "validate"},
+	} {
+		t.Run(command[1], func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeHashedLayoutDirectory(c, "golang-migrate", files)
+			args := slices.Concat(command, []string{"--dir", "file://" + dir + "?format=golang-migrate",
+				"--dev-url", newCleanGateDatabase(c, adminURL, nil)})
+
+			out, err := runCompat(c, args...)
+
+			c.Assert(err, qt.ErrorMatches, refusal, qt.Commentf("output:\n%s", out))
+		})
+	}
+
+	t.Run("apply", func(t *testing.T) {
+		c := qt.New(t)
+		db, out, err := applyGolangMigrateDirectory(c, adminURL, files)
+
+		c.Assert(err, qt.ErrorMatches, refusal, qt.Commentf("output:\n%s", out))
+		c.Assert(tableExistsIn(c, db, "t1"), qt.IsTrue)
+		applied, _ := latestRevision(c, db, "20240830000000")
+		c.Assert(applied, qt.Equals, 3)
+	})
+}

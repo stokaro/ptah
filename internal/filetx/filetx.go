@@ -84,6 +84,37 @@ func (b Blocks) Committed(index int) int {
 	return index
 }
 
+// AsOneQuery returns the transactions a file of total statements runs in when
+// it is sent as one query, which is how golang-migrate sends a file by default.
+// PostgreSQL then runs the statements in an implicit transaction: statements
+// before a BEGIN join the transaction it opens, a COMMIT or END ends it, and
+// the statements after the last one run in one more transaction that the end
+// of the query commits. Measured with golang-migrate v4.20.1 on PostgreSQL
+// 15.19 (stokaro/ptah#4979): for `CREATE TABLE a; BEGIN; CREATE TABLE b;
+// COMMIT; CREATE TABLE c; INSERT INTO missing ...;` a and b stay, and a
+// failure inside the block takes a back too.
+//
+// Each returned transaction opens at its first statement and closes at the
+// file's statement that ended it; the last one, when statements follow the
+// file's last COMMIT, closes at total, past the file's last statement, where
+// the end of the file commits it. A file that opens no transaction of its own
+// returns the zero value.
+func (b Blocks) AsOneQuery(total int) Blocks {
+	if b.Empty() {
+		return Blocks{}
+	}
+	var boundaries []int
+	start := 0
+	for i := 1; i < len(b.boundaries); i += 2 {
+		boundaries = append(boundaries, start, b.boundaries[i])
+		start = b.boundaries[i] + 1
+	}
+	if start < total {
+		boundaries = append(boundaries, start, total)
+	}
+	return Blocks{boundaries: boundaries}
+}
+
 func (b Blocks) opening(index int) (int, bool) {
 	for i := 0; i+1 < len(b.boundaries); i += 2 {
 		if index >= b.boundaries[i] && index < b.boundaries[i+1] {
@@ -110,6 +141,38 @@ func RunsAlone(statements []string) bool {
 		}
 	}
 	return count == 1
+}
+
+// Begin reports whether statement opens a transaction, as BEGIN or START
+// TRANSACTION, and returns the transaction modes it names as SQL a SET
+// TRANSACTION takes, or the empty string for none. PostgreSQL applies the
+// modes of a BEGIN that joins a transaction already open, as one inside a
+// query does, the way SET TRANSACTION applies them: an isolation level after
+// the transaction's first query is refused.
+func Begin(statement string) (modes string, ok bool) {
+	tokens := significantTokens(statement)
+	if len(tokens) == 0 || tokens[0].Type != lexer.TokenIdentifier {
+		return "", false
+	}
+	at := 1
+	switch {
+	case wordsAt(tokens, 0, "BEGIN"):
+	case wordsAt(tokens, 0, "START", "TRANSACTION"):
+		at = 2
+	default:
+		return "", false
+	}
+	if kind, reason := classifyTransactionControl(tokens); kind != transactionBegin || reason != "" {
+		return "", false
+	}
+	if wordsAt(tokens, at, "WORK") || wordsAt(tokens, at, "TRANSACTION") {
+		at++
+	}
+	words := make([]string, 0, len(tokens)-at)
+	for _, token := range tokens[at:] {
+		words = append(words, strings.TrimSpace(token.Value))
+	}
+	return strings.ReplaceAll(strings.Join(words, " "), " ,", ","), true
 }
 
 // StructureError refuses a file whose transaction control [Read] cannot

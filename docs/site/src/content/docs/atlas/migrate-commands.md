@@ -725,11 +725,10 @@ golang-migrate opens no transaction around a file; it sends the file as it is.
 A golang-migrate directory is applied the same way, instead of with a
 transaction of the migrator's around each file:
 
-- A PostgreSQL file that opens and closes its own transaction runs as written,
-  on one session, outside any transaction of the migrator's. Its revision row
-  is written after the file's last statement. This holds under the default
-  `--tx-mode file`, under `--tx-mode none`, and in a file that carries
-  `-- atlas:txmode none`.
+- A PostgreSQL file that opens and closes its own transaction runs as
+  golang-migrate's default mode runs it, on one session, outside any
+  transaction of the migrator's. Its revision row is written after the file's
+  last statement.
 - A file whose one statement PostgreSQL refuses inside a transaction, such as
   `CREATE INDEX CONCURRENTLY`, runs without one, unless the file asks for a
   transaction with `-- atlas:txmode file`.
@@ -737,28 +736,45 @@ transaction of the migrator's around each file:
   transaction is refused before any migration runs under `--tx-mode all`, and
   when it carries `-- atlas:txmode file`.
 
-In a file that opens its own transactions, each statement outside them runs
-and commits on its own, as in golang-migrate's `x-multi-statement=true` mode.
 golang-migrate's default mode sends the file as one query, and PostgreSQL runs
-the statements outside the file's transactions together, in one implicit
-transaction. The two differ when such a statement fails. Measured on
-PostgreSQL 15.19 with
-`BEGIN; CREATE TABLE t2 (id int); COMMIT; CREATE TABLE t3 (id int); INSERT INTO missing_table VALUES (1);`
-sent as one query, `t2` stays and the failed `INSERT` takes `t3` back. Ptah
-keeps both.
+its statements in an implicit transaction. Statements before a `BEGIN` join the
+transaction it opens, `COMMIT` ends it, and the statements after the last
+`COMMIT` run in one more transaction, committed at the end of the file. A
+failure takes back everything not yet committed. Ptah sends the statements one
+at a time, so it can record progress, and runs them in the same transactions.
+Measured with golang-migrate v4.20.1 on PostgreSQL 15.19:
 
-Progress is recorded where the file's transactions commit. The revision row of
-a failed file records the statements that stayed committed, four in the
-example above. A transaction the failure interrupted is rolled back on the
-session first, and none of its statements count. The next `migrate apply`
-refuses the failed revision, as it does after any failure. With
-`--allow-dirty` it resumes after the committed statements, on a fresh session.
-It first replays the `SET` and `RESET` statements among them, those inside a
-committed transaction included, and skips `SET LOCAL` and `LOCK`, which ended
-with their transaction. A failure that left nothing of the file committed,
-such as a failed statement in its first transaction, removes the revision row
-instead, as a file that failed in the migrator's transaction does, and the
-next apply runs the file from its start.
+| file | golang-migrate leaves | Ptah leaves |
+| --- | --- | --- |
+| `CREATE TABLE a; BEGIN; CREATE TABLE b; COMMIT; CREATE TABLE c; INSERT INTO missing ...;` | `a`, `b` | `a`, `b` |
+| `CREATE TABLE a; BEGIN; CREATE TABLE b; INSERT INTO missing ...; COMMIT;` | nothing | nothing |
+| `CREATE TABLE a; BEGIN ISOLATION LEVEL SERIALIZABLE; CREATE TABLE b; COMMIT;` | nothing: `SET TRANSACTION ISOLATION LEVEL must be called before any query` | nothing, with the same error |
+
+A `BEGIN` that follows statements of its transaction is not sent, because
+PostgreSQL would only warn that a transaction is in progress. Its modes are
+applied with `SET TRANSACTION`, which is what PostgreSQL does with the modes of
+a `BEGIN` inside a query: an isolation level after the transaction's first
+query is refused, as the third row shows, and one after a `SET` applies.
+
+Under `--tx-mode none`, and in a file that carries `-- atlas:txmode none`, the
+file's own transactions run as written and each statement outside them commits
+on its own, as golang-migrate's `x-multi-statement=true` mode runs the file.
+
+Progress is recorded where a transaction commits. The revision row of a failed
+file records the statements that stayed committed, four in the first row of
+the table. A transaction the failure interrupted is rolled back on the session
+first, and none of its statements count. The next `migrate apply` refuses the
+failed revision, as it does after any failure. With `--allow-dirty` it resumes
+after the committed statements, on a fresh session. It first replays the `SET`
+and `RESET` statements among them, those inside a committed transaction
+included, and skips `SET LOCAL` and `LOCK`, which ended with their
+transaction. A failure that left nothing of the file committed, such as one
+in its first transaction, removes the revision row instead, as a file that
+failed in the migrator's transaction does, and the next apply runs the file
+from its start. golang-migrate marks the version dirty in both cases and
+refuses the next `up` until `migrate force`, after which it runs the whole file
+again: measured, the first row's file then fails at `CREATE TABLE a`, which
+already exists.
 
 The reading of a file's own transactions is the one the dev database replay
 uses, so `migrate lint`, `migrate validate` and `migrate diff` read each file

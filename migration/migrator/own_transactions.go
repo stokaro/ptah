@@ -22,14 +22,19 @@ import (
 // is applied, and replayed on a dev database, the way that runner runs it, in
 // place of the per-file transaction:
 //
-//   - A file that opens and closes its own transactions runs as written, on
-//     one session, outside any transaction of the migrator's. Progress is
-//     recorded where the file's transactions commit, and the revision after
-//     its last statement. A file that fails is rolled back on that session,
-//     and the failure records the statements that stayed committed; a retry
-//     resumes after them. Which files qualify, and which forms of transaction
-//     control are refused before anything runs, is the engine's reading; only
-//     PostgreSQL offers one.
+//   - A file that opens and closes its own transactions runs on one session,
+//     outside any transaction of the migrator's, in the transactions
+//     PostgreSQL runs it in when it is sent as one query, as golang-migrate
+//     sends it by default; see [filetx.Blocks.AsOneQuery]. The statements are
+//     still sent one at a time. Under tx-mode none, or with a directive asking
+//     for no transaction, each statement outside the file's transactions
+//     commits on its own instead, as golang-migrate's x-multi-statement mode
+//     runs it. Progress is recorded where a transaction commits, and the
+//     revision after the file's last statement. A file that fails is rolled
+//     back on that session, and the failure records the statements that
+//     stayed committed; a retry resumes after them. Which files qualify, and
+//     which forms of transaction control are refused before anything runs, is
+//     the engine's reading; only PostgreSQL offers one.
 //   - A file whose one statement the engine refuses inside a transaction, such
 //     as CREATE INDEX CONCURRENTLY, runs without one, as if it carried the
 //     no-transaction directive. A file that names a transaction mode keeps it.
@@ -123,6 +128,11 @@ type ownTransactionRun struct {
 	// that runs in mode, and statements the statements they index.
 	blocks     filetx.Blocks
 	statements []string
+	// transactions are the transactions the body's statements commit in: the
+	// body sent as one query ([filetx.Blocks.AsOneQuery]) when oneQuery is
+	// set, and blocks otherwise.
+	transactions filetx.Blocks
+	oneQuery     bool
 	// mode is the transaction mode the body runs in.
 	mode MigrationTxMode
 }
@@ -141,7 +151,12 @@ func (m *Migrator) upOwnTransactionMode(migration *Migration, mode MigrationTxMo
 		return kept, err
 	}
 	if !blocks.Empty() {
-		return ownTransactionRun{blocks: blocks, statements: statements, mode: MigrationTxModeNone}, nil
+		run := ownTransactionRun{blocks: blocks, statements: statements, transactions: blocks, mode: MigrationTxModeNone}
+		if mode == MigrationTxModeFile {
+			run.transactions = blocks.AsOneQuery(len(statements))
+			run.oneQuery = true
+		}
+		return run, nil
 	}
 	if mode == MigrationTxModeFile && migration.upRunsAloneOutsideATransaction(m.conn) {
 		return ownTransactionRun{mode: MigrationTxModeNone}, nil
@@ -150,24 +165,22 @@ func (m *Migrator) upOwnTransactionMode(migration *Migration, mode MigrationTxMo
 }
 
 // applyUpMigrationOwnTransactions runs a body that opens and closes its own
-// transactions as written, on one session the run pins, outside any
-// transaction of the migrator's; see [WithOwnTransactions].
+// transactions, on one session the run pins, outside any transaction of the
+// migrator's; see [WithOwnTransactions].
 //
 // It is the no-transaction path with three differences. The body's
 // transaction control is not refused, because it is the body's own. Progress
-// is recorded where the body commits: a statement outside the body's
-// transactions is marked and checkpointed as it runs, while the statements of
-// one of its transactions are recorded together, by a mark before the
-// statement that closes it and a checkpoint after. And a resumed attempt reads
-// a committed transaction of the prefix as such; see
-// [Migrator.restoreSessionPrefix].
+// is recorded where the body commits: the statements of one transaction are
+// recorded together, by a mark before the statement that closes it and a
+// checkpoint after, and a statement that commits on its own is marked and
+// checkpointed as it runs. And a resumed attempt reads a committed transaction
+// of the prefix as such; see [Migrator.restoreSessionPrefix].
 func (m *Migrator) applyUpMigrationOwnTransactions(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
 	plan upRetryPlan,
-	blocks filetx.Blocks,
-	statements []string,
+	run ownTransactionRun,
 ) error {
 	timeouts, err := m.effectiveUpTimeouts(migration)
 	if err != nil {
@@ -178,7 +191,7 @@ func (m *Migrator) applyUpMigrationOwnTransactions(
 		if err != nil {
 			return err
 		}
-		if err := scoped.restoreSessionPrefix(ctx, migration, MigrationDirectionUp, plan.resumeFrom, blocks); err != nil {
+		if err := scoped.restoreSessionPrefix(ctx, migration, MigrationDirectionUp, plan.resumeFrom, run); err != nil {
 			failure := fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
@@ -194,7 +207,7 @@ func (m *Migrator) applyUpMigrationOwnTransactions(
 			)
 		}
 		executionCtx := withMigrationResume(boundedCtx, plan.resumeFrom)
-		return scoped.applyUpMigrationOwnTransactionsOnSession(executionCtx, migration, startedAt, restoreTimeouts, blocks, statements)
+		return scoped.applyUpMigrationOwnTransactionsOnSession(executionCtx, migration, startedAt, restoreTimeouts, run)
 	})
 }
 
@@ -203,18 +216,28 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	migration *Migration,
 	startedAt time.Time,
 	restoreTimeouts restoreTimeoutsFunc,
-	blocks filetx.Blocks,
-	statements []string,
+	run ownTransactionRun,
 ) error {
 	executionConn := m.noTransactionConnection()
 	fail := func(err error, prefix string) error {
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx, migration, startedAt, err, migration.UpSQL, prefix, MigrationTxModeNone, MigrationDirectionUp)
 	}
-	executionCtx := m.withOwnTransactionProgress(ctx, migration, startedAt, blocks, statements)
+	var query *oneQuerySession
+	if run.oneQuery {
+		query = &oneQuerySession{conn: executionConn, transactions: run.transactions}
+	}
+	executionCtx := m.withOwnTransactionProgress(ctx, migration, startedAt, run, query)
+	if query != nil {
+		executionCtx = query.withBeginCommitter(executionCtx)
+	}
 	executionCtx = m.withPostgresIndexObservation(executionCtx, executionConn)
-	if err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction); err != nil {
-		failure := m.ownTransactionFailure(ctx, migration.Version, err, blocks)
+	err := migration.executeUp(executionCtx, executionConn, migrationExecutionNoTransaction)
+	if err == nil && query != nil {
+		err = m.commitOneQueryEnd(executionCtx, migration, startedAt, query, run.statements)
+	}
+	if err != nil {
+		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
 		failure = fail(failure, fmt.Sprintf("failed to apply migration %d", migration.Version))
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
@@ -237,41 +260,101 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 }
 
 // withOwnTransactionProgress installs the progress recorders of a body that
-// runs its own transactions. A statement outside them is recorded as the
-// no-transaction path records it. A statement inside one records nothing:
-// its transaction has not committed, and a failure takes it back. The
-// statement that closes one is marked in flight for the whole transaction,
-// naming the statement that opened it, and checkpointed once it commits, so
-// an interrupted run's mark says the transaction from that statement on may
-// or may not have committed.
+// runs its own transactions, the transactions run.transactions names. A
+// statement outside them is recorded as the no-transaction path records it.
+// A statement inside one records nothing: its transaction has not committed,
+// and a failure takes it back. The statement that closes one is marked in
+// flight for the whole transaction, naming the transaction's first statement,
+// and checkpointed once it commits, so an interrupted run's mark says the
+// transaction from that statement on may or may not have committed. query,
+// when the body runs as one query, opens the transaction a statement joins
+// before the statement runs.
 func (m *Migrator) withOwnTransactionProgress(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
-	blocks filetx.Blocks,
-	statements []string,
+	run ownTransactionRun,
+	query *oneQuerySession,
 ) context.Context {
 	return withStatementProgressRecorder(
 		ctx,
 		func(ctx context.Context, event StatementEvent) error {
+			if err := query.before(ctx, event); err != nil {
+				return err
+			}
 			index := event.Index - 1
-			if blocks.Inside(index) {
+			if run.transactions.Inside(index) {
 				return nil
 			}
-			if opened, ok := blocks.Opening(index); ok {
+			if opened, ok := run.transactions.Opening(index); ok {
 				event.Index = opened + 1
-				event.Statement = strings.TrimSpace(statements[opened])
+				event.Statement = strings.TrimSpace(run.statements[opened])
 			}
 			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, MigrationDirectionUp)
 		},
 		func(ctx context.Context, event StatementEvent) error {
-			if blocks.Inside(event.Index - 1) {
+			query.after(ctx, event)
+			if run.transactions.Inside(event.Index - 1) {
 				return nil
 			}
 			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, MigrationDirectionUp)
 		},
 	)
 }
+
+// commitOneQueryEnd commits, at the end of a body that runs as one query, the
+// transaction the statements after its last COMMIT ran in, the way the end of
+// the query commits it. It records the commit as the statement that closes one
+// of the body's transactions is recorded: a mark naming the transaction's
+// first statement before, and a checkpoint after.
+func (m *Migrator) commitOneQueryEnd(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	query *oneQuerySession,
+	statements []string,
+) error {
+	if !query.open {
+		return nil
+	}
+	total := len(statements)
+	start, _ := query.transactions.Opening(total)
+	first := strings.TrimSpace(statements[start])
+	failed := func(phase string, err error) error {
+		return &endOfQueryCommitError{phase: phase, total: total, err: &MigrationExecutionError{
+			Err:            fmt.Errorf("failed to commit statements %d to %d at the end of the file: %w", start+1, total, err),
+			Statement:      first,
+			StatementIndex: start + 1,
+			Total:          total,
+		}}
+	}
+	mark := StatementEvent{Statement: first, Index: start + 1, Total: total}
+	if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, mark, MigrationDirectionUp); err != nil {
+		return failed("before", err)
+	}
+	if err := query.finish(ctx); err != nil {
+		return failed("commit", markedStatementFailure(ctx, err))
+	}
+	checkpoint := StatementEvent{Statement: first, Index: total, Total: total}
+	if err := m.checkpointMigrationRevision(ctx, migration, startedAt, checkpoint, MigrationDirectionUp); err != nil {
+		return failed("after", err)
+	}
+	return nil
+}
+
+// endOfQueryCommitError is a failure of the commit that ends a body run as
+// one query, in phase: the mark before it ("before"), the COMMIT ("commit"),
+// or the checkpoint after it ("after"). It wraps the error that names the
+// first statement of the transaction it would have committed.
+type endOfQueryCommitError struct {
+	phase string
+	total int
+	err   error
+}
+
+func (e *endOfQueryCommitError) Error() string { return e.err.Error() }
+
+func (e *endOfQueryCommitError) Unwrap() error { return e.err }
 
 // ownTransactionFailure is the failure of a body that runs its own
 // transactions, with how many of the body's statements stay committed: the
@@ -288,9 +371,10 @@ func (e *ownTransactionFailure) Unwrap() error { return e.err }
 
 // ownTransactionFailure ends whatever transaction the failed body may have
 // left open on its session, sending nothing when it left none, and returns the
-// failure with how many statements stayed committed. A failure that left nothing committed, and whose session is known
-// to hold no transaction any more, is reported as rolled back, as a failed
-// body of the per-file transaction is.
+// failure with how many statements stayed committed. blocks are the
+// transactions the body's statements commit in. A failure that left nothing
+// committed, and whose session is known to hold no transaction any more, is
+// reported as rolled back, as a failed body of the per-file transaction is.
 func (m *Migrator) ownTransactionFailure(ctx context.Context, version int64, err error, blocks filetx.Blocks) error {
 	stopped, open := ownTransactionStop(err, blocks)
 	var rollbackErr error
@@ -319,8 +403,13 @@ func (m *Migrator) ownTransactionFailure(ctx context.Context, version int64, err
 // written before a closing statement failing leaves the transaction open,
 // because the closing statement was never sent. A closing statement that
 // failed ended its transaction, and one outside every transaction opened
-// none. A failure that names no statement may have left one open.
+// none. The commit at the end of a body run as one query stops it past its
+// last statement, with the transaction open only when the mark before the
+// commit failed. A failure that names no statement may have left one open.
 func ownTransactionStop(err error, blocks filetx.Blocks) (int, bool) {
+	if end, ok := errors.AsType[*endOfQueryCommitError](err); ok {
+		return end.total, end.phase == "before"
+	}
 	if progress, ok := errors.AsType[*statementProgressError](err); ok && progress.event.Index > 0 {
 		index := progress.event.Index - 1
 		return index, progress.phase == "before" && blocks.Closes(index)
@@ -344,6 +433,12 @@ func ownTransactionStop(err error, blocks filetx.Blocks) (int, bool) {
 // one of the body's transactions, which the rollback took back.
 func ownTransactionApplied(err error, blocks filetx.Blocks, index int) int {
 	ran := false
+	if end, ok := errors.AsType[*endOfQueryCommitError](err); ok {
+		if end.phase == "after" {
+			return end.total
+		}
+		return blocks.Committed(index)
+	}
 	if progress, ok := errors.AsType[*statementProgressError](err); ok {
 		ran = progress.phase == "after"
 	} else if _, ok := errors.AsType[*StatementObservationError](err); ok {

@@ -4287,10 +4287,12 @@ an unspecified down value as `file`.
 The `migrator.WithOwnTransactions` provider option loads a directory written
 for a runner that opens no transaction around a file, as golang-migrate does,
 and the migrator applies and replays its files the way that runner runs them.
-An up body that opens and closes its own PostgreSQL transaction runs as
-written, outside any transaction of the migrator's, under tx-mode file or
-none; progress is recorded where the body commits, and a retry resumes after
-the committed statements. A body whose one statement the engine refuses inside
+An up body that opens and closes its own PostgreSQL transaction runs outside
+any transaction of the migrator's: under tx-mode file in the transactions the
+body sent as one query runs in, as golang-migrate's default mode runs it, and
+under tx-mode none with each statement outside its transactions committing on
+its own. Progress is recorded where a transaction commits, and a retry resumes
+after the committed statements. A body whose one statement the engine refuses inside
 a transaction runs without one, unless the file names a transaction mode. A
 body whose transaction control the migrator cannot follow, or one that opens
 its own transaction under tx-mode all or with a directive asking for a

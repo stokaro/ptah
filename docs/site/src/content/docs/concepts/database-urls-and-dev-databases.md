@@ -282,11 +282,12 @@ whole file is refused, with the statement named, when it:
 
 This holds for PostgreSQL only, and only where Ptah replays an existing
 migration directory. Elsewhere in a replay each of these statements is refused
-on its own. In a golang-migrate directory, a file whose one statement
-PostgreSQL refuses inside a transaction, such as `CREATE INDEX CONCURRENTLY`,
-replays without one, as golang-migrate sends it. `ptah-compat migrate apply`
-reads the files of a golang-migrate directory the same way and runs a file
-that opens its own transaction as written; see
+on its own. In a golang-migrate directory, replay runs a file the way
+`ptah-compat migrate apply` runs it, which is how golang-migrate's default mode
+runs it: a file that opens its own transaction runs in the transactions the
+file sent as one query runs in, and a file whose one statement PostgreSQL
+refuses inside a transaction, such as `CREATE INDEX CONCURRENTLY`, runs without
+one; see
 [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory).
 `LOCK TABLE` is accepted for the same reason as `SET LOCAL`; a lock on a table in
 a protected namespace is refused.

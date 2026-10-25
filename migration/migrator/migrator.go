@@ -20,7 +20,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
-	"ptah.run/internal/filetx"
 	"ptah.run/internal/migratorext"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
@@ -2534,7 +2533,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		// Same reason the plans are read here: the probe queries the catalog, so
 		// it has to run before the batch transaction takes the connection. See
 		// [Migrator.refuseUpOverUnsafeIndex].
-		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, MigrationTxModeAll, filetx.Blocks{}); err != nil {
+		if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, MigrationTxModeAll, ownTransactionRun{}); err != nil {
 			return nil, err
 		}
 		plans[migration.RevisionVersion()] = plan
@@ -2795,11 +2794,11 @@ func (m *Migrator) applyUpMigrationObserved(
 	// Read-only, and before the revision row is touched: a refusal has to leave
 	// whatever an earlier attempt recorded exactly as it found it. See
 	// [Migrator.refuseUpOverUnsafeIndex].
-	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode, own.blocks); err != nil {
+	if err := m.refuseUpOverUnsafeIndex(ctx, migration, plan.resumeFrom, txMode, own); err != nil {
 		return false, err
 	}
 	if !own.blocks.Empty() {
-		return checksDeferred, m.applyUpMigrationOwnTransactions(ctx, migration, startedAt, plan, own.blocks, own.statements)
+		return checksDeferred, m.applyUpMigrationOwnTransactions(ctx, migration, startedAt, plan, own)
 	}
 	if txMode == MigrationTxModeNone {
 		return checksDeferred, m.applyUpMigrationNoTransaction(ctx, migration, startedAt, plan)
