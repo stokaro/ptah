@@ -63,6 +63,9 @@ func (h *Host) hclExtensions() []hclext.Extension {
 	}
 	owner := &hclOwner{host: h, engines: engines}
 	extension := hclext.Extension{Owner: h.description.GetProviderId(), Decoder: owner, Coverage: owner.coverage, CapturedCoverage: true}
+	if slices.ContainsFunc(engines, func(engine *protocol.Engine) bool { return h.targets[engine.GetId()].encodes() }) {
+		extension.Encoder = owner
+	}
 	for _, engine := range engines {
 		for _, claim := range engine.GetHclSource().GetBlocks() {
 			extension.Blocks = append(extension.Blocks, hclBlock(claim))

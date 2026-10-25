@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	transport "github.com/stokaro/ptah/provider-sdk/runtime"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // hclClaimsClient starts the hcl-claims program with a host that lists
@@ -120,4 +122,70 @@ func TestHCLSource_FailurePath(t *testing.T) {
 		c.Assert(engine.GetHclSource(), qt.IsNil)
 		c.Assert(engine.GetFeatures(), qt.Not(qt.Contains), provider.HCLSourceFeature)
 	})
+}
+
+// TestHCLSource_EncodeRoundTrip has the program write a table's and an
+// index's retention as the fragments its HCL claims read, and report a
+// column's as a loss. Decoding what it wrote gives the same canonical values.
+func TestHCLSource_EncodeRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	client := hclClaimsClient(c, provider.HCLSourceFeature)
+	model := client.Description().GetEngines()[0].GetValueModels()[0]
+	normalize := func(id string, owner *protocol.Reference, payload string) *protocol.NormalizedValue {
+		normalized, err := client.NormalizeValues(c.Context(), &protocol.NormalizeValuesRequest{Engine: "fixture", Values: []*protocol.ValueInput{{Id: id,
+			Representation: protocol.ValueInput_DESIRED, Value: &protocol.Envelope{ProviderId: "example.org/fixture", Kind: model.GetKind(), SchemaVersion: 1,
+				Encoding: "json", DefinitionSha256: model.GetDefinitionSha256(), Owner: owner, Payload: []byte(payload)}}}})
+		c.Assert(err, qt.IsNil)
+		return normalized.GetValues()[0]
+	}
+	table := &protocol.Reference{Engine: "fixture", Kind: "table", Schema: "public", Name: "records"}
+	index := &protocol.Reference{Engine: "fixture", Kind: "index", Schema: "public", Path: []string{"records"}, Name: "by_body"}
+	column := &protocol.Reference{Engine: "fixture", Kind: "column", Schema: "public", Path: []string{"records"}, Name: "body"}
+	request := &protocol.EncodeSourceRequest{Engine: "fixture", Format: protocol.SourceDocument_HCL, TargetFeatures: client.Description().GetEngines()[0].GetFeatures(),
+		Bindings: []*protocol.SourceBinding{{Id: "records", Object: table}},
+		Values: []*protocol.EncodeSourceValue{
+			{Placement: protocol.SourceModelValue_FACET, BindingId: "records", Value: normalize("0", table, `{"seconds":5}`)},
+			{Placement: protocol.SourceModelValue_FACET, BindingId: "records", Value: normalize("1", index, `{"seconds":9}`)},
+			{Placement: protocol.SourceModelValue_FACET, BindingId: "records", Value: normalize("2", column, `{"seconds":7}`)},
+		}}
+
+	encoded, err := client.EncodeSource(c.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(encoded.GetFragments(), qt.HasLen, 2)
+	c.Assert(encoded.GetLosses(), qt.CmpEquals(protocmp.Transform()), []*protocol.EncodeLoss{{ValueId: "2", Message: `the retention of column "body" has no HCL spelling`}})
+	span := &protocol.SourceSpan{Start: &protocol.SourcePosition{Line: 1, Column: 1}, End: &protocol.SourcePosition{ByteOffset: 10, Line: 1, Column: 11}}
+	document := &protocol.SourceDocument{Id: "document", Format: protocol.SourceDocument_HCL, File: "schema.hcl", ByteLength: 10,
+		Models: []*protocol.ValueModel{proto.CloneOf(model)}, Bindings: request.GetBindings()}
+	for i, written := range encoded.GetFragments() {
+		fragment := proto.CloneOf(written.GetFragment())
+		fragment.Id, fragment.Span = strconv.Itoa(i), span
+		positioned(fragment, span)
+		document.Fragments = append(document.Fragments, fragment)
+	}
+	decoded, err := client.DecodeSource(c.Context(), &protocol.DecodeSourceRequest{Engine: "fixture", Documents: []*protocol.SourceDocument{document}})
+	c.Assert(err, qt.IsNil)
+	projections := make([]string, 0, 2)
+	for _, fragment := range decoded.GetDocuments()[0].GetFragments() {
+		projections = append(projections, string(fragment.GetValues()[0].GetValue().GetCanonicalProjection()))
+	}
+	c.Assert(projections, qt.DeepEquals, []string{`{"seconds":5}`, `{"seconds":9}`})
+}
+
+// positioned gives every value and block of a written fragment the span a
+// document read back would give it.
+func positioned(fragment *protocol.SourceFragment, span *protocol.SourceSpan) {
+	mapping := func(entries *protocol.SourceMapping) {
+		for _, entry := range entries.GetEntries() {
+			entry.KeySpan, entry.Value.Span = span, span
+		}
+	}
+	if block := fragment.GetBlock(); block != nil {
+		block.Span = span
+		mapping(block.GetAttributes())
+	}
+	if value := fragment.GetValue(); value != nil {
+		value.Span = span
+		mapping(value.GetMapping())
+	}
 }

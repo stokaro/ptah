@@ -9,6 +9,10 @@
 //
 // A retention suits an ordered index only, so the program refuses one on an
 // index whose type says it is a hash index.
+//
+// It writes the retention of a table back as the block in the table, and of
+// an index as the index's attribute. HCL has no spelling it writes for a
+// column's retention, which it reports as a loss.
 package main
 
 import (
@@ -29,11 +33,24 @@ import (
 const retentionKind = "example.org/fixture/retention"
 
 func main() {
+	owner := &hclClaims{Provider: &backend.Provider{}}
+	err := runtime.Serve(runtime.Server{Description: description(), Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
+		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, SourceEncoder: owner})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// description is the base fixture with the program's HCL claims, the Go
+// claims beyond table scope, and source encoding.
+func description() *protocol.Description {
 	description := backend.Description()
 	description.SemanticIdentity += "-hcl-claims"
-	description.Features = append(description.Features, provider.HCLSourceFeature)
+	description.Features = append(description.Features, provider.HCLSourceFeature, provider.EncodeSourceFeature)
 	engine := description.GetEngines()[0]
-	engine.Features = append(engine.Features, provider.HCLSourceFeature)
+	engine.Features = append(engine.Features, provider.HCLSourceFeature, provider.EncodeSourceFeature)
+	engine.GoSourceDirectives = append(engine.GoSourceDirectives, backend.ScopedGoSourceDirectives()...)
 	seconds := []*protocol.HCLSourceAttribute{{Name: "seconds", Kind: protocol.HCLSourceAttribute_TEXT}}
 	models := []string{retentionKind}
 	engine.HclSource = &protocol.HCLSourceDeclaration{HeaderKinds: []string{"retention"}, Blocks: []*protocol.HCLSourceBlock{
@@ -43,13 +60,7 @@ func main() {
 		{Site: protocol.HCLSourceBlock_INDEX_ATTRIBUTES, Type: "index", Attributes: []*protocol.HCLSourceAttribute{{Name: "retention_seconds", Kind: protocol.HCLSourceAttribute_TEXT}},
 			Selector: "retention", Models: models, Inherited: []string{"type"}},
 	}}
-	owner := &hclClaims{Provider: &backend.Provider{}}
-	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, SQLAnalyzer: owner,
-		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return description
 }
 
 type hclClaims struct{ *backend.Provider }
@@ -138,4 +149,48 @@ func (p *hclClaims) retention(ctx context.Context, document *protocol.SourceDocu
 	}
 	return &protocol.SourceModelValue{Placement: protocol.SourceModelValue_FACET, Value: normalized.GetValues()[0],
 		Source: &protocol.SourceTrace{DocumentId: document.GetId(), FragmentId: fragment.GetId(), Root: protocol.SourceTrace_CONTENT}}, nil
+}
+
+// EncodeSource writes each retention in HCL as the program reads it back: a
+// table's as a retention block in the table, an index's as its
+// retention_seconds attribute. A column's has no HCL spelling and is a loss.
+func (p *hclClaims) EncodeSource(_ context.Context, request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {
+	if request.GetFormat() != protocol.SourceDocument_HCL {
+		return nil, fmt.Errorf("the fixture writes HCL only")
+	}
+	claims := make(map[protocol.HCLSourceBlock_Site]*protocol.HCLSourceBlock)
+	for _, block := range description().GetEngines()[0].GetHclSource().GetBlocks() {
+		claims[block.GetSite()] = block
+	}
+	result := &protocol.EncodedSource{Complete: true}
+	for _, value := range request.GetValues() {
+		var seconds struct {
+			Seconds uint64 `json:"seconds"`
+		}
+		if err := json.Unmarshal(value.GetValue().GetCanonicalProjection(), &seconds); err != nil {
+			return nil, err
+		}
+		text := func(key string) *protocol.SourceMapping {
+			return &protocol.SourceMapping{Entries: []*protocol.SourceEntry{{Key: key,
+				Value: &protocol.SourceValue{Value: &protocol.SourceValue_Text{Text: strconv.FormatUint(seconds.Seconds, 10)}}}}}
+		}
+		owner := value.GetValue().GetValue().GetOwner()
+		switch owner.GetKind() {
+		case "table":
+			claim := claims[protocol.HCLSourceBlock_IN_TABLE]
+			result.Fragments = append(result.Fragments, &protocol.EncodedFragment{ValueIds: []string{value.GetValue().GetId()}, Placement: protocol.EncodedFragment_WITHIN_TABLE,
+				Fragment: &protocol.SourceFragment{Id: strconv.Itoa(len(result.Fragments)), HclBlock: claim, Selector: claim.GetSelector(), BindingId: value.GetBindingId(),
+					Content: &protocol.SourceFragment_Block{Block: &protocol.SourceBlock{Type: claim.GetType(), Attributes: text("seconds")}}}})
+		case "index":
+			claim := claims[protocol.HCLSourceBlock_INDEX_ATTRIBUTES]
+			result.Fragments = append(result.Fragments, &protocol.EncodedFragment{ValueIds: []string{value.GetValue().GetId()},
+				Fragment: &protocol.SourceFragment{Id: strconv.Itoa(len(result.Fragments)), HclBlock: claim, Selector: claim.GetSelector(), BindingId: value.GetBindingId(),
+					Subject: proto.CloneOf(owner),
+					Content: &protocol.SourceFragment_Value{Value: &protocol.SourceValue{Value: &protocol.SourceValue_Mapping{Mapping: text("retention_seconds")}}}}})
+		default:
+			result.Losses = append(result.Losses, &protocol.EncodeLoss{ValueId: value.GetValue().GetId(), Message: "the retention of " + owner.GetKind() + " " +
+				strconv.Quote(owner.GetName()) + " has no HCL spelling"})
+		}
+	}
+	return result, nil
 }

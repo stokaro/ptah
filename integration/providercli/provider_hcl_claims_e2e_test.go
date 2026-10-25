@@ -3,12 +3,15 @@
 package providercli_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/engine"
 	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/testutils"
 )
 
 func hclClaimsProvider(c *qt.C) *engine.Runtime {
@@ -107,4 +110,48 @@ func TestProviderHCLClaims_FailurePath(t *testing.T) {
 			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// hclExportSource declares the retention of a table, of an index and of a
+// column through the provider's Go claims.
+const hclExportSource = `package models
+
+//ptah:schema:table name="records"
+//ptah:fixture:retention seconds=5
+type Record struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int
+	//ptah:schema:field name="body" type="TEXT" seconds=7
+	Body string
+
+	//ptah:schema:index name="by_body" fields="body" seconds=9
+	_ int
+}
+`
+
+// TestProviderHCLExport_HappyPath writes a provider's values through
+// EncodeSource: the table's retention as the provider's block in the table,
+// and the index's as the provider's attribute of the index block. The
+// column's has no place in an HCL encoding and is reported as a loss.
+// Reading the document back gives the table and index values again.
+func TestProviderHCLExport_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newProviderCLI(c, fixtureReleaseSpec(c, "hcl-claims", testutils.FixtureRelease{}))
+	models := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(models, "records.go"), []byte(hclExportSource), 0o600), qt.IsNil)
+	out := filepath.Join(c.TempDir(), "schema.hcl")
+
+	_, stderr, code := executeProviderCLI(c.Context(), []string{"schema", "export", "--provider-config", f.manifestPath, "--provider-engine", "fixture",
+		"--to", "hcl", "--root-dir", models, "--out", out})
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	written, err := os.ReadFile(out)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(written), qt.Contains, "  retention {\n    seconds = \"5\"\n  }\n")
+	c.Assert(string(written), qt.Contains, "retention_seconds = \"9\"")
+	c.Assert(stderr, qt.Contains, `warning: column.Record.body: example.org/fixture/retention of column "body" of table "records" has no HCL spelling a provider writes`)
+	runtime := hclClaimsProvider(c)
+	db, err := atlashcl.ParseWithOptions(c.Context(), written, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopedRetentions(c, runtime, *db), qt.DeepEquals, []string{`table records {"seconds":5}`, `index by_body {"seconds":9}`})
 }

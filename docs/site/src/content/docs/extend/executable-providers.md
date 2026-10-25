@@ -737,6 +737,15 @@ read by Ptah with the provider's model definitions. A decode reply records no
 subject a header leaves undescribed, so a provider can refuse a document by such
 an entry but cannot record the limit.
 
+`source.encode` lets the provider write its values back when Ptah writes HCL,
+as `ptah schema export --to hcl` does. Ptah sends the values and what the
+document knows of them, and the provider answers with the blocks and
+attributes its claims read, which Ptah writes. A value the provider cannot
+write is reported as a loss where Ptah writes its block. A facet of a column, a
+key, a routine or a materialized view has no place in an encoding request and is
+reported as a loss too. The `ptah:not-described` entries the provider returns
+are written in the document's header.
+
 A provider can also claim the group of its own engine in a table's `platform`
 key, where the common syntax holds platform properties. The claim is a
 `TABLE` key `platform.<engine>`, and the engine is one the provider declares, by
