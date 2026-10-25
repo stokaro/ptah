@@ -290,15 +290,14 @@ func renderGeneratedDownMigrationSQL(
 	if err := qualifier.ApplyToPlan(plan.Dialect, priorSchema, nodes); err != nil {
 		return "", err
 	}
-	output, err := renderer.Render(ctx, service, renderer.Request{Target: plan.Dialect, Capabilities: plan.Capabilities, Nodes: nodes})
+	output, err := renderer.Render(ctx, service, renderer.Request{Target: plan.Dialect, Capabilities: plan.Capabilities, Nodes: nodes, Form: renderer.FormText})
 	if err != nil {
 		return "", err
 	}
-	sql, err := output.SQL()
+	statements, err := generatedStatements(output, plan.Dialect)
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(sql, plan.Dialect)
 	if len(statements) == 0 {
 		return fmt.Sprintf(
 			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
@@ -326,15 +325,14 @@ func renderGeneratedMigrationSQL(
 	direction string,
 	directiveOpts generatedDirectiveOptions,
 ) (string, error) {
-	rawSQL, err := renderer.Render(ctx, service, renderer.Request{Target: dialect, Capabilities: caps, Nodes: nodes})
+	rawSQL, err := renderer.Render(ctx, service, renderer.Request{Target: dialect, Capabilities: caps, Nodes: nodes, Form: renderer.FormText})
 	if err != nil {
 		return "", err
 	}
-	sql, err := rawSQL.SQL()
+	statements, err := generatedStatements(rawSQL, dialect)
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		return "", nil
 	}
@@ -363,4 +361,27 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	return &MigrationFiles{
 		Files: pairs,
 	}
+}
+
+// generatedStatements is the statements a migration file holds, each without
+// its terminator, which the file writer adds. A fragment that is one execution
+// unit, as an executable provider renders it, is one statement the owner's
+// executor reads back: the host keeps its bytes and its boundary rather than
+// split it with a host grammar, and drops only the terminator every such unit
+// ends with. Other output is split by the dialect's grammar.
+func generatedStatements(output renderer.Result, dialect string) ([]string, error) {
+	fragments, err := output.SQLFragments()
+	if err != nil {
+		return nil, err
+	}
+	if !output.ExecutableUnits {
+		return sqlutil.SplitSQLStatementsForDialect(strings.Join(fragments, ""), dialect), nil
+	}
+	statements := make([]string, 0, len(fragments))
+	for _, fragment := range fragments {
+		if statement := strings.TrimSuffix(strings.TrimSpace(fragment), ";"); strings.TrimSpace(statement) != "" {
+			statements = append(statements, statement)
+		}
+	}
+	return statements, nil
 }

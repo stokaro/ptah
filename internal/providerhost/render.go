@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/ast"
@@ -42,9 +43,18 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	if len(changes) == 0 {
 		return renderer.Result{Complete: true}, nil
 	}
-	result, err := t.host.client.Render(ctx, &protocol.RenderRequest{Engine: t.engine.GetId(), Changes: changes, TargetFeatures: t.engine.GetFeatures(), Capabilities: capabilities})
+	remote := &protocol.RenderRequest{Engine: t.engine.GetId(), Changes: changes, TargetFeatures: t.engine.GetFeatures(), Capabilities: capabilities}
+	// A provider that did not negotiate text units renders as it always does,
+	// and a native unit in a text consumer is refused below.
+	if request.Form == renderer.FormText && t.negotiated(provider.TextUnitsFeature) {
+		remote.Form = protocol.RenderRequest_TEXT
+	}
+	result, err := t.host.client.Render(ctx, remote)
 	if err != nil {
 		return renderer.Result{}, err
+	}
+	if refusal := result.GetRefusal(); refusal != nil {
+		return renderer.Result{}, t.textRefusal(request.Nodes, refusal)
 	}
 	fragments := make([]renderer.Fragment, 0, len(result.GetUnits()))
 	for i, unit := range result.GetUnits() {
@@ -55,6 +65,51 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 		fragments = append(fragments, fragment)
 	}
 	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil
+}
+
+// textRefusal reports a change the provider performs only through a native
+// call, at the node the plan holds, naming the engine and the provider's
+// reason. The SDK accepts a refusal only in the text form, naming a change of
+// the request.
+func (t *target) textRefusal(nodes []ast.Node, refusal *protocol.RenderRefusal) error {
+	index, err := strconv.Atoi(refusal.GetChangeId())
+	if err != nil || index < 0 || index >= len(nodes) {
+		return fmt.Errorf("%w: text refusal names no change of the batch", provider.ErrProtocol)
+	}
+	return fmt.Errorf("%w: the %s provider has no text form for %s: %s", renderer.ErrNativeSQL, t.engine.GetId(), nodeSummary(nodes[index]), refusal.GetMessage())
+}
+
+// nodeSummary names what a plan node changes, for a message: a native
+// operation by its kind and subject, a common table change by its table.
+func nodeSummary(node ast.Node) string {
+	switch typed := node.(type) {
+	case *ast.ExtensionStatement:
+		return payloadSummary(typed.Payload)
+	case *ast.AlterTableNode:
+		if len(typed.Operations) == 1 {
+			if native, ok := typed.Operations[0].(*ast.ExtensionAlterOperation); ok {
+				return payloadSummary(native.Payload)
+			}
+		}
+		return tableref.Phrase(typed.Name)
+	case *ast.CreateTableNode:
+		return tableref.Phrase(typed.Name)
+	case *ast.DropTableNode:
+		return tableref.Phrase(typed.Name)
+	}
+	return fmt.Sprintf("a %T", node)
+}
+
+func payloadSummary(payload ast.ExtensionPayload) string {
+	if payload == nil {
+		return "a native operation"
+	}
+	if source, ok := payload.(schemaext.EffectSource); ok {
+		if effect := source.Effect(); effect.Reason != "" {
+			return fmt.Sprintf("operation %s (%s)", payload.Kind(), effect.Reason)
+		}
+	}
+	return fmt.Sprintf("operation %s", payload.Kind())
 }
 
 // Native execution retains the captured operation, including its semantic

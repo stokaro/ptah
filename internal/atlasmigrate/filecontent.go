@@ -469,7 +469,7 @@ func renderMigrationStatements(
 	if target == "" {
 		target = dialect
 	}
-	request := renderer.Request{Target: target, Capabilities: caps, Nodes: nodes}
+	request := renderer.Request{Target: target, Capabilities: caps, Nodes: nodes, Form: renderer.FormText}
 	output, err := renderer.Render(ctx, service, request)
 	if err != nil {
 		return nil, err

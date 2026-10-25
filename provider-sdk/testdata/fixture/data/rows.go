@@ -316,6 +316,7 @@ func matches(value *protocol.DataValue, kind protocol.DataKind) bool {
 
 // RenderRowWrites renders each write as one SQLite statement. A value the
 // fixture has no literal for refuses the batch, which then exposes no unit.
+// NativeWrites wraps each statement in a native unit, except in the text form.
 func (p *Provider) RenderRowWrites(_ context.Context, request *protocol.RenderRowWritesRequest) (*protocol.RenderResult, error) {
 	result := &protocol.RenderResult{Complete: true}
 	for _, write := range request.GetWrites() {
@@ -327,7 +328,7 @@ func (p *Provider) RenderRowWrites(_ context.Context, request *protocol.RenderRo
 			return &protocol.RenderResult{Refusal: refusal}, nil
 		}
 		unit := &protocol.Unit{ChangeId: write.GetChangeId(), Body: &protocol.Unit_Sql{Sql: statement}}
-		if p.NativeWrites {
+		if p.NativeWrites && request.GetForm() != protocol.RenderRequest_TEXT {
 			unit.Body = &protocol.Unit_Native{Native: &protocol.Envelope{ProviderId: "example.org/fixture", Kind: "example.org/fixture/row-write",
 				SchemaVersion: 1, Encoding: "sql", Owner: write.GetTable(), Payload: []byte(statement)}}
 		}

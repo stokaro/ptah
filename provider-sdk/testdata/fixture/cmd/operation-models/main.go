@@ -43,7 +43,7 @@ func main() {
 	d := backend.Description()
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "owned" && mode != "policy" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -53,9 +53,16 @@ func main() {
 		d.Features = append(d.Features, provider.TransactionsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
 	}
-	if mode == "native-cli" || mode == "policy" {
+	if mode == "native-cli" || mode == "native-text" || mode == "policy" {
 		d.Features = append(d.Features, provider.LocksFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.LocksFeature)
+	}
+	if mode == "native-text" || mode == "policy" {
+		// The provider renders a native operation as SQL text when the host
+		// asks for text, and refuses a rebuild, which only its native
+		// operation runs as one unit.
+		d.Features = append(d.Features, provider.TextUnitsFeature)
+		d.Engines[0].Features = append(d.Engines[0].Features, provider.TextUnitsFeature)
 	}
 	if mode == "owned" {
 		// The provider owns the table lifecycle: the host never interprets a
@@ -132,7 +139,7 @@ func main() {
 	if p.transactionalDDL {
 		server.Transactions = p
 	}
-	if mode == "native-cli" || mode == "policy" {
+	if mode == "native-cli" || mode == "native-text" || mode == "policy" {
 		server.Locks = p
 	}
 	if err := runtime.Serve(server); err != nil {

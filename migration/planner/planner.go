@@ -284,14 +284,16 @@ func GenerateSchemaDiffSQLStatements(ctx context.Context, runtime Runtime, diff 
 }
 
 // GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
-// statements using explicit planning options.
+// statements using explicit planning options. It renders in
+// [renderer.FormText]: an owner that can make a planned change only through a
+// native call refuses it with an error wrapping [renderer.ErrNativeSQL].
 func GenerateSchemaDiffSQLStatementsWithOptions(
 	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	opts planext.Options,
 ) ([]string, error) {
-	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
+	plan, err := renderedPlan(ctx, runtime, diff, dialect, opts, renderer.FormText)
 	if err != nil {
 		return nil, err
 	}
@@ -415,12 +417,25 @@ func (p RenderedPlan) Statements() ([]string, error) {
 // GenerateSchemaDiffRenderedPlan plans diff and renders the planned nodes
 // once, keeping the nodes, the request, and the per-node result together. It
 // fails with the errors [GenerateSchemaDiffSQLWithOptions] documents, and
-// returns the zero plan on any failure or cancellation.
+// returns the zero plan on any failure or cancellation. The plan is rendered
+// in [renderer.FormAny], since it runs through the owner that rendered it; the
+// SQL functions of this package, whose output is text, render in
+// [renderer.FormText].
 func GenerateSchemaDiffRenderedPlan(
 	ctx context.Context, runtime Runtime,
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	opts planext.Options,
+) (RenderedPlan, error) {
+	return renderedPlan(ctx, runtime, diff, dialect, opts, renderer.FormAny)
+}
+
+func renderedPlan(
+	ctx context.Context, runtime Runtime,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	opts planext.Options,
+	form renderer.Form,
 ) (RenderedPlan, error) {
 	// An extension this plan installs is installed before the statements that
 	// need it. A connection opened before the extension existed answers about
@@ -448,7 +463,7 @@ func GenerateSchemaDiffRenderedPlan(
 	if target == "" {
 		target = dialect
 	}
-	request := renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes}
+	request := renderer.Request{Target: target, Capabilities: caps, Nodes: astNodes, Form: form}
 	output, err := renderer.Render(ctx, runtime, request)
 	if err != nil {
 		return RenderedPlan{}, wrapRenderError(dialect, err)
@@ -534,6 +549,10 @@ func GenerateSchemaDiffSQL(ctx context.Context, runtime Runtime, diff *difftypes
 // statements render even when the capability set was resolved from a server
 // that does not have the extension yet (stokaro/ptah#1026).
 //
+// The plan is rendered in [renderer.FormText]: an owner that can make a
+// planned change only through a native call refuses it with an error wrapping
+// [renderer.ErrNativeSQL].
+//
 // Planning failures come back as *ptaherr.PlanError (see
 // GenerateSchemaDiffASTWithOptions); rendering failures as
 // *ptaherr.RenderError. Both carry the dialect and answer errors.As.
@@ -543,7 +562,7 @@ func GenerateSchemaDiffSQLWithOptions(
 	dialect string,
 	opts planext.Options,
 ) (string, error) {
-	plan, err := GenerateSchemaDiffRenderedPlan(ctx, runtime, diff, dialect, opts)
+	plan, err := renderedPlan(ctx, runtime, diff, dialect, opts, renderer.FormText)
 	if err != nil {
 		return "", err
 	}

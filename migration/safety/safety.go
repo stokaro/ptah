@@ -203,8 +203,10 @@ func AssessRendered(ctx context.Context, runtime RenderingRuntime, nodes []ast.N
 // platform.NormalizeDialect resolves.
 //
 // The caller selects the runtime. All assessment units are rendered in one
-// batch, with node provenance retained in the reply, and the dialect's owner
-// judges every rendered statement in one call more, as [AssessSQL] describes.
+// batch, in [renderer.FormText] since the statements judged are the text a
+// migration holds, with node provenance retained in the reply, and the
+// dialect's owner judges every rendered statement in one call more, as
+// [AssessSQL] describes.
 // A missing runtime, rendering or judging errors, incomplete replies, and
 // cancellation return no assessments.
 //
@@ -248,7 +250,7 @@ func AssessRenderedWithCapabilities(
 	if err != nil {
 		return nil, err
 	}
-	result, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: units})
+	result, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: units, Form: renderer.FormText})
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +332,7 @@ func assessmentUnits(
 	if len(candidates) == 0 {
 		return nodes, nil
 	}
-	rendered, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: candidates})
+	rendered, err := renderer.Render(ctx, runtime, renderer.Request{Target: target, Capabilities: caps, Nodes: candidates, Form: renderer.FormText})
 	if err != nil {
 		return nil, err
 	}
