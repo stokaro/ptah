@@ -1186,6 +1186,14 @@ type View struct {
 	// body, and nothing kept this, so a replayed view came back unbound with
 	// no diagnostic anywhere (stokaro/ptah#2125).
 	Attributes []string `json:"attributes,omitempty"`
+
+	// Options is the view's own options other than its check option, as the
+	// server holds them, `name=value`: PostgreSQL's security_invoker and
+	// security_barrier. Ptah declares and compares none of them. A planner
+	// that replaces the view or creates it again writes them back, because
+	// CREATE OR REPLACE VIEW clears the options it does not state and a new
+	// view has none.
+	Options []string `json:"options,omitempty"`
 }
 
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.
@@ -1203,6 +1211,19 @@ type MaterializedView struct {
 	Schema  string           `json:"schema"`  // Schema where the materialized view is defined
 	Body    string           `json:"body"`    // SELECT query used as the materialized view definition
 	Comment string           `json:"comment"` // Materialized view comment/description
+
+	// Options is the materialized view's storage parameters as the server
+	// holds them, `name=value`, such as fillfactor or an autovacuum setting.
+	// Ptah declares and compares none of them; see [View.Options].
+	Options []string `json:"options,omitempty"`
+
+	// Unpopulated reports that the server holds the view without rows, as
+	// CREATE MATERIALIZED VIEW ... WITH NO DATA leaves it, where a reader
+	// records it: PostgreSQL's pg_class.relispopulated. The definition the
+	// server reports has no WITH NO DATA clause, so a description of the view
+	// writes the clause by this, and a view created again from it is empty
+	// too. It is a reader-only fact and not part of a serialized description.
+	Unpopulated bool `json:"-"`
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

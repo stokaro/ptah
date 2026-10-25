@@ -330,12 +330,14 @@ func statementStyleTarget(c *qt.C) *sql.DB {
 	return db
 }
 
-// publicRelations names the tables and views of the target's public schema,
-// sorted.
+// publicRelations names the tables, views and materialized views of the
+// target's public schema, sorted. It reads pg_class: information_schema.tables
+// lists no materialized view.
 func publicRelations(c *qt.C, db *sql.DB) []string {
 	c.Helper()
-	rows, err := db.QueryContext(c.Context(), `SELECT table_name FROM information_schema.tables
-WHERE table_schema = 'public' ORDER BY table_name`)
+	rows, err := db.QueryContext(c.Context(), `SELECT c.relname FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f') ORDER BY c.relname`)
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 	var names []string
@@ -443,7 +445,11 @@ CREATE VIEW reporting.charges_copy AS SELECT id FROM public.charges_search;`)
 }
 
 // materializedViewFixture is stokaro/ptah#4964 as filed: a materialized view
-// whose body changes, and a view that reads it.
+// whose body changes, and a view that reads it. The rollback creates both
+// again from the bodies the dev database prints, which differ between
+// PostgreSQL releases (`sum(orders.amount)` on 15, `sum(amount)` from 16), so
+// the down file is matched against what the server the test runs on prints;
+// see [heldViewBodies].
 var materializedViewFixture = []statementStyleStep{
 	{
 		name: "base",
@@ -475,14 +481,25 @@ DROP VIEW "order_report";
 DROP MATERIALIZED VIEW "order_totals";
 -- reverse: drop "order_totals" materialized view
 CREATE MATERIALIZED VIEW "order_totals" AS
-SELECT sum(amount) AS total
-   FROM orders;
+{order_totals}
 -- reverse: drop "order_report" view
 CREATE VIEW "order_report" AS
-SELECT total
-   FROM order_totals;
+{order_report}
 `,
 	},
+}
+
+// heldViewBodies replaces each {name} in text with the body the server db is
+// connected to prints for the view or materialized view of that name, as
+// pg_get_viewdef prints it: the text a rollback creates the object from.
+func heldViewBodies(c *qt.C, db *sql.DB, text string, names ...string) string {
+	c.Helper()
+	for _, name := range names {
+		var body string
+		c.Assert(db.QueryRowContext(c.Context(), "SELECT pg_get_viewdef($1::regclass, true)", name).Scan(&body), qt.IsNil)
+		text = strings.ReplaceAll(text, "{"+name+"}", strings.TrimSpace(body))
+	}
+	return text
 }
 
 // TestCompatMigrateDiffStatementStyleE2E_AMaterializedViewChangeKeepsItsReaders
@@ -497,16 +514,105 @@ func TestCompatMigrateDiffStatementStyleE2E_AMaterializedViewChangeKeepsItsReade
 	dir := diffStatementStyleSteps(c, materializedViewFixture)
 
 	pairs := readMigrationPairs(c, dir)
-	c.Assert(pairs[1:], qt.DeepEquals, wantPairs(materializedViewFixture[1:]))
 	target := statementStyleTarget(c)
-	for _, pair := range pairs {
-		_, err := target.ExecContext(c.Context(), pair.Up)
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", pair.Up))
-	}
-	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "orders"})
-	_, err := target.ExecContext(c.Context(), pairs[1].Down)
+	_, err := target.ExecContext(c.Context(), pairs[0].Up)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", pairs[0].Up))
+	want := wantPairs(materializedViewFixture[1:])
+	want[0].Down = heldViewBodies(c, target, want[0].Down, "order_totals", "order_report")
+	c.Assert(pairs[1:], qt.DeepEquals, want)
+	_, err = target.ExecContext(c.Context(), pairs[1].Up)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", pairs[1].Up))
+	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "order_totals", "orders"})
+	_, err = target.ExecContext(c.Context(), pairs[1].Down)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", pairs[1].Down))
-	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "orders"})
+	c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"order_report", "order_totals", "orders"})
+}
+
+// stopsReadingFixture is a view a policy reads that stops reading the
+// materialized view the step changes. The plan replaces the view in place
+// before it drops the materialized view, so nothing reads the materialized
+// view when it goes and the policy stays. The rollback replaces the view after
+// the materialized view is back.
+var stopsReadingFixture = []statementStyleStep{
+	{
+		name: "base",
+		schema: `CREATE TABLE orders (id integer PRIMARY KEY, amount numeric NOT NULL);
+CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total FROM orders;
+CREATE VIEW big_orders AS SELECT id, amount FROM orders WHERE amount > (SELECT total / 10 FROM order_totals);
+CREATE TABLE audit (id integer PRIMARY KEY, order_id integer);
+ALTER TABLE audit ENABLE ROW LEVEL SECURITY;
+CREATE POLICY audit_visible ON audit USING (order_id IN (SELECT id FROM big_orders));
+`,
+	},
+	{
+		name: "count_orders",
+		schema: `CREATE TABLE orders (id integer PRIMARY KEY, amount numeric NOT NULL);
+CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total, count(*) AS n FROM orders;
+CREATE VIEW big_orders AS SELECT id, amount FROM orders WHERE amount > 100;
+CREATE TABLE audit (id integer PRIMARY KEY, order_id integer);
+ALTER TABLE audit ENABLE ROW LEVEL SECURITY;
+CREATE POLICY audit_visible ON audit USING (order_id IN (SELECT id FROM big_orders));
+`,
+		up: `-- modify "big_orders" view
+CREATE OR REPLACE VIEW "big_orders" AS
+SELECT id, amount FROM orders WHERE amount > 100;
+-- drop "order_totals" materialized view
+DROP MATERIALIZED VIEW "order_totals";
+-- create "order_totals" materialized view
+CREATE MATERIALIZED VIEW "order_totals" AS
+SELECT sum(amount) AS total, count(*) AS n FROM orders;
+`,
+		down: `-- reverse: create "order_totals" materialized view
+DROP MATERIALIZED VIEW "order_totals";
+-- reverse: drop "order_totals" materialized view
+CREATE MATERIALIZED VIEW "order_totals" AS
+{order_totals}
+-- reverse: modify "big_orders" view
+CREATE OR REPLACE VIEW "big_orders" AS
+{big_orders}
+`,
+	},
+}
+
+// TestCompatMigrateDiffStatementStyleE2E_AViewThatStopsReadingAChangedMaterializedView
+// diffs [stopsReadingFixture] and runs the files on PostgreSQL up, down and
+// up again. The policy that reads the view is there after each step.
+func TestCompatMigrateDiffStatementStyleE2E_AViewThatStopsReadingAChangedMaterializedView(t *testing.T) {
+	c := qt.New(t)
+
+	dir := diffStatementStyleSteps(c, stopsReadingFixture)
+
+	pairs := readMigrationPairs(c, dir)
+	target := statementStyleTarget(c)
+	_, err := target.ExecContext(c.Context(), pairs[0].Up)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", pairs[0].Up))
+	want := wantPairs(stopsReadingFixture[1:])
+	want[0].Down = heldViewBodies(c, target, want[0].Down, "order_totals", "big_orders")
+	c.Assert(pairs[1:], qt.DeepEquals, want)
+	for _, file := range []string{pairs[1].Up, pairs[1].Down, pairs[1].Up} {
+		_, err := target.ExecContext(c.Context(), file)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", file))
+		c.Assert(publicRelations(c, target), qt.DeepEquals, []string{"audit", "big_orders", "order_totals", "orders"})
+		c.Assert(targetPolicies(c, target), qt.DeepEquals, []string{"audit/audit_visible"})
+	}
+}
+
+// targetPolicies names the row-level security policies of the target's public
+// schema, each as table/policy, sorted.
+func targetPolicies(c *qt.C, db *sql.DB) []string {
+	c.Helper()
+	rows, err := db.QueryContext(c.Context(), `SELECT tablename || '/' || policyname FROM pg_policies
+WHERE schemaname = 'public' ORDER BY 1`)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
 }
 
 // TestCompatMigrateDiffStatementStyleE2E_RefusesARetypeThatDropsAPolicy diffs
@@ -531,6 +637,7 @@ CREATE POLICY tenant_visible ON orders USING (tenant_id IN (SELECT id FROM activ
 		"--to", "file://"+filepath.ToSlash(retyped),
 		"--dev-url", pinnedDevURL(c, postgresScratchDevURL(c, "ptah_style_dev"), "public"))
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*drops active_tenants, which ptah\.run/pgpolicy/policy public\.orders\.tenant_visible reads, and nothing recreates it: PostgreSQL refuses the drop while it does, and a drop with CASCADE takes it too.*`, qt.Commentf("%s", output))
+	c.Assert(err, qt.ErrorMatches, `(?s).*drops view active_tenants and creates it again, for the type change of tenants\.id; `+
+		`ptah\.run/pgpolicy/policy public\.orders\.tenant_visible reads it, and PostgreSQL refuses the drop while it does.*`, qt.Commentf("%s", output))
 	c.Assert(readMigrationPairs(c, dir), qt.HasLen, 1)
 }

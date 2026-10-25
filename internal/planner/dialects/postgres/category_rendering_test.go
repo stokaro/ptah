@@ -43,6 +43,10 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
 	"ObservedConstraintHosts":         "PostgreSQL changes constraints in place; observed rebuild operands do not add PostgreSQL operations",
 	"SkippedFeatures":                 "the objects the comparison left out because the target does not serve their model; PostgreSQL serves every model a skip names, and the plan's comment for one is written by the planner host for every dialect, which TestOffFamilyTargetsSkipADeclaredExtension drives",
+	"DeclaredIndexes":                 "every declared index with its relation resolved, which a view rebuild reads to put back the indexes of a materialized view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
+	"DeclaredTriggers":                "every declared trigger, which a view rebuild reads to put back the triggers of a view it drops and creates again. It renders only beside the rebuild that reads it; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4976)",
+	"RoutinesKept":                    "the declared routines the database holds unchanged, with their drop identities, which a view rebuild reads to drop and create again a routine that uses a rebuilt view's row type. It renders only beside that rebuild; TestViewRebuild_PutsBackWhatTheDropTook_HappyPath drives it (stokaro/ptah#4980)",
+	"CurrentViewOptions":              "the options the read reported on each view and materialized view, such as security_invoker, which Ptah does not declare. A plan that replaces a view or creates one again writes them back; on its own it renders nothing, and TestViewRebuild_KeepsTheOptionsTheDatabaseHeld_HappyPath drives it",
 	"CurrentGrants":                   "every grant the read of the database reported, carried for a target that rebuilds a table and has to give the new one the grants the old one held. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere",
 	"CurrentNotDescribed":             "what the read of the database declined to describe, carried for a target that rebuilds a table and must not drop a setting the read left out. PostgreSQL changes its tables in place and never rebuilds one, so this planner reads the field nowhere; a fixture here would assert that a coverage set plans nothing",
 	"CurrentDatabasePath":             "the absolute path of the database the read describes, carried for a target that names a Serial column's sequence, and some objects of a GRANT, by an absolute path. PostgreSQL addresses every object relative to the connection, so this planner reads the field nowhere; a fixture here would assert that a path plans nothing",
@@ -357,11 +361,18 @@ func diffCategoryFixtures() []categoryFixture {
 		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv"}}}, &schemamodel.Database{}},
 		{
 			"MaterializedViewsModified",
-			&difftypes.SchemaDiff{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
-				ViewName: "mv",
-				Changes:  map[string]string{"body": "a -> b"},
-				Desired:  schemamodel.MaterializedView{Name: "mv", Body: "SELECT 2"},
-			}}},
+			// A comparison carries the declaration the rebuild creates the
+			// view from; see TestViewRebuild_FailurePath for a diff without.
+			&difftypes.SchemaDiff{
+				MaterializedViewsModified: []difftypes.MaterializedViewDiff{{
+					ViewName: "mv",
+					Changes:  map[string]string{"body": "a -> b"},
+					Desired:  schemamodel.MaterializedView{Name: "mv", Body: "SELECT 2"},
+				}},
+				DeclaredViewLikes: difftypes.ViewLikeVocabulary{
+					MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 2"}},
+				},
+			},
 			&schemamodel.Database{},
 		},
 		{

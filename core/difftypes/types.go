@@ -1065,6 +1065,40 @@ type SchemaDiff struct {
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
 
+	// DeclaredIndexes is every index the declaration holds, with the relation
+	// it belongs to resolved, carried once for the whole diff and off the
+	// wire.
+	//
+	// A planner that drops a materialized view and creates it again, to change
+	// it or a column under it, takes the view's indexes with it, and those
+	// indexes are usually ones this diff does not touch. This is how the
+	// planner puts them back.
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredIndexes IndexChanges `json:"-"`
+
+	// DeclaredTriggers is every trigger the declaration holds, carried once
+	// for the whole diff and off the wire, for a planner that drops a view
+	// and creates it again: the drop takes the view's INSTEAD OF triggers.
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredTriggers []schemamodel.Trigger `json:"-"`
+
+	// RoutinesKept is every declared routine the database holds as declared,
+	// with the argument list a DROP addresses it by, carried off the wire.
+	//
+	// A comparison plans only the routines that differ. A planner that drops
+	// a view and creates it again also has to drop a routine whose
+	// parameters or result name the view's row type, and create it again
+	// after the view, and that routine is usually one this diff does not
+	// touch.
+	//
+	// An unchanged routine is the same in both directions, so a reversal
+	// carries the same list.
+	RoutinesKept FunctionChanges `json:"-"`
+
 	// CurrentNotDescribed is what the read of the database this plan runs
 	// against declined to describe, carried once for the whole diff and off
 	// the wire.
@@ -1105,6 +1139,22 @@ type SchemaDiff struct {
 	//
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`
+
+	// CurrentViewOptions is the options the read reported on the views and
+	// materialized views that have any, carried off the wire: a view's
+	// security_invoker or security_barrier, a materialized view's storage
+	// parameters.
+	//
+	// Ptah declares none of them, so a comparison ignores them. A planner that
+	// writes CREATE OR REPLACE VIEW for a view the database holds, or drops
+	// one and creates it again, writes them back. PostgreSQL's replace sets
+	// the options the statement states and clears the others, and a view
+	// created again starts with none, so a security_invoker view would start
+	// running with its owner's privileges.
+	//
+	// A reversal runs against the same database and carries the same
+	// options.
+	CurrentViewOptions ViewLikeOptions `json:"-"`
 
 	// Features is every named feature object on each side, changed or not,
 	// carried once for the whole diff and off the wire. A planner reads it
@@ -2805,6 +2855,35 @@ func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges {
 		declarations = append(declarations, IndexChange{Index: index.Clone(), TableName: owners[position]})
 	}
 	return declarations
+}
+
+// ViewLikeOptions is the options a read of PostgreSQL reported on views and
+// materialized views, each `name=value` as pg_class.reloptions holds it, keyed
+// by the name the read gives the object: bare in the schema it reads, and
+// qualified elsewhere. A view's check option is not among them, because the
+// comparison models it. An object with no options has no entry.
+type ViewLikeOptions struct {
+	// Views holds each view's options: security_invoker, security_barrier.
+	Views map[string][]string
+	// MaterializedViews holds each materialized view's storage parameters,
+	// such as fillfactor.
+	MaterializedViews map[string][]string
+}
+
+// Clone returns options that share no map or list with o.
+func (o ViewLikeOptions) Clone() ViewLikeOptions {
+	return ViewLikeOptions{Views: cloneOptionMap(o.Views), MaterializedViews: cloneOptionMap(o.MaterializedViews)}
+}
+
+func cloneOptionMap(options map[string][]string) map[string][]string {
+	if options == nil {
+		return nil
+	}
+	clone := make(map[string][]string, len(options))
+	for name, values := range options {
+		clone[name] = slices.Clone(values)
+	}
+	return clone
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

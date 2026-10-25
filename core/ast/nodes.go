@@ -1651,6 +1651,17 @@ type CreateViewNode struct {
 	// WithCheck, which is a clause that follows the body rather than one that
 	// precedes it (stokaro/ptah#2125).
 	Attributes []string
+	// Options is the view's options as PostgreSQL holds them in
+	// pg_class.reloptions, each `name=value`, such as security_invoker=true or
+	// security_barrier=true. The check option is not one of them: it is
+	// WithCheck. Only the PostgreSQL renderer writes them, as WITH (...) before
+	// AS, and every other renderer refuses a view that carries any.
+	//
+	// No declaration sets them. A planner that creates or replaces a view the
+	// database holds sets the ones the database holds, because CREATE OR
+	// REPLACE VIEW replaces the options with the ones it states, and a view
+	// created again starts with none.
+	Options []string
 }
 
 // NewCreateView starts a CREATE VIEW for a named view.
@@ -1737,6 +1748,14 @@ type CreateMaterializedViewNode struct {
 	IfNotExists bool
 	Body        string
 	Comment     string
+	// Options is the materialized view's storage parameters as PostgreSQL
+	// holds them in pg_class.reloptions, each `name=value`, such as
+	// fillfactor=70. Only the PostgreSQL renderer writes them, as WITH (...)
+	// before AS, and every other renderer refuses a materialized view that
+	// carries any. No declaration sets them: a planner that creates a
+	// materialized view the database holds again sets the ones the database
+	// holds; see [CreateViewNode.Options].
+	Options []string
 }
 
 // NewCreateMaterializedView starts a CREATE MATERIALIZED VIEW for a named view.

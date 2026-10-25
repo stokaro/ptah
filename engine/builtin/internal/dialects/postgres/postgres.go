@@ -2880,8 +2880,12 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
+	options, err := r.relationOptionsClause("view", node.Name, node.Options)
+	if err != nil {
+		return err
+	}
 	target := r.escapeQualifiedIdentifier(node.Name)
-	r.w.WriteLinef("%s %s AS", create, target)
+	r.w.WriteLinef("%s %s%s AS", create, target, options)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")
@@ -2889,6 +2893,46 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	r.w.WriteLine(";")
 	r.writeCreatedObjectComment(ast.CommentedView, target, node.Name, node.Comment)
 	return nil
+}
+
+// relationOptionsClause is the WITH clause that gives a view or a materialized
+// view the options it carries, each `name=value` as pg_class.reloptions holds
+// it, or empty for none.
+//
+// Each value is written as a string literal, which the server takes for every
+// option and stores as written: `security_barrier='on'` reads back as
+// security_barrier=on, so the options the database held come back unchanged.
+// A name that is not a plain option name is refused rather than written into
+// the statement.
+func (r *Renderer) relationOptionsClause(kind, name string, options []string) (string, error) {
+	if len(options) == 0 {
+		return "", nil
+	}
+	written := make([]string, 0, len(options))
+	for _, option := range options {
+		key, value, found := strings.Cut(option, "=")
+		if !found || !isRelationOptionName(key) {
+			return "", fmt.Errorf("%w: postgres: %s %s carries the option %q, which is not name=value",
+				ptaherr.ErrInvalidSchemaDiff, kind, name, option)
+		}
+		written = append(written, key+"="+r.escapeValue(value))
+	}
+	return " WITH (" + strings.Join(written, ", ") + ")", nil
+}
+
+// isRelationOptionName reports whether name is spelled like a relation option:
+// lower-case letters, digits and underscores, and a dot before the option of
+// a TOAST table.
+func isRelationOptionName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' && c != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 // renderDropView renders a DROP VIEW statement.
@@ -2919,8 +2963,12 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 		return nil
 	}
 
+	options, err := r.relationOptionsClause("materialized view", node.Name, node.Options)
+	if err != nil {
+		return err
+	}
 	target := r.escapeQualifiedIdentifier(node.Name)
-	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", target)
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s%s AS", target, options)
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	r.w.WriteLine(";")
 	r.writeCreatedObjectComment(ast.CommentedMaterializedView, target, node.Name, node.Comment)

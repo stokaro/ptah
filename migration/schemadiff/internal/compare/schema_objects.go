@@ -235,7 +235,9 @@ func functionsWithDialect(
 		functionComparison := functionDefinitions(generatedFunction, databaseFunction, dialect, arguments, routines)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+			continue
 		}
+		diff.RoutinesKept = append(diff.RoutinesKept, keptRoutine(generatedFunction, generatedFunction.Name, databaseFunction))
 	}
 
 	for _, fn := range database.Functions {
@@ -253,6 +255,7 @@ func functionsWithDialect(
 	sortRoutines(diff.FunctionsAdded)
 	sortRoutines(diff.FunctionsRemoved)
 	sortRoutines(diff.ProceduresRemoved)
+	sortRoutines(diff.RoutinesKept)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -301,7 +304,9 @@ func FunctionsWithSemantics(
 			functionComparison := functionDefinitions(pair.declared, pair.recorded, dialect, arguments, routines)
 			if len(functionComparison.Changes) > 0 {
 				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+				continue
 			}
+			diff.RoutinesKept = append(diff.RoutinesKept, keptRoutine(pair.declared, generatedNames[identity], pair.recorded))
 		}
 	}
 	for identity, recorded := range databaseFunctions {
@@ -333,6 +338,7 @@ func FunctionsWithSemantics(
 	sortRoutines(diff.FunctionsAdded)
 	sortRoutines(diff.FunctionsRemoved)
 	sortRoutines(diff.ProceduresRemoved)
+	sortRoutines(diff.RoutinesKept)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -1134,6 +1140,14 @@ func declaredRoutine(declared schemamodel.Function) difftypes.RoutineChange {
 func declaredRoutineNamed(declared schemamodel.Function, name string) difftypes.RoutineChange {
 	declared.Name = name
 	return difftypes.RoutineChange{Function: declared}
+}
+
+// keptRoutine is a declared routine the database holds as declared, named as
+// the diff names the declaration, with the argument list the database
+// addresses it by.
+func keptRoutine(declared schemamodel.Function, name string, recorded catalog.Function) difftypes.RoutineChange {
+	declared.Name = name
+	return difftypes.RoutineChange{Function: declared, Signature: recorded.DropIdentity()}
 }
 
 // reportedRoutine carries a routine the database reported, with the argument

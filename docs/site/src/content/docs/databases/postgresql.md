@@ -842,7 +842,7 @@ views that read its table, directly or through another view, before the column
 step. It creates them again after it, in dependency order. A live view the
 declaration no longer holds is dropped at the same point, because the removal
 step comes after the column step. The rollback migration does the same in the
-other direction.
+other direction. See [What a view rebuild keeps](#what-a-view-rebuild-keeps).
 
 ## Changing a column to or from an enum
 
@@ -900,33 +900,82 @@ a `zbase` declared without a schema.
 A materialized view declared `WITH NO DATA` is compared by its query, because
 the server does not store the clause. An unchanged declaration plans nothing. A
 plan that creates the view again creates it `WITH NO DATA`, so it is empty until
-a `REFRESH MATERIALIZED VIEW`. The rollback migration creates it from the
-definition the server reports, which has no clause, so the rollback fills it.
+a `REFRESH MATERIALIZED VIEW`. The read reports a view the server holds without
+rows, so the rollback migration creates such a view `WITH NO DATA` too.
 
 ## What a view rebuild keeps
 
-Both rebuilds drop each object by name, readers first. In Ptah's own statement
-style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
-CASCADE`, so grants on a dropped object and any object that depends on it and
-that the schema does not declare go with it. In the exact style that `ptah-compat
-migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
-stops the migration at the drop instead. The exception is a rebuilt object
-whose row type a routine the plan removes takes or returns, or that a policy of
-a table the plan removes reads. Both are dropped after the rebuild, so the
-rebuild's drop relies on `CASCADE`. A view or table the plan removes for good
-is handled differently: the routine that names its row type is dropped right
-before it, and the drop needs no `CASCADE`. See the exact style in the
-[`migrate diff` documentation](../../atlas/migrate-commands/).
+Three changes drop a view or a materialized view and create it again: a column
+type change under it, a change to a materialized view, and a view change
+`CREATE OR REPLACE VIEW` cannot make, such as a column that moves. Each object
+that depends on a dropped one goes with it:
 
-A plan with no retyped column and no
-changed materialized view keeps `CREATE OR REPLACE VIEW`, which leaves both
-alone. The plan check rates a `DROP VIEW ... CASCADE` and every `DROP
-MATERIALIZED VIEW` destructive although the plan creates the object again, so
+- the views and materialized views that read it, directly or through another
+  view;
+- the routines whose parameters or result use its row type, such as
+  `RETURNS SETOF v` or `f(r v)`, the routines whose SQL-standard body,
+  `BEGIN ATOMIC ... END` or `RETURN`, reads it, and the views that call such
+  a routine.
+
+The plan drops each of them by name before the column step, after everything
+that depends on it, so no drop needs `CASCADE` for a dependent the schema
+declares. It creates them again after the view step, in dependency order, from
+the declaration. Right after each object it creates again, it writes:
+
+- the declared indexes of a materialized view, so `REFRESH MATERIALIZED VIEW
+  CONCURRENTLY` finds its unique index once the migration commits;
+- the declared triggers of a view, such as an `INSTEAD OF` trigger;
+- the privileges the database held on the object, column privileges included,
+  also those of a role the schema does not manage. A routine that `PUBLIC`
+  could not execute has that privilege revoked again, since a new routine is
+  executable by `PUBLIC`;
+- the options the database held it with: `security_invoker` and
+  `security_barrier` on a view, storage parameters such as `fillfactor` on a
+  materialized view.
+
+A comment is part of each `CREATE`, and a routine keeps its language,
+volatility, `SECURITY DEFINER`, `STRICT`, `LEAKPROOF`, `PARALLEL` and `SET`
+settings, because it is created from its declaration. A routine is dropped
+without `CASCADE` in both statement styles.
+
+A view the plan changes with `CREATE OR REPLACE VIEW` is not dropped. When its
+definition in the database reads a dropped object and its new one does not, the
+plan replaces it before the drops; when only its new one does, after the
+object is back. The view keeps its policies and privileges either way. Every
+`CREATE OR REPLACE VIEW` Ptah writes for a view the database holds states the
+options it holds, because the replace sets the options it states and clears the
+others.
+
+What a rebuild does not keep:
+
+- the owner. The new object belongs to the role that runs the migration, since
+  Ptah does not describe ownership;
+- an object that depends on a dropped one and that the schema does not
+  declare, such as a view in a schema the run leaves out. In Ptah's own
+  statement style the drop carries `CASCADE` and takes it; in the exact style
+  the drop has no `CASCADE`, and the server stops the migration at the drop.
+  The exact style keeps `CASCADE` only on a drop of an object a policy of a
+  table the plan removes reads, since that policy goes with its table later;
+- a materialized view's rows and tablespace. `CREATE MATERIALIZED VIEW` runs
+  the query again and puts the view in the default tablespace.
+
+The plan refuses a rebuild that drops an object a row-level security policy
+reads or calls, a view or a routine, and names the policy; see
+[Row-level security](#row-level-security).
+
+The drops and creates run inside the migration. Each `DROP` and `CREATE` takes
+an `ACCESS EXCLUSIVE` lock on its object, so queries against a rebuilt view or
+materialized view wait until the migration commits, and `CREATE MATERIALIZED
+VIEW` computes the rows inside the migration, which takes as long as the
+view's query. In a migration that runs without a transaction, other sessions
+see each statement as it commits: a rebuilt object is missing between its drop
+and its create, and `REFRESH MATERIALIZED VIEW CONCURRENTLY` fails until the
+unique index is back.
+
+The plan check rates a `DROP VIEW ... CASCADE` and every `DROP MATERIALIZED
+VIEW` destructive although the plan creates the object again, so
 `--check-destructive` refuses the plan; a `CREATE OR REPLACE VIEW` is a
 warning.
-
-A plan that would drop a view or a materialized view that a row-level security
-policy reads is refused; see [Row-level security](#row-level-security).
 
 ## Materialized view refresh
 
@@ -966,7 +1015,8 @@ own, `REFRESH EVERY|AFTER`, is engine-native DDL and is managed — see
 privileges next to your entities. Ptah emits `CREATE ROLE` for new roles,
 `ALTER ROLE` for attribute changes, and `GRANT`/`REVOKE` as declared grants
 change. Grants target a table, a schema, a sequence, a function or a
-procedure, and grants are compared per individual privilege, so a
+procedure; a view and a materialized view take the grants of a table, and both
+are read back. Grants are compared per individual privilege, so a
 `privilege="SELECT,INSERT"` list round-trips cleanly through introspection. A
 grant on a sequence is described with `on_sequence`, so the description
 compares equal to the database it was read from. That holds for the sequence a
@@ -1406,17 +1456,22 @@ applied; a migration that runs without one keeps the statements that ran
 before it. Change the policy in one migration and the column, the function or
 the type in the next. Measured on PostgreSQL 17.
 
-A plan that drops a view or a materialized view a policy reads is refused. The
-drop would remove the policy, or, without `CASCADE`, the server would refuse
-the drop, and the plan does not create the policy again. That covers a view
-change `CREATE OR REPLACE VIEW` cannot make
+A plan that drops a view or a materialized view a policy reads is refused, and
+so is one that drops a routine a policy calls. The drop would remove the
+policy, or, without `CASCADE`, the server would refuse the drop, and the plan
+does not create the policy again. That covers a view change `CREATE OR REPLACE
+VIEW` cannot make
 ([stokaro/ptah#4305](https://github.com/stokaro/ptah/issues/4305)), a column
 type change under the view
-([stokaro/ptah#4965](https://github.com/stokaro/ptah/issues/4965)), and a
-change to a materialized view the view reads
-([stokaro/ptah#4964](https://github.com/stokaro/ptah/issues/4964)). The error
-names the policy. Change the policy so it no longer reads the view in one
-migration, and the view or the column in the next.
+([stokaro/ptah#4965](https://github.com/stokaro/ptah/issues/4965)), a change
+to a materialized view the view reads
+([stokaro/ptah#4964](https://github.com/stokaro/ptah/issues/4964)), and a
+routine that uses the row type of such a view
+([stokaro/ptah#4980](https://github.com/stokaro/ptah/issues/4980)). The error
+names the policy and the change the drop is for. Change the policy so it no
+longer reads the view or calls the routine in one migration, and make the
+change in the next. A view the plan replaces in place is not dropped and does
+not cause a refusal; see [What a view rebuild keeps](#what-a-view-rebuild-keeps).
 
 A policy reads a view by the names in its expressions, as a rebuild reads one.
 A name with a schema reads only that schema's object. A name without one may

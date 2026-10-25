@@ -473,11 +473,23 @@ func convertMaterializedViews(database *schemamodel.Database, dbViews []catalog.
 		materializedView := schemamodel.MaterializedView{
 			Facets:  dbView.Facets,
 			Name:    dbView.QualifiedName(),
-			Body:    dbView.Body,
+			Body:    materializedViewBody(dbView),
 			Comment: dbView.Comment,
 		}
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}
+}
+
+// materializedViewBody is the body a description of view declares: the
+// definition the server reports, and WITH NO DATA after it for a view the
+// server holds without rows. The server keeps no trace of the clause in the
+// definition, so without it a rollback, or a replay of the description,
+// creates the view filled with rows it did not hold.
+func materializedViewBody(view catalog.MaterializedView) string {
+	if !view.Unpopulated {
+		return view.Body
+	}
+	return strings.TrimSuffix(strings.TrimSpace(view.Body), ";") + "\nWITH NO DATA"
 }
 
 func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigger) {

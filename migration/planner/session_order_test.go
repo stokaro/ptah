@@ -93,8 +93,8 @@ func TestGenerateSchemaDiffSQL_OrdersInTheSessionsSchema_HappyPath(t *testing.T)
 		},
 		{
 			// Swapping base's columns is a change CREATE OR REPLACE VIEW
-			// cannot make, so base is created again and what reads it is
-			// replaced after it.
+			// cannot make, so base and its readers leave and return in
+			// dependency order.
 			name: "readers a view change takes with it",
 			desired: &schemamodel.Database{Views: []schemamodel.View{
 				{Name: "top", Body: "SELECT m.a FROM app.base b, app.mid m"},
@@ -106,7 +106,8 @@ func TestGenerateSchemaDiffSQL_OrdersInTheSessionsSchema_HappyPath(t *testing.T)
 				{Name: "mid", Body: "SELECT a FROM app.base"},
 				{Name: "base", Body: "SELECT 1 AS a, 2 AS b"},
 			}},
-			prefixes: []string{`CREATE OR REPLACE VIEW "mid"`, `CREATE OR REPLACE VIEW "top"`},
+			prefixes: []string{`DROP VIEW "top"`, `DROP VIEW "mid"`, `DROP VIEW "base"`,
+				`CREATE VIEW "base"`, `CREATE VIEW "mid"`, `CREATE VIEW "top"`},
 		},
 		{
 			name:    "views the plan removes",

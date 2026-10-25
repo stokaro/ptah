@@ -491,7 +491,9 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 // anywhere else in the plan -- so a migration that only dropped and recreated the
 // named view applied cleanly and left the database short of objects the same
 // schema declares. Re-planning did not repair it either: the next plan created
-// the dependent and dropped it again in the same file.
+// the dependent and dropped it again in the same file. The plan drops those
+// readers itself, readers first, and creates them again after the view, so no
+// drop depends on what a CASCADE takes.
 func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
@@ -529,17 +531,19 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 
 	c.Assert(sql, qt.Contains, "DROP VIEW IF EXISTS base_view CASCADE;", qt.Commentf("rendered:\n%s", sql))
 	c.Assert(sql, qt.Contains, "CREATE VIEW base_view AS", qt.Commentf("rendered:\n%s", sql))
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW mid_view AS", qt.Commentf("rendered:\n%s", sql))
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW leaf_view AS", qt.Commentf("rendered:\n%s", sql))
+	c.Assert(sql, qt.Contains, "CREATE VIEW mid_view AS", qt.Commentf("rendered:\n%s", sql))
+	c.Assert(sql, qt.Contains, "CREATE VIEW leaf_view AS", qt.Commentf("rendered:\n%s", sql))
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW mid_stats AS", qt.Commentf("rendered:\n%s", sql))
 
 	// A view the CASCADE cannot reach has no business in this plan.
 	c.Assert(sql, qt.Not(qt.Contains), "unrelated_view", qt.Commentf("rendered:\n%s", sql))
 
-	// And the rebuild has to follow the read order, or the same CASCADE takes it
-	// straight back out.
-	assertBefore(t, sql, "CREATE VIEW base_view AS", "CREATE OR REPLACE VIEW mid_view AS")
-	assertBefore(t, sql, "CREATE OR REPLACE VIEW mid_view AS", "CREATE OR REPLACE VIEW leaf_view AS")
+	// The readers leave before what they read and come back after it.
+	assertBefore(t, sql, "DROP VIEW IF EXISTS leaf_view CASCADE;", "DROP VIEW IF EXISTS mid_view CASCADE;")
+	assertBefore(t, sql, "DROP VIEW IF EXISTS mid_view CASCADE;", "DROP VIEW IF EXISTS base_view CASCADE;")
+	assertBefore(t, sql, "DROP MATERIALIZED VIEW IF EXISTS mid_stats CASCADE;", "DROP VIEW IF EXISTS base_view CASCADE;")
+	assertBefore(t, sql, "CREATE VIEW base_view AS", "CREATE VIEW mid_view AS")
+	assertBefore(t, sql, "CREATE VIEW mid_view AS", "CREATE VIEW leaf_view AS")
 }
 
 // TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText pins the
@@ -547,11 +551,10 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 // the plan even when the dropped view's name appears in the body as text.
 //
 // The rebuild list exists to put back what DROP VIEW ... CASCADE takes, so every
-// name on it is answered with a statement: a materialized view is dropped and
-// recreated, a view is re-asserted. Reading the name out of a string literal or
-// a comment therefore does not merely add a redundant statement -- it issues
-// DROP MATERIALIZED VIEW ... CASCADE against an object no part of the migration
-// touched. Measured on PostgreSQL 17.10, that took a hand-made dependent view, a
+// name on it is answered with statements: the object is dropped and created
+// again. Reading the name out of a string literal or a comment therefore does
+// not merely add a redundant statement -- it issues DROP MATERIALIZED VIEW ...
+// CASCADE against an object no part of the migration touched. Measured on PostgreSQL 17.10, that took a hand-made dependent view, a
 // unique index on the materialized view, and the SELECT granted on it; none of
 // the three is declared, so nothing put them back.
 func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.T) {
@@ -592,7 +595,8 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 
 	// The genuine dependents are still rebuilt.
 	c.Assert(sql, qt.Contains, "DROP VIEW IF EXISTS base_view CASCADE;", qt.Commentf("rendered:\n%s", sql))
-	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW reader_view AS", qt.Commentf("rendered:\n%s", sql))
+	c.Assert(sql, qt.Contains, "DROP VIEW IF EXISTS reader_view CASCADE;", qt.Commentf("rendered:\n%s", sql))
+	c.Assert(sql, qt.Contains, "CREATE VIEW reader_view AS", qt.Commentf("rendered:\n%s", sql))
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW reader_stats AS", qt.Commentf("rendered:\n%s", sql))
 
 	// The objects that only spell the name are not named by any statement.

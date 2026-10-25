@@ -26,25 +26,32 @@ func ResolvesBodyAtCreate(routine schemamodel.Function) bool {
 // routinePlacements says where each routine this plan creates or replaces
 // goes; see [deporder.PlaceRoutines], which is the rule. A replaced routine is
 // placed by its new definition, because that is the one the server resolves.
-func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) (map[string]deporder.RoutinePlacement, error) {
+// A routine the view rebuild owns is placed with it; see [routineInRebuild].
+func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff, rebuild viewRebuild) (map[string]deporder.RoutinePlacement, error) {
 	routines := diff.FunctionsAdded.Declarations()
 	for _, fnDiff := range diff.FunctionsModified {
 		if fnDiff.Desired.Name != "" {
 			routines = append(routines, fnDiff.Desired)
 		}
 	}
-	created, err := routineCreation(diff)
+	created, err := routineCreation(diff, rebuild)
 	if err != nil {
 		return nil, err
 	}
-	return deporder.PlaceRoutinesIn(
+	placements := deporder.PlaceRoutinesIn(
 		routines,
 		diff.DeclaredFunctions.Dependencies,
 		created,
 		p.targetDialect(),
 		ResolvesBodyAtCreate,
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
-	), nil
+	)
+	for name := range placements {
+		if rebuild.ownsRoutine(name) {
+			placements[name] = routineInRebuild
+		}
+	}
+	return placements, nil
 }
 
 // routineCreation is what this plan creates that a routine's definition can
@@ -53,8 +60,10 @@ func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) (map[string]depo
 // LANGUAGE sql body reading the column is refused until the column exists. A
 // type a feature owner creates, rebuilds or changes counts as a common one
 // does: the owner's statement joins the type window, which the routines
-// naming it follow.
-func routineCreation(diff *difftypes.SchemaDiff) (deporder.RoutineCreation, error) {
+// naming it follow. And so does every view and materialized view the view
+// rebuild creates again or replaces after its drops: before that point it is
+// absent or holds its old definition.
+func routineCreation(diff *difftypes.SchemaDiff, rebuild viewRebuild) (deporder.RoutineCreation, error) {
 	var created deporder.RoutineCreation
 	owned, err := schemaext.CreatedTypes(diff.FeatureChanges)
 	if err != nil {
@@ -70,6 +79,11 @@ func routineCreation(diff *difftypes.SchemaDiff) (deporder.RoutineCreation, erro
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 {
 			created.Relations = append(created.Relations, tableDiff.TableName)
+		}
+	}
+	for _, object := range rebuild.late() {
+		if !object.Routine {
+			created.Relations = append(created.Relations, object.Name)
 		}
 	}
 	return created, nil

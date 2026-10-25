@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/grantrefusal"
+	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/triggerdef"
 )
@@ -611,6 +612,9 @@ func viewAttributeClause(attributes []string) string {
 }
 
 func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
+	if err := viewrefusal.Options(DialectName, "view", node.Name, node.Options); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
