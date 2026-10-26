@@ -238,6 +238,9 @@ Columns support the same information as field annotations:
 | `comment` | Column comment. |
 | `platform` / `overrides` | Dialect-specific overrides. |
 
+An explicit `default: ""` declares an empty string literal. Omitting `default`
+or setting it to YAML `null` declares no literal default.
+
 For PostgreSQL, Ptah plans generated-column expression changes with
 `ALTER COLUMN ... SET EXPRESSION` only for PostgreSQL 17+ capability sets.
 Older PostgreSQL targets receive an explicit manual migration warning instead
