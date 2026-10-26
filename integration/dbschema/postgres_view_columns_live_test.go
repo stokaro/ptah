@@ -11,11 +11,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/parser"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -45,7 +47,7 @@ table "t" {
 
 view "v" {
   schema = schema.` + schemaName + `
-  as     = "SELECT id, label FROM ` + schemaName + `.t"
+  as     = "SELECT id AS old_id, label AS old_label FROM ` + schemaName + `.t"
   column "ident" {
   }
   column "name" {
@@ -57,11 +59,9 @@ view "v" {
 // TestPostgresLiveViewColumnsConverge is the test this rewrite could not have
 // been added without.
 //
-// PostgreSQL does not keep an alias list. `CREATE VIEW v (a, b) AS SELECT x, y`
-// is stored as `SELECT x AS a, y AS b`, so a declaration that rendered the
-// alias list would never match its own catalog row and the view would be
-// planned for replacement on every run (stokaro/ptah#3172). Only a server shows
-// that: both sides of an offline comparison come from the same declaration.
+// PostgreSQL gives the column list priority over aliases already in SELECT.
+// The rendered body must replace those aliases so the server accepts it and
+// the catalog read converges on the declared names (stokaro/ptah#4933).
 //
 // Three steps: the server accepts the rewritten statement, the columns it holds
 // are the ones the declaration named, and comparing the document against what
@@ -116,4 +116,43 @@ func TestPostgresLiveViewColumnsConverge(t *testing.T) {
 	c.Assert(settled.ViewsAdded, qt.HasLen, 0)
 	c.Assert(settled.ViewsModified, qt.HasLen, 0)
 	c.Assert(settled.ViewsRemoved, qt.HasLen, 0)
+}
+
+// TestPostgresLiveSQLViewColumnListOverridesSelectAliases proves that the SQL
+// reader's rewritten view executes and returns values under the names declared
+// by the column list, even when the SELECT already names both items.
+func TestPostgresLiveSQLViewColumnListOverridesSelectAliases(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	schemaName := fmt.Sprintf("ptah_viewalias_%d", time.Now().UnixNano())
+	_, err = conn.ExecContext(ctx, `CREATE SCHEMA "`+schemaName+`"`)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS "`+schemaName+`" CASCADE`)
+	}()
+	_, err = conn.ExecContext(ctx, `CREATE TABLE "`+schemaName+`".t (id integer PRIMARY KEY, name text)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `INSERT INTO "`+schemaName+`".t (id, name) VALUES (7, 'Ada')`)
+	c.Assert(err, qt.IsNil)
+
+	statements, err := parser.NewParser(`CREATE VIEW v (label, key) AS SELECT name AS shown, id AS old_id FROM "` + schemaName + `".t;`).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	view, ok := statements.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	_, err = conn.ExecContext(ctx, `CREATE VIEW "`+schemaName+`".v AS `+view.Body)
+	c.Assert(err, qt.IsNil)
+
+	var label string
+	var key int
+	err = conn.QueryRowContext(ctx, `SELECT label, key FROM "`+schemaName+`".v`).Scan(&label, &key)
+	c.Assert(err, qt.IsNil)
+	c.Assert(label, qt.Equals, "Ada")
+	c.Assert(key, qt.Equals, 7)
 }

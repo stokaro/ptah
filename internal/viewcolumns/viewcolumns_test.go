@@ -65,6 +65,30 @@ func TestWithAliases_HappyPath(t *testing.T) {
 			want:  "SELECT id AS ident, label AS title FROM t",
 		},
 		{
+			name:  "declared names replace explicit aliases",
+			body:  "SELECT name AS shown, id FROM t",
+			names: []string{"label", "key"},
+			want:  "SELECT name AS label, id AS key FROM t",
+		},
+		{
+			name:  "an AS inside a cast does not name the select item",
+			body:  "SELECT CAST(id AS text) AS old_name, label FROM t",
+			names: []string{"key", "name"},
+			want:  "SELECT CAST(id AS text) AS key, label AS name FROM t",
+		},
+		{
+			name:  "quoted aliases with spaces and escaped quotes",
+			body:  `SELECT name AS "old label", id AS "old""key" FROM t`,
+			names: []string{`"new label"`, `"new key"`},
+			want:  `SELECT name AS "new label", id AS "new key" FROM t`,
+		},
+		{
+			name:  "OpenMeter casts and literals already have aliases",
+			body:  `SELECT NULL::timestamptz AS "base_intent_deleted_at", 'credit_purchase' AS "type" FROM charge_credit_purchases`,
+			names: []string{`"type"`, `"base_intent_deleted_at"`},
+			want:  `SELECT NULL::timestamptz AS "type", 'credit_purchase' AS "base_intent_deleted_at" FROM charge_credit_purchases`,
+		},
+		{
 			name:  "a quoted identifier holding a comma",
 			body:  `SELECT "a,b", c FROM t`,
 			names: []string{"weird", "c"},
@@ -109,6 +133,7 @@ func TestWithAliases_FailurePath(t *testing.T) {
 		{name: "a qualified star given one name", body: "SELECT t.* FROM t", names: []string{"x"}},
 		{name: "not a select at all", body: "TABLE t", names: []string{"x"}},
 		{name: "an empty name", body: "SELECT a FROM t", names: []string{"  "}},
+		{name: "unreadable existing alias", body: "SELECT a AS old + extra FROM t", names: []string{"x"}},
 	}
 
 	for _, row := range rows {
