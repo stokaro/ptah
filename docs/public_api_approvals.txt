@@ -878,3 +878,10 @@ v0.15.0 ptah.run/core/dataext
 # the former Boolean field is not owed under the provider extraction policy.
 v0.16.0 ptah.run/catalog
 v0.16.1 ptah.run/catalog
+
+# #4204 binds approved execution input references to renderer.Fragment and
+# planner.PlannedUnit. Their input slices make these values non-comparable;
+# callers compare the explicit bodies and references instead of using == or
+# map keys. Pre-v1, so compatibility with the former comparable shape is not owed.
+v0.16.1 ptah.run/core/renderer
+v0.16.1 ptah.run/migration/planner
