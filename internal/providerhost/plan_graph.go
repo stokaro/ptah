@@ -29,7 +29,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := commonPlanningMetadata(request, nodes)
+	metadata, err := commonPlanningMetadata(request, nodes, p.selections)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 // Metadata is read from the accepted common operands, never reconstructed from
 // the desired table. In particular, a column rewrite receives the actual ADD
 // COLUMN definition, which can differ from the final declaration.
-func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node, selections *scopeSelections) ([]featureplan.CommonStep, error) {
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	parents := make(map[objectidentity.Key]objectidentity.ID, len(request.Tables))
 	for _, table := range request.Tables {
@@ -78,7 +78,7 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 	}
 	metadata := make([]featureplan.CommonStep, len(nodes))
 	for i, node := range nodes {
-		common, isCommon, err := commonObjectMetadata(builder, parents, node)
+		common, isCommon, err := commonObjectMetadata(builder, parents, node, selections)
 		if err != nil {
 			return nil, err
 		}

@@ -222,3 +222,17 @@ These are for the implementation. None holds today.
 - The YDB provider's CI excludes each of its ten kinds by type and a topic with
   its grant, and keeps the pool of a kept classifier, on each YDB line it
   supports.
+
+## Native access footprints
+
+A common grant or revoke on a selected native object reads that object's
+identity and alters a separate `object_access` resource. This resource keeps
+the object's coordinates and places its model kind in a namespace component.
+The kind component prevents two object types from sharing an access identity.
+A database-wide name retains literal dots throughout declaration, planning and
+rendering. The captured database path reaches the grant operand separately.
+
+A native operation can order its captured access check before a grant without
+claiming that the grant changes native settings. A provider that replaces a
+common revoke with a drop must account for the access effect explicitly;
+the graph does not treat every drop as a replacement for an alteration.

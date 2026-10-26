@@ -41,6 +41,12 @@ func (c Constraint) Clone() Constraint {
 	return c
 }
 
+// Clone returns an ownership observation with independent login knowledge.
+func (o ObjectOwner) Clone() ObjectOwner {
+	o.OwnerCanLogin = cloneScalar(o.OwnerCanLogin)
+	return o
+}
+
 func cloneScalar[T ~string | ~int | ~bool](value *T) *T {
 	if value == nil {
 		return nil

@@ -29,6 +29,11 @@ owner's privileges, objects owned by a role that can log in, overlapping and
 empty role memberships, and privileges held on objects nothing was observed
 using.
 
+The command refuses a report when the read leaves roles, grants, memberships
+or object owners uninspected. It also refuses ownership findings when an
+owner's login status is unknown. Unknown access metadata cannot establish
+that the database has no security findings.
+
 Each finding is an observation paired with a suggestion, not a verdict. Use the
 command to put those observations in front of a person, and to gate a pull
 request once you have decided which of them should never appear again.

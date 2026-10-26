@@ -28,7 +28,8 @@ type commonPlanner struct {
 	// comments sets the comments of a table the plan creates, and of a column
 	// it adds, with steps of their own: the engine carries comments on the
 	// common-object wire, and the common table message has no place for one.
-	comments bool
+	comments   bool
+	selections *scopeSelections
 }
 
 // commonObjectFields are the diff fields of the common objects beyond

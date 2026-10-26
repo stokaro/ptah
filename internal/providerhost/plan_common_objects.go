@@ -104,7 +104,22 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, role := range diff.RolesRemoved {
 		plan.last = append(plan.last, ast.NewDropRole(role.Name).SetGroup(role.Group))
 	}
+	bindGrantDatabasePath(plan.before, diff.CurrentDatabasePath)
+	bindGrantDatabasePath(plan.after, diff.CurrentDatabasePath)
 	return plan, nil
+}
+
+// bindGrantDatabasePath supplies the session path to grants whose engine needs
+// an absolute target for a root object or the database itself.
+func bindGrantDatabasePath(nodes []ast.Node, database string) {
+	for _, node := range nodes {
+		switch access := node.(type) {
+		case *ast.GrantPrivilegeNode:
+			access.DatabasePath = database
+		case *ast.RevokePrivilegeNode:
+			access.DatabasePath = database
+		}
+	}
 }
 
 // droppedViews drops each view the plan removes, and each one whose query
@@ -315,11 +330,35 @@ var commentedObjects = map[difftypes.CommentedObjectKind]ast.CommentedObject{
 // tables, and reports whether node is one: its footprint on the object, and
 // the node as its operand. A comment on a table or a column is a step of that
 // table, its captured parent.
-func commonObjectMetadata(builder objectidentity.Builder, parents map[objectidentity.Key]objectidentity.ID, node ast.Node) (featureplan.CommonStep, bool, error) {
+func commonObjectMetadata(builder objectidentity.Builder, parents map[objectidentity.Key]objectidentity.ID, node ast.Node, selections *scopeSelections) (featureplan.CommonStep, bool, error) {
 	if alter, isAlter := node.(*ast.AlterTableNode); isAlter {
 		return tableCommentMetadata(builder, parents, alter)
 	}
 	step := featureplan.CommonStep{CommonObject: node}
+	if selections != nil {
+		var objectType, objectName string
+		switch typed := node.(type) {
+		case *ast.GrantPrivilegeNode:
+			objectType, objectName = typed.ObjectType, typed.ObjectName
+		case *ast.RevokePrivilegeNode:
+			objectType, objectName = typed.ObjectType, typed.ObjectName
+		}
+		grants := grantObjects{selected: selections.selected}
+		if grants.OwnsGrantType(objectType) {
+			subject, valid := grants.GrantObject(objectType, objectName)
+			if !valid {
+				return step, true, unsupported("an invalid native grant object identity")
+			}
+			// Access changes require the object but do not alter its native
+			// settings. A separate resource lets its owner order exact captured
+			// access checks before grants, or account for revokes in a drop.
+			access := subject
+			access.Kind = "object_access"
+			access.Namespace = objectidentity.NewParts(objectidentity.Part{Source: string(subject.Kind), Normalized: string(subject.Kind)})
+			step.Effects = []plangraph.Effect{{Subject: subject, Action: plangraph.Read}, {Subject: access, Action: plangraph.Alter}}
+			return step, true, nil
+		}
+	}
 	for _, family := range []func(objectidentity.Builder, ast.Node) (objectidentity.ID, plangraph.Action, bool){relationEffect, principalEffect, accessEffect} {
 		subject, action, matched := family(builder, node)
 		if !matched {

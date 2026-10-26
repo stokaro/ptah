@@ -156,6 +156,10 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err := refuseUnreadPrincipals(live); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	owners, err := objectOwners(live)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	// The connection's own set rather than the dialect default: it is what the
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
@@ -175,7 +179,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			// read them, and the rules that need them must run rather than
 			// report themselves skipped (stokaro/ptah#1950).
 			RoleMemberships: roleMemberships(live),
-			ObjectOwners:    objectOwners(live),
+			ObjectOwners:    owners,
 			RoleObjectUsage: usage,
 			DatabasePath:    live.DatabasePath,
 		},
@@ -201,11 +205,16 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 // mysql.user, ClickHouse for system.roles and Oracle for its role views, and
 // as a provider's read does when it leaves roles uninspected.
 func refuseUnreadPrincipals(live *catalog.Database) error {
-	if _, limited := live.NotDescribed.Limit(coverage.Role); !limited {
-		return nil
+	for _, kind := range []coverage.Kind{coverage.RoleMembership, coverage.ObjectOwner} {
+		if _, limited := live.NotDescribed.Limit(kind); limited {
+			return fmt.Errorf("the read did not inspect %s; a security report needs complete access metadata", kind)
+		}
 	}
-	return errors.New("the analysis reads the database's roles, and this connection may not read them, " +
-		"so a report would describe an access model nobody saw; connect as a user that may read the roles")
+	if _, limited := live.NotDescribed.Limit(coverage.Role); limited {
+		return errors.New("the analysis reads the database's roles, and this connection may not read them, " +
+			"so a report would describe an access model nobody saw; connect as a user that may read the roles")
+	}
+	return nil
 }
 
 // roleMemberships carries the live role graph into the analysis.
@@ -227,17 +236,20 @@ func roleMemberships(live *catalog.Database) []schemasecurity.RoleMembership {
 
 // objectOwners carries who owns what into the analysis, with the owner's login
 // flag as the catalog reported it.
-func objectOwners(live *catalog.Database) []schemasecurity.ObjectOwner {
+func objectOwners(live *catalog.Database) ([]schemasecurity.ObjectOwner, error) {
 	owners := make([]schemasecurity.ObjectOwner, 0, len(live.ObjectOwners))
 	for _, owner := range live.ObjectOwners {
+		if owner.OwnerCanLogin == nil {
+			return nil, fmt.Errorf("the read did not establish whether owner %q of %s %q can log in; an ownership security report needs that fact", owner.Owner, owner.Kind, owner.Name)
+		}
 		owners = append(owners, schemasecurity.ObjectOwner{
 			Kind:          owner.Kind,
 			Name:          owner.Name,
 			Owner:         owner.Owner,
-			OwnerCanLogin: owner.OwnerCanLogin,
+			OwnerCanLogin: *owner.OwnerCanLogin,
 		})
 	}
-	return owners
+	return owners, nil
 }
 
 // validateSecurityFailOn rejects a threshold nothing understands, rather than

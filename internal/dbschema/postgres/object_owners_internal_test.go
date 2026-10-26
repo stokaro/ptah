@@ -50,9 +50,9 @@ func TestReadObjectOwners_PassesOneArgumentPerSchema(t *testing.T) {
 	// The catalog letters are mapped into the vocabulary the rest of Ptah
 	// speaks, so a consumer need not know what relkind 'S' is.
 	c.Assert(owners, qt.DeepEquals, []catalog.ObjectOwner{
-		{Kind: "table", Schema: "public", Name: "users", Owner: "app_user", OwnerCanLogin: true},
-		{Kind: "sequence", Schema: "public", Name: "users_id_seq", Owner: "app_user", OwnerCanLogin: true},
-		{Kind: "schema", Name: "public", Owner: "pg_database_owner"},
+		{Kind: "table", Schema: "public", Name: "users", Owner: "app_user", OwnerCanLogin: new(true)},
+		{Kind: "sequence", Schema: "public", Name: "users_id_seq", Owner: "app_user", OwnerCanLogin: new(true)},
+		{Kind: "schema", Name: "public", Owner: "pg_database_owner", OwnerCanLogin: new(false)},
 	})
 }
 

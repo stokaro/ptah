@@ -368,6 +368,7 @@ func (r *Reader) principals(ctx context.Context, source Source, db *catalog.Data
 		add(catalog.Role{Name: user.Name, Login: user.Enabled, Inherit: true})
 	}
 	for _, group := range principals.Groups {
+		canLogin[group] = false
 		add(catalog.Role{Name: group, Inherit: true, Group: true})
 	}
 	for _, membership := range principals.Memberships {
@@ -380,7 +381,9 @@ func (r *Reader) principals(ctx context.Context, source Source, db *catalog.Data
 		return strings.Compare(a.Role+"\x00"+a.Member, b.Role+"\x00"+b.Member)
 	})
 	for i := range db.ObjectOwners {
-		db.ObjectOwners[i].OwnerCanLogin = canLogin[db.ObjectOwners[i].Owner]
+		if login, known := canLogin[db.ObjectOwners[i].Owner]; known {
+			db.ObjectOwners[i].OwnerCanLogin = new(login)
+		}
 	}
 	return nil
 }

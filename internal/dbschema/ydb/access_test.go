@@ -88,9 +88,9 @@ func TestReader_ReadsTheAccessModel_HappyPath(t *testing.T) {
 		{Role: "DDL-ADMINS", Privilege: "ydb.granular.alter_schema", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 	})
 	c.Assert(db.ObjectOwners, qt.DeepEquals, []catalog.ObjectOwner{
-		{Kind: "database", Owner: "root", OwnerCanLogin: true},
+		{Kind: "database", Owner: "root", OwnerCanLogin: new(true)},
 		{Kind: "schema", Name: "shop", Owner: "root@builtin"},
-		{Kind: "table", Schema: "shop", Name: "orders", Owner: "app", OwnerCanLogin: true},
+		{Kind: "table", Schema: "shop", Name: "orders", Owner: "app", OwnerCanLogin: new(true)},
 	})
 	c.Assert(db.NotDescribed.Objects, qt.HasLen, 0)
 }

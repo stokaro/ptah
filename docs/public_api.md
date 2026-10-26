@@ -7,6 +7,14 @@ For task-oriented guidance and examples, see the
 [Reusable components](site/src/content/docs/extend/components.md)
 guide.
 
+`catalog.ObjectOwner.OwnerCanLogin` is a `*bool`: nil means that inspection did
+not establish the owner's login status. A non-nil false value means the owner
+cannot log in. `ObjectOwner.Clone` copies that value independently. The JSON
+field `owner_can_login` is null for unknown state. Access analysis must preserve
+this distinction. Membership edges can name principals outside the managed
+role list; `coverage.RoleMembership` and `coverage.ObjectOwner` track these
+observations independently.
+
 ## Stable Embedder API
 
 These packages are intended for application and tool embedders:

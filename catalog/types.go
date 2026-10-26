@@ -84,14 +84,10 @@ type Database struct {
 	// (stokaro/ptah#1950).
 	ObjectOwners []ObjectOwner `json:"object_owners,omitempty"`
 
-	// RoleMemberships are the role-in-role edges the server holds between the
-	// roles Ptah manages: who inherits whose privileges.
-	//
-	// It is read for ANALYSIS rather than for planning. A membership is a
-	// cluster-wide fact on the PostgreSQL family, and Ptah neither renders nor
-	// diffs one today, so this list describes the server rather than the
-	// desired state -- which is why it is omitted when empty and why nothing
-	// in the comparator reads it (stokaro/ptah#1950).
+	// RoleMemberships are the role-in-role edges the server reports: who
+	// inherits whose privileges. An endpoint may be outside the managed roles.
+	// Analysis reads these edges independently of role definitions. Engines
+	// with declared memberships also compare them when coverage permits it.
 	RoleMemberships []RoleMembership `json:"role_memberships,omitempty"`
 
 	// RolesOutOfScope lists roles that exist on the server but that this
@@ -1320,21 +1316,21 @@ type ObjectOwner struct {
 	Name string `json:"name"`
 	// Owner is the role that owns it.
 	Owner string `json:"owner"`
-	// OwnerCanLogin reports whether that role can log in, read from the
+	// OwnerCanLogin reports whether that role can log in; nil means that the
+	// read did not establish it. A known value is read from the
 	// catalog beside the owner rather than inferred from the described roles:
 	// the owner of everything on a default PostgreSQL database is the
 	// bootstrap superuser, which Ptah deliberately does not describe, and an
 	// analysis that had to look it up in the role list would go quiet exactly
 	// where the question matters.
-	OwnerCanLogin bool `json:"owner_can_login"`
+	OwnerCanLogin *bool `json:"owner_can_login"`
 }
 
 // RoleMembership is one role-in-role edge: Member holds everything Role
 // grants, subject to Role's inheritance setting.
 //
-// The two names are read from the same catalog the roles come from, and both
-// are roles Ptah manages -- reserved system roles are excluded on both sides,
-// for the same reason they are excluded from Roles.
+// Either endpoint may be outside the roles Ptah manages. Keeping the edge
+// lets access analysis follow privileges without declaring those principals.
 type RoleMembership struct {
 	// Role is the role whose privileges are granted.
 	Role string `json:"role"`

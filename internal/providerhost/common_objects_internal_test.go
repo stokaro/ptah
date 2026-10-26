@@ -306,7 +306,7 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "id", WithOption: true},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "name", WithOption: true},
 	})
-	c.Assert(result.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Refused(coverage.Sequence)))
+	c.Assert(result.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Refused(coverage.Sequence), coverage.Refused(coverage.ObjectOwner), coverage.Refused(coverage.RoleMembership)))
 }
 
 func TestCommonObjectRead_FailurePath(t *testing.T) {

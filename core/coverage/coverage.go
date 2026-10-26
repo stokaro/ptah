@@ -113,14 +113,20 @@ const (
 	// Grant is a permission granted on an object. A YDB read records the
 	// whole kind, since it does not read the access model.
 	Grant Kind = "grant"
+	// ObjectOwner is an object's ownership and its owner's login knowledge.
+	// A security analysis needs this independently of the described roles.
+	ObjectOwner Kind = "object_owner"
+	// RoleMembership is a role-in-role edge. A principal can be visible while
+	// its memberships remain uninspected.
+	RoleMembership Kind = "role_membership"
 )
 
 // kinds is every common [Kind] the serialized directive grammar accepts, in
 // sorted order. An owner's kinds join it through a [Vocabulary].
 var kinds = []Kind{
 	Composite, Domain,
-	Extension, Grant, Policy,
-	Role, Schema, Sequence,
+	Extension, Grant, ObjectOwner, Policy,
+	Role, RoleMembership, Schema, Sequence,
 	View,
 }
 
