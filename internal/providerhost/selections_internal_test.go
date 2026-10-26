@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
@@ -141,9 +142,12 @@ func TestScopeRequirementsUseCapturedContextWithoutChangingOwner(t *testing.T) {
 		{name: "foreign", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/foreign", normalized: "/foreign", refused: true},
 		{name: "changed spelling", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/REALM", normalized: "/realm", refused: true},
 		{name: "missing context", source: "/realm", normalized: "/realm", refused: true},
-		{name: "owner identity differs from context", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity"},
-		{name: "physical root is not owner identity", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/realm", normalized: "/realm", refused: true},
-		{name: "owner normalization changed", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, ownerDatabase: "/IDENTITY", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity", refused: true},
+		{name: "owner identity differs from context", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity"},
+		{name: "physical root is not owner identity", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/realm", normalized: "/realm", refused: true},
+		{name: "owner normalization changed", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/IDENTITY", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity", refused: true},
 		{name: "pending", pending: true, refused: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -153,10 +157,10 @@ func TestScopeRequirementsUseCapturedContextWithoutChangingOwner(t *testing.T) {
 			selection, err := newScopeSelections(description)
 			c.Assert(err, qt.IsNil)
 			owner := &protocol.Reference{Engine: "example", Database: row.ownerDatabase, Kind: "example.org/queue", Schema: "main", Name: "jobs"}
-			normalizedOwner := *owner
+			normalizedOwner := proto.CloneOf(owner)
 			normalizedOwner.Database = row.normalizedOwnerDatabase
 			value := &resolvedModel{kind: "example.org/queue", wire: modelWire{Features: []string{provider.ValueContextFeature}}, normalized: &protocol.NormalizedValue{
-				Value: &protocol.Envelope{Owner: owner, Context: row.context}, NormalizedOwner: &normalizedOwner, RequiresDatabaseContext: row.pending,
+				Value: &protocol.Envelope{Owner: owner, Context: row.context}, NormalizedOwner: normalizedOwner, RequiresDatabaseContext: row.pending,
 			}}
 			if !row.pending {
 				value.normalized.RequiredObjects = []*protocol.ComparisonIdentity{{Kind: "example.org/pool", Database: &protocol.ComparisonPart{Source: row.source, Normalized: row.normalized}, Name: &protocol.ComparisonPart{Source: "fast", Normalized: "fast"}}}
