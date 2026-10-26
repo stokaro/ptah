@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/routineargs"
@@ -31,25 +32,26 @@ import (
 // relation is not one.
 func removedRoutineNames(diff *difftypes.SchemaDiff, relation string, ahead routinesAhead) bool {
 	return removedRoutineMatches(diff, func(routine difftypes.RoutineChange) bool {
-		return !ahead.moves(routine) && routineNames(routine, relation, defaultSchema(diff))
+		return !ahead.moves(routine) && routineNames(routine, relation, relationSemantics(diff))
 	})
 }
 
-// routineNames reports whether routine depends on relation, an unqualified
-// name of either resolving in schema: the type of a parameter or of its result
-// is the relation's row type, or its SQL-standard body reads the relation. A
+// routineNames reports whether routine depends on relation, with names
+// resolved as semantics says: the type of a parameter or of its result is the
+// relation's row type, or its SQL-standard body reads the relation. A
 // parameter or a result column of that name, or a type of the same name in
 // another schema, is not the row type.
-func routineNames(routine difftypes.RoutineChange, relation, schema string) bool {
+func routineNames(routine difftypes.RoutineChange, relation string, semantics identifier.Semantics) bool {
 	types := append(routineargs.ArgumentTypes(routine.Parameters), resultTypes(routine.Returns)...)
-	return slices.ContainsFunc(types, func(spelled string) bool { return typeNamesRelation(spelled, relation, schema) }) ||
-		sqlStandardBodyReads(routine.Body, relation, schema)
+	return slices.ContainsFunc(types, func(spelled string) bool { return typeNamesRelation(spelled, relation, semantics) }) ||
+		sqlStandardBodyReads(routine.Body, relation, semantics)
 }
 
-// defaultSchema is the schema an unqualified name of diff resolves in, empty
-// when it is not known.
-func defaultSchema(diff *difftypes.SchemaDiff) string {
-	return diff.EffectiveIdentifierSemantics("").DefaultSchema
+// relationSemantics is where the names of diff resolve: the identifier
+// semantics of the connection it was compared over, the ones the view rebuild
+// and the policy refusal ask with; see [readsRelationIn].
+func relationSemantics(diff *difftypes.SchemaDiff) identifier.Semantics {
+	return diff.EffectiveIdentifierSemantics("")
 }
 
 // resultTypes are the types a routine's result names: the type, the element
@@ -72,11 +74,14 @@ func resultTypes(returns string) []string {
 }
 
 // typeNamesRelation reports whether spelled, a type as a routine's definition
-// writes it, is the row type of relation or an array of it, an unqualified name
-// of either resolving in schema. Names compare without case. An empty schema
-// is not known, and an unqualified name then matches the name in any schema,
-// so a type that might be the relation's row type counts as one.
-func typeNamesRelation(spelled, relation, schema string) bool {
+// writes it, is the row type of relation or an array of it. Names compare
+// without case and resolve as [deporder.ReferencesRelation] resolves them: a
+// relation named without a schema is in the default schema, and a type
+// spelled without one may be in any schema of the search path, since
+// PostgreSQL prints a type without its schema wherever the path reaches it.
+// What semantics leaves out matches any schema, so a type that might be the
+// relation's row type counts as one.
+func typeNamesRelation(spelled, relation string, semantics identifier.Semantics) bool {
 	spelled = strings.TrimSpace(spelled)
 	for strings.HasSuffix(spelled, "[]") {
 		spelled = strings.TrimSpace(strings.TrimSuffix(spelled, "[]"))
@@ -89,13 +94,20 @@ func typeNamesRelation(spelled, relation, schema string) bool {
 	if !ok || !strings.EqualFold(named.Name, want.Name) {
 		return false
 	}
-	in := func(ref tableref.Ref) string {
-		if ref.Qualified {
-			return ref.Schema
-		}
-		return schema
+	schema := want.Schema
+	if !want.Qualified {
+		schema = semantics.DefaultSchema
 	}
-	return in(named) == "" || in(want) == "" || strings.EqualFold(in(named), in(want))
+	switch {
+	case schema == "":
+		return true
+	case named.Qualified:
+		return strings.EqualFold(named.Schema, schema)
+	default:
+		return len(semantics.SearchPath) == 0 || slices.ContainsFunc(semantics.SearchPath, func(onPath string) bool {
+			return strings.EqualFold(onPath, schema)
+		})
+	}
 }
 
 // routinesAhead holds the routines the plan removes that the exact style drops
@@ -147,7 +159,7 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 		for _, routine := range routines {
 			var named []string
 			for _, relation := range dropped {
-				if routineNames(routine, relation, defaultSchema(diff)) && !slices.Contains(named, relation) {
+				if routineNames(routine, relation, relationSemantics(diff)) && !slices.Contains(named, relation) {
 					named = append(named, relation)
 				}
 			}
@@ -214,7 +226,7 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 		return true
 	}
 	return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
-		return capturedReads(removal.Current.OwnedObjects, name, defaultSchema(diff))
+		return capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff))
 	})
 }
 
@@ -270,7 +282,7 @@ func derefText(text *string) string {
 // back.
 func removedRoutineReadsColumn(diff *difftypes.SchemaDiff, table, column string) bool {
 	return removedRoutineMatches(diff, func(routine difftypes.RoutineChange) bool {
-		return sqlStandardBodyReads(routine.Body, table, defaultSchema(diff)) &&
+		return sqlStandardBodyReads(routine.Body, table, relationSemantics(diff)) &&
 			(strings.Contains(routine.Body, "*") || deporder.ReferencesIdentifier(routine.Body, column))
 	})
 }
@@ -285,16 +297,16 @@ func removedRoutineMatches(diff *difftypes.SchemaDiff, match func(difftypes.Rout
 }
 
 // sqlStandardBodyReads reports whether body is a SQL-standard routine body,
-// `BEGIN ATOMIC ... END` or `RETURN expression`, that names relation, an
-// unqualified name resolving in schema. The server parses such a body when the
+// `BEGIN ATOMIC ... END` or `RETURN expression`, that names relation, with
+// names resolved as semantics says. The server parses such a body when the
 // routine is created and records what it reads; a body in quotes is a string it
 // records nothing for.
-func sqlStandardBodyReads(body, relation, schema string) bool {
+func sqlStandardBodyReads(body, relation string, semantics identifier.Semantics) bool {
 	head := strings.ToUpper(strings.Join(strings.Fields(body), " "))
 	if !strings.HasPrefix(head, "BEGIN ATOMIC") && !strings.HasPrefix(head, "RETURN ") {
 		return false
 	}
-	return deporder.ReferencesRelation(body, relation, schema)
+	return deporder.ReferencesRelation(body, relation, semantics)
 }
 
 // removedTableReads reports whether a captured object of a table the plan
@@ -304,16 +316,16 @@ func removedTableReads(diff *difftypes.SchemaDiff, relation string, skip map[str
 		if skip[removal.Name] || removal.Name == relation {
 			continue
 		}
-		if capturedReads(removal.Current.OwnedObjects, relation, defaultSchema(diff)) {
+		if capturedReads(removal.Current.OwnedObjects, relation, relationSemantics(diff)) {
 			return true
 		}
 	}
 	return false
 }
 
-// capturedReads reports whether one of objects reads relation, an unqualified
-// name resolving in schema.
-func capturedReads(objects schemaext.Objects, relation, schema string) bool {
+// capturedReads reports whether one of objects reads relation, with names
+// resolved as semantics says.
+func capturedReads(objects schemaext.Objects, relation string, semantics identifier.Semantics) bool {
 	all, err := objects.All()
 	if err != nil {
 		// An unreadable capture cannot say it reads nothing, so the drop keeps
@@ -321,7 +333,7 @@ func capturedReads(objects schemaext.Objects, relation, schema string) bool {
 		return true
 	}
 	for _, object := range all {
-		if reader, ok := object.Value.(schemaext.RelationReader); ok && schemaext.ReadsRelationIn(reader, relation, schema) {
+		if reader, ok := object.Value.(schemaext.RelationReader); ok && schemaext.ReadsRelationIn(reader, relation, semantics) {
 			return true
 		}
 	}
@@ -345,7 +357,7 @@ func removalOutlivesDrop(diff *difftypes.SchemaDiff, relation string, ahead rout
 func removedFeatureReads(diff *difftypes.SchemaDiff, relation string) bool {
 	return removedFeatureMatches(diff, func(object schemaext.Value) bool {
 		reader, ok := object.(schemaext.RelationReader)
-		return !ok || schemaext.ReadsRelationIn(reader, relation, defaultSchema(diff))
+		return !ok || schemaext.ReadsRelationIn(reader, relation, relationSemantics(diff))
 	})
 }
 
@@ -361,7 +373,7 @@ func removedFeatureReadsColumns(diff *difftypes.SchemaDiff, table string) bool {
 			return false
 		}
 		reader, ok := object.(schemaext.RelationReader)
-		return !ok || schemaext.ReadsRelationIn(reader, table, defaultSchema(diff))
+		return !ok || schemaext.ReadsRelationIn(reader, table, relationSemantics(diff))
 	})
 }
 

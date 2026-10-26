@@ -1580,7 +1580,7 @@ func (p *Planner) removedTableGroups(diff *difftypes.SchemaDiff, ahead routinesA
 				if grouped[later] {
 					continue
 				}
-				if slices.ContainsFunc(group, func(member string) bool { return capturedReads(readers[later], member, defaultSchema(diff)) }) {
+				if slices.ContainsFunc(group, func(member string) bool { return capturedReads(readers[later], member, relationSemantics(diff)) }) {
 					group = append(group, later)
 					grouped[later] = true
 					changed = true
@@ -1600,7 +1600,7 @@ func removedTableOrder(diff *difftypes.SchemaDiff) []string {
 	readers := make(map[string][]string)
 	for _, removal := range diff.TablesRemoved {
 		for _, name := range names {
-			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name, defaultSchema(diff)) {
+			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff)) {
 				readers[removal.Name] = append(readers[removal.Name], name)
 			}
 		}
