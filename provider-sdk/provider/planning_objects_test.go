@@ -200,3 +200,17 @@ func TestPlanningObjectAssignmentIsExclusiveAndNegotiated(t *testing.T) {
 	d.Engines[0].Planning = append(d.Engines[0].Planning, other)
 	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorIs, provider.ErrProtocol)
 }
+
+func TestMixedPlanningEngineKeepsOrdinaryRequestsWithoutObjectContext(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	d, request, result := planningExchange()
+	d.Features = append(d.Features, provider.PlanningObjectContextFeature)
+	d.Engines[0].Features = append(d.Engines[0].Features, provider.PlanningObjectContextFeature)
+	d.Engines[0].Planning = append(d.Engines[0].Planning, &protocol.ModelPlanning{Id: "context", ContextKinds: []string{d.Engines[0].ValueModels[0].Kind}})
+	request.TargetFeatures = append(request.TargetFeatures, provider.PlanningObjectContextFeature)
+	c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+	c.Assert(provider.ValidatePlannedFeatures(d, request, result), qt.IsNil)
+	request.DesiredObjects = &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}}
+	c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorMatches, ".*service has no object assessment assignment")
+}

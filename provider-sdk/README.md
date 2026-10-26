@@ -1733,7 +1733,9 @@ the assigned kinds. The host derives the sorted, unique `changed_subjects` from
 its complete accepted native-change batch before service assignment. This is
 read-only evidence, never permission to operate on another kind. SDK validation
 checks captured membership and ordering; it does not repeat sibling comparison
-semantics. A missing capture or unresolved dependency context refuses.
+semantics. A missing capture or unresolved dependency context refuses. Services without
+context assignments retain their ordinary request shape and carry no object
+context fields.
 
 `PlannedFeatures.objects` accounts for every assigned-kind subject in records
 and subject coverage. `provider.PlanningObjectSubjects` returns this ordered

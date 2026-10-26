@@ -235,7 +235,7 @@ func buildFixture(c *qt.C, program string) string {
 	c.Helper()
 	sdk := fixtureSDK(c)
 	dir := filepath.Join(sdk, "testdata", "fixture")
-	return buildFixtureModules(c, program, dir, "./cmd/"+program, dir, sdk)
+	return buildFixtureModule(c, program, dir, "./cmd/"+program, sdk)
 }
 
 // buildSDKFixture compiles an unreleased SDK proof without changing the
@@ -247,13 +247,13 @@ func buildSDKFixture(c *qt.C, program string) string {
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(sdk, "testdata", "fixture"))), qt.IsNil)
 	c.Assert(os.CopyFS(filepath.Join(dir, "cmd", program), os.DirFS(filepath.Join(sdk, "integration", "testdata", program))), qt.IsNil)
-	return buildFixtureModules(c, program, dir, "./cmd/"+program, dir, sdk)
+	return buildFixtureModule(c, program, dir, "./cmd/"+program, sdk)
 }
 
-func buildFixtureModules(c *qt.C, program, dir, target string, modules ...string) string {
+func buildFixtureModule(c *qt.C, program, dir, target, sdk string) string {
 	c.Helper()
 	workspace := filepath.Join(c.TempDir(), "go.work")
-	initialize := exec.CommandContext(c.Context(), "go", append([]string{"work", "init"}, modules...)...)
+	initialize := exec.CommandContext(c.Context(), "go", "work", "init", dir, sdk)
 	initialize.Dir = filepath.Dir(workspace)
 	initialize.Env = append(os.Environ(), "GOWORK=")
 	output, err := initialize.CombinedOutput()

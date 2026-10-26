@@ -74,7 +74,9 @@ The runtime invokes each selected target service with assigned context kinds
 once, even if it has no changes, no table parent action, or no named records.
 Kind-level unknown coverage can hide dependents and must reach the owner for
 assessment before mutations. Empty collections do not bypass that assessment.
-Other services retain their existing invocation rules. Context without a
+Other services retain their existing invocation rules and carry none of the
+object-context request fields. Engine-level negotiation does not assign
+assessment to an ordinary service. Context without a
 registered assignment grants no permission to emit operations for it.
 
 The public host contract mirrors these facts with

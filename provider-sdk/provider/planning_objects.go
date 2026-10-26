@@ -50,6 +50,12 @@ func validatePlanningObjectAssignments(description *protocol.Description, engine
 }
 
 func validatePlanningObjects(description *protocol.Description, engine *protocol.Engine, service *protocol.ModelPlanning, request *protocol.PlanFeaturesRequest) error {
+	if len(service.GetContextKinds()) == 0 {
+		if request.GetDesiredObjects() != nil || request.GetCurrentObjects() != nil || len(request.GetContextKinds())+len(request.GetChangedSubjects()) != 0 {
+			return planningObjectError("the service has no object assessment assignment")
+		}
+		return nil
+	}
 	negotiated := EngineOffers(description, engine.GetId(), PlanningObjectContextFeature) && slices.Contains(request.GetTargetFeatures(), PlanningObjectContextFeature)
 	if !negotiated {
 		if request.GetDesiredObjects() != nil || request.GetCurrentObjects() != nil || len(request.GetContextKinds())+len(request.GetChangedSubjects())+len(service.GetContextKinds()) != 0 {
