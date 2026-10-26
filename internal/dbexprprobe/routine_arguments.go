@@ -37,6 +37,17 @@ type RoutineArgumentsProbe struct {
 	// so the body the server stored is part of the answer. See
 	// [config.RoutineArguments.Body].
 	ReadsBody bool
+	// SQLStandardBody reports that Statement carries a declared SQL-standard
+	// body, `BEGIN ATOMIC ... END` or `RETURN expression`, which PostgreSQL
+	// keeps parsed rather than as text. The body is read back with
+	// pg_get_function_sqlbody, the way the catalog read spells it.
+	SQLStandardBody bool
+	// Fallback creates the probe routine with the declared signature and a
+	// body nobody reads. It runs when the server refuses Statement, as it
+	// refuses a SQL-standard body that reads something it does not hold yet,
+	// so the arguments and the result are still answered and only the body
+	// is left to compare as written. Empty means there is none.
+	Fallback string
 }
 
 // ResolveRoutineArguments asks the connected server to spell each declared
@@ -56,6 +67,9 @@ type RoutineArgumentsProbe struct {
 // transaction is rolled back. Its body is not the declared one and is never
 // checked, because the signature does not depend on it and a body that names
 // objects the plan has not created yet would refuse the probe for no reason.
+// A probe that carries a SQL-standard body is the exception, see
+// [RoutineArgumentsProbe.SQLStandardBody], and its [RoutineArgumentsProbe.Fallback]
+// answers for the signature when the server refuses the body.
 // A declaration the server refuses -- a result type that does not exist yet,
 // for one -- is returned with Resolved false. Other dialects, and a connection
 // pinned to a session with a transaction open, return nil, for the reasons
@@ -68,7 +82,9 @@ type RoutineArgumentsProbe struct {
 // named and the star expanded. Only the server can produce that from the
 // declaration, so the body it stores for the probe is the declaration's form,
 // and a body naming something the server does not hold refuses the probe, which
-// then compares as text (stokaro/ptah#4058).
+// then compares as text (stokaro/ptah#4058). PostgreSQL 14 and later do the
+// same with a SQL-standard body, which they keep parsed and print back in their
+// own spelling (stokaro/ptah#5021).
 func ResolveRoutineArguments(
 	ctx context.Context,
 	conn Session,
@@ -102,7 +118,11 @@ func resolveOneRoutineArguments(
 	read := func(ctx context.Context, tx *sql.Tx) error {
 		var result, body string
 		var returnsSet bool
-		if err := tx.QueryRowContext(ctx, routineProbeQuery, probe.Name, probe.InCurrentSchema).
+		query := routineProbeQuery
+		if probe.SQLStandardBody {
+			query = sqlStandardRoutineProbeQuery
+		}
+		if err := tx.QueryRowContext(ctx, query, probe.Name, probe.InCurrentSchema).
 			Scan(&answer.Arguments, &result, &returnsSet, &body); err != nil {
 			return err
 		}
@@ -121,6 +141,12 @@ func resolveOneRoutineArguments(
 	}
 	answered, err := runProbe(ctx, tx, "resolve routine arguments", probe.Name, "ptah_routine_probe",
 		postgresSavepoints, []string{uncheckedBodies, probe.Statement}, read)
+	if err == nil && !answered && probe.Fallback != "" {
+		probe.ReadsBody, probe.SQLStandardBody = false, false
+		answer = config.RoutineArguments{}
+		answered, err = runProbe(ctx, tx, "resolve routine arguments", probe.Name, "ptah_routine_probe",
+			postgresSavepoints, []string{uncheckedBodies, probe.Fallback}, read)
+	}
 	if err != nil || !answered {
 		return config.RoutineArguments{}, err
 	}
@@ -132,12 +158,25 @@ func resolveOneRoutineArguments(
 // in: the session's current schema when $2 is true, pg_temp otherwise.
 // COALESCE for the reason the catalog read gives: pg_get_function_result is
 // NULL for a procedure.
-const routineProbeQuery = `
+const routineProbeQuery = routineProbeSelect + "p.prosrc" + routineProbeFrom
+
+// sqlStandardRoutineProbeQuery is [routineProbeQuery] for a probe whose body is
+// a SQL-standard one, which pg_get_function_sqlbody spells as the catalog read
+// does. Only such a probe asks for it, so a server without the function never
+// parses it.
+const sqlStandardRoutineProbeQuery = routineProbeSelect + "COALESCE(pg_get_function_sqlbody(p.oid), p.prosrc)" + routineProbeFrom
+
+// routineProbeSelect and routineProbeFrom are the probe read around the
+// expression that reads the stored body.
+const (
+	routineProbeSelect = `
 		SELECT pg_get_function_arguments(p.oid), COALESCE(pg_get_function_result(p.oid), ''),
-			p.proretset, p.prosrc
+			p.proretset, `
+	routineProbeFrom = `
 		FROM pg_proc p
 		WHERE p.proname = $1
 		AND p.pronamespace = CASE
 			WHEN $2::bool THEN (SELECT n.oid FROM pg_namespace n WHERE n.nspname = current_schema())
 			ELSE pg_my_temp_schema()
 		END`
+)

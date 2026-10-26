@@ -10,6 +10,7 @@ import (
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/tableref"
 )
 
@@ -45,7 +46,7 @@ func removedRoutineNames(diff *difftypes.SchemaDiff, relation string, ahead rout
 func routineNames(routine difftypes.RoutineChange, relation string, semantics identifier.Semantics) bool {
 	types := append(routineargs.ArgumentTypes(routine.Parameters), resultTypes(routine.Returns)...)
 	return slices.ContainsFunc(types, func(spelled string) bool { return typeNamesRelation(spelled, relation, semantics) }) ||
-		sqlStandardBodyReads(routine.Body, relation, semantics)
+		sqlStandardBodyReads(routine, relation, semantics)
 }
 
 // relationSemantics is where the names of diff resolve: the identifier
@@ -329,7 +330,7 @@ func derefText(text *string) string {
 // back.
 func removedRoutineReadsColumn(diff *difftypes.SchemaDiff, table, column string) bool {
 	return removedRoutineMatches(diff, func(routine difftypes.RoutineChange) bool {
-		return sqlStandardBodyReads(routine.Body, table, relationSemantics(diff)) &&
+		return sqlStandardBodyReads(routine, table, relationSemantics(diff)) &&
 			(strings.Contains(routine.Body, "*") || deporder.ReferencesIdentifier(routine.Body, column))
 	})
 }
@@ -343,17 +344,14 @@ func removedRoutineMatches(diff *difftypes.SchemaDiff, match func(difftypes.Rout
 	return false
 }
 
-// sqlStandardBodyReads reports whether body is a SQL-standard routine body,
-// `BEGIN ATOMIC ... END` or `RETURN expression`, that names relation, with
-// names resolved as semantics says. The server parses such a body when the
+// sqlStandardBodyReads reports whether routine has a SQL-standard body,
+// `BEGIN ATOMIC ... END` or `RETURN expression`, that names relation under
+// the comparison's identifier semantics. The server parses such a body when the
 // routine is created and records what it reads; a body in quotes is a string it
 // records nothing for.
-func sqlStandardBodyReads(body, relation string, semantics identifier.Semantics) bool {
-	head := strings.ToUpper(strings.Join(strings.Fields(body), " "))
-	if !strings.HasPrefix(head, "BEGIN ATOMIC") && !strings.HasPrefix(head, "RETURN ") {
-		return false
-	}
-	return deporder.ReferencesRelation(body, relation, semantics)
+func sqlStandardBodyReads(routine difftypes.RoutineChange, relation string, semantics identifier.Semantics) bool {
+	return routinebody.SQLStandard(routine.Language, routine.Body) &&
+		deporder.ReferencesRelation(routine.Body, relation, semantics)
 }
 
 // removedTableReads reports whether a captured object of a table the plan

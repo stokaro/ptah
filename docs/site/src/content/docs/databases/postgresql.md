@@ -115,6 +115,8 @@ keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 | routine argument `b text DEFAULT 'X'` | `b text DEFAULT 'X'::text` |
 | routine argument `c numeric(10,2) = 1.5` | `c numeric DEFAULT 1.5` |
 | routine result `SETOF public.items`, with `public` on the search path | `SETOF items` |
+| routine body `BEGIN ATOMIC SELECT count(*) FROM v; END` | `BEGIN ATOMIC SELECT count(*) AS count FROM v; END`, on several lines |
+| routine `f(x int)` body `BEGIN ATOMIC SELECT count(*) FROM t WHERE a > x; END` | `... FROM t WHERE (t.a > f.x); END` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
 column type and default, CHECK, `EXCLUDE` element list and predicate, policy
@@ -126,6 +128,25 @@ it. A routine is asked when it declares arguments or a result and the database
 holds a routine of that name. Its temporary copy has the declared arguments and
 return type, and a body the server does not check, because the signature does
 not depend on the body.
+
+A routine with a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is
+asked with its body too, a procedure without arguments included. PostgreSQL
+keeps such a body parsed, and `pg_get_function_sqlbody` prints it in its own
+spelling, so the temporary copy carries the declared body and its stored form
+is compared with the one the database holds. The copy takes the routine's own
+name, because the server qualifies a parameter with it, as `f.x`.
+
+- The body reads the tables and views the database holds. A body that reads
+  one the plan has not created yet makes the server refuse the copy. A second
+  copy with the body left out then answers for the arguments and the result,
+  and the body is compared as written.
+- A body that selects `*` is answered only while no table the database holds
+  gains or loses a column, as on CockroachDB.
+- A `RETURN` written in a schema file is not asked: the SQL schema reader drops
+  the keyword and keeps the expression as a quoted body, which reads back as
+  written ([stokaro/ptah#4981](https://github.com/stokaro/ptah/issues/4981)).
+- YugabyteDB keeps a routine created in `pg_temp` past the rollback, so there
+  the copy carries no body.
 
 A result type keeps its schema in the read-back only where the session's search
 path does not reach it: `SETOF public.items` reads back as `SETOF items`, and
