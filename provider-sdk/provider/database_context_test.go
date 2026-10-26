@@ -2,7 +2,6 @@ package provider_test
 
 import (
 	"net/url"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -27,7 +26,7 @@ func TestDatabaseContextRequiresNegotiationAndRedactedRefusals(t *testing.T) {
 	unnegotiated := provider.NegotiatedDescription(d, nil)
 	err := provider.ValidateDatabaseContextRequest(unnegotiated, request)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
-	c.Assert(strings.Contains(err.Error(), "never-report-this"), qt.IsFalse)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "never-report-this")
 	request.Engine = "foreign"
 	c.Assert(provider.ValidateDatabaseContextRequest(d, request), qt.ErrorIs, provider.ErrProtocol)
 	for _, value := range []*protocol.DatabaseContext{nil, {}, {Database: "/db"}, {Database: "/db", SourceDatabase: "/db\nother"}, {Database: " /db", SourceDatabase: "/db"}, {Database: "/db", SourceDatabase: "/db\u2028other"}} {
