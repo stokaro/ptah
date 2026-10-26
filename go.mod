@@ -172,7 +172,7 @@ require (
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
-	github.com/yandex-cloud/go-genproto v0.131.0 // indirect
+	github.com/yandex-cloud/go-genproto v0.132.0 // indirect
 	github.com/ydb-platform/ydb-go-yc v0.12.5 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
