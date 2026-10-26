@@ -842,9 +842,9 @@ The common migrator can read provider history for status. Versioned execution,
 provider lock ownership, and official-engine qualification remain required in
 [issue #4204](https://github.com/stokaro/ptah/issues/4204).
 
-Native sessions do not expose `database/sql` handles. Raw queries, raw execution,
-SQL transactions, and isolated SQL-query callbacks return
-`ptaherr.ErrUnsupportedFeature`. Schema operations use the selected reader and
+Native sessions do not expose `database/sql` handles. Raw queries, raw execution
+and SQL transactions return `ptaherr.ErrUnsupportedFeature`, and so do isolated
+SQL-query callbacks unless the provider runs operator statements. Schema operations use the selected reader and
 writer. `QueryRow` and `QueryRowContext` return `dataext.Row`, which keeps `Scan`
 and `Err` available for either a database row or an explicit refusal. This
 changes the pre-v1 API without retaining an old signature.
@@ -856,7 +856,19 @@ session because its driver does not implement transactions. Ptah discards the
 physical session afterward, except for in-memory SQLite, whose only connection
 owns the database lifetime and is returned to the pool after rollback. The
 callback cannot control transactions or reach Ptah schema writers. Callers
-remain responsible for restricting SQL to read-only queries.
+remain responsible for restricting SQL to read-only queries. On a native
+connection whose provider runs operator statements, the callback queries a
+read-only statement handle instead: the provider runs a query only when it
+proves the query changes nothing and reads only the session's database.
+
+`dbschema.DatabaseConnection.OperatorStatements` returns the handle for
+statements the operator wrote, such as a test assertion or a script step, and
+the function that releases it. A `database/sql` connection returns itself. A
+native connection returns a `database/sql` handle over its provider's
+`sessions.statements` service, on which `sql.Result.RowsAffected` is an error
+when the engine did not measure the count; a provider that runs no statement
+refuses with `ptaherr.ErrUnsupportedFeature`. `dbschema.OperatorStatementProvider`
+is the interface a native session implements to serve it.
 
 `migration/migrator.CheckFailedError` identifies one failed or invalid
 pre-migration assertion. `CheckGroupFailedError` identifies an Atlas `oneof`

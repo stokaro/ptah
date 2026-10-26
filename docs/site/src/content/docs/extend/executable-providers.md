@@ -416,10 +416,17 @@ missing provider reports `ptah providers install <engine>`.
 
 A provider's connection takes no `database/sql` call: outside a plan, a
 migration and the services the provider declares, the host can neither query
-it nor run a statement on it. `db verify`, which queries the database for each
-check, and `schema test`, which applies the desired schema that way, refuse a
-provider's database with "this connection does not expose database/sql
-operations".
+it nor run a statement on it. `schema test`, which applies the desired schema
+that way, refuses a provider's database with "this connection does not expose
+database/sql operations".
+
+`sessions.statements` runs a statement the operator wrote and returns its rows
+in pages. `db verify` and the `-- +ptah check` assertions of a migration run
+through it: the host sends each check read-only, and the provider runs it only
+when it proves the check is one query that changes nothing and reads only the
+session's database, or refuses it with the reason. A check the database refuses
+reports the server's message. An engine that does not list the feature refuses
+the checks.
 
 `migrations checkpoint`, and the rollback `migrations down --shadow-db`
 verifies or plans, replay the directory on a database the provider provisions

@@ -523,13 +523,19 @@ type schemaTransactionRunnerProvider interface {
 // it; where one cannot, the request is moved to the server rather than dropped
 // (see isolatedSessionReadOnly). This method provides lifecycle isolation, not
 // SQL read-only validation: callers must restrict statements themselves.
+//
+// On a native connection whose provider runs operator statements, the queries
+// run on its read-only statement handle instead: the provider runs a query
+// only when it proves the query changes nothing and reads only the session's
+// database (see [OperatorStatementProvider]). A provider that runs no statement
+// refuses with ptaherr.ErrUnsupportedFeature.
 func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	ctx context.Context,
 	opts *sql.TxOptions,
 	use func(IsolatedQueryer) error,
 ) (resultErr error) {
 	if dc != nil && dc.native != nil {
-		return rawSQLUnavailable()
+		return withNativeIsolatedQuerySession(dc.native, use)
 	}
 	if dc == nil || dc.db == nil {
 		return fmt.Errorf("isolated query session requires an open database connection")

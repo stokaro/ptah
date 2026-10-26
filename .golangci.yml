@@ -242,6 +242,7 @@ linters:
       packages:
         - database/sql
         - example.com/ptah-fixture-provider/backend
+        - example.com/ptah-fixture-provider/statements
         - ptah.run/dbschema
         - ptah.run/internal/atlasscript
         - ptah.run/internal/connector
