@@ -42,43 +42,46 @@ func TestDefaultsBindsLiteralNamesAndProtectsCapture(t *testing.T) {
 
 func TestDefaultsRefusesPartialCancellationAndDuplicateNames(t *testing.T) {
 	sentinel := errors.New("owner refused")
-	for _, mode := range []string{"partial", "error", "canceled during call", "canceled before call", "duplicate"} {
-		t.Run(mode, func(t *testing.T) {
+	complete := func(context.CancelFunc) (schemacomparison.ColumnDefaultsResult, error) {
+		return schemacomparison.ColumnDefaultsResult{Complete: true}, nil
+	}
+	keep := func(context.CancelFunc) {}
+	cancelNow := func(cancel context.CancelFunc) { cancel() }
+	columns := []catalog.Column{{Name: "id"}}
+	for _, row := range []struct {
+		name    string
+		before  func(context.CancelFunc)
+		read    func(context.CancelFunc) (schemacomparison.ColumnDefaultsResult, error)
+		columns []catalog.Column
+		want    error
+		calls   int
+	}{
+		{name: "partial", before: keep, read: complete, columns: columns, want: schemacomparison.ErrColumns, calls: 1},
+		{name: "error", before: keep, read: func(context.CancelFunc) (schemacomparison.ColumnDefaultsResult, error) {
+			return schemacomparison.ColumnDefaultsResult{}, sentinel
+		}, columns: columns, want: sentinel, calls: 1},
+		{name: "canceled during call", before: keep, read: func(cancel context.CancelFunc) (schemacomparison.ColumnDefaultsResult, error) {
+			cancel()
+			return schemacomparison.ColumnDefaultsResult{Complete: true}, nil
+		}, columns: columns, want: context.Canceled, calls: 1},
+		{name: "canceled before call", before: cancelNow, read: complete, columns: columns, want: context.Canceled},
+		{name: "duplicate", before: keep, read: complete, columns: []catalog.Column{{Name: "id"}, {Name: "ID"}}, want: schemacomparison.ErrColumns},
+	} {
+		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			ctx, cancel := context.WithCancel(c.Context())
 			defer cancel()
+			row.before(cancel)
 			calls := 0
-			service := defaultsService{read: func(_ context.Context, _ schemacomparison.ColumnDefaultsRequest) (schemacomparison.ColumnDefaultsResult, error) {
+			service := defaultsService{read: func(context.Context, schemacomparison.ColumnDefaultsRequest) (schemacomparison.ColumnDefaultsResult, error) {
 				calls++
-				if mode == "error" {
-					return schemacomparison.ColumnDefaultsResult{}, sentinel
-				}
-				if mode == "canceled during call" {
-					cancel()
-				}
-				return schemacomparison.ColumnDefaultsResult{Complete: true}, nil
+				return row.read(cancel)
 			}}
-			tables := []catalog.Table{{Name: "records", Columns: []catalog.Column{{Name: "id"}}}}
-			if mode == "duplicate" {
-				tables[0].Columns = append(tables[0].Columns, catalog.Column{Name: "ID"})
-			}
-			if mode == "canceled before call" {
-				cancel()
-			}
+			tables := []catalog.Table{{Name: "records", Columns: row.columns}}
 			result, err := columnsemantics.Defaults(ctx, service, "fixture", identifier.Semantics{ColumnNames: identifier.ComparisonASCIIInsensitive}, capability.Capabilities{}, tables)
-			c.Assert(err, qt.IsNotNil)
+			c.Assert(err, qt.ErrorIs, row.want)
 			c.Assert(result, qt.IsNil)
-			if mode == "error" {
-				c.Assert(err, qt.ErrorIs, sentinel)
-			}
-			if mode == "canceled during call" || mode == "canceled before call" {
-				c.Assert(err, qt.ErrorIs, context.Canceled)
-			}
-			if mode == "duplicate" || mode == "canceled before call" {
-				c.Assert(calls, qt.Equals, 0)
-			} else {
-				c.Assert(calls, qt.Equals, 1)
-			}
+			c.Assert(calls, qt.Equals, row.calls)
 		})
 	}
 }

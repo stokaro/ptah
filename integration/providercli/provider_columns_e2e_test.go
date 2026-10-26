@@ -73,8 +73,8 @@ func TestProviderColumnsTrueNullabilityAndChangedDefault(t *testing.T) {
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	changed := diff.TablesModified[0].ColumnsModified[0]
 	c.Assert(changed.Changes, qt.DeepEquals, map[string]string{"default": " -> next"})
-	c.Assert(desired.Fields[1].Default, qt.Equals, "next")
-	c.Assert(desired.Fields[1].DefaultSet, qt.IsTrue)
+	c.Assert(changed.Desired.Default, qt.Equals, "next")
+	c.Assert(changed.Desired.DefaultSet, qt.IsTrue)
 }
 
 func TestProviderColumnsIncludesRemovedDefaultsAndSequenceSettings(t *testing.T) {
