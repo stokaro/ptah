@@ -133,7 +133,10 @@ cases run in a dev realm in that database.
   it, so no migration drops it.
 - **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
   and YugabyteDB cleanup treats all user schemas and user-installed extensions
-  in the selected database as one dependency graph. Extensions the dev
+  in the selected database as one dependency graph. The row-security policies
+  of its tables go before any relation: a policy holds back each relation it
+  reads, so tables whose policies read each other's table are dropped too.
+  Extensions the dev
   database held when the run started stay installed, with everything they own,
   so a migration may use a type from one without creating it, as under Atlas;
   a schema one is installed in is emptied in place. A dev URL that selects a

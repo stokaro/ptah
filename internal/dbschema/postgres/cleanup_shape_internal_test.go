@@ -79,6 +79,54 @@ func TestCollectAllObjectsAsksForTheShapeTheServerAccepts(t *testing.T) {
 	c.Assert(postgres, qt.Contains, "pg_rewrite")
 }
 
+// TestCollectAllObjectsDropsPoliciesWhereTheServerHasThem reads the query a
+// cleanup sends. A server that models row-level security is asked for the
+// policies of the managed tables, each dropped through its table, so a policy
+// that reads another relation does not hold that relation back. A server
+// without the key has no pg_policy to read.
+func TestCollectAllObjectsDropsPoliciesWhereTheServerHasThem(t *testing.T) {
+	rows := []struct {
+		name string
+		caps capability.Capabilities
+		want bool
+	}{
+		{name: "postgres", caps: capability.Postgres16(), want: true},
+		{name: "cockroachdb", caps: capability.CockroachDB26(), want: true},
+		{name: "yugabytedb", caps: capability.YugabyteDB25(), want: true},
+		{name: "a server without row-level security", caps: capability.Postgres16().With(capability.RowLevelSecurity, false), want: false},
+		{name: "spanner", caps: capability.SpannerPostgres(), want: false},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			query := collectedQueryFor(t, row.caps)
+
+			c.Assert(strings.Contains(query, "FROM pg_policy pol"), qt.Equals, row.want)
+			c.Assert(strings.Contains(query, "DROP POLICY IF EXISTS %I ON %I.%I"), qt.Equals, row.want && row.caps.Has(capability.PostgresCatalogFunctions))
+			c.Assert(query, qt.Not(qt.Contains), "{{")
+		})
+	}
+}
+
+// TestCollectAllObjectsKeepsTheKeptExtensionsPolicies reads the realm query,
+// which leaves out what a kept extension owns: the policies of an extension's
+// table stay with the table.
+func TestCollectAllObjectsKeepsTheKeptExtensionsPolicies(t *testing.T) {
+	c := qt.New(t)
+	runner := newRecordingRunner(t)
+	writer := NewPostgreSQLWriterForRunnerWithCapabilities(runner, "public", "", capability.Postgres16())
+
+	_, _ = writer.collectAllObjects(context.Background(), runner,
+		postgresDatabaseCleanupScope([]string{"public"}, []string{"hstore"}), postgresCleanupCapabilities{})
+
+	policies, _, found := strings.Cut(lastRecordedQuery[strings.Index(lastRecordedQuery, "FROM pg_policy pol"):], "UNION ALL")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(policies, qt.Contains, "WHERE NOT EXISTS")
+	c.Assert(policies, qt.Contains, "owned.classid = 'pg_class'::regclass")
+	c.Assert(policies, qt.Contains, "owned.objid = c.oid")
+}
+
 // beganTx records whether the cleanup asked for a transaction. It is the only
 // offline way to tell the two paths apart: both fail on the fake runner, and
 // the difference is which call they made first.
@@ -117,6 +165,8 @@ func TestCollectAllObjectsKeepsTheRecursiveShapeForPostgres(t *testing.T) {
 
 	c.Assert(writer.caps.Has(capability.CatalogRecursiveCTE), qt.IsTrue)
 	c.Assert(writer.caps.Has(capability.DDLInsideTransaction), qt.IsTrue)
+	// And every key that gates a branch, so its cleanup drops policies too.
+	c.Assert(writer.caps.Has(capability.RowLevelSecurity), qt.IsTrue)
 }
 
 func TestWriterWithCapabilitiesCarriesTheServersAnswer(t *testing.T) {
