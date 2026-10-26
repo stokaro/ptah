@@ -162,9 +162,9 @@ func TestOwnedLifecycleKeepsRefusals_FailurePath(t *testing.T) {
 		diff *difftypes.SchemaDiff
 		want string
 	}{
-		{"modified column", modified(func(d *difftypes.TableDiff) {
-			d.ColumnsModified = []difftypes.ColumnDiff{{ColumnName: "added"}}
-		}), `.*TableDiff\.ColumnsModified.*`},
+		{"untransported constraint transition", modified(func(d *difftypes.TableDiff) {
+			d.ConstraintsAdded = []string{"untransported"}
+		}), `.*TableDiff\.ConstraintsAdded.*`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)

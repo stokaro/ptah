@@ -2,6 +2,7 @@ package schemadiff_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
@@ -11,16 +12,15 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
-	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -37,8 +37,7 @@ func (s *selectedProbeRuntime) Render(ctx context.Context, request renderer.Requ
 	return s.service.Render(ctx, request)
 }
 
-// ReadBack reports no read-back service: the probes under test read a SQLite
-// target, whose reads report what the declaration wrote.
+// ReadBack reports no read-back service because these tests stop at validation.
 func (s *selectedProbeRuntime) ReadBack(string) (schemaprojection.ReadBack, error) {
 	return nil, nil
 }
@@ -65,11 +64,44 @@ func probeComparisonSchemas() (*schemamodel.Database, *catalog.Database) {
 	}
 }
 
-func probeComparisonConnection(t *testing.T) *dbschema.DatabaseConnection {
+func probeComparisonConnection(t *testing.T) schemadiff.Connection {
 	t.Helper()
-	conn := must.Must(dbschema.ConnectToDatabase(t.Context(), atlasurl.SQLiteURLFromPath(t.TempDir()+"/probes.db")))
-	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	return conn
+	return probeComparisonSession{dialect: "postgres"}
+}
+
+// probeComparisonSession exercises dispatch on a supported catalog while
+// declining transactional probes, as a caller with an active transaction does.
+type probeComparisonSession struct{ dialect string }
+
+func (s probeComparisonSession) Info() catalog.ServerInfo {
+	return catalog.ServerInfo{Dialect: s.dialect}
+}
+
+func (probeComparisonSession) ResolveIdentifierSemantics(ctx context.Context, _ []string) (identifier.Semantics, error) {
+	return identifier.Semantics{TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact,
+		IndexNames: identifier.ComparisonExact, IndexNamespace: identifier.IndexNamespaceSchema}, ctx.Err()
+}
+
+func (probeComparisonSession) WithRolledBackTransaction(ctx context.Context, _ string, _ func(context.Context, *sql.Tx) error) (bool, error) {
+	return false, ctx.Err()
+}
+
+func TestDatabaseComparisonDoesNotRenderUnsupportedCatalogProbes(t *testing.T) {
+	c := qt.New(t)
+	desired, current := probeComparisonSchemas()
+	stop := errors.New("stop after unused probes")
+	calls := 0
+	service := probeRenderFunc(func(context.Context, renderer.Request) (renderer.Result, error) {
+		calls++
+		return renderer.Result{}, errors.New("unsupported probe reached the renderer")
+	})
+	runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), NormalizationService: must.Must(builtin.New()),
+		FacetNormalizationService: must.Must(builtin.New()), service: service, stop: stop}
+	diff, err := schemadiff.CompareWithDatabase(t.Context(), probeComparisonSession{dialect: "sqlite"}, desired, current, nil, runtime)
+	c.Assert(err, qt.ErrorIs, stop)
+	c.Assert(diff, qt.IsNil)
+	c.Assert(calls, qt.Equals, 0)
+	c.Assert(runtime.validations, qt.Equals, 1)
 }
 
 func TestDatabaseComparisonSelectsContextualProbeBatches(t *testing.T) {
@@ -213,7 +245,7 @@ func TestDatabaseComparisonDoesNotHideMissingSelectedRenderer(t *testing.T) {
 	c := qt.New(t)
 	conn := probeComparisonConnection(t)
 	desired, current := probeComparisonSchemas()
-	missing := must.Must(engine.New(engine.Provider{ID: "example.org/missing", Targets: []engine.Target{{Name: "sqlite"}}}))
+	missing := must.Must(engine.New(engine.Provider{ID: "example.org/missing", Targets: []engine.Target{{Name: "postgres"}}}))
 	runtime := &selectedProbeRuntime{TargetRuntime: must.Must(builtin.New()), service: missing}
 	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, desired, current, nil, runtime)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

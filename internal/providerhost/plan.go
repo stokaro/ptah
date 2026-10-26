@@ -137,12 +137,18 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 
 func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
 	fields := []string{"TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"}
+	ownedColumns := !p.commonTables && p.assessParents
+	if ownedColumns {
+		// The owner receives complete captured columns and must account for
+		// the parent change. Shared column spellings cannot preempt that decision.
+		fields = append(fields, "ColumnsModified")
+	}
 	if p.commonObjects {
 		// A comment travels on the common-object wire; see commentNodes. A
 		// column change other than its comment is not one the wire carries.
 		fields = append(fields, "CommentChange", "ColumnsModified")
 		for _, column := range table.ColumnsModified {
-			if !commentOnly(column) {
+			if !ownedColumns && !commentOnly(column) {
 				return nil, nil, unsupported(fmt.Sprintf("changing column %s of table %s beyond its comment", column.ColumnName, table.TableName))
 			}
 		}

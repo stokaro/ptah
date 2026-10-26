@@ -291,7 +291,7 @@ func resolveRoutineArguments(
 	semantics identifier.Semantics,
 	service renderer.Service,
 ) (map[string]config.RoutineArguments, error) {
-	if desired == nil || database == nil {
+	if desired == nil || database == nil || !dbexprprobe.SupportsRoutineArguments(conn.Info().Dialect) {
 		return nil, nil
 	}
 	starsAnswerable := !columnListsChange(desired, database, semantics)
@@ -540,7 +540,7 @@ func resolveColumnSpellings(
 	semantics identifier.Semantics,
 	service renderer.Service,
 ) (map[string]config.ColumnSpelling, error) {
-	if desired == nil || database == nil {
+	if desired == nil || database == nil || !dbexprprobe.SupportsColumnSpellings(conn.Info().Dialect) {
 		return nil, nil
 	}
 	held := make(map[string]map[string]string, len(database.Tables))
