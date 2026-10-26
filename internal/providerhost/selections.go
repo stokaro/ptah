@@ -239,24 +239,40 @@ func (r requiredObjects) SelectObjects(_ context.Context, request selectext.Requ
 			return selectext.Result{}, err
 		}
 		for _, required := range requiredObjects {
-			if slices.Contains(keeps, string(required.Kind)) {
-				if !required.Database.Empty() {
-					value, ok := object.Value.(*resolvedModel)
-					if !ok {
-						return selectext.Result{}, selectionError("a qualified requirement has no captured database binding")
-					}
-					database := value.normalized.GetValue().GetOwner().GetDatabase()
-					if database == "" || value.normalized.GetNormalizedOwner().GetDatabase() != database ||
-						required.Database.Source != database || required.Database.Normalized != database {
-						return selectext.Result{}, selectionError("a kept requirement belongs to a database outside its object's binding")
-					}
-					required.Database = objectidentity.Part{}
-				}
-				result.Requires = append(result.Requires, required)
+			if !slices.Contains(keeps, string(required.Kind)) {
+				continue
 			}
+			local, err := localRequirement(object.Value, required)
+			if err != nil {
+				return selectext.Result{}, err
+			}
+			result.Requires = append(result.Requires, local)
 		}
 	}
 	return result, nil
+}
+
+// localRequirement removes only the context's exact database qualification.
+// A selected value's context is interpretation authority, not its owner identity.
+func localRequirement(payload schemaext.Value, required objectidentity.ID) (objectidentity.ID, error) {
+	if required.Database.Empty() {
+		return required, nil
+	}
+	value, ok := payload.(*resolvedModel)
+	if !ok {
+		return objectidentity.ID{}, selectionError("a qualified requirement has no captured database binding")
+	}
+	database := value.normalized.GetValue().GetOwner().GetDatabase()
+	normalizedDatabase := value.normalized.GetNormalizedOwner().GetDatabase()
+	if database == "" && normalizedDatabase == "" && slices.Contains(value.wire.Features, provider.ValueContextFeature) {
+		database = value.normalized.GetValue().GetContext().GetDatabase()
+		normalizedDatabase = database
+	}
+	if database == "" || normalizedDatabase != database || required.Database.Source != database || required.Database.Normalized != database {
+		return objectidentity.ID{}, selectionError("a kept requirement belongs to a database outside its object's binding")
+	}
+	required.Database = objectidentity.Part{}
+	return required, nil
 }
 
 // scopeSelectionIdentity is one scope selection in an engine's contract

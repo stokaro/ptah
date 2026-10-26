@@ -897,6 +897,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// `data "hcl_schema"` is verified against the values that block
 		// supplies. The plan itself was computed from them.
 		desired, err = schemafile.LoadSources(cmd.Context(), atlasSchemaApplyDesiredSources(opts), schemafile.Options{
+			Contexts: opts.runtime, DatabaseURL: conn.Info().URL,
 			YAML:                  opts.runtime.YAML(),
 			SQL:                   opts.runtime.SQL(),
 			HCL:                   opts.runtime.HCL(),

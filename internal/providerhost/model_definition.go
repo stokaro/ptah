@@ -138,7 +138,7 @@ func (h *Host) modelDefinition(contract *modelContract) (json.RawMessage, error)
 		ProtocolRevision uint32                 `json:"protocol_revision"`
 		ProviderFeatures []string               `json:"provider_features"`
 		Engines          map[string]engineModel `json:"engines"`
-	}{"ptah.provider.resolved-model.v2", h.description.GetProviderId(), h.description.GetVersion(), h.description.GetSemanticIdentity(), h.description.GetRevision(), featureSet(h.description.GetFeatures()), engines}
+	}{"ptah.provider.resolved-model.v3", h.description.GetProviderId(), h.description.GetVersion(), h.description.GetSemanticIdentity(), h.description.GetRevision(), featureSet(h.description.GetFeatures()), engines}
 	data, err := json.Marshal(definition)
 	if err != nil {
 		return nil, err

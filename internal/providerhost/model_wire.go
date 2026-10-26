@@ -12,12 +12,14 @@ import (
 // that the provider validated it. Decoding requires the selected owner's batch
 // normalization service to reconstruct the local semantic projection.
 type modelWire struct {
-	Format           uint32          `json:"format"`
-	Engine           string          `json:"engine"`
-	Features         []string        `json:"features"`
-	Subject          *modelReference `json:"subject"`
-	RequiredFeatures []string        `json:"required_features"`
-	Payload          []byte          `json:"payload"`
+	Format                  uint32                    `json:"format"`
+	Engine                  string                    `json:"engine"`
+	Features                []string                  `json:"features"`
+	Subject                 *modelReference           `json:"subject"`
+	RequiredFeatures        []string                  `json:"required_features"`
+	Payload                 []byte                    `json:"payload"`
+	Context                 schemaext.DatabaseContext `json:"context"`
+	RequiresDatabaseContext bool                      `json:"requires_database_context"`
 }
 
 type modelReference struct {

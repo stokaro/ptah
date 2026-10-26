@@ -146,6 +146,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		EnvSelectorFlag: opts.EnvSelectorFlag,
 		Commands:        opts.Commands,
 		Dialect:         conn.Info().Dialect,
+		DatabaseURL:     conn.Info().URL,
 		PlainHTTP:       opts.PlainHTTP,
 		Vars:            opts.Vars,
 	}

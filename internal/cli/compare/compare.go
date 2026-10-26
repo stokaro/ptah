@@ -195,6 +195,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// 2. Resolve the desired schema from Go entities, schema files, and/or an
 	// external command into one composite schema, then read the database.
 	loadOpts.Dialect = conn.Info().Dialect
+	loadOpts.DatabaseURL = conn.Info().URL
 	result, err := schemaload.LoadContext(cmd.Context(), loadOpts)
 	if err != nil {
 		return err

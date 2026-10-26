@@ -892,6 +892,9 @@ func (s Sequence) QualifiedName() string {
 // version, which schema unqualified names mean there, and the capability set
 // and identifier semantics that follow from those answers.
 type ServerInfo struct {
+	// DatabaseContext is the selected provider's established interpretation of
+	// authored and execution database roots. It contains no connection address.
+	DatabaseContext schemaext.DatabaseContext `json:"database_context,omitzero"`
 	// Provider binds an explicitly selected executable to its negotiated
 	// contract. Built-in connections leave it zero. Saved plans compare it
 	// before reading or writing the target.

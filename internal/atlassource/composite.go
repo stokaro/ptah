@@ -14,6 +14,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/valuecontext"
 )
 
 // CompositePart is one part of a [KindCompositeSchema] source.
@@ -118,6 +119,9 @@ func (s Set) resolveCompositeSchema(ctx context.Context, opts ResolveOptions) (S
 		partSet := Set{Flag: s.Flag, Kind: part.Source.Kind, Sources: []Source{part.Source}}
 		var loaded *schemamodel.Database
 		err := partSet.resolve(ctx, opts, func(state State, _ *dbschema.DatabaseConnection) error {
+			if err := valuecontext.BindSource(ctx, opts.Runtime, opts.Dialect, opts.DatabaseURL, state.Schema); err != nil {
+				return err
+			}
 			loaded = state.Schema
 			return nil
 		})
