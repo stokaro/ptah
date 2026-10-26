@@ -2254,7 +2254,7 @@ func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Nod
 	// A replacement even after the drop above: the plan still rewrites a
 	// routine that exists, and the drop took its grants with it. Only an added
 	// routine is a plain CREATE.
-	return append(result, modelast.FromFunction(target).SetReplace())
+	return append(result, modelast.FromFunctionFor(target, p.targetDialect()).SetReplace())
 }
 
 // replacementIsRefused reports whether PostgreSQL refuses this modification
