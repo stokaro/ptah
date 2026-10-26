@@ -15,12 +15,12 @@ import (
 
 func TestRewriteBoundaryProjectionPreservesClaimValidation(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		mutate func(*featurehost.Result)
-		want   error
- nodes, readers int
+		name           string
+		mutate         func(*featurehost.Result)
+		want           error
+		nodes, readers int
 	}{
-		{name: "multiple independent replacements",mutate:func(*featurehost.Result){},nodes:6,readers:2},
+		{name: "multiple independent replacements", mutate: func(*featurehost.Result) {}, nodes: 6, readers: 2},
 		{name: "unknown source", mutate: func(r *featurehost.Result) { r.Rewrites[0].Sources[0].Name = "missing" }, want: plangraph.ErrInvalid},
 		{name: "duplicate source", mutate: func(r *featurehost.Result) { r.Rewrites[1].Sources = r.Rewrites[0].Sources }, want: plangraph.ErrInvalid},
 		{name: "foreign source", mutate: func(r *featurehost.Result) { r.Rewrites[0].Sources[0] = r.Contributions[0].Steps[1].ID }, want: plangraph.ErrInvalid},
