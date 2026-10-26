@@ -246,6 +246,10 @@ func buildSDKFixture(c *qt.C, program string) string {
 	dir, err := filepath.EvalSymlinks(c.TempDir())
 	c.Assert(err, qt.IsNil)
 	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(sdk, "testdata", "fixture"))), qt.IsNil)
+	// The SDK proof supplies its own command, including main.go. Remove the
+	// copied fixture command before installing it because CopyFS does not
+	// replace files that already exist.
+	c.Assert(os.RemoveAll(filepath.Join(dir, "cmd", program)), qt.IsNil)
 	c.Assert(os.CopyFS(filepath.Join(dir, "cmd", program), os.DirFS(filepath.Join(sdk, "integration", "testdata", program))), qt.IsNil)
 	return buildFixtureModule(c, program, dir, "./cmd/"+program, sdk)
 }
