@@ -50,6 +50,8 @@ type Provider struct {
 	// Conversions assigns each target/kind pair to one batched service. The
 	// provider must own both schema codecs for each kind it converts.
 	Conversions []Conversion
+	// ContextBindings bind model interpretation before scope and dependencies.
+	ContextBindings []ContextBinding
 	// Properties assigns source property grammars to their feature owners.
 	Properties []PropertySource
 	// Comparisons assigns named object semantics and change representations to
@@ -157,6 +159,8 @@ type OffTargetPolicy struct {
 // beginning with a letter. Registering a target does not assert that its server
 // supports any particular capability. A nil Rendering service is unavailable.
 type Target struct {
+	// DatabaseContext resolves an address without opening a database session.
+	DatabaseContext schemaext.DatabaseContextResolver
 	// Name is the canonical target identifier passed to the service.
 	Name string
 	// Aliases contains additional accepted spellings, excluding Name.
@@ -227,6 +231,8 @@ type Runtime struct {
 	codecs              schemaext.Registry
 	conversions         map[conversionKey]int
 	conversionServices  []schemaext.ConversionService
+	bindings            map[conversionKey]int
+	bindingServices     []schemaext.ValueContextService
 	properties          map[propertyKey]int
 	propertyServices    []PropertySource
 	comparisons         map[conversionKey]int
@@ -261,6 +267,7 @@ type Runtime struct {
 }
 
 type target struct {
+	databaseContext schemaext.DatabaseContextResolver
 	planner         planext.Factory
 	owner           string
 	name            string
@@ -287,7 +294,8 @@ type target struct {
 // provider. Registration calls no services and performs no database I/O.
 func New(providers ...Provider) (*Runtime, error) {
 	runtime := &Runtime{
-		targets: make(map[string]target), conversions: make(map[conversionKey]int), comparisons: make(map[conversionKey]int),
+		bindings: make(map[conversionKey]int),
+		targets:  make(map[string]target), conversions: make(map[conversionKey]int), comparisons: make(map[conversionKey]int),
 		facetComparisons: make(map[conversionKey]int),
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
 		parentPlanning: make(map[conversionKey]int),
@@ -424,7 +432,7 @@ func (r *Runtime) registerServices(provider Provider) error {
 			return err
 		}
 	}
-	return nil
+	return r.registerContextBindings(provider)
 }
 
 // Codecs returns the runtime's immutable model registry. A nil runtime knows
@@ -449,6 +457,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		value any
 	}{
 		{"rendering", declared.Rendering},
+		{"database context", declared.DatabaseContext},
 		{"schema rendering", declared.SchemaRendering},
 		{"validation", declared.Validation},
 		{"preparation", declared.Preparation},
@@ -484,7 +493,8 @@ func (r *Runtime) register(owner string, declared Target) error {
 				ErrInvalidRegistration, name, existing.owner, owner)
 		}
 		r.targets[name] = target{
-			owner: owner, name: declared.Name, selection: selection, planner: declared.Planner,
+			databaseContext: declared.DatabaseContext,
+			owner:           owner, name: declared.Name, selection: selection, planner: declared.Planner,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
 			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering, spelling: declared.Spelling,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,

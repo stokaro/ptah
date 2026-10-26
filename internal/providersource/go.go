@@ -159,7 +159,7 @@ func GoAnnotations(ctx context.Context, engine *protocol.Engine, tables annotati
 		}
 		document.Fragments = append(document.Fragments, fragment)
 	}
-	request := &protocol.DecodeSourceRequest{Engine: engine.GetId(), Documents: []*protocol.SourceDocument{document}}
+	request := sourceRequest(engine, document)
 	if err := provider.ValidateSourceDocuments(engine.GetId(), request.GetDocuments()); err != nil {
 		return nil, err
 	}

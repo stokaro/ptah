@@ -155,7 +155,7 @@ func HCL(ctx context.Context, engine *protocol.Engine, claims []hclext.Claim, li
 		}
 		document.ByteLength = max(document.ByteLength, uint64(max(claim.Range.End.Byte, 0)))
 	}
-	request := &protocol.DecodeSourceRequest{Engine: engine.GetId(), Documents: []*protocol.SourceDocument{document}}
+	request := sourceRequest(engine, document)
 	if err := provider.ValidateSourceDocuments(engine.GetId(), request.GetDocuments()); err != nil {
 		return nil, err
 	}

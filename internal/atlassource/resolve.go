@@ -46,6 +46,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/sourceformats"
 )
@@ -53,6 +54,7 @@ import (
 // Runtime is what a resolution needs of the selected providers.
 // *ptah.run/engine.Runtime implements it.
 type Runtime interface {
+	schemaext.ValueContextRuntime
 	schemaext.TargetResolver
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
@@ -71,9 +73,9 @@ type ResolveOptions struct {
 	// may declare. It is required, including for a source with no feature
 	// declarations.
 	Runtime Runtime
-	// DatabaseURL supplies the database root used to resolve absolute YDB source
-	// paths. Relative declarations remain portable. The URL is never stored in
-	// the desired model or included in source errors.
+	// DatabaseURL supplies the target address for context binding and absolute
+	// source references. The URL is never stored in the desired model or
+	// included in source errors.
 	DatabaseURL string
 
 	// Dialect pins the SQL dialect used to parse local schema files and to
@@ -340,6 +342,11 @@ func (s Set) ResolveHolding(ctx context.Context, opts ResolveOptions, hold HoldF
 	// a directive can reach the constraint another part declares.
 	ctx, allowances := sqlschema.WithNotValidAllowances(ctx)
 	err := s.resolve(ctx, opts, func(state State, conn *dbschema.DatabaseConnection) error {
+		if state.DB == nil {
+			if err := valuecontext.BindSource(ctx, opts.Runtime, opts.Dialect, opts.DatabaseURL, state.Schema); err != nil {
+				return err
+			}
+		}
 		if err := allowances.Apply(state.Schema); err != nil {
 			return err
 		}
@@ -368,6 +375,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions, finish HoldFunc) 
 	switch s.Kind {
 	case KindLocalFile:
 		schema, err := schemafile.LoadSources(ctx, s.SchemaFileSources(), schemafile.Options{
+			Contexts:              opts.Runtime,
 			DatabaseURL:           opts.DatabaseURL,
 			Dialect:               opts.Dialect,
 			YAML:                  opts.Runtime.YAML(),

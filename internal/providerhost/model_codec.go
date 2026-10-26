@@ -153,19 +153,23 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 	wire.Subject = referenceFromProtocol(normalized.GetValue().GetOwner())
 	wire.Payload = bytes.Clone(normalized.GetValue().GetPayload())
 	wire.RequiredFeatures = slices.Clone(normalized.GetValue().GetRequiredFeatures())
+	wire.Context = databaseContext(normalized.GetValue().GetContext())
+	wire.RequiresDatabaseContext = normalized.GetRequiresDatabaseContext()
 	subject := referenceFromProtocol(normalized.GetNormalizedOwner())
 	subject.DisplayName = ""
 	projection := struct {
-		Contract         string               `json:"contract"`
-		Engine           string               `json:"engine"`
-		Features         []string             `json:"features"`
-		RequiredFeatures []string             `json:"required_features"`
-		Subject          *modelReference      `json:"subject"`
-		Format           string               `json:"format"`
-		Projection       []byte               `json:"projection"`
-		Required         []dependencyIdentity `json:"required"`
-		Change           *changeFacts         `json:"change"`
-		Operation        *operationFacts      `json:"operation"`
+		Contract                string                    `json:"contract"`
+		Engine                  string                    `json:"engine"`
+		Features                []string                  `json:"features"`
+		RequiredFeatures        []string                  `json:"required_features"`
+		Subject                 *modelReference           `json:"subject"`
+		Format                  string                    `json:"format"`
+		Projection              []byte                    `json:"projection"`
+		Required                []dependencyIdentity      `json:"required"`
+		Change                  *changeFacts              `json:"change"`
+		Operation               *operationFacts           `json:"operation"`
+		Context                 schemaext.DatabaseContext `json:"context"`
+		RequiresDatabaseContext bool                      `json:"requires_database_context"`
 	}{m.signature,
 		wire.Engine,
 		featureSet(wire.Features),
@@ -174,7 +178,7 @@ func (m *modelContract) resolved(wire modelWire, normalized *protocol.Normalized
 		normalized.GetCanonicalFormat(),
 		normalized.GetCanonicalProjection(),
 		(&resolvedModel{normalized: normalized}).dependencyIdentities(),
-		normalizedChangeFacts(normalized.GetChangeSemantics()), normalizedOperationFacts(normalized.GetOperationSemantics())}
+		normalizedChangeFacts(normalized.GetChangeSemantics()), normalizedOperationFacts(normalized.GetOperationSemantics()), wire.Context, wire.RequiresDatabaseContext}
 	data, err := json.Marshal(projection)
 	if err != nil {
 		return nil, err

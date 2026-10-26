@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
@@ -163,7 +164,7 @@ func TestSavedPlanAcceptsAnotherBuildOfTheSameRelease(t *testing.T) {
 }
 
 func TestSavedPlanRefusesChangedProviderBeforeReadingTheTarget(t *testing.T) {
-	const targetChanged = `plan provider target facts changed: the server version, schema scope, capabilities or identifier rules differ from planning; ` + newPlanAdvice
+	const targetChanged = `plan provider target facts changed: the database context, server version, schema scope, capabilities or identifier rules differ from planning; ` + newPlanAdvice
 	cases := []struct {
 		name   string
 		change func(*catalog.ServerInfo)
@@ -183,6 +184,9 @@ func TestSavedPlanRefusesChangedProviderBeforeReadingTheTarget(t *testing.T) {
 		{"server", func(info *catalog.ServerInfo) { info.Version = "another" }, targetChanged},
 		{"whole server", func(info *catalog.ServerInfo) { info.WholeServer = true }, targetChanged},
 		{"integer size", func(info *catalog.ServerInfo) { info.DefaultIntSize = 8 }, targetChanged},
+		{"database context", func(info *catalog.ServerInfo) {
+			info.DatabaseContext = schemaext.DatabaseContext{Database: "/other", SourceDatabase: "/source"}
+		}, targetChanged},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -244,7 +248,7 @@ func TestProviderTargetProjectionHasVersionedGolden(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	plan, err := atlasschema.PreparePlanFile(c.Context(), connectBoundProvider(c, provider), atlasschema.PlanFileOptions{Runtime: runtime, Desired: &schemamodel.Database{}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(plan.Provider.TargetSHA256, qt.Equals, "489d3d5511aefc8cff3a76284ed9f63fda4819c5a0f6079cbf46974d3c0d04a4")
+	c.Assert(plan.Provider.TargetSHA256, qt.Equals, "dffeecec025fab260fed741b6735304deb0641da4aa59e96f203636b9f4372b3")
 }
 
 func TestSavedPlanRefusesMalformedProviderBinding(t *testing.T) {
@@ -261,4 +265,32 @@ func TestSavedPlanRefusesMalformedProviderBinding(t *testing.T) {
 	plan.Provider.Version = " experiment"
 	_, err = atlasschema.MarshalPlanFile(plan)
 	c.Assert(err, qt.ErrorMatches, "plan provider binding requires a provider ID and a release version")
+}
+
+func TestSavedPlanBindsBothDatabaseInterpretationRoots(t *testing.T) {
+	for _, field := range []string{"database", "source database", "incomplete"} {
+		t.Run(field, func(t *testing.T) {
+			c := qt.New(t)
+			selected, _, _ := prepareBoundPlan(c)
+			selected.info.DatabaseContext = schemaext.DatabaseContext{Database: "/selected/realm", SourceDatabase: "/authored"}
+			runtime, err := builtin.New()
+			c.Assert(err, qt.IsNil)
+			conn := connectBoundProvider(c, selected)
+			plan, err := atlasschema.PreparePlanFile(c.Context(), conn, atlasschema.PlanFileOptions{Runtime: runtime, Desired: &schemamodel.Database{}})
+			c.Assert(err, qt.IsNil)
+			c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, plan, runtime), qt.IsNil)
+			changed := &boundProvider{base: c.Context(), info: selected.info, address: selected.address}
+			switch field {
+			case "database":
+				changed.info.DatabaseContext.Database = "/selected/other"
+			case "source database":
+				changed.info.DatabaseContext.SourceDatabase = "/other"
+			case "incomplete":
+				changed.info.DatabaseContext.SourceDatabase = ""
+			}
+			err = atlasschema.VerifyPlanTarget(c.Context(), connectBoundProvider(c, changed), plan, runtime)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(changed.reads.Load(), qt.Equals, int64(0))
+		})
+	}
 }
