@@ -73,7 +73,7 @@ func planViewRebuild(diff *difftypes.SchemaDiff) viewRebuild {
 	// what reads it is found without it being a candidate.
 	rebuild := viewRebuild{recreate: slices.Clone(modified)}
 	candidates, kinds := rebuildCandidates(diff, &rebuild)
-	for _, i := range readerIndexes(candidates, seeds) {
+	for _, i := range readerIndexes(candidates, seeds, readsRelationIn(diff)) {
 		*kinds[i] = append(*kinds[i], candidates[i])
 	}
 	return rebuild
@@ -200,7 +200,7 @@ func removedViewLikes(diff *difftypes.SchemaDiff) []deporder.ViewLike {
 // readersOf returns the candidates that read one of the named relations,
 // directly or through another returned candidate.
 func readersOf(candidates []deporder.ViewLike, names []string) []deporder.ViewLike {
-	indexes := readerIndexes(candidates, names)
+	indexes := readerIndexes(candidates, names, deporder.ReferencesIdentifier)
 	found := make([]deporder.ViewLike, 0, len(indexes))
 	for _, i := range indexes {
 		found = append(found, candidates[i])
@@ -209,7 +209,7 @@ func readersOf(candidates []deporder.ViewLike, names []string) []deporder.ViewLi
 }
 
 // readerIndexes is [readersOf] as positions in candidates.
-func readerIndexes(candidates []deporder.ViewLike, names []string) []int {
+func readerIndexes(candidates []deporder.ViewLike, names []string, reads func(body, relation string) bool) []int {
 	var found []int
 	taken := make([]bool, len(candidates))
 	frontier := append([]string(nil), names...)
@@ -217,7 +217,7 @@ func readerIndexes(candidates []deporder.ViewLike, names []string) []int {
 		name := frontier[0]
 		frontier = frontier[1:]
 		for i, candidate := range candidates {
-			if taken[i] || !deporder.ReferencesIdentifier(candidate.Body, name) {
+			if taken[i] || !reads(candidate.Body, name) {
 				continue
 			}
 			taken[i] = true
@@ -253,7 +253,7 @@ func retypedTables(diff *difftypes.SchemaDiff) []string {
 // those. The exception is an object a later removal depends on, a removed
 // routine or a policy of a removed table; see [removalOutlivesDrop].
 func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
-	for _, object := range deporder.ViewLikesForDropForDialect(rebuild.dropped(), p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForDropIn(rebuild.dropped(), p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
 		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
 	}
 	return result
@@ -284,7 +284,7 @@ func (p *Planner) createRebuiltViewLikes(
 
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	declared := rebuildDeclarations(diff)
-	for _, object := range deporder.ViewLikesForCreateForDialect(pending, p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForCreateIn(pending, p.targetDialect(), semantics) {
 		if object.Routine {
 			result = append(result, routines.nodes[object.Name]...)
 			continue

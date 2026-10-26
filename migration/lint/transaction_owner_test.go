@@ -18,11 +18,11 @@ import (
 //
 // The directory is in Atlas's layout, the one ptah-compat lints a converted
 // golang-migrate directory in, and the TX101 row is the control that the field
-// is not read as a file outside a transaction. A lone concurrent build is the
+// is not read as a file outside a transaction. A file of one statement is the
 // exception the field makes: the runner sends it alone and the migrator runs
 // it without a transaction, so PG103 does not apply, unless the file names a
-// transaction mode. A nested BEGIN is still TX201, because the file's own
-// transaction cannot hold a second one.
+// transaction mode. A nested BEGIN is still TX201, a warning: PostgreSQL
+// ignores it with one.
 func TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 	const block = "BEGIN;\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\nCOMMIT;\n"
 	const mix = "CREATE TABLE t (id int);\nCREATE INDEX CONCURRENTLY idx ON t (id);\n"

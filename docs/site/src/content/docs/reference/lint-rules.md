@@ -174,9 +174,9 @@ inside it, so the rule reports every one. A golang-migrate directory is applied
 without one: golang-migrate sends each file as it is, and
 `ptah-compat migrate apply` runs a file that opens and closes its own
 transaction as written. There `ptah-compat migrate lint` reports no `TX201` for
-a block the file opens and closes, its dev database replay refuses a `BEGIN`
-inside a block the file has not closed, as `migrate apply` does, and `PG103`
-passes over a file whose one statement is the concurrent build;
+a block the file opens and closes, warns about a `BEGIN` inside a block the
+file has not closed, which PostgreSQL ignores with a warning, and `PG103`
+passes over a file of one statement, which runs without a transaction;
 [Transaction blocks in a golang-migrate directory](../../atlas/migrate-commands/#transaction-blocks-in-a-golang-migrate-directory)
 has the measurement. Every other layout is judged as one whose tool wraps each
 file.

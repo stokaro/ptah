@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -26,8 +27,8 @@ type schemaReader struct {
 
 func (r schemaReader) Clone() schemaext.Value           { return r }
 func (r schemaReader) Equal(other schemaext.Value) bool { return other == schemaext.Value(r) }
-func (r schemaReader) ReadsRelationIn(_, defaultSchema string) bool {
-	return defaultSchema == r.readsIn
+func (r schemaReader) ReadsRelationIn(_ string, semantics identifier.Semantics) bool {
+	return semantics.DefaultSchema == r.readsIn
 }
 
 // TestReadsRelationIn_AsksTheSchemaAwareMethod pins that a reader which can be
@@ -46,7 +47,7 @@ func TestReadsRelationIn_AsksTheSchemaAwareMethod(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaext.ReadsRelationIn(reader, "orders", test.defaultSchema), qt.Equals, test.want)
+			c.Assert(schemaext.ReadsRelationIn(reader, "orders", identifier.Semantics{DefaultSchema: test.defaultSchema}), qt.Equals, test.want)
 		})
 	}
 }
@@ -65,7 +66,7 @@ func TestReadsRelationIn_FallsBackToReadsRelation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaext.ReadsRelationIn(test.reader, "orders", "public"), qt.Equals, test.want)
+			c.Assert(schemaext.ReadsRelationIn(test.reader, "orders", identifier.Semantics{DefaultSchema: "public"}), qt.Equals, test.want)
 		})
 	}
 }

@@ -83,11 +83,12 @@ type Options struct {
 	// Listing is how a summary tells its reader to list the objects it
 	// counts. The zero Listing is [ListedAtDebugLevel].
 	Listing Listing
-	// Records writes each warning as a log record at warning level, through
-	// the default logger, instead of as a line, for a run whose log is JSON:
-	// the summaries then join the objects' records as JSON lines rather than
-	// break that log with text. A record carries the category, the number of
-	// objects, and for one object that object's fields.
+	// Records writes each warning as a JSON log record at warning level
+	// instead of as a line, for a run whose log is JSON: the summaries then
+	// join the objects' records as JSON lines rather than break that log with
+	// text. A record carries the category, the number of objects, and for one
+	// object that object's fields. It is written on the stream the line would
+	// go to, whatever level the default logger keeps, as the line would be.
 	Records bool
 }
 
@@ -100,6 +101,14 @@ type bucket struct {
 	out      io.Writer
 	keys     map[string]bool
 	records  []Record
+}
+
+// SetRecords decides [Options.Records] once the run knows what its log is,
+// such as after a command parsed a --log-format flag.
+func (r *Report) SetRecords(records bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = records
 }
 
 // New returns an empty report for a run as opts describe it.
@@ -189,15 +198,15 @@ func (r *Report) bucket(category *Category, out io.Writer) *bucket {
 // [Options.Records] each warning is a log record instead.
 func (r *Report) Flush() {
 	r.mu.Lock()
-	buckets := r.buckets
+	buckets, records := r.buckets, r.records
 	r.buckets = nil
 	r.mu.Unlock()
 	for _, target := range buckets {
 		line, attrs := r.summary(target)
 		switch {
 		case line == "":
-		case r.records:
-			slog.LogAttrs(context.Background(), slog.LevelWarn, line, attrs...)
+		case records:
+			slog.New(slog.NewJSONHandler(target.out, nil)).LogAttrs(context.Background(), slog.LevelWarn, line, attrs...)
 		default:
 			fmt.Fprintf(target.out, "warning: %s\n", line)
 		}

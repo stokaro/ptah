@@ -108,10 +108,14 @@ CREATE TABLE users (id integer PRIMARY KEY);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
 ```
 
-`IF NOT EXISTS` makes the statement do nothing for a column the table already
-declares the same way. A column declared again is refused otherwise: without
-`IF NOT EXISTS` the server refuses it, and with it the server keeps the first
-declaration, so either reading would drop what the other one says.
+`IF NOT EXISTS` skips the statement for a column the table already has, as
+the server skips it: the first declaration stands, whatever type, default or
+constraint the second one writes. This is the rule `CREATE TABLE ... IF NOT
+EXISTS` follows, described under
+[`--dialect` decides how the file is read](#--dialect-decides-how-the-file-is-read-not-only-how-it-is-written).
+Without `IF NOT EXISTS`, a column declared again is refused, as the server
+refuses it. On MariaDB a restated column with a `REFERENCES` clause is refused
+too, because the server skips the column and still adds the foreign key.
 
 ## Limit ON DELETE to some columns
 
@@ -461,18 +465,20 @@ warning: 47 names are longer than 63 bytes; the server keeps their first 63 byte
 ```
 
 `PTAH_LOG_LEVEL=debug` lists each name written and kept, and
-`PTAH_LOG_FORMAT=json` lists them as records with `written`, `stored`, `kind`,
-`scope`, `source` and `limit` fields, followed by the summary as a record with
-`category` and `count`. The strict compatibility profile refuses both
-variables. See
+`PTAH_LOG_FORMAT=json` or `--log-format json` lists them as records with
+`written`, `stored`, `kind`, `scope`, `source` and `limit` fields, followed by
+the summary as a record with `category` and `count`. The summary record is
+written at any log level, as the text line is. The strict compatibility
+profile refuses both variables. See
 [Warnings about many objects](../../operate/troubleshooting/#warnings-about-many-objects).
 
 Two different names cut to one are refused in the namespace where the server
 stores them as one. PostgreSQL keeps one namespace per schema for tables, views,
 materialized views, sequences and indexes, including the index that a
 `PRIMARY KEY`, `UNIQUE` or `EXCLUDE` constraint builds under its own name.
-Constraint and column names are unique per table, so two tables may each hold a
-foreign key of the same cut name. The refusal names both declarations and the
+Constraint, column and trigger names are unique per table, so two tables may
+each hold a foreign key of the same cut name. A function or procedure name is
+unique per schema together with its argument types. The refusal names both declarations and the
 name they share. It holds under `IF NOT EXISTS` and `OR REPLACE` too, where the
 server skips the second statement or lets it replace the first: the file names
 two objects, and the server would keep one of them without an error. Ptah is
@@ -486,12 +492,25 @@ refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
 definition alike, are read as one, as the server keeps one. A schema directory
 refuses an object that a later file declares again in its own words.
 
-A guard on a name written twice is read the way the server runs it. A
-`CREATE TABLE`, `CREATE INDEX` or `CREATE SEQUENCE ... IF NOT EXISTS` of an
-object already declared is skipped whole, so the first declaration stands with
-nothing of the second, not its columns, keys or options. A `CREATE OR REPLACE`
-view, function or trigger replaces the earlier definition, so the last one
-counts. A database built from the file and the file itself then compare equal.
+A guard on a name written twice is read the way the server runs it, in one
+file or across the files of a schema directory, so a database built from the
+file and the file itself compare equal:
+
+- A `CREATE TABLE`, `CREATE INDEX`, `CREATE SEQUENCE` or `CREATE MATERIALIZED
+  VIEW ... IF NOT EXISTS` is skipped whole when its name is taken in the
+  namespace the server checks. The first declaration stands with nothing of
+  the second, not its columns, keys or options.
+- Another kind of object can hold the name, such as a view of the table's
+  name, and so can a name the server derives: `t_pkey` for the primary key of
+  `t`, `t_a_key` for a `UNIQUE` column `a`, and `t_id_seq` for the sequence of
+  a `serial` or identity column `id`.
+- A `CREATE OR REPLACE` view, function, procedure or trigger replaces the
+  definition of the object the server finds, `public.v` and `v` alike. The
+  last definition counts, and a comment on the first one stays.
+
+A `CREATE EXTENSION IF NOT EXISTS` of an extension declared differently is
+still refused
+([`stokaro/ptah#5026`](https://github.com/stokaro/ptah/issues/5026)).
 
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,

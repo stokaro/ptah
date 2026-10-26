@@ -168,37 +168,39 @@ func (v *DesiredPolicy) Equal(other schemaext.Value) bool {
 		v.Comment == right.Comment && v.StructName == right.StructName && v.Normalized.equal(right.Normalized)
 }
 
-// ReadsRelation is [ObservedPolicy.ReadsRelationIn] with the default schema not
-// known: an unqualified name, in relation or in an expression, may then be in
-// any schema, so `reporting.item_skus` reads item_skus, while it never reads
-// public.item_skus. It implements [schemaext.RelationReader].
+// ReadsRelation is [ObservedPolicy.ReadsRelationIn] with nothing known about
+// the session: an unqualified name, in relation or in an expression, may then
+// be in any schema, so `reporting.item_skus` reads item_skus, while it never
+// reads public.item_skus. It implements [schemaext.RelationReader].
 func (v *ObservedPolicy) ReadsRelation(relation string) bool {
-	return v.ReadsRelationIn(relation, "")
+	return v.ReadsRelationIn(relation, identifier.Semantics{})
 }
 
-// ReadsRelationIn reports whether either expression names relation, an
-// unqualified name of either resolving in defaultSchema. It implements
+// ReadsRelationIn reports whether either expression names relation, with
+// unqualified names resolving as semantics says. It implements
 // [schemaext.RelationReaderInSchema]: PostgreSQL records a dependency from a
 // policy to each relation its expressions read, so dropping one with CASCADE
 // drops the policy.
 //
 // Each part of a qualified name may be quoted or not, so
 // `"reporting"."order_report"` reads reporting.order_report. A name in another
-// schema reads nothing: with public the default, a policy reading
-// `reporting.item_skus` does not read item_skus or public.item_skus, and an
-// unqualified `item_skus` does not read reporting.item_skus. An unqualified name
-// is put in defaultSchema alone, as the planner resolves one, and a search path
-// that names further schemas is not consulted.
+// schema reads nothing. A relation named without a schema is in the default
+// schema, and a name written without one in an expression may be in any schema
+// of the search path, because the server prints back without a schema every
+// relation the session's path reaches. With the path public alone, a policy
+// reading `reporting.item_skus` does not read item_skus or public.item_skus,
+// and an unqualified `item_skus` does not read reporting.item_skus; with the
+// path reporting, public, the unqualified one reads both.
 //
 // The test is the one view rebuilds use to find what reads a dropped relation,
 // [deporder.ReferencesRelation], so the plan refuses exactly the policies on
 // relations it rebuilds. A nil policy reads nothing.
-func (v *ObservedPolicy) ReadsRelationIn(relation, defaultSchema string) bool {
+func (v *ObservedPolicy) ReadsRelationIn(relation string, semantics identifier.Semantics) bool {
 	if v == nil {
 		return false
 	}
 	for _, clause := range []*string{v.Using, v.WithCheck} {
-		if clause != nil && deporder.ReferencesRelation(*clause, relation, defaultSchema) {
+		if clause != nil && deporder.ReferencesRelation(*clause, relation, semantics) {
 			return true
 		}
 	}

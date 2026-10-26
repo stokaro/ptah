@@ -298,16 +298,19 @@ func replayOnLockedConnection(
 		return fmt.Errorf("replay migrations: nil database connection")
 	}
 	return conn.WithSession(ctx, func(replayConn *dbschema.DatabaseConnection) (resultErr error) {
+		// A history written for a runner that sends each file as it is carries
+		// files that open and close their own transaction. Replay runs those
+		// outside a transaction of its own and rolls a failed one back on this
+		// pinned session, which it then cleans.
+		guard := devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions()
+		if hooks.ownTransactions {
+			guard = guard.WithUnwrappedTransactions()
+		}
 		options := []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(dirFormat),
 			migrator.WithAtlasTemplateData(atlasTemplateData),
 			migrator.WithAtlasRevisionVersions(revisionVersions),
-			// A history written for a runner that sends each file as it is carries
-			// files that open and close their own transaction. Replay runs those
-			// outside a transaction of its own and rolls a failed one back on this
-			// pinned session, which it then cleans.
-			migrator.WithStatementValidator(
-				devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions()),
+			migrator.WithStatementValidator(guard),
 		}
 		if hooks.ownTransactions {
 			options = append(options, migrator.WithOwnTransactions())

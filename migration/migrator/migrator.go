@@ -2777,7 +2777,7 @@ func (m *Migrator) applyUpMigrationObserved(
 	}
 	plan, err := m.planUpRetry(ctx, migration)
 	if err != nil {
-		return false, err
+		return false, own.describeUnknownOutcome(err, migration, m.migrationStatementCount(migration.UpSQL))
 	}
 	if plan.resumeFrom <= 1 {
 		checksDeferred, err = m.runPreMigrationChecks(ctx, migration, observesApplyState)
@@ -3135,11 +3135,14 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		// Every statement committed before the session's timeouts could not
+		// be put back, so a retry has none of them to run again.
+		committed := &committedProgressFailure{err: err, applied: m.migrationStatementCount(migration.UpSQL)}
 		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
-			err,
+			committed,
 			migration.UpSQL,
 			"",
 			MigrationTxModeNone,

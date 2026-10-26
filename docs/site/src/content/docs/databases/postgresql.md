@@ -848,8 +848,17 @@ Both rebuilds find a reader by the names its body uses, each part quoted or
 not: `"reporting"."order_totals"`, `"reporting".order_totals` and
 `reporting.order_totals` all read the materialized view
 `reporting.order_totals`. A name with a schema reads only that schema's object.
-A name without one may read an object of that name in any schema, so a view
-that reads a namesake in another schema is rebuilt too.
+A name without one reads an object of that name in any schema of the
+connection's `search_path`, which is where PostgreSQL looks it up, and an object
+declared without a schema is in the default schema, the first schema of the
+path that exists. With `public` the path, a view that reads `item_skus` is not
+rebuilt when `reporting.item_skus` changes. A comparison made without a
+connection does not know the path, and a name without a schema then reads an
+object of that name in every schema.
+
+The order a plan creates views in reads names the same way, but never guesses a
+schema: under `search_path=app`, a view that reads `app.zbase` is created after
+a `zbase` declared without a schema.
 
 A materialized view declared `WITH NO DATA` is compared by its query, because
 the server does not store the clause. An unchanged declaration plans nothing. A
@@ -1368,12 +1377,17 @@ change to a materialized view the view reads
 names the policy. Change the policy so it no longer reads the view in one
 migration, and the view or the column in the next.
 
-A policy reads a view by the names in its expressions, each part quoted or not.
-A name without a schema is read in the connection's default schema, the first
-schema of its `search_path` that exists; the schemas after it are not
-consulted. With `public` the default, a policy that reads `reporting.item_skus`
-does not stop a plan that rebuilds `item_skus`, and a policy that reads
-`item_skus` does not stop a plan that rebuilds `reporting.item_skus`.
+A policy reads a view by the names in its expressions, as a rebuild reads one.
+A name with a schema reads only that schema's object. A name without one may
+read the view in any schema of the connection's `search_path`, because
+PostgreSQL prints a policy's expression without the schema of every relation
+the path reaches. With `public` the path, a policy that reads
+`reporting.item_skus` does not stop a plan that rebuilds `item_skus`, and a
+policy that reads `item_skus` does not stop a plan that rebuilds
+`reporting.item_skus`. Under `search_path=reporting,public`, a policy that reads
+`item_skus` stops a plan that rebuilds either of them, since it may read both:
+a path that names more schemas refuses more plans. A server that does not
+report its search path is read as one that names every schema.
 
 Both ways of taking the protection away are lint findings at error severity:
 `DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is

@@ -30,11 +30,32 @@ func (g guard) TransactionBoundaries(statements []string) ([]int, error) {
 		return nil, nil
 	}
 	blocks, err := filetx.Read(statements)
-	if structure, ok := errors.AsType[*filetx.StructureError](err); ok {
-		return nil, &replay.TransactionStructureError{Dialect: g.dialect, Index: structure.Index, Reason: structure.Reason}
-	}
 	if err != nil {
-		return nil, err
+		return nil, g.structureError(err)
 	}
 	return blocks.Boundaries(), nil
+}
+
+// UnwrappedTransactionControl is [guard.TransactionBoundaries] for a
+// directory whose runner sends each file as it is, as golang-migrate does. The
+// reading is [filetx.ReadUnwrapped], the one the apply of such a directory
+// uses, and every statement of the file's own transaction control it accepts
+// is accepted here.
+func (g guard) UnwrappedTransactionControl(statements []string) ([]int, error) {
+	if g.dialect != platform.Postgres {
+		return nil, nil
+	}
+	blocks, err := filetx.ReadUnwrapped(statements)
+	if err != nil {
+		return nil, g.structureError(err)
+	}
+	return blocks.Controls(), nil
+}
+
+// structureError is a refusal of the reading as the replay reports one.
+func (g guard) structureError(err error) error {
+	if structure, ok := errors.AsType[*filetx.StructureError](err); ok {
+		return &replay.TransactionStructureError{Dialect: g.dialect, Index: structure.Index, Reason: structure.Reason}
+	}
+	return err
 }

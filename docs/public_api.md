@@ -920,6 +920,9 @@ receives an independent snapshot. `Result.Rewrites` claims source steps by ident
 and names a contributed replacement; the runtime validates and copies those claims,
 and the host applies them to its complete graph. A refusal discards the claims.
 `AlterTable` requests parent assessment even when no attached feature changed.
+`CommonStep.CommonObject` is the operand of a step that changes a common object
+beyond tables: a view, materialized view, sequence, role, membership, grant,
+revocation or comment, as its AST node. It is nil for every other step.
 Common AST operands are local data; process adapters must map them to an explicit
 protocol schema instead of serializing Go AST structs.
 
@@ -1291,6 +1294,23 @@ value with it, a scope keeps or leaves the value with it, and the value's owner
 plans its changes alone, as for a SQL Server extended property. A receipt that
 gives an attachment to a child or a facet, names something other than a table,
 or repeats a dependency is refused.
+
+`RelationReader` is implemented by a captured value whose stored definition
+reads relations by name, as a PostgreSQL row-security policy's expressions do.
+A host that plans `DROP ... CASCADE` of a relation asks each captured value
+whether the drop takes it along, without knowing its model.
+`ReadsRelation(relation)` answers with nothing known about the session, so an
+unqualified name may be in any schema.
+
+A value that also implements
+`RelationReaderInSchema` is asked through `ReadsRelationIn(reader, relation,
+semantics)` with the `identifier.Semantics` of the session that read it: a
+relation named without a schema is in `DefaultSchema`, and a name written
+without one in the definition may be in any schema of `SearchPath`; any other
+reader is asked `ReadsRelation`. Both tests are syntactic and err toward
+reading the relation, which keeps the value: known semantics turn an answer to
+false only where the definition names the relation's name somewhere the
+relation is not.
 
 `RelationSnapshot.CaptureRelated` captures the connected feature context around
 structured object references. It retains each multi-table object once, with its
@@ -2299,6 +2319,19 @@ server holds. A nil service leaves the declaration as written.
 resolved capabilities and the identifier semantics under the target's canonical
 name. A service must not modify the request. An error, a nil result and
 cancellation return no schema.
+
+`Target.Spelling` is a second `schemapreparation.Lowering`, for the common
+objects beyond tables: it rewrites the values of the desired views,
+materialized views, sequences, roles and grants into the spelling the target's
+reader reports, such as a view's query as the engine stores it. It serves the
+comparison alone; the diff carries each view, materialized view, sequence and
+role as declared, and a grant in the target's spelling of its privileges.
+`Runtime.SpellDesired` calls it under the target's canonical name, and returns
+the request's schema unchanged for a target without one or a nil schema. A
+result that renames, adds or drops a view, materialized view, sequence or role,
+or changes the number of grants or revocations, fails with
+`schemapreparation.ErrInvalid`. An error, a nil result and cancellation return
+no schema.
 
 `Target.Comparison` holds the `schemacomparison.Rules` a target gives the shared
 comparison, where its catalog reports a declaration in a form the shared rules
@@ -4328,8 +4361,10 @@ The option is off by default. With it:
   mode runs it. Under tx-mode none each statement outside its transactions
   commits on its own. Progress is recorded where a transaction commits, and a
   retry resumes after the committed statements.
-- A body whose one statement the engine refuses inside a transaction runs
-  without one, unless the file names a transaction mode.
+- A body of one statement runs without a transaction, unless the file names a
+  transaction mode. On PostgreSQL that is any such body, as golang-migrate
+  sends it on its own; on another engine only one whose statement the engine
+  refuses inside a transaction.
 - A body whose transaction control the migrator cannot follow, or one that
   opens its own transaction under tx-mode all or with a directive asking for a
   transaction around the file, is refused before any migration runs.
@@ -5122,7 +5157,12 @@ restore.
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract. `identifier.FromDescriptor` reads the
 defaults from a dialect descriptor, and `ForDialect` is that function over the
-process dialect registry.
+process dialect registry. `Semantics.DefaultSchema` is where an object named
+without a schema is created, and `Semantics.SearchPath` every schema a name
+written without one resolves in, in search order: on PostgreSQL the session's
+`current_schemas(false)`. An empty path is not known, and a reader of
+unqualified names takes one to be in any schema. `Equal` and `IsZero` compare
+the path too, and `Clone` copies it.
 
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
 data only. Beside its names and aliases, protocol family, default schema,

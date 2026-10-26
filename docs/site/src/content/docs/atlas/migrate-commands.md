@@ -729,9 +729,12 @@ transaction of the migrator's around each file:
   golang-migrate's default mode runs it, on one session, outside any
   transaction of the migrator's. Its revision row is written after the file's
   last statement.
-- A file whose one statement PostgreSQL refuses inside a transaction, such as
-  `CREATE INDEX CONCURRENTLY`, runs without one, unless the file asks for a
-  transaction with `-- atlas:txmode file`.
+- A PostgreSQL file of one statement runs without a transaction, unless the
+  file asks for one with `-- atlas:txmode file`. golang-migrate sends such a
+  file on its own, and PostgreSQL runs a statement sent on its own outside a
+  transaction block, so `CREATE INDEX CONCURRENTLY`, `VACUUM`, or a `DO` block
+  that commits inside applies there. On other engines only a statement the
+  engine refuses inside a transaction leaves the per-file transaction.
 - Every other file keeps the per-file transaction. A file that opens its own
   transaction is refused before any migration runs under `--tx-mode all`, and
   when it carries `-- atlas:txmode file`.
@@ -750,15 +753,24 @@ Measured with golang-migrate v4.20.1 on PostgreSQL 15.19:
 | `CREATE TABLE a; BEGIN; CREATE TABLE b; INSERT INTO missing ...; COMMIT;` | nothing | nothing |
 | `CREATE TABLE a; BEGIN ISOLATION LEVEL SERIALIZABLE; CREATE TABLE b; COMMIT;` | nothing: `SET TRANSACTION ISOLATION LEVEL must be called before any query` | nothing, with the same error |
 
-A `BEGIN` that follows statements of its transaction is not sent, because
-PostgreSQL would only warn that a transaction is in progress. Its modes are
-applied with `SET TRANSACTION`, which is what PostgreSQL does with the modes of
-a `BEGIN` inside a query: an isolation level after the transaction's first
-query is refused, as the third row shows, and one after a `SET` applies.
+A `COMMIT` outside every block ends the transaction the statements before it
+run in, as it does in golang-migrate's single query. This is how a file uses an
+enum value it adds: `ALTER TYPE color ADD VALUE 'green'; COMMIT; CREATE TABLE
+a (c color DEFAULT 'green');` applies with golang-migrate and with Ptah.
+
+A `BEGIN` that follows statements of its transaction, or comes inside a block
+the file opened, is not sent, because PostgreSQL would only warn that a
+transaction is in progress. Its modes are applied with `SET TRANSACTION`, which
+is what PostgreSQL does with the modes of such a `BEGIN`: an isolation level
+after the transaction's first query is refused, as the third row shows, and one
+after a `SET` applies. `SAVEPOINT`, `RELEASE` and `ROLLBACK TO` inside a block
+run as written; a resumed apply starts after a committed transaction, so it
+never needs a savepoint back.
 
 Under `--tx-mode none`, and in a file that carries `-- atlas:txmode none`, the
 file's own transactions run as written and each statement outside them commits
-on its own, as golang-migrate's `x-multi-statement=true` mode runs the file.
+on its own, as golang-migrate's `x-multi-statement=true` mode runs the file. A
+`COMMIT` outside every block then does nothing but warn.
 
 Progress is recorded where a transaction commits. The revision row of a failed
 file records the statements that stayed committed, four in the first row of
@@ -770,8 +782,13 @@ depends on what committed:
   revision, as it does after any failure. With `--allow-dirty` it resumes
   after the committed statements, on a fresh session. It first replays the
   `SET` and `RESET` statements among them, those inside a committed
-  transaction included, and skips `SET LOCAL` and `LOCK`, which ended with
-  their transaction.
+  transaction included, and skips `SET LOCAL`, `LOCK` and the file's own
+  transaction control, which ended with their transaction. A `DO`, `SELECT`,
+  `WITH` or `CALL` inside a committed transaction needs nothing replayed,
+  unless its text can set session state that outlives a transaction
+  (`set_config`, `SET`, `PREPARE`, `LISTEN`, a temporary object, a session
+  advisory lock), which refuses the resume. A function or procedure such a
+  statement calls is not read: session state it sets itself is not restored.
 - A failure that left nothing of the file committed, such as one in its first
   transaction, removes the revision row instead, as a file that failed in the
   migrator's transaction does, and the next apply runs the file from its
@@ -781,12 +798,33 @@ golang-migrate marks the version dirty in both cases and refuses the next `up`
 until `migrate force`, after which it runs the whole file again. Measured, the
 first row's file then fails at `CREATE TABLE a`, which already exists.
 
+A run killed while a commit was in flight leaves the outcome of that commit
+unknown, and `--allow-dirty` refuses to resume. The refusal names the
+statements the commit decides together, such as `statements 1 to 4 commit
+together, and whether the COMMIT at statement 4 took effect is unknown`, and
+the statements to run by hand in either case. Run them, then record the
+migration applied with `ptah-compat migrate set <version>`. When nothing of the
+file took effect, `ptah-compat migrate set <previous version>` removes its
+revision instead, and the next apply runs the file from its start.
+
 The reading of a file's own transactions is the one the dev database replay
 uses, so `migrate lint`, `migrate validate` and `migrate diff` read each file
-the way apply runs it. A file that opens a transaction inside another, leaves
-one open, or uses `ROLLBACK`, `SAVEPOINT`, `AND CHAIN` or a prepared
-transaction is refused before any migration runs, naming the statement.
-`COMMIT AND NO CHAIN` is a plain `COMMIT`.
+the way apply runs it, where the replay admits the file: the replay refuses
+`SET search_path` on every dev server, and `DO` and `CREATE FUNCTION` unless
+the dev server is declared disposable; see
+[Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/).
+`COMMIT AND NO CHAIN` is a plain `COMMIT`. These forms are refused before any
+migration runs, naming the statement:
+
+- `ROLLBACK` and `ABORT`, which golang-migrate applies: a file that takes its
+  own work back cannot be recorded as a history of what it did;
+- `SAVEPOINT`, `RELEASE` and `ROLLBACK TO` outside a block, which PostgreSQL
+  refuses there, so golang-migrate fails at them too;
+- `AND CHAIN` and the prepared-transaction statements;
+- a block the file leaves open. golang-migrate's two drivers settle that file
+  in opposite ways: measured, `postgres://` (lib/pq) rolls the block back and
+  leaves the version dirty, while `pgx5://` commits it together with the
+  version.
 
 The pinned community binary v1.3.0 wraps these files in a transaction of its
 own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
@@ -1638,10 +1676,10 @@ transaction. Marking the file non-transactional is no fix, because apply
 refuses transaction control in a file that runs without a transaction.
 
 golang-migrate opens no transaction around a file, so in a directory of its
-layout `TX201` is not reported for a block the file opens and closes. A `BEGIN`
-inside a block the file has not closed is refused instead: the dev database
-replay that `migrate lint` runs stops at it, with the reason `migrate apply`
-gives. This holds for each way of selecting the layout:
+layout `TX201` is not reported for a block the file opens and closes. It warns
+about a `BEGIN` inside a block the file has not closed, which PostgreSQL
+ignores with a warning; `migrate apply` runs such a file as golang-migrate
+does. This holds for each way of selecting the layout:
 `?format=golang-migrate`, `--dir-format golang-migrate`, or
 `format = golang-migrate` in `atlas.hcl`. Measured with golang-migrate v4.20.1
 on PostgreSQL 15.19, through the `postgres://` and `pgx5://` drivers alike:
@@ -1657,7 +1695,8 @@ golang-migrate has no marker for a migration that must run outside a
 transaction. Its PostgreSQL driver documentation tells users upgrading from v1
 to wrap existing migrations of several statements in `BEGIN`/`COMMIT`.
 
-A golang-migrate file whose only statement is `CREATE INDEX CONCURRENTLY` gets
+A golang-migrate file of one statement is judged as one that runs without a
+transaction, so a file whose only statement is `CREATE INDEX CONCURRENTLY` gets
 no `PG103`: golang-migrate sends it on its own, and PostgreSQL runs it outside a
 transaction. `ptah-compat migrate apply` runs it the same way, and
 `migrate validate` and `migrate diff` replay it without a transaction; see

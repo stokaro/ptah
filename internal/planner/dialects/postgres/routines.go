@@ -37,12 +37,13 @@ func (p *Planner) routinePlacements(diff *difftypes.SchemaDiff) (map[string]depo
 	if err != nil {
 		return nil, err
 	}
-	return deporder.PlaceRoutines(
+	return deporder.PlaceRoutinesIn(
 		routines,
 		diff.DeclaredFunctions.Dependencies,
 		created,
 		p.targetDialect(),
 		ResolvesBodyAtCreate,
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 	), nil
 }
 

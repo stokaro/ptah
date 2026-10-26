@@ -25,6 +25,11 @@ type CommonStep struct {
 	// This is local planning data. A process adapter maps common definitions to
 	// its explicit protocol schema rather than serializing Go AST structs.
 	AddedColumn *ast.ColumnNode
+	// CommonObject is the planned node when the step changes a common object
+	// beyond tables: a view, a materialized view, a sequence, a role, a role
+	// membership, a grant, a revocation or a comment. Nil otherwise. The node
+	// is read-only; a process adapter maps it to its explicit protocol schema.
+	CommonObject ast.Node
 }
 
 // Clone returns independent metadata and common column operands. Facets retain
