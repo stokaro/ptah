@@ -59,6 +59,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0047](0047-common-view-facets-retain-authored-and-observed-state.md) | Common view facets retain authored and observed state | Accepted |
 | [0048](0048-common-column-observations-have-one-complete-wire-representation.md) | Common column observations have one complete wire representation | Accepted |
 | [0049](0049-native-object-context-is-assessed-without-inventing-schema-differences.md) | Native object context is assessed without inventing schema differences | Accepted |
+| [0050](0050-statement-style-reaches-feature-owners.md) | Statement style reaches feature owners | Proposed |
 
 ## Writing one
 
