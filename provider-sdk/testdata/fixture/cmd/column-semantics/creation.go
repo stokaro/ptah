@@ -21,7 +21,8 @@ func (*columns) ProjectTableCreations(ctx context.Context, request *protocol.Pro
 			if effectiveNullable(table, column) {
 				nullable = "YES"
 			}
-			predicted := &protocol.ObservedColumn{Name: column.Name, DataType: canonicalType(column.Type), ColumnType: canonicalType(column.Type), IsNullable: nullable, PrimaryKey: slices.Contains(output.ColumnPrimaryKeys, column.Name), OrdinalPosition: int64(i + 1), Comment: column.Comment,
+			predicted := &protocol.ObservedColumn{Name: column.Name, DataType: canonicalType(column.Type), ColumnType: canonicalType(column.Type), IsNullable: nullable,
+				PrimaryKey: slices.Contains(output.ColumnPrimaryKeys, column.Name), OrdinalPosition: int64(i + 1), Comment: column.Comment,
 				AutoIncrement: column.AutoIncrement, IdentityStart: column.IdentityStart, IdentityIncrement: column.IdentityIncrement, IdentityGeneration: column.IdentityGeneration}
 			if column.DefaultSet {
 				predicted.DefaultExpression = new("typed(" + column.DefaultValue + ")")
