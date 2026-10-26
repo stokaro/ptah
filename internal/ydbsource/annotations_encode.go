@@ -69,7 +69,7 @@ func (annotationEncoder) EncodeAnnotations(ctx context.Context, request annotati
 	var result annotation.EncodeResult
 	if request.Target == "" || request.Target == platform.YDB {
 		for _, limit := range limits {
-			result.Limits = append(result.Limits, annotation.EncodedLimit{Kind: string(limit.Kind), Name: limit.Name})
+			result.Limits = append(result.Limits, annotation.EncodedLimit{Kind: string(limit.Kind), Name: limit.Name, Reason: limit.Reason, Provenance: limit.Provenance})
 		}
 	}
 	families, attributes, err := slotSettings(request.Slots)

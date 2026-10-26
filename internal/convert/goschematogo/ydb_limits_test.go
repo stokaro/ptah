@@ -40,7 +40,7 @@ func TestRender_WritesYDBLimitsWhereYDBReadsThem(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			limits := make([]int, 0, len(files))
 			for _, file := range files {
-				limits = append(limits, strings.Count(string(file.Data), `//ptah:schema:notdescribed kind="topic"`+"\n"))
+				limits = append(limits, strings.Count(string(file.Data), `//ptah:schema:notdescribed kind="topic" provenance=""`+"\n"))
 			}
 			c.Assert(limits, qt.DeepEquals, test.files)
 		})

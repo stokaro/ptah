@@ -581,9 +581,8 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
 // whole family is declined, which is what a bare directive means in the
 // serialized grammar too.
 //
-// The provenance is [coverage.Declared] because a person wrote it, and the
-// reason is left unspecified: the annotation carries no room for one, and
-// guessing would put a sentence in a diagnostic that the author never said.
+// Omitted provenance is [coverage.Declared]. Explicit reason and provenance
+// preserve the evidence of an exported source, including unknown provenance.
 func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error {
 	kv := s.kv.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:notdescribed", kv["kind"])
@@ -593,8 +592,21 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
 	}
+	limit := coverage.Object{Kind: coverage.Kind(kv["kind"]), Name: kv["name"], Provenance: coverage.Declared}
+	if reason, present := kv["reason"]; present {
+		limit.Reason = coverage.Reason(reason)
+		if !limit.Reason.Valid() {
+			return fmt.Errorf("%w: invalid not-described reason %q", ptaherr.ErrInvalidAttributeValue, reason)
+		}
+	}
+	if provenance, present := kv["provenance"]; present {
+		limit.Provenance = coverage.Provenance(provenance)
+		if !limit.Provenance.Valid() {
+			return fmt.Errorf("%w: invalid not-described provenance %q", ptaherr.ErrInvalidAttributeValue, provenance)
+		}
+	}
 	if _, owned := s.annotations.LimitOwner(kv["kind"]); owned {
-		s.limits = append(s.limits, coverage.Object{Kind: coverage.Kind(kv["kind"]), Name: kv["name"], Provenance: coverage.Declared})
+		s.limits = append(s.limits, limit)
 		return nil
 	}
 	kind, err := s.annotations.CoverageVocabulary().ParseKind(kv["kind"])
@@ -609,11 +621,8 @@ func (s *schemaParseState) parseNotDescribedComment(comment *ast.Comment) error 
 		}
 	}
 
-	s.notDescribed = append(s.notDescribed, coverage.Object{
-		Kind:       kind,
-		Name:       kv["name"],
-		Provenance: coverage.Declared,
-	})
+	limit.Kind = kind
+	s.notDescribed = append(s.notDescribed, limit)
 	return nil
 }
 

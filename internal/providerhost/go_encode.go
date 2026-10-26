@@ -6,8 +6,10 @@ import (
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/annotation"
+	"ptah.run/core/coverage"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 )
@@ -55,8 +57,7 @@ type goEncoding struct {
 // directive at its table, or among the schema's standalone objects; one of the
 // frontend's directive becomes attributes of that declaration. A Go export
 // takes no loss, so a value the provider cannot write refuses the export,
-// naming it, and so does a not-described entry, which a Go source of a
-// provider cannot carry.
+// naming it. Negotiated not-described entries retain their coverage evidence.
 func (g goEncoder) EncodeAnnotations(ctx context.Context, request annotation.EncodeRequest) (annotation.EncodeResult, error) {
 	selected, err := g.goEncodingEngine(request.Target)
 	if err != nil {
@@ -76,14 +77,18 @@ func (g goEncoder) EncodeAnnotations(ctx context.Context, request annotation.Enc
 		return annotation.EncodeResult{}, fmt.Errorf("%w: Go annotations cannot represent a value of provider %s: %s", ptaherr.ErrUnsupportedFeature,
 			g.host.description.GetProviderId(), loss.GetMessage())
 	}
-	if len(encoded.GetLimits()) > 0 {
+	if len(encoded.GetLimits()) > 0 && !selected.negotiated(provider.SourceLimitsFeature) {
 		return annotation.EncodeResult{}, fmt.Errorf("%w: a Go source of provider %s cannot carry its not-described %s entries", ptaherr.ErrUnsupportedFeature,
 			g.host.description.GetProviderId(), encoded.GetLimits()[0].GetKind())
 	}
-	for _, fragment := range encoded.GetFragments() {
-		if err := encoding.fragment(fragment.GetFragment()); err != nil {
+	for _, part := range provider.EncodedSourceParts(encoded) {
+		if err := encoding.fragment(part.GetFragment()); err != nil {
 			return annotation.EncodeResult{}, err
 		}
+	}
+	for _, limit := range encoded.GetLimits() {
+		encoding.result.Limits = append(encoding.result.Limits, annotation.EncodedLimit{Kind: limit.GetKind(), Name: limit.GetName(),
+			Reason: coverage.Reason(limit.GetReason()), Provenance: coverage.Provenance(limit.GetProvenance())})
 	}
 	for _, typed := range encoded.GetFieldTypes() {
 		slot, found := encoding.fields[[2]string{typed.GetBindingId(), typed.GetColumn()}]

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
@@ -78,8 +79,8 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	if err != nil {
 		return hclext.EncodeResult{}, err
 	}
-	for _, fragment := range encoded.GetFragments() {
-		if err := encoding.fragment(fragment); err != nil {
+	for _, part := range encoding.parts(encoded) {
+		if err := encoding.fragment(part); err != nil {
 			return hclext.EncodeResult{}, err
 		}
 	}
@@ -91,6 +92,31 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 			Reason: coverage.Reason(limit.GetReason()), Provenance: coverage.Provenance(limit.GetProvenance())}.Directive())
 	}
 	return encoding.finish(), ctx.Err()
+}
+
+// parts retains value accounting for the writer's object identity and target
+// scope. A group may contain several subjects; each part receives only the
+// matching subjects of its own claim and binding.
+func (e *hclEncoding) parts(result *protocol.EncodedSource) []*protocol.EncodedFragment {
+	parts := slices.Clone(result.GetFragments())
+	for _, group := range result.GetGroups() {
+		for _, part := range group.GetParts() {
+			fragment := part.GetFragment()
+			encoded := &protocol.EncodedFragment{Fragment: fragment, Placement: part.GetPlacement()}
+			for _, value := range e.batch.request.GetValues() {
+				if !slices.Contains(group.GetValueIds(), value.GetValue().GetId()) ||
+					!slices.Contains(fragment.GetHclBlock().GetModels(), value.GetValue().GetValue().GetKind()) ||
+					fragment.GetBindingId() != value.GetBindingId() {
+					continue
+				}
+				if fragment.GetSubject() == nil || proto.Equal(fragment.GetSubject(), value.GetValue().GetNormalizedOwner()) {
+					encoded.ValueIds = append(encoded.ValueIds, value.GetValue().GetId())
+				}
+			}
+			parts = append(parts, encoded)
+		}
+	}
+	return parts
 }
 
 // capture adds the document's values to the batch: objects as native objects,
@@ -263,6 +289,9 @@ func (e *hclEncoding) block(encoded *protocol.EncodedFragment) (hclext.EncodedBl
 	}
 	for _, id := range encoded.GetValueIds() {
 		if object, written := e.objects[id]; written {
+			if block.Object.Kind != "" && block.Object != object.Ref {
+				return hclext.EncodedBlock{}, unsupported("one HCL block representing several native object identities")
+			}
 			block.Object, block.Targets = object.Ref, slices.Clone(object.Targets)
 		}
 	}

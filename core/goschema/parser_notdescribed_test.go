@@ -102,12 +102,40 @@ type _ struct{}
 
 		_, err := goschema.ParseSource(noOwners, "entities.go", `package entities
 
-//ptah:schema:notdescribed kind="extension" reason="because"
+//ptah:schema:notdescribed kind="extension" unexpected="because"
 type _ struct{}
 `)
 
-		c.Assert(err, qt.ErrorMatches, `(?s)unknown annotation attribute "reason".*`)
+		c.Assert(err, qt.ErrorMatches, `(?s)unknown annotation attribute "unexpected".*`)
 	})
+}
+
+func TestParseSource_NotDescribed_Evidence(t *testing.T) {
+	for _, test := range []struct {
+		name, attributes string
+		reason           coverage.Reason
+		provenance       coverage.Provenance
+	}{
+		{name: "authored default", provenance: coverage.Declared},
+		{name: "observed refusal", attributes: `reason="not-inspected" provenance="observed"`, reason: coverage.NotInspected, provenance: coverage.Observed},
+		{name: "explicit unknown provenance", attributes: `provenance=""`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db, err := goschema.ParseSource(noOwners, "evidence.go", "package models\n//ptah:schema:notdescribed kind=\"role\" "+test.attributes+"\ntype _ struct{}\n")
+			c.Assert(err, qt.IsNil)
+			limit, found := db.NotDescribed.Limit(coverage.Role)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(limit, qt.DeepEquals, coverage.Object{Kind: coverage.Role, Reason: test.reason, Provenance: test.provenance})
+		})
+	}
+	for _, attribute := range []string{`reason="invented"`, `provenance="invented"`} {
+		t.Run(attribute, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := goschema.ParseSource(noOwners, "evidence.go", "package models\n//ptah:schema:notdescribed kind=\"role\" "+attribute+"\ntype _ struct{}\n")
+			c.Assert(err, qt.IsNotNil)
+		})
+	}
 }
 
 // TestParseSource_NotDescribed_WithholdsTheRemoval is what the directive is

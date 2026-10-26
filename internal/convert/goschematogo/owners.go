@@ -64,7 +64,8 @@ func (ctx *renderContext) encodeOwners(requestContext context.Context) error {
 	}
 	for _, limit := range encoded.Limits {
 		ctx.featureLimitAnnotations = append(ctx.featureLimitAnnotations, annotation("ptah:schema:notdescribed",
-			attr{name: "kind", value: limit.Kind, set: true}, attr{name: "name", value: limit.Name, set: limit.Name != ""}))
+			attr{name: "kind", value: limit.Kind, set: true}, attr{name: "name", value: limit.Name, set: limit.Name != ""},
+			attr{name: "reason", value: string(limit.Reason), set: limit.Reason != ""}, attr{name: "provenance", value: string(limit.Provenance), set: true}))
 	}
 	ctx.ownerAttributes = make(map[ownerSlot][]attr)
 	claimed := make(map[annotationext.Slot][]string)

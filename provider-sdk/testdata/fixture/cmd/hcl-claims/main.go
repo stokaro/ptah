@@ -52,6 +52,15 @@ func description() *protocol.Description {
 	description.Features = append(description.Features, provider.HCLSourceFeature, provider.EncodeSourceFeature)
 	engine := description.GetEngines()[0]
 	engine.Features = append(engine.Features, provider.HCLSourceFeature, provider.EncodeSourceFeature)
+	if sourceLimitsEnabled() {
+		description.Features = append(description.Features, provider.SourceLimitsFeature)
+		engine.Features = append(engine.Features, provider.SourceLimitsFeature)
+		engine.GoHeaderKinds = []string{"retention"}
+	}
+	if os.Getenv("FIXTURE_SOURCE_GROUPS") == "1" {
+		description.Features = append(description.Features, provider.EncodeGroupsFeature)
+		engine.Features = append(engine.Features, provider.EncodeGroupsFeature)
+	}
 	engine.GoSourceDirectives = append(engine.GoSourceDirectives, backend.ScopedGoSourceDirectives()...)
 	seconds := []*protocol.HCLSourceAttribute{{Name: "seconds", Kind: protocol.HCLSourceAttribute_TEXT}}
 	models := []string{retentionKind}
@@ -73,7 +82,11 @@ type hclClaims struct{ *backend.Provider }
 // or the index whose attribute it is.
 func (p *hclClaims) DecodeSource(ctx context.Context, request *protocol.DecodeSourceRequest) (*protocol.DecodedSource, error) {
 	if request.GetDocuments()[0].GetFormat() != protocol.SourceDocument_HCL {
-		return p.Provider.DecodeSource(ctx, request)
+		result, err := p.Provider.DecodeSource(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+		return decodeLimits(request, result)
 	}
 	result := &protocol.DecodedSource{Complete: true}
 	for _, document := range request.GetDocuments() {
@@ -100,7 +113,7 @@ func (p *hclClaims) DecodeSource(ctx context.Context, request *protocol.DecodeSo
 		}
 		result.Documents = append(result.Documents, decoded)
 	}
-	return result, nil
+	return decodeLimits(request, result)
 }
 
 // retention decodes one fragment's retention for what the fragment is about.
@@ -197,7 +210,7 @@ func (p *hclClaims) EncodeSource(_ context.Context, request *protocol.EncodeSour
 				strconv.Quote(owner.GetName()) + " has no HCL spelling"})
 		}
 	}
-	return result, nil
+	return encodeLimits(request, result)
 }
 
 // encodeGo writes each retention as a Go annotation the program reads back: a
@@ -238,5 +251,5 @@ func encodeGo(request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, e
 			result.FieldTypes = append(result.FieldTypes, &protocol.EncodedFieldType{BindingId: column.GetBindingId(), Column: column.GetName(), GoType: "int64"})
 		}
 	}
-	return result, nil
+	return encodeLimits(request, result)
 }

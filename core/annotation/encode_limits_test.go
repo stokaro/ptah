@@ -28,7 +28,7 @@ func limiting(owner, directive string, kind schemaext.Kind, handed *[]annotation
 func TestSet_Encode_Limits_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	var handed []annotation.EncodeRequest
-	levels := []annotation.EncodedLimit{{Kind: "gauge"}, {Kind: "gauge", Name: "spare"}}
+	levels := []annotation.EncodedLimit{{Kind: "gauge", Reason: coverage.NotInspected, Provenance: coverage.Observed}, {Kind: "gauge", Name: "spare"}}
 	marks := []annotation.EncodedLimit{{Kind: "dial"}}
 	set := must.Must(annotation.NewSet(
 		limiting("example.org/marks", "ptah:schema:mark", markKind, &handed, annotation.EncodeResult{Limits: marks}, "dial"),
@@ -56,6 +56,10 @@ func TestSet_Encode_Limits_FailurePath(t *testing.T) {
 			wantErr: `.*encoder of example.org/levels wrote the limit of kind "knob" and name "", which reading the source back does not hand to it, or wrote it twice`},
 		{name: "a kind another owner reads", limits: []annotation.EncodedLimit{{Kind: "dial", Name: "front"}},
 			wantErr: `.*encoder of example.org/levels wrote the limit of kind "dial" and name "front", which reading the source back does not hand to it, or wrote it twice`},
+		{name: "duplicate identity with different evidence", limits: []annotation.EncodedLimit{{Kind: "gauge", Name: "spare"}, {Kind: " Gauge ", Name: "spare", Provenance: coverage.Observed}},
+			wantErr: `.*encoder of example.org/levels wrote the limit of kind " Gauge " and name "spare", which reading the source back does not hand to it, or wrote it twice`},
+		{name: "unknown reason", limits: []annotation.EncodedLimit{{Kind: "gauge", Reason: "invented"}}, wantErr: `.*invalid limit evidence`},
+		{name: "unknown provenance", limits: []annotation.EncodedLimit{{Kind: "gauge", Provenance: "invented"}}, wantErr: `.*invalid limit evidence`},
 		{name: "a limit twice", limits: []annotation.EncodedLimit{{Kind: "gauge", Name: "spare"}, {Kind: "gauge", Name: "spare"}},
 			wantErr: `.*encoder of example.org/levels wrote the limit of kind "gauge" and name "spare", which reading the source back does not hand to it, or wrote it twice`},
 	}
