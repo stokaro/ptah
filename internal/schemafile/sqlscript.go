@@ -74,7 +74,7 @@ func (s *sqlScript) addDir(dir string, names []string) error {
 // read reads the script in one call to the owner, and checks each schema
 // directory among its files.
 func (s *sqlScript) read(ctx context.Context, opts Options) (*schemamodel.Database, error) {
-	root, err := sourceDatabasePath(opts)
+	root, err := sourceDatabasePath(ctx, opts)
 	if err != nil {
 		return nil, err
 	}

@@ -38,6 +38,7 @@ import (
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/undecidednote"
+	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -741,13 +742,18 @@ func loadDesiredApplySchema(
 	opts ApplyOptions,
 ) (*schemamodel.Database, error) {
 	if opts.Desired != nil {
-		return validateDesiredApplySchema(opts.Desired, opts.ValidateDesiredSchema)
+		bound, err := valuecontext.Source(ctx, opts.Runtime, conn.Info().Dialect, conn.Info().URL, opts.Desired)
+		if err != nil {
+			return nil, err
+		}
+		return validateDesiredApplySchema(bound, opts.ValidateDesiredSchema)
 	}
 	// Both the dev database and the target can limit an apply to one schema, and
 	// the target's URL is the one this connection was opened from.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
 		desired, err := schemafile.LoadSources(ctx, localApplySources(opts), schemafile.Options{
+			Contexts:              opts.Runtime,
 			YAML:                  opts.Runtime.YAML(),
 			SQL:                   opts.Runtime.SQL(),
 			HCL:                   opts.Runtime.HCL(),

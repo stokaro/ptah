@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -52,6 +53,9 @@ func TestPlanBidirectionalSchemaDiff_ReplicationsRollBack(t *testing.T) {
 		},
 		DeclaredTables: []schemamodel.Table{{StructName: "L", Name: "log"}},
 		Features: difftypes.FeatureContext{
+			CurrentCoverage: must.Must(schemaext.NewCoverage(schemaext.Observed, slices.Concat(
+				must.Must(ydbreplication.ReplicationCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)).KindRecords(),
+				must.Must(ydbreplication.TransferCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil)).KindRecords()), nil)),
 			CurrentObjects: must.Must(schemaext.NewObjects(
 				ydbreplication.ObservedReplicationObject("", "old", replicationOf("o", "ro"), ydbreplication.StateRunning),
 				ydbreplication.ObservedReplicationObject("", "paused", replicationOf("p", "rp"), ydbreplication.StatePaused),

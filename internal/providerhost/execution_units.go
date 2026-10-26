@@ -83,6 +83,9 @@ func (s *session) encodeUnits(ctx context.Context, units []renderer.Fragment) ([
 			if err != nil {
 				return nil, nil, err
 			}
+			if value.normalized.GetValue().GetContext() != nil && !proto.Equal(value.normalized.GetValue().GetContext(), s.remote.GetContext()) {
+				return nil, nil, fmt.Errorf("%w: native operation database context differs from the session", provider.ErrProtocol)
+			}
 			wire.Body = &protocol.Unit_Native{Native: proto.CloneOf(value.normalized.GetValue())}
 		}
 		if err := provider.ValidateUnit(wire); err != nil {

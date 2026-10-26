@@ -18,6 +18,10 @@ import (
 func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.Request, map[objectidentity.Key]string, error) {
 	request := featureplan.Request{Target: p.target, Identifiers: diff.EffectiveIdentifierSemantics(p.target),
 		Capabilities: p.options.Capabilities, Changes: slices.Clone(diff.FeatureChanges), DatabasePath: diff.CurrentDatabasePath,
+		Objects: featureplan.ObjectContext{
+			Desired: schemaext.ObjectState{Objects: diff.Features.DesiredObjects, Coverage: diff.Features.DesiredCoverage},
+			Current: schemaext.ObjectState{Objects: diff.Features.CurrentObjects, Coverage: diff.Features.CurrentCoverage},
+		},
 		Types: featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)}}
 	builder := objectidentity.NewBuilder(request.Identifiers)
 	policy, err := p.policy(builder)

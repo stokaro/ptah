@@ -39,6 +39,9 @@ func (h *Host) decodeModels(ctx context.Context, envelopes []schemaext.Envelope)
 		for i, value := range normalized.GetValues() {
 			index := group.indexes[i]
 			input := inputs[index]
+			if value.GetRequiresDatabaseContext() != input.wire.RequiresDatabaseContext {
+				return nil, fmt.Errorf("%w: captured dependency readiness changed", schemaext.ErrIncompatibleCodec)
+			}
 			resolved, err := input.contract.resolved(input.wire, value)
 			if err != nil {
 				return nil, err
@@ -80,6 +83,7 @@ func (h *Host) prepareModelDecode(envelopes []schemaext.Envelope) ([]modelDecode
 		group.request.Values = append(group.request.Values, &protocol.ValueInput{Id: strconv.Itoa(i), Representation: protocolRepresentation(envelope.Representation), Value: &protocol.Envelope{
 			ProviderId: h.description.GetProviderId(), Kind: model.GetKind(), SchemaVersion: model.GetSchemaVersion(), Encoding: model.GetEncoding(),
 			DefinitionSha256: model.GetDefinitionSha256(), Owner: input.wire.Subject.protocol(), RequiredFeatures: slices.Clone(input.wire.RequiredFeatures), Payload: slices.Clone(input.wire.Payload),
+			Context: wireDatabaseContext(input.wire.Context),
 		}})
 	}
 	for _, group := range groups {
@@ -101,6 +105,14 @@ func (h *Host) modelDecodeInput(envelope schemaext.Envelope) (modelDecodeInput, 
 	}
 	if wire.Format != 1 || contract.engines[wire.Engine] == nil || len(featureSet(wire.Features)) != len(wire.Features) {
 		return modelDecodeInput{}, fmt.Errorf("%w: unsupported provider model wire format or engine", schemaext.ErrInvalidValue)
+	}
+	if !wire.Context.IsZero() {
+		if err := wire.Context.Validate(); err != nil {
+			return modelDecodeInput{}, err
+		}
+		if wire.RequiresDatabaseContext {
+			return modelDecodeInput{}, fmt.Errorf("%w: bound model has unresolved dependencies", schemaext.ErrInvalidValue)
+		}
 	}
 	return modelDecodeInput{contract: contract, wire: wire}, nil
 }

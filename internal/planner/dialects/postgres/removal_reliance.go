@@ -112,27 +112,31 @@ func typeNamesRelation(spelled, relation string, semantics identifier.Semantics)
 	}
 }
 
-// routinesAhead holds the routines the plan removes that the exact style drops
-// just ahead of a relation, keyed by the relation, instead of after every
-// table and view.
+// routinesAhead holds the routines the exact style drops just ahead of a
+// relation or column they read, instead of after every table and view.
 //
 // Such a routine depends on the one relation the plan drops: its parameters or
 // result name the relation's row type, or its SQL-standard body reads it.
 // Dropped first, it leaves the relation's drop relying on nothing, so the drop
 // carries no CASCADE, which would also take a reader nobody declared, such as
 // a view in a schema the run leaves out. The server then refuses the drop and
-// names that reader.
+// names that reader. A routine moved ahead of a column is keyed by its table
+// and column; a routine moved ahead of a relation is keyed by that relation.
 //
 // A routine moves only when nothing else the plan knows of still uses it at
 // that point: no view or materialized view the declaration holds, removes or
 // rebuilds names it, no other removed routine's body does, and no captured
-// object of a removed table reads it. It moves only ahead of a relation the
-// plan removes, and only when that is the only relation it names that the plan
-// drops. Every other routine stays in the routine step, and the relation's
-// drop keeps CASCADE for it.
+// object of a removed table reads it. For a relation move, that must be the
+// only removed relation the routine names. A column move can also precede a
+// removed table whose row type the routine names, since table drops follow
+// column drops. It cannot name a relation removed before columns or read a
+// column the plan drops earlier. Every other routine stays in the routine
+// step, and the drop keeps CASCADE for it.
 type routinesAhead struct {
-	byRelation map[string][]difftypes.RoutineChange
-	moved      map[string]bool
+	byRelation       map[string][]difftypes.RoutineChange
+	byColumn         map[string][]difftypes.RoutineChange
+	moved            map[string]bool
+	beforeColumnDrop map[string]bool
 }
 
 // earlyGeneratedColumns identifies generated columns on kept tables that call
@@ -168,14 +172,20 @@ func earlyGeneratedColumns(diff *difftypes.SchemaDiff) map[string]bool {
 }
 
 // routinesAheadOf works out which removed routines the plan drops ahead of a
-// removed relation; see [routinesAhead]. Ptah's own style keeps every routine
-// in the routine step.
+// removed relation or column; see [routinesAhead]. Ptah's own style keeps
+// every routine in the routine step.
 func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuild, earlyColumns map[string]bool) routinesAhead {
-	ahead := routinesAhead{byRelation: make(map[string][]difftypes.RoutineChange), moved: make(map[string]bool)}
+	ahead := routinesAhead{
+		byRelation:       make(map[string][]difftypes.RoutineChange),
+		byColumn:         make(map[string][]difftypes.RoutineChange),
+		moved:            make(map[string]bool),
+		beforeColumnDrop: make(map[string]bool),
+	}
 	if !p.exact() {
 		return ahead
 	}
 	removed := make(map[string]bool)
+	removedTables := make(map[string]bool)
 	var dropped []string
 	for _, object := range removedViewLikes(diff) {
 		removed[object.Name] = true
@@ -183,6 +193,7 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 	}
 	for _, table := range diff.TablesRemoved {
 		removed[table.Name] = true
+		removedTables[table.Name] = true
 		dropped = append(dropped, table.Name)
 	}
 	for _, object := range rebuild.dropped() {
@@ -200,11 +211,65 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 			if len(named) != 1 || !removed[named[0]] || routineInUse(diff, routine, rebuild, earlyColumns) {
 				continue
 			}
+			// Table drops follow column drops. If this routine also reads a
+			// removed column, it must leave before that column, not merely
+			// before the table whose row type its signature names.
+			if removedTables[named[0]] && !routineReadsEarlyColumn(diff, routine, earlyColumns) {
+				if key := firstRemovedColumnRead(diff, routine, earlyColumns); key != "" {
+					ahead.byColumn[key] = append(ahead.byColumn[key], routine)
+					ahead.moved[routineKey(routine)] = true
+					ahead.beforeColumnDrop[routineKey(routine)] = true
+					continue
+				}
+			}
 			ahead.byRelation[named[0]] = append(ahead.byRelation[named[0]], routine)
 			ahead.moved[routineKey(routine)] = true
+			if !removedTables[named[0]] {
+				ahead.beforeColumnDrop[routineKey(routine)] = true
+			}
 		}
 	}
+	ahead.moveColumnRoutines(diff, rebuild, earlyColumns, dropped)
 	return ahead
+}
+
+func (a *routinesAhead) moveColumnRoutines(diff *difftypes.SchemaDiff, rebuild viewRebuild, earlyColumns map[string]bool, dropped []string) {
+	for _, routines := range []difftypes.FunctionChanges{diff.FunctionsRemoved, diff.ProceduresRemoved} {
+		for _, routine := range routines {
+			if a.moves(routine) || routineInUse(diff, routine, rebuild, earlyColumns) ||
+				routineReadsEarlyColumn(diff, routine, earlyColumns) ||
+				slices.ContainsFunc(dropped, func(relation string) bool {
+					return routineNames(routine, relation, relationSemantics(diff))
+				}) {
+				continue
+			}
+			key := firstRemovedColumnRead(diff, routine, earlyColumns)
+			if key == "" {
+				continue
+			}
+			a.byColumn[key] = append(a.byColumn[key], routine)
+			a.moved[routineKey(routine)] = true
+			a.beforeColumnDrop[routineKey(routine)] = true
+		}
+	}
+}
+
+// firstRemovedColumnRead picks the first column this routine reads in the
+// order the planner drops columns: tables in diff order, generated columns
+// before ordinary columns within each table.
+func firstRemovedColumnRead(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, earlyColumns map[string]bool) string {
+	for _, table := range diff.TablesModified {
+		for _, generated := range []bool{true, false} {
+			for _, column := range table.ColumnsRemoved {
+				key := table.TableName + "\x00" + column.Name
+				if isGenerated(column) == generated && !earlyColumns[key] &&
+					routineReadsColumn(routine, table.TableName, column.Name, relationSemantics(diff)) {
+					return key
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // moves reports whether the plan drops routine ahead of a relation.
@@ -215,6 +280,10 @@ func (a routinesAhead) moves(routine difftypes.RoutineChange) bool {
 // of is the routines the plan drops just ahead of relation.
 func (a routinesAhead) of(relation string) []difftypes.RoutineChange {
 	return a.byRelation[relation]
+}
+
+func (a routinesAhead) ofColumn(table, column string) []difftypes.RoutineChange {
+	return a.byColumn[table+"\x00"+column]
 }
 
 // routineKey identifies a removed routine by its kind, name and signature.
@@ -328,11 +397,27 @@ func derefText(text *string) string {
 // selects `*`, which the server expands into every column when it creates the
 // routine. A row type in the parameters or the result does not hold a column
 // back.
-func removedRoutineReadsColumn(diff *difftypes.SchemaDiff, table, column string) bool {
+func removedRoutineReadsColumn(diff *difftypes.SchemaDiff, table, column string, ahead routinesAhead) bool {
 	return removedRoutineMatches(diff, func(routine difftypes.RoutineChange) bool {
-		return sqlStandardBodyReads(routine, table, relationSemantics(diff)) &&
-			(strings.Contains(routine.Body, "*") || deporder.ReferencesIdentifier(routine.Body, column))
+		return !ahead.beforeColumnDrop[routineKey(routine)] && routineReadsColumn(routine, table, column, relationSemantics(diff))
 	})
+}
+
+func routineReadsColumn(routine difftypes.RoutineChange, table, column string, semantics identifier.Semantics) bool {
+	return sqlStandardBodyReads(routine, table, semantics) &&
+		(strings.Contains(routine.Body, "*") || deporder.ReferencesIdentifier(routine.Body, column))
+}
+
+func routineReadsEarlyColumn(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, earlyColumns map[string]bool) bool {
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			if earlyColumns[table.TableName+"\x00"+column.Name] &&
+				routineReadsColumn(routine, table.TableName, column.Name, relationSemantics(diff)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func removedRoutineMatches(diff *difftypes.SchemaDiff, match func(difftypes.RoutineChange) bool) bool {

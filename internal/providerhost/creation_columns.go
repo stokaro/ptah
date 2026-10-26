@@ -10,7 +10,7 @@ import (
 	"ptah.run/catalog"
 )
 
-func projectedColumn(source *protocol.ObservedColumn) (catalog.Column, error) {
+func catalogColumn(source *protocol.ObservedColumn) (catalog.Column, error) {
 	result := catalog.Column{
 		Name: source.GetName(), DataType: source.GetDataType(), UDTName: source.GetUdtName(), UDTSchema: source.GetUdtSchema(),
 		FormattedType: source.GetFormattedType(), ColumnType: source.GetColumnType(), IsNullable: source.GetIsNullable(),

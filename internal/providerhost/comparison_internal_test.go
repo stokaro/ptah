@@ -115,8 +115,12 @@ func TestResolvedRequirementsUseNormalizedIdentity(t *testing.T) {
 	alias, err := contract.resolved(modelWire{Format: 1, Engine: "fixture"}, value)
 	c.Assert(err, qt.IsNil)
 	c.Assert(original.Equal(alias), qt.IsTrue)
-	c.Assert(original.Requires()[0].Name.Source, qt.Equals, "Example")
-	c.Assert(alias.Requires()[0].Name.Source, qt.Equals, "example")
+	originalRequired, err := original.Requires()
+	c.Assert(err, qt.IsNil)
+	aliasRequired, err := alias.Requires()
+	c.Assert(err, qt.IsNil)
+	c.Assert(originalRequired[0].Name.Source, qt.Equals, "Example")
+	c.Assert(aliasRequired[0].Name.Source, qt.Equals, "example")
 	value.RequiredObjects[0].Path = []*protocol.ComparisonPart{{Source: "a", Normalized: "a"}, {Source: "b/c", Normalized: "b/c"}}
 	different, err := contract.resolved(modelWire{Format: 1, Engine: "fixture"}, value)
 	c.Assert(err, qt.IsNil)
@@ -125,4 +129,17 @@ func TestResolvedRequirementsUseNormalizedIdentity(t *testing.T) {
 	absent, err := contract.resolved(modelWire{Format: 1, Engine: "fixture"}, value)
 	c.Assert(err, qt.IsNil)
 	c.Assert(original.Equal(absent), qt.IsFalse)
+}
+
+func TestResolvedRequirementsRefusePendingDatabaseContext(t *testing.T) {
+	c := qt.New(t)
+	_, value := planningFixture(c)
+	value.normalized.RequiresDatabaseContext = true
+	requirements, err := value.Requires()
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(requirements, qt.IsNil)
+	value.normalized.RequiresDatabaseContext = false
+	requirements, err = value.Requires()
+	c.Assert(err, qt.IsNil)
+	c.Assert(requirements, qt.HasLen, 0)
 }

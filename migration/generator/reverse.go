@@ -185,11 +185,9 @@ func reverseSchemaDiffWithPrior(
 		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
 		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema, prior, semantics),
 
-		// The context the down plan reads is the database the up migration
-		// left: the declared objects become the current ones, each with the
-		// value the database held where it held one already, which carries
-		// the state a replication or a transfer reported.
-		Features: reverseFeatureContext(diff.Features),
+		// Contextful reversal converts declarations and applies owner-provided
+		// predictions before this captured state reaches a reverse planner.
+		Features: diff.Features,
 
 		// Materialized views to remove become materialized views to add, each
 		// as the pre-change database held it, settings included.
@@ -545,25 +543,4 @@ func reverseIndexComments(changes []difftypes.IndexCommentChange) []difftypes.In
 		})
 	}
 	return reversed
-}
-
-// reverseFeatureContext is the context a down plan reads: the database the up
-// migration left holds what the target schema declared, and the down plan
-// declares what the database held. An object both sides held keeps the
-// database's value, which carries what only a read reports, such as the
-// state of a YDB replication; the forward plan changed no such value an
-// object has outside its declaration.
-func reverseFeatureContext(context difftypes.FeatureContext) difftypes.FeatureContext {
-	current := context.DesiredObjects
-	for _, ref := range context.DesiredObjects.Refs() {
-		held, found, err := context.CurrentObjects.Get(ref)
-		if err != nil || !found {
-			continue
-		}
-		if replaced, err := current.Replace(held); err == nil {
-			current = replaced
-		}
-	}
-	return difftypes.FeatureContext{DesiredObjects: context.CurrentObjects, CurrentObjects: current,
-		CurrentCoverage: context.CurrentCoverage}
 }

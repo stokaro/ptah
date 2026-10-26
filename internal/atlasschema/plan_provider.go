@@ -13,6 +13,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 )
 
 // PlanProviderBinding records the provider release that shaped a plan and the
@@ -46,6 +47,11 @@ func planProviderBinding(info catalog.ServerInfo) (*PlanProviderBinding, error) 
 	if err := info.Provider.Validate(); err != nil {
 		return nil, err
 	}
+	if !info.DatabaseContext.IsZero() {
+		if err := info.DatabaseContext.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	rules := info.IdentifierSemantics.Clone()
 	slices.SortFunc(rules.ResolvedNames, func(a, b identifier.ResolvedName) int {
 		if order := cmp.Compare(a.Name, b.Name); order != 0 {
@@ -53,19 +59,20 @@ func planProviderBinding(info catalog.ServerInfo) (*PlanProviderBinding, error) 
 		}
 		return cmp.Compare(a.Key, b.Key)
 	})
-	// Field names and order define projection version 1. Capability JSON uses
+	// Field names and order define projection version 2. Capability JSON uses
 	// sorted names; resolved identifier equivalences are sorted above. A future
 	// projection change must use a new version rather than reinterpret a digest.
 	projection := struct {
-		Version        int                     `json:"version"`
-		Target         string                  `json:"target"`
-		ServerVersion  string                  `json:"server_version"`
-		Schema         string                  `json:"schema"`
-		WholeServer    bool                    `json:"whole_server"`
-		DefaultIntSize int                     `json:"default_int_size"`
-		Capabilities   capability.Capabilities `json:"capabilities"`
-		Identifiers    identifier.Semantics    `json:"identifiers"`
-	}{1, info.Dialect, info.Version, info.Schema, info.WholeServer, info.DefaultIntSize, info.Capabilities, rules}
+		Version         int                       `json:"version"`
+		Target          string                    `json:"target"`
+		ServerVersion   string                    `json:"server_version"`
+		Schema          string                    `json:"schema"`
+		WholeServer     bool                      `json:"whole_server"`
+		DefaultIntSize  int                       `json:"default_int_size"`
+		Capabilities    capability.Capabilities   `json:"capabilities"`
+		Identifiers     identifier.Semantics      `json:"identifiers"`
+		DatabaseContext schemaext.DatabaseContext `json:"database_context"`
+	}{2, info.Dialect, info.Version, info.Schema, info.WholeServer, info.DefaultIntSize, info.Capabilities, rules, info.DatabaseContext}
 	encoded, err := json.Marshal(projection)
 	if err != nil {
 		return nil, fmt.Errorf("encode provider target facts: %w", err)
@@ -126,7 +133,7 @@ func verifyPlanProvider(plan *PlanProviderBinding, info catalog.ServerInfo) erro
 		return fmt.Errorf("plan was computed with provider %q version %q under provider contract major version %d, but the selected provider uses major version %d; %s",
 			plan.ID, plan.Version, plan.ContractMajor, current.ContractMajor, planProviderAdvice)
 	case plan.TargetSHA256 != current.TargetSHA256:
-		return fmt.Errorf("plan provider target facts changed: the server version, schema scope, capabilities or identifier rules differ from planning; %s",
+		return fmt.Errorf("plan provider target facts changed: the database context, server version, schema scope, capabilities or identifier rules differ from planning; %s",
 			planProviderAdvice)
 	}
 	return nil

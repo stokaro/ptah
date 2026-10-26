@@ -84,7 +84,9 @@ func (*ObservedContinuousAggregate) Kind() schemaext.Kind { return ContinuousAgg
 
 // Requires names the timescaledb extension, which a continuous aggregate
 // cannot exist without; see [schemaext.Requirer].
-func (*DesiredContinuousAggregate) Requires() []objectidentity.ID { return requiresExtension() }
+func (*DesiredContinuousAggregate) Requires() ([]objectidentity.ID, error) {
+	return requiresExtension(), nil
+}
 
 // Clone returns an independent declaration. A nil receiver remains typed nil.
 func (v *DesiredContinuousAggregate) Clone() schemaext.Value { return v.Copy() }

@@ -87,7 +87,7 @@ func YAML(ctx context.Context, engine *protocol.Engine, input yamlext.Document) 
 		}
 		document.Fragments = append(document.Fragments, captured)
 	}
-	request := &protocol.DecodeSourceRequest{Engine: engine.GetId(), Documents: []*protocol.SourceDocument{document}}
+	request := sourceRequest(engine, document)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

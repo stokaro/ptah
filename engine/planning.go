@@ -19,7 +19,10 @@ type Planning struct {
 	Kinds  []schemaext.Kind
 	// ParentKinds assigns attached model assessment independently of child
 	// deltas. Each model requires owned desired and observed codecs.
-	ParentKinds    []schemaext.Kind
+	ParentKinds []schemaext.Kind
+	// ContextKinds assigns named object assessment without requiring a change.
+	// Each kind has one planner and owned desired and observed codecs.
+	ContextKinds   []schemaext.Kind
 	OperationKinds []schemaext.Kind
 	Service        featureplan.Service
 }
@@ -31,7 +34,7 @@ type ownedPlanning struct {
 
 func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 	target, found := r.targets[declaration.Target]
-	if !found || target.name != declaration.Target || (len(declaration.Kinds) == 0 && len(declaration.ParentKinds) == 0) || declaration.Service == nil || nilService(declaration.Service) {
+	if !found || target.name != declaration.Target || (len(declaration.Kinds) == 0 && len(declaration.ParentKinds) == 0 && len(declaration.ContextKinds) == 0) || declaration.Service == nil || nilService(declaration.Service) {
 		return fmt.Errorf("%w: incomplete planning registration for %q", ErrInvalidRegistration, declaration.Target)
 	}
 	if len(declaration.Kinds) > 0 && len(declaration.OperationKinds) == 0 {
@@ -47,6 +50,9 @@ func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 		}
 		r.parentPlanning[key] = len(r.planningServices)
 	}
+	if err := r.registerObjectPlanning(owner, target.name, declaration.ContextKinds); err != nil {
+		return err
+	}
 	for _, kind := range declaration.Kinds {
 		if !r.ownsCodec(owner, kind, schemaext.Change) {
 			return fmt.Errorf("%w: %q does not own change %q", ErrInvalidRegistration, owner, kind)
@@ -57,17 +63,40 @@ func (r *Runtime) registerPlanning(owner string, declaration Planning) error {
 		}
 		r.planning[key] = len(r.planningServices)
 	}
+	if err := r.validatePlanningOperations(owner, declaration.OperationKinds); err != nil {
+		return err
+	}
+	declaration.Kinds = slices.Clone(declaration.Kinds)
+	declaration.ParentKinds = slices.Clone(declaration.ParentKinds)
+	declaration.ContextKinds = slices.Clone(declaration.ContextKinds)
+	slices.Sort(declaration.ContextKinds)
+	declaration.OperationKinds = slices.Clone(declaration.OperationKinds)
+	r.planningServices = append(r.planningServices, ownedPlanning{owner, declaration})
+	return nil
+}
+
+func (r *Runtime) validatePlanningOperations(owner string, kinds []schemaext.Kind) error {
 	seen := make(map[schemaext.Kind]bool)
-	for _, kind := range declaration.OperationKinds {
+	for _, kind := range kinds {
 		if seen[kind] || !r.ownsCodec(owner, kind, schemaext.Operation) {
 			return fmt.Errorf("%w: duplicate or unowned planning operation %q", ErrInvalidRegistration, kind)
 		}
 		seen[kind] = true
 	}
-	declaration.Kinds = slices.Clone(declaration.Kinds)
-	declaration.ParentKinds = slices.Clone(declaration.ParentKinds)
-	declaration.OperationKinds = slices.Clone(declaration.OperationKinds)
-	r.planningServices = append(r.planningServices, ownedPlanning{owner, declaration})
+	return nil
+}
+
+func (r *Runtime) registerObjectPlanning(owner, target string, kinds []schemaext.Kind) error {
+	for _, kind := range kinds {
+		if !r.ownsCodec(owner, kind, schemaext.Desired) || !r.ownsCodec(owner, kind, schemaext.Observed) {
+			return fmt.Errorf("%w: %q does not own context model %q", ErrInvalidRegistration, owner, kind)
+		}
+		key := conversionKey{target: target, kind: kind}
+		if _, found := r.objectPlanning[key]; found {
+			return fmt.Errorf("%w: duplicate object context planning for %q/%q", ErrInvalidRegistration, target, kind)
+		}
+		r.objectPlanning[key] = len(r.planningServices)
+	}
 	return nil
 }
 
@@ -86,13 +115,17 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	if !found {
 		return featureplan.Result{}, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
+	callerObjects := request.Objects.AllSubjects()
 	request.Target = target.name
 	// Assignment is runtime-owned. An input cannot suppress a registered model.
 	request.ParentKinds = nil
+	request.ContextKinds = nil
+	request.Objects.ChangedSubjects = nil
 	request, err := r.snapshotPlanning(ctx, request)
 	if err != nil {
 		return featureplan.Result{}, err
 	}
+	request.Objects.ChangedSubjects = changedObjectSubjects(request)
 	batches, err := r.planningBatches(request)
 	if err != nil {
 		return featureplan.Result{}, err
@@ -101,17 +134,11 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	for service, indices := range batches {
 		owner := r.planningServices[service]
 		assessParents := owner.Target == target.name && len(owner.ParentKinds) > 0 && hasParentActions(request.Tables)
-		if len(indices) == 0 && !assessParents {
+		assessObjects := owner.Target == target.name && len(owner.ContextKinds) > 0
+		if len(indices) == 0 && !assessParents && !assessObjects {
 			continue
 		}
-		batch := request
-		if assessParents {
-			batch.ParentKinds = slices.Clone(owner.ParentKinds)
-		}
-		batch.Changes = make([]schemaext.ChangeRecord, len(indices))
-		for i, index := range indices {
-			batch.Changes[i] = request.Changes[index]
-		}
+		batch := r.planningBatch(owner, request, indices)
 		sent, err := r.snapshotPlanning(ctx, batch)
 		if err != nil {
 			return featureplan.Result{}, err
@@ -125,12 +152,13 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 			return featureplan.Result{}, err
 		}
 		if len(reply.Diagnostics) != 0 {
-			result.Diagnostics = append(result.Diagnostics, remapPlanningDiagnostics(reply.Diagnostics, indices)...)
+			result.Diagnostics = append(result.Diagnostics, remapPlanningDiagnostics(reply.Diagnostics, indices, batch.Objects.AllSubjects(), callerObjects)...)
 			continue
 		}
 		result.Contributions = append(result.Contributions, reply.Contributions...)
 		result.Rewrites = append(result.Rewrites, reply.Rewrites...)
 		result.Parents = append(result.Parents, reply.Parents...)
+		result.Objects = append(result.Objects, reply.Objects...)
 		for i, index := range indices {
 			result.Changes[index] = reply.Changes[i]
 		}
@@ -144,11 +172,32 @@ func (r *Runtime) PlanFeatures(ctx context.Context, request featureplan.Request)
 	return result, nil
 }
 
-func remapPlanningDiagnostics(diagnostics []featureplan.Diagnostic, indices []int) []featureplan.Diagnostic {
+func (r *Runtime) planningBatch(owner ownedPlanning, request featureplan.Request, indices []int) featureplan.Request {
+	batch := request
+	batch.ContextKinds = slices.Clone(owner.ContextKinds)
+	batch.Objects = featureplan.ObjectContext{}
+	if len(owner.ContextKinds) > 0 {
+		batch.Objects = r.planningObjectsFor(owner.owner, request.Target, request.Objects)
+	}
+	if len(owner.ParentKinds) > 0 && hasParentActions(request.Tables) {
+		batch.ParentKinds = slices.Clone(owner.ParentKinds)
+	}
+	batch.Changes = make([]schemaext.ChangeRecord, len(indices))
+	for i, index := range indices {
+		batch.Changes[i] = request.Changes[index]
+	}
+	return batch
+}
+
+func remapPlanningDiagnostics(diagnostics []featureplan.Diagnostic, indices []int, batchObjects, allObjects []objectidentity.ID) []featureplan.Diagnostic {
 	result := make([]featureplan.Diagnostic, len(diagnostics))
 	for i, diagnostic := range diagnostics {
 		if diagnostic.Change != nil {
 			diagnostic.Change = new(indices[*diagnostic.Change])
+		}
+		if diagnostic.ContextObject != nil {
+			subject := batchObjects[*diagnostic.ContextObject]
+			diagnostic.ContextObject = new(slices.IndexFunc(allObjects, func(candidate objectidentity.ID) bool { return candidate.Key() == subject.Key() }))
 		}
 		result[i] = diagnostic
 	}

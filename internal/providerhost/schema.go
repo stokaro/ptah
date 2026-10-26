@@ -46,6 +46,7 @@ func (h *Host) Provider() engine.Provider {
 		selected.registerComparisons(&result)
 		selected.registerPlanning(&result)
 		selected.registerDeclarations(&result)
+		selected.registerContextBindings(&result)
 		if selected.supportsLint() {
 			result.Lint = append(result.Lint, selected.lint())
 		}
@@ -65,6 +66,9 @@ func (t *target) registration() engine.Target {
 				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
+	}
+	if t.offers(provider.DatabaseContextFeature) {
+		result.DatabaseContext = t
 	}
 	if t.supportsCommonTables() {
 		result.SchemaRendering, result.Validation = t, t

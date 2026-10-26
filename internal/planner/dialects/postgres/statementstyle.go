@@ -66,14 +66,15 @@ func (p *Planner) cascades(relied bool) bool {
 // the columns it reads. It removes these only after the column, so a drop
 // relies on CASCADE when the plan holds one:
 //
-//   - a routine it removes whose SQL-standard body reads the column;
+//   - a routine it removes whose SQL-standard body reads the column and cannot
+//     leave ahead of it;
 //   - a captured object of a table it removes that reads the table, such as a
 //     row-level security policy;
 //   - an owner operation that may drop a standalone object in a later window,
 //     whose object reads the table's columns or cannot say; see
 //     [removedFeatureReadsColumns].
-func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string) bool {
-	return removedRoutineReadsColumn(diff, tableDiff.TableName, column) ||
+func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string, ahead routinesAhead) bool {
+	return removedRoutineReadsColumn(diff, tableDiff.TableName, column, ahead) ||
 		removedTableReads(diff, tableDiff.TableName, nil) ||
 		removedFeatureReadsColumns(diff, tableDiff.TableName)
 }

@@ -10,11 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/internal/tableidentity"
 )
 
@@ -126,4 +128,56 @@ func TestScopedInspectionCoverageSurvivesComparisonBinding(t *testing.T) {
 	c.Assert(bound.Lookup(model.Kind, ref).State, qt.Equals, schemaext.Complete)
 	ref.Database = scopePart("/other")
 	c.Assert(bound.Lookup(model.Kind, ref).State, qt.Equals, schemaext.Uninspected)
+}
+
+func TestScopeRequirementsUseCapturedContextWithoutChangingOwner(t *testing.T) {
+	for _, row := range []struct {
+		name                                   string
+		context                                *protocol.DatabaseContext
+		source, normalized                     string
+		ownerDatabase, normalizedOwnerDatabase string
+		pending, refused                       bool
+	}{
+		{name: "bound", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/realm", normalized: "/realm"},
+		{name: "foreign", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/foreign", normalized: "/foreign", refused: true},
+		{name: "changed spelling", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/REALM", normalized: "/realm", refused: true},
+		{name: "missing context", source: "/realm", normalized: "/realm", refused: true},
+		{name: "owner identity differs from context", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity"},
+		{name: "physical root is not owner identity", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/realm", normalized: "/realm", refused: true},
+		{name: "owner normalization changed", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
+			ownerDatabase: "/IDENTITY", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity", refused: true},
+		{name: "pending", pending: true, refused: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			description := scopeDescription()
+			description.Engines[0].ScopeSelections[0].KeepsRequired = []string{"example.org/pool"}
+			selection, err := newScopeSelections(description)
+			c.Assert(err, qt.IsNil)
+			owner := &protocol.Reference{Engine: "example", Database: row.ownerDatabase, Kind: "example.org/queue", Schema: "main", Name: "jobs"}
+			normalizedOwner := proto.CloneOf(owner)
+			normalizedOwner.Database = row.normalizedOwnerDatabase
+			value := &resolvedModel{kind: "example.org/queue", wire: modelWire{Features: []string{provider.ValueContextFeature}}, normalized: &protocol.NormalizedValue{
+				Value: &protocol.Envelope{Owner: owner, Context: row.context}, NormalizedOwner: normalizedOwner, RequiresDatabaseContext: row.pending,
+			}}
+			if !row.pending {
+				value.normalized.RequiredObjects = []*protocol.ComparisonIdentity{{Kind: "example.org/pool", Database: &protocol.ComparisonPart{Source: row.source, Normalized: row.normalized}, Name: &protocol.ComparisonPart{Source: "fast", Normalized: "fast"}}}
+			}
+			kept, err := schemaext.NewObjects(schemaext.Object{Ref: objectidentity.ID{Kind: "example.org/queue", Schema: scopePart("main"), Name: scopePart("jobs")}, Value: value})
+			c.Assert(err, qt.IsNil)
+			result, err := selection.extension.Service.SelectObjects(c.Context(), selectext.Request{Kept: kept})
+			if row.refused {
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(result.Requires, qt.HasLen, 0)
+				return
+			}
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Requires, qt.HasLen, 1)
+			c.Assert(result.Requires[0].Database.Empty(), qt.IsTrue)
+			c.Assert(result.Requires[0].Name.Source, qt.Equals, "fast")
+			c.Assert(owner.GetDatabase(), qt.Equals, row.ownerDatabase)
+		})
+	}
 }

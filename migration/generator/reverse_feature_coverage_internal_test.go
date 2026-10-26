@@ -53,7 +53,7 @@ func reverseCoveragePlan(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamod
 	encode := func(value schemaext.Payload) (json.RawMessage, error) {
 		return json.Marshal(value.(*coverageChange).Number)
 	}
-	runtime, err := engine.New(engine.Provider{
+	p := engine.Provider{
 		ID: "example.org/reversal", Targets: []engine.Target{{Name: "postgres", Preparation: schemapreparation.Identity{}, Creations: schemaprojection.IdentityCreations{}}},
 		Codecs: []schemaext.Codec{{Prototype: &coverageChange{}, Representation: schemaext.Change, Version: 1, Definition: json.RawMessage(`{"type":"integer"}`),
 			Clone: func(value schemaext.Payload) (schemaext.Payload, error) {
@@ -65,7 +65,39 @@ func reverseCoveragePlan(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamod
 			},
 		}},
 		Reversals: []engine.Reversal{{Target: "postgres", Kinds: []schemaext.Kind{coverageChangeKind}, Service: coverageReverser{}}},
-	})
+	}
+	p.Codecs = append(p.Codecs, coverageObjectCodec(schemaext.Desired), coverageObjectCodec(schemaext.Observed))
+	p.Conversions = []engine.Conversion{{Target: "postgres", Kinds: []schemaext.Kind{coverageObjectKind}, Service: coverageObjectConverter{}}}
+	runtime, err := engine.New(p)
 	c.Assert(err, qt.IsNil)
 	return reverseWithRuntimeForTest(c, runtime, diff, desired, current, "postgres")
+}
+
+const coverageObjectKind schemaext.Kind = "example.org/reversal/object"
+
+type coverageObjectValue struct{ Number int }
+
+func (*coverageObjectValue) Kind() schemaext.Kind     { return coverageObjectKind }
+func (v *coverageObjectValue) Clone() schemaext.Value { return &coverageObjectValue{Number: v.Number} }
+func (v *coverageObjectValue) Equal(other schemaext.Value) bool {
+	w, ok := other.(*coverageObjectValue)
+	return ok && w != nil && v.Number == w.Number
+}
+func coverageObject(name string, number int) schemaext.Object {
+	return schemaext.Object{Ref: objectidentity.ID{Kind: objectidentity.Kind(coverageObjectKind), Name: objectidentity.Part{Source: name, Normalized: name}}, Value: &coverageObjectValue{Number: number}}
+}
+func coverageObjectCodec(representation schemaext.Representation) schemaext.Codec {
+	encode := func(value schemaext.Payload) (json.RawMessage, error) {
+		return json.Marshal(value.(*coverageObjectValue).Number)
+	}
+	return schemaext.Codec{Prototype: &coverageObjectValue{}, Representation: representation, Version: 1, Definition: json.RawMessage(`{"type":"integer"}`), Clone: func(v schemaext.Payload) (schemaext.Payload, error) { return v.(*coverageObjectValue).Clone(), nil }, Encode: encode, Canonical: encode, Decode: func(data json.RawMessage) (schemaext.Payload, error) {
+		n, err := schemaext.DecodeJSON[int](data)
+		return &coverageObjectValue{Number: n}, err
+	}}
+}
+
+type coverageObjectConverter struct{}
+
+func (coverageObjectConverter) ConvertFeatures(ctx context.Context, request schemaext.ConversionRequest) ([]schemaext.Value, error) {
+	return request.Values, ctx.Err()
 }

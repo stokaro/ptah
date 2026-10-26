@@ -234,7 +234,9 @@ func TestDesiredValues_RequireTheExtension(t *testing.T) {
 			requirer, ok := value.(schemaext.Requirer)
 
 			c.Assert(ok, qt.IsTrue)
-			c.Assert(requirer.Requires(), qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("timescaledb"))})
+			required, err := requirer.Requires()
+			c.Assert(err, qt.IsNil)
+			c.Assert(required, qt.DeepEquals, []objectidentity.ID{pgextension.Subject(pgextension.Ref("timescaledb"))})
 		})
 	}
 }

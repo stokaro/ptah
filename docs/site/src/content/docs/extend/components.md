@@ -365,6 +365,10 @@ Planning uses its feature services and renderer; a service failure or cancellati
 returns no usable SQL prefix. `core/featureplan` defines the contextual planning
 batch for provider implementations. Owners receive typed changes, captured parent
 state, identifier rules, and target capabilities without opening a database.
+An owner registered with `ContextKinds` also receives unchanged named objects
+and their coverage. Its object receipts can account for lifecycle operations
+when another object changes. Missing context or unresolved dependencies refuse
+the batch instead of implying absence.
 Completed refusals carry structured diagnostics without operations. The host
 converts them to `featureplan.RefusalError` before lowering the plan. Provider
 failures and cancellation return no diagnostics or operations.

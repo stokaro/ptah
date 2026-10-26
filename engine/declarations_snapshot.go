@@ -13,7 +13,7 @@ import (
 func (r *Runtime) snapshotDeclarations(ctx context.Context, request featureplan.DeclarationRequest) (featureplan.DeclarationRequest, error) {
 	// Creation and migration use the same isolation and metadata validation.
 	// Only declared tables are supplied here; no catalog state is synthesized.
-	planning := featureplan.Request{Identifiers: request.Identifiers, Capabilities: request.Capabilities,
+	planning := featureplan.Request{Target: request.Target, Identifiers: request.Identifiers, Capabilities: request.Capabilities,
 		CommonSteps: request.CommonSteps, Tables: declarationTables(request), Types: featureplan.TypeContext{Desired: request.Types}}
 	for _, table := range planning.Tables {
 		if !table.Desired.HasTable() {

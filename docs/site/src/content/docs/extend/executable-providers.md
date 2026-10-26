@@ -77,6 +77,14 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+Providers can negotiate `schema.observed-columns` to return complete common
+column facts during inspection. The host preserves type metadata, default
+presence, generated expressions, identity and sequence settings, comments, and
+constraints. Each column has one observed record with its exact name and
+position. Legacy scalar fields cannot accompany that record, and missing or
+contradictory facts refuse the whole snapshot. Native facets remain attached to
+the same column and carry only their separately owned settings.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
@@ -116,7 +124,19 @@ declared one with "comparison requires one captured target profile".
 An inspected catalog retains the opened session's database binding, including
 a selected dev realm, even when the selected scope is empty. Comparison and
 planning receive that binding so they can resolve absolute object references.
-A saved schema description does not carry it to another target.
+
+With negotiated `database.context` and `values.context`, the selected provider
+resolves the target address without opening a database. Its receipt separates
+the execution database from the root of authored absolute references. Source
+loads bind owned values before scope selection and dependency collection;
+SQL parsing receives the authored root. Object identities and target scopes
+stay unchanged. Without an address, parsing retains values that need context,
+and dependency consumers refuse them until binding succeeds.
+
+Captured models and their conversions retain this context. A bound model cannot
+be rebound to another target. Saved-plan target digests include both roots, and
+native operation dispatch checks the captured context against the session.
+Neither the captured context nor the digest contains the connection address.
 
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.

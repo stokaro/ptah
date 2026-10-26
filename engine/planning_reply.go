@@ -27,12 +27,15 @@ func (r *Runtime) validatePlanningReply(ctx context.Context, service int, reques
 	if err != nil {
 		return featureplan.Result{}, err
 	}
-	result := featureplan.Result{Complete: true, Contributions: contributions, Changes: slices.Clone(reply.Changes), Parents: slices.Clone(reply.Parents)}
+	result := featureplan.Result{Complete: true, Contributions: contributions, Changes: slices.Clone(reply.Changes), Parents: slices.Clone(reply.Parents), Objects: slices.Clone(reply.Objects)}
 	covered := make(map[plangraph.StepID]bool)
 	if err := validatePlannedChanges(request.Changes, result.Changes, steps, covered); err != nil {
 		return featureplan.Result{}, err
 	}
 	if err := validatePlannedParents(request, result.Parents, steps, covered); err != nil {
+		return featureplan.Result{}, err
+	}
+	if err := validatePlannedObjects(request, result.Objects, steps, covered); err != nil {
 		return featureplan.Result{}, err
 	}
 	if len(covered) != len(steps) {
@@ -91,6 +94,9 @@ func validatePlanningDiagnostics(request featureplan.Request, diagnostics []feat
 		}
 		if diagnostic.Parent != nil && !slices.Contains(request.ParentKinds, kind) {
 			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic names an unassigned parent kind", schemaext.ErrInvalidValue)
+		}
+		if diagnostic.ContextObject != nil && (!slices.Contains(request.ContextKinds, kind) || kind != schemaext.Kind(request.Objects.AllSubjects()[*diagnostic.ContextObject].Kind)) {
+			return featureplan.Result{}, fmt.Errorf("%w: planning diagnostic changed its context object kind", schemaext.ErrInvalidValue)
 		}
 		result.Diagnostics[i] = diagnostic.Clone()
 	}

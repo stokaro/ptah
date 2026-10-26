@@ -55,7 +55,7 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -146,7 +146,7 @@ func main() {
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
 	p := &owner{Provider: &backend.Provider{},
-		nativeUnits:    mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit",
+		nativeUnits:    mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context",
 		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit", ownedEdits: mode == "owned-edit",
 		rebuilds: mode == "policy", transactionalDDL: transactional, operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
@@ -154,6 +154,9 @@ func main() {
 		server.ExecutionInputs = p
 		server.History = p
 		server.Statements = &statements.Service{Sessions: p}
+	}
+	if mode == "object-context" {
+		configureObjectContext(d)
 	}
 	if mode == "declarations" {
 		configureDeclarations(d)

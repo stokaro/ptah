@@ -65,6 +65,12 @@ type Request struct {
 	// ParentKinds is the model vocabulary assigned to this service. The
 	// selected runtime derives it from registration; callers cannot narrow it.
 	ParentKinds []schemaext.Kind
+	// Objects retains native objects across the whole selected provider, even
+	// when this service has no comparison change for them.
+	Objects ObjectContext
+	// ContextKinds assigns native object assessment independently of changes.
+	// The selected runtime derives it from registration.
+	ContextKinds []schemaext.Kind
 	// DatabasePath is the absolute path of the database the plan runs
 	// against, such as /local, and empty when the target has none or the
 	// host does not know it, as for a declaration rendered without a
@@ -223,7 +229,7 @@ func (p Phase) Valid() bool {
 // ChangePlan accounts for one input change, preserving its subject and kind.
 // Steps names the operations that implement it. An empty list is an explicit
 // no-op and still requires a nonempty Strategy. Several changes may share a
-// step, but every contributed step must be accounted for by a change or parent.
+// step, but every contributed step must be accounted for by a change, parent, or object.
 type ChangePlan struct {
 	Subject  objectidentity.ID
 	Kind     schemaext.Kind
@@ -244,11 +250,14 @@ type Result struct {
 	// Parents accounts for every table with an Action, in table order, and
 	// every assigned ParentKind, in kind order. Missing receipts are errors.
 	Parents []ParentPlan
+	// Objects accounts for the exact union of the assigned ContextKinds, in
+	// ObjectContext.Subjects order. Every assigned object needs a receipt.
+	Objects []ObjectPlan
 	// Rewrites transfers explicitly claimed common steps to contributed units.
 	// The host validates and applies these claims before scheduling the graph.
 	Rewrites []plangraph.Rewrite
 	// Diagnostics describes a completed refusal. A refused batch carries no
-	// contributions, rewrites, or change/parent receipts, including a successful prefix.
+	// contributions, rewrites, or change/parent/object receipts, including a successful prefix.
 	Diagnostics []Diagnostic
 }
 

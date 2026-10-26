@@ -17,7 +17,7 @@ import (
 func main() {
 	description := backend.Description()
 	description.SemanticIdentity += "-column-semantics"
-	features := []string{provider.ColumnsFeature, provider.ProjectTableCreationsFeature, provider.PrepareTablesFeature, provider.ValidateSchemaFeature}
+	features := []string{provider.ObservedColumnsFeature, provider.ColumnsFeature, provider.ProjectTableCreationsFeature, provider.PrepareTablesFeature, provider.ValidateSchemaFeature}
 	description.Features = append(description.Features, features...)
 	engine := description.Engines[0]
 	engine.Aliases = append(engine.Aliases, "fixture-columns")

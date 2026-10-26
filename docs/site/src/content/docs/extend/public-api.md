@@ -238,10 +238,18 @@ The schema census discards its measurement when any selected service fails,
 including after earlier cells completed.
 
 `Runtime.PlanFeatures` returns `featureplan.Diagnostic` data with original change
-or parent indexes. Refusals discard all operations and receipts; service failures
+or parent indexes and context-object indexes into `Request.Objects.AllSubjects()`.
+Refusals discard all operations and receipts; service failures
 and cancellation also discard diagnostics. Call `Result.Err(request)` before
 lowering operations. Its `featureplan.RefusalError` preserves the report and error
 identities. Process adapters transfer diagnostic data instead of Go errors.
+
+`Provider.Planning.ContextKinds` assigns object assessment independently of
+schema changes. `Request.Objects` preserves both schema representations and
+their coverage; every assigned object needs an `ObjectPlan` receipt. The runtime
+invokes context planners even when no objects changed, so an unchanged dependent
+can contribute lifecycle operations. Unknown coverage remains unknown, and
+unresolved `schemaext.Requirer` dependencies return an error before selection.
 
 `featureplan.Request.Types` carries desired and observed type identities and
 references, including unchanged types. `DeclarationRequest.Types` supplies the
