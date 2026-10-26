@@ -607,7 +607,9 @@ var viewRebuildForwardCases = []viewRebuildCase{
 			"relation order_report options= acl= comment=",
 			"relation order_totals options= acl= comment=",
 			"populated order_totals=true",
-			"routine report_total() strict=false parallel=u definer=false config= acl=default comment=",
+			// Restoring the old owner's EXECUTE materializes the default
+			// PUBLIC grant in proacl, without changing who may execute it.
+			"routine report_total() strict=false parallel=u definer=false config= acl==X/{owner} comment=",
 		},
 	},
 	{
