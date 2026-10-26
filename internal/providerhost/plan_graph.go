@@ -35,7 +35,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	}
 	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
 		Creation: creationStart, Dependent: removalStart, Removal: removalStart,
-		Lifecycle: &featurehost.Span{Start: 0, End: len(nodes)},
+		Lifecycle:     &featurehost.Span{Start: 0, End: len(nodes)},
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
 		Types:         &featurehost.TypeWindows{Creation: featurehost.Span{}, Removal: featurehost.Span{Start: len(nodes), End: len(nodes)}},
 	})
