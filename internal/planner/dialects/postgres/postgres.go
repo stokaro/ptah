@@ -2044,15 +2044,29 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeSequences(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
-	result = p.removeFunctions(result, diff, ahead)
+	result = p.removeFunctions(result, diff, ahead, false)
 
-	// 14. Remove roles (must be done after removing functions and policies that depend on them)
-	result = p.removeRoles(result, diff)
+	// 14. Ordinarily roles leave after routines and before types. If a removed
+	// domain still holds a routine, keep roles until after that routine leaves.
+	postTypeRoutines := slices.ContainsFunc(diff.FunctionsRemoved, func(routine difftypes.RoutineChange) bool {
+		return removedDomainCallsRoutine(diff, routine)
+	}) || slices.ContainsFunc(diff.ProceduresRemoved, func(routine difftypes.RoutineChange) bool {
+		return removedDomainCallsRoutine(diff, routine)
+	})
+	if !postTypeRoutines {
+		result = p.removeRoles(result, diff)
+	}
 
-	// 15. Remove enums (dangerous!). The type phase's drops go first: after
-	// the tables, routines and roles that may use a type are gone, and before
-	// the enums a type may name.
+	// 15. The type phase's drops run after tables and routines that may use a
+	// type. A removed domain whose CHECK or DEFAULT calls a removed routine
+	// leaves here, before that routine: PostgreSQL records the dependency.
 	types.Removal = featurehost.Span{Start: len(result), End: len(result)}
+	result = p.removeFunctions(result, diff, ahead, true)
+	if postTypeRoutines {
+		result = p.removeRoles(result, diff)
+	}
+
+	// 16. Remove enums after domains that may use them.
 	result = p.removeEnums(result, diff)
 
 	prerequisites.Removal = len(result)
@@ -2344,14 +2358,14 @@ func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
 
-func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead) []ast.Node {
+func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, afterTypes bool) []ast.Node {
 	for _, routine := range diff.FunctionsRemoved {
-		if !ahead.moves(routine) {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == afterTypes {
 			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindFunction))
 		}
 	}
 	for _, routine := range diff.ProceduresRemoved {
-		if !ahead.moves(routine) {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == afterTypes {
 			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindProcedure))
 		}
 	}

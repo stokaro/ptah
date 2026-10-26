@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,6 +10,7 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -36,6 +38,27 @@ func renderedTypePlan(c *qt.C, diff *difftypes.SchemaDiff) string {
 	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
+}
+
+// TestPlanner_DropsDomainCheckBeforeItsRoutine pins a PostgreSQL dependency:
+// a removed domain CHECK still calls its routine until the domain is gone.
+// Dropping the routine first is refused with 2BP01.
+func TestPlanner_DropsDomainCheckBeforeItsRoutine(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{typeRecord(pgtype.DomainKind, "", "qty", &pgtype.DomainChange{
+			Before: &pgtype.ObservedDomain{BaseType: "integer", Check: "f(VALUE)",
+				Checks: []pgtype.DomainCheck{{Name: "qty_check", Expression: "f(VALUE)"}}},
+		})},
+		FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "f", Parameters: "x integer", Returns: "boolean"}, Signature: new("x integer")}},
+	}
+
+	sql := renderedTypePlan(c, diff)
+	domain := strings.Index(sql, `DROP DOMAIN IF EXISTS "qty"`)
+	function := strings.Index(sql, `DROP FUNCTION IF EXISTS "f"(x integer)`)
+	c.Assert(domain, qt.Not(qt.Equals), -1, qt.Commentf("plan:\n%s", sql))
+	c.Assert(function, qt.Not(qt.Equals), -1, qt.Commentf("plan:\n%s", sql))
+	c.Assert(domain < function, qt.IsTrue, qt.Commentf("plan:\n%s", sql))
 }
 
 // TestPlanner_PlansOwnerTypes pins the script the PostgreSQL planner writes

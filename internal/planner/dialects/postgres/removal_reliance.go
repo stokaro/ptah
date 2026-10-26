@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
@@ -234,6 +235,9 @@ func routineKey(routine difftypes.RoutineChange) string {
 // before relation drops and therefore does not hold the routine back.
 func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, rebuild viewRebuild, earlyColumns map[string]bool) bool {
 	name := unqualified(routine.Name)
+	if removedDomainCallsRoutine(diff, routine) {
+		return true
+	}
 	bodies := tableDefinitions(diff, earlyColumns)
 	for _, view := range diff.DeclaredViewLikes.Views {
 		bodies = append(bodies, view.Body)
@@ -257,6 +261,30 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 	return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
 		return capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff))
 	})
+}
+
+// removedDomainCallsRoutine reports a removed domain whose CHECK or DEFAULT
+// calls routine. PostgreSQL records that dependency, so the domain must leave
+// before the routine. A routine the domain calls cannot move ahead of a
+// relation while the domain remains.
+func removedDomainCallsRoutine(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange) bool {
+	name := unqualified(routine.Name)
+	for _, record := range diff.FeatureChanges {
+		change, ok := record.Value.(*pgtype.DomainChange)
+		if !ok || change == nil || change.Before == nil || change.After != nil {
+			continue
+		}
+		before := change.Before
+		if deporder.ReferencesIdentifier(before.Check, name) || deporder.ReferencesIdentifier(before.Default, name) {
+			return true
+		}
+		if slices.ContainsFunc(before.Checks, func(check pgtype.DomainCheck) bool {
+			return deporder.ReferencesIdentifier(check.Expression, name)
+		}) {
+			return true
+		}
+	}
+	return false
 }
 
 // tableDefinitions is the text of every definition the plan drops with a
