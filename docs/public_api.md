@@ -725,7 +725,9 @@ An unavailable parent planning service is an error even for an empty capture.
 table, its columns, indexes, constraints and triggers, in owned objects, and in
 coverage records under it; the runtime refuses an action on a table any of them
 has no owner for, and a host that sends only such tables asks the same
-question.
+question. `engine.Runtime.ParentKinds` lists a target's registered
+`ParentKinds`, sorted, and implements `featureplan.ParentVocabulary`, which a
+host asks before it makes namespace claims under a captured table.
 
 Each `ParentPlan` accounts for one model and table action, preserving the exact
 subject, kind, and action. Its strategy describes how the parent operation treats
@@ -4647,6 +4649,13 @@ elements, predicate, timing and comment from the captured feature objects.
 The entry point takes the caller's context and propagates service failures and
 cancellation. `PriorSchema` retains the converted rollback target, so rendering
 does not select another runtime or reconstruct the target again.
+
+A restored table keeps the capture's knowledge of each attached kind the
+runtime names through `featureplan.ParentVocabulary` as a claim of its own. A
+kind no table on the target holds, such as PostgreSQL default privileges, keeps
+only a claim the capture made on the table itself. A runtime without the
+vocabulary keeps a claim for every captured kind, and the rollback of a removed
+table that holds owned state is then refused.
 
 `SchemaDirectionPlan.Recovery` retains owner-provided reversal assessments.
 Reverse AST nodes include their strategy and every recovery limit as comments.

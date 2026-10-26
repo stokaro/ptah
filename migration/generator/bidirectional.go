@@ -7,6 +7,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -165,7 +166,8 @@ func PlanBidirectionalSchemaDiff(
 		return nil, fmt.Errorf("invalid capabilities for %s: %w", dialect, err)
 	}
 
-	current, err := restoreTableSource(opts.Diff, opts.CurrentSchema, dialect)
+	vocabulary, _ := opts.Runtime.(featureplan.ParentVocabulary)
+	current, err := restoreTableSource(opts.Diff, opts.CurrentSchema, dialect, vocabulary)
 	if err != nil {
 		return nil, err
 	}
