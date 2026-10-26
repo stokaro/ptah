@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/selectext"
 	"ptah.run/engine"
 )
 
@@ -35,6 +36,9 @@ func (h *Host) Provider() engine.Provider {
 	}
 	if len(result.Codecs) > 0 {
 		result.ModelDecoder = &schemaext.BatchDecoder{Decode: h.decodeModels}
+	}
+	if h.selections != nil {
+		result.Selections = []selectext.Extension{h.selections.extension}
 	}
 	for _, declared := range h.description.GetEngines() {
 		selected := h.targets[declared.GetId()]

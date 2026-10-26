@@ -40,6 +40,9 @@ func (h *Host) decodedValue(engine string, source *protocol.SourceModelValue) (d
 	if err != nil {
 		return decodedSourceValue{}, err
 	}
+	if err := h.selections.fit(subject); err != nil {
+		return decodedSourceValue{}, err
+	}
 	return decodedSourceValue{kind: kind, subject: subject, value: resolved}, nil
 }
 

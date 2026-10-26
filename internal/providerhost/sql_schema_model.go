@@ -286,6 +286,9 @@ func (t *target) sqlNativeObjects(ctx context.Context, envelopes []*protocol.Env
 		if err != nil {
 			return schemaext.Objects{}, err
 		}
+		if err := t.host.selections.fit(subject); err != nil {
+			return schemaext.Objects{}, err
+		}
 		objects, err = objects.With(schemaext.Object{Ref: subject, Value: resolved, Targets: []string{t.engine.GetId()}})
 		if err != nil {
 			return schemaext.Objects{}, err

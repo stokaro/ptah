@@ -73,7 +73,11 @@ func observedFacets(values []observedValue, engine string) (schemaext.Facets, er
 // rules first. Native identities retain the owner's structured components.
 func (r reader) observedIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
 	if source.GetKind() != "table" && source.GetKind() != "column" {
-		return sourceIdentity(source, normalized)
+		id, err := sourceIdentity(source, normalized)
+		if err != nil {
+			return objectidentity.ID{}, err
+		}
+		return id, r.session.target.host.selections.fit(id)
 	}
 	if source.GetDatabase() != r.session.remote.GetDatabase() || normalized.GetDatabase() != source.GetDatabase() ||
 		source.GetCatalog() != "" || normalized.GetCatalog() != "" || len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
