@@ -29,7 +29,7 @@ func TestIndependentProviderBindsContextWithoutOpeningAndPreservesObservationFac
 	features := []string{provider.DatabaseContextFeature, provider.ValueContextFeature, provider.CommonObjectsFeature, provider.CommonViewFacetsFeature, provider.ObservedColumnsFeature, provider.PlanningObjectContextFeature}
 	client := start(c, transport.Options{Executable: binary, SHA256: hex.EncodeToString(checksum[:]), ProviderID: "example.org/fixture", RequiredFeatures: features, HostFeatures: features})
 	engine := client.Description().Engines[0]
-	c.Assert(slices.Contains(engine.Aliases, "fixture-context"), qt.IsTrue)
+	c.Assert(engine.Aliases, qt.Contains, "fixture-context")
 	path := filepath.Join(c.TempDir(), "database.db")
 	address := (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/"), RawQuery: url.Values{"source": {"/authored"}}.Encode()}).String()
 	request := &protocol.DatabaseContextRequest{Engine: "fixture", Address: address}
