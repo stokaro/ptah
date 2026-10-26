@@ -47,15 +47,17 @@ func TestReverseObjectContextUsesCompleteProjectionsAndKeepsSiblings(t *testing.
 }
 
 func TestReverseObjectContextMissingProjectionIsUnknown(t *testing.T) {
-	for _, enrolled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "missing namespace", true: "complete namespace"}[enrolled], func(t *testing.T) {
+	complete := must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	for _, test := range []struct {
+		name     string
+		coverage schemaext.Coverage
+		sibling  schemaext.KnowledgeState
+	}{{"missing namespace", schemaext.Coverage{}, schemaext.Uninspected}, {"complete namespace", complete, schemaext.Complete}} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runtime := must.Must(builtin.New())
 			object := ydbtopic.ObservedObject("app", "topic", ydbtopic.Spec{MinActivePartitions: 2})
-			captured := difftypes.FeatureContext{CurrentObjects: must.Must(schemaext.NewObjects(object))}
-			if enrolled {
-				captured.CurrentCoverage = must.Must(ydbtopic.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
-			}
+			captured := difftypes.FeatureContext{CurrentObjects: must.Must(schemaext.NewObjects(object)), CurrentCoverage: test.coverage}
 			result, err := reverseObjectContext(t.Context(), captured, []schemaext.Reversal{{Change: schemaext.ChangeRecord{Subject: object.Ref}}}, "ydb", runtime)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result.CurrentObjects.Len(), qt.Equals, 0)
@@ -64,11 +66,7 @@ func TestReverseObjectContextMissingProjectionIsUnknown(t *testing.T) {
 			c.Assert(knowledge.Reason, qt.Contains, "did not predict")
 			c.Assert(result.DesiredObjects.Len(), qt.Equals, 1)
 			sibling := ydbtopic.Ref("app", "unread")
-			want := schemaext.Complete
-			if !enrolled {
-				want = schemaext.Uninspected
-			}
-			c.Assert(result.CurrentCoverage.Lookup(ydbtopic.Kind, sibling).State, qt.Equals, want)
+			c.Assert(result.CurrentCoverage.Lookup(ydbtopic.Kind, sibling).State, qt.Equals, test.sibling)
 		})
 	}
 }

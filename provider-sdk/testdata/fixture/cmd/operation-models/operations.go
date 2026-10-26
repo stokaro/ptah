@@ -163,11 +163,13 @@ func (p *owner) NormalizeValues(ctx context.Context, r *protocol.NormalizeValues
 			return nil, err
 		}
 		if input.GetValue().GetKind() == contextObjectKind {
- value, err := normalizeContextObject(input)
- if err != nil { return nil, err }
- result.Values = append(result.Values, value)
- continue
- }
+			value, err := normalizeContextObject(input)
+			if err != nil {
+				return nil, err
+			}
+			result.Values = append(result.Values, value)
+			continue
+		}
 		if input.GetRepresentation() == protocol.ValueInput_DESIRED && input.GetValue().GetKind() == declarationKind {
 			value, err := normalizeDeclaration(input)
 			if err != nil {

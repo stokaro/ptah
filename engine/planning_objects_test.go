@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"testing"
 
@@ -210,7 +209,7 @@ func TestPlanningRemapsObjectDiagnosticsAcrossServices(t *testing.T) {
 	c.Assert(result.Contributions, qt.HasLen, 0)
 	c.Assert(*result.Diagnostics[0].ContextObject, qt.Equals, 1)
 	var refused *featureplan.RefusalError
-	c.Assert(errors.As(result.Err(request), &refused), qt.IsTrue)
+	c.Assert(result.Err(request), qt.ErrorAs, &refused)
 }
 
 func TestPlanningChangedSubjectsComeFromTheCompleteAcceptedBatch(t *testing.T) {
@@ -239,8 +238,8 @@ func TestPlanningChangedSubjectsComeFromTheCompleteAcceptedBatch(t *testing.T) {
 }
 
 func TestPlanningDependencyReadinessRefusesBeforeDispatch(t *testing.T) {
-	for _, observed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "desired", true: "current"}[observed], func(t *testing.T) {
+	for index, name := range []string{"desired", "current"} {
+		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
 			calls := 0
 			p := objectPlanningProvider(planningFunc(func(ctx context.Context, r featureplan.Request) (featureplan.Result, error) {
@@ -250,11 +249,8 @@ func TestPlanningDependencyReadinessRefusesBeforeDispatch(t *testing.T) {
 			objects, err := schemaext.NewObjects(schemaext.Object{Ref: comparedRef(conversionFirst, "pending"), Value: &conversionValue{ID: conversionFirst, NeedsError: true}})
 			c.Assert(err, qt.IsNil)
 			request := featureplan.Request{Target: "custom"}
-			if observed {
-				request.Objects.Current.Objects = objects
-			} else {
-				request.Objects.Desired.Objects = objects
-			}
+			states := []*schemaext.ObjectState{&request.Objects.Desired, &request.Objects.Current}
+			states[index].Objects = objects
 			result, err := mustRuntime(c, p).PlanFeatures(t.Context(), request)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(result, qt.DeepEquals, featureplan.Result{})
@@ -284,4 +280,27 @@ func TestPlanningObjectUnionPreservesDesiredSpellingWithoutParentReceipts(t *tes
 	c.Assert(result.Objects, qt.HasLen, 2)
 	c.Assert(result.Objects[0].Subject, qt.Equals, desired)
 	c.Assert(result.Objects[1].Subject, qt.Equals, missing)
+}
+
+func TestPlanningDiagnosticKeepsCallerIndexAcrossTargetFiltering(t *testing.T) {
+	c := qt.New(t)
+	p := objectPlanningProvider(planningFunc(func(_ context.Context, r featureplan.Request) (featureplan.Result, error) {
+		c.Assert(r.Objects.AllSubjects(), qt.HasLen, 2)
+		c.Assert(r.Objects.AllSubjects()[0], qt.Equals, comparedRef(conversionFirst, "first"))
+		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{
+			ContextObject: new(0),
+			Problem:       schemavalidation.Diagnostic{Code: schemavalidation.InvalidSchema, Kind: string(conversionFirst), Message: "dependency cannot be resolved"},
+		}}}, nil
+	}))
+	p.Targets = append(p.Targets, engine.Target{Name: "other"})
+	runtime := mustRuntime(c, p)
+	request := objectPlanningRequest(c)
+	request.Objects.Desired.Coverage = comparisonCoverage(c, runtime.Codecs(), schemaext.Uninspected,
+		schemaext.SubjectCoverage{Kind: conversionFirst, Subject: comparedRef(conversionFirst, "earlier"), Targets: []string{"other"}, Knowledge: schemaext.Knowledge{State: schemaext.Uninspected, Reason: "another target"}})
+	c.Assert(request.Objects.AllSubjects(), qt.HasLen, 3)
+	result, err := runtime.PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Diagnostics, qt.HasLen, 1)
+	c.Assert(*result.Diagnostics[0].ContextObject, qt.Equals, 1)
+	c.Assert(result.ValidateOutcome(request), qt.IsNil)
 }

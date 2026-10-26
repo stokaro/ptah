@@ -74,7 +74,7 @@ func (p *owner) planObjectContext(ctx context.Context, request *protocol.PlanFea
 					return nil, err
 				}
 				step := &protocol.PlanningStep{
-					Id: &protocol.StepIdentity{Owner: contribution.Owner, Name: value.Id},
+					Id:        &protocol.StepIdentity{Owner: contribution.Owner, Name: value.Id},
 					Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT, Phase: protocol.PlanningOperation_LIFECYCLE},
 					Metadata: &protocol.PlanningMetadata{
 						Transaction: protocol.PlanningMetadata_FORBIDDEN, Impact: value.OperationSemantics.Impact, Reason: value.OperationSemantics.Reason,

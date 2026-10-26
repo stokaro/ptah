@@ -155,7 +155,9 @@ func main() {
 		server.History = p
 		server.Statements = &statements.Service{Sessions: p}
 	}
-	if mode == "object-context" { configureObjectContext(d) }
+	if mode == "object-context" {
+		configureObjectContext(d)
+	}
 	if mode == "declarations" {
 		configureDeclarations(d)
 		server.Declarations, server.SchemaValidator = p, p

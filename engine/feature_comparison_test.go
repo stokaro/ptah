@@ -123,8 +123,11 @@ func TestFeatureComparisonRejectsAmbiguousModelRole(t *testing.T) {
 }
 
 func TestFeatureComparisonRefusesUnresolvedRequirementsBeforeOwnersRun(t *testing.T) {
-	for _, facet := range []bool{false, true} {
-		t.Run(map[bool]string{false: "object", true: "facet"}[facet], func(t *testing.T) {
+	for _, test := range []struct {
+		name                    string
+		objectError, facetError bool
+	}{{"object", true, false}, {"facet", false, true}} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			calls := 0
 			runtime := mustRuntime(c, combinedProvider(comparisonFunc(func(ctx context.Context, r schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
@@ -135,11 +138,8 @@ func TestFeatureComparisonRefusesUnresolvedRequirementsBeforeOwnersRun(t *testin
 				return changedFacet(ctx, r)
 			})))
 			request := combinedRequest(c)
-			if facet {
-				request.Desired.Facets[0].Values = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionSecond, NeedsError: true}))
-			} else {
-				request.Desired.Objects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: comparedRef(conversionFirst, "first"), Value: &conversionValue{ID: conversionFirst, NeedsError: true}}))
-			}
+			request.Desired.Facets[0].Values = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionSecond, NeedsError: test.facetError}))
+			request.Desired.Objects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: comparedRef(conversionFirst, "first"), Value: &conversionValue{ID: conversionFirst, NeedsError: test.objectError}}))
 			result, err := runtime.CompareFeatures(t.Context(), request)
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(result, qt.DeepEquals, schemaext.ComparisonResult{})
