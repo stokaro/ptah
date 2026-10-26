@@ -121,6 +121,13 @@ var golangMigrateUnwrappedCases = []struct {
 		wantApplied: 1,
 	},
 	{
+		name:        "a lone concurrent reindex",
+		body:        "REINDEX TABLE CONCURRENTLY owntx_base_%[1]s;\n",
+		txMode:      migrator.MigrationTxModeFile,
+		wantTables:  nil,
+		wantApplied: 1,
+	},
+	{
 		name:        "a ROLLBACK",
 		body:        "BEGIN;\nCREATE TABLE owntx_a_%[1]s (id int);\nROLLBACK;\nCREATE TABLE owntx_b_%[1]s (id int);\n",
 		txMode:      migrator.MigrationTxModeFile,
@@ -366,4 +373,21 @@ func TestMigrateUpOwnTransactions_RefusalAdviceFitsTheRunnerLive(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*cannot run inside a transaction: .*; move the statement into a migration file of its own, `+
 		`which runs without a transaction.*`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "no_transaction")
+}
+
+// A session that dies while it runs the file's transaction ends the
+// transaction with it. The failure names the statement that was running, and
+// says nothing more about the session it can no longer discard.
+func TestMigrateUpOwnTransactions_SessionDiesInsideTheFilesTransactionLive(t *testing.T) {
+	c := qt.New(t)
+	run := newOwnTransactionsRun(c, postgresTestURL(t),
+		"BEGIN;\nCREATE TABLE owntx_a_%[1]s (id int);\nSELECT pg_terminate_backend(pg_backend_pid());\nCOMMIT;\n")
+
+	err := run.migrator(c, migrator.WithOwnTransactions()).MigrateUp(context.Background())
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*SQL: SELECT pg_terminate_backend\(pg_backend_pid\(\)\).*`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "discard pinned database session")
+	c.Assert(run.tables(c), qt.IsNil)
+	applied, _ := run.revision(c)
+	c.Assert(applied, qt.Equals, 0)
 }
