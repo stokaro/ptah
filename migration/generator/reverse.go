@@ -9,6 +9,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
@@ -69,11 +71,15 @@ func reverseSchemaDiffWithPrior(
 	dbSchema *catalog.Database,
 	prior *schemamodel.Database,
 	dialect string,
+	caps capability.Capabilities,
 ) *difftypes.SchemaDiff {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	var routineGrants struct{ granted, revoked []difftypes.GrantRef }
-	routineGrants.granted, routineGrants.revoked = routineGrantsFromRemovals(
-		append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema)
+	if descriptor, ok := platform.Lookup(dialect); ok &&
+		descriptor.Conversion.ImplicitRoutineGrants && caps.Has(capability.RoleManagement) {
+		routineGrants.granted, routineGrants.revoked = routineGrantsFromRemovals(
+			append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema)
+	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 		TablePreparation:    cloneTablePreparation(diff.TablePreparation),

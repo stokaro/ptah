@@ -174,13 +174,12 @@ func refuseUnrestorableRoutines(diff *difftypes.SchemaDiff, current *catalog.Dat
 // routines it creates again, as the pre-change database held them.
 //
 // A routine PostgreSQL creates holds its default ACL: its owner and PUBLIC
-// may execute it. The read reports that as an implicit PUBLIC EXECUTE, and an
-// ACL that revoked it reports no PUBLIC row at all. So a routine whose read
-// has no PUBLIC EXECUTE gets that privilege revoked, and every privilege the
-// read reports for another role, grant option included, is granted again. A
-// role's privilege granted by itself is the owner's own, which the new routine
-// holds already. Without this a SECURITY DEFINER function revoked from PUBLIC
-// came back executable by everyone.
+// may execute it. The read reports those as implicit grants. An ACL that
+// revoked PUBLIC reports the owner but no PUBLIC row. A read that excluded
+// grants reports neither, and cannot justify a revoke. The old owner also
+// needs an explicit grant after the migrator re-creates the routine: the
+// migrator may be a different role. Without these rules a SECURITY DEFINER
+// function can come back with broader or narrower access.
 func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *catalog.Database) (granted, revoked []difftypes.GrantRef) {
 	if current == nil {
 		return nil, nil
@@ -202,10 +201,12 @@ func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *cata
 				ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, WithOption: withOption}
 		}
 		publicExecutes := false
+		grantsObserved := false
 		for _, grant := range current.Grants {
 			if !grantOnRoutine(grant, function, objectType) {
 				continue
 			}
+			grantsObserved = true
 			role := strings.TrimSpace(grant.Role)
 			privilege := strings.ToUpper(strings.TrimSpace(grant.Privilege))
 			if strings.EqualFold(role, "PUBLIC") && privilege == "EXECUTE" {
@@ -214,12 +215,21 @@ func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *cata
 					continue
 				}
 			}
+			if grant.Implicit && !strings.EqualFold(role, "PUBLIC") {
+				// The old owner is implicit in the old catalog, but the new
+				// routine belongs to the migrator. A blank privilege records
+				// that the ACL was read and the owner revoked EXECUTE.
+				if privilege != "" {
+					granted = append(granted, target(role, privilege, "", false))
+				}
+				continue
+			}
 			if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
 				continue
 			}
 			granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), grant.WithOption))
 		}
-		if !publicExecutes {
+		if grantsObserved && !publicExecutes {
 			revoked = append(revoked, target("PUBLIC", "EXECUTE", "", false))
 		}
 	}

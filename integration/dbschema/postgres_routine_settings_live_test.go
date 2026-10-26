@@ -49,9 +49,9 @@ function "pinned" {
 //  1. The rendered SET clause is one PostgreSQL takes. It sits after the
 //     language and security clauses and before the body, and an offline test
 //     comparing strings cannot tell a valid position from an invalid one.
-//  2. pg_proc.proconfig reports the setting back. The catalog stores it as
-//     `name=value`, which is the spelling the model holds, so this is where the
-//     two representations meet.
+//  2. pg_proc.proconfig reports the setting back. The reader quotes its value
+//     as SQL so a rollback can render it, and comparison normalizes that
+//     spelling against the declaration.
 //  3. Comparing the same document against what the server now holds finds
 //     nothing to do.
 func TestPostgresLiveRoutineSettingsConverge(t *testing.T) {
@@ -86,7 +86,7 @@ func TestPostgresLiveRoutineSettingsConverge(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(live.Functions, qt.HasLen, 1)
-	c.Assert(live.Functions[0].Settings, qt.DeepEquals, []string{"search_path=" + schemaName})
+	c.Assert(live.Functions[0].Settings, qt.DeepEquals, []string{"search_path='" + schemaName + "'"})
 
 	// 3. The convergence assertion.
 	settled := must.Must(schemadiff.CompareWithDialect(t.Context(), description, live, platform.Postgres, must.Must(builtin.New())))

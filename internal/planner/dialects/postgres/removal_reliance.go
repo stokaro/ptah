@@ -133,10 +133,42 @@ type routinesAhead struct {
 	moved      map[string]bool
 }
 
+// earlyGeneratedColumns identifies generated columns on kept tables that call
+// a removed routine whose signature or SQL body names a removed relation.
+// They leave before that routine and relation. Their own drop uses RESTRICT;
+// an unmodeled dependent object must make the server refuse the plan.
+func earlyGeneratedColumns(diff *difftypes.SchemaDiff) map[string]bool {
+	early := make(map[string]bool)
+	relations := removedViewLikes(diff)
+	for _, table := range diff.TablesRemoved {
+		relations = append(relations, deporder.ViewLike{Name: table.Name})
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			if strings.TrimSpace(column.GeneratedExpression) == "" {
+				continue
+			}
+			for _, routines := range []difftypes.FunctionChanges{diff.FunctionsRemoved, diff.ProceduresRemoved} {
+				for _, routine := range routines {
+					if !deporder.ReferencesIdentifier(column.GeneratedExpression, unqualified(routine.Name)) {
+						continue
+					}
+					if slices.ContainsFunc(relations, func(relation deporder.ViewLike) bool {
+						return routineNames(routine, relation.Name, relationSemantics(diff))
+					}) {
+						early[table.TableName+"\x00"+column.Name] = true
+					}
+				}
+			}
+		}
+	}
+	return early
+}
+
 // routinesAheadOf works out which removed routines the plan drops ahead of a
 // removed relation; see [routinesAhead]. Ptah's own style keeps every routine
 // in the routine step.
-func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuild) routinesAhead {
+func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuild, earlyColumns map[string]bool) routinesAhead {
 	ahead := routinesAhead{byRelation: make(map[string][]difftypes.RoutineChange), moved: make(map[string]bool)}
 	if !p.exact() {
 		return ahead
@@ -163,7 +195,7 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 					named = append(named, relation)
 				}
 			}
-			if len(named) != 1 || !removed[named[0]] || routineInUse(diff, routine, rebuild) {
+			if len(named) != 1 || !removed[named[0]] || routineInUse(diff, routine, rebuild, earlyColumns) {
 				continue
 			}
 			ahead.byRelation[named[0]] = append(ahead.byRelation[named[0]], routine)
@@ -198,14 +230,11 @@ func routineKey(routine difftypes.RoutineChange) string {
 // names it, another removed routine whose body names it, a captured object of
 // a removed table that reads it, or a definition of a removed table or a
 // dropped column that names it, such as a default, a CHECK, a generated
-// column or an index expression. A CHECK the plan removes from a table it
-// keeps carries no definition to read, so it counts as one that names it.
-func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, rebuild viewRebuild) bool {
+// column or an index expression. A CHECK removed from a kept table leaves
+// before relation drops and therefore does not hold the routine back.
+func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, rebuild viewRebuild, earlyColumns map[string]bool) bool {
 	name := unqualified(routine.Name)
-	if removesCheckOfKeptTable(diff) {
-		return true
-	}
-	bodies := tableDefinitions(diff)
+	bodies := tableDefinitions(diff, earlyColumns)
 	for _, view := range diff.DeclaredViewLikes.Views {
 		bodies = append(bodies, view.Body)
 	}
@@ -233,7 +262,7 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 // tableDefinitions is the text of every definition the plan drops with a
 // removed table or a dropped column that may call a routine: a column's
 // default and generation expression, a CHECK clause and an index definition.
-func tableDefinitions(diff *difftypes.SchemaDiff) []string {
+func tableDefinitions(diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []string {
 	var definitions []string
 	for _, removal := range diff.TablesRemoved {
 		for _, column := range removal.Current.Table.Columns {
@@ -248,23 +277,13 @@ func tableDefinitions(diff *difftypes.SchemaDiff) []string {
 	}
 	for _, table := range diff.TablesModified {
 		for _, column := range table.ColumnsRemoved {
+			if earlyColumns[table.TableName+"\x00"+column.Name] {
+				continue
+			}
 			definitions = append(definitions, column.Default, column.DefaultExpr, column.GeneratedExpression, column.Check)
 		}
 	}
 	return definitions
-}
-
-// removesCheckOfKeptTable reports whether the plan removes a CHECK from a
-// table it keeps. The removal names the constraint and not its clause, which
-// may call a routine.
-func removesCheckOfKeptTable(diff *difftypes.SchemaDiff) bool {
-	removed := make(map[string]bool, len(diff.TablesRemoved))
-	for _, removal := range diff.TablesRemoved {
-		removed[bareName(removal.Name)] = true
-	}
-	return slices.ContainsFunc(diff.ConstraintsRemoved, func(constraint difftypes.ConstraintRemovalInfo) bool {
-		return strings.EqualFold(strings.TrimSpace(constraint.Type), "CHECK") && !removed[bareName(constraint.TableName)]
-	})
 }
 
 // derefText is the text text points at, empty for nil.

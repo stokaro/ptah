@@ -109,9 +109,9 @@ func reverseOfRemoving(c *qt.C, current *catalog.Database) (string, error) {
 // pins the privileges the rollback of a removed routine gives back. A new
 // routine is executable by PUBLIC, so one whose read reports no PUBLIC
 // EXECUTE has it revoked, and the privileges of every other role, grant option
-// included, are granted again. The owner's own privilege, granted by itself,
-// is the new routine's already, and a routine that holds its default ACL gets
-// no statement at all.
+// included, are granted again. The old owner gets EXECUTE because the
+// migrator may be a different role. A read that excluded grants gives no ACL
+// evidence, so the rollback must not infer a PUBLIC revoke from it.
 func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -122,20 +122,31 @@ func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges(t 
 		{
 			name: "a function revoked from PUBLIC and granted to a role",
 			grants: []catalog.Grant{
-				executeGrant("app_owner", "app_owner", false, false),
+				executeGrant("app_owner", "", false, true),
 				executeGrant("reporting", "app_owner", false, false),
 				executeGrant("auditor", "app_owner", true, false),
 			},
 			want: []string{
 				`REVOKE EXECUTE ON FUNCTION "public"."f"(x integer) FROM PUBLIC;`,
+				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO "app_owner";`,
 				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO "reporting";`,
 				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO "auditor" WITH GRANT OPTION;`,
 			},
-			notWant: []string{`TO "app_owner"`},
 		},
 		{
 			name:    "a function that holds its default ACL",
 			grants:  []catalog.Grant{executeGrant("PUBLIC", "", false, true)},
+			notWant: []string{"REVOKE", "GRANT"},
+		},
+		{
+			name: "an owner who revoked its own EXECUTE",
+			grants: []catalog.Grant{{Role: "app_owner", ObjectType: "FUNCTION", Schema: "public", ObjectName: "f",
+				Arguments: "x integer", Implicit: true}},
+			want:    []string{`REVOKE EXECUTE ON FUNCTION "public"."f"(x integer) FROM PUBLIC;`},
+			notWant: []string{`TO "app_owner"`},
+		},
+		{
+			name:    "a read that excluded routine grants",
 			notWant: []string{"REVOKE", "GRANT"},
 		},
 	}
@@ -152,6 +163,46 @@ func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges(t 
 			for _, notWant := range test.notWant {
 				c.Assert(sql, qt.Not(qt.Contains), notWant)
 			}
+		})
+	}
+}
+
+// TestPlanBidirectionalSchemaDiff_RemovedRoutineOutsidePostgres keeps the
+// rollback of a routine usable on engines whose routine privileges Ptah does
+// not model. A PostgreSQL PUBLIC revoke on their down file is refused before
+// the file can be written.
+func TestPlanBidirectionalSchemaDiff_RemovedRoutineOutsidePostgres(t *testing.T) {
+	tests := []struct {
+		dialect string
+		schema  string
+		caps    capability.Capabilities
+	}{
+		{dialect: platform.MySQL, schema: "app", caps: capability.MySQL84()},
+		{dialect: platform.MariaDB, schema: "app", caps: capability.MariaDB1011()},
+		{dialect: platform.SQLServer, schema: "dbo", caps: capability.SQLServer2022()},
+		{dialect: platform.Oracle, schema: "APP", caps: capability.Oracle23()},
+		{dialect: platform.ClickHouse, schema: "default", caps: capability.ClickHouse24()},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			current := &catalog.Database{Functions: []catalog.Function{{
+				Name: "f", Schema: test.schema, Returns: "int", Language: "SQL", Body: "RETURN 1",
+			}}}
+			desired := &schemamodel.Database{}
+			diff := must.Must(schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current,
+				catalog.ServerInfo{Dialect: test.dialect, Schema: test.schema}, nil, runtime))
+
+			plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
+				Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current,
+				Dialect: test.dialect, Capabilities: test.caps,
+			})
+			c.Assert(err, qt.IsNil)
+			sql, err := builtin.RenderSQL(test.dialect, plan.Reverse.Nodes...)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Not(qt.Contains), "REVOKE EXECUTE")
 		})
 	}
 }

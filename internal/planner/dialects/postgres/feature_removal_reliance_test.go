@@ -146,3 +146,59 @@ func TestPlanner_ExactStyleMatchesARowTypeOfAnySchemaWhenTheSchemaIsUnknown(t *t
 		})
 	}
 }
+
+// TestPlanner_ExactStyleReleasesRemovedCheckBeforeRoutineAndView pins the
+// dependency order when a removed CHECK on a kept table may call a removed
+// routine. The CHECK must leave first; the routine can then leave ahead of a
+// view whose row type it names, without a cascading view drop.
+func TestPlanner_ExactStyleReleasesRemovedCheckBeforeRoutineAndView(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ViewsRemoved: difftypes.ViewChanges{{Name: "item_skus", Body: "SELECT 1 AS id"}},
+		FunctionsRemoved: difftypes.FunctionChanges{{
+			Function:  schemamodel.Function{Name: "sku_of", Parameters: "r item_skus", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+			Signature: new("r item_skus"),
+		}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "orders_valid", TableName: "orders", Type: "CHECK"}},
+	}
+	planner := postgres.New().WithStatementStyle(planext.StatementStyleExact)
+
+	nodes, err := planner.GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"drop constraint", "drop function", "drop view"})
+	for _, node := range nodes {
+		if drop, ok := node.(*ast.DropViewNode); ok {
+			c.Assert(drop.Cascade, qt.IsFalse)
+		}
+	}
+}
+
+// TestPlanner_ExactStyleReleasesGeneratedColumnBeforeRoutineAndView pins the
+// order for a generated column that calls a removed routine taking a removed
+// view's row type. Dropping the view with CASCADE would silently remove the
+// column, and its later explicit drop would fail.
+func TestPlanner_ExactStyleReleasesGeneratedColumnBeforeRoutineAndView(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ViewsRemoved: difftypes.ViewChanges{{Name: "item_skus", Body: "SELECT 1 AS id"}},
+		FunctionsRemoved: difftypes.FunctionChanges{{
+			Function:  schemamodel.Function{Name: "sku_of", Parameters: "r item_skus", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+			Signature: new("r item_skus"),
+		}},
+		TablesModified: []difftypes.TableDiff{{TableName: "orders", ColumnsRemoved: difftypes.ColumnChanges{{
+			Name: "computed", GeneratedExpression: "sku_of(NULL::item_skus)", GeneratedKind: "STORED",
+		}}}},
+	}
+	planner := postgres.New().WithStatementStyle(planext.StatementStyleExact)
+
+	nodes, err := planner.GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"drop column", "drop function", "drop view"})
+	for _, node := range nodes {
+		if drop, ok := node.(*ast.DropViewNode); ok {
+			c.Assert(drop.Cascade, qt.IsFalse)
+		}
+	}
+}

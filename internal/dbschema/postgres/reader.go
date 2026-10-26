@@ -4323,19 +4323,19 @@ func (r *Reader) readGrants(ctx context.Context) ([]catalog.Grant, error) {
 }
 
 // readRoutineGrantsForSchema reads the privileges on the routines
-// [describedRoutinePredicate] describes, one row per privilege.
+// [describedRoutinePredicate] describes, one row per privilege plus an owner
+// observation row for each routine.
 //
 // A routine whose pg_proc.proacl is NULL holds its default ACL, which nobody
 // wrote: measured on PostgreSQL 18, a new function is executable by PUBLIC and
 // by its owner, and the first GRANT or REVOKE on it materializes the ACL, so
 // `REVOKE ALL ... FROM PUBLIC` leaves `{owner=X/owner}`. CockroachDB 26.3
 // answers the same way: proacl is NULL on a new function, SHOW GRANTS lists
-// public EXECUTE, and the first REVOKE writes the ACL. The owner half of the
-// default is left out, as a table's is by readTableGrantsForSchema. The PUBLIC
-// half is reported as one [catalog.Grant] marked Implicit, because a schema
-// that revokes it has to see it is there. It is synthesized here rather than
-// read through acldefault, which a PostgreSQL-shaped catalog is not bound to
-// have.
+// public EXECUTE, and the first REVOKE writes the ACL. An implicit owner row
+// records that grants for the routine were read, even when the owner revoked
+// EXECUTE from itself: its privilege is empty then. An excluded grant
+// collection has no such row, and a rollback must not infer a PUBLIC revoke.
+// The PUBLIC half of a default ACL is also reported as an implicit grant.
 //
 // The argument types come from pg_get_function_identity_arguments, which the
 // routine read already asks for, so the two reads name a routine the same way.
@@ -4349,7 +4349,8 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 			COALESCE(grantee.rolname, 'PUBLIC'),
 			COALESCE(acl.privilege_type, ''),
 			COALESCE(acl.is_grantable, false),
-			COALESCE(grantor.rolname, '')
+			COALESCE(grantor.rolname, ''),
+			false
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
@@ -4363,7 +4364,26 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 		-- The same roles the table grant read leaves out.
 		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg\_%' ESCAPE '\'
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
-		ORDER BY p.proname, 2, 5, 6`
+		AND (acl.grantee IS NULL OR acl.grantee <> p.proowner)
+		UNION ALL
+		SELECT
+			p.proname,
+			pg_get_function_identity_arguments(p.oid),
+			CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+			false,
+			pg_get_userbyid(p.proowner),
+			CASE WHEN p.proacl IS NULL OR EXISTS (
+				SELECT 1 FROM aclexplode(p.proacl) owner_acl
+				WHERE owner_acl.grantee = p.proowner AND owner_acl.privilege_type = 'EXECUTE'
+			) THEN 'EXECUTE' ELSE '' END,
+			false,
+			'',
+			true
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		JOIN pg_language l ON l.oid = p.prolang
+		WHERE n.nspname = $1` + describedRoutinePredicate + `
+		ORDER BY 1, 2, 5, 6`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)
 	if err != nil {
@@ -4374,15 +4394,18 @@ func (r *Reader) readRoutineGrantsForSchema(ctx context.Context, schemaName stri
 	var grants []catalog.Grant
 	for rows.Next() {
 		grant := catalog.Grant{Schema: r.outputSchema(schemaName)}
-		var defaultACL bool
+		var defaultACL, owner bool
 		if err := rows.Scan(
 			&grant.ObjectName, &grant.Arguments, &grant.ObjectType, &defaultACL,
-			&grant.Role, &grant.Privilege, &grant.WithOption, &grant.GrantedBy,
+			&grant.Role, &grant.Privilege, &grant.WithOption, &grant.GrantedBy, &owner,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan routine grant for schema %s: %w", schemaName, err)
 		}
 		if defaultACL {
 			grant.Role, grant.Privilege, grant.WithOption, grant.GrantedBy = "PUBLIC", "EXECUTE", false, ""
+			grant.Implicit = true
+		}
+		if owner {
 			grant.Implicit = true
 		}
 		grants = append(grants, grant)

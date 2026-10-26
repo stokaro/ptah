@@ -1240,7 +1240,7 @@ func (p *Planner) dropsWithCascade() bool {
 // removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
 // longer holds. A generated column goes first: it may be computed from another
 // removed column, which a drop could otherwise take only with CASCADE.
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool) []ast.Node {
 	columns := make([]schemamodel.Field, 0, len(tableDiff.ColumnsRemoved))
 	for _, generated := range []bool{true, false} {
 		for _, column := range tableDiff.ColumnsRemoved {
@@ -1250,6 +1250,9 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.
 		}
 	}
 	for _, column := range columns {
+		if earlyColumns[tableDiff.TableName+"\x00"+column.Name] {
+			continue
+		}
 		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name))
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
@@ -1347,14 +1350,28 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
 			astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
 			result = append(result, astCommentNode)
 
 			// Remove columns (dangerous!)
-			result = p.removeTableColumnsFromDiff(result, diff, tableDiff)
+			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns)
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeEarlyGeneratedColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			if !earlyColumns[table.TableName+"\x00"+column.Name] {
+				continue
+			}
+			result = append(result, &ast.AlterTableNode{Name: table.TableName, Operations: []ast.AlterOperation{
+				&ast.DropColumnOperation{ColumnName: column.Name},
+			}})
 		}
 	}
 	return result
@@ -1886,7 +1903,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes
 	// leaves with everything that reads it. Step 6.6 puts them back.
 	rebuild := planViewRebuild(diff)
-	ahead := p.routinesAheadOf(diff, rebuild)
+	var earlyColumns map[string]bool
+	if p.exact() {
+		earlyColumns = earlyGeneratedColumns(diff)
+	}
+	ahead := p.routinesAheadOf(diff, rebuild, earlyColumns)
 	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
@@ -1987,21 +2008,29 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	// A removed CHECK on a table we keep may call a routine this plan removes.
+	// Release it before moving that routine ahead of a removed relation. The
+	// constraint's body is absent from the diff, so waiting until step 12.5
+	// would make the relation drop rely on CASCADE for an unknown reader.
+	releasedConstraints := released.ConstraintSet()
+	maps.Copy(releasedConstraints, foreignKeysReleased)
+	if p.exact() {
+		result = p.removeConstraints(result, diff, releasedConstraints, true)
+	}
 
 	// 11.9. Remove triggers and view-like objects before the columns, the
 	// constraints and the tables they depend on. A trigger may fire on UPDATE
 	// OF a column, and a view reads columns and, through GROUP BY, a primary
 	// key; dropped first, neither leaves a column drop relying on CASCADE.
 	result = p.removeTriggers(result, diff)
+	result = p.removeEarlyGeneratedColumns(result, diff, earlyColumns)
 	result = p.removeViewLikes(result, diff, rebuild, ahead)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
-	result = p.removeTableColumns(result, diff)
+	result = p.removeTableColumns(result, diff, earlyColumns)
 
 	// 12.5. Remove constraints (must be done before removing tables)
-	releasedConstraints := released.ConstraintSet()
-	maps.Copy(releasedConstraints, foreignKeysReleased)
-	result = p.removeConstraints(result, diff, releasedConstraints)
+	result = p.removeConstraints(result, diff, releasedConstraints, false)
 
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
@@ -3423,6 +3452,7 @@ func (p *Planner) removeConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	released map[constraintHostKey]struct{},
+	earlyChecks bool,
 ) []ast.Node {
 	// The pure-removal path keys its hosts by the same rule addNewConstraints
 	// does, for the same reason: the two sides of a modify spell one table two
@@ -3510,10 +3540,17 @@ func (p *Planner) removeConstraints(
 	namesWithHost := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemoved {
 		if info.TableName == "" {
+			if earlyChecks {
+				continue
+			}
 			// No host recorded for this entry; defer to the bare fallback.
 			continue
 		}
 		namesWithHost[info.Name] = struct{}{}
+		_, tableRemoved := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]
+		if (p.exact() && strings.EqualFold(strings.TrimSpace(info.Type), "CHECK") && !tableRemoved) != earlyChecks {
+			continue
+		}
 		key := info.Identity
 		if _, modified := modifySet[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
@@ -3558,6 +3595,9 @@ func (p *Planner) removeConstraints(
 	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[name] = struct{}{}
+	}
+	if earlyChecks {
+		return result
 	}
 	for _, constraintName := range constraintscope.RemovalNames(diff) {
 		if _, hadHost := namesWithHost[constraintName]; hadHost {
