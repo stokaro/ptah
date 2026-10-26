@@ -139,7 +139,7 @@ var policyLossStyles = []struct {
 	{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
 		refusal: `(?s).*drops %[1]s with CASCADE, which also drops %[2]s, whose definition reads it.*`},
 	{name: "the exact style", style: planext.StatementStyleExact,
-		refusal: `(?s).*drops %[1]s, which %[2]s reads, and PostgreSQL refuses the drop while it does.*`},
+		refusal: `(?s).*drops %[1]s, which %[2]s reads, and nothing recreates it: PostgreSQL refuses the drop while it does, and a drop with CASCADE takes it too.*`},
 }
 
 // tenantVisible is the policy the refusals name, as a pattern.
@@ -199,6 +199,38 @@ func TestGenerateSchemaDiffSQL_KeepsAPolicyNoRebuildReaches_HappyPath(t *testing
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.HasLen, 1)
 			c.Assert(statements[0], qt.Contains, `ALTER COLUMN "active" SET NOT NULL`)
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQL_RemovesAPolicyWithTheViewItReads_HappyPath pins
+// the policy the plan removes: the declaration drops the view and the policy
+// that reads it, so the drop of the view loses nothing the schema declares.
+// The plan drops the policy first, and the view after it needs no CASCADE.
+// The exact style keeps IF EXISTS on the view: the policy's drop is an owner
+// operation, which may remove objects the plan cannot name.
+func TestGenerateSchemaDiffSQL_RemovesAPolicyWithTheViewItReads_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		style planext.StatementStyle
+		want  []string
+	}{
+		{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
+			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW IF EXISTS "active_tenants" CASCADE`}},
+		{name: "the exact style", style: planext.StatementStyleExact,
+			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW IF EXISTS "active_tenants"`}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := policyCascadeSchemas("SELECT id, name FROM tenants WHERE active", "INTEGER")
+			desired.Views = nil
+			desired.FeatureObjects = schemaext.Objects{}
+
+			statements, err := planPolicyCascadeInStyle(c, desired, current, test.style)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.DeepEquals, test.want)
 		})
 	}
 }

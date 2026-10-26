@@ -39,6 +39,12 @@ type Comparison struct {
 	// RewritesRoutineBodies reports that the server stores a routine body in
 	// a form of its own, reflowed and qualified, rather than as written.
 	RewritesRoutineBodies bool `json:"rewrites_routine_bodies,omitempty"`
+	// ProbesSQLStandardBodies reports that a routine probe may carry a
+	// declared SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN
+	// expression`. The server keeps such a body parsed and prints it with
+	// pg_get_function_sqlbody in its own spelling, and a routine the probe
+	// creates in pg_temp leaves with the probe's rollback.
+	ProbesSQLStandardBodies bool `json:"probes_sql_standard_bodies,omitempty"`
 	// RolePasswords reports that the catalog can say whether a role has a
 	// password, which a comparison that sets one must establish first.
 	RolePasswords bool `json:"role_passwords,omitempty"`

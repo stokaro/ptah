@@ -313,7 +313,10 @@ type RoutineArguments struct {
 	// stores it, which is CockroachDB, the declared text never equals the
 	// stored one. Measured on v26.3.2, `SELECT * FROM public.items` is stored
 	// as `SELECT public.items.id, public.items.title FROM f1.public.items;`
-	// (stokaro/ptah#4058).
+	// (stokaro/ptah#4058). PostgreSQL 14 and later rewrite a SQL-standard body
+	// the same way: `BEGIN ATOMIC SELECT count(*) FROM v; END` is stored as
+	// `BEGIN ATOMIC SELECT count(*) AS count FROM v; END`, laid out on several
+	// lines (stokaro/ptah#5021).
 	Body string
 	// BodyResolved reports that Body is the server's answer. It is false on a
 	// server that stores a body as written, which is never asked.

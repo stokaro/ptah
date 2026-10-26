@@ -5533,6 +5533,17 @@ the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
 Spanner state `plpgsql`.
 
 
+### Enum column flag
+
+`ast.ColumnNode.EnumType` reports that a column's declared type is an enum the
+schema declares, an array of one, or, on the PostgreSQL family, a domain over
+one. Earlier versions set it for a bare enum alone. The PostgreSQL renderer
+reads it to cast a column changing type into such a type through text, `USING
+s::text::status` or `USING s::text[]::status[]`, and to drop and set its
+default around the TYPE clause. The flag reaches providers in the planning
+column. A renderer that refuses enum columns, as the YDB renderer does,
+refuses an array of an enum too, which it could not create either.
+
 ### Provider session locks
 
 `DatabaseConnection.SessionLocker` selects a native session's `SessionLocker`.

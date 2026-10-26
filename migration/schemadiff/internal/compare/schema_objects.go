@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
 )
@@ -768,12 +769,14 @@ func functionDefinitions(
 		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
 	}
 
-	// Compare the routine's own configuration settings, folded onto one
-	// spelling. A property the comparison cannot see is one it plans forever,
-	// and a search_path pinned by the author would otherwise be dropped on the
-	// next apply without anything reporting it (stokaro/ptah#2356).
-	genSettings := routinesetting.NormalizeAll(genFunction.Settings)
-	dbSettings := routinesetting.NormalizeAll(dbFunction.Settings)
+	// Compare the routine's own configuration settings, each read down to what
+	// the server stores, so a declared `work_mem = '8MB'` equals the catalog's
+	// 8MB and a bare `search_path = pg_catalog` the catalog's quoted one. A
+	// property the comparison cannot see is one it plans forever, and a
+	// search_path pinned by the author would otherwise be dropped on the next
+	// apply without anything reporting it (stokaro/ptah#2356).
+	genSettings := routinesetting.ComparableAll(genFunction.Settings)
+	dbSettings := routinesetting.ComparableAll(dbFunction.Settings)
 	if !slices.Equal(genSettings, dbSettings) {
 		functionDiff.Changes["settings"] = fmt.Sprintf("%s -> %s",
 			strings.Join(dbSettings, ", "), strings.Join(genSettings, ", "))
@@ -1095,6 +1098,12 @@ func withTargetDefaults(declared *schemamodel.Function, reported *catalog.Functi
 		return
 	}
 	defaults := routines.Defaults()
+	if declared.Language == "" && strings.EqualFold(defaults.Language, "plpgsql") &&
+		routinebody.Of(declared.Language, declared.Body) == routinebody.Atomic {
+		// PostgreSQL takes a SQL-standard body as LANGUAGE sql where the
+		// routine names no language, and the renderer writes it so.
+		declared.Language = "sql"
+	}
 	declared.Language, reported.Language = omittedAs(defaults.Language, declared.Language, reported.Language)
 	declared.Security, reported.Security = omittedAs(defaults.Security, declared.Security, reported.Security)
 }

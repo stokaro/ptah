@@ -115,6 +115,8 @@ keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 | routine argument `b text DEFAULT 'X'` | `b text DEFAULT 'X'::text` |
 | routine argument `c numeric(10,2) = 1.5` | `c numeric DEFAULT 1.5` |
 | routine result `SETOF public.items`, with `public` on the search path | `SETOF items` |
+| routine body `BEGIN ATOMIC SELECT count(*) FROM v; END` | `BEGIN ATOMIC SELECT count(*) AS count FROM v; END`, on several lines |
+| routine `f(x int)` body `BEGIN ATOMIC SELECT count(*) FROM t WHERE a > x; END` | `... FROM t WHERE (t.a > f.x); END` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
 column type and default, CHECK, `EXCLUDE` element list and predicate, policy
@@ -126,6 +128,25 @@ it. A routine is asked when it declares arguments or a result and the database
 holds a routine of that name. Its temporary copy has the declared arguments and
 return type, and a body the server does not check, because the signature does
 not depend on the body.
+
+A routine with a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is
+asked with its body too, a procedure without arguments included. PostgreSQL
+keeps such a body parsed, and `pg_get_function_sqlbody` prints it in its own
+spelling, so the temporary copy carries the declared body and its stored form
+is compared with the one the database holds. The copy takes the routine's own
+name, because the server qualifies a parameter with it, as `f.x`.
+
+- The body reads the tables and views the database holds. A body that reads
+  one the plan has not created yet makes the server refuse the copy. A second
+  copy with the body left out then answers for the arguments and the result,
+  and the body is compared as written.
+- A body that selects `*` is answered only while no table the database holds
+  gains or loses a column, as on CockroachDB.
+- A `RETURN` written in a schema file is not asked: the SQL schema reader drops
+  the keyword and keeps the expression as a quoted body, which reads back as
+  written ([stokaro/ptah#4981](https://github.com/stokaro/ptah/issues/4981)).
+- YugabyteDB keeps a routine created in `pg_temp` past the rollback, so there
+  the copy carries no body.
 
 A result type keeps its schema in the read-back only where the session's search
 path does not reach it: `SETOF public.items` reads back as `SETOF items`, and
@@ -739,6 +760,14 @@ view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.
 
+The rollback of a routine the schema stops declaring creates it again as the
+database held it, with its settings, its properties, its comment and its
+privileges. PostgreSQL lets PUBLIC execute a new routine, so one whose
+privilege PUBLIC lost has it revoked again, and the privileges of every other
+role are granted again, grant option included. A plan whose removed routine
+the read of the database does not hold refuses the rollback rather than
+creating the routine without them.
+
 A function with `OUT` or `INOUT` arguments may leave `RETURNS` out. PostgreSQL
 then records the type those arguments imply, and Ptah compares the declaration
 against that type: the type of the one such argument, or `record` for two or
@@ -818,19 +847,27 @@ other direction.
 ## Changing a column to or from an enum
 
 A column that becomes an enum is changed with `ALTER COLUMN ... TYPE status
-USING s::status`. PostgreSQL has no automatic cast from the old default to the
-enum either, so a column with a default loses it before the `TYPE` clause and
-takes it back after.
+USING s::text::status`. The cast goes through text because every type a column
+can leave casts to text, and no cast leads from one enum to another. An array
+of an enum casts through `text[]`, `USING s::text[]::status[]`, and a domain
+over an enum takes the same cast as its enum. PostgreSQL has no automatic cast
+from the old default to the enum either, so a column with a default loses it
+before the `TYPE` clause and takes the declared one back after, if it declares
+one.
 
-A column that leaves an enum takes its declared default again after the
-`TYPE` clause. PostgreSQL converts the stored default to the new type and keeps
-the enum inside it, `('a'::status)::text`, and refuses to drop the enum while
-that default uses it:
+A column that leaves an enum, an array of one or a domain over one takes its
+declared default again after the `TYPE` clause. PostgreSQL converts the stored
+default to the new type and keeps the old type inside it,
+`('a'::status)::text`, and refuses to drop the enum while that default uses
+it:
 
 ```text
 ERROR:  cannot drop type status because other objects depend on it
 DETAIL:  default value for column s of table t depends on type status
 ```
+
+The default is set again whenever the old type is not one of PostgreSQL's own,
+which covers a composite or range type too.
 
 ## Changing a materialized view
 
@@ -873,9 +910,13 @@ style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
 CASCADE`, so grants on a dropped object and any object that depends on it and
 that the schema does not declare go with it. In the exact style that `ptah-compat
 migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
-stops the migration at the drop instead. The exception is an object a routine
-the plan removes takes or returns, or a policy of a table the plan removes
-reads: both are dropped later, so the drop relies on `CASCADE`.
+stops the migration at the drop instead. The exception is a rebuilt object
+whose row type a routine the plan removes takes or returns, or that a policy of
+a table the plan removes reads. Both are dropped after the rebuild, so the
+rebuild's drop relies on `CASCADE`. A view or table the plan removes for good
+is handled differently: the routine that names its row type is dropped right
+before it, and the drop needs no `CASCADE`. See the exact style in the
+[`migrate diff` documentation](../../atlas/migrate-commands/).
 
 A plan with no retyped column and no
 changed materialized view keeps `CREATE OR REPLACE VIEW`, which leaves both

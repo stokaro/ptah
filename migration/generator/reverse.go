@@ -9,6 +9,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
@@ -69,8 +71,15 @@ func reverseSchemaDiffWithPrior(
 	dbSchema *catalog.Database,
 	prior *schemamodel.Database,
 	dialect string,
+	caps capability.Capabilities,
 ) *difftypes.SchemaDiff {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	var routineGrants struct{ granted, revoked []difftypes.GrantRef }
+	if descriptor, ok := platform.Lookup(dialect); ok &&
+		descriptor.Conversion.ImplicitRoutineGrants && caps.Has(capability.RoleManagement) {
+		routineGrants.granted, routineGrants.revoked = routineGrantsFromRemovals(
+			append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema)
+	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
@@ -134,7 +143,7 @@ func reverseSchemaDiffWithPrior(
 		// Reverse function operations. A removed routine of either kind comes
 		// back as an addition carrying its own kind, so the two removal lists
 		// merge into one addition list without losing which was which.
-		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
+		FunctionsAdded:    routineAdditionsFromRemovals(append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema, prior),
 		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded),
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified, dbSchema, prior),
 		// A removed procedure comes back as an addition, and the planner reads
@@ -223,10 +232,13 @@ func reverseSchemaDiffWithPrior(
 		// from the schema beside it.
 		RoleMembershipsAdded:   diff.RoleMembershipsRemoved,
 		RoleMembershipsRemoved: diff.RoleMembershipsAdded,
-		GrantsAdded:            diff.GrantsRemoved,       // Grants to remove become grants to add
-		GrantsRemoved:          diff.GrantsAdded,         // Grants to add become grants to revoke
-		GrantOptionsAdded:      diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
-		GrantOptionsRevoked:    diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
+		// Grants to remove become grants to add, and grants to add become grants
+		// to revoke. A routine the rollback creates again also gets back the
+		// privileges the pre-change database held on it.
+		GrantsAdded:         append(slices.Clone(diff.GrantsRemoved), routineGrants.granted...),
+		GrantsRemoved:       append(slices.Clone(diff.GrantsAdded), routineGrants.revoked...),
+		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
+		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete

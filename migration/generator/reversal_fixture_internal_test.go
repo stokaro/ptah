@@ -26,7 +26,7 @@ func reverseWithRuntimeForTest(t testing.TB, runtime Runtime, diff *difftypes.Sc
 	c := qt.New(t)
 	prior, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), current, dialect, runtime)
 	c.Assert(err, qt.IsNil)
-	reversed := reverseSchemaDiffWithPrior(diff, desired, current, prior, dialect)
+	reversed := reverseSchemaDiffWithPrior(diff, desired, current, prior, dialect, capability.ForDialect(dialect))
 	_, err = reverseFeatureChanges(t.Context(), diff, reversed, dialect, capability.ForDialect(dialect), runtime)
 	c.Assert(err, qt.IsNil)
 	return reversed

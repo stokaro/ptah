@@ -35,6 +35,12 @@ func TestOfAndUndone_HappyPath(t *testing.T) {
 			undone: `create "items" table`,
 		},
 		{
+			name:   "two tables one statement drops",
+			node:   ast.NewDropTable("public.b").SetNames([]string{"public.b", "public.a"}),
+			of:     `drop "b" table, drop "a" table`,
+			undone: `create "b" table, create "a" table`,
+		},
+		{
 			name: "an added column",
 			node: &ast.AlterTableNode{Name: "owners", Operations: []ast.AlterOperation{
 				&ast.AddColumnOperation{Column: ast.NewColumn("email", "varchar")},
@@ -210,6 +216,16 @@ func TestRollback_HappyPath(t *testing.T) {
 		{name: "a drop of a view the forward plan rebuilt", forward: rebuilt, node: ast.NewDropView("v"), want: `create "v" view`},
 		{name: "a create of a view the forward plan rebuilt", forward: rebuilt, node: ast.NewCreateView("v"), want: `drop "v" view`},
 		{name: "a drop of another view", forward: replaced, node: ast.NewDropView("w"), want: `create "w" view`},
+		{name: "a drop of a view the forward plan replaced, spelled in another case", forward: replaced,
+			node: ast.NewDropView("V"), want: `modify "v" view`},
+		{name: "a drop of a view of the same name in another schema",
+			forward: []ast.Node{ast.NewCreateView("app.v").SetReplace()}, node: ast.NewDropView("reporting.v"), want: `create "v" view`},
+		{name: "a drop of a view the forward plan replaced beside one of the same name it rebuilt in another schema",
+			forward: []ast.Node{ast.NewCreateView("app.v").SetReplace(), ast.NewDropView("reporting.v"), ast.NewCreateView("reporting.v")},
+			node:    ast.NewDropView("app.v"), want: `modify "v" view`},
+		{name: "a drop of a trigger the forward plan replaced on another table",
+			forward: []ast.Node{ast.NewCreateTrigger("audit", "orders").SetReplace()}, node: ast.NewDropTrigger("audit", "items"),
+			want: `create "audit" trigger`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

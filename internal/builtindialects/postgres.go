@@ -142,6 +142,10 @@ func postgres() descriptor.Dialect {
 			DefaultGeneratedKind: "STORED",
 			RoutineTypeAliases:   "pg-aliases",
 			QualifiedTypeNames:   true,
+			// YugabyteDB leaves this off: a routine created in pg_temp
+			// outlives the rollback there, and a copy whose body reads a
+			// table would hold it.
+			ProbesSQLStandardBodies: true,
 		},
 
 		// PostgreSQL keeps one index for equal UNIQUE and PRIMARY KEY

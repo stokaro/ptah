@@ -55,7 +55,7 @@ func (p *Planner) cascades(relied bool) bool {
 	return relied || !p.exact()
 }
 
-// columnDropRelies reports whether dropping a column of tableDiff relies on
+// columnDropRelies reports whether dropping column of tableDiff relies on
 // CASCADE.
 //
 // The objects a column drop needs CASCADE for are the ones outside the
@@ -66,15 +66,16 @@ func (p *Planner) cascades(relied bool) bool {
 // the columns it reads. It removes these only after the column, so a drop
 // relies on CASCADE when the plan holds one:
 //
-//   - a routine it removes whose SQL-standard body reads the table;
+//   - a routine it removes whose SQL-standard body reads the column;
 //   - a captured object of a table it removes that reads the table, such as a
 //     row-level security policy;
 //   - an owner operation that may drop a standalone object in a later window,
-//     which may read the column.
-func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) bool {
-	return removedRoutineReadsColumns(diff, tableDiff.TableName) ||
+//     whose object reads the table's columns or cannot say; see
+//     [removedFeatureReadsColumns].
+func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string) bool {
+	return removedRoutineReadsColumn(diff, tableDiff.TableName, column) ||
 		removedTableReads(diff, tableDiff.TableName, nil) ||
-		removesFeatureState(diff)
+		removedFeatureReadsColumns(diff, tableDiff.TableName)
 }
 
 // tableDropRelies reports whether dropping the table name relies on CASCADE,
@@ -89,12 +90,13 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff)
 //   - a captured object of a removed table dropped after this one, such as a
 //     policy that reads this table. The tables are ordered so the one holding
 //     the policy goes first, and only a cycle leaves one after;
-//   - an owner operation that may drop a standalone object, such as a type
-//     whose attribute is the table's row type.
-func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool) bool {
-	return removedRoutineNames(diff, name) ||
+//   - an owner operation that may drop a standalone object that reads the
+//     table, such as a type whose attribute is the table's row type, or one
+//     whose object cannot say; see [removedFeatureReads].
+func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, ahead routinesAhead) bool {
+	return removedRoutineNames(diff, name, ahead) ||
 		removedTableReads(diff, name, droppedBefore) ||
-		removesFeatureState(diff)
+		removedFeatureReads(diff, name)
 }
 
 func isGenerated(column schemamodel.Field) bool {
@@ -118,12 +120,13 @@ func isGenerated(column schemamodel.Field) bool {
 //     triggers on the view;
 //   - DROP TRIGGER, whose statement also drops the function Ptah wrote for
 //     the trigger;
-//   - ALTER TABLE ... DROP CONSTRAINT, which takes the index that backs the
-//     constraint;
 //   - an earlier drop of the same object.
 //
-// A new index keeps IF NOT EXISTS only after an earlier statement created an
-// index or a constraint of that name.
+// A new index never keeps IF NOT EXISTS: the plan creates each index once.
+// A column drop carries no guard in either style, so it has none to settle.
+// An index that backs a constraint is dropped as the constraint, and every
+// other index drop comes before the constraint step, so no DROP INDEX follows
+// a DROP CONSTRAINT that took its index.
 //
 // Names are compared without their schema and without case, so an object that
 // might be the one an earlier statement removed keeps its guard. The pass
@@ -152,8 +155,6 @@ type guardState struct {
 	shrunk map[string]bool
 	// dropped holds every object dropped by name, keyed by kind and name.
 	dropped map[string]bool
-	// indexNames holds the names of indexes and constraints created.
-	indexNames map[string]bool
 	// sequences is set once a table or a column was dropped, which may take a
 	// sequence it owns.
 	sequences bool
@@ -165,7 +166,6 @@ func (g *guardState) init() {
 	g.triggerFunctions = make(map[string]bool)
 	g.shrunk = make(map[string]bool)
 	g.dropped = make(map[string]bool)
-	g.indexNames = make(map[string]bool)
 }
 
 func (g *guardState) settle(node ast.Node) {
@@ -181,10 +181,8 @@ func (g *guardState) settle(node ast.Node) {
 	case *ast.DropIndexNode:
 		g.settleDropIndex(n)
 	case *ast.IndexNode:
-		n.IfNotExists = n.IfNotExists && g.indexNames[bareName(n.Name)]
-		g.indexNames[bareName(n.Name)] = true
-	case *ast.CreateTableNode:
-		g.createTable(n)
+		// The plan creates each index once, so nothing before it can have.
+		n.IfNotExists = false
 	case *ast.DropViewNode:
 		g.dropRelation(n.Name, &n.IfExists, n.Cascade)
 	case *ast.DropMaterializedViewNode:
@@ -199,8 +197,6 @@ func (g *guardState) settle(node ast.Node) {
 		g.dropNamed("type", n.Name, &n.IfExists, n.Cascade)
 	case *ast.DropRoleNode:
 		g.dropNamed("role", n.Name, &n.IfExists, false)
-	case *ast.DropPolicyNode:
-		g.settleDropPolicy(n)
 	case *ast.RawSQLNode, *ast.DoBlockNode, *ast.OpaqueRoutineNode:
 		g.anything = true
 	}
@@ -221,11 +217,6 @@ func (g *guardState) settleDropSequence(n *ast.DropSequenceNode) {
 	g.drop("sequence:"+bareName(n.Name), n.Cascade)
 }
 
-func (g *guardState) settleDropPolicy(n *ast.DropPolicyNode) {
-	n.IfExists = n.IfExists && (g.mayBeGone("policy", scopedName(n.Table, n.Name)) || g.tables[bareName(n.Table)])
-	g.drop("policy:"+scopedName(n.Table, n.Name), false)
-}
-
 func (g *guardState) settleDropTable(n *ast.DropTableNode) {
 	relied := false
 	for _, name := range n.TableNames() {
@@ -237,15 +228,6 @@ func (g *guardState) settleDropTable(n *ast.DropTableNode) {
 		g.drop("table:"+bareName(name), n.Cascade)
 	}
 	g.sequences = true
-}
-
-func (g *guardState) createTable(n *ast.CreateTableNode) {
-	for _, constraint := range n.Constraints {
-		g.indexNames[bareName(constraint.Name)] = true
-	}
-	for _, index := range n.Indexes {
-		g.indexNames[bareName(index.Name)] = true
-	}
 }
 
 func (g *guardState) settleDropTrigger(n *ast.DropTriggerNode) {
@@ -275,9 +257,8 @@ func (g *guardState) settleAlterTable(n *ast.AlterTableNode) {
 	for _, operation := range n.Operations {
 		switch op := operation.(type) {
 		case *ast.DropColumnOperation:
-			op.IfExists = op.IfExists && (g.anything || g.tables[table] ||
-				g.dropped["column:"+table+"."+strings.ToLower(op.ColumnName)])
-			g.dropped["column:"+table+"."+strings.ToLower(op.ColumnName)] = true
+			// The planner writes no guard on a column drop, so there is none
+			// to settle; the drop is recorded for the statements after it.
 			g.shrunk[table] = true
 			g.sequences = true
 			cascaded = cascaded || op.Cascade
@@ -285,12 +266,6 @@ func (g *guardState) settleAlterTable(n *ast.AlterTableNode) {
 			key := "constraint:" + table + "." + strings.ToLower(op.ConstraintName)
 			op.IfExists = op.IfExists && (g.anything || g.tables[table] || g.shrunk[table] || g.dropped[key])
 			g.dropped[key] = true
-			// The index that backs a key goes with it.
-			g.dropped["index:"+strings.ToLower(op.ConstraintName)] = true
-		case *ast.AddConstraintOperation:
-			if op.Constraint != nil {
-				g.indexNames[bareName(op.Constraint.Name)] = true
-			}
 		case *ast.ReplaceIndexOperation:
 			g.anything = true
 		}
@@ -320,14 +295,14 @@ func (g *guardState) mayBeGone(kind, key string) bool {
 	if g.anything {
 		return true
 	}
-	if kind == "trigger" || kind == "policy" {
+	if kind == "trigger" {
 		return g.dropped[kind+":"+key]
 	}
 	return g.dropped[kind+":"+bareName(key)]
 }
 
 // scopedName keys an object whose name is unique within its table, such as a
-// trigger or a policy.
+// trigger.
 func scopedName(table, name string) string {
 	return bareName(table) + "/" + strings.ToLower(name)
 }

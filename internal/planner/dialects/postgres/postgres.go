@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -837,7 +838,6 @@ func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	vocabulary difftypes.UserTypeVocabulary,
-	enums map[string]bool,
 ) []ast.Node {
 	for _, colDiff := range tableDiff.ColumnsModified {
 		if isGeneratedColumnChange(colDiff) {
@@ -867,7 +867,7 @@ func (p *Planner) modifyExistingTableColumns(
 		// are emitted above this and reach a column the diff carries no
 		// definition for.
 		changed := columnchange.Properties(colDiff)
-		changed.Default = changed.Default || restatesDefault(colDiff, enums)
+		changed.Default = changed.Default || restatesDefault(colDiff)
 		_, uniqueChanged := colDiff.Changes["unique"]
 		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
@@ -881,6 +881,7 @@ func (p *Planner) modifyExistingTableColumns(
 
 		if changed.Any() {
 			columnNode, _ := columnNodeFor(colDiff, vocabulary)
+			columnNode.EnumType = columnNode.EnumType || domainOverEnum(colDiff.Desired.Type, vocabulary)
 			result = append(result, &ast.AlterTableNode{
 				Name: tableDiff.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
@@ -900,35 +901,93 @@ func (p *Planner) modifyExistingTableColumns(
 	return result
 }
 
-// restatesDefault reports whether a column whose type changes away from an
-// enum sets its declared default again after the TYPE clause.
+// restatesDefault reports whether a column whose type changes away from a
+// type of the schema's own sets its declared default again after the TYPE
+// clause.
 //
 // PostgreSQL converts the stored default to the new type and keeps the old
 // one inside it: `'a'::status` becomes `('a'::status)::text`. The comparison
 // reads that back as the declared `'a'`, so it reports no change, but the
-// default still depends on the enum, and `DROP TYPE status` is refused while
-// it does (`default value for column s of table t depends on type status`);
-// with CASCADE the server drops the default instead. Setting the declared
-// default again leaves the column with no trace of the old type.
-func restatesDefault(colDiff difftypes.ColumnDiff, enums map[string]bool) bool {
+// default still depends on the old type, and `DROP TYPE status` is refused
+// while it does (`default value for column s of table t depends on type
+// status`); with CASCADE the server drops the default instead. Setting the
+// declared default again leaves the column with no trace of the old type.
+//
+// The old type counts unless it is one of PostgreSQL's own, which nothing
+// drops: an enum, an array of one, a domain over one, a composite or a range
+// is restated alike, whether the schema still declares it or removes it here.
+func restatesDefault(colDiff difftypes.ColumnDiff) bool {
 	previous := previousColumnType(colDiff.Changes["type"])
-	if previous == "" || !enums[bareName(strings.TrimSuffix(previous, "[]"))] {
+	if previous == "" || builtinColumnType(previous) {
 		return false
 	}
 	return colDiff.Desired.DefaultSet || colDiff.Desired.Default != "" || colDiff.Desired.DefaultExpr != ""
 }
 
-// knownEnums names, by bare name, every enum the diff knows of: the declared
-// ones and the ones it removes.
-func knownEnums(diff *difftypes.SchemaDiff) map[string]bool {
-	enums := make(map[string]bool, len(diff.DeclaredUserTypes.Enums)+len(diff.EnumsRemoved))
-	for _, enum := range diff.DeclaredUserTypes.Enums {
+// domainOverEnum reports whether spelled names a domain the declaration holds
+// whose base type is a declared enum, or an array of either. A column changing
+// type into one takes the cast and the default handling an enum target does:
+// text casts to the domain through its enum, and nothing else reaches it.
+func domainOverEnum(spelled string, vocabulary difftypes.UserTypeVocabulary) bool {
+	enums := make(map[string]bool, len(vocabulary.Enums))
+	for _, enum := range vocabulary.Enums {
 		enums[bareName(enum.Name)] = true
 	}
-	for _, enum := range diff.EnumsRemoved {
-		enums[bareName(enum.Name)] = true
+	name := bareName(strings.TrimSuffix(strings.TrimSpace(spelled), "[]"))
+	// A domain may be over another domain; each step names a declared type,
+	// so the walk ends within as many steps as there are domains.
+	for range len(vocabulary.Defined) + 1 {
+		base, ok := domainBase(name, vocabulary.Defined)
+		if !ok {
+			return false
+		}
+		if enums[base] {
+			return true
+		}
+		name = base
 	}
-	return enums
+	return false
+}
+
+// domainBase is the bare name of the base type of the declared domain name,
+// without an array suffix.
+func domainBase(name string, defined []schemaext.DefinedType) (string, bool) {
+	for _, definition := range defined {
+		if definition.ID.Kind != objectidentity.KindDomain || len(definition.References) == 0 ||
+			bareName(definition.ID.Name.Source) != name {
+			continue
+		}
+		return bareName(strings.TrimSuffix(strings.TrimSpace(definition.References[0]), "[]")), true
+	}
+	return "", false
+}
+
+// builtinTypeNames are PostgreSQL's own type names as a comparison spells a
+// column's type, with no length, precision or array suffix.
+var builtinTypeNames = map[string]bool{
+	"smallint": true, "int2": true, "integer": true, "int": true, "int4": true, "bigint": true, "int8": true,
+	"smallserial": true, "serial2": true, "serial": true, "serial4": true, "bigserial": true, "serial8": true,
+	"decimal": true, "numeric": true, "real": true, "float4": true, "double precision": true, "float8": true, "float": true,
+	"money": true, "text": true, "varchar": true, "character varying": true, "char": true, "character": true,
+	"bpchar": true, "name": true, "bytea": true, "boolean": true, "bool": true, "date": true, "time": true,
+	"timetz": true, "time without time zone": true, "time with time zone": true, "timestamp": true,
+	"timestamptz": true, "timestamp without time zone": true, "timestamp with time zone": true,
+	"interval": true, "uuid": true, "json": true, "jsonb": true, "xml": true, "inet": true, "cidr": true,
+	"macaddr": true, "macaddr8": true, "bit": true, "varbit": true, "bit varying": true, "tsvector": true,
+	"tsquery": true, "point": true, "line": true, "lseg": true, "box": true, "path": true, "polygon": true,
+	"circle": true, "oid": true, "regclass": true,
+}
+
+// builtinColumnType reports whether spelled names one of PostgreSQL's own
+// types, or an array of one.
+func builtinColumnType(spelled string) bool {
+	name := strings.ToLower(strings.TrimSpace(spelled))
+	name = strings.TrimSpace(strings.TrimSuffix(name, "[]"))
+	if open := strings.IndexByte(name, '('); open >= 0 {
+		name = strings.TrimSpace(name[:open])
+	}
+	name = strings.TrimPrefix(name, "pg_catalog.")
+	return builtinTypeNames[name]
 }
 
 // addedColumnUnique is the ADD CONSTRAINT for a column that gains a
@@ -1181,8 +1240,7 @@ func (p *Planner) dropsWithCascade() bool {
 // removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
 // longer holds. A generated column goes first: it may be computed from another
 // removed column, which a drop could otherwise take only with CASCADE.
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff) []ast.Node {
-	cascade := p.cascades(columnDropRelies(diff, tableDiff))
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool) []ast.Node {
 	columns := make([]schemamodel.Field, 0, len(tableDiff.ColumnsRemoved))
 	for _, generated := range []bool{true, false} {
 		for _, column := range tableDiff.ColumnsRemoved {
@@ -1192,6 +1250,10 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.
 		}
 	}
 	for _, column := range columns {
+		if earlyColumns[tableDiff.TableName+"\x00"+column.Name] {
+			continue
+		}
+		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name))
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
 			Cascade:    cascade,
@@ -1241,7 +1303,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, knownEnums(diff))
+			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1288,14 +1350,28 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
 			astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
 			result = append(result, astCommentNode)
 
 			// Remove columns (dangerous!)
-			result = p.removeTableColumnsFromDiff(result, diff, tableDiff)
+			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns)
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeEarlyGeneratedColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			if !earlyColumns[table.TableName+"\x00"+column.Name] {
+				continue
+			}
+			result = append(result, &ast.AlterTableNode{Name: table.TableName, Operations: []ast.AlterOperation{
+				&ast.DropColumnOperation{ColumnName: column.Name},
+			}})
 		}
 	}
 	return result
@@ -1459,22 +1535,78 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 // removeTables drops the tables the declaration no longer holds. A table whose
 // row-level security policy reads another removed table goes before that
 // table, since the policy goes with its own table; see [tableDropRelies].
-func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead) []ast.Node {
 	dropped := make(map[string]bool, len(diff.TablesRemoved))
-	for _, tableName := range removedTableOrder(diff) {
-		dropTableNode := ast.NewDropTable(tableName).
+	for _, group := range p.removedTableGroups(diff, ahead) {
+		for _, tableName := range group {
+			result = p.appendRoutinesAhead(result, diff, tableName, ahead)
+		}
+		dropTableNode := ast.NewDropTable(group[0]).SetNames(group).
 			SetIfExists()
 		if p.describes() {
 			dropTableNode.SetComment("WARNING: This will delete all data!")
 		}
-		dropped[tableName] = true
-		if p.cascades(tableDropRelies(diff, tableName, dropped)) {
+		for _, tableName := range group {
+			dropped[tableName] = true
+		}
+		relied := false
+		for _, tableName := range group {
+			relied = relied || tableDropRelies(diff, tableName, dropped, ahead)
+		}
+		if p.cascades(relied) {
 			dropTableNode.SetCascade()
 		}
 
 		result = append(result, dropTableNode)
 	}
 	return result
+}
+
+// removedTableGroups is the removed tables in the order they are dropped, each
+// group one statement. A table is a group of its own, except in the exact
+// style, where tables whose captured objects read each other in a cycle, such
+// as two policies that each read the other table, go in one DROP TABLE.
+// PostgreSQL drops the tables one statement names together, so their
+// dependencies on each other need no CASCADE; one drop at a time, the first
+// would rely on it.
+func (p *Planner) removedTableGroups(diff *difftypes.SchemaDiff, ahead routinesAhead) [][]string {
+	order := removedTableOrder(diff)
+	groups := make([][]string, 0, len(order))
+	if !p.exact() {
+		for _, name := range order {
+			groups = append(groups, []string{name})
+		}
+		return groups
+	}
+	readers := make(map[string]schemaext.Objects, len(diff.TablesRemoved))
+	for _, removal := range diff.TablesRemoved {
+		readers[removal.Name] = removal.Current.OwnedObjects
+	}
+	grouped := make(map[string]bool, len(order))
+	for i, name := range order {
+		if grouped[name] {
+			continue
+		}
+		group := []string{name}
+		grouped[name] = true
+		// A table a later table's object reads joins that table, and so
+		// does every table the group's members are read by in turn.
+		for changed := true; changed; {
+			changed = false
+			for _, later := range order[i+1:] {
+				if grouped[later] {
+					continue
+				}
+				if slices.ContainsFunc(group, func(member string) bool { return capturedReads(readers[later], member, relationSemantics(diff)) }) {
+					group = append(group, later)
+					grouped[later] = true
+					changed = true
+				}
+			}
+		}
+		groups = append(groups, group)
+	}
+	return groups
 }
 
 // removedTableOrder is the order the removed tables are dropped in: children
@@ -1485,7 +1617,7 @@ func removedTableOrder(diff *difftypes.SchemaDiff) []string {
 	readers := make(map[string][]string)
 	for _, removal := range diff.TablesRemoved {
 		for _, name := range names {
-			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name) {
+			if name != removal.Name && capturedReads(removal.Current.OwnedObjects, name, relationSemantics(diff)) {
 				readers[removal.Name] = append(readers[removal.Name], name)
 			}
 		}
@@ -1771,6 +1903,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes
 	// leaves with everything that reads it. Step 6.6 puts them back.
 	rebuild := planViewRebuild(diff)
+	var earlyColumns map[string]bool
+	if p.exact() {
+		earlyColumns = earlyGeneratedColumns(diff)
+	}
+	ahead := p.routinesAheadOf(diff, rebuild, earlyColumns)
 	result = p.dropRebuiltViewLikes(result, diff, rebuild)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
@@ -1871,21 +2008,29 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	// A removed CHECK on a table we keep may call a routine this plan removes.
+	// Release it before moving that routine ahead of a removed relation. The
+	// constraint's body is absent from the diff, so waiting until step 12.5
+	// would make the relation drop rely on CASCADE for an unknown reader.
+	releasedConstraints := released.ConstraintSet()
+	maps.Copy(releasedConstraints, foreignKeysReleased)
+	if p.exact() {
+		result = p.removeConstraints(result, diff, releasedConstraints, constraintsBeforeRelations)
+	}
 
 	// 11.9. Remove triggers and view-like objects before the columns, the
 	// constraints and the tables they depend on. A trigger may fire on UPDATE
 	// OF a column, and a view reads columns and, through GROUP BY, a primary
 	// key; dropped first, neither leaves a column drop relying on CASCADE.
 	result = p.removeTriggers(result, diff)
-	result = p.removeViewLikes(result, diff, rebuild)
+	result = p.removeEarlyGeneratedColumns(result, diff, earlyColumns)
+	result = p.removeViewLikes(result, diff, rebuild, ahead)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
-	result = p.removeTableColumns(result, diff)
+	result = p.removeTableColumns(result, diff, earlyColumns)
 
 	// 12.5. Remove constraints (must be done before removing tables)
-	releasedConstraints := released.ConstraintSet()
-	maps.Copy(releasedConstraints, foreignKeysReleased)
-	result = p.removeConstraints(result, diff, releasedConstraints)
+	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
 
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
@@ -1893,21 +2038,35 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	windows.Removal = len(result)
 
 	// 13. Remove tables (dangerous!)
-	result = p.removeTables(result, diff)
+	result = p.removeTables(result, diff, ahead)
 
 	// 13.5. Remove standalone sequences after tables that may default from them.
 	result = p.removeSequences(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
-	result = p.removeFunctions(result, diff)
+	result = p.removeFunctions(result, diff, ahead, routinesBeforeTypes)
 
-	// 14. Remove roles (must be done after removing functions and policies that depend on them)
-	result = p.removeRoles(result, diff)
+	// 14. Ordinarily roles leave after routines and before types. If a removed
+	// domain still holds a routine, keep roles until after that routine leaves.
+	postTypeRoutines := slices.ContainsFunc(diff.FunctionsRemoved, func(routine difftypes.RoutineChange) bool {
+		return removedDomainCallsRoutine(diff, routine)
+	}) || slices.ContainsFunc(diff.ProceduresRemoved, func(routine difftypes.RoutineChange) bool {
+		return removedDomainCallsRoutine(diff, routine)
+	})
+	if !postTypeRoutines {
+		result = p.removeRoles(result, diff)
+	}
 
-	// 15. Remove enums (dangerous!). The type phase's drops go first: after
-	// the tables, routines and roles that may use a type are gone, and before
-	// the enums a type may name.
+	// 15. The type phase's drops run after tables and routines that may use a
+	// type. A removed domain whose CHECK or DEFAULT calls a removed routine
+	// leaves here, before that routine: PostgreSQL records the dependency.
 	types.Removal = featurehost.Span{Start: len(result), End: len(result)}
+	result = p.removeFunctions(result, diff, ahead, routinesAfterTypes)
+	if postTypeRoutines {
+		result = p.removeRoles(result, diff)
+	}
+
+	// 16. Remove enums after domains that may use them.
 	result = p.removeEnums(result, diff)
 
 	prerequisites.Removal = len(result)
@@ -2138,7 +2297,7 @@ func (p *Planner) modifiedFunctionNodes(fnDiff difftypes.FunctionDiff) []ast.Nod
 	// A replacement even after the drop above: the plan still rewrites a
 	// routine that exists, and the drop took its grants with it. Only an added
 	// routine is a plain CREATE.
-	return append(result, modelast.FromFunction(target).SetReplace())
+	return append(result, modelast.FromFunctionFor(target, p.targetDialect()).SetReplace())
 }
 
 // replacementIsRefused reports whether PostgreSQL refuses this modification
@@ -2199,42 +2358,67 @@ func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
 
-func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+type routineRemovalPhase uint8
+
+const (
+	routinesBeforeTypes routineRemovalPhase = iota
+	routinesAfterTypes
+)
+
+func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, phase routineRemovalPhase) []ast.Node {
+	for _, routine := range diff.FunctionsRemoved {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
+			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindFunction))
+		}
+	}
+	for _, routine := range diff.ProceduresRemoved {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
+			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindProcedure))
+		}
+	}
+	return result
+}
+
+// dropRoutineNode is the statement that drops a removed routine of kind, a
+// function or a procedure; the list the removal came from says which.
+func (p *Planner) dropRoutineNode(routine difftypes.RoutineChange, kind string) ast.Node {
 	// The signature is what makes the statement addressable. A name alone is
 	// refused with `function name "f" is not unique` on any schema that
 	// overloads, and IF EXISTS does not help because the refusal is about
 	// ambiguity rather than existence (stokaro/ptah#2296).
-	for _, removal := range diff.FunctionsRemoved.Removals() {
-		dropFunctionNode := ast.NewDropFunction(removal.Name).
-			SetIfExists()
+	node := ast.NewDropFunction(routine.Name).SetIfExists()
+	if kind == schemamodel.FunctionKindProcedure {
+		// A procedure is dropped with its own verb. PostgreSQL answers
+		// `DROP FUNCTION` aimed at one with `could not find a function named
+		// ...`, so the kind the comparator kept is what makes the statement
+		// run (stokaro/ptah#1722).
+		node = node.SetKind(schemamodel.FunctionKindProcedure)
 		if p.describes() {
-			dropFunctionNode.SetComment("WARNING: Ensure no other objects depend on this function")
+			node.SetComment("WARNING: Ensure no other objects depend on this procedure")
 		}
-		// An empty list addresses the overload that takes no arguments, so it
-		// is carried like any other; only a removal that recorded no identity
-		// leaves the statement naming the routine.
-		if removal.Signature != nil {
-			dropFunctionNode = dropFunctionNode.SetParameters(*removal.Signature)
-		}
-		result = append(result, dropFunctionNode)
+	} else if p.describes() {
+		node.SetComment("WARNING: Ensure no other objects depend on this function")
 	}
-	// A procedure is dropped with its own verb. PostgreSQL answers
-	// `DROP FUNCTION` aimed at one with `could not find a function named ...`,
-	// so the kind the comparator kept is what makes the statement run
-	// (stokaro/ptah#1722).
-	for _, removal := range diff.ProceduresRemoved.Removals() {
-		dropProcedureNode := ast.NewDropFunction(removal.Name).
-			SetKind(schemamodel.FunctionKindProcedure).
-			SetIfExists()
-		if p.describes() {
-			dropProcedureNode.SetComment("WARNING: Ensure no other objects depend on this procedure")
+	// An empty list addresses the overload that takes no arguments, so it is
+	// carried like any other; only a removal that recorded no identity leaves
+	// the statement naming the routine.
+	if routine.Signature != nil {
+		node = node.SetParameters(*routine.Signature)
+	}
+	return node
+}
+
+// appendRoutinesAhead appends the drops of the routines the plan drops just
+// ahead of relation; see [routinesAhead].
+func (p *Planner) appendRoutinesAhead(result []ast.Node, diff *difftypes.SchemaDiff, relation string, ahead routinesAhead) []ast.Node {
+	for _, routine := range ahead.of(relation) {
+		kind := schemamodel.FunctionKindFunction
+		if slices.ContainsFunc(diff.ProceduresRemoved, func(candidate difftypes.RoutineChange) bool {
+			return routineKey(candidate) == routineKey(routine)
+		}) {
+			kind = schemamodel.FunctionKindProcedure
 		}
-		// A procedure overloads too, and the same ambiguity refusal applies,
-		// including for the one that takes no arguments.
-		if removal.Signature != nil {
-			dropProcedureNode = dropProcedureNode.SetParameters(*removal.Signature)
-		}
-		result = append(result, dropProcedureNode)
+		result = append(result, p.dropRoutineNode(routine, kind))
 	}
 	return result
 }
@@ -2543,7 +2727,7 @@ func (p *Planner) viewDropRelies(diff *difftypes.SchemaDiff, name string, owned 
 			return true
 		}
 	}
-	return removedReaderRemains(diff, name, owned) || removalOutlivesDrop(diff, name)
+	return removedReaderRemains(diff, name, owned) || removalOutlivesDrop(diff, name, routinesAhead{})
 }
 
 // removedReaderRemains reports whether a view or materialized view the
@@ -2678,7 +2862,7 @@ func viewLikesLostToCascade(
 // already is left out. A drop relies on CASCADE when a removed routine uses
 // the object's row type or a policy of a removed table reads it, since both
 // are dropped later; see [removalOutlivesDrop].
-func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead) []ast.Node {
 	owned := rebuild.owns()
 	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
 	for _, object := range removedViewLikes(diff) {
@@ -2687,7 +2871,8 @@ func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff,
 		}
 	}
 	for _, object := range deporder.ViewLikesForDropIn(removed, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
-		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
+		result = p.appendRoutinesAhead(result, diff, object.Name, ahead)
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name, ahead))))
 	}
 	return result
 }
@@ -3284,11 +3469,20 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 //
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
+type constraintRemovalPhase uint8
+
+const (
+	constraintsBeforeRelations constraintRemovalPhase = iota
+	constraintsAfterColumns
+)
+
 func (p *Planner) removeConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	released map[constraintHostKey]struct{},
+	phase constraintRemovalPhase,
 ) []ast.Node {
+	earlyChecks := phase == constraintsBeforeRelations
 	// The pure-removal path keys its hosts by the same rule addNewConstraints
 	// does, for the same reason: the two sides of a modify spell one table two
 	// ways, and a verbatim key answers that they are two (stokaro/ptah#1987).
@@ -3375,39 +3569,19 @@ func (p *Planner) removeConstraints(
 	namesWithHost := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemoved {
 		if info.TableName == "" {
+			if earlyChecks {
+				continue
+			}
 			// No host recorded for this entry; defer to the bare fallback.
 			continue
 		}
 		namesWithHost[info.Name] = struct{}{}
-		key := info.Identity
-		if _, modified := modifySet[key]; modified {
-			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+		_, tableRemoved := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]
+		if (p.exact() && strings.EqualFold(strings.TrimSpace(info.Type), "CHECK") && !tableRemoved) != earlyChecks {
 			continue
 		}
-		if replaced, found := replacedKeys[state.semantics.QualifiedTableIdentityKey(info.TableName)]; found &&
-			replaced.Identity == key {
-			// Dropped ahead of the primary key that replaces it.
-			continue
-		}
-		if _, dropped := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]; dropped &&
-			strings.EqualFold(info.Type, "PRIMARY KEY") {
-			// The DROP TABLE below removes the key with its table. Dropping the
-			// key first is refused by CockroachDB, which takes a primary key
-			// drop only beside the ADD of its replacement, and on v26 also by
-			// the schema_locked flag its tables carry (stokaro/ptah#4277).
-			continue
-		}
-		if _, dropped := released[key]; dropped {
-			// Dropped ahead of the column changes, to free the name a
-			// column's own UNIQUE takes; a second drop would remove that key.
-			continue
-		}
-		if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {
-			// Hostless re-add: addNewConstraints already dropped every
-			// recorded removal host for this name before the re-add
-			// (emitModifyDropForName with unknown addedHosts). A second drop
-			// here would follow the re-add and delete the fresh constraint
-			// (issue #229).
+		if skipConstraintRemoval(info, state.semantics, replacedKeys, droppedTables,
+			modifySet, released, addedBareNamesHosted, addedHostCounts) {
 			continue
 		}
 		result = p.appendScopedDrop(result, info.TableName, info.Name, info.Identity, state)
@@ -3424,6 +3598,9 @@ func (p *Planner) removeConstraints(
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[name] = struct{}{}
 	}
+	if earlyChecks {
+		return result
+	}
 	for _, constraintName := range constraintscope.RemovalNames(diff) {
 		if _, hadHost := namesWithHost[constraintName]; hadHost {
 			continue
@@ -3434,6 +3611,40 @@ func (p *Planner) removeConstraints(
 		result = append(result, p.dropConstraintNode(constraintName))
 	}
 	return result
+}
+
+// skipConstraintRemoval leaves drops owned by another planning phase to that
+// phase. A second drop can remove a freshly restored constraint.
+func skipConstraintRemoval(
+	info difftypes.ConstraintRemovalInfo,
+	semantics identifier.Semantics,
+	replacedKeys map[string]difftypes.ConstraintRemovalInfo,
+	droppedTables map[string]struct{},
+	modifySet, released map[constraintHostKey]struct{},
+	addedBareNamesHosted map[string]struct{},
+	addedHostCounts map[string]int,
+) bool {
+	key := info.Identity
+	if _, modified := modifySet[key]; modified {
+		return true
+	}
+	if replaced, found := replacedKeys[semantics.QualifiedTableIdentityKey(info.TableName)]; found && replaced.Identity == key {
+		return true
+	}
+	if _, dropped := droppedTables[semantics.QualifiedTableIdentityKey(info.TableName)]; dropped && strings.EqualFold(info.Type, "PRIMARY KEY") {
+		// PostgreSQL removes the key with its table. CockroachDB refuses an
+		// isolated primary key drop (stokaro/ptah#4277).
+		return true
+	}
+	if _, dropped := released[key]; dropped {
+		return true
+	}
+	if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {
+		// addNewConstraints already dropped every recorded host before the
+		// hostless re-add; repeating it would delete the new constraint.
+		return true
+	}
+	return false
 }
 
 // dropConstraintNode builds a self-contained DROP CONSTRAINT statement for a

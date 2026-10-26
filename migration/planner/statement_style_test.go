@@ -212,8 +212,8 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyle_HappyPath(t *test
 			`ALTER TABLE "items" DROP COLUMN "sku"`,
 		}},
 		{name: "a check dropped with its column", change: checkDroppedWithItsColumn(), want: []string{
+			`ALTER TABLE "public"."owners" DROP CONSTRAINT "owners_email_check"`,
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
-			`ALTER TABLE "public"."owners" DROP CONSTRAINT IF EXISTS "owners_email_check"`,
 		}},
 		{name: "a view dropped under a declared reader", change: viewDroppedUnderADeclaredReader(), want: []string{
 			`DROP VIEW "owner_names" CASCADE`,

@@ -74,6 +74,11 @@ func GrantsWithSemantics(
 	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
 	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
 	for _, grant := range database.Grants {
+		if grant.Privilege == "" {
+			// An implicit routine-owner row with no privilege records that
+			// its ACL was inspected after the owner revoked EXECUTE.
+			continue
+		}
 		if grant.IsPartialRevoke {
 			// Not a grant. The row SUBTRACTS a privilege from a broader one --
 			// ClickHouse's partial revoke, SQL Server's DENY -- and entering it

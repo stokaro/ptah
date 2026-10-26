@@ -135,3 +135,31 @@ func TestInputTypes_KeepsDistinctTargetsApart(t *testing.T) {
 		})
 	}
 }
+
+// TestArgumentTypes_NamesEveryArgumentsType pins the types an argument list
+// names, each without its mode, its name or its default: the types a routine
+// depends on, OUT and INOUT arguments included.
+func TestArgumentTypes_NamesEveryArgumentsType(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments string
+		want      []string
+	}{
+		{name: "no arguments", arguments: "", want: nil},
+		{name: "a named argument", arguments: "r item_skus", want: []string{"item_skus"}},
+		{name: "an unnamed argument", arguments: "item_skus", want: []string{"item_skus"}},
+		{name: "an argument named after a type", arguments: "item_skus integer", want: []string{"integer"}},
+		{name: "modes and a default", arguments: "IN a int, OUT b app.v, INOUT c text DEFAULT 'x'", want: []string{"int", "app.v", "text"}},
+		{name: "a multi-word type and an array", arguments: "d double precision, e v[]", want: []string{"double precision", "v[]"}},
+		{name: "a type with modifiers", arguments: "n numeric(10,2)", want: []string{"numeric(10,2)"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := routineargs.ArgumentTypes(test.arguments)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}

@@ -4,11 +4,14 @@ package generator
 // as well as its name, which is what a reversal has to carry.
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectlookup"
 )
@@ -130,6 +133,135 @@ func sameDropIdentity(left, right *string) bool {
 	return *left == *right
 }
 
+// routineAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, each with the declaration the pre-change database
+// held: the routine read and converted with every property it has, its
+// settings, STRICT, LEAKPROOF, PARALLEL and SECURITY, which the removal's own
+// operand does not carry. A SECURITY DEFINER function that came back without
+// its pinned search_path would run with the caller's. [refuseUnrestorableRoutines]
+// refuses a removal the pre-change database does not hold before the rollback
+// is planned, so every removal here finds its routine.
+func routineAdditionsFromRemovals(removals difftypes.FunctionChanges, current *catalog.Database, prior *schemamodel.Database) difftypes.FunctionChanges {
+	additions := slices.Clone(removals)
+	for i, removal := range additions {
+		if held := priorFunction(current, prior, removal.Name, removal.Signature); held.Name != "" {
+			additions[i].Function = held
+		}
+	}
+	return additions
+}
+
+// refuseUnrestorableRoutines refuses a rollback that would create a removed
+// routine again without the declaration the pre-change database held: the
+// read holds no routine of that name and signature to restore it from. A
+// rollback built from the removal's own operand would create the routine
+// without its settings, properties and privileges, and say nothing about it.
+func refuseUnrestorableRoutines(diff *difftypes.SchemaDiff, current *catalog.Database, prior *schemamodel.Database) error {
+	for _, removal := range append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...) {
+		if priorFunction(current, prior, removal.Name, removal.Signature).Name == "" {
+			signature := ""
+			if removal.Signature != nil {
+				signature = *removal.Signature
+			}
+			return fmt.Errorf("%w: cannot plan the rollback of removing %s(%s): the database read holds no such routine to restore",
+				ptaherr.ErrInvalidSchemaDiff, removal.Name, signature)
+		}
+	}
+	return nil
+}
+
+// routineGrantsFromRemovals is the privileges the rollback gives back to the
+// routines it creates again, as the pre-change database held them.
+//
+// A routine PostgreSQL creates holds its default ACL: its owner and PUBLIC
+// may execute it. The read reports those as implicit grants. An ACL that
+// revoked PUBLIC reports the owner but no PUBLIC row. A read that excluded
+// grants reports neither, and cannot justify a revoke. The old owner also
+// needs an explicit grant after the migrator re-creates the routine: the
+// migrator may be a different role. Without these rules a SECURITY DEFINER
+// function can come back with broader or narrower access.
+func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *catalog.Database) (granted, revoked []difftypes.GrantRef) {
+	if current == nil {
+		return nil, nil
+	}
+	for _, removal := range removals {
+		function, ok := heldFunction(current, removal.Name, removal.Signature)
+		if !ok {
+			continue
+		}
+		functionGranted, functionRevoked := routineGrantsForRestoredFunction(function, current.Grants)
+		granted = append(granted, functionGranted...)
+		revoked = append(revoked, functionRevoked...)
+	}
+	return granted, revoked
+}
+
+func routineGrantsForRestoredFunction(function catalog.Function, observed []catalog.Grant) (granted, revoked []difftypes.GrantRef) {
+	objectType := "FUNCTION"
+	if function.Kind == schemamodel.FunctionKindProcedure {
+		objectType = "PROCEDURE"
+	}
+	arguments := function.Signature()
+	// A routine privilege names no column, so the column is the read's,
+	// which is empty.
+	target := func(role, privilege, column string, withOption bool) difftypes.GrantRef {
+		return difftypes.GrantRef{Role: role, Privilege: privilege, ObjectType: objectType,
+			ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, WithOption: withOption}
+	}
+	publicExecutes := false
+	grantsObserved := false
+	for _, grant := range observed {
+		if !grantOnRoutine(grant, function, objectType) {
+			continue
+		}
+		grantsObserved = true
+		role := strings.TrimSpace(grant.Role)
+		privilege := strings.ToUpper(strings.TrimSpace(grant.Privilege))
+		if strings.EqualFold(role, "PUBLIC") && privilege == "EXECUTE" {
+			publicExecutes = true
+			if grant.Implicit || !grant.WithOption {
+				continue
+			}
+		}
+		if grant.Implicit && !strings.EqualFold(role, "PUBLIC") {
+			// The old owner is implicit in the old catalog, but the new
+			// routine belongs to the migrator. A blank privilege records
+			// that the ACL was read and the owner revoked EXECUTE.
+			if privilege != "" {
+				granted = append(granted, target(role, privilege, "", false))
+			}
+			continue
+		}
+		if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
+			continue
+		}
+		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), grant.WithOption))
+	}
+	if grantsObserved && !publicExecutes {
+		revoked = append(revoked, target("PUBLIC", "EXECUTE", "", false))
+	}
+	return granted, revoked
+}
+
+// grantOnRoutine reports whether grant, read from the database, is about
+// function, a routine of objectType.
+func grantOnRoutine(grant catalog.Grant, function catalog.Function, objectType string) bool {
+	return strings.EqualFold(strings.TrimSpace(grant.ObjectType), objectType) &&
+		grant.QualifiedTarget() == function.QualifiedName() &&
+		strings.TrimSpace(grant.Arguments) == strings.TrimSpace(function.Signature())
+}
+
+// heldFunction is the routine the pre-change database held under name and
+// signature, as the read reported it.
+func heldFunction(current *catalog.Database, name string, signature *string) (catalog.Function, bool) {
+	for _, function := range current.Functions {
+		if function.QualifiedName() == name && sameDropIdentity(function.DropIdentity(), signature) {
+			return function, true
+		}
+	}
+	return catalog.Function{}, false
+}
+
 // priorFunction is the function the pre-change database held, as a declaration
 // the planner can render.
 //
@@ -143,16 +275,29 @@ func sameDropIdentity(left, right *string) bool {
 // rewrote the wrong routine, and a rebuild dropped `f(n integer)` and never
 // created it again (stokaro/ptah#3288). The comparison records the signature
 // from this same catalog record, so the two agree by construction.
+//
+// The conversion keeps the read's routines in order, so the declaration at the
+// read routine's position is the one converted from it. Where the two lists
+// differ in length, the declaration is found by the name, kind and argument
+// list it was converted with instead.
 func priorFunction(current *catalog.Database, prior *schemamodel.Database, name string, signature *string) schemamodel.Function {
-	if current == nil || prior == nil || len(current.Functions) != len(prior.Functions) {
+	if current == nil || prior == nil {
 		return schemamodel.Function{}
 	}
 	for i, function := range current.Functions {
-		if function.QualifiedName() == name && sameDropIdentity(function.DropIdentity(), signature) {
-			// Conversion preserves routine order. Keep the catalog signature for
-			// overload selection and use the declaration already converted with
-			// this operation's selected runtime, including its feature facets.
+		if function.QualifiedName() != name || !sameDropIdentity(function.DropIdentity(), signature) {
+			continue
+		}
+		if len(current.Functions) == len(prior.Functions) {
+			// Keep the catalog signature for overload selection and use the
+			// declaration already converted with this operation's selected
+			// runtime, including its feature facets.
 			return prior.Functions[i]
+		}
+		for _, declared := range prior.Functions {
+			if declared.Name == function.QualifiedName() && declared.Kind == function.Kind && declared.Parameters == function.Parameters {
+				return declared
+			}
 		}
 	}
 	return schemamodel.Function{}

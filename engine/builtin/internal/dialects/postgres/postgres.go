@@ -2083,8 +2083,14 @@ func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNod
 		targetType = columnType
 	}
 	if column.EnumType {
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
-			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType, r.escapeIdentifier(column.Name), targetType)
+		// Through text: no cast reaches an enum from another enum, and every
+		// type a column can leave casts to text. An array goes through text[].
+		via := "text"
+		if strings.HasSuffix(strings.TrimSpace(targetType), "[]") {
+			via = "text[]"
+		}
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s::%s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType, r.escapeIdentifier(column.Name), via, targetType)
 	} else {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;",
 			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), targetType)

@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
@@ -258,7 +259,15 @@ func resolveTriggerConditions(
 // Each probe is the CREATE the renderer writes for the declared kind,
 // arguments and return type, in pg_temp and with a body nobody reads: the
 // server spells both the way it would for the plan's own statement. A routine
-// that declares neither, a procedure without arguments, has nothing to spell.
+// that declares neither, a procedure without arguments, has nothing to spell,
+// unless its body is SQL-standard.
+//
+// On PostgreSQL a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN
+// expression`, is printed back in the server's own spelling, so its probe
+// carries the declared body under the routine's own name and reads the stored
+// body back; see [routineArgumentsProbe]. A body the server refuses there
+// leaves the signature to a second CREATE with a body nobody reads, and the
+// body compares as written.
 //
 // CockroachDB refuses a routine in pg_temp and rewrites a body when it stores
 // one, so there the probe is the declared routine itself, language and body
@@ -269,10 +278,11 @@ func resolveTriggerConditions(
 //
 // A body that selects `*`, see [dbexprprobe.SelectsStar], is stored with the
 // star expanded against the columns its tables hold when the routine is
-// created. The probe expands it against the columns they hold now, so its body
-// is used only while no table the database shares with the declaration gains
-// or loses a column: an answer from today's columns would hide a column the
-// plan adds, as it would for a view. Its signature is used either way.
+// created, on CockroachDB and in a PostgreSQL SQL-standard body alike. The
+// probe expands it against the columns they hold now, so its body is used only
+// while no table the database shares with the declaration gains or loses a
+// column: an answer from today's columns would hide a column the plan adds, as
+// it would for a view. Its signature is used either way.
 func resolveRoutineArguments(
 	ctx context.Context,
 	conn Connection,
@@ -294,7 +304,8 @@ func resolveRoutineArguments(
 	var probes []dbexprprobe.RoutineArgumentsProbe
 	for _, function := range desired.Functions {
 		key := exprkey.RoutineArguments(function)
-		spellsNothing := strings.TrimSpace(function.Parameters+function.Returns) == "" && !rewritesStoredBodies(dialect)
+		spellsNothing := strings.TrimSpace(function.Parameters+function.Returns) == "" && !rewritesStoredBodies(dialect) &&
+			!probesSQLStandardBody(dialect, function)
 		if spellsNothing || seen[key] || !held[strings.ToLower(bareName(function.Name))] {
 			continue
 		}
@@ -405,20 +416,64 @@ func routineArgumentsProbe(
 		Language:   "sql",
 		Body:       "SELECT NULL",
 	}
-	if rewritesStoredBodies(dialect) {
+	switch {
+	case rewritesStoredBodies(dialect):
 		probe.InCurrentSchema = true
 		probe.ReadsBody = starsAnswerable || !dbexprprobe.SelectsStar(function.Body)
 		declared.Name = name
 		declared.Language = function.Language
 		declared.Body = function.Body
+	case probesSQLStandardBody(dialect, function) && (starsAnswerable || !dbexprprobe.SelectsStar(function.Body)):
+		// PostgreSQL keeps a SQL-standard body parsed and prints it back in
+		// its own spelling: `BEGIN ATOMIC SELECT count(*) FROM v WHERE a > x;
+		// END` reads back as `BEGIN ATOMIC\n SELECT count(*) AS count\n
+		// FROM v\n  WHERE (v.a > f.x);\nEND` for a routine f
+		// (stokaro/ptah#5021). The probe creates the declared body, which
+		// reads what the target holds, so its stored form compares with the
+		// one the target holds. The copy takes the routine's own name in
+		// pg_temp, because the server qualifies a parameter with it; an
+		// unqualified name never finds a routine in pg_temp, and the probe is
+		// rolled back. A body that reads something the target does not hold
+		// yet refuses the copy, and Fallback answers for the signature.
+		probe.ReadsBody = true
+		probe.SQLStandardBody = true
+		probe.Name = bareName(function.Name)
+		declared.Name = "pg_temp." + probe.Name
+		declared.Language = function.Language
+		declared.Body = function.Body
 	}
 	result, usable, err := renderProbe(ctx, service, info,
-		modelast.FromFunction(declared), ast.NewDropFunction(declared.Name).SetKind(function.Kind))
+		modelast.FromFunctionFor(declared, dialect), ast.NewDropFunction(declared.Name).SetKind(function.Kind))
 	if err != nil || !usable {
 		return dbexprprobe.RoutineArgumentsProbe{}, false, err
 	}
 	probe.Statement, probe.Drop = result.Fragments[0].SQL, result.Fragments[1].SQL
+	if probe.SQLStandardBody {
+		signature := declared
+		signature.Language = "sql"
+		signature.Body = "SELECT NULL"
+		fallback, usable, err := renderProbe(ctx, service, info,
+			modelast.FromFunctionFor(signature, dialect), ast.NewDropFunction(signature.Name).SetKind(function.Kind))
+		if err != nil {
+			return dbexprprobe.RoutineArgumentsProbe{}, false, err
+		}
+		if usable {
+			probe.Fallback = fallback.Fragments[0].SQL
+		}
+	}
 	return probe, true, nil
+}
+
+// probesSQLStandardBody reports whether the probe for function carries its
+// body: a SQL-standard body on an engine whose descriptor says a probe may,
+// see [descriptor.Comparison.ProbesSQLStandardBodies]. YugabyteDB keeps a
+// routine created in pg_temp past the rollback, see
+// [dbexprprobe.RoutineArgumentsProbe.Drop], and a copy whose body reads the
+// target's tables would then hold them, so its probe stays on the signature.
+func probesSQLStandardBody(dialect string, function schemamodel.Function) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.Comparison.ProbesSQLStandardBodies &&
+		routinebody.SQLStandard(function.Language, function.Body)
 }
 
 // columnListsChange reports whether a table the database shares with the

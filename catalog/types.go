@@ -1116,9 +1116,11 @@ type Function struct {
 	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
 	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
 	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	// Settings are the routine's own configuration settings as the catalog
-	// reports them, each `name=value`. PostgreSQL keeps them in
-	// pg_proc.proconfig; a dialect without such a facility leaves this empty.
+	// Settings are the routine's own configuration settings, each `name=value`
+	// with the value in SQL, quoted as pg_get_functiondef prints it:
+	// `work_mem='8MB'`, `search_path='public', 'pg_catalog'`. PostgreSQL keeps
+	// them in pg_proc.proconfig unquoted; a dialect without such a facility
+	// leaves this empty.
 	Settings []string `json:"settings,omitempty"`
 	Body     string   `json:"body"`    // Function body/implementation
 	Comment  string   `json:"comment"` // Function comment/description
@@ -1339,9 +1341,11 @@ type Grant struct {
 
 	// Implicit marks a privilege the object holds by default rather than by a
 	// GRANT: PostgreSQL lets PUBLIC execute a routine whose pg_proc.proacl is
-	// NULL, meaning nobody has granted or revoked anything on it. The row is
-	// reported so a declaration that revokes it can see it is there; a
-	// description of the database leaves it out, because nobody wrote it.
+	// NULL, meaning nobody has granted or revoked anything on it. A routine's
+	// owner also has an implicit observation row; an empty Privilege there
+	// records that the owner revoked its own EXECUTE. The row is reported so a
+	// rollback can distinguish a revoked privilege from an unread ACL. A
+	// description of the database leaves implicit rows out.
 	Implicit bool `json:"implicit,omitempty"`
 
 	// IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather

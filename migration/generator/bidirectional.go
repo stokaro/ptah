@@ -211,7 +211,10 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err != nil {
 		return nil, fmt.Errorf("capture rollback target: %w", err)
 	}
-	reverseDiff := reverseSchemaDiffWithPrior(opts.Diff, opts.DesiredSchema, opts.CurrentSchema, prior, dialect)
+	if err := refuseUnrestorableRoutines(opts.Diff, opts.CurrentSchema, prior); err != nil {
+		return nil, err
+	}
+	reverseDiff := reverseSchemaDiffWithPrior(opts.Diff, opts.DesiredSchema, opts.CurrentSchema, prior, dialect, caps)
 	recovery, err := reverseFeatureChanges(ctx, opts.Diff, reverseDiff, dialect, caps, opts.Runtime)
 	if err != nil {
 		return nil, fmt.Errorf("reverse feature changes: %w", err)

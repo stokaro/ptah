@@ -39,6 +39,8 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routinebody"
+	"ptah.run/internal/tableref"
 )
 
 // Check is the key for a table CHECK whose table arrives as one possibly
@@ -131,12 +133,29 @@ func TableParts(semantics identifier.Semantics, schema, table string) string {
 // language and body are in the key because a server that rewrites a body when
 // it stores it answers for the body too, and two routines declaring one
 // signature with two bodies need two answers (stokaro/ptah#4058).
+//
+// A SQL-standard body is the exception: PostgreSQL prints a parameter in it
+// qualified with the routine's own name, `f.x`, so two routines declaring one
+// body answer differently, and the key carries the routine's name without its
+// schema (stokaro/ptah#5021).
 func RoutineArguments(routine schemamodel.Function) string {
 	kind := schemamodel.FunctionKindFunction
 	if routine.IsProcedure() {
 		kind = schemamodel.FunctionKindProcedure
 	}
+	if routinebody.SQLStandard(routine.Language, routine.Body) {
+		return lengthPrefixed(kind, routine.Parameters, routine.Returns, routine.Language, routine.Body, bareRoutineName(routine.Name))
+	}
 	return lengthPrefixed(kind, routine.Parameters, routine.Returns, routine.Language, routine.Body)
+}
+
+// bareRoutineName is name without the schema a declaration may qualify it
+// with.
+func bareRoutineName(name string) string {
+	if ref, ok := tableref.Parse(name); ok {
+		return ref.Name
+	}
+	return name
 }
 
 // ViewBody is the key [config.CompareOptions.ViewBodies] is held under for a

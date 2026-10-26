@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
@@ -289,7 +290,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
-	column.EnumType = declaredEnum(declaredType, enums) != nil
+	column.EnumType = declaredEnum(strings.TrimSuffix(strings.TrimSpace(declaredType), "[]"), enums) != nil
 
 	// Set nullable - only override default if explicitly set to false
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
@@ -395,7 +396,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	column.Facets = field.Facets
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
 	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
-	column.EnumType = declaredEnum(declaredType, enums) != nil
+	column.EnumType = declaredEnum(strings.TrimSuffix(strings.TrimSpace(declaredType), "[]"), enums) != nil
 
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
@@ -1177,6 +1178,32 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 	return functionNode
 }
 
+// FromFunctionFor is [FromFunction] for targetPlatform. On a target whose
+// routine grammar quotes the body, which is PostgreSQL's, a LANGUAGE sql
+// routine whose body starts with `BEGIN ATOMIC` or
+// `RETURN`, or a routine naming no language whose body starts with `BEGIN
+// ATOMIC`, has a SQL-standard body, which is SQL rather than a string:
+// PostgreSQL refuses it in dollar quotes (stokaro/ptah#4981), and a read
+// reports it as the server prints it, starting at its keyword. Every other
+// target keeps the body as it is: a MySQL, MariaDB or SQL Server function
+// body that starts with RETURN is the routine's own statement.
+func FromFunctionFor(function schemamodel.Function, targetPlatform string) *ast.CreateFunctionNode {
+	functionNode := FromFunction(function)
+	if describe(targetPlatform).Grammar.Routines.Body != descriptor.RoutineQuotedBody {
+		return functionNode
+	}
+	switch routinebody.Of(function.Language, function.Body) {
+	case routinebody.Atomic:
+		// PostgreSQL takes a SQL-standard body as LANGUAGE sql where the
+		// routine names no language, so the routine is written in it.
+		functionNode.SetAtomicBody(strings.TrimSpace(function.Body)).SetLanguage("sql")
+	case routinebody.Return:
+		functionNode.SetReturnBody(routinebody.ReturnExpression(function.Body))
+	case routinebody.Quoted:
+	}
+	return functionNode
+}
+
 // FromSequence converts a schemamodel.Sequence into a CreateSequenceNode.
 //
 // The returned node faithfully carries every declared option, including OWNED
@@ -1792,7 +1819,7 @@ func appendPreTableStatements(
 
 	// Before the types, so a domain CHECK can call the routine as a column
 	// default can.
-	if err := appendRoutineStatements(visit, database, placements, deporder.RoutineBeforeTypes); err != nil {
+	if err := appendRoutineStatements(visit, database, targetPlatform, placements, deporder.RoutineBeforeTypes); err != nil {
 		return err
 	}
 
@@ -1813,7 +1840,7 @@ func appendPreTableStatements(
 		typeWindow(true)
 		typeWindow(false)
 	}
-	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
+	return appendRoutineStatements(visit, database, targetPlatform, placements, deporder.RoutineAfterTypes)
 }
 
 // CollectDatabase collects the nodes [WalkDatabase] visits into an
@@ -1888,7 +1915,7 @@ func appendTableStatements(
 				if function.Name != step.Name {
 					continue
 				}
-				if err := visit(FromFunction(function)); err != nil {
+				if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 					return nil, err
 				}
 			}
@@ -2100,6 +2127,7 @@ func appendRoleStatements(visit func(ast.Node) error, database schemamodel.Datab
 func appendRoutineStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
+	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
 	placement deporder.RoutinePlacement,
 ) error {
@@ -2107,7 +2135,7 @@ func appendRoutineStatements(
 		if placements[function.Name] != placement {
 			continue
 		}
-		if err := visit(FromFunction(function)); err != nil {
+		if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 			return err
 		}
 	}
@@ -2215,7 +2243,7 @@ func appendOrderedViewLikeStatements(
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, targetPlatform) {
 		if object.Routine {
 			for _, function := range routinesByName[object.Name] {
-				if err := visit(FromFunction(function)); err != nil {
+				if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 					return err
 				}
 			}
