@@ -61,6 +61,12 @@ func TestRead_AlterTableAddColumnReachesTheTable_HappyPath(t *testing.T) {
 			wantColumns: []string{"id", "note"},
 		},
 		{
+			// The server skips the statement, "column already exists, skipping".
+			name:        "a guarded column declared differently",
+			sql:         "CREATE TABLE users (id uuid PRIMARY KEY, note text);\nALTER TABLE users ADD COLUMN IF NOT EXISTS note varchar(10);",
+			wantColumns: []string{"id", "note"},
+		},
+		{
 			name: "columns keep the order the document adds them in",
 			sql: "CREATE TABLE users (id uuid PRIMARY KEY);\n" +
 				"ALTER TABLE users ADD COLUMN IF NOT EXISTS b text;\nALTER TABLE users ADD COLUMN a text;",
@@ -89,13 +95,6 @@ func TestRead_AlterTableAddColumnReachesTheTable_FailurePath(t *testing.T) {
 			name:    "a column the table already declares, unguarded",
 			sql:     "CREATE TABLE users (id uuid PRIMARY KEY, note text);\nALTER TABLE users ADD COLUMN note text;",
 			wantErr: `ALTER TABLE users ADD COLUMN note names a column the table already declares`,
-		},
-		{
-			// Keeping either definition would drop what the other says.
-			name: "a guarded column declared differently",
-			sql:  "CREATE TABLE users (id uuid PRIMARY KEY, note text);\nALTER TABLE users ADD COLUMN IF NOT EXISTS note varchar(10);",
-			wantErr: `ALTER TABLE users ADD COLUMN IF NOT EXISTS note declares the column differently from the ` +
-				`table's own declaration; .*`,
 		},
 		{
 			name:    "a table the document does not declare",

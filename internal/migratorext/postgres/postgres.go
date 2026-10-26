@@ -24,7 +24,7 @@ func Postgres() migratorext.Services {
 	services := Family()
 	services.Dialects = []string{platform.Postgres}
 	services.Indexes = indexGuard{}
-	services.OwnTransactions = filetx.Read
+	services.OwnTransactions = filetx.ReadUnwrapped
 	return services
 }
 

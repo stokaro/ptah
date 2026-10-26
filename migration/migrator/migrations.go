@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
+	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -137,8 +138,12 @@ type StatementEvent struct {
 // StatementObserver receives successfully executed migration statements. It is
 // called after either an interceptor or the normal migrator path executes the
 // statement. When a Migrator executes SQL in no-transaction mode, the observer
-// runs after Ptah durably checkpoints that statement's progress. Returning an
-// error aborts the migration.
+// runs after Ptah durably checkpoints that statement's progress. A body that
+// runs its own transactions ([WithOwnTransactions]) is observed statement by
+// statement too, a statement inside a transaction that has not committed yet
+// included: a later failure can take such a statement back, and only the
+// statement that commits the transaction is checkpointed. Returning an error
+// aborts the migration.
 type StatementObserver interface {
 	ObserveStatement(ctx context.Context, event StatementEvent) error
 }
@@ -158,6 +163,18 @@ type statementExecutionHooks struct {
 	interceptor StatementInterceptor
 	validator   StatementValidator
 	observer    StatementObserver
+	// ownTransactions marks the files of a directory written for a runner
+	// that opens no transaction around a file; see [WithOwnTransactions].
+	ownTransactions bool
+}
+
+// refusalRemedy words the way out of a transaction preflight refusal for the
+// directory, or returns nil for the finding's own.
+func (h statementExecutionHooks) refusalRemedy() func(txrequire.Reason) string {
+	if h.ownTransactions {
+		return unwrappedRemedy
+	}
+	return nil
 }
 
 type statementProgressRecorder func(context.Context, StatementEvent) error
@@ -800,7 +817,7 @@ func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConn
 // the replay's transaction instead of the body's. A body of a directory that
 // runs such bodies the way golang-migrate does ([WithOwnTransactions]) runs in
 // the transactions a migrate apply of it runs it in: those of the body sent as
-// one query, unless the body asks for no transaction ([oneQuerySession]).
+// one query, unless the body asks for no transaction ([ownTransactionSession]).
 //
 // A body that fails is rolled back on the same session before the error is
 // returned, because the session is the one the replay then cleans the dev
@@ -818,20 +835,22 @@ func (m *Migration) replayOwnTransactions(
 	if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
 		return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", m.Version)
 	}
-	var query *oneQuerySession
-	if txMode.Mode != migrationfile.FileTxModeNone {
-		blocks, statements, err := m.upOwnTransactions(conn)
-		if err != nil {
-			return err
-		}
-		if !blocks.Empty() {
-			query = &oneQuerySession{conn: conn, transactions: blocks.AsOneQuery(len(statements))}
-			ctx = query.withOneQueryHooks(ctx)
-		}
+	var session *ownTransactionSession
+	blocks, statements, err := m.upOwnTransactions(conn)
+	if err != nil {
+		return err
 	}
-	err := m.upSQLFunc(ctx, conn, migrationExecutionNoTransaction)
-	if err == nil && query != nil {
-		err = query.finish(ctx)
+	if !blocks.Empty() {
+		session = &ownTransactionSession{conn: conn, transactions: blocks}
+		if txMode.Mode != migrationfile.FileTxModeNone {
+			session.transactions = blocks.AsOneQuery(len(statements))
+			session.oneQuery = true
+		}
+		ctx = session.withSessionHooks(ctx)
+	}
+	err = m.upSQLFunc(ctx, conn, migrationExecutionNoTransaction)
+	if err == nil {
+		err = session.finish(ctx)
 	}
 	if err == nil {
 		return nil
@@ -1070,7 +1089,7 @@ func executeMigrationFileSQL(
 	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
 		return err
 	}
-	if err := preflightTransactionRequirements(conn, filename, sql, statements, mode); err != nil {
+	if err := preflightTransactionRequirements(conn, filename, sql, statements, mode, hooks.refusalRemedy()); err != nil {
 		return err
 	}
 	for i, stmt := range statements {

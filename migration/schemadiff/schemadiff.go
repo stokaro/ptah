@@ -97,12 +97,13 @@ func compareReportingUndecidedAdditions(
 	// The rules the target gives the shared comparison; a comparison without
 	// a target has none.
 	var rules schemacomparison.Rules
+	var authored *schemamodel.Database
 	if opts.Dialect != "" {
 		inputs, err := targetComparisonInputs(ctx, desired, database, opts, selected, caps, runtime)
 		if err != nil {
 			return nil, Diagnostics{}, err
 		}
-		desired, database, rules = inputs.desired, inputs.current, inputs.rules
+		desired, database, rules, authored = inputs.desired, inputs.current, inputs.rules, inputs.authored
 	}
 
 	diff := &difftypes.SchemaDiff{}
@@ -254,6 +255,8 @@ func compareReportingUndecidedAdditions(
 		}
 		return strings.Compare(a.Name, b.Name)
 	})
+
+	restoreAuthored(diff, authored)
 
 	// Last, because it reads the whole plan: an object the effective desired
 	// state keeps must not bind what any comparator above drops. It reports
@@ -492,6 +495,16 @@ type targetInputs struct {
 	desired *schemamodel.Database
 	current *catalog.Database
 	rules   schemacomparison.Rules
+	// authored is the desired schema before the target spelled its common
+	// objects, which the diff carries; see restoreAuthored.
+	authored *schemamodel.Database
+}
+
+// desiredSpeller is the runtime of a target that spells the values of the
+// desired schema's common objects as its reader reports them, for the
+// comparison alone; see [ptah.run/engine.Target.Spelling].
+type desiredSpeller interface {
+	SpellDesired(context.Context, schemapreparation.LoweringRequest) (*schemamodel.Database, error)
 }
 
 // targetComparisonInputs prepares the [targetInputs] of a comparison for
@@ -538,7 +551,95 @@ func targetComparisonInputs(
 	if err != nil {
 		return targetInputs{}, err
 	}
-	return targetInputs{desired: desired, current: database, rules: rules}, nil
+	inputs := targetInputs{desired: desired, current: database, rules: rules}
+	if speller, spells := runtime.(desiredSpeller); spells {
+		spelled, err := speller.SpellDesired(ctx, schemapreparation.LoweringRequest{
+			Target: selected.Name(), Desired: desired, Current: database, Capabilities: caps, Semantics: loweringSemantics(opts),
+		})
+		if err != nil {
+			return targetInputs{}, err
+		}
+		if spelled != desired {
+			inputs.desired, inputs.authored = spelled, desired
+		}
+	}
+	return inputs, nil
+}
+
+// restoreAuthored puts the declared values of views, materialized views,
+// sequences and roles back into the changes of diff, in place of the spelling
+// the target gave them for the comparison, so a plan creates and changes each
+// object as it was declared. Only the values the target spells return; what
+// the comparison added to an entry, such as settings adopted from the read,
+// stays. A grant keeps the target's spelling of its privileges: its diff
+// entries are per privilege, which the spelling may change in number. Nil
+// authored means the target spelled nothing.
+func restoreAuthored(diff *difftypes.SchemaDiff, authored *schemamodel.Database) {
+	if authored == nil {
+		return
+	}
+	views := make(map[string]schemamodel.View, len(authored.Views))
+	for _, view := range authored.Views {
+		views[view.Name] = view
+	}
+	matviews := make(map[string]schemamodel.MaterializedView, len(authored.MaterializedViews))
+	for _, view := range authored.MaterializedViews {
+		matviews[view.Name] = view
+	}
+	sequences := make(map[string]schemamodel.Sequence, len(authored.Sequences))
+	for _, sequence := range authored.Sequences {
+		sequences[sequence.QualifiedName()] = sequence
+	}
+	roles := make(map[string]schemamodel.Role, len(authored.Roles))
+	for _, role := range authored.Roles {
+		roles[role.Name] = role
+	}
+	restoreView := func(view *schemamodel.View) {
+		if declared, found := views[view.Name]; found {
+			view.Body, view.WithCheck, view.Attributes = declared.Body, declared.WithCheck, slices.Clone(declared.Attributes)
+		}
+	}
+	restoreMatview := func(view *schemamodel.MaterializedView) {
+		if declared, found := matviews[view.Name]; found {
+			view.Body = declared.Body
+		}
+	}
+	restoreSequence := func(sequence *schemamodel.Sequence) {
+		if declared, found := sequences[sequence.QualifiedName()]; found {
+			sequence.AsType, sequence.Start, sequence.Increment, sequence.MinValue = declared.AsType, declared.Start, declared.Increment, declared.MinValue
+			sequence.MaxValue, sequence.Cache, sequence.Cycle, sequence.OwnedBy = declared.MaxValue, declared.Cache, declared.Cycle, declared.OwnedBy
+		}
+	}
+	restoreRole := func(role *schemamodel.Role) {
+		if declared, found := roles[role.Name]; found {
+			role.Login, role.Superuser, role.CreateDB, role.CreateRole = declared.Login, declared.Superuser, declared.CreateDB, declared.CreateRole
+			role.Inherit, role.Replication, role.MemberOf = declared.Inherit, declared.Replication, slices.Clone(declared.MemberOf)
+		}
+	}
+	for i := range diff.ViewsAdded {
+		restoreView(&diff.ViewsAdded[i])
+	}
+	for i := range diff.ViewsModified {
+		restoreView(&diff.ViewsModified[i].Desired)
+	}
+	for i := range diff.MaterializedViewsAdded {
+		restoreMatview(&diff.MaterializedViewsAdded[i])
+	}
+	for i := range diff.MaterializedViewsModified {
+		restoreMatview(&diff.MaterializedViewsModified[i].Desired)
+	}
+	for i := range diff.SequencesAdded {
+		restoreSequence(&diff.SequencesAdded[i])
+	}
+	for i := range diff.SequencesModified {
+		restoreSequence(&diff.SequencesModified[i].Desired)
+	}
+	for i := range diff.RolesAdded {
+		restoreRole(&diff.RolesAdded[i])
+	}
+	for i := range diff.RolesModified {
+		restoreRole(&diff.RolesModified[i].Desired)
+	}
 }
 
 // loweringSemantics are the identifier rules a target's lowering pairs names

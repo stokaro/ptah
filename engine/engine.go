@@ -176,6 +176,12 @@ type Target struct {
 	// reader reports it in, before comparison. Nil leaves the desired schema
 	// as declared.
 	Lowering schemapreparation.Lowering
+	// Spelling rewrites the values of a desired schema's views, materialized
+	// views, sequences, roles and grants into the spelling the target's reader
+	// reports them in, such as a view query as the server stores it, for the
+	// comparison alone: a plan keeps each object as declared. Nil compares the
+	// declaration as written.
+	Spelling schemapreparation.Lowering
 	// Creations predicts table defaults and key membership for source documents.
 	// Nil leaves this offline operation unavailable.
 	Creations schemaprojection.TableCreationService
@@ -263,6 +269,7 @@ type target struct {
 	validation      schemavalidation.Service
 	preparation     schemapreparation.Service
 	lowering        schemapreparation.Lowering
+	spelling        schemapreparation.Lowering
 	comparison      schemacomparison.Rules
 	creations       schemaprojection.TableCreationService
 	constraints     schemaprojection.ConstraintService
@@ -441,6 +448,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"validation", declared.Validation},
 		{"preparation", declared.Preparation},
 		{"lowering", declared.Lowering},
+		{"spelling", declared.Spelling},
 		{"creation projection", declared.Creations},
 		{"constraint projection", declared.Constraints},
 		{"column comparison", declared.Comparison.Columns},
@@ -472,7 +480,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		r.targets[name] = target{
 			owner: owner, name: declared.Name, selection: selection, planner: declared.Planner,
 			rendering: declared.Rendering, schemaRendering: declared.SchemaRendering,
-			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering,
+			validation: declared.Validation, preparation: declared.Preparation, lowering: declared.Lowering, spelling: declared.Spelling,
 			constraints: declared.Constraints, creations: declared.Creations, comparison: declared.Comparison,
 			splitter: declared.Splitter, annotator: declared.Annotator, routineBodies: declared.RoutineBodies,
 			refusesSkips: declared.RefusesSkips, data: declared.Data, readBack: declared.ReadBack,

@@ -1,6 +1,7 @@
 package filetx_test
 
 import (
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -323,5 +324,145 @@ func TestBegin(t *testing.T) {
 			c.Assert(ok, qt.Equals, test.wantOK)
 			c.Assert(modes, qt.Equals, test.wantModes)
 		})
+	}
+}
+
+// ReadUnwrapped accepts what golang-migrate applies beyond a block the file
+// opens and closes: a COMMIT outside a block, a BEGIN inside one, and savepoint
+// statements inside one. Each is the file's own transaction control, and only
+// a block's BEGIN and COMMIT are its boundaries.
+func TestReadUnwrapped_HappyPath(t *testing.T) {
+	tests := []struct {
+		name           string
+		statements     []string
+		wantBoundaries []int
+		wantControls   []int
+	}{
+		{
+			name:           "a block",
+			statements:     []string{"BEGIN", "CREATE TABLE a (id int)", "COMMIT"},
+			wantBoundaries: []int{0, 2},
+			wantControls:   []int{0, 2},
+		},
+		{
+			name:           "a COMMIT outside a block",
+			statements:     []string{"ALTER TYPE color ADD VALUE 'green'", "COMMIT", "CREATE TABLE a (c color)"},
+			wantBoundaries: nil,
+			wantControls:   []int{1},
+		},
+		{
+			name:           "an END outside a block after one",
+			statements:     []string{"BEGIN", "SELECT 1", "COMMIT", "SELECT 2", "END"},
+			wantBoundaries: []int{0, 2},
+			wantControls:   []int{0, 2, 4},
+		},
+		{
+			name:           "a BEGIN inside a block",
+			statements:     []string{"BEGIN", "BEGIN ISOLATION LEVEL SERIALIZABLE", "CREATE TABLE a (id int)", "COMMIT"},
+			wantBoundaries: []int{0, 3},
+			wantControls:   []int{0, 1, 3},
+		},
+		{
+			name: "savepoints inside a block",
+			statements: []string{"BEGIN", "SAVEPOINT s", "CREATE TABLE a (id int)", "ROLLBACK TO SAVEPOINT s",
+				"ROLLBACK WORK TO s", "RELEASE SAVEPOINT s", "RELEASE s", "COMMIT"},
+			wantBoundaries: []int{0, 7},
+			wantControls:   []int{0, 1, 3, 4, 5, 6, 7},
+		},
+		{
+			name:           "no transaction control",
+			statements:     []string{"CREATE TABLE a (id int)"},
+			wantBoundaries: nil,
+			wantControls:   nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			blocks, err := filetx.ReadUnwrapped(test.statements)
+			c.Assert(err, qt.IsNil)
+			c.Assert(blocks.Boundaries(), qt.DeepEquals, test.wantBoundaries)
+			c.Assert(blocks.Controls(), qt.DeepEquals, test.wantControls)
+			c.Assert(blocks.Empty(), qt.Equals, test.wantControls == nil)
+		})
+	}
+}
+
+// ReadUnwrapped refuses what golang-migrate applies but a history cannot
+// record, what PostgreSQL refuses outside a block, and a block the file leaves
+// open, whatever follows the refused statement.
+func TestReadUnwrapped_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		statements []string
+		wantIndex  int
+		wantReason string
+	}{
+		{name: "rollback", statements: []string{"BEGIN", "ROLLBACK"}, wantIndex: 1, wantReason: "ROLLBACK takes the file's own work back"},
+		{name: "abort", statements: []string{"BEGIN", "ABORT"}, wantIndex: 1, wantReason: "ABORT takes the file's own work back"},
+		{name: "a savepoint outside a block", statements: []string{"SAVEPOINT s", "SELECT 1"}, wantIndex: 0,
+			wantReason: "SAVEPOINT outside a transaction the file opened"},
+		{name: "a rollback to a savepoint outside a block", statements: []string{"BEGIN", "COMMIT", "ROLLBACK TO s"}, wantIndex: 2,
+			wantReason: "ROLLBACK outside a transaction the file opened"},
+		{name: "commit and chain", statements: []string{"BEGIN", "COMMIT AND CHAIN"}, wantIndex: 1, wantReason: "COMMIT AND CHAIN starts a transaction"},
+		{name: "a block left open", statements: []string{"SELECT 1", "BEGIN", "SELECT 2"}, wantIndex: 1,
+			wantReason: "the transaction is never closed by the file"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := filetx.ReadUnwrapped(test.statements)
+			structure, ok := errors.AsType[*filetx.StructureError](err)
+			c.Assert(ok, qt.IsTrue, qt.Commentf("error: %v", err))
+			c.Assert(structure.Index, qt.Equals, test.wantIndex)
+			c.Assert(structure.Reason, qt.Contains, test.wantReason)
+		})
+	}
+}
+
+// Sent as one query, a COMMIT outside every block ends the transaction the
+// statements before it run in, as a block's COMMIT does. Closing names the
+// statement that ends the transaction a statement runs in, the statement count
+// for the one the end of the file closes.
+func TestBlocks_AsOneQueryWithACommitOutsideABlock(t *testing.T) {
+	c := qt.New(t)
+	statements := []string{"CREATE TABLE a (id int)", "COMMIT", "BEGIN", "CREATE TABLE b (id int)", "COMMIT", "CREATE TABLE c (id int)"}
+	blocks, err := filetx.ReadUnwrapped(statements)
+	c.Assert(err, qt.IsNil)
+
+	query := blocks.AsOneQuery(len(statements))
+
+	c.Assert(query.Boundaries(), qt.DeepEquals, []int{0, 1, 2, 4, 5, 6})
+	for _, test := range []struct {
+		index   int
+		closing int
+		ok      bool
+	}{
+		{index: 0, closing: 1, ok: true},
+		{index: 1, closing: 1, ok: true},
+		{index: 3, closing: 4, ok: true},
+		{index: 5, closing: 6, ok: true},
+	} {
+		closing, ok := query.Closing(test.index)
+		c.Assert(closing, qt.Equals, test.closing, qt.Commentf("statement %d", test.index))
+		c.Assert(ok, qt.Equals, test.ok, qt.Commentf("statement %d", test.index))
+	}
+	_, ok := blocks.Closing(0)
+	c.Assert(ok, qt.IsFalse)
+}
+
+// Read keeps refusing what ReadUnwrapped accepts: the replay of a directory in
+// Atlas's layout reads files strictly.
+func TestRead_RefusesWhatReadUnwrappedAccepts(t *testing.T) {
+	for _, statements := range [][]string{
+		{"SELECT 1", "COMMIT"},
+		{"BEGIN", "BEGIN", "COMMIT"},
+		{"BEGIN", "SAVEPOINT s", "COMMIT"},
+	} {
+		c := qt.New(t)
+		_, err := filetx.Read(statements)
+		_, unwrapped := filetx.ReadUnwrapped(statements)
+		c.Assert(err, qt.ErrorAs, new(*filetx.StructureError), qt.Commentf("statements %q", statements))
+		c.Assert(unwrapped, qt.IsNil, qt.Commentf("statements %q", statements))
 	}
 }

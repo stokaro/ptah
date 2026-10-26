@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -171,12 +172,20 @@ func searchPathChange(guard migratorext.IndexGuard, statement string) (changed, 
 // ownTransactionResumeAction is [noTransactionResumeAction] for the statement
 // at index of a committed prefix of a body run describes; see
 // [Migrator.restoreSessionPrefix].
+//
+// The body's own transaction control is durable: a BEGIN, a COMMIT and a
+// savepoint statement change no session state that outlives the transaction,
+// and a COMMIT outside every transaction does nothing. Inside a committed
+// transaction, a DO, SELECT, WITH or CALL is durable too, unless its text
+// names something that sets session state that outlives a transaction; see
+// [setsSessionState]. A function or procedure such a statement calls is not
+// read, so one that sets such state itself is not restored.
 func ownTransactionResumeAction(index int, statement, dialect string, run ownTransactionRun) noTransactionPrefixAction {
+	if run.blocks.Control(index) {
+		return noTransactionPrefixDurable
+	}
 	if _, inside := run.transactions.Opening(index); !inside {
 		return noTransactionResumeAction(statement, dialect)
-	}
-	if opened, ok := run.blocks.Opening(index); ok && (opened == index || run.blocks.Closes(index)) {
-		return noTransactionPrefixDurable
 	}
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("LOCK") {
@@ -186,7 +195,25 @@ func ownTransactionResumeAction(index int, statement, dialect string, run ownTra
 		matchesAnyKeyword(tokens[1], "LOCAL", "TRANSACTION", "CONSTRAINTS") {
 		return noTransactionPrefixDurable
 	}
+	if len(tokens) > 0 && matchesAnyKeyword(tokens[0], "DO", "SELECT", "WITH", "CALL") && !setsSessionState(statement) {
+		return noTransactionPrefixDurable
+	}
 	return noTransactionResumeAction(statement, dialect)
+}
+
+// sessionStateWord matches, anywhere in a statement's text, a word that can
+// set PostgreSQL session state a transaction's end does not take back: SET and
+// RESET, set_config, a prepared statement, a notification channel, DISCARD, a
+// temporary object, a session-level advisory lock and LOAD. A false match
+// refuses a resume that would have been safe, which is the direction to err
+// in.
+var sessionStateWord = regexp.MustCompile(`(?i)\b(SET|RESET|SET_CONFIG|PREPARE|DEALLOCATE|LISTEN|UNLISTEN|DISCARD|` +
+	`TEMP|TEMPORARY|PG_ADVISORY_LOCK|PG_ADVISORY_LOCK_SHARED|PG_TRY_ADVISORY_LOCK|PG_TRY_ADVISORY_LOCK_SHARED|LOAD)\b`)
+
+// setsSessionState reports a statement whose text, a DO body's included, can
+// set session state that outlives the transaction it ran in.
+func setsSessionState(statement string) bool {
+	return sessionStateWord.MatchString(statement)
 }
 
 func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {

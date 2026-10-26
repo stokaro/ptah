@@ -32,6 +32,9 @@ type ReplayGuard struct {
 	// ownTransactions is set only by a caller that replays an existing history
 	// outside an enclosing transaction; see [ReplayGuard.WithOwnTransactions].
 	ownTransactions bool
+	// unwrapped reads such a file as a runner that sends it as it is runs it;
+	// see [ReplayGuard.WithUnwrappedTransactions].
+	unwrapped bool
 }
 
 // ReplayRealm is how much of the dev server a replay may change.
@@ -134,14 +137,34 @@ func (g *ReplayGuard) WithOwnTransactions() *ReplayGuard {
 	return &guard
 }
 
+// WithUnwrappedTransactions returns a guard that reads a file's own
+// transactions the way a runner that sends the file as it is, with no
+// transaction around it, runs them, as golang-migrate does (see
+// [replay.UnwrappedTransactionGuard]), in place of the reading
+// [ReplayGuard.WithOwnTransactions] gives. It changes nothing without that
+// option. The caller replays the file the way the apply of its directory runs
+// it.
+func (g *ReplayGuard) WithUnwrappedTransactions() *ReplayGuard {
+	guard := *g
+	guard.unwrapped = true
+	return &guard
+}
+
 // TransactionBoundaries returns the indexes of the statements of one migration
-// file that are its own transaction boundaries, or nil when the guard was not
+// file that are its own transaction control, or nil when the guard was not
 // given [ReplayGuard.WithOwnTransactions] or the dialect's guard reads none.
 // A file whose transaction control the dialect's guard does not accept is
 // refused as a whole.
 func (g *ReplayGuard) TransactionBoundaries(statements []string) ([]int, error) {
 	if !g.ownTransactions || g.guard == nil {
 		return nil, nil
+	}
+	if g.unwrapped {
+		reader, ok := g.guard.(replay.UnwrappedTransactionGuard)
+		if !ok {
+			return nil, nil
+		}
+		return reader.UnwrappedTransactionControl(statements)
 	}
 	reader, ok := g.guard.(replay.TransactionGuard)
 	if !ok {

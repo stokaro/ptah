@@ -918,6 +918,9 @@ receives an independent snapshot. `Result.Rewrites` claims source steps by ident
 and names a contributed replacement; the runtime validates and copies those claims,
 and the host applies them to its complete graph. A refusal discards the claims.
 `AlterTable` requests parent assessment even when no attached feature changed.
+`CommonStep.CommonObject` is the operand of a step that changes a common object
+beyond tables: a view, materialized view, sequence, role, membership, grant,
+revocation or comment, as its AST node. It is nil for every other step.
 Common AST operands are local data; process adapters must map them to an explicit
 protocol schema instead of serializing Go AST structs.
 
@@ -2314,6 +2317,19 @@ server holds. A nil service leaves the declaration as written.
 resolved capabilities and the identifier semantics under the target's canonical
 name. A service must not modify the request. An error, a nil result and
 cancellation return no schema.
+
+`Target.Spelling` is a second `schemapreparation.Lowering`, for the common
+objects beyond tables: it rewrites the values of the desired views,
+materialized views, sequences, roles and grants into the spelling the target's
+reader reports, such as a view's query as the engine stores it. It serves the
+comparison alone; the diff carries each view, materialized view, sequence and
+role as declared, and a grant in the target's spelling of its privileges.
+`Runtime.SpellDesired` calls it under the target's canonical name, and returns
+the request's schema unchanged for a target without one or a nil schema. A
+result that renames, adds or drops a view, materialized view, sequence or role,
+or changes the number of grants or revocations, fails with
+`schemapreparation.ErrInvalid`. An error, a nil result and cancellation return
+no schema.
 
 `Target.Comparison` holds the `schemacomparison.Rules` a target gives the shared
 comparison, where its catalog reports a declaration in a form the shared rules
@@ -4343,8 +4359,10 @@ The option is off by default. With it:
   mode runs it. Under tx-mode none each statement outside its transactions
   commits on its own. Progress is recorded where a transaction commits, and a
   retry resumes after the committed statements.
-- A body whose one statement the engine refuses inside a transaction runs
-  without one, unless the file names a transaction mode.
+- A body of one statement runs without a transaction, unless the file names a
+  transaction mode. On PostgreSQL that is any such body, as golang-migrate
+  sends it on its own; on another engine only one whose statement the engine
+  refuses inside a transaction.
 - A body whose transaction control the migrator cannot follow, or one that
   opens its own transaction under tx-mode all or with a directive asking for a
   transaction around the file, is refused before any migration runs.

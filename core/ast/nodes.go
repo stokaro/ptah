@@ -1728,10 +1728,13 @@ func (n *DropViewNode) Accept(visitor Visitor) error { return visitor.VisitNode(
 type CreateMaterializedViewNode struct {
 	// Facets carries settings interpreted by the selected feature owner, such
 	// as a ClickHouse refresh schedule the CREATE statement states inline.
-	Facets  schemaext.Facets
-	Name    string
-	Body    string
-	Comment string
+	Facets schemaext.Facets
+	Name   string
+	// IfNotExists records CREATE MATERIALIZED VIEW IF NOT EXISTS, which the
+	// server skips when the name is in use.
+	IfNotExists bool
+	Body        string
+	Comment     string
 }
 
 // NewCreateMaterializedView starts a CREATE MATERIALIZED VIEW for a named view.

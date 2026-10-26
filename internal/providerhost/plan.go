@@ -3,6 +3,7 @@ package providerhost
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
@@ -21,7 +22,22 @@ type commonPlanner struct {
 	assessParents bool
 	transactions  bool
 	commonTables  bool
+	// commonObjects plans the views, sequences, roles, grants and comments a
+	// provider carries on the common-object wire.
+	commonObjects bool
+	// comments sets the comments of a table the plan creates, and of a column
+	// it adds, with steps of their own: the engine carries comments on the
+	// common-object wire, and the common table message has no place for one.
+	comments bool
 }
+
+// commonObjectFields are the diff fields of the common objects beyond
+// tables, and the context they bring, which a provider that carries them on
+// the common-object wire receives.
+var commonObjectFields = []string{"SequencesAdded", "SequencesRemoved", "SequencesModified", "ViewsAdded", "ViewsRemoved", "ViewsModified",
+	"MaterializedViewsAdded", "MaterializedViewsRemoved", "MaterializedViewsModified", "ObjectCommentsChanged", "DeclaredViewLikes",
+	"CurrentGrants", "CurrentNotDescribed", "RolesAdded", "RolesRemoved", "RolesModified", "RoleMembershipsAdded", "RoleMembershipsRemoved",
+	"GrantsAdded", "GrantsRemoved", "GrantOptionsAdded", "GrantOptionsRevoked"}
 
 func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if err := ctx.Err(); err != nil {
@@ -51,23 +67,22 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// Matched counts the pairs a comparison made, for the drift report. It is
 	// not a change, and a plan that refused it would refuse every diff that
 	// keeps a table.
-	if err := onlyFields(*diff, "TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
-		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "Matched"); err != nil {
+	common, err := p.commonObjectSteps(diff)
+	if err != nil {
 		return nil, err
 	}
-	nodes := make([]ast.Node, 0)
+	nodes := slices.Concat(common.before, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
 		return nil, fmt.Errorf("provider planner received incomplete or duplicate table creations")
 	}
 	for _, creation := range ordered {
-		node, err := p.creationNode(creation)
+		created, err := p.creationNodes(creation)
 		if err != nil {
 			return nil, err
 		}
-		nodes = append(nodes, node)
+		nodes = append(nodes, created...)
 	}
 	for _, table := range diff.TablesModified {
 		additions, removals, err := p.alterations(table)
@@ -77,6 +92,8 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, additions...)
 		columnRemovals = append(columnRemovals, removals...)
 	}
+	creationStart := len(nodes)
+	nodes = append(nodes, common.after...)
 	removalStart := len(nodes)
 	nodes = append(nodes, columnRemovals...)
 	for _, removal := range diff.TablesRemoved {
@@ -91,11 +108,43 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		}
 		nodes = append(nodes, &ast.DropTableNode{Name: name})
 	}
-	return p.schedule(ctx, runtime, diff, nodes, removalStart)
+	nodes = append(nodes, common.last...)
+	return p.schedule(ctx, runtime, diff, nodes, creationStart, removalStart)
+}
+
+// commonObjectSteps plans the common objects beyond tables for a provider
+// that carries them. It first refuses a diff field the planner has no step
+// for; for a provider without the common-object wire that includes every
+// field of those objects.
+func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
+	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
+		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "Matched"}
+	if p.commonObjects {
+		fields = append(fields, commonObjectFields...)
+	}
+	if err := onlyFields(*diff, fields...); err != nil {
+		return commonObjectPlan{}, err
+	}
+	if !p.commonObjects {
+		return commonObjectPlan{}, nil
+	}
+	return p.planCommonObjects(diff)
 }
 
 func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
-	if err := onlyFields(table, "TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"); err != nil {
+	fields := []string{"TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"}
+	if p.commonObjects {
+		// A comment travels on the common-object wire; see commentNodes. A
+		// column change other than its comment is not one the wire carries.
+		fields = append(fields, "CommentChange", "ColumnsModified")
+		for _, column := range table.ColumnsModified {
+			if !commentOnly(column) {
+				return nil, nil, unsupported(fmt.Sprintf("changing column %s of table %s beyond its comment", column.ColumnName, table.TableName))
+			}
+		}
+	}
+	if err := onlyFields(table, fields...); err != nil {
 		return nil, nil, err
 	}
 	if !table.Desired.HasTable() || !table.Current.HasTable() {
@@ -120,11 +169,32 @@ func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals [
 			nodes = append(nodes, &pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)})
 			continue
 		}
+		comment := ""
+		if p.comments {
+			comment, field.Comment = field.Comment, ""
+		}
 		column, err := commonColumn(field)
 		if err != nil {
 			return nil, nil, err
 		}
 		nodes = append(nodes, &ast.AlterTableNode{Name: name, Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: column}}})
+		if comment != "" {
+			nodes = append(nodes, commentStep(name, field.Name, comment))
+		}
 	}
 	return nodes, removals, nil
+}
+
+// commentOnly reports a column change that changes the column's comment and
+// nothing else, which the comparison may also record among its changes.
+func commentOnly(column difftypes.ColumnDiff) bool {
+	if column.CommentChange == nil || column.NotNullConstraintNameChange != nil || column.CurrentSequenceRestart != "" {
+		return false
+	}
+	for attribute := range column.Changes {
+		if attribute != "comment" {
+			return false
+		}
+	}
+	return true
 }

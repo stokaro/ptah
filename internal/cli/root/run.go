@@ -2,6 +2,7 @@ package root
 
 import (
 	"context"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,18 +29,31 @@ import (
 // The run collects the warnings that concern many objects and writes one line
 // per kind to cmd's error stream when the command ends, whether it succeeded
 // or not, in the words cmd's surface declares for listing them, and as JSON
-// records when PTAH_LOG_FORMAT makes the log JSON; see [rundiag],
-// [cmdutil.SetDiagnosticsListing] and [cliobs.JSONLog].
+// records when the run's log is JSON; see [rundiag],
+// [cmdutil.SetDiagnosticsListing] and [jsonLog].
 func RunContext(ctx context.Context, cmd *cobra.Command, args ...string) int {
-	report := rundiag.New(rundiag.Options{
-		Stream: cmd.ErrOrStderr(), Listing: cmdutil.DiagnosticsListing(cmd), Records: cliobs.JSONLog(),
-	})
+	report := rundiag.New(rundiag.Options{Stream: cmd.ErrOrStderr(), Listing: cmdutil.DiagnosticsListing(cmd)})
 	defer report.Flush()
 	cmd.SetArgs(args)
 	cmd.SetContext(rundiag.With(ctx, report))
 
-	if err := executeWithRecovery(cmd); err != nil {
+	executed, err := executeWithRecovery(cmd)
+	report.SetRecords(jsonLog(executed))
+	if err != nil {
 		return exitcode.Code(err, 2)
 	}
 	return 0
+}
+
+// jsonLog reports whether the run's log is JSON: PTAH_LOG_FORMAT makes it so,
+// and so does --log-format json on the command that ran.
+func jsonLog(executed *cobra.Command) bool {
+	if cliobs.JSONLog() {
+		return true
+	}
+	if executed == nil {
+		return false
+	}
+	flag := executed.Flags().Lookup(cliobs.LogFormatFlagName)
+	return flag != nil && strings.EqualFold(strings.TrimSpace(flag.Value.String()), "json")
 }

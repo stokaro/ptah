@@ -1,6 +1,7 @@
 package sqlschema
 
 import (
+	"cmp"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -12,14 +13,21 @@ import (
 // the guard says what the server does then. IF NOT EXISTS skips the whole
 // statement, so the first declaration stands with nothing of the second: not
 // its columns, keys or indexes. OR REPLACE replaces the earlier definition with
-// its own. Measured on PostgreSQL 15.19 for a table, a sequence, a view, a
-// function and a trigger. The reader follows the server, so a database built
-// from a file and the file itself compare equal.
+// its own. Measured on PostgreSQL 15.19 for a table, a sequence, an index, a
+// materialized view, a view, a function, a procedure and a trigger.
 //
-// The earlier declaration is looked for in the statements of this read and, for
-// IF NOT EXISTS, in the earlier files of a schema directory as well. A later
-// file's OR REPLACE of an object an earlier file declared is left to the
-// directory's merge.
+// Whether a name is in use is the server's question, so on a dialect whose
+// namespaces the stored-name pass follows, the PostgreSQL family, the
+// statements it found skipped are the ones the conversion skips
+// ([Document.skips]): a view or a sequence takes a table's name, a serial
+// column takes its sequence's, and an unnamed key takes its index's. Elsewhere
+// the conversion looks for a table or a sequence it already declared.
+//
+// The earlier declaration is looked for in the statements of this read and in
+// the earlier files of the document, the files of a schema directory or the
+// other sources of one load, and an OR REPLACE replaces it where it is. What
+// the server keeps of an object it replaces, its comment, stays when the new
+// statement sets none.
 
 // appendGuardedCreateTable converts node unless the server skips it.
 func appendGuardedCreateTable(database *schemamodel.Database, document *Document, node *ast.CreateTableNode, sourcePlatform string) error {
@@ -40,26 +48,56 @@ func appendSequence(database *schemamodel.Database, document *Document, node *as
 
 // appendFunction records the routine node declares, in the place of the one
 // it replaces.
-func appendFunction(database *schemamodel.Database, node *ast.CreateFunctionNode, sourcePlatform string) {
+func appendFunction(database *schemamodel.Database, document *Document, node *ast.CreateFunctionNode, sourcePlatform string) {
 	function := toFunction(node, sourcePlatform)
-	if !node.Replace || !replaceFunction(database, function, sourcePlatform) {
+	if !node.Replace || !replaceFunction(declaredIn(database, document), function, sourcePlatform) {
 		database.Functions = append(database.Functions, function)
 	}
 }
 
 // appendTrigger records the trigger node declares, in the place of the one it
 // replaces.
-func appendTrigger(database *schemamodel.Database, node *ast.CreateTriggerNode, sourcePlatform string) {
+func appendTrigger(database *schemamodel.Database, document *Document, node *ast.CreateTriggerNode, sourcePlatform string) {
 	trigger := toTrigger(node, sourcePlatform)
-	if !node.Replace || !replaceTrigger(database, trigger, sourcePlatform) {
+	if !node.Replace || !replaceTrigger(declaredIn(database, document), trigger, sourcePlatform) {
 		database.Triggers = append(database.Triggers, trigger)
 	}
 }
 
+// appendCreateView records the view node declares, in the place of the one it
+// replaces.
+func appendCreateView(database *schemamodel.Database, document *Document, node *ast.CreateViewNode, sourcePlatform string) {
+	view := toView(node, sourcePlatform)
+	if !node.Replace || !replaceView(declaredIn(database, document), view, sourcePlatform) {
+		database.Views = append(database.Views, view)
+	}
+}
+
+// declaredIn is the models an earlier declaration may sit in: this read's,
+// then the document's earlier files'.
+func declaredIn(database *schemamodel.Database, document *Document) []*schemamodel.Database {
+	if document == nil || document.base == nil {
+		return []*schemamodel.Database{database}
+	}
+	return []*schemamodel.Database{database, document.base}
+}
+
+// skips reports whether the server skips stmt, as the stored-name pass found.
+func (d *Document) skips(stmt ast.Node) bool {
+	return d != nil && d.names != nil && d.names.skipped[stmt]
+}
+
+// followsNames reports whether the stored-name pass decides what the server
+// skips for this document.
+func (d *Document) followsNames(sourcePlatform string) bool {
+	return d != nil && d.names != nil && d.names.sourcePlatform == sourcePlatform
+}
+
 // skipsCreateTable reports whether the server skips node: a CREATE TABLE IF NOT
-// EXISTS whose name reaches a table already declared.
+// EXISTS whose name reaches a table already declared, on a dialect the
+// stored-name pass does not follow.
 func skipsCreateTable(database *schemamodel.Database, document *Document, node *ast.CreateTableNode, sourcePlatform string) bool {
-	if !node.IfNotExists {
+	if !node.IfNotExists || document.followsNames(sourcePlatform) {
 		return false
 	}
 	declared := []*schemamodel.Database{database}
@@ -70,9 +108,10 @@ func skipsCreateTable(database *schemamodel.Database, document *Document, node *
 }
 
 // skipsCreateSequence reports whether the server skips a CREATE SEQUENCE IF NOT
-// EXISTS of sequence: one declared under the same name in the same schema.
+// EXISTS of sequence: one declared under the same name in the same schema, on
+// a dialect the stored-name pass does not follow.
 func skipsCreateSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sequence schemamodel.Sequence, sourcePlatform string) bool {
-	if !node.IfNotExists {
+	if !node.IfNotExists || document.followsNames(sourcePlatform) {
 		return false
 	}
 	key := sequenceKey(sequence, sourcePlatform)
@@ -108,13 +147,17 @@ func unqualified(name, sourcePlatform string) string {
 	return name
 }
 
-// replaceView puts view in the place of the view of its name this read
-// declared, for a CREATE OR REPLACE VIEW, and reports whether there was one.
-func replaceView(database *schemamodel.Database, view schemamodel.View, sourcePlatform string) bool {
-	for i := range database.Views {
-		if unqualified(database.Views[i].Name, sourcePlatform) == unqualified(view.Name, sourcePlatform) {
-			database.Views[i] = view
-			return true
+// replaceView puts view in the place of the view of its name an earlier
+// statement declared, for a CREATE OR REPLACE VIEW, and reports whether there
+// was one.
+func replaceView(declared []*schemamodel.Database, view schemamodel.View, sourcePlatform string) bool {
+	for _, database := range declared {
+		for i := range database.Views {
+			if unqualified(database.Views[i].Name, sourcePlatform) == unqualified(view.Name, sourcePlatform) {
+				view.Comment = cmp.Or(view.Comment, database.Views[i].Comment)
+				database.Views[i] = view
+				return true
+			}
 		}
 	}
 	return false
@@ -124,14 +167,17 @@ func replaceView(database *schemamodel.Database, view schemamodel.View, sourcePl
 // CREATE OR REPLACE FUNCTION or PROCEDURE, and reports whether there was one.
 // A routine is found by its kind, its name and its argument types, as the
 // server finds it: an overload with other arguments is another routine.
-func replaceFunction(database *schemamodel.Database, function schemamodel.Function, sourcePlatform string) bool {
-	for i := range database.Functions {
-		declared := database.Functions[i]
-		if declared.IsProcedure() == function.IsProcedure() &&
-			unqualified(declared.Name, sourcePlatform) == unqualified(function.Name, sourcePlatform) &&
-			routineargs.InputTypes(declared.Parameters) == routineargs.InputTypes(function.Parameters) {
-			database.Functions[i] = function
-			return true
+func replaceFunction(declared []*schemamodel.Database, function schemamodel.Function, sourcePlatform string) bool {
+	for _, database := range declared {
+		for i := range database.Functions {
+			existing := database.Functions[i]
+			if existing.IsProcedure() == function.IsProcedure() &&
+				unqualified(existing.Name, sourcePlatform) == unqualified(function.Name, sourcePlatform) &&
+				routineargs.InputTypes(existing.Parameters) == routineargs.InputTypes(function.Parameters) {
+				function.Comment = cmp.Or(function.Comment, existing.Comment)
+				database.Functions[i] = function
+				return true
+			}
 		}
 	}
 	return false
@@ -139,13 +185,16 @@ func replaceFunction(database *schemamodel.Database, function schemamodel.Functi
 
 // replaceTrigger puts trigger in the place of the trigger of its name on its
 // table, for a CREATE OR REPLACE TRIGGER, and reports whether there was one.
-func replaceTrigger(database *schemamodel.Database, trigger schemamodel.Trigger, sourcePlatform string) bool {
-	for i := range database.Triggers {
-		declared := database.Triggers[i]
-		if declared.Name == trigger.Name &&
-			unqualified(declared.Table, sourcePlatform) == unqualified(trigger.Table, sourcePlatform) {
-			database.Triggers[i] = trigger
-			return true
+func replaceTrigger(declared []*schemamodel.Database, trigger schemamodel.Trigger, sourcePlatform string) bool {
+	for _, database := range declared {
+		for i := range database.Triggers {
+			existing := database.Triggers[i]
+			if existing.Name == trigger.Name &&
+				unqualified(existing.Table, sourcePlatform) == unqualified(trigger.Table, sourcePlatform) {
+				trigger.Comment = cmp.Or(trigger.Comment, existing.Comment)
+				database.Triggers[i] = trigger
+				return true
+			}
 		}
 	}
 	return false

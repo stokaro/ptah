@@ -96,6 +96,55 @@ func TestReadStoredNames_ReportsAConstraintsIndexOnce(t *testing.T) {
 	}
 }
 
+// triggerFunction is a trigger function for the trigger rows to execute.
+const triggerFunction = "CREATE FUNCTION trg() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;\n"
+
+// TestReadStoredNames_ReportsARoutineOrTriggerCut holds that a function,
+// procedure or trigger name past 63 bytes is cut, as PostgreSQL 15.19 cuts it
+// with a notice, and is reported in the place it is unique in: a routine's
+// schema and input argument types, which the scope reads as the catalog
+// spells them, and a trigger's table.
+func TestReadStoredNames_ReportsARoutineOrTriggerCut(t *testing.T) {
+	long := strings.Repeat("k", 63) + "_alpha"
+	tests := []struct {
+		name  string
+		sql   string
+		kind  string
+		scope string
+	}{
+		{
+			name:  "a function",
+			sql:   `CREATE FUNCTION "` + long + `"(a int, b varchar(5)) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;`,
+			kind:  "function",
+			scope: `schema "public" with arguments (integer, character varying)`,
+		},
+		{
+			name:  "a procedure",
+			sql:   `CREATE PROCEDURE "` + long + `"() LANGUAGE sql AS $$ SELECT 1 $$;`,
+			kind:  "procedure",
+			scope: `schema "public" with arguments ()`,
+		},
+		{
+			name:  "a trigger",
+			sql:   "CREATE TABLE t (a int);\n" + triggerFunction + `CREATE TRIGGER "` + long + `" BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();`,
+			kind:  "trigger",
+			scope: `table "public.t"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cut, err := readNotices(c, platform.Postgres, test.sql)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cut, qt.DeepEquals, []sqlschema.StoredName{
+				{Kind: test.kind, Scope: test.scope, Written: long, Stored: long[:63], Limit: 63},
+			})
+		})
+	}
+}
+
 // TestReadStoredNames_KeepsLegitimateRepetition pins the namespaces the server
 // keeps apart, each measured on PostgreSQL 15.19 to accept the file.
 func TestReadStoredNames_KeepsLegitimateRepetition(t *testing.T) {
@@ -124,6 +173,24 @@ func TestReadStoredNames_KeepsLegitimateRepetition(t *testing.T) {
 			name: "an index guarded by IF NOT EXISTS, written the same way twice",
 			sql: "CREATE TABLE t (a int);\n" + `CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);` + "\n" +
 				`CREATE INDEX IF NOT EXISTS "` + long + `_alpha" ON t (a);`,
+		},
+		{
+			// pg_proc keeps an overload with other argument types apart.
+			name: "functions cut to one name with other argument types",
+			sql: `CREATE FUNCTION "` + long + `_alpha"(int) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE FUNCTION "` + long + `_beta"(text) RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+		},
+		{
+			name: "triggers cut to one name on two tables",
+			sql: "CREATE TABLE t1 (a int);\nCREATE TABLE t2 (a int);\n" + triggerFunction +
+				`CREATE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE TRIGGER "` + long + `_beta" BEFORE INSERT ON t2 FOR EACH ROW EXECUTE FUNCTION trg();`,
+		},
+		{
+			// The second statement names the table by the 63 bytes the server
+			// kept, so it is the same table, and the server skips it.
+			name: "a table guarded under the stored form of its name",
+			sql:  `CREATE TABLE "` + long + `_alpha" (a int);` + "\n" + `CREATE TABLE IF NOT EXISTS "` + long + `" (a int, b int);`,
 		},
 		{
 			name: "an index dropped before the next is created",
@@ -203,6 +270,22 @@ func TestReadStoredNames_RefusesAGuardedNameCutToOneInUse(t *testing.T) {
 			want: `.*view "` + long + `_alpha" and view "` + long + `_beta" in schema "public" are both stored as "` + long +
 				`", and the server keeps only one of them`,
 		},
+		{
+			// The server replaces the first function with the second.
+			name: "a function",
+			sql: `CREATE OR REPLACE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE OR REPLACE FUNCTION "` + long + `_beta"() RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+			want: `.*function "` + long + `_alpha" and function "` + long + `_beta" in schema "public" with arguments \(\) are both stored as "` +
+				long + `", and the server keeps only one of them`,
+		},
+		{
+			name: "a trigger",
+			sql: "CREATE TABLE t (a int);\n" + triggerFunction +
+				`CREATE OR REPLACE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE OR REPLACE TRIGGER "` + long + `_beta" BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION trg();`,
+			want: `.*trigger "` + long + `_alpha" and trigger "` + long + `_beta" in table "public.t" are both stored as "` + long +
+				`", and the server keeps only one of them`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -263,6 +346,28 @@ func TestReadStoredNames_RefusesWhatTheServerRefuses(t *testing.T) {
 			name: "two columns on one table",
 			sql:  `CREATE TABLE t ("` + long + `_alpha" int, "` + long + `_beta" int);`,
 			want: `.*column "` + long + `_alpha" and column "` + long + `_beta" in table "public.t" are both stored as.*`,
+		},
+		{
+			// function "kkk…" already exists with same argument types
+			name: "two functions with the same argument types",
+			sql: `CREATE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE FUNCTION "` + long + `_beta"() RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+			want: `.*function "` + long + `_alpha" and function "` + long + `_beta" in schema "public" with arguments \(\) are both stored as.*`,
+		},
+		{
+			// A function and a procedure share pg_proc, and the same message.
+			name: "a function and a procedure of one signature",
+			sql: `CREATE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE PROCEDURE "` + long + `_beta"() LANGUAGE sql AS $$ SELECT 2 $$;`,
+			want: `.*function "` + long + `_alpha" and procedure "` + long + `_beta" in schema "public" with arguments \(\) are both stored as.*`,
+		},
+		{
+			// trigger "kkk…" for relation "t" already exists
+			name: "two triggers on one table",
+			sql: "CREATE TABLE t (a int);\n" + triggerFunction +
+				`CREATE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE TRIGGER "` + long + `_beta" BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION trg();`,
+			want: `.*trigger "` + long + `_alpha" and trigger "` + long + `_beta" in table "public.t" are both stored as.*`,
 		},
 		{
 			name: "a column added under a name cut to an existing one",

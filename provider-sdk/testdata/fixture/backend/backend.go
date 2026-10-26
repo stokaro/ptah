@@ -32,6 +32,9 @@ type Provider struct {
 	// addresses it opens. Empty is fixture. A program that serves the fixture
 	// under the identity of an official provider names that provider's engine.
 	Engine string
+	// ViewsElsewhere leaves the views of a database to the program that
+	// reports them: Inspect neither refuses nor reports one.
+	ViewsElsewhere bool
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -158,8 +161,12 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 			return nil, fmt.Errorf("fixture supports only the main schema")
 		}
 	}
+	refused := "'view', 'trigger', 'index'"
+	if p.ViewsElsewhere {
+		refused = "'trigger', 'index'"
+	}
 	var unsupported int
-	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type IN ('view', 'trigger', 'index') AND name NOT LIKE 'sqlite_%'").Scan(&unsupported); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type IN ("+refused+") AND name NOT LIKE 'sqlite_%'").Scan(&unsupported); err != nil {
 		return nil, err
 	}
 	if unsupported != 0 {

@@ -27,6 +27,7 @@ sourceOfTruth:
   - "integration/providercli/provider_inference_mcp_e2e_test.go"
   - "integration/providercli/provider_planning_policy_e2e_test.go"
   - "integration/providercli/provider_text_units_e2e_test.go"
+  - "integration/providercli/provider_common_objects_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -204,6 +205,26 @@ policy and plans as if none were set. The feature also lets a comparison read a
 request the operator wrote: Ptah sends each `--rotate-secret` value as written
 to every comparison of the engine whose actions include `rotate`, and refuses a
 value that no comparison resolves, or that two resolve, naming the value.
+
+`schema.common-objects` carries views, materialized views, sequences, roles and
+groups with their memberships, grants and comments between Ptah and the
+provider. Each engine that lists it names the kinds it carries, and Ptah refuses
+a declaration of any other kind before it sends anything, naming the kind and
+the engine. The work is split this way:
+
+- The provider reads every object of a kind it carries, or says that it did not
+  read the kind, and Ptah then plans no removal of it.
+- Before a comparison, the provider spells the declared objects as its engine
+  reports them, such as a view's query as the engine stores it.
+- Ptah compares and orders the changes, and keeps each object as declared in
+  the plan. The provider renders each change as one unit.
+- On an engine with `schema.common-table-identity.v1`, the comment of a table
+  Ptah creates is a step of its own after the table. A declaration is validated
+  by rendering it, so the provider refuses there an object it cannot hold, and
+  the error names the render.
+
+A planning request does not carry the declared and observed objects as
+context.
 
 An engine can declare its release lines in the description. Each line names a
 support level and, for a line that claims testing, the image that runs it. A line
