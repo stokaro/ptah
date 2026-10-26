@@ -33,9 +33,12 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	if err != nil {
 		return nil, err
 	}
+	movable, dependencies, err := nativeAccessWindows(request, nodes, metadata, p.selections)
+	if err != nil { return nil, err }
 	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
 		Creation: creationStart, Dependent: removalStart, Removal: removalStart,
 		Lifecycle:     &featurehost.Span{Start: 0, End: len(nodes)},
+		LifecycleCommon: movable, CommonDependencies: dependencies,
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
 		Types:         &featurehost.TypeWindows{Creation: featurehost.Span{}, Removal: featurehost.Span{Start: len(nodes), End: len(nodes)}},
 	})

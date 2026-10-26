@@ -48,7 +48,16 @@ type Windows struct {
 	// Effects, dependencies and rewrite boundaries constrain each step.
 	// Nil refuses lifecycle operations.
 	Lifecycle *Span
+	// LifecycleCommon names common node indexes whose established dependencies
+	// replace their incidental sequence position. Each needs a known footprint
+	// inside Lifecycle. IDs, operands and rewrite receipts remain unchanged.
+	LifecycleCommon []int
+	// CommonDependencies orders common nodes by their original indexes.
+	CommonDependencies []CommonDependency
 }
+
+// CommonDependency orders common nodes without depending on assigned step IDs.
+type CommonDependency struct{ Before, After int }
 
 // PrerequisiteWindows are the two windows of [featureplan.PhasePrerequisite],
 // for an object every other object may use, such as a PostgreSQL extension.
@@ -97,6 +106,7 @@ type Graph struct {
 	prerequisites bool
 	types         bool
 	lifecycle     bool
+	sequenceLast plangraph.StepID
 }
 
 // The windows in the order their positions must keep.
@@ -128,6 +138,8 @@ func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep,
 	if metadata != nil && len(metadata) != len(nodes) {
 		return nil, fmt.Errorf("%w: %d metadata records for %d common nodes", schemaext.ErrInvalidValue, len(metadata), len(nodes))
 	}
+	movable, err := lifecycleCommon(windows, metadata, len(nodes))
+	if err != nil { return nil, err }
 	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil,
 		types: windows.Types != nil, lifecycle: windows.Lifecycle != nil}
 	for i := 0; i <= len(nodes); i++ {
@@ -144,7 +156,25 @@ func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep,
 			}
 			step.Effects, step.Transaction, step.Impact = description.Effects, description.Transaction, description.Impact
 		}
-		graph.append(step, description)
+		if movable[i] {
+			graph.appendIndependent(step, description)
+		} else {
+			graph.append(step, description)
+		}
+	}
+	for _, index := range windows.LifecycleCommon {
+		id := plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", index)}
+		graph.contribution.Dependencies = append(graph.contribution.Dependencies,
+			plangraph.Dependency{Before: graph.windows[lifecycleWindow][0], After: id},
+			plangraph.Dependency{Before: id, After: graph.windows[lifecycleWindow][1]})
+	}
+	for _, edge := range windows.CommonDependencies {
+		if edge.Before < 0 || edge.After < 0 || edge.Before >= len(nodes) || edge.After >= len(nodes) || edge.Before == edge.After {
+			return nil, fmt.Errorf("%w: invalid common dependency indexes", schemaext.ErrInvalidValue)
+		}
+		graph.contribution.Dependencies = append(graph.contribution.Dependencies, plangraph.Dependency{
+			Before: plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", edge.Before)},
+			After: plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", edge.After)}})
 	}
 	return graph, nil
 }
@@ -206,9 +236,14 @@ func (g *Graph) marker(name string) plangraph.StepID {
 }
 
 func (g *Graph) append(step plangraph.Step[[]ast.Node], description featureplan.CommonStep) {
-	if count := len(g.contribution.Steps); count > 0 {
-		g.contribution.Dependencies = append(g.contribution.Dependencies, plangraph.Dependency{Before: g.contribution.Steps[count-1].ID, After: step.ID})
+	if g.sequenceLast != (plangraph.StepID{}) {
+		g.contribution.Dependencies = append(g.contribution.Dependencies, plangraph.Dependency{Before: g.sequenceLast, After: step.ID})
 	}
+	g.sequenceLast = step.ID
+	g.appendIndependent(step, description)
+}
+
+func (g *Graph) appendIndependent(step plangraph.Step[[]ast.Node], description featureplan.CommonStep) {
 	g.contribution.Steps = append(g.contribution.Steps, step)
 	description.ID = step.ID
 	g.steps = append(g.steps, description.Clone())
