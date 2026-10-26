@@ -225,43 +225,43 @@ type tableSpec struct {
 }
 
 type fieldSpec struct {
-	FieldName          stringScalar `yaml:"field_name"`
-	Name               stringScalar `yaml:"name"`
-	APIName            stringScalar `yaml:"api_name"`
-	OpenAPIName        stringScalar `yaml:"openapi_name"`
-	GraphQLName        stringScalar `yaml:"graphql_name"`
-	ProtoName          stringScalar `yaml:"proto_name"`
-	APIType            stringScalar `yaml:"api_type"`
-	APIExpose          stringScalar `yaml:"api_expose"`
-	Type               stringScalar `yaml:"type"`
-	Nullable           *bool        `yaml:"nullable"`
-	NotNull            bool         `yaml:"not_null"`
-	Primary            bool         `yaml:"primary"`
-	AutoIncrement      bool         `yaml:"auto_increment"`
-	AutoInc            bool         `yaml:"auto_inc"`
-	IdentityGeneration stringScalar `yaml:"identity_generation"`
-	IdentityStart      stringScalar `yaml:"identity_start"`
-	IdentityIncrement  stringScalar `yaml:"identity_increment"`
-	IdentityOptions    stringScalar `yaml:"identity_options"`
-	Unique             bool         `yaml:"unique"`
-	UniqueExpr         stringScalar `yaml:"unique_expr"`
-	Index              bool         `yaml:"index"`
-	Generated          stringScalar `yaml:"generated"`
-	GeneratedKind      stringScalar `yaml:"generated_kind"`
-	Stored             bool         `yaml:"stored"`
-	Default            stringScalar `yaml:"default"`
-	DefaultExpr        stringScalar `yaml:"default_expr"`
-	Foreign            stringScalar `yaml:"foreign"`
-	ForeignKeyName     stringScalar `yaml:"foreign_key_name"`
-	OnDelete           stringScalar `yaml:"on_delete"`
-	OnUpdate           stringScalar `yaml:"on_update"`
-	Enum               stringList   `yaml:"enum"`
-	Check              stringScalar `yaml:"check"`
-	CheckName          stringScalar `yaml:"check_name"`
-	Collate            stringScalar `yaml:"collate"`
-	Comment            stringScalar `yaml:"comment"`
-	Platform           platformSpec `yaml:"platform"`
-	Overrides          platformSpec `yaml:"overrides"`
+	FieldName          stringScalar  `yaml:"field_name"`
+	Name               stringScalar  `yaml:"name"`
+	APIName            stringScalar  `yaml:"api_name"`
+	OpenAPIName        stringScalar  `yaml:"openapi_name"`
+	GraphQLName        stringScalar  `yaml:"graphql_name"`
+	ProtoName          stringScalar  `yaml:"proto_name"`
+	APIType            stringScalar  `yaml:"api_type"`
+	APIExpose          stringScalar  `yaml:"api_expose"`
+	Type               stringScalar  `yaml:"type"`
+	Nullable           *bool         `yaml:"nullable"`
+	NotNull            bool          `yaml:"not_null"`
+	Primary            bool          `yaml:"primary"`
+	AutoIncrement      bool          `yaml:"auto_increment"`
+	AutoInc            bool          `yaml:"auto_inc"`
+	IdentityGeneration stringScalar  `yaml:"identity_generation"`
+	IdentityStart      stringScalar  `yaml:"identity_start"`
+	IdentityIncrement  stringScalar  `yaml:"identity_increment"`
+	IdentityOptions    stringScalar  `yaml:"identity_options"`
+	Unique             bool          `yaml:"unique"`
+	UniqueExpr         stringScalar  `yaml:"unique_expr"`
+	Index              bool          `yaml:"index"`
+	Generated          stringScalar  `yaml:"generated"`
+	GeneratedKind      stringScalar  `yaml:"generated_kind"`
+	Stored             bool          `yaml:"stored"`
+	Default            *stringScalar `yaml:"default"`
+	DefaultExpr        stringScalar  `yaml:"default_expr"`
+	Foreign            stringScalar  `yaml:"foreign"`
+	ForeignKeyName     stringScalar  `yaml:"foreign_key_name"`
+	OnDelete           stringScalar  `yaml:"on_delete"`
+	OnUpdate           stringScalar  `yaml:"on_update"`
+	Enum               stringList    `yaml:"enum"`
+	Check              stringScalar  `yaml:"check"`
+	CheckName          stringScalar  `yaml:"check_name"`
+	Collate            stringScalar  `yaml:"collate"`
+	Comment            stringScalar  `yaml:"comment"`
+	Platform           platformSpec  `yaml:"platform"`
+	Overrides          platformSpec  `yaml:"overrides"`
 
 	// Owned holds the keys the frontend does not read itself: the ones a
 	// selected document owner adds to a column, and anything else, which is
@@ -705,6 +705,11 @@ func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database
 		identityGeneration = "BY_DEFAULT"
 	}
 
+	var defaultValue string
+	if spec.Default != nil {
+		defaultValue = string(*spec.Default)
+	}
+
 	return schemamodel.Field{
 		StructName: structName,
 		FieldName:  fieldName,
@@ -727,7 +732,8 @@ func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database
 		IdentityOptions:     string(spec.IdentityOptions),
 		Unique:              spec.Unique,
 		UniqueExpr:          string(spec.UniqueExpr),
-		Default:             string(spec.Default),
+		Default:             defaultValue,
+		DefaultSet:          spec.Default != nil,
 		DefaultExpr:         string(spec.DefaultExpr),
 		Foreign:             string(spec.Foreign),
 		ForeignKeyName:      string(spec.ForeignKeyName),
