@@ -584,19 +584,24 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
 		}},
 		{name: "a table removed with the table its policy reads", change: removedTablesWithPolicy(), want: []string{
+			`DROP POLICY "docs_allowed" ON "docs"`,
 			`DROP TABLE "public"."docs"`,
 			`DROP TABLE "public"."allowed"`,
 		}},
 		{name: "a column a policy of a removed table reads", change: droppedColumnUnderRemovedPolicy(), want: []string{
-			`ALTER TABLE "allowed" DROP COLUMN "who" CASCADE`,
-			`DROP TABLE IF EXISTS "public"."docs"`,
+			`DROP POLICY "docs_allowed" ON "docs"`,
+			`ALTER TABLE "allowed" DROP COLUMN "who"`,
+			`DROP TABLE "public"."docs"`,
 		}},
 		{name: "two tables removed whose policies read each other", change: removedTablesWithPolicyCycle(), want: []string{
+			`DROP POLICY "pa" ON "a"`,
+			`DROP POLICY "pb" ON "b"`,
 			`DROP TABLE "public"."b", "public"."a"`,
 		}},
 		{name: "a view removed with a table whose policy reads it", change: removedViewWithPolicy(), want: []string{
-			`DROP VIEW "public"."current_owners" CASCADE`,
-			`DROP TABLE IF EXISTS "public"."docs"`,
+			`DROP POLICY "docs_owned" ON "docs"`,
+			`DROP VIEW "public"."current_owners"`,
+			`DROP TABLE "public"."docs"`,
 		}},
 		{name: "a column that leaves an enum", change: enumColumnBecomesText(), want: []string{
 			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE text`,
