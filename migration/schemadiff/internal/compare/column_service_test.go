@@ -56,13 +56,13 @@ func TestColumnOwnerReceivesFormattedTypesOutsideDomainTargets(t *testing.T) {
 		name      string
 		typeName  string
 		domain    string
-		domains   *bool
+		caps      capability.Capabilities
 		ownedType bool
 	}{
 		{name: "absent domain capability", typeName: "Int64", ownedType: true},
-		{name: "false domain capability", typeName: "Utf8", domains: new(false), ownedType: true},
-		{name: "explicit domain remains common", typeName: "positive", domain: "positive", domains: new(true)},
-		{name: "formatted domain remains common", typeName: "positive", domains: new(true)},
+		{name: "false domain capability", typeName: "Utf8", caps: capability.Capabilities{}.With(capability.DomainTypes, false), ownedType: true},
+		{name: "explicit domain remains common", typeName: "positive", domain: "positive", caps: capability.Capabilities{}.With(capability.DomainTypes, true)},
+		{name: "formatted domain remains common", typeName: "positive", caps: capability.Capabilities{}.With(capability.DomainTypes, true)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -71,12 +71,8 @@ func TestColumnOwnerReceivesFormattedTypesOutsideDomainTargets(t *testing.T) {
 			current := &catalog.Database{Tables: []catalog.Table{{Name: "items", Columns: []catalog.Column{{Name: "id", DataType: test.typeName,
 				FormattedType: test.typeName, DomainName: test.domain, IsNullable: "NO", OrdinalPosition: 1}}}}}
 			owner := &columnRouteOwner{}
-			caps := capability.Capabilities{}
-			if test.domains != nil {
-				caps = caps.With(capability.DomainTypes, *test.domains)
-			}
 			facts, err := compare.ResolveColumnFacts(c.Context(), desired, current, "fixture", identifier.Semantics{},
-				caps, nil, owner)
+				test.caps, nil, owner)
 			c.Assert(err, qt.IsNil)
 			c.Assert(owner.request.Tables, qt.HasLen, 1)
 			c.Assert(owner.request.Tables[0].Pairs, qt.HasLen, 1)
