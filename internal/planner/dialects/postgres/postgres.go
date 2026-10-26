@@ -1240,7 +1240,7 @@ func (p *Planner) dropsWithCascade() bool {
 // removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
 // longer holds. A generated column goes first: it may be computed from another
 // removed column, which a drop could otherwise take only with CASCADE.
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool, ahead routinesAhead) []ast.Node {
 	columns := make([]schemamodel.Field, 0, len(tableDiff.ColumnsRemoved))
 	for _, generated := range []bool{true, false} {
 		for _, column := range tableDiff.ColumnsRemoved {
@@ -1253,7 +1253,8 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.
 		if earlyColumns[tableDiff.TableName+"\x00"+column.Name] {
 			continue
 		}
-		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name))
+		result = p.appendRoutinesAheadColumn(result, diff, tableDiff.TableName, column.Name, ahead)
+		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name, ahead))
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
 			Cascade:    cascade,
@@ -1350,14 +1351,14 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool) []ast.Node {
+func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool, ahead routinesAhead) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
 			astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
 			result = append(result, astCommentNode)
 
 			// Remove columns (dangerous!)
-			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns)
+			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns, ahead)
 		}
 	}
 	return result
@@ -2035,7 +2036,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeViewLikes(result, diff, rebuild, ahead)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
-	result = p.removeTableColumns(result, diff, earlyColumns)
+	result = p.removeTableColumns(result, diff, earlyColumns, ahead)
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
@@ -2444,6 +2445,19 @@ func (p *Planner) dropRoutineNode(routine difftypes.RoutineChange, kind string) 
 // ahead of relation; see [routinesAhead].
 func (p *Planner) appendRoutinesAhead(result []ast.Node, diff *difftypes.SchemaDiff, relation string, ahead routinesAhead) []ast.Node {
 	for _, routine := range ahead.of(relation) {
+		kind := schemamodel.FunctionKindFunction
+		if slices.ContainsFunc(diff.ProceduresRemoved, func(candidate difftypes.RoutineChange) bool {
+			return routineKey(candidate) == routineKey(routine)
+		}) {
+			kind = schemamodel.FunctionKindProcedure
+		}
+		result = append(result, p.dropRoutineNode(routine, kind))
+	}
+	return result
+}
+
+func (p *Planner) appendRoutinesAheadColumn(result []ast.Node, diff *difftypes.SchemaDiff, table, column string, ahead routinesAhead) []ast.Node {
+	for _, routine := range ahead.ofColumn(table, column) {
 		kind := schemamodel.FunctionKindFunction
 		if slices.ContainsFunc(diff.ProceduresRemoved, func(candidate difftypes.RoutineChange) bool {
 			return routineKey(candidate) == routineKey(routine)
