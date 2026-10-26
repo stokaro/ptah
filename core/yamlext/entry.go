@@ -16,6 +16,9 @@ const (
 	// EntryIndex is an index entry, of a table's indexes or of the top-level
 	// indexes key.
 	EntryIndex = "indexes"
+	// EntryColumn is a column entry of a table, of its columns or its fields
+	// key. Only a document owner adds keys to it.
+	EntryColumn = "columns"
 	// EntryFunction is an entry of the functions key.
 	EntryFunction = "functions"
 	// EntryMaterializedView is an entry of the matviews key.
@@ -48,11 +51,21 @@ type EntryAttributes struct {
 
 // EntrySection is a key an owner adds to the frontend's table entries whose
 // value is not a scalar, such as the changefeeds of a YDB table. A document
-// owner may claim any value shape here and leaves Decode nil.
+// owner may claim any value shape here and leaves Decode nil, and it may
+// claim a key of a column or an index entry too.
 type EntrySection struct {
-	// Key is the table entry's key. A key belongs to one owner, and never to
-	// the entry itself.
+	// Entry is the frontend's entry the key belongs to: [EntryTable], the
+	// default when empty, or, for a document owner only, [EntryColumn] or
+	// [EntryIndex].
+	Entry string
+	// Key is the entry's key. A key belongs to one owner, and never to the
+	// entry itself.
 	Key string
+	// Reads are keys of a column or an index entry itself that the owner
+	// reads with its own, such as an index's type. A fragment of the key
+	// carries the ones the entry writes in [Fragment.Inherited]. A table key
+	// reads none.
+	Reads []string
 	// Decode reads the key's value of one table entry. decode unmarshals it
 	// into target, refusing a key target's type does not declare and naming
 	// the line. table is the table the entry declares. It returns the objects
@@ -113,6 +126,15 @@ func (s *Set) claimEntryKeys(index int, extension Extension) error {
 		if section.Decode == nil && extension.Document == nil {
 			return fmt.Errorf("YAML extension of %s declares a table key without a decoder", extension.Owner)
 		}
+		if err := checkEntrySection(extension, section); err != nil {
+			return err
+		}
+		if entry := section.entry(); entry != EntryTable {
+			if err := s.claimEntryKey(index, extension, entry, section.Key); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, claimed := PlatformGroup(section.Key); strings.Contains(section.Key, ".") && !claimed {
 			return fmt.Errorf("YAML extension of %s declares the table key %q; a dotted table key claims a platform group and reads %q and a group name",
 				extension.Owner, section.Key, PlatformKeyPrefix)
@@ -122,6 +144,54 @@ func (s *Set) claimEntryKeys(index int, extension Extension) error {
 		}
 		if err := s.claimEntryKey(index, extension, EntryTable, section.Key); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// entry is the frontend's entry the section's key belongs to.
+func (e EntrySection) entry() string {
+	if e.Entry == "" {
+		return EntryTable
+	}
+	return e.Entry
+}
+
+// checkEntrySection refuses a column or an index key of an owner that is not a
+// document owner, a key of another entry, and reads of a table key or of a
+// name given twice.
+func checkEntrySection(extension Extension, section EntrySection) error {
+	switch section.entry() {
+	case EntryTable:
+		if len(section.Reads) != 0 {
+			return fmt.Errorf("YAML extension of %s reads keys of the table entry with its key %q; only a column or an index key reads its entry's keys",
+				extension.Owner, section.Key)
+		}
+	case EntryColumn, EntryIndex:
+		if extension.Document == nil || section.Decode != nil {
+			return fmt.Errorf("YAML extension of %s declares the %s key %q, which only a document owner reads", extension.Owner, section.entry(), section.Key)
+		}
+	default:
+		return fmt.Errorf("YAML extension of %s declares the key %q of the entry %q, which the frontend does not read", extension.Owner, section.Key, section.Entry)
+	}
+	for i, name := range section.Reads {
+		if strings.TrimSpace(name) == "" || name == section.Key || slices.Contains(section.Reads[:i], name) {
+			return fmt.Errorf("YAML extension of %s reads an empty, repeated or owned key with its %s key %q", extension.Owner, section.entry(), section.Key)
+		}
+	}
+	return nil
+}
+
+// EntryReads returns the keys of entry itself that the owner of its key key
+// reads with it (see [EntrySection.Reads]), or none.
+func (s Set) EntryReads(entry, key string) []string {
+	index, found := s.entryKeys[entry][key]
+	if !found {
+		return nil
+	}
+	for _, section := range s.extensions[index].EntrySections {
+		if section.entry() == entry && section.Key == key {
+			return slices.Clone(section.Reads)
 		}
 	}
 	return nil
@@ -162,7 +232,7 @@ func (s Set) EntryKey(entry, key string) (found, scalar bool) {
 		return false, false
 	}
 	for _, section := range s.extensions[index].EntrySections {
-		if entry == EntryTable && section.Key == key {
+		if section.entry() == entry && section.Key == key {
 			return true, false
 		}
 	}

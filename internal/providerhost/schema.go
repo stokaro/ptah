@@ -21,7 +21,8 @@ import (
 // Provider returns services for the explicitly selected target declarations.
 // No built-in renderer, planner, or capability preset supplies missing behavior.
 func (h *Host) Provider() engine.Provider {
-	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs), YAML: h.yamlExtension(), Annotations: h.annotationExtensions(), SQL: h.sqlExtensions()}
+	result := engine.Provider{ID: h.description.GetProviderId(), Codecs: slices.Clone(h.modelCodecs), YAML: h.yamlExtension(), Annotations: h.annotationExtensions(), SQL: h.sqlExtensions(),
+		HCL: h.hclExtensions()}
 	for _, codec := range result.Codecs {
 		contract := h.models[modelKey{kind: codec.Prototype.Kind(), representation: codec.Representation}]
 		if contract.displayName != "" {

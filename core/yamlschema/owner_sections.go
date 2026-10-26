@@ -27,6 +27,7 @@ var entryKeys = sync.OnceValue(func() map[string][]string {
 	return map[string][]string{
 		yamlext.EntryTable:            yamlKeys(reflect.TypeFor[tableSpec]()),
 		yamlext.EntryIndex:            yamlKeys(reflect.TypeFor[indexSpec]()),
+		yamlext.EntryColumn:           yamlKeys(reflect.TypeFor[fieldSpec]()),
 		yamlext.EntryFunction:         yamlKeys(reflect.TypeFor[functionSpec]()),
 		yamlext.EntryMaterializedView: yamlKeys(reflect.TypeFor[matViewSpec]()),
 	}
@@ -59,6 +60,11 @@ func checkOwnedKeys(owners yamlext.Set, data []byte, owned map[string]yaml.Node)
 		for _, key := range owners.EntryKeys(entry) {
 			if slices.Contains(own, key) {
 				return fmt.Errorf("parse YAML schema: key %q an owner adds to %s takes the name of one of the frontend's own", key, entry)
+			}
+			for _, read := range owners.EntryReads(entry, key) {
+				if !slices.Contains(own, read) {
+					return fmt.Errorf("parse YAML schema: the owner of key %q of %s reads %q with it, which is not a key of the frontend's own", key, entry, read)
+				}
 			}
 		}
 	}
@@ -232,15 +238,52 @@ func contribute(db *schemamodel.Database, key string, contribution yamlext.Contr
 		return nil
 	}
 	table := &db.Tables[contribution.Table]
-	facets, err := table.Facets.With(contribution.Facet)
+	target, what, err := facetTarget(db, table, contribution)
 	if err != nil {
-		return fmt.Errorf("%s: table %q declares %s twice: %w", key, table.Name, contribution.Label, schemaext.ErrDuplicate)
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	facets, err := target.With(contribution.Facet)
+	if err != nil {
+		return fmt.Errorf("%s: %s declares %s twice: %w", key, what, contribution.Label, schemaext.ErrDuplicate)
 	}
 	if len(contribution.Targets) > 0 {
 		if facets, err = facets.WithTargetScope(contribution.Facet.Kind(), contribution.Targets...); err != nil {
 			return err
 		}
 	}
-	table.Facets = facets
+	*target = facets
 	return nil
+}
+
+// facetTarget returns the facets a contribution's facet joins: those of its
+// table, or of the column or the index of the table it names, with what holds
+// them for a refusal. A column or an index the table does not declare is
+// refused.
+func facetTarget(db *schemamodel.Database, table *schemamodel.Table, contribution yamlext.Contribution) (*schemaext.Facets, string, error) {
+	switch {
+	case contribution.Column != "":
+		for i := range db.Fields {
+			if field := &db.Fields[i]; field.StructName == table.StructName && field.Name == contribution.Column {
+				return &field.Facets, fmt.Sprintf("column %q of table %q", field.Name, table.Name), nil
+			}
+		}
+		return nil, "", fmt.Errorf("%w: %s names column %q, which table %q does not declare", schemaext.ErrInvalidValue, contribution.Label, contribution.Column, table.Name)
+	case contribution.Index != "":
+		for i := range db.Indexes {
+			if index := &db.Indexes[i]; index.Name == contribution.Index && indexOf(*index, *table) {
+				return &index.Facets, fmt.Sprintf("index %q of table %q", index.Name, table.Name), nil
+			}
+		}
+		return nil, "", fmt.Errorf("%w: %s names index %q, which table %q does not declare", schemaext.ErrInvalidValue, contribution.Label, contribution.Index, table.Name)
+	}
+	return &table.Facets, fmt.Sprintf("table %q", table.Name), nil
+}
+
+// indexOf reports whether an index belongs to table: one of the table's
+// entry, by its struct, or a top-level one that names the table.
+func indexOf(index schemamodel.Index, table schemamodel.Table) bool {
+	if index.StructName != "" {
+		return index.StructName == table.StructName
+	}
+	return index.TableName == table.Name || (table.Schema != "" && index.TableName == table.Schema+"."+table.Name)
 }

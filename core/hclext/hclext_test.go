@@ -491,3 +491,36 @@ func TestSet_Split_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, errRestate)
 	c.Assert(lines, qt.IsNil)
 }
+
+// TestSet_Coverage_HandsEachOwnerItsClaims hands each owner the claims of its
+// own shapes the document matched, in the document's order, so an owner whose
+// account depends on what its blocks write reads them again.
+func TestSet_Coverage_HandsEachOwnerItsClaims(t *testing.T) {
+	c := qt.New(t)
+	var first, second hclext.CoverageRequest
+	recording := func(into *hclext.CoverageRequest) func(hclext.CoverageRequest) (schemaext.Coverage, error) {
+		return func(request hclext.CoverageRequest) (schemaext.Coverage, error) {
+			*into = request
+			return schemaext.NewCoverage(schemaext.Desired, nil, nil)
+		}
+	}
+	gadgets := extension("example.org/a", "example.org/a/x", answeringDecoder{}, block("gadget"))
+	gadgets.Coverage = recording(&first)
+	widgets := extension("example.org/b", "example.org/b/x", answeringDecoder{}, block("widget"))
+	widgets.Coverage = recording(&second)
+	set := must.Must(hclext.NewSet(gadgets, widgets))
+	gadget, _ := set.Lookup(hclext.TopLevel, "gadget")
+	widget, _ := set.Lookup(hclext.TopLevel, "widget")
+	matches := []hclext.Match{
+		{Shape: gadget, Claim: hclext.Claim{Block: "gadget", Name: "g1"}},
+		{Shape: widget, Claim: hclext.Claim{Block: "widget", Name: "w1"}},
+		{Shape: gadget, Claim: hclext.Claim{Block: "gadget", Name: "g2"}},
+	}
+
+	_, err := set.Coverage(hclext.CoverageRequest{Matches: matches})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(first.Claims, qt.DeepEquals, []hclext.Claim{{Block: "gadget", Name: "g1"}, {Block: "gadget", Name: "g2"}})
+	c.Assert(second.Claims, qt.DeepEquals, []hclext.Claim{{Block: "widget", Name: "w1"}})
+	c.Assert(first.Matches, qt.IsNil)
+}

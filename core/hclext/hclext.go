@@ -308,6 +308,24 @@ type Claim struct {
 	// At is where the block stands, as `<file>:<line>`, for an owner that
 	// names two blocks in one refusal.
 	At string
+	// Range is where the block stands, from its type to its closing brace,
+	// for an owner that positions what it reads. The zero range means the
+	// frontend did not record one.
+	Range Range
+}
+
+// Range is where a block stands in its document.
+type Range struct {
+	// Filename names the document, as the frontend read it.
+	Filename string
+	// Start is the block's first byte, and End the byte after its last.
+	Start, End Position
+}
+
+// Position is one place in a document: a byte offset from 0, and a line and a
+// column from 1.
+type Position struct {
+	Byte, Line, Column int
 }
 
 // ClaimChild is one block nested in a claimed block, as the frontend read
@@ -323,6 +341,8 @@ type ClaimChild struct {
 	Attributes map[string]Value
 	// At is where the child stands, as `<file>:<line>`.
 	At string
+	// Range is where the child stands; see [Claim.Range].
+	Range Range
 }
 
 // Table is the identity read by the frontend for a table claim.
@@ -490,6 +510,14 @@ type CoverageRequest struct {
 	// frontend's, such as the policies whose tables a claim leaves to a
 	// default.
 	Declared schemaext.Objects
+	// Matches are the claims the frontend made in the document, in its
+	// order, which [Set.Coverage] reads to fill Claims. An owner reads
+	// Claims.
+	Matches []Match
+	// Claims are the owner's claims of the document, as [Set.Decode] handed
+	// them to its decoder, for an owner whose account of the document
+	// depends on what the blocks write.
+	Claims []Claim
 }
 
 // Set is the frozen collection of extensions one parse selects. The zero
@@ -909,7 +937,7 @@ func checkDeclaration(extension Extension, declaration Declaration) error {
 // is returned as it is.
 func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 	var combined schemaext.Coverage
-	for _, extension := range s.extensions {
+	for index, extension := range s.extensions {
 		if extension.Coverage == nil {
 			continue
 		}
@@ -917,6 +945,13 @@ func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 		for _, entry := range document.Limits {
 			if containsKind(extension.Header, entry.Kind) {
 				request.Limits = append(request.Limits, entry)
+			}
+		}
+		for _, match := range document.Matches {
+			if match.Shape.extension == index && match.Shape.Block.Type != "" {
+				claim := match.Claim
+				claim.Dialect = match.Shape.dialect
+				request.Claims = append(request.Claims, claim)
 			}
 		}
 		if extension.CapturedCoverage {

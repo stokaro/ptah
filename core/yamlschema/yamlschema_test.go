@@ -600,7 +600,7 @@ tables:
         type: SERIAL
         primarry: true
 `))
-	c.Assert(err, qt.ErrorMatches, `(?s)parse YAML schema: .*field primarry not found.*`)
+	c.Assert(err, qt.ErrorMatches, `parse YAML schema: line 7: unknown key "primarry" of column "id" of table "users"`)
 }
 
 func defaultPrivilegeObject(c *qt.C, db *schemamodel.Database, class string) schemaext.Object {

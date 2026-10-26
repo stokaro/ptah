@@ -19,7 +19,7 @@ import (
 type tableAttributeDecoder struct{ requests *[]hclext.Request }
 
 func (d tableAttributeDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	result := hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}
 	for i, claim := range request.Claims {
 		if claim.Name == "refused" {

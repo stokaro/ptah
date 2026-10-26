@@ -56,6 +56,11 @@ func (d document) addOwnerDocuments(ctx context.Context, db *schemamodel.Databas
 			}
 		}
 	}
+	entries, err := d.ownerEntryFragments(owners, data, input.Tables, &capture)
+	if err != nil {
+		return err
+	}
+	input.Fragments = append(input.Fragments, entries...)
 	slices.SortStableFunc(input.Fragments, func(a, b yamlext.Fragment) int {
 		return cmp.Compare(a.Node.Range.Start.ByteOffset, b.Node.Range.Start.ByteOffset)
 	})
@@ -162,4 +167,177 @@ func ownerPlatformGroups(owners yamlext.Set, data []byte) (map[string]map[string
 		}
 	}
 	return groups, nil
+}
+
+// ownerEntryFragments captures the keys document owners add to column and
+// index entries, with the keys of the entry each owner reads with its own.
+// The typed decoding keeps no source position of an entry's keys, so the
+// document is decoded again as nodes, and only when an owner claims such a
+// key.
+func (d document) ownerEntryFragments(owners yamlext.Set, data []byte, tables yamlext.Tables, capture *ownerCapture) ([]yamlext.Fragment, error) {
+	if len(owners.EntryKeys(yamlext.EntryColumn))+len(owners.EntryKeys(yamlext.EntryIndex)) == 0 {
+		return nil, nil
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("parse YAML schema: %w", err)
+	}
+	entries := entryCapture{owners: owners, root: &root, capture: capture}
+	for index, table := range tables {
+		if err := entries.tableEntries(index, table.Key, d.Tables[table.Key]); err != nil {
+			return nil, err
+		}
+	}
+	for _, key := range sortedKeys(d.Indexes) {
+		if err := entries.topLevelIndex(tables, key, d.Indexes[key]); err != nil {
+			return nil, err
+		}
+	}
+	return entries.fragments, nil
+}
+
+// entryCapture collects the fragments of the owners' keys of column and index
+// entries from the document decoded as nodes.
+type entryCapture struct {
+	owners    yamlext.Set
+	root      *yaml.Node
+	capture   *ownerCapture
+	fragments []yamlext.Fragment
+}
+
+// tableEntries captures the owners' keys of a table entry's columns, fields
+// and indexes.
+func (e *entryCapture) tableEntries(index int, key string, spec tableSpec) error {
+	for _, group := range []struct {
+		key     string
+		entries orderedMap[fieldSpec]
+	}{{yamlext.EntryColumn, spec.Columns}, {"fields", spec.Fields}} {
+		for _, column := range group.entries {
+			path := []string{yamlext.EntryTable, key, group.key, column.Name}
+			if err := e.add(yamlext.EntryColumn, path, index, valueOrDefault(column.Value.Name, column.Name), column.Value.Owned); err != nil {
+				return err
+			}
+		}
+	}
+	for _, entry := range spec.Indexes {
+		path := []string{yamlext.EntryTable, key, yamlext.EntryIndex, entry.Name}
+		if err := e.add(yamlext.EntryIndex, path, index, valueOrDefault(entry.Value.Name, entry.Name), entry.Value.Owned); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// topLevelIndex captures the owners' keys of a top-level index entry, bound
+// to the table the entry names, which the document has to declare.
+func (e *entryCapture) topLevelIndex(tables yamlext.Tables, key string, spec indexSpec) error {
+	if !slices.ContainsFunc(sortedKeys(spec.Owned), func(owned string) bool { return e.owners.DocumentKey(yamlext.EntryIndex, owned) }) {
+		return nil
+	}
+	table, err := tables.Find("", string(spec.TableName))
+	if err != nil {
+		return fmt.Errorf("parse YAML schema: index %q: %w", key, err)
+	}
+	if table < 0 {
+		return fmt.Errorf("parse YAML schema: index %q names table %q, which the document does not declare; an owner's key of an index needs its table", key, spec.TableName)
+	}
+	return e.add(yamlext.EntryIndex, []string{yamlext.EntryIndex, key}, table, valueOrDefault(spec.Name, key), spec.Owned)
+}
+
+// add captures each key of owned that a document owner reads, at path, with
+// the keys of the entry its owner reads with it.
+func (e *entryCapture) add(entry string, path []string, table int, name string, owned map[string]yaml.Node) error {
+	node := entryNode(e.root, path...)
+	for _, key := range sortedKeys(owned) {
+		if !e.owners.DocumentKey(entry, key) {
+			continue
+		}
+		value := mappingValue(node, key)
+		if value == nil {
+			return fmt.Errorf("parse YAML schema: key %q of %q has no value", key, path)
+		}
+		fragment, err := e.capture.fragment(append(slices.Clone(path), key), table, value)
+		if err != nil {
+			return err
+		}
+		fragment.Name = name
+		if fragment.Inherited, err = e.inherited(node, e.owners.EntryReads(entry, key)); err != nil {
+			return err
+		}
+		e.fragments = append(e.fragments, fragment)
+	}
+	return nil
+}
+
+// inherited captures the keys of reads an entry writes, or nil for none.
+func (e *entryCapture) inherited(node *yaml.Node, reads []string) (map[string]*yamlext.Node, error) {
+	var inherited map[string]*yamlext.Node
+	for _, read := range reads {
+		written := mappingValue(node, read)
+		if written == nil {
+			continue
+		}
+		captured, err := e.capture.node(written)
+		if err != nil {
+			return nil, fmt.Errorf("parse YAML schema: %w", err)
+		}
+		if inherited == nil {
+			inherited = make(map[string]*yamlext.Node)
+		}
+		inherited[read] = captured
+	}
+	return inherited, nil
+}
+
+// entryNode follows path through the mappings of a decoded document, aliases
+// included, and returns the node it ends at, or nil.
+func entryNode(root *yaml.Node, path ...string) *yaml.Node {
+	node := root
+	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
+		node = node.Content[0]
+	}
+	for _, key := range path {
+		node = mappingValue(node, key)
+		if node == nil {
+			return nil
+		}
+	}
+	return node
+}
+
+// mappingValue returns the value of key in a mapping node, following an
+// alias of the mapping and of the value, or nil.
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	for node != nil && node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == key {
+			value := node.Content[index+1]
+			for value.Kind == yaml.AliasNode && value.Alias != nil {
+				value = value.Alias
+			}
+			return value
+		}
+	}
+	return nil
+}
+
+// keyNodeLine returns the line key is written on in a mapping node, or 0.
+func keyNodeLine(node *yaml.Node, key string) int {
+	for node != nil && node.Kind == yaml.AliasNode {
+		node = node.Alias
+	}
+	if node == nil || node.Kind != yaml.MappingNode {
+		return 0
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == key {
+			return node.Content[index].Line
+		}
+	}
+	return 0
 }

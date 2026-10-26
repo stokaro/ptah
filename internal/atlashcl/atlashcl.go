@@ -300,7 +300,7 @@ func (p *parser) readHeader() error {
 		return fmt.Errorf("parse HCL schema %s: %w", p.filename, err)
 	}
 	p.db.NotDescribed = notDescribed
-	p.db.FeatureCoverage, err = documentCoverage(string(p.src), owned, p.db.FeatureObjects, p.owners)
+	p.db.FeatureCoverage, err = documentCoverage(string(p.src), owned, p.db.FeatureObjects, p.ownerMatches, p.owners)
 	return err
 }
 
@@ -313,13 +313,13 @@ func (p *parser) readHeader() error {
 // A captured header no selected owner reads is refused rather than ignored:
 // it is an exact claim an export wrote, and dropping it would read the
 // document as claiming nothing.
-func documentCoverage(data string, owned []coverage.Object, objects schemaext.Objects, owners hclext.Set) (schemaext.Coverage, error) {
+func documentCoverage(data string, owned []coverage.Object, objects schemaext.Objects, matches []hclext.Match, owners hclext.Set) (schemaext.Coverage, error) {
 	captured := schemaext.CoverageHeaderBodies(data)
 	if len(captured) > 0 && !owners.ReadsCapturedCoverage() {
 		return schemaext.Coverage{}, fmt.Errorf("%w: the document carries a %s header, and none of the selected owners reads one",
 			ptaherr.ErrUnsupportedFeature, schemaext.CoverageHeaderMarker)
 	}
-	known, err := owners.Coverage(hclext.CoverageRequest{Limits: owned, Captured: captured, Declared: objects})
+	known, err := owners.Coverage(hclext.CoverageRequest{Limits: owned, Captured: captured, Declared: objects, Matches: matches})
 	if err != nil {
 		return schemaext.Coverage{}, err
 	}
@@ -425,6 +425,9 @@ type parser struct {
 	dialect     string
 	owners      hclext.Set
 	ownerClaims []ownerClaim
+	// ownerMatches are the claims decodeOwnerClaims handed the owners, with
+	// their references resolved, which the coverage claim reads too.
+	ownerMatches []hclext.Match
 	// documentErr is an owner's refusal of the document as a whole, held
 	// until this package's own checks of the whole document pass; see
 	// [parser.decodeOwnerClaims].

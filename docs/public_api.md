@@ -3556,6 +3556,22 @@ under `overrides`, and every group nobody claims, stay in `Overrides`. Only a
 document owner can claim a group, and any other dotted table key is refused when
 the set is built.
 
+A document owner may also claim a key of a column or an index entry: an
+`EntrySection` with `Entry` set to `yamlext.EntryColumn` or
+`yamlext.EntryIndex`. Its fragment's path names the entry, as `Fragment`
+lists the shapes and `Fragment.Entry` reads them, a table's `columns` and
+`fields`, its `indexes` and the top-level `indexes` among them, and
+`Fragment.Name` is the name the entry declares. A top-level index key needs a
+table the document declares.
+
+`EntrySection.Reads` names keys of the entry itself the owner reads with its
+own, such as an index's `type`: a fragment carries the ones the entry writes in
+`Fragment.Inherited`, and each stays the frontend's key. A read that is not a
+key of the frontend's entry is refused when the document is parsed. A
+contribution's `Column` or `Index` attaches its facet to that column or index
+of its table, and one the table does not declare is refused. A key of a column
+entry that no selected owner reads is refused as unknown, naming its line.
+
 `DocumentResult` returns contributions and explicit desired coverage together.
 No objects does not imply absence, and no coverage record means uninspected.
 The set refuses undeclared model kinds, another owner's coverage, invalid table
@@ -3880,7 +3896,10 @@ shape. `schema inspect` writes its document for the inspected target.
   and struct identity in `Claim.Table`. Returned facets attach to that exact
   table, so equal names in different schemas stay separate. An `InTable` claim carries its table
   in `Claim.Table`, and its `Facets` go to that table. `Claim.At` says where a
-  block stands, for a refusal that names two blocks.
+  block stands, for a refusal that names two blocks, and `Claim.Range` and
+  `ClaimChild.Range` give the file, the first byte and the byte after the
+  last, each with its line and column, for an owner that positions what it
+  reads.
 - A `ClaimError` refuses one block, positioned at it. Of an owner's refusal and
   the reader's own, the reader reports the one earlier in the document, so the
   result does not depend on when the owner runs. A refusal that names no
@@ -3892,7 +3911,9 @@ shape. `schema inspect` writes its document for the inspected target.
   the extension lists in `Header`, and, when `CapturedCoverage` is set, the
   bodies of the document's `ptah:feature-coverage` header. A document with
   that header is refused when no selected owner reads it. `Declared` holds
-  the objects the document declares.
+  the objects the document declares, and `Claims` the owner's claims of the
+  document, as its decoder received them, which `Set.Coverage` takes from
+  the document's `Matches`.
 
 `engine.Provider.HCL` registers an extension, and `engine.Runtime.HCL` returns
 the frozen set. The zero set is refused with `hclext.ErrUnselected`, and

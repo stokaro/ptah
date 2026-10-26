@@ -78,7 +78,7 @@ func (p *parser) claimOwnerBlock(block *hclsyntax.Block, shape hclext.Shape) err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: -1, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: schema, Name: name, Attributes: values,
-			Children: children, At: blockAt(block)}}})
+			Children: children, At: blockAt(block), Range: blockRange(block)}}})
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (p *parser) ownerChildren(block *hclsyntax.Block, shape hclext.Shape, name 
 		if err != nil {
 			return nil, err
 		}
-		children = append(children, hclext.ClaimChild{Type: nested.Type, Name: childName, Attributes: values, At: blockAt(nested)})
+		children = append(children, hclext.ClaimChild{Type: nested.Type, Name: childName, Attributes: values, At: blockAt(nested), Range: blockRange(nested)})
 	}
 	return children, nil
 }
@@ -279,7 +279,7 @@ func (p *parser) claimOwnerTableBlock(table *schemamodel.Table, position int, bl
 		return err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
-		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Attributes: values, Children: children, At: blockAt(block),
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Attributes: values, Children: children, At: blockAt(block), Range: blockRange(block),
 			Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
 	return nil
 }
@@ -287,6 +287,15 @@ func (p *parser) claimOwnerTableBlock(table *schemamodel.Table, position int, bl
 // blockAt says where a block stands, as `<file>:<line>`.
 func blockAt(block *hclsyntax.Block) string {
 	return fmt.Sprintf("%s:%d", block.TypeRange.Filename, block.TypeRange.Start.Line)
+}
+
+// blockRange is where a block stands, from its type to its closing brace.
+func blockRange(block *hclsyntax.Block) hclext.Range {
+	whole := block.Range()
+	position := func(at hcl.Pos) hclext.Position {
+		return hclext.Position{Byte: at.Byte, Line: at.Line, Column: at.Column}
+	}
+	return hclext.Range{Filename: whole.Filename, Start: position(whole.Start), End: position(whole.End)}
 }
 
 // blockOrigin names a block in a refusal that has to name two: what it
@@ -311,7 +320,7 @@ func (p *parser) claimOwnerIndex(block *hclsyntax.Block, position int) error {
 		return err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: position, table: -1, references: references,
-		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values, At: blockAt(block),
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values, At: blockAt(block), Range: blockRange(block),
 			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator}}}})
 	return nil
 }
@@ -575,6 +584,7 @@ func (p *parser) decodeOwnerClaims() (declarations []hclext.Declaration, documen
 		}
 		matches = append(matches, match)
 	}
+	p.ownerMatches = matches
 	// Owner decoding shares the caller deadline and cancellation.
 	declarations, err = p.owners.Decode(p.requestCtx, matches)
 	if refused, ok := errors.AsType[*hclext.ClaimError](err); ok {
@@ -733,7 +743,7 @@ func (p *parser) claimOwnerRoutine(block *hclsyntax.Block, position int) error {
 		return err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, routine: new(position), index: -1, table: -1, references: references,
-		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: routine.Name, Attributes: values, At: blockAt(block)}}})
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: routine.Name, Attributes: values, At: blockAt(block), Range: blockRange(block)}}})
 	return nil
 }
 
@@ -751,7 +761,7 @@ func (p *parser) claimOwnerTable(block *hclsyntax.Block, position int) error {
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Schema: table.Schema, Name: table.Name,
-			Attributes: values, At: blockAt(block), Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
+			Attributes: values, At: blockAt(block), Range: blockRange(block), Table: &hclext.Table{Schema: table.Schema, Name: table.Name, Struct: table.StructName}}}})
 	return nil
 }
 
@@ -768,6 +778,6 @@ func (p *parser) claimOwnerMaterializedView(block *hclsyntax.Block, position int
 		return err
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, materialized: new(position), index: -1, table: -1, references: references,
-		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: view.Name, Attributes: values, At: blockAt(block)}}})
+		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: view.Name, Attributes: values, At: blockAt(block), Range: blockRange(block)}}})
 	return nil
 }

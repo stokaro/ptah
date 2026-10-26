@@ -262,6 +262,11 @@ type fieldSpec struct {
 	Comment            stringScalar `yaml:"comment"`
 	Platform           platformSpec `yaml:"platform"`
 	Overrides          platformSpec `yaml:"overrides"`
+
+	// Owned holds the keys the frontend does not read itself: the ones a
+	// selected document owner adds to a column, and anything else, which is
+	// refused as unknown.
+	Owned map[string]yaml.Node `yaml:",inline"`
 }
 
 type indexSpec struct {
@@ -605,7 +610,7 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 			return err
 		}
 
-		if err := addFields(db, structName, table.Columns, table.Fields); err != nil {
+		if err := addFields(db, owners, data, structName, tableKey, table.Columns, table.Fields); err != nil {
 			return err
 		}
 		if err := addTableIndexes(db, owners, structName, table.Indexes); err != nil {
@@ -619,10 +624,16 @@ func (d document) addTables(db *schemamodel.Database, owners yamlext.Set, data [
 	return nil
 }
 
-func addFields(db *schemamodel.Database, structName string, columns, fields orderedMap[fieldSpec]) error {
+// addFields adds the columns of a table entry. A column entry holds no key
+// the frontend does not read but the ones a document owner reads, which
+// addOwnerDocuments hands to it.
+func addFields(db *schemamodel.Database, owners yamlext.Set, data []byte, structName, tableKey string, columns, fields orderedMap[fieldSpec]) error {
 	seen := make(map[string]bool)
 	for _, column := range columns {
 		seen[column.Name] = true
+		if err := checkColumnKeys(owners, data, tableKey, yamlext.EntryColumn, column); err != nil {
+			return err
+		}
 		field, err := buildField(structName, column.Name, column.Value, db)
 		if err != nil {
 			return err
@@ -634,6 +645,9 @@ func addFields(db *schemamodel.Database, structName string, columns, fields orde
 		if seen[field.Name] {
 			return fmt.Errorf("duplicate column %q in columns and fields", field.Name)
 		}
+		if err := checkColumnKeys(owners, data, tableKey, "fields", field); err != nil {
+			return err
+		}
 		parsedField, err := buildField(structName, field.Name, field.Value, db)
 		if err != nil {
 			return err
@@ -641,6 +655,27 @@ func addFields(db *schemamodel.Database, structName string, columns, fields orde
 		db.Fields = append(db.Fields, parsedField)
 	}
 
+	return nil
+}
+
+// checkColumnKeys refuses a key of a column entry that neither the frontend
+// nor a selected owner reads, naming the line the author wrote it on. The
+// entry's Owned nodes come from a re-encoded copy, whose lines are not the
+// document's.
+func checkColumnKeys(owners yamlext.Set, data []byte, tableKey, group string, column yamlvalue.Entry[fieldSpec]) error {
+	for _, key := range sortedKeys(column.Value.Owned) {
+		if found, _ := owners.EntryKey(yamlext.EntryColumn, key); found {
+			continue
+		}
+		line := 0
+		var root yaml.Node
+		if yaml.Unmarshal(data, &root) == nil {
+			if node := entryNode(&root, yamlext.EntryTable, tableKey, group, column.Name); node != nil {
+				line = keyNodeLine(node, key)
+			}
+		}
+		return fmt.Errorf("parse YAML schema: line %d: unknown key %q of column %q of table %q", line, key, column.Name, tableKey)
+	}
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ type gadgetDecoder struct {
 }
 
 func (d gadgetDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	declarations := make([]hclext.Declaration, 0, len(request.Claims))
 	for i, claim := range request.Claims {
 		if claim.Name == "refused" {
@@ -220,7 +221,7 @@ type dialDecoder struct {
 }
 
 func (d dialDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	declarations := make([]hclext.Declaration, 0, len(request.Claims))
 	for _, claim := range request.Claims {
 		if claim.Block == "knob" {
@@ -370,7 +371,7 @@ type tunerDecoder struct {
 }
 
 func (d tunerDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	declarations := make([]hclext.Declaration, 0, len(request.Claims))
 	for i, claim := range request.Claims {
 		if claim.Name == "refused" {
@@ -535,7 +536,7 @@ type probeDecoder struct {
 }
 
 func (d probeDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	return hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}, nil
 }
 
@@ -660,4 +661,48 @@ func TestParseWithOptions_EvaluatesTheNamingsSchemaOnce(t *testing.T) {
 	c.Assert(requests[0].Claims[0].Attributes, qt.DeepEquals, map[string]hclext.Value{
 		"schema": {Kind: hclext.Ref, Reference: &hclext.Reference{Kind: "schema", Name: "app"}},
 	})
+}
+
+// withoutRanges returns request with the range of each claim and child
+// cleared, for a test about what the claims hold rather than where they
+// stand; TestParseWithOptions_RecordsWhereAClaimStands is about the ranges.
+func withoutRanges(request hclext.Request) hclext.Request {
+	claims := make([]hclext.Claim, len(request.Claims))
+	for i, claim := range request.Claims {
+		claim.Range = hclext.Range{}
+		claim.Children = slices.Clone(claim.Children)
+		for j := range claim.Children {
+			claim.Children[j].Range = hclext.Range{}
+		}
+		claims[i] = claim
+	}
+	return hclext.Request{Claims: claims}
+}
+
+// TestParseWithOptions_RecordsWhereAClaimStands hands an owner the range of
+// its block and of each child, from the type to the closing brace, with the
+// file name the parse was given.
+func TestParseWithOptions_RecordsWhereAClaimStands(t *testing.T) {
+	c := qt.New(t)
+	var requests []hclext.Request
+	owners := must.Must(hclext.NewSet(hclext.Extension{Owner: "example.org/shapes", Kinds: []schemaext.Kind{gadgetKind},
+		Blocks:  []hclext.Block{{Site: hclext.TopLevel, Type: "shape", Naming: hclext.SchemaAndName, Children: []hclext.Child{{Type: "field"}}}},
+		Decoder: rangeDecoder{requests: &requests}}))
+	source := "schema \"public\" {}\n\nshape \"public\" \"s\" {\n  field \"a\" {}\n}\n"
+
+	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(source), "schema.hcl", atlashcl.Options{HCL: owners})
+
+	c.Assert(err, qt.IsNil)
+	claim := requests[0].Claims[0]
+	c.Assert(claim.Range, qt.DeepEquals, hclext.Range{Filename: "schema.hcl", Start: hclext.Position{Byte: 20, Line: 3, Column: 1}, End: hclext.Position{Byte: 57, Line: 5, Column: 2}})
+	c.Assert(claim.Children[0].Range, qt.DeepEquals, hclext.Range{Filename: "schema.hcl", Start: hclext.Position{Byte: 43, Line: 4, Column: 3}, End: hclext.Position{Byte: 55, Line: 4, Column: 15}})
+	c.Assert(source[claim.Range.Start.Byte:claim.Range.End.Byte], qt.Equals, "shape \"public\" \"s\" {\n  field \"a\" {}\n}")
+}
+
+// rangeDecoder records the requests it reads and declares nothing.
+type rangeDecoder struct{ requests *[]hclext.Request }
+
+func (d rangeDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
+	*d.requests = append(*d.requests, request)
+	return hclext.Result{Declarations: make([]hclext.Declaration, len(request.Claims))}, nil
 }

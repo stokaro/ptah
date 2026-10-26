@@ -747,13 +747,20 @@ no files, checks bounds and cycles, and limits depth and batch size.
 The independent fixture exercises evaluated YAML, HCL, and Go annotation
 fragments. It accepts a synthetic retention mapping or HCL block, resolves its
 `on` binding, and preserves exact integers. It refuses SQL and does not apply
-retention to SQLite. The host YAML frontend captures negotiated document and
-table keys for this RPC. The host Go annotation adapter captures the claimed
+retention to SQLite.
+
+The host YAML frontend captures negotiated document, table, column, and index
+keys for this RPC. The host Go annotation adapter captures the claimed
 directives of a Go file at every scope, with attribute values as text, and the
 attributes a provider claims on Ptah's table, field and index directives. It
-refuses a claim on any other Ptah directive. The host HCL
-adapter, official-engine adapters, complete native planning, and history
-remain part of #4204; this transport is not a claim of YDB source support.
+refuses a claim on any other Ptah directive.
+
+The host HCL adapter captures
+declared blocks and attributes with their bindings, inherited values, and
+header limits. HCL and Go export send the provider's values through
+`EncodeSource`; HCL reports unrepresentable values as losses, while Go refuses
+losses and coverage limits. Official-engine source parity remains part of
+#4204; the fixtures do not establish YDB source support.
 
 ## Observed model coverage
 

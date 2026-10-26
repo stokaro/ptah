@@ -27,7 +27,7 @@ type ruleDecoder struct {
 }
 
 func (d ruleDecoder) DecodeHCL(_ context.Context, request hclext.Request) (hclext.Result, error) {
-	*d.requests = append(*d.requests, request)
+	*d.requests = append(*d.requests, withoutRanges(request))
 	for i, claim := range request.Claims {
 		if claim.Name == "refused" {
 			return hclext.Result{}, &hclext.ClaimError{Claim: i, Err: fmt.Errorf("rule %q is refused", claim.Name)}

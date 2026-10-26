@@ -85,6 +85,12 @@ func checkGoClaim(engine *protocol.Engine, claim *protocol.GoSourceDirective) (a
 	name := claim.GetDirective()
 	own, isOwn := frontendDirectives().Lookup(name)
 	if !isOwn {
+		if len(claim.GetInherited()) != 0 {
+			// A provider's own directive sits beside the frontend's, whose
+			// attributes its declaration does not carry.
+			return false, fmt.Errorf("Go directive %q of engine %q inherits attributes; only a claim on ptah:schema:table, ptah:schema:field or ptah:schema:index reads the attributes of the directive it extends",
+				name, engine.GetId())
+		}
 		switch claim.GetScope() {
 		case protocol.GoSourceDirective_DOCUMENT, protocol.GoSourceDirective_TABLE, protocol.GoSourceDirective_COLUMN, protocol.GoSourceDirective_INDEX:
 			return false, nil
@@ -105,6 +111,11 @@ func checkGoClaim(engine *protocol.Engine, claim *protocol.GoSourceDirective) (a
 	for _, attribute := range claim.GetAttributes() {
 		if slices.ContainsFunc(own.Attributes, func(existing annotation.Attribute) bool { return existing.Name == attribute }) {
 			return true, fmt.Errorf("Go directive %q of engine %q adds attribute %q, which the directive declares already", name, engine.GetId(), attribute)
+		}
+	}
+	for _, attribute := range claim.GetInherited() {
+		if !slices.ContainsFunc(own.Attributes, func(existing annotation.Attribute) bool { return existing.Name == attribute }) {
+			return true, fmt.Errorf("Go directive %q of engine %q inherits attribute %q, which the directive does not declare", name, engine.GetId(), attribute)
 		}
 	}
 	return true, nil
@@ -164,13 +175,23 @@ func goFragment(engine *protocol.Engine, tables annotation.Tables, bindings []st
 	if err != nil {
 		return nil, &annotation.DeclarationError{Declaration: declaration, Err: err}
 	}
-	mapping := &protocol.SourceMapping{}
+	// The attributes of the directive itself that the claim inherits travel
+	// apart from the claim's own: they stay the frontend's.
+	mapping, inherited := &protocol.SourceMapping{}, &protocol.SourceMapping{}
 	for _, key := range slices.Sorted(maps.Keys(declaration.Attributes)) {
-		mapping.Entries = append(mapping.Entries, &protocol.SourceEntry{Key: key, KeySpan: span,
-			Value: &protocol.SourceValue{Span: span, Value: &protocol.SourceValue_Text{Text: declaration.Attributes[key]}}})
+		entry := &protocol.SourceEntry{Key: key, KeySpan: span,
+			Value: &protocol.SourceValue{Span: span, Value: &protocol.SourceValue_Text{Text: declaration.Attributes[key]}}}
+		if slices.Contains(claim.GetInherited(), key) {
+			inherited.Entries = append(inherited.Entries, entry)
+			continue
+		}
+		mapping.Entries = append(mapping.Entries, entry)
 	}
 	fragment := &protocol.SourceFragment{Id: strconv.Itoa(index), GoDirective: proto.CloneOf(claim), Selector: claim.GetSelector(), Span: span,
 		Content: &protocol.SourceFragment_Value{Value: &protocol.SourceValue{Span: span, Value: &protocol.SourceValue_Mapping{Mapping: mapping}}}}
+	if len(inherited.GetEntries()) != 0 {
+		fragment.InheritedAttributes = inherited
+	}
 	table, subject, err := GoSubject(engine.GetId(), tables, claim, declaration)
 	if err != nil {
 		return nil, &annotation.DeclarationError{Declaration: declaration, Err: err}
