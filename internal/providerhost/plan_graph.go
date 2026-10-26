@@ -22,8 +22,9 @@ import (
 // removals join at removalStart, before the host removes columns and tables.
 // Lifecycle operations share the complete common sequence. Their effects and
 // explicit dependencies order them around common changes, including a native
-// object that replaces a table at the same physical path. Rewrite boundaries
-// still keep a claimed common operation in its original position.
+// object that replaces a table at the same physical path. Native access steps
+// retain principal and same-access dependencies while sharing that span.
+// Rewrite boundaries preserve the resulting common dependencies.
 func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, creationStart, removalStart int) ([]ast.Node, error) {
 	request, names, err := p.planningContext(diff)
 	if err != nil {
@@ -33,9 +34,14 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	if err != nil {
 		return nil, err
 	}
+	movable, dependencies, err := nativeAccessWindows(request, nodes, metadata, p.selections)
+	if err != nil {
+		return nil, err
+	}
 	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
 		Creation: creationStart, Dependent: removalStart, Removal: removalStart,
-		Lifecycle:     &featurehost.Span{Start: 0, End: len(nodes)},
+		Lifecycle:       &featurehost.Span{Start: 0, End: len(nodes)},
+		LifecycleCommon: movable, CommonDependencies: dependencies,
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
 		Types:         &featurehost.TypeWindows{Creation: featurehost.Span{}, Removal: featurehost.Span{Start: len(nodes), End: len(nodes)}},
 	})
