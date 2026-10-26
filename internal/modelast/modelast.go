@@ -25,6 +25,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
@@ -1191,32 +1192,16 @@ func FromFunctionFor(function schemamodel.Function, targetPlatform string) *ast.
 	if describe(targetPlatform).Grammar.Routines.Body != descriptor.RoutineQuotedBody {
 		return functionNode
 	}
-	language := strings.TrimSpace(function.Language)
-	switch body := strings.TrimSpace(function.Body); {
-	case hasKeyword(body, "BEGIN ATOMIC") && (language == "" || strings.EqualFold(language, "sql")):
+	switch routinebody.Of(function.Language, function.Body) {
+	case routinebody.Atomic:
 		// PostgreSQL takes a SQL-standard body as LANGUAGE sql where the
 		// routine names no language, so the routine is written in it.
-		functionNode.SetAtomicBody(body).SetLanguage("sql")
-	case hasKeyword(body, "RETURN") && strings.EqualFold(language, "sql"):
-		functionNode.SetReturnBody(strings.TrimSpace(body[len("RETURN"):]))
+		functionNode.SetAtomicBody(strings.TrimSpace(function.Body)).SetLanguage("sql")
+	case routinebody.Return:
+		functionNode.SetReturnBody(routinebody.ReturnExpression(function.Body))
+	case routinebody.Quoted:
 	}
 	return functionNode
-}
-
-// hasKeyword reports whether text starts with keyword, in any case, followed
-// by white space or nothing.
-func hasKeyword(text, keyword string) bool {
-	words := strings.Fields(text)
-	want := strings.Fields(keyword)
-	if len(words) < len(want) {
-		return false
-	}
-	for i, word := range want {
-		if !strings.EqualFold(words[i], word) {
-			return false
-		}
-	}
-	return true
 }
 
 // FromSequence converts a schemamodel.Sequence into a CreateSequenceNode.

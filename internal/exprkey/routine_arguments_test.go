@@ -10,12 +10,16 @@ import (
 )
 
 // One argument list declared on two routines of one kind is one key: the
-// server's spelling depends on the list, not on the routine's name.
+// server's spelling depends on the list, not on the routine's name. A
+// SQL-standard body is keyed by the routine's name too, without its schema.
 func TestRoutineArguments_OneListIsOneKey(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(exprkey.RoutineArguments(schemamodel.Function{Name: "a", Parameters: "b text DEFAULT 'X'"}), qt.Equals,
 		exprkey.RoutineArguments(schemamodel.Function{Name: "b", Parameters: "b text DEFAULT 'X'"}))
+	c.Assert(exprkey.RoutineArguments(schemamodel.Function{Name: "app.f", Language: "sql", Body: "RETURN 1"}), qt.Equals,
+		exprkey.RoutineArguments(schemamodel.Function{Name: "f", Language: "sql", Body: "RETURN 1"}),
+		qt.Commentf("a SQL-standard body is keyed by the routine's name without its schema"))
 }
 
 // A procedure's list and a function's are two keys, because the server takes
@@ -24,7 +28,9 @@ func TestRoutineArguments_OneListIsOneKey(t *testing.T) {
 // literal's case are two keys too, and so are two results, since the server
 // spells each result. Two bodies and two languages are two keys, because a
 // server that rewrites a body when it stores it answers for the body too
-// (stokaro/ptah#4058).
+// (stokaro/ptah#4058). One SQL-standard body on two routines is two keys:
+// PostgreSQL qualifies a parameter in it with the routine's name
+// (stokaro/ptah#5021).
 func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 	procedure := schemamodel.FunctionKindProcedure
 	tests := []struct {
@@ -40,6 +46,9 @@ func TestRoutineArguments_DifferentListsAreDifferentKeys(t *testing.T) {
 		{name: "two bodies", left: schemamodel.Function{Returns: "bigint", Body: "SELECT 1"}, right: schemamodel.Function{Returns: "bigint", Body: "SELECT 2"}},
 		{name: "two languages", left: schemamodel.Function{Returns: "bigint", Language: "sql"}, right: schemamodel.Function{Returns: "bigint", Language: "plpgsql"}},
 		{name: "a body written into the language", left: schemamodel.Function{Language: "sql", Body: "x"}, right: schemamodel.Function{Language: "sqlx"}},
+		{name: "one SQL-standard body on two routines",
+			left:  schemamodel.Function{Name: "f", Parameters: "x int", Language: "sql", Body: "BEGIN ATOMIC SELECT x; END"},
+			right: schemamodel.Function{Name: "g", Parameters: "x int", Language: "sql", Body: "BEGIN ATOMIC SELECT x; END"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
