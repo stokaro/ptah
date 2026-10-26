@@ -268,8 +268,15 @@ func TestSavedPlanRefusesMalformedProviderBinding(t *testing.T) {
 }
 
 func TestSavedPlanBindsBothDatabaseInterpretationRoots(t *testing.T) {
-	for _, field := range []string{"database", "source database", "incomplete"} {
-		t.Run(field, func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context schemaext.DatabaseContext
+	}{
+		{"database", schemaext.DatabaseContext{Database: "/selected/other", SourceDatabase: "/authored"}},
+		{"source database", schemaext.DatabaseContext{Database: "/selected/realm", SourceDatabase: "/other"}},
+		{"incomplete", schemaext.DatabaseContext{Database: "/selected/realm"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			selected, _, _ := prepareBoundPlan(c)
 			selected.info.DatabaseContext = schemaext.DatabaseContext{Database: "/selected/realm", SourceDatabase: "/authored"}
@@ -280,14 +287,7 @@ func TestSavedPlanBindsBothDatabaseInterpretationRoots(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(atlasschema.VerifyPlanTarget(c.Context(), conn, plan, runtime), qt.IsNil)
 			changed := &boundProvider{base: c.Context(), info: selected.info, address: selected.address}
-			switch field {
-			case "database":
-				changed.info.DatabaseContext.Database = "/selected/other"
-			case "source database":
-				changed.info.DatabaseContext.SourceDatabase = "/other"
-			case "incomplete":
-				changed.info.DatabaseContext.SourceDatabase = ""
-			}
+			changed.info.DatabaseContext = test.context
 			err = atlasschema.VerifyPlanTarget(c.Context(), connectBoundProvider(c, changed), plan, runtime)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(changed.reads.Load(), qt.Equals, int64(0))
