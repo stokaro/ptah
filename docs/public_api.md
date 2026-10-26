@@ -963,7 +963,9 @@ host-owned `Annotation` prose, exclusively. An annotation has no input reference
 Empty SQL accounts for a node that emits nothing. SQL fragments
 can contain several statements. `ExecutableUnits` preserves exact operation
 boundaries and is required for native fragments. The boundary clones native
-payloads and annotation text and refuses invalid clones. `renderer.Comment`
+payloads and annotation text and refuses invalid clones.
+
+`renderer.Comment`
 prefixes every physical line when projecting annotation text into SQL comments.
 `renderer.Annotation` positions notes before a unit or after the final unit;
 `ValidateAnnotations` refuses unordered and out-of-range positions. Planner
