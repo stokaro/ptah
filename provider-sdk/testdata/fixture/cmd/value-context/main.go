@@ -13,6 +13,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
@@ -65,11 +66,18 @@ func (p *contextOwner) Open(ctx context.Context, request *protocol.OpenRequest) 
 }
 
 func (p *contextOwner) NormalizeValues(ctx context.Context, request *protocol.NormalizeValuesRequest) (*protocol.NormalizedValues, error) {
-	result, err := p.Provider.NormalizeValues(ctx, request)
+	captured := proto.CloneOf(request)
+	for _, input := range captured.GetValues() {
+		if input.GetValue().GetKind() == backend.RetentionObjectKind {
+			input.Value.Kind = "example.org/fixture/retention"
+		}
+	}
+	result, err := p.Provider.NormalizeValues(ctx, captured)
 	if err != nil {
 		return nil, err
 	}
-	for _, value := range result.Values {
+	for i, value := range result.Values {
+		value.Value.Kind = request.GetValues()[i].GetValue().GetKind()
 		if value.Value.Context == nil {
 			value.RequiresDatabaseContext = true
 			continue
