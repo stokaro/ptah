@@ -1,6 +1,6 @@
 package providerhost
 
-// White-box testing required to validate the private selection adapter's
+// White-box testing required: these tests validate the private selection adapter's
 // footprint checks independently of a provider's declared native vocabulary.
 
 import (
