@@ -436,12 +436,15 @@ func commonObjectEngine(description *protocol.Description, name string, targetFe
 // code runs: a negotiated engine that carries the declared kinds, complete
 // identifier facts, and well-formed, unique declarations.
 func ValidatePrepareCommonObjectsRequest(description *protocol.Description, request *protocol.PrepareCommonObjectsRequest) error {
-	_, kinds, err := commonObjectEngine(description, request.GetEngine(), request.GetTargetFeatures())
+	engine, kinds, err := commonObjectEngine(description, request.GetEngine(), request.GetTargetFeatures())
 	if err != nil {
 		return err
 	}
 	if err := validateComparisonContext(&protocol.CompareModelsRequest{Identifiers: request.GetIdentifiers(), Capabilities: request.GetCapabilities()},
 		&protocol.ModelComparison{Placement: protocol.ModelComparison_OBJECTS}); err != nil {
+		return err
+	}
+	if err := validateDeclaredViewFacets(description, engine, request.GetTargetFeatures(), request.GetIdentifiers(), request.GetDeclared().GetViews()); err != nil {
 		return err
 	}
 	return validateDeclaredCommonObjects(request.GetIdentifiers(), kinds, request.GetDeclared())
@@ -474,7 +477,7 @@ func validatePreparedIdentities(before, after *protocol.DeclaredCommonObjects) e
 	}
 	for i, view := range before.GetViews() {
 		prepared := after.GetViews()[i]
-		if prepared.GetSchema() != view.GetSchema() || prepared.GetName() != view.GetName() || prepared.GetMaterialized() != view.GetMaterialized() {
+		if prepared.GetSchema() != view.GetSchema() || prepared.GetName() != view.GetName() || prepared.GetMaterialized() != view.GetMaterialized() || !proto.Equal(prepared.GetFeatures(), view.GetFeatures()) {
 			return commonObjectError("preparation changed a view's identity")
 		}
 	}
@@ -558,7 +561,11 @@ func relationChangeSubject(engine string, kinds commonKinds, change *protocol.Co
 		if strings.TrimSpace(view.GetName()) == "" || strings.TrimSpace(view.GetBody()) == "" {
 			return nil, true, commonObjectError("a view needs a name and a body")
 		}
-		return named(engine, reference, view.GetSchema(), view.GetName()), true, kinds.commentCarried(view.GetComment())
+		subject := named(engine, reference, view.GetSchema(), view.GetName())
+		if current := operation.CreateView.GetCurrent(); current != nil {
+			subject = current.GetIdentity()
+		}
+		return subject, true, kinds.commentCarried(view.GetComment())
 	case *protocol.CommonObjectChange_DropView:
 		ref := operation.DropView
 		kind, known := viewKinds[ref.GetKind()]

@@ -47,6 +47,9 @@ func validateTextUnits(form protocol.RenderRequest_Form, units []*protocol.Unit)
 // ValidateRenderRequest checks the complete rendering batch before owner code
 // runs. Native operations must use the negotiated OPERATION model.
 func ValidateRenderRequest(description *protocol.Description, request *protocol.RenderRequest) error {
+	if err := requireResolvedContext(request); err != nil {
+		return err
+	}
 	if request == nil || !slices.Contains(description.GetFeatures(), RenderFeature) {
 		return fmt.Errorf("%w: rendering is unavailable", ErrProtocol)
 	}
@@ -81,6 +84,9 @@ func validateRenderOperation(description *protocol.Description, engine *protocol
 		kinds := engineCommonKinds(engine)
 		if len(kinds) == 0 {
 			return commonObjectError("the engine carries no common object")
+		}
+		if err := validateViewCreationFacets(description, engine, request.GetTargetFeatures(), viewIdentifiers(engine), operation.CommonObject.GetCreateView()); err != nil {
+			return err
 		}
 		return validateCommonObjectChange(engine.GetId(), kinds, change.GetObject(), operation.CommonObject)
 	case *protocol.Change_Native:
@@ -139,6 +145,9 @@ func validateNativeOperation(description *protocol.Description, request *protoco
 // failed batch has no executable prefix, even when earlier units are well formed.
 func ValidateRenderedBatch(description *protocol.Description, request *protocol.RenderRequest, result *protocol.RenderResult) error {
 	if err := ValidateRenderRequest(description, request); err != nil {
+		return err
+	}
+	if err := validateUnitContexts(description, request.GetEngine(), result.GetUnits()); err != nil {
 		return err
 	}
 	return ValidateRender(request, result)

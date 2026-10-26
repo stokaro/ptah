@@ -58,6 +58,7 @@ func ValidateConvertedValues(description *protocol.Description, request *protoco
 		converted := result.GetValues()[i]
 		if converted.GetId() != source.GetId() || converted.GetValue().GetKind() != source.GetValue().GetKind() ||
 			!proto.Equal(converted.GetValue().GetOwner(), source.GetValue().GetOwner()) ||
+			!proto.Equal(converted.GetValue().GetContext(), source.GetValue().GetContext()) ||
 			compareReferences(converted.GetNormalizedOwner(), source.GetNormalizedOwner()) != 0 {
 			return fmt.Errorf("%w: conversion changed ordered model or identity", ErrProtocol)
 		}

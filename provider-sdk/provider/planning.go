@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"google.golang.org/protobuf/proto"
 )
 
 // PlanFeaturesFeature advertises offline planning against captured context.
@@ -22,6 +23,9 @@ type FeaturePlanner interface {
 // ValidatePlanningRequest checks service ownership and all captured context
 // before owner code runs. Missing knowledge remains unknown.
 func ValidatePlanningRequest(description *protocol.Description, request *protocol.PlanFeaturesRequest) error {
+	if err := requireResolvedContext(request); err != nil {
+		return err
+	}
 	if request == nil || !slices.Contains(description.GetFeatures(), PlanFeaturesFeature) {
 		return fmt.Errorf("%w: feature planning is unavailable", ErrProtocol)
 	}
@@ -47,7 +51,7 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if err := validatePlanningContext(description, request); err != nil {
 		return err
 	}
-	if err := validatePlanningCommonObjects(engine, request); err != nil {
+	if err := validatePlanningCommonObjects(description, engine, request); err != nil {
 		return err
 	}
 	if err := validatePlanningPolicy(description, engine, request.GetPolicy()); err != nil {
@@ -56,12 +60,15 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if err := validatePlanningChanges(description, request, service); err != nil {
 		return err
 	}
-	return validatePlanningTables(description, request, engine)
+	if err := validatePlanningTables(description, request, engine); err != nil {
+		return err
+	}
+	return validatePlanningObjects(description, engine, service, request)
 }
 
 // validatePlanningCommonObjects checks the common objects a planning request
 // carries as context, and the operand of each common step that changes one.
-func validatePlanningCommonObjects(engine *protocol.Engine, request *protocol.PlanFeaturesRequest) error {
+func validatePlanningCommonObjects(description *protocol.Description, engine *protocol.Engine, request *protocol.PlanFeaturesRequest) error {
 	kinds := engineCommonKinds(engine)
 	uses := request.GetDesiredCommon() != nil || request.GetCurrentCommon() != nil ||
 		slices.ContainsFunc(request.GetCommonSteps(), func(step *protocol.CommonPlanningStep) bool { return step.GetCommonObject() != nil })
@@ -79,9 +86,22 @@ func validatePlanningCommonObjects(engine *protocol.Engine, request *protocol.Pl
 			return err
 		}
 	}
+	if err := validateDeclaredViewFacets(description, engine, request.GetTargetFeatures(), request.GetIdentifiers(), request.GetDesiredCommon().GetViews()); err != nil {
+		return err
+	}
+	if err := validateObservedViewFacets(description, engine, request.GetTargetFeatures(), request.GetCurrentCommon().GetViews()); err != nil {
+		return err
+	}
 	for _, step := range request.GetCommonSteps() {
 		if step.GetCommonObject() == nil {
 			continue
+		}
+		if err := validateViewCreationFacets(description, engine, request.GetTargetFeatures(), request.GetIdentifiers(), step.GetCommonObject().GetCreateView()); err != nil {
+			return err
+		}
+		current := step.GetCommonObject().GetCreateView().GetCurrent()
+		if current != nil && !slices.ContainsFunc(request.GetCurrentCommon().GetViews(), func(view *protocol.ObservedView) bool { return proto.Equal(view, current) }) {
+			return commonObjectError("replacement operand is not the captured current view")
 		}
 		if _, err := commonChangeSubject(engine.GetId(), kinds, step.GetCommonObject()); err != nil {
 			return err
@@ -130,6 +150,9 @@ func planningValueContext(request *protocol.PlanFeaturesRequest) *protocol.Compa
 // receipts, and successful output mixed with a refusal. External dependencies
 // and rewrite effects are validated again against the host's complete graph.
 func ValidatePlannedFeatures(description *protocol.Description, request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures) error {
+	if err := requireResolvedContext(result); err != nil {
+		return err
+	}
 	if err := ValidatePlanningRequest(description, request); err != nil {
 		return err
 	}

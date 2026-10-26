@@ -169,13 +169,18 @@ func (c *Client) Close() {
 // Open starts a session after negotiation. It returns no usable handle on an
 // error, an empty handle, or an engine mismatch.
 func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	request = proto.CloneOf(request)
+	expected, err := c.addressContext(ctx, request)
+	if err != nil {
+		return nil, err
+	}
 	call, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 	result, err := c.rpc.Open(call, request)
 	if err != nil {
 		return nil, remoteError(call, "open session", err)
 	}
-	if err := provider.ValidateSession(request.GetEngine(), result); err != nil {
+	if err := provider.ValidateSessionContext(c.description, request.GetEngine(), expected, result); err != nil {
 		if result.GetId() != "" {
 			return nil, errors.Join(err, c.CloseSession(context.WithoutCancel(ctx), result.GetId()))
 		}

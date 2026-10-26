@@ -68,6 +68,9 @@ func declarationService(engine *protocol.Engine, id string) *protocol.ModelDecla
 // ValidateDeclarationsRequest checks explicit dispatch, authored models and
 // declared context before invoking owner code. It establishes no current state.
 func ValidateDeclarationsRequest(description *protocol.Description, request *protocol.PlanDeclarationsRequest) error {
+	if err := requireResolvedContext(request); err != nil {
+		return err
+	}
 	if request.GetEngine() == "" || !slices.Contains(description.GetFeatures(), SchemaDeclarationsFeature) {
 		return declarationError("an explicit engine and advertised service are required")
 	}
@@ -86,16 +89,11 @@ func ValidateDeclarationsRequest(description *protocol.Description, request *pro
 	if err := validatePlanningContext(description, planning); err != nil {
 		return err
 	}
-	if err := validatePlanningCommonObjects(engine, planning); err != nil {
+	if err := validatePlanningCommonObjects(description, engine, planning); err != nil {
 		return err
 	}
-	for _, table := range request.GetTables() {
-		if table.GetDeclaration() == nil {
-			return declarationError("a table needs its declaration")
-		}
-		if err := validatePreparationIdentity(table.GetSubject(), table.GetDeclaration().GetName(), table.GetDeclaration().GetSchema(), request.GetIdentifiers().GetDefaultSchema()); err != nil {
-			return err
-		}
+	if err := validateDeclarationTables(request); err != nil {
+		return err
 	}
 	if err := validatePlanningTables(description, planning, engine); err != nil {
 		return err
@@ -133,6 +131,9 @@ func declarationContext(request *protocol.PlanDeclarationsRequest) *protocol.Pla
 // ValidatePlannedDeclarations requires complete object receipts and accounted
 // operations. A diagnostic batch carries no successful prefix.
 func ValidatePlannedDeclarations(description *protocol.Description, request *protocol.PlanDeclarationsRequest, result *protocol.PlannedDeclarations) error {
+	if err := requireResolvedContext(result); err != nil {
+		return err
+	}
 	if err := ValidateDeclarationsRequest(description, request); err != nil {
 		return err
 	}
@@ -206,6 +207,18 @@ func validateDeclarationDiagnostics(request *protocol.PlanDeclarationsRequest, r
 		}
 		if diagnostic.Object != nil && (uint64(diagnostic.GetObject()) >= uint64(len(request.GetObjects())) || problem.GetKind() != request.GetObjects()[diagnostic.GetObject()].GetKind()) {
 			return declarationError("a diagnostic index or kind differs from its input object")
+		}
+	}
+	return nil
+}
+
+func validateDeclarationTables(request *protocol.PlanDeclarationsRequest) error {
+	for _, table := range request.GetTables() {
+		if table.GetDeclaration() == nil {
+			return declarationError("a table needs its declaration")
+		}
+		if err := validatePreparationIdentity(table.GetSubject(), table.GetDeclaration().GetName(), table.GetDeclaration().GetSchema(), request.GetIdentifiers().GetDefaultSchema()); err != nil {
+			return err
 		}
 	}
 	return nil

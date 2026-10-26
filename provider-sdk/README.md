@@ -26,6 +26,10 @@ its contract-25.0 programs (`provider`, `lint` and `contract-host`) against
 contract minors meet. Those programs and the `backend` package use nothing a
 later minor added.
 
+SDK-only proof programs under `integration/testdata` build in
+an isolated temporary module using the same workspace. They can exercise an
+unreleased contract without changing the independent fixture's published pin.
+
 `protocol/experimental` contains generated Protobuf messages and the gRPC service.
 `provider` defines service contracts and validates complete results.
 `runtime` starts and serves authenticated subprocesses. The runtime does not
@@ -51,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.6. `provider-sdk/v0.7.0` speaks 25.5.
+speaks contract 25.7. `provider-sdk/v0.8.0` speaks 25.6.
+`provider-sdk/v0.7.0` speaks 25.5.
 `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
 speaks contract 25.3, `provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0`
 speaks 25.1, and `provider-sdk/v0.2.0` speaks 25.0.
@@ -77,7 +82,11 @@ returns to 0.
   [independent access observations](#independent-access-observations),
   [lifecycle placement](#lifecycle-placement) and
   [sensitive execution inputs](#sensitive-execution-inputs). Contract 25.6 adds
-  [common column semantics](#common-column-semantics).
+  [common column semantics](#common-column-semantics). Contract 25.7 adds
+  [database interpretation context](#database-interpretation-context),
+  [view facets and replacement observations](#view-facets-and-replacement-observations),
+  [complete column observations](#complete-column-observations), and
+  [native object assessment](#native-object-assessment).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -101,7 +110,9 @@ does not oblige a peer to use it.
   `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`,
   `scope.selections`, `source.encode-groups`, `source.limits`,
   `schema.declarations`, `schema.common-access`, `planning.lifecycle`,
-  `units.sensitive-inputs` and `schema.columns`. The embedding store's calls and `PrepareCommonObjects` are
+  `units.sensitive-inputs`, `schema.columns`, `database.context`,
+  `values.context`, `schema.common-view-facets`, `schema.observed-columns`, and
+  `planning.object-context`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
@@ -146,6 +157,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | Operation | Required result |
 | --- | --- |
 | `Describe` | The contract major and the provider's minimum minor, provider identity, semantic identity, engines, identifier comparison rules, and advertised features, negotiated with the host's version and features. |
+| `ResolveDatabaseContext` | Pure interpretation of an address into selected and authored database roots, without connecting, provisioning, or resolving credentials. |
 | `Open` | A session handle for the requested engine, identifier rules, and established server capabilities. Credentials belong in this request, never in process arguments. |
 | `Close` | Release one session. Repeated closes succeed. |
 | `Inspect` | A complete snapshot with explicit dispositions for observed fields. Incomplete state is an error, never an empty database. |
@@ -528,6 +540,37 @@ observed objects and facets, and dispatches contextual comparison to their owner
 Native planning and migration backend operations require the separate services
 described below; see [ADR 0022](../docs/adr/0022-provider-values-are-resolved-in-semantic-batches.md).
 
+## Database interpretation context
+
+[ADR 0046](../docs/adr/0046-database-context-is-bound-before-provider-dependencies-are-used.md)
+separates authored identity from the database needed to interpret references.
+Both peers negotiate `database.context` before `ResolveDatabaseContext` or a
+context-bearing session. The pure RPC receives an explicit engine and address.
+It returns `DatabaseContext.database`, the selected database or realm, and
+`source_database`, the root of authored absolute references. The provider owns
+this interpretation. The host neither parses paths nor assumes a default root.
+The service cannot connect, provision resources, read environment variables, or
+resolve credentials. Its receipt and errors contain no address or credentials.
+
+The client and server resolve the address before `Open`. They require the opened
+session's context to equal that receipt and its database to equal the selected
+root. A mismatched session is closed and never returned. Context roots must be
+nonempty, exact, single-line strings; an absent context means unknown.
+
+`values.context` independently negotiates `Envelope.context`. This durable
+interpretation context does not change `Envelope.owner` or its normalized
+identity. Normalization and representation conversion preserve it exactly. The
+host retains it in captures, plans, and digests, and refuses a different target
+context before consuming or executing a bound model.
+
+Without context, an owner can set `NormalizedValue.requires_database_context`
+when dependencies cannot be resolved. Such a result carries no partial
+`required_objects`, change semantics, or operation semantics. It may be retained
+for source processing, but comparison, planning, declaration rendering, and
+operation rendering refuse it. A context-bearing normalization result cannot
+retain this flag. The host binds context and normalizes the complete batch before
+selection or dependency collection; failure discards the batch.
+
 ## SQL schema documents
 
 A desired schema can be a SQL file. An engine declares in `Engine.sql_schema`
@@ -780,8 +823,8 @@ model coverage even for an empty database. The host matches the engine and
 features to the inspected session. A missing coverage record is not evidence
 that a model has no objects.
 
-`provider.InspectionValues` validates native objects, table facets, and column
-facets against their negotiated model definitions and complete subject records.
+`provider.InspectionValues` validates native objects, table facets, column
+facets, and common view facets against their negotiated model definitions and complete subject records.
 It returns an independent batch for `NormalizeValues`. Native objects use their
 model kind as their identity kind. Table facets name their table, and column
 facets use `provider.ColumnReference` to keep the table and column names as
@@ -1326,8 +1369,30 @@ validates, spells and renders:
 Both transport boundaries refuse a kind the engine does not carry, an empty
 name, a grant without a role, privileges or a target, a role that is a member
 of itself in a declaration, an identity repeated under the engine's identifier rules, and a
-prepared entry that changed its identity or its collection's length. The
-fixture does not serve this wire.
+prepared entry that changed its identity or its collection's length.
+
+### View facets and replacement observations
+
+[ADR 0047](../docs/adr/0047-common-view-facets-retain-authored-and-observed-state.md)
+defines `schema.common-view-facets`. An inspected `ObservedView` carries typed
+observed envelopes in `facets`, each owned by that exact view identity. These
+values enter the inspection normalization inventory after table and column
+facets and require their own complete model coverage. A common view has no
+standalone native twin.
+
+A desired `SQLView.features` carries captured desired facets and coverage. Its
+object collection is empty. Each facet's source and normalized owner matches
+the authored view. Preparation preserves the complete feature collection while
+preparing common spelling. SQL `WITH` attributes remain common SQL attributes;
+they cannot hold native payloads.
+
+A replacement can carry `ViewCreation.current`, the actual full `ObservedView`.
+It requires `replace`, matches the desired kind, schema, and name, and binds the
+render change to every coordinate of the current identity. A planning step's
+current operand must equal a captured current view. A missing operand means
+unknown current state, including an authored `CREATE OR REPLACE`; it establishes
+no absence. Providers refuse replacements whose preservation requirements need
+unavailable current facts.
 
 ### Independent access observations
 
@@ -1634,3 +1699,52 @@ effective type and nullability are required. Authored declarations remain
 unchanged, and predictions establish no catalog inspection. An unnegotiated
 peer refuses these new fields. The host consumes effective receipts separately
 from the source fields used for export and operation operands.
+
+## Complete column observations
+
+[ADR 0048](../docs/adr/0048-common-column-observations-have-one-complete-wire-representation.md)
+defines `schema.observed-columns`. When both peers negotiate it, every inspected
+`Column` contains one `observed` value using the full `ObservedColumn` shape.
+The wrapper retains the column name and native facets; its common type,
+nullability, primary-key flag, and optional default remain empty. The complete
+observation is the exclusive common fact source, including auto-increment,
+identity start and increment, sequence restart, and owned-sequence identity.
+
+The observed name must match its wrapper, ordinals must follow column order,
+types must be nonempty, and nullability must be `YES` or `NO`. Optional default
+presence distinguishes no default from an explicit empty value. Missing,
+reordered, conflicting, or unnegotiated observations are refused. Native facets
+retain independent evidence and cannot supply a second writable copy of a
+common default or sequence setting. Providers refuse unrepresentable extras
+rather than dropping them during conversion.
+
+## Native object assessment
+
+[ADR 0049](../docs/adr/0049-native-object-context-is-assessed-without-inventing-schema-differences.md)
+defines `planning.object-context`. An unchanged native object can need lifecycle
+operations when another object changes. `ModelPlanning.context_kinds` assigns
+assessment to one planner per native kind, with both desired and observed
+contracts. The host invokes that service even without changes, table actions,
+or named objects; unknown kind coverage can hide a dependent.
+
+`PlanFeaturesRequest.desired_objects` and `current_objects` carry complete
+owner-local `ComparisonState` captures and coverage. They remain visible beyond
+the assigned kinds. The host derives the sorted, unique `changed_subjects` from
+its complete accepted native-change batch before service assignment. This is
+read-only evidence, never permission to operate on another kind. SDK validation
+checks captured membership and ordering; it does not repeat sibling comparison
+semantics. A missing capture or unresolved dependency context refuses.
+
+`PlannedFeatures.objects` accounts for every assigned-kind subject in records
+and subject coverage. `provider.PlanningObjectSubjects` returns this ordered
+union as independent copies, pairing normalized identities and preferring
+desired spelling. Each receipt preserves exact identity and kind, states a
+strategy, and names contributed steps once. Empty steps explicitly mean no work.
+Change, parent, and object receipts can share steps; every operation must have a
+receipt. Diagnostics can name a `context_object` index and carry no successful
+output. The host validates and orders the complete graph.
+
+An observed model can retain its database while its selected subject is local.
+That localization requires both captured owner database spellings to equal the
+request's nonempty `database_path`. Other identity components remain exact.
+Foreign roots and invented replacement observations are refused.

@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Provider_Describe_FullMethodName                  = "/ptah.provider.experimental.Provider/Describe"
 	Provider_Open_FullMethodName                      = "/ptah.provider.experimental.Provider/Open"
+	Provider_ResolveDatabaseContext_FullMethodName    = "/ptah.provider.experimental.Provider/ResolveDatabaseContext"
 	Provider_Close_FullMethodName                     = "/ptah.provider.experimental.Provider/Close"
 	Provider_Inspect_FullMethodName                   = "/ptah.provider.experimental.Provider/Inspect"
 	Provider_Render_FullMethodName                    = "/ptah.provider.experimental.Provider/Render"
@@ -106,6 +107,7 @@ const (
 type ProviderClient interface {
 	Describe(ctx context.Context, in *DescribeRequest, opts ...grpc.CallOption) (*Description, error)
 	Open(ctx context.Context, in *OpenRequest, opts ...grpc.CallOption) (*Session, error)
+	ResolveDatabaseContext(ctx context.Context, in *DatabaseContextRequest, opts ...grpc.CallOption) (*DatabaseContext, error)
 	Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*Empty, error)
 	Inspect(ctx context.Context, in *InspectRequest, opts ...grpc.CallOption) (*Schema, error)
 	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResult, error)
@@ -209,6 +211,16 @@ func (c *providerClient) Open(ctx context.Context, in *OpenRequest, opts ...grpc
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Session)
 	err := c.cc.Invoke(ctx, Provider_Open_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ResolveDatabaseContext(ctx context.Context, in *DatabaseContextRequest, opts ...grpc.CallOption) (*DatabaseContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DatabaseContext)
+	err := c.cc.Invoke(ctx, Provider_ResolveDatabaseContext_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -928,6 +940,7 @@ func (c *providerClient) CloseStatement(ctx context.Context, in *CloseStatementR
 type ProviderServer interface {
 	Describe(context.Context, *DescribeRequest) (*Description, error)
 	Open(context.Context, *OpenRequest) (*Session, error)
+	ResolveDatabaseContext(context.Context, *DatabaseContextRequest) (*DatabaseContext, error)
 	Close(context.Context, *CloseRequest) (*Empty, error)
 	Inspect(context.Context, *InspectRequest) (*Schema, error)
 	Render(context.Context, *RenderRequest) (*RenderResult, error)
@@ -1022,6 +1035,9 @@ func (UnimplementedProviderServer) Describe(context.Context, *DescribeRequest) (
 }
 func (UnimplementedProviderServer) Open(context.Context, *OpenRequest) (*Session, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Open not implemented")
+}
+func (UnimplementedProviderServer) ResolveDatabaseContext(context.Context, *DatabaseContextRequest) (*DatabaseContext, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResolveDatabaseContext not implemented")
 }
 func (UnimplementedProviderServer) Close(context.Context, *CloseRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Close not implemented")
@@ -1286,6 +1302,24 @@ func _Provider_Open_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).Open(ctx, req.(*OpenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ResolveDatabaseContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DatabaseContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ResolveDatabaseContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ResolveDatabaseContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ResolveDatabaseContext(ctx, req.(*DatabaseContextRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2564,6 +2598,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Open",
 			Handler:    _Provider_Open_Handler,
+		},
+		{
+			MethodName: "ResolveDatabaseContext",
+			Handler:    _Provider_ResolveDatabaseContext_Handler,
 		},
 		{
 			MethodName: "Close",

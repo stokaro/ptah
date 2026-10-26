@@ -12,7 +12,8 @@ import (
 
 // InspectionValues validates a complete inspection against the negotiated
 // models and returns an independent observed-value normalization batch. Its
-// order is native objects, then each table's facets and column facets. An empty
+// order is native objects, each table's facets and column facets, then each
+// common view's facets in captured order. An empty
 // batch establishes no native absence; only explicit coverage can do that.
 // Schema-filtered native coverage requires owner binding of request selectors
 // and namespace limits. Callers must also match the snapshot target and features
@@ -31,7 +32,13 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err != nil {
 		return nil, err
 	}
+	if err := validateInspectedColumns(description, engine, snapshot); err != nil {
+		return nil, err
+	}
 	if err := validateObservedCommonObjects(engine, snapshot.GetCommonObjects()); err != nil {
+		return nil, err
+	}
+	if err := validateObservedViewFacets(description, engine, snapshot.GetTargetFeatures(), snapshot.GetCommonObjects().GetViews()); err != nil {
 		return nil, err
 	}
 	coverage := snapshot.GetCoverage()
@@ -92,6 +99,9 @@ func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {
 				values = append(values, value)
 			}
 		}
+	}
+	for _, view := range snapshot.GetCommonObjects().GetViews() {
+		values = append(values, view.GetFacets()...)
 	}
 	ordered := slices.Clone(values)
 	slices.SortFunc(ordered, func(a, b *protocol.Envelope) int {
