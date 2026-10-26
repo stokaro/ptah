@@ -1116,9 +1116,11 @@ type Function struct {
 	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
 	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
 	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	// Settings are the routine's own configuration settings as the catalog
-	// reports them, each `name=value`. PostgreSQL keeps them in
-	// pg_proc.proconfig; a dialect without such a facility leaves this empty.
+	// Settings are the routine's own configuration settings, each `name=value`
+	// with the value in SQL, quoted as pg_get_functiondef prints it:
+	// `work_mem='8MB'`, `search_path='public', 'pg_catalog'`. PostgreSQL keeps
+	// them in pg_proc.proconfig unquoted; a dialect without such a facility
+	// leaves this empty.
 	Settings []string `json:"settings,omitempty"`
 	Body     string   `json:"body"`    // Function body/implementation
 	Comment  string   `json:"comment"` // Function comment/description

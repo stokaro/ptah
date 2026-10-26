@@ -768,12 +768,14 @@ func functionDefinitions(
 		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
 	}
 
-	// Compare the routine's own configuration settings, folded onto one
-	// spelling. A property the comparison cannot see is one it plans forever,
-	// and a search_path pinned by the author would otherwise be dropped on the
-	// next apply without anything reporting it (stokaro/ptah#2356).
-	genSettings := routinesetting.NormalizeAll(genFunction.Settings)
-	dbSettings := routinesetting.NormalizeAll(dbFunction.Settings)
+	// Compare the routine's own configuration settings, each read down to what
+	// the server stores, so a declared `work_mem = '8MB'` equals the catalog's
+	// 8MB and a bare `search_path = pg_catalog` the catalog's quoted one. A
+	// property the comparison cannot see is one it plans forever, and a
+	// search_path pinned by the author would otherwise be dropped on the next
+	// apply without anything reporting it (stokaro/ptah#2356).
+	genSettings := routinesetting.ComparableAll(genFunction.Settings)
+	dbSettings := routinesetting.ComparableAll(dbFunction.Settings)
 	if !slices.Equal(genSettings, dbSettings) {
 		functionDiff.Changes["settings"] = fmt.Sprintf("%s -> %s",
 			strings.Join(dbSettings, ", "), strings.Join(genSettings, ", "))
