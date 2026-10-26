@@ -103,7 +103,7 @@ func columnServiceRequest(desired *schemamodel.Database, current *catalog.Databa
 			}
 			pair := schemacomparison.ColumnPair{Desired: builder.ColumnParts(table.Schema, table.Name, field.Name), Current: builder.ColumnParts(held.Schema, held.Name, column.Name),
 				Aspects: []schemacomparison.ColumnAspect{schemacomparison.ColumnDefault, schemacomparison.ColumnNullability}}
-			if columnTypeOwned(field, column, target, domains) {
+			if columnTypeOwned(field, column, target, domains, caps) {
 				pair.Aspects = append(pair.Aspects, schemacomparison.ColumnType)
 			}
 			if caps.Has(capability.SerialSequenceOptions) {
@@ -138,7 +138,12 @@ func tableDefinesColumns(desired, current schemaext.Facets) bool {
 
 // columnTypeOwned and columnTypeChange share this decision so a provider never
 // receives a type aspect that the common domain owner will also interpret.
-func columnTypeOwned(desired schemamodel.Field, current catalog.Column, target string, domains map[string]domainIdentity) bool {
+func columnTypeOwned(desired schemamodel.Field, current catalog.Column, target string, domains map[string]domainIdentity, caps capability.Capabilities) bool {
+	// A formatted built-in type is not domain evidence on a target without
+	// domains. Its registered owner decides type equivalence.
+	if !caps.Has(capability.DomainTypes) {
+		return true
+	}
 	_, owned := commonColumnTypeChange(desired, current, current.RawType(), target, domains)
 	return !owned
 }
