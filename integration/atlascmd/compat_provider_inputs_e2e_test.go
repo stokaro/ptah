@@ -15,13 +15,10 @@ import (
 
 func TestCompatProviderExecutionInputs(t *testing.T) {
 	for _, test := range []struct {
-		name string
-		seed func(*qt.C, compatProviderFixture)
+		name, current string
 	}{
-		{"SQL", func(*qt.C, compatProviderFixture) {}},
-		{"native", func(c *qt.C, f compatProviderFixture) {
-			createFixtureTable(c, filepath.Join(f.dir, "database.db"), `CREATE TABLE "needs_input" ("id" INTEGER NOT NULL)`)
-		}},
+		{"SQL", ""},
+		{"native", `CREATE TABLE "needs_input" ("id" INTEGER NOT NULL)`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -30,7 +27,7 @@ func TestCompatProviderExecutionInputs(t *testing.T) {
 				provider:    testutils.BuildFixtureProvider(c, "operation-models"),
 				environment: []string{"FIXTURE_RENDER_MODE=native-cli", "FIXTURE_INPUT_MODE=stable"},
 			})
-			test.seed(c, f)
+			seedInputFixture(c, f, test.current)
 			source := filepath.Join(f.dir, "desired.yaml")
 			c.Assert(os.WriteFile(source, []byte("tables:\n  needs_input:\n    columns:\n      id: {type: INTEGER, not_null: true}\n      added: {type: REAL}\n"), 0o600), qt.IsNil)
 			to := "file://" + filepath.ToSlash(source)
@@ -74,4 +71,11 @@ func assertInputFixtureColumn(c *qt.C, f compatProviderFixture, want int) {
 	var count int
 	c.Assert(db.QueryRowContext(c.Context(), `SELECT count(*) FROM pragma_table_info('needs_input') WHERE name = 'added'`).Scan(&count), qt.IsNil)
 	c.Assert(count, qt.Equals, want)
+}
+
+func seedInputFixture(c *qt.C, f compatProviderFixture, statement string) {
+	c.Helper()
+	if statement != "" {
+		createFixtureTable(c, filepath.Join(f.dir, "database.db"), statement)
+	}
 }
