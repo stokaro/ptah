@@ -120,4 +120,9 @@ func TestSavedPlanWithNativeOperationsRefusesSQLExecution_FailurePath(t *testing
 	c.Assert(err, qt.IsNil)
 	_, _, err = atlasschema.ReadPlanDocument(c.Context(), runtime, path)
 	c.Assert(err, qt.ErrorIs, renderer.ErrNativeSQL)
+	complete, format, err := atlasschema.ReadExecutionPlanDocument(c.Context(), runtime, path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(format, qt.Equals, atlasschema.PlanFormatJSON)
+	c.Assert(complete.HasNative(), qt.IsTrue)
+	c.Assert(complete.Statements, qt.HasLen, 2)
 }

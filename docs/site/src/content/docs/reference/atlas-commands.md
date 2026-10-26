@@ -1220,8 +1220,17 @@ Native twin: [`ptah schema inspect`](../native-commands/).
 
 ### `ptah-compat schema apply`
 
-Diffs a live database against the `--to` desired state, prints the planned SQL,
-and applies it after interactive confirmation or explicit `--auto-approve`.
+Diffs a live database against the `--to` desired state, prints the planned
+changes, and applies them after interactive confirmation or explicit
+`--auto-approve`. Provider-native operations retain their captured order and
+owner assessments through approval and execution. They are displayed by kind
+and subject; their opaque payloads are not printed. A dry run validates the
+complete batch and writes nothing.
+
+Native operations cannot enter a SQL editor, an Atlas SQL report template, or
+a SQL rehearsal on `--dev-url`. These options refuse before execution. An
+explicit `atlas.hcl` SQL lint policy also refuses native operations unless
+`--skip-lint` is selected after reviewing the owner assessments.
 
 **Desired state (`--to`)** accepts one of:
 
@@ -1413,6 +1422,12 @@ plan document prints to stdout.
 | `--format <template>` | Renders the plan through a Go template instead of printing the plan document. See [Plan report payload](#plan-report-payload). |
 | `--directive <line>`/`-d` | Writes a migration directive into the plan file. See [Plan directives](#plan-directives). |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
+
+The JSON plan preserves provider-native operations alongside SQL, including
+their owner binding, safety assessments, and transaction requirements.
+`schema apply --plan` verifies the source fingerprint and preflights the whole
+captured batch before approval. Save native operations with a `.json` output;
+HCL, SQL editing, and SQL report templates cannot represent them and refuse.
 
 The JSON plan records the ordered SQL statements with per-statement safety
 severity, the dialect, the exclude patterns, the schemas the plan reads beyond

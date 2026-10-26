@@ -14,13 +14,8 @@ import (
 func (t *target) comparisonCoverage(representation schemaext.Representation, coverage schemaext.Coverage) (*protocol.ComparisonCoverage, error) {
 	result := &protocol.ComparisonCoverage{}
 	for _, record := range coverage.KindRecords() {
-		contract := t.host.models[modelKey{kind: record.Model.Kind, representation: representation}]
-		if contract == nil ||
-			record.Model.Owner != t.host.description.GetProviderId() ||
-			record.Model.Representation != representation ||
-			record.Model.Version != 1 ||
-			record.Model.Definition != contract.signature ||
-			contract.engines[t.engine.GetId()] == nil {
+		contract := t.coverageModel(representation, record.Model)
+		if contract == nil || contract.engines[t.engine.GetId()] == nil {
 			return nil, fmt.Errorf("%w: comparison coverage model changed", schemaext.ErrIncompatibleCodec)
 		}
 		kind := &protocol.ComparisonKindCoverage{Model: proto.CloneOf(contract.engines[t.engine.GetId()])}
@@ -41,6 +36,18 @@ func (t *target) comparisonCoverage(representation schemaext.Representation, cov
 				Targets:   slices.Clone(record.Targets)})
 	}
 	return result, nil
+}
+
+// coverageModel validates model ownership independently of engine assignment.
+// Planning routes valid knowledge for another engine away from this target,
+// while comparison still requires the selected engine's assignment.
+func (t *target) coverageModel(representation schemaext.Representation, model schemaext.CodecIdentity) *modelContract {
+	contract := t.host.models[modelKey{kind: model.Kind, representation: representation}]
+	if contract == nil || model.Owner != t.host.description.GetProviderId() || model.Representation != representation ||
+		model.Version != 1 || model.Definition != contract.signature {
+		return nil
+	}
+	return contract
 }
 
 func (t *target) boundCoverage(representation schemaext.Representation, coverage *protocol.ComparisonCoverage) (schemaext.Coverage, error) {
