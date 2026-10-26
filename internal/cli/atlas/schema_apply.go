@@ -661,7 +661,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "Schema is synced, no changes to be made", nil
 		}
 
-		if plan.HasNativeUnits() {
+		if plan.HasNativeUnits() || plan.HasInputReferences() {
 			return applyAtlasNativeSchemaPlan(cmd, opts, conn, plan, txMode)
 		}
 
@@ -937,7 +937,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			}
 		}
 
-		if plan.HasNative() {
+		if plan.HasNative() || plan.HasInputReferences() {
 			return applyAtlasNativePlanFile(cmd, opts, conn, plan, txMode, desired)
 		}
 

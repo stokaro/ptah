@@ -678,6 +678,14 @@ native units, and those commands refuse them. `schema plan`, `schema apply` and
 saved plans keep native operations. `--edit` and dev-database rehearsal refuse
 native plans.
 
+With `units.sensitive-inputs`, the provider declares environment variable names
+for exact execution units before approval. Native and compatibility schema
+plans retain these references, and JSON plan digests cover them. Input values
+are resolved only at dispatch and never enter plans or provider process
+environments. Dry runs need no values. A missing value or changed reference
+set refuses execution before the batch starts. SQL editing, report templates,
+and dev-database rehearsal refuse input-bearing plans.
+
 `--dry-run` lists the planned operations, decodes and preflights a saved plan,
 and writes nothing. The protocol does not establish a lock acquisition that
 writes nothing, so a preview on a provider-served target takes no lock and does
