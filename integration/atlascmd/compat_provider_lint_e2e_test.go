@@ -16,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/providerconfig"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/testutils"
@@ -73,7 +74,7 @@ func (f compatProviderFixture) fixtureURL(name string) string {
 // driver of the test's own, so the answer does not pass through the provider.
 func sqliteTables(c *qt.C, path string) []string {
 	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+path)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), atlasurl.SQLiteURLFromPath(path))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	rows, err := conn.QueryContext(c.Context(), "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")

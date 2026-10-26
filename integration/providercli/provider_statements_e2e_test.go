@@ -160,6 +160,7 @@ func TestProviderRunsMigrationTestStepsThroughItsStatements_NoStatements(t *test
 
 	out, diagnostics, code := executeProviderCLI(c.Context(), []string{"migrations", "test", "--provider-config", f.manifestPath,
 		"--dir", cases, "--migrations-dir", hashedMigrations(c), "--db-url", f.address})
+	f.assertStopped(c)
 
 	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("%s\n%s", out, diagnostics))
 	c.Assert(out, qt.Contains, "the experimental provider contract does not support statements the operator wrote")
