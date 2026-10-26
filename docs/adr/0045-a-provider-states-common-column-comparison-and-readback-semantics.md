@@ -230,6 +230,11 @@ prediction agrees with rendering and inspection.
 
 ### Keep other column semantics with their owners
 
+The host retains domain type comparison only when the target's effective
+`DomainTypes` capability permits domains. Without that capability, a formatted
+catalog type still reaches the provider's type comparison service. Its spelling
+alone cannot establish domain ownership on that target.
+
 Generated-expression comparison remains the separate
 `Rules.GeneratedExpressions` capability. This feature does not claim to compare
 it. YDB refuses generated-column declarations through its schema validation
