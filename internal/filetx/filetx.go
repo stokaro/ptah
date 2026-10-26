@@ -3,15 +3,18 @@
 //
 // A history written for a runner that sends each file as it is, as
 // golang-migrate does, has files that begin with BEGIN and end with COMMIT. The
-// dev database replay and the apply of such a directory both run those files
-// without a transaction of their own, and both decide which files qualify
-// with [Read], so the two cannot disagree about a file.
+// dev database replay runs those files without a transaction of its own, and
+// decides which files qualify with [Read]. A directory of such a runner is
+// read with [ReadUnwrapped], by its apply and by its replay alike, so the two
+// cannot disagree about a file: it accepts the further forms that runner
+// applies, such as a COMMIT outside a block.
 //
-// [Read] knows no dialect. The engine whose transactions it describes offers
-// it: PostgreSQL's replay guard calls it, and PostgreSQL's migrator services
-// carry it (internal/migratorext/postgres). CockroachDB, YugabyteDB and
-// Spanner take the same words with other transaction semantics and offer
-// nothing, so on them no file is read as one with transactions of its own.
+// Neither reading knows a dialect. The engine whose transactions they describe
+// offers them: PostgreSQL's replay guard calls both, and PostgreSQL's migrator
+// services carry [ReadUnwrapped] (internal/migratorext/postgres). CockroachDB,
+// YugabyteDB and Spanner take the same words with other transaction semantics
+// and offer nothing, so on them no file is read as one with transactions of
+// its own.
 package filetx
 
 import (
@@ -28,10 +31,35 @@ type Blocks struct {
 	// boundaries holds, in order, the index of each block's opening statement
 	// followed by the index of its closing one.
 	boundaries []int
+	// commits holds the COMMIT and END statements outside every block, which
+	// [ReadUnwrapped] accepts: each ends the transaction the statements before
+	// it run in when the file is sent as one query.
+	commits []int
+	// joined holds the statements that act on a block already open, which
+	// [ReadUnwrapped] accepts: a BEGIN inside a block, and SAVEPOINT, RELEASE
+	// and ROLLBACK TO.
+	joined []int
 }
 
-// Empty reports whether the file opens no transaction of its own.
-func (b Blocks) Empty() bool { return len(b.boundaries) == 0 }
+// Empty reports whether the file controls no transaction of its own.
+func (b Blocks) Empty() bool {
+	return len(b.boundaries) == 0 && len(b.commits) == 0 && len(b.joined) == 0
+}
+
+// Control reports whether the statement at index is one of the file's own
+// transaction control statements: a block's BEGIN or COMMIT, a COMMIT outside
+// every block, a BEGIN inside one, or a savepoint statement.
+func (b Blocks) Control(index int) bool {
+	return slices.Contains(b.boundaries, index) || slices.Contains(b.commits, index) || slices.Contains(b.joined, index)
+}
+
+// Controls returns the indexes of the file's own transaction control
+// statements, in order, or nil when it has none; see [Blocks.Control].
+func (b Blocks) Controls() []int {
+	controls := slices.Concat(b.boundaries, b.commits, b.joined)
+	slices.Sort(controls)
+	return slices.Clip(controls)
+}
 
 // Boundaries returns the indexes of the statements that open and close the
 // file's transactions, in order, or nil when it opens none.
@@ -94,25 +122,49 @@ func (b Blocks) Committed(index int) int {
 // COMMIT; CREATE TABLE c; INSERT INTO missing ...;` a and b stay, and a
 // failure inside the block takes a back too.
 //
+// A COMMIT outside every block ends the transaction too, the implicit one the
+// statements before it run in, as golang-migrate's single query ends it: for
+// `ALTER TYPE color ADD VALUE 'green'; COMMIT; CREATE TABLE a (c color
+// DEFAULT 'green');` the value is committed before the table uses it.
+//
 // Each returned transaction opens at its first statement and closes at the
 // file's statement that ended it; the last one, when statements follow the
 // file's last COMMIT, closes at total, past the file's last statement, where
-// the end of the file commits it. A file that opens no transaction of its own
-// returns the zero value.
+// the end of the file commits it. A file that controls no transaction of its
+// own returns the zero value.
 func (b Blocks) AsOneQuery(total int) Blocks {
 	if b.Empty() {
 		return Blocks{}
 	}
+	var ends []int
+	for i := 1; i < len(b.boundaries); i += 2 {
+		ends = append(ends, b.boundaries[i])
+	}
+	ends = append(ends, b.commits...)
+	slices.Sort(ends)
 	var boundaries []int
 	start := 0
-	for i := 1; i < len(b.boundaries); i += 2 {
-		boundaries = append(boundaries, start, b.boundaries[i])
-		start = b.boundaries[i] + 1
+	for _, end := range ends {
+		boundaries = append(boundaries, start, end)
+		start = end + 1
 	}
 	if start < total {
 		boundaries = append(boundaries, start, total)
 	}
 	return Blocks{boundaries: boundaries}
+}
+
+// Closing returns the index of the statement that ends the transaction the
+// statement at index runs in or ends, and false for a statement outside every
+// transaction. A transaction [Blocks.AsOneQuery] closes at the end of the file
+// returns the statement count it was given.
+func (b Blocks) Closing(index int) (int, bool) {
+	for i := 0; i+1 < len(b.boundaries); i += 2 {
+		if index >= b.boundaries[i] && index <= b.boundaries[i+1] {
+			return b.boundaries[i+1], true
+		}
+	}
+	return 0, false
 }
 
 func (b Blocks) opening(index int) (int, bool) {
@@ -250,6 +302,90 @@ func Read(statements []string) (Blocks, error) {
 		return Blocks{}, &StructureError{Index: openAt, Reason: "the transaction is never closed by the file"}
 	}
 	return Blocks{boundaries: boundaries}, nil
+}
+
+// ReadUnwrapped reads the statements of a migration file a runner sends as it
+// is, with no transaction of its own around the file, as golang-migrate does,
+// for the transaction control PostgreSQL runs in such a file.
+//
+// It accepts what [Read] accepts, and three forms [Read] refuses, each of
+// which golang-migrate v4.20.1 applies through both of its PostgreSQL drivers,
+// measured on PostgreSQL 15.19 (stokaro/ptah#4979):
+//
+//   - a COMMIT or END outside every block, which ends the transaction the
+//     statements before it run in; on its own it is a no-op with a warning;
+//   - a BEGIN inside a block, which joins the block with a warning;
+//   - SAVEPOINT, RELEASE and ROLLBACK TO inside a block. A savepoint ends with
+//     the block, so a file resumed after the block needs none of it.
+//
+// Refused, for the whole file, with a [*StructureError]:
+//
+//   - ROLLBACK and ABORT: a file that takes its own work back cannot be
+//     recorded as a history of what it did;
+//   - SAVEPOINT, RELEASE and ROLLBACK TO outside a block, which PostgreSQL
+//     refuses there, so golang-migrate fails at them too;
+//   - AND CHAIN, PREPARE TRANSACTION, COMMIT PREPARED and ROLLBACK PREPARED;
+//   - a block the file leaves open, which golang-migrate's drivers settle in
+//     opposite ways: lib/pq rolls it back and leaves the version dirty, pgx5
+//     commits it with the version.
+func ReadUnwrapped(statements []string) (Blocks, error) {
+	var blocks Blocks
+	openAt := -1
+	for index, statement := range statements {
+		tokens := significantTokens(statement)
+		if len(tokens) == 0 {
+			continue
+		}
+		if savepointStatement(tokens) {
+			if openAt < 0 {
+				return Blocks{}, &StructureError{Index: index, Reason: strings.ToUpper(tokens[0].Value) +
+					" outside a transaction the file opened, where PostgreSQL refuses it"}
+			}
+			blocks.joined = append(blocks.joined, index)
+			continue
+		}
+		kind, reason := classifyTransactionControl(tokens)
+		if reason != "" {
+			return Blocks{}, &StructureError{Index: index, Reason: reason}
+		}
+		switch kind {
+		case transactionBegin:
+			if openAt >= 0 {
+				blocks.joined = append(blocks.joined, index)
+				continue
+			}
+			openAt = index
+			blocks.boundaries = append(blocks.boundaries, index)
+		case transactionEnd:
+			if openAt < 0 {
+				blocks.commits = append(blocks.commits, index)
+				continue
+			}
+			openAt = -1
+			blocks.boundaries = append(blocks.boundaries, index)
+		case transactionNone:
+		}
+	}
+	if openAt >= 0 {
+		return Blocks{}, &StructureError{Index: openAt, Reason: "the transaction is never closed by the file"}
+	}
+	return blocks, nil
+}
+
+// savepointStatement reports SAVEPOINT, RELEASE [SAVEPOINT] and ROLLBACK
+// [WORK | TRANSACTION] TO [SAVEPOINT].
+func savepointStatement(tokens []lexer.Token) bool {
+	switch {
+	case wordsAt(tokens, 0, "SAVEPOINT"), wordsAt(tokens, 0, "RELEASE"):
+		return true
+	case wordsAt(tokens, 0, "ROLLBACK"):
+		at := 1
+		if wordsAt(tokens, at, "WORK") || wordsAt(tokens, at, "TRANSACTION") {
+			at++
+		}
+		return wordsAt(tokens, at, "TO")
+	}
+	return false
 }
 
 type transactionControl int

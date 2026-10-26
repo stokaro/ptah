@@ -4342,8 +4342,10 @@ The option is off by default. With it:
   mode runs it. Under tx-mode none each statement outside its transactions
   commits on its own. Progress is recorded where a transaction commits, and a
   retry resumes after the committed statements.
-- A body whose one statement the engine refuses inside a transaction runs
-  without one, unless the file names a transaction mode.
+- A body of one statement runs without a transaction, unless the file names a
+  transaction mode. On PostgreSQL that is any such body, as golang-migrate
+  sends it on its own; on another engine only one whose statement the engine
+  refuses inside a transaction.
 - A body whose transaction control the migrator cannot follow, or one that
   opens its own transaction under tx-mode all or with a directive asking for a
   transaction around the file, is refused before any migration runs.

@@ -267,6 +267,7 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.hooks.ownTransactions = p.ownTransactions
 	if err := p.load(); err != nil {
 		return nil, err
 	}

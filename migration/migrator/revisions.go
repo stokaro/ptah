@@ -383,12 +383,12 @@ func migrationExecutionProgress(
 	dialect string,
 	txMode MigrationTxMode,
 ) migrationProgress {
-	// A body that runs its own transactions knows which of its statements
-	// stayed committed. It is read first: what stopped the body, a failed
-	// statement or a progress mark that could not be written, says only where
-	// the body stopped, and a mark before the statement that closes one of
-	// its transactions would claim the transaction the rollback took back.
-	if owned, ok := errors.AsType[*ownTransactionFailure](err); ok {
+	// A failure that knows which of the body's statements stayed committed is
+	// read first: what stopped the body, a failed statement or a progress mark
+	// that could not be written, says only where the body stopped, and a mark
+	// before the statement that closes one of its transactions would claim the
+	// transaction the rollback took back.
+	if owned, ok := errors.AsType[*committedProgressFailure](err); ok {
 		progress := migrationExecutionProgress(owned.err, dialect, txMode)
 		progress.Applied = owned.applied
 		return progress
@@ -1648,12 +1648,7 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 		return 0, err
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, fmt.Errorf(
-			"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; inspect the database, then use 'ptah migrations repair --version %d'",
-			revision.Version,
-			revision.Applied+1,
-			revision.Version,
-		)
+		return 0, &unknownOutcomeError{version: revision.Version, statement: revision.Applied + 1}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil

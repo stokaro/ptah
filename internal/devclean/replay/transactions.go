@@ -24,6 +24,20 @@ type TransactionGuard interface {
 	TransactionBoundaries(statements []string) ([]int, error)
 }
 
+// UnwrappedTransactionGuard is the part of a [Guard] that reads a whole
+// migration file of a directory whose runner sends each file as it is, with no
+// transaction around it, as golang-migrate does. Such a runner leaves more
+// transaction control to the file than [TransactionGuard] accounts for, such
+// as a COMMIT that ends the implicit transaction of the statements before it.
+type UnwrappedTransactionGuard interface {
+	// UnwrappedTransactionControl reads the statements of one migration file,
+	// in order, and returns the indexes of the statements that are the file's
+	// own transaction control. It returns nil for a file that carries none.
+	// A file it cannot account for in full is refused with a
+	// [*TransactionStructureError], as [TransactionGuard] refuses one.
+	UnwrappedTransactionControl(statements []string) ([]int, error)
+}
+
 // TransactionStructureError is the refusal of a migration file whose
 // transaction control a [TransactionGuard] does not accept.
 type TransactionStructureError struct {
