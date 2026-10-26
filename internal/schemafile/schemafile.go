@@ -240,6 +240,14 @@ func ScopeFromURLs(devURL, targetURL, targetFlag string) (scope, flag string) {
 // collector already set and just contributes to it, so the count is the desired
 // state's and the refusal is reported once.
 func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*schemamodel.Database, error)) (*schemamodel.Database, error) {
+	if opts.Contexts != nil && opts.Dialect != "" {
+		selected, err := opts.Contexts.ResolveTarget(opts.Dialect)
+		if err != nil {
+			return nil, err
+		}
+		opts.Dialect = selected.Name()
+	}
+
 	topLevel := opts.collect == nil
 	if topLevel {
 		opts.collect = &schemaBlockCollector{}

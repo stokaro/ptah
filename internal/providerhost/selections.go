@@ -264,7 +264,7 @@ func localRequirement(payload schemaext.Value, required objectidentity.ID) (obje
 	}
 	database := value.normalized.GetValue().GetOwner().GetDatabase()
 	normalizedDatabase := value.normalized.GetNormalizedOwner().GetDatabase()
-	if slices.Contains(value.wire.Features, provider.ValueContextFeature) {
+	if database == "" && normalizedDatabase == "" && slices.Contains(value.wire.Features, provider.ValueContextFeature) {
 		database = value.normalized.GetValue().GetContext().GetDatabase()
 		normalizedDatabase = database
 	}

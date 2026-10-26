@@ -31,7 +31,7 @@ func TestNativeUnitPreparationRequiresExactBoundSessionContext(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			kind := schemaext.Kind("example.org/fixture/operation")
-			subject := objectidentity.ID{Kind: objectidentity.Table, Name: objectidentity.Part{Source: "items", Normalized: "items"}}
+			subject := objectidentity.ID{Kind: "table", Name: objectidentity.Part{Source: "items", Normalized: "items"}}
 			bound := &protocol.DatabaseContext{Database: "/target", SourceDatabase: "/source"}
 			envelope := &protocol.Envelope{ProviderId: "example.org/fixture", Kind: string(kind), SchemaVersion: 1, Encoding: "json", Context: bound}
 			model := &resolvedModel{kind: kind, subject: subject, signature: "contract", canonical: []byte(`{}`), wire: modelWire{Format: 1, Engine: "fixture"}, normalized: &protocol.NormalizedValue{Value: envelope}}
