@@ -336,7 +336,7 @@ func pgTypeCreateRangeFixture() extensionFixture {
 }
 
 func pgTypeDropFixture() extensionFixture {
-	return extensionFixture{payload: &pgtype.Drop{Target: pgtype.Target{Kind: pgtype.DomainKind, Schema: "app", Name: "qty"}, Cascade: true},
+	return extensionFixture{payload: &pgtype.Drop{Target: pgtype.Target{Kind: pgtype.DomainKind, Schema: "app", Name: "qty"}, IfExists: true, Cascade: true},
 		wantSQL: "DROP DOMAIN IF EXISTS \"app\".\"qty\" CASCADE;\n"}
 }
 

@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/tableref"
@@ -69,6 +70,15 @@ func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.
 // it. The words of a rebuild request are set whether or not the operator
 // asked, because a refusal is what an operator who did not ask reads.
 func (p commonPlanner) policy(builder objectidentity.Builder) (featureplan.Policy, error) {
+	var statements featureplan.StatementStyle
+	switch p.options.Statements {
+	case planext.StatementStyleAnnotated:
+		statements = featureplan.StatementStyleAnnotated
+	case planext.StatementStyleExact:
+		statements = featureplan.StatementStyleExact
+	default:
+		return featureplan.Policy{}, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, p.options.Statements)
+	}
 	builds, err := policyIndexes(builder, p.options.ConcurrentIndexRefs)
 	if err != nil {
 		return featureplan.Policy{}, err
@@ -78,6 +88,7 @@ func (p commonPlanner) policy(builder objectidentity.Builder) (featureplan.Polic
 		return featureplan.Policy{}, err
 	}
 	return featureplan.Policy{
+		Statements:                   statements,
 		AllowTableRebuild:            p.options.AllowTableRebuild,
 		TableRebuildRequest:          p.options.TableRebuildWords(),
 		OnlineAlter:                  p.options.OnlineAlter,

@@ -78,6 +78,7 @@ var hostFeatures = []string{
 	// comparisons resolve the requests the operator spells, such as
 	// --rotate-secret; see target.planningPolicy and writtenRequests.
 	provider.PlanningPolicyFeature,
+	provider.PlanningStatementStyleFeature,
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
 	provider.PlanningObjectContextFeature,

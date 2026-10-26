@@ -1399,13 +1399,12 @@ drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
 writes it for every schema an added object names, whether or not that schema
 exists.
 
-A statement a feature owner renders keeps its own spelling in the exact style
-too. The drop of a domain, a composite type or a range type keeps `IF EXISTS`
-and `CASCADE`, so it also drops a column of an undeclared table that uses the
-type, with its data, and the drop of an extension keeps `IF EXISTS`.
-[stokaro/ptah#5000](https://github.com/stokaro/ptah/issues/5000) tracks this.
-A drop after a statement an owner renders keeps its guard, since that
-statement may have removed objects the plan cannot name.
+In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
+from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
+composite type drop while an undeclared column still uses the type. A provider
+that cannot honor the exact statement style is refused before an executable
+plan is returned. A drop after another owner operation may keep its guard
+when that operation can remove objects the common planner cannot name.
 
 The MySQL-family planner leaves out its descriptive comments and keeps its
 guards. The SQLite, SQL Server and ClickHouse planners keep both. Native `ptah

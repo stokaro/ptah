@@ -87,6 +87,10 @@ type Request struct {
 // request, and refuses a change it cannot make in its own words. Each field
 // has the meaning of the planext.Options field of the same name.
 type Policy struct {
+	// Statements is the spelling of generated statements. Its zero value is
+	// Ptah's annotated style; exact style leaves out guards and CASCADE that
+	// the plan does not rely on.
+	Statements StatementStyle
 	// AllowTableRebuild plans a change the target cannot make in place as an
 	// explicit rebuild of its table, rather than refuse it.
 	AllowTableRebuild bool
@@ -112,6 +116,21 @@ type Policy struct {
 	// OmitNullBackfill makes a column NOT NULL without filling its NULL rows
 	// first.
 	OmitNullBackfill bool
+}
+
+// StatementStyle is the owner-facing form of a plan's statement style. The
+// planner maps its planext style at the boundary so featureplan does not
+// depend on planext, which already imports this package.
+type StatementStyle uint8
+
+const (
+	StatementStyleAnnotated StatementStyle = iota
+	StatementStyleExact
+)
+
+// Valid reports whether the owner can honor this style.
+func (s StatementStyle) Valid() bool {
+	return s == StatementStyleAnnotated || s == StatementStyleExact
 }
 
 // Clone returns a policy that shares no slice with p.

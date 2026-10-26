@@ -46,6 +46,9 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	if err := validateRequest(ctx, request.Target); err != nil {
 		return featureplan.Result{}, err
 	}
+	if !request.Policy.Statements.Valid() {
+		return featureplan.Result{}, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, request.Policy.Statements)
+	}
 	if len(request.ParentKinds) != 0 {
 		return featureplan.Result{}, fmt.Errorf("%w: an extension belongs to no table", schemaext.ErrInvalidValue)
 	}
@@ -59,7 +62,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		if !ok {
 			return featureplan.Result{}, fmt.Errorf("%w: unexpected extension change %T", schemaext.ErrInvalidValue, record.Value)
 		}
-		steps, refusal, err := planChange(request.Target, fmt.Sprintf("extension/%06d", index), record.Subject, change)
+		steps, refusal, err := planChange(request.Target, fmt.Sprintf("extension/%06d", index), record.Subject, change, request.Policy.Statements)
 		if err != nil {
 			return featureplan.Result{}, err
 		}
@@ -93,7 +96,7 @@ func (Service) PlanDeclarations(ctx context.Context, request featureplan.Declara
 		if !ok {
 			return featureplan.DeclarationResult{}, fmt.Errorf("%w: expected a declared extension, got %T", schemaext.ErrInvalidValue, object.Value)
 		}
-		steps, refusal, err := planChange(request.Target, fmt.Sprintf("declared/%06d", index), object.Ref, &pgextension.Change{After: declared})
+		steps, refusal, err := planChange(request.Target, fmt.Sprintf("declared/%06d", index), object.Ref, &pgextension.Change{After: declared}, featureplan.StatementStyleAnnotated)
 		if err != nil {
 			return featureplan.DeclarationResult{}, err
 		}
@@ -146,7 +149,7 @@ func (p *planned) add(step plangraph.Step[featureplan.Operation]) {
 
 // planChange plans one change as steps name/..., or returns the refusal the
 // server would answer with.
-func planChange(target, name string, subject objectidentity.ID, change *pgextension.Change) (planned, *schemavalidation.Diagnostic, error) {
+func planChange(target, name string, subject objectidentity.ID, change *pgextension.Change, style featureplan.StatementStyle) (planned, *schemavalidation.Diagnostic, error) {
 	if err := change.Validate(); err != nil {
 		return planned{}, nil, err
 	}
@@ -169,7 +172,7 @@ func planChange(target, name string, subject objectidentity.ID, change *pgextens
 		result.add(step("create", plangraph.Create, &pgextension.Operation{Name: extension, Action: pgextension.Create,
 			Schema: change.After.Schema, Version: change.After.Version, IfNotExists: change.After.IfNotExists}, change.Effect()))
 	case change.After == nil:
-		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop, IfExists: true}, change.Effect(),
+		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop, IfExists: style != featureplan.StatementStyleExact}, change.Effect(),
 			fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extension),
 			"Consider reviewing all database objects that use this extension before proceeding",
 			"Extension removal may cascade to dependent objects - review carefully",
