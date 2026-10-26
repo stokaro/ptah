@@ -44,7 +44,7 @@ func (t *target) projectOwnedTableCreations(ctx context.Context, request schemap
 			ColumnPrimaryKeysPrepared: output.ColumnPrimaryKeysPrepared, ColumnPrimaryKeys: slices.Clone(output.ColumnPrimaryKeys)}
 		created.ColumnsPrepared = slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature)
 		for _, column := range output.Columns {
-			predicted, err := projectedColumn(column)
+			predicted, err := catalogColumn(column)
 			if err != nil {
 				return schemaprojection.TableCreationResult{}, err
 			}
