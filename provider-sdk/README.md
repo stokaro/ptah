@@ -97,7 +97,7 @@ does not oblige a peer to use it.
   `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
   `query.dialect`, `embeddings.store`, `schema.common-objects`,
   `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`,
-  `scope.selections`, `source.encode-groups`, `source.go-limits`,
+  `scope.selections`, `source.encode-groups`, `source.limits`,
   `schema.declarations`, `schema.common-access`, `planning.lifecycle` and
   `units.sensitive-inputs`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
@@ -1430,11 +1430,19 @@ value accounting. A reply cannot mix the shapes. `EncodedSourceParts` exposes
 their ordered parts after validation. A peer without groups receives a loss
 when one fragment cannot preserve a value.
 
-The two-way feature `source.go-limits` declares `Engine.go_header_kinds` for Go
+The two-way feature `source.limits` declares `Engine.go_header_kinds` for Go
 not-described headers. Go input and negotiated encoded output accept only those
 kinds and unique kind/name pairs. The host writes and captures the header's
 kind, name, reason and provenance, then preserves its coverage through import.
 An unrepresentable access constraint or coverage state remains a loss or refusal.
+
+HCL and Go decoding may narrow coverage only when `source.limits` is negotiated
+and the document has claimed headers. Every header must be valid; the returned
+model inventory stays exact. The provider interprets which of its models and
+subjects a header limits. The SDK validates these ownership and knowledge
+boundaries, not opaque header semantics. A missing feature or a document without
+headers retains complete authored scope. Round-trip tests must prove that the
+host preserves the owner's narrowed knowledge instead of inventing absence.
 
 `source.encode` is a provider service, listed by the provider and each
 supporting engine beside `source.decode`. It adds no field to an existing

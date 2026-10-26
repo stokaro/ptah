@@ -44,7 +44,7 @@ const (
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
 		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
-		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, GoLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature}
+		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -183,8 +183,11 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 				engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == PlanningLifecycleFeature })
 			}
 		}
-		if !slices.Contains(hostFeatures, GoLimitsFeature) {
+		if !slices.Contains(hostFeatures, SourceLimitsFeature) {
 			engine.GoHeaderKinds = nil
+		}
+		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
+			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
 		}
 		if !slices.Contains(hostFeatures, EntryKeysFeature) {
 			withoutEntryKeys(engine)

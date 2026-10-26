@@ -54,7 +54,7 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateHCLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
-		if err := validateGoSourceLimits(description, request.GetEngine(), document); err != nil {
+		if err := validateSourceLimits(description, request.GetEngine(), document); err != nil {
 			return err
 		}
 		if len(document.GetFragments()) != 0 && len(kinds) == 0 {
@@ -113,13 +113,17 @@ func validateSourceCoverage(description *protocol.Description, engine string, do
 	if err := ValidateModelCoverage(description, engine, coverage); err != nil {
 		return err
 	}
+	limited := sourceLimitsAvailable(description, engine, document)
 	for i, model := range document.GetModels() {
 		record := coverage.GetKinds()[i]
-		if !proto.Equal(record.GetModel(), model) || record.GetKnowledge().GetState() != protocol.ModelKnowledge_COMPLETE || len(record.GetRegions()) != 0 {
+		if !proto.Equal(record.GetModel(), model) || !limited && (record.GetKnowledge().GetState() != protocol.ModelKnowledge_COMPLETE || len(record.GetRegions()) != 0) {
 			return sourceError("decoded model scope is changed or incomplete")
 		}
 	}
 	for _, record := range coverage.GetSubjects() {
+		if limited {
+			continue
+		}
 		switch record.GetKnowledge().GetState() {
 		case protocol.ModelKnowledge_COMPLETE, protocol.ModelKnowledge_ABSENT, protocol.ModelKnowledge_DEFAULTED:
 		default:

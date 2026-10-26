@@ -343,8 +343,18 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 
 // validateEncodedExtras checks the header limits and the Go field types.
 func validateEncodedExtras(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
-	if request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS && slices.Contains(engine.GetFeatures(), GoLimitsFeature) {
-		if err := validateGoLimits(engine.GetGoHeaderKinds(), result.GetLimits()); err != nil {
+	if slices.Contains(engine.GetFeatures(), SourceLimitsFeature) {
+		if sourceCoverageRequiresLimits(request.GetCoverage()) && len(result.GetLimits()) == 0 {
+			return encodeError("narrowed coverage requires a claimed source limit")
+		}
+		var kinds []string
+		switch request.GetFormat() {
+		case protocol.SourceDocument_GO_ANNOTATIONS:
+			kinds = engine.GetGoHeaderKinds()
+		case protocol.SourceDocument_HCL:
+			kinds = engine.GetHclSource().GetHeaderKinds()
+		}
+		if err := validateHeaderLimits(kinds, result.GetLimits()); err != nil {
 			return err
 		}
 	}
