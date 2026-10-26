@@ -62,17 +62,27 @@ func (c *planningCapture) validation(source *schemamodel.Database) (*protocol.Va
 		return nil, fmt.Errorf("provider validation requires a schema")
 	}
 	// Declared rows are not schema: the provider types and writes them through
-	// the data services, so validation leaves ManagedData to them.
+	// the data services, so validation leaves ManagedData to them. The common
+	// objects beyond tables travel on the common-object wire, which refuses a
+	// kind the engine does not carry by name.
 	if err := onlyFields(*source,
 		"Tables", "Fields", "Indexes", "Constraints", "Enums", "Triggers", "Schemas", "FeatureObjects",
 		"FeatureCoverage", "NotDescribed", "Dependencies", "EmbeddedFields", "EmbeddedSources", "ManagedData",
+		"Views", "MaterializedViews", "Sequences", "Roles", "Grants", "RevokedGrants",
 	); err != nil {
+		return nil, err
+	}
+	common, err := c.target.declaredCommonObjects(source)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateCapturedChildren(source); err != nil {
 		return nil, err
 	}
 	remote := &protocol.ValidateSchemaRequest{Engine: c.request.Engine, Identifiers: c.request.Identifiers, Capabilities: c.request.Capabilities}
+	if len(c.target.commonKinds()) > 0 {
+		remote.CommonObjects = common
+	}
 	builder := objectidentity.NewBuilder(c.identifiers)
 	for _, table := range source.Tables {
 		subject := builder.TableParts(table.Schema, table.Name)
@@ -93,7 +103,6 @@ func (c *planningCapture) validation(source *schemamodel.Database) (*protocol.Va
 			return nil, err
 		}
 	}
-	var err error
 	remote.Enums, err = mapPlanningDefinitions(source.Enums, declaredPlanningEnum)
 	if err != nil {
 		return nil, err

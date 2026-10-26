@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/planext"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
@@ -55,7 +56,7 @@ func (t *target) registration() engine.Target {
 	result := engine.Target{Name: t.engine.GetId(), Aliases: slices.Clone(t.engine.GetAliases()), Rendering: t, Splitter: t, Data: t.dataServices(),
 		Planner: func(options planext.Options) planext.Planner {
 			return commonPlanner{options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
-				commonTables:  t.supportsCommonTables(),
+				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}
@@ -75,7 +76,21 @@ func (t *target) registration() engine.Target {
 	if t.supportsLint() {
 		result.Annotator = t
 	}
+	if len(t.commonKinds()) > 0 {
+		result.Spelling = commonSpeller{target: t}
+	}
 	return result
+}
+
+// commonDeclaration is a table declaration as the common table message holds
+// it: without its comments on an engine that carries them on the
+// common-object wire, where a step of their own sets them. An engine that
+// does not carry them keeps them, and commonTable refuses them.
+func (t *target) commonDeclaration(declaration schemacapture.TableDeclaration) schemacapture.TableDeclaration {
+	if t.commonKinds()[protocol.CommonObjectSupport_COMMENT] {
+		declaration, _ = creationComments(declaration)
+	}
+	return declaration
 }
 
 // supportsCommonTables gates shared table interpretation, not native services.
@@ -93,7 +108,13 @@ func (t *target) requireCommonTables() error {
 }
 
 func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaRequest) (renderer.SchemaResult, error) {
-	nodes, err := commonSchema(request.Schema, t.engine.GetDefaultSchema())
+	if request.Schema == nil {
+		return renderer.SchemaResult{}, fmt.Errorf("provider schema is required")
+	}
+	if _, err := t.declaredCommonObjects(request.Schema); err != nil {
+		return renderer.SchemaResult{}, err
+	}
+	nodes, err := t.commonSchema(request.Schema)
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
@@ -132,7 +153,7 @@ func (t *target) PrepareTables(ctx context.Context, request schemapreparation.Re
 	result := request.Clone()
 	for i := range result.Tables {
 		table := &result.Tables[i]
-		node, err := commonTable(table.Desired)
+		node, err := commonTable(t.commonDeclaration(table.Desired))
 		if err != nil {
 			return schemapreparation.Result{}, err
 		}
@@ -158,7 +179,7 @@ func (t *target) ProjectTableCreations(ctx context.Context, request schemaprojec
 	}
 	result := schemaprojection.TableCreationResult{Complete: true}
 	for _, table := range request.Tables {
-		node, err := commonTable(table.Declaration)
+		node, err := commonTable(t.commonDeclaration(table.Declaration))
 		if err != nil {
 			return schemaprojection.TableCreationResult{}, err
 		}
