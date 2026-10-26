@@ -69,7 +69,8 @@ func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, erro
 	if err != nil {
 		return catalog.ServerInfo{}, err
 	}
-	return catalog.ServerInfo{Dialect: remote.GetEngine(), Schema: remote.GetDefaultSchema(), Version: remote.GetServerVersion(), IdentifierSemantics: rules, Provider: identity, Capabilities: caps}, nil
+	return catalog.ServerInfo{Dialect: remote.GetEngine(), Schema: remote.GetDefaultSchema(), Version: remote.GetServerVersion(), IdentifierSemantics: rules, Provider: identity, Capabilities: caps,
+		DatabaseContext: databaseContext(remote.GetContext())}, nil
 }
 
 func (s *session) Info() catalog.ServerInfo { return s.info }

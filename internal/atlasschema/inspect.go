@@ -35,6 +35,7 @@ import (
 // InspectRuntime supplies conversion, reporting, and schema rendering through
 // one selected build.
 type InspectRuntime interface {
+	schemaext.ValueContextRuntime
 	goschematodb.Runtime
 	schemacomparison.Runtime
 	atlasreport.InspectRuntime

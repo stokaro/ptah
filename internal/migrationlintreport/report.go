@@ -101,6 +101,7 @@ type Report struct {
 // schema captures, the statement splitting and rules of each target's owner,
 // and the routine body reading the baseline's dependents are resolved with.
 type Runtime interface {
+	schemaext.ValueContextRuntime
 	lintext.Runtime
 	// TargetResolver names the engines the runtime serves, through which a
 	// dialect of an engine only a provider serves is accepted.

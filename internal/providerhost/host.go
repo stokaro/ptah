@@ -105,6 +105,8 @@ var hostFeatures = []string{
 	provider.SourceLimitsFeature,
 	provider.ColumnsFeature,
 	provider.ObservedColumnsFeature,
+	provider.DatabaseContextFeature,
+	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its
 	// engines declare, and a grant rides the object it names; see
 	// newScopeSelections.

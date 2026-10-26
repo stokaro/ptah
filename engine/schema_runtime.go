@@ -21,6 +21,7 @@ import (
 // planning, and AST or whole-schema rendering workflows. Narrower stages may
 // accept only the individual service they call. Both in-process runtimes and transport adapters can satisfy it.
 type SchemaRuntime interface {
+	schemaext.ValueContextRuntime
 	planext.Resolver
 	annotation.Runtime
 	yamlext.Runtime

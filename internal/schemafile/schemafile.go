@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
 	"ptah.run/core/yamlext"
@@ -32,13 +33,16 @@ import (
 	"ptah.run/internal/schemamerge"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/valuecontext"
 )
 
 // Options configures schema file loading.
 type Options struct {
-	// DatabaseURL supplies the database root used to resolve absolute YDB source
-	// paths. Relative declarations remain portable. The URL is never stored in
-	// the desired model or included in source errors.
+	// Contexts binds database interpretation before source dependency collection.
+	Contexts schemaext.ValueContextRuntime
+	// DatabaseURL supplies the target address for context binding and absolute
+	// source references. The URL is never stored in the desired model or
+	// included in source errors.
 	DatabaseURL string
 
 	Dialect string
@@ -248,6 +252,9 @@ func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*sch
 		return nil, err
 	}
 	if topLevel {
+		if err := valuecontext.BindSource(ctx, opts.Contexts, opts.Dialect, opts.DatabaseURL, db); err != nil {
+			return nil, err
+		}
 		if err := opts.checkSchemaScope(opts.collect.blocks); err != nil {
 			return nil, err
 		}
@@ -912,7 +919,16 @@ func readSQLFile(
 // are read against: the one opts.DatabaseURL names, or empty without one or
 // for a dialect whose documents name no root; see [RootReader]. A URL that
 // names no root is refused in the words of the dialect's root reader.
-func sourceDatabasePath(opts Options) (string, error) {
+func sourceDatabasePath(ctx context.Context, opts Options) (string, error) {
+	if opts.Contexts != nil && opts.DatabaseURL != "" {
+		bound, err := opts.Contexts.ResolveDatabaseContext(ctx, schemaext.DatabaseContextRequest{Target: opts.Dialect, Address: opts.DatabaseURL})
+		if err != nil {
+			return "", err
+		}
+		if !bound.IsZero() {
+			return bound.SourceDatabase, nil
+		}
+	}
 	reader, err := RootReader(opts.Dialect)
 	if err != nil || reader == nil || opts.DatabaseURL == "" {
 		return "", err

@@ -899,3 +899,9 @@ v0.16.1 ptah.run/atlascompat
 v0.16.1 ptah.run/core/schemaext
 v0.16.1 ptah.run/dialect/postgres/pgtable
 v0.16.1 ptah.run/dialect/timescaledb/tsschema
+
+# Source loading binds provider database interpretation before selections and
+# dependency consumers. engine.SchemaRuntime now requires ResolveDatabaseContext
+# and BindValueContexts; custom runtimes implement the explicit services rather
+# than infer a root from an object's identity. Pre-v1, so no compatibility is owed.
+v0.16.1 ptah.run/engine

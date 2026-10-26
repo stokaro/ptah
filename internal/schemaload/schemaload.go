@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/goschema"
 	"ptah.run/core/hclext"
 	"ptah.run/core/manageddata"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
 	"ptah.run/core/sqlext"
@@ -32,12 +33,14 @@ import (
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/sqlschema"
+	"ptah.run/internal/valuecontext"
 	"ptah.run/sourceformats"
 )
 
 // Owners selects the feature owners each source format reads.
 // *ptah.run/engine.Runtime implements it.
 type Owners interface {
+	schemaext.ValueContextRuntime
 	annotation.Runtime
 	yamlext.Runtime
 	sqlext.Runtime
@@ -47,9 +50,9 @@ type Owners interface {
 
 // Options selects the desired-schema sources and how loading is reported.
 type Options struct {
-	// DatabaseURL supplies the database root used to resolve absolute YDB source
-	// paths. Relative declarations remain portable. The URL is never stored in
-	// the desired model or included in source errors.
+	// DatabaseURL supplies the target address for context binding and absolute
+	// source references. The URL is never stored in the desired model or
+	// included in source errors.
 	DatabaseURL string
 
 	// RootDirs are Go entity roots scanned for migrator directives (repeatable).
@@ -186,7 +189,14 @@ func LoadContext(ctx context.Context, opts Options) (*schemamodel.Database, erro
 // provenance when the input is exactly one OCI schema artifact.
 func LoadResult(ctx context.Context, opts Options) (*Result, error) {
 	if raw, ok := singleOCIReference(opts); ok {
-		return opts.loadOCIResult(ctx, raw)
+		result, err := opts.loadOCIResult(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := valuecontext.BindSource(ctx, opts.Owners, opts.Dialect, opts.DatabaseURL, result.Database); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 	// The sources are read under one collector of `ptah:allow-not-valid`
 	// directives, and they are applied once every source is merged, so a
@@ -194,6 +204,9 @@ func LoadResult(ctx context.Context, opts Options) (*Result, error) {
 	ctx, allowances := sqlschema.WithNotValidAllowances(ctx)
 	database, err := loadContext(ctx, opts)
 	if err != nil {
+		return nil, err
+	}
+	if err := valuecontext.BindSource(ctx, opts.Owners, opts.Dialect, opts.DatabaseURL, database); err != nil {
 		return nil, err
 	}
 	if err := allowances.Apply(database); err != nil {
@@ -540,6 +553,7 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*schema
 	// extension-check convenience above; it must not become the value the guard
 	// judges.
 	result, err := schemafile.LoadPath(ctx, schemaFile, schemafile.Options{
+		Contexts:           o.Owners,
 		DatabaseURL:        o.DatabaseURL,
 		Dialect:            o.Dialect,
 		YAML:               o.yaml(),

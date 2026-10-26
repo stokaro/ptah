@@ -1123,6 +1123,16 @@ for empty changes. The same context reaches selected planning and rendering;
 errors or cancellation expose no AST or SQL prefix. This changes the Go API;
 pre-v1, so no compatibility is owed.
 
+`schemaext.DatabaseContext` separates the selected database from the root used
+for authored absolute references. `Target.DatabaseContext` resolves an opaque
+address without opening it. `Provider.ContextBindings` assigns each target and
+owned model kind to one `ValueContextService`; `Runtime.BindValueContexts`
+snapshots the complete ordered input before dispatch and returns no partial
+batch. Model identity and target scopes stay unchanged. A bound value refuses
+another context. `engine.SchemaRuntime` includes these services so source loads
+can bind before scope selection and dependency collection. Implementations
+update directly; pre-v1, so compatibility with an incomplete runtime is not owed.
+
 `Provider.Conversions` assigns each target and feature kind to one conversion
 service. The provider must own the desired and observed codecs for that kind.
 `Runtime.ConvertFeatures` batches values by registration and preserves their
