@@ -833,7 +833,8 @@ type Function struct {
 	Security   string // Security context (e.g., "DEFINER", "INVOKER")
 	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	// Settings are the routine's own configuration settings, each as
-	// `name=value`, which is the spelling pg_proc.proconfig reports.
+	// `name=value` with the value in SQL, as a `SET name = value` clause
+	// writes it: `work_mem='8MB'`, `search_path=pg_catalog`.
 	//
 	// A SECURITY DEFINER routine without a pinned search_path resolves
 	// unqualified names through whatever the caller set. Ptah could not express
