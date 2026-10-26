@@ -23,6 +23,8 @@ service Provider {
   rpc ConvertValues(ConvertValuesRequest) returns (NormalizedValues);
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
+  rpc PlanDeclarations(PlanDeclarationsRequest) returns (PlannedDeclarations);
+  rpc DescribeExecutionInputs(DescribeExecutionInputsRequest) returns (ExecutionInputs);
   rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
   rpc ProjectTableCreations(ProjectTableCreationsRequest) returns (ProjectedTableCreations);
   rpc ValidateSchema(ValidateSchemaRequest) returns (SchemaValidation);
@@ -160,6 +162,10 @@ message Engine {
   // engine lists scope.selections, and sent only to a host that lists it.
   // Contract 25.4.
   repeated ScopeSelection scope_selections = 18;
+  // Offline authored creation services, under schema.declarations (25.5).
+  repeated ModelDeclarations declarations = 19;
+  // Claimed ptah:not-described kinds in Go source, under source.go-limits.
+  repeated string go_header_kinds = 20;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name
@@ -209,6 +215,9 @@ message CommonObjectSupport {
     ROLE = 4;
     GRANT = 5;
     COMMENT = 6;
+    // Contract 25.5, under schema.common-access. Each has its own coverage.
+    OBJECT_OWNER = 7;
+    ROLE_MEMBERSHIP = 8;
   }
   repeated Kind kinds = 1;
 }
@@ -490,6 +499,17 @@ message ObservedCommonObjects {
   // Roles the server holds that this read does not describe, so a role
   // absent from roles is not taken for one the server does not have.
   repeated string roles_out_of_scope = 7;
+  // Contract 25.5, under schema.common-access.
+  repeated ObjectOwner object_owners = 8;
+  // Independent of the roles this read describes. When ROLE_MEMBERSHIP is
+  // declared, ObservedRole.member_of is empty and these are the only edges.
+  repeated RoleMembership memberships = 9;
+}
+message ObjectOwner {
+  Reference object = 1;
+  string owner = 2;
+  // Absent when the read did not establish whether the principal can log in.
+  optional bool owner_can_login = 3;
 }
 message CommonObjectCoverage {
   CommonObjectSupport.Kind kind = 1;
@@ -704,6 +724,34 @@ message ExecuteRequest {
   // caller can tell its own limit from a canceled call. Negative is refused.
   // Sent only when both sides list units.statement-timeout. Contract 25.1.
   int64 statement_timeout_nanoseconds = 5;
+  // Required when units.sensitive-inputs is negotiated. Contract 25.5.
+  string engine = 6;
+  // References captured in the reviewed plan, never values. The provider
+  // re-describes the exact units and requires the same references at dispatch.
+  repeated ExecutionInput expected_inputs = 7;
+  // Ephemeral values resolved immediately before dispatch. Never persisted in
+  // units, plans, history, diagnostics or provider logs.
+  repeated ExecutionInputBinding input_bindings = 8;
+}
+message ExecutionInput {
+  enum Source { SOURCE_UNSPECIFIED = 0; ENVIRONMENT = 1; }
+  Source source = 1;
+  string name = 2;
+}
+message ExecutionInputBinding {
+  ExecutionInput input = 1;
+  // An explicitly present binding may hold empty bytes.
+  bytes value = 2;
+}
+message DescribeExecutionInputsRequest {
+  string engine = 1;
+  repeated Unit units = 2;
+}
+message ExecutionInputs {
+  bool complete = 1;
+  // Unique references, sorted by source then name. Discovery is deterministic
+  // and offline. It never reads an environment or opens a database session.
+  repeated ExecutionInput inputs = 2;
 }
 
 // Isolation is explicit. Providers refuse levels they cannot establish; they
@@ -955,9 +1003,9 @@ message SourceDocument {
   // Explicit scope, frozen before dispatch. Only DESIRED models supporting
   // this document format may be enrolled. Empty means no owner models.
   repeated ValueModel models = 7;
-  // HCL only: the document's ptah:not-described header entries of the kinds
-  // the engine declares in hcl_source.header_kinds, in written order.
-  // Contract 25.3, under source.hcl.
+  // The document's ptah:not-described entries in written order. HCL uses
+  // hcl_source.header_kinds under source.hcl (25.3); Go uses go_header_kinds
+  // under source.go-limits (25.5).
   repeated SchemaCoverageLimit limits = 8;
 }
 // SourcePathStep distinguishes a mapping key from a sequence index. A trace
@@ -1499,6 +1547,41 @@ message ModelPlanning {
   repeated string parent_kinds = 3;
   repeated string operation_kinds = 4;
 }
+message ModelDeclarations {
+  string id = 1;
+  repeated string kinds = 2;
+  repeated string operation_kinds = 3;
+}
+// PlanDeclarations lowers authored objects without asserting observed absence.
+// An explicit engine is required; no session or current state is involved.
+message PlanDeclarationsRequest {
+  string engine = 1;
+  string declaration_id = 2;
+  repeated string target_features = 3;
+  ComparisonIdentifiers identifiers = 4;
+  map<string, bool> capabilities = 5;
+  repeated ComparisonRecord objects = 6;
+  repeated ValidationTable tables = 7;
+  repeated PlanningType types = 8;
+  repeated CommonPlanningStep common_steps = 9;
+}
+message PlannedDeclarations {
+  bool complete = 1;
+  repeated PlanningContribution contributions = 2;
+  repeated DeclarationReceipt declarations = 3;
+  // A completed refusal carries diagnostics and no successful output.
+  repeated DeclarationDiagnostic diagnostics = 4;
+}
+message DeclarationReceipt {
+  ComparisonIdentity subject = 1;
+  string strategy = 2;
+  repeated StepIdentity steps = 3;
+}
+message DeclarationDiagnostic {
+  SchemaDiagnostic problem = 1;
+  // Zero-based index of the input object, when the diagnostic names one.
+  optional uint32 object = 2;
+}
 // StepIdentity is structured: neither component is a delimiter-joined key.
 message StepIdentity { string owner = 1; string name = 2; }
 message PlanningEffect {
@@ -1531,7 +1614,15 @@ message PlanningOperation {
   ComparisonIdentity parent = 2;
   NormalizedValue value = 3;
   repeated string notes = 4;
-  enum Phase { DEFAULT = 0; DEPENDENT = 1; PREREQUISITE = 2; TYPE = 3; }
+  enum Phase {
+    DEFAULT = 0;
+    DEPENDENT = 1;
+    PREREQUISITE = 2;
+    TYPE = 3;
+    // Spans the complete common sequence subject to resource, explicit and
+    // rewrite constraints. Contract 25.5, under planning.lifecycle.
+    LIFECYCLE = 4;
+  }
   Phase phase = 5;
 }
 message PlanningStep {
@@ -3453,6 +3544,18 @@ message EncodedSource {
   repeated SchemaCoverageLimit limits = 4;
   // GO_ANNOTATIONS only.
   repeated EncodedFieldType field_types = 5;
+  // Contract 25.5, under source.encode-groups. Mutually exclusive with
+  // fragments. Each group accounts for values once across ordered syntax parts.
+  repeated EncodedSourceGroup groups = 6;
+}
+message EncodedSourceGroup {
+  repeated string value_ids = 1;
+  repeated EncodedSourcePart parts = 2;
+}
+message EncodedSourcePart {
+  // The negotiated claim and content, without positions or value accounting.
+  SourceFragment fragment = 1;
+  EncodedFragment.Placement placement = 2;
 }
 message EncodedFragment {
   // The claim, selector, binding, subject and content as DecodeSource

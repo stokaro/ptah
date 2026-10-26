@@ -16,6 +16,10 @@ import (
 // existing message, so it is not two-way. Contract 25.3.
 const EncodeSourceFeature = "source.encode"
 
+// EncodeGroupsFeature enables ordered syntax parts that account for a value
+// together. It is negotiated by both peers beside EncodeSourceFeature.
+const EncodeGroupsFeature = "source.encode-groups"
+
 // SourceEncoder writes a batch of values as source fragments offline. Every
 // value is written by one fragment or reported as one loss. It never writes
 // text of a format, and a failure exposes no prefix.
@@ -30,6 +34,10 @@ func encodeError(reason string) error {
 // validateEncodeEngine requires an engine that lists the service to have the
 // provider's service and source decoding.
 func validateEncodeEngine(description *protocol.Description, engine *protocol.Engine) error {
+	if slices.Contains(engine.GetFeatures(), EncodeGroupsFeature) &&
+		(!slices.Contains(description.GetFeatures(), EncodeGroupsFeature) || !slices.Contains(engine.GetFeatures(), EncodeSourceFeature)) {
+		return encodeError("an engine lists encoding groups without the provider's feature and source encoding")
+	}
 	if slices.Contains(engine.GetFeatures(), EncodeSourceFeature) &&
 		(!slices.Contains(description.GetFeatures(), EncodeSourceFeature) || !slices.Contains(description.GetFeatures(), DecodeSourceFeature)) {
 		return encodeError("an engine lists the service without the provider's service and source decoding")
@@ -137,7 +145,7 @@ func validateEncodeColumns(request *protocol.EncodeSourceRequest, bindings map[s
 }
 
 // ValidateEncodedSource checks a reply against its request: complete, every
-// value written by one fragment or lost once, each fragment a negotiated claim
+// value written by one group or flat fragment, or lost once, each part a negotiated claim
 // of the format with the binding, subject and content its scope or site
 // needs and no position, and limits and field types the request allows.
 func ValidateEncodedSource(description *protocol.Description, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
@@ -148,6 +156,13 @@ func ValidateEncodedSource(description *protocol.Description, request *protocol.
 		return encodeError("incomplete encoding")
 	}
 	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	grouped := slices.Contains(engine.GetFeatures(), EncodeGroupsFeature)
+	if grouped && len(result.GetFragments()) != 0 {
+		return encodeError("a grouped encoding carries no flat fragments")
+	}
+	if !grouped && len(result.GetGroups()) != 0 {
+		return encodeError("encoding groups were not negotiated")
+	}
 	document, kinds, err := encodedDocument(engine, request, result)
 	if err != nil {
 		return err
@@ -187,7 +202,7 @@ func encodedDocument(engine *protocol.Engine, request *protocol.EncodeSourceRequ
 		kinds[model.GetKind()] = true
 	}
 	document := &protocol.SourceDocument{Id: "encoded", Format: request.GetFormat(), File: "encoded", Bindings: request.GetBindings()}
-	for _, encoded := range result.GetFragments() {
+	for _, encoded := range EncodedSourceParts(result) {
 		fragment := encoded.GetFragment()
 		claimed := map[protocol.SourceDocument_Format]bool{
 			protocol.SourceDocument_YAML:           fragment.GetYamlKey() != nil,
@@ -242,6 +257,11 @@ func validateEncodedAccount(request *protocol.EncodeSourceRequest, result *proto
 			}
 		}
 	}
+	for _, group := range result.GetGroups() {
+		if err := validateEncodedGroup(group, values, accounted); err != nil {
+			return err
+		}
+	}
 	for _, loss := range result.GetLosses() {
 		if values[loss.GetValueId()] == nil || accounted[loss.GetValueId()] || !diagnosticLine(loss.GetMessage()) {
 			return encodeError("a loss names a value of the request once, in one line")
@@ -252,6 +272,61 @@ func validateEncodedAccount(request *protocol.EncodeSourceRequest, result *proto
 		return encodeError("a value is neither written nor lost")
 	}
 	return nil
+}
+
+// EncodedSourceParts returns the syntax parts of a validated reply in order.
+// Accounting stays in the reply's groups or flat fragments. Callers validate
+// the reply before consuming these parts, including its negotiated shape.
+func EncodedSourceParts(result *protocol.EncodedSource) []*protocol.EncodedSourcePart {
+	var parts []*protocol.EncodedSourcePart
+	for _, encoded := range result.GetFragments() {
+		parts = append(parts, &protocol.EncodedSourcePart{Fragment: encoded.GetFragment(), Placement: encoded.GetPlacement()})
+	}
+	for _, group := range result.GetGroups() {
+		parts = append(parts, group.GetParts()...)
+	}
+	return parts
+}
+
+func validateEncodedGroup(group *protocol.EncodedSourceGroup, values map[string]*protocol.EncodeSourceValue, accounted map[string]bool) error {
+	if len(group.GetValueIds()) == 0 || len(group.GetParts()) == 0 {
+		return encodeError("an encoding group needs values and syntax parts")
+	}
+	covered := make(map[string]bool)
+	for _, id := range group.GetValueIds() {
+		if values[id] == nil || accounted[id] {
+			return encodeError("a group names each requested value once")
+		}
+		accounted[id] = true
+	}
+	for _, part := range group.GetParts() {
+		if err := validateEncodedPlacement(&protocol.EncodedFragment{Fragment: part.GetFragment(), Placement: part.GetPlacement()}); err != nil {
+			return err
+		}
+		matched := false
+		for _, id := range group.GetValueIds() {
+			if encodedPartOwns(part.GetFragment(), values[id]) {
+				covered[id], matched = true, true
+			}
+		}
+		if !matched {
+			return encodeError("an encoding part names no group value with its model, binding and subject")
+		}
+	}
+	if len(covered) != len(group.GetValueIds()) {
+		return encodeError("an encoding group leaves a value outside its parts' models, bindings or subjects")
+	}
+	return nil
+}
+
+func encodedPartOwns(fragment *protocol.SourceFragment, value *protocol.EncodeSourceValue) bool {
+	if !slices.Contains(fragmentModels(fragment), value.GetValue().GetValue().GetKind()) || fragment.GetBindingId() != value.GetBindingId() {
+		return false
+	}
+	if subject := fragment.GetSubject(); subject != nil {
+		return compareReferences(subject, value.GetValue().GetNormalizedOwner()) == 0
+	}
+	return true
 }
 
 func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
@@ -268,6 +343,11 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 
 // validateEncodedExtras checks the header limits and the Go field types.
 func validateEncodedExtras(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
+	if request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS && slices.Contains(engine.GetFeatures(), GoLimitsFeature) {
+		if err := validateGoLimits(engine.GetGoHeaderKinds(), result.GetLimits()); err != nil {
+			return err
+		}
+	}
 	for _, limit := range result.GetLimits() {
 		if !comparisonReason(limit.GetKind()) {
 			return encodeError("a limit needs a kind")

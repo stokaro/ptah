@@ -36,6 +36,9 @@ func validatePlanningContributions(description *protocol.Description, request *p
 			if err := validatePlanningOperation(request, service, step); err != nil {
 				return nil, err
 			}
+			if step.GetOperation().GetPhase() == protocol.PlanningOperation_LIFECYCLE && !planningLifecycleAvailable(description, request.GetEngine()) {
+				return nil, fmt.Errorf("%w: lifecycle planning was not negotiated", ErrProtocol)
+			}
 			values = append(values, step.GetOperation().GetValue())
 		}
 		if err := validatePlanningDependencies(contribution.GetDependencies()); err != nil {

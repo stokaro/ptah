@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 4
+const ContractMinor uint32 = 5
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -43,7 +43,8 @@ const (
 // declares Engine.common_objects, so their calls are two-way too.
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
-		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature}
+		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
+		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, GoLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -161,12 +162,29 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		if !slices.Contains(hostFeatures, CommonObjectsFeature) {
 			engine.CommonObjects = nil
+			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == CommonAccessFeature })
+		}
+		if !slices.Contains(hostFeatures, CommonAccessFeature) && engine.CommonObjects != nil {
+			engine.CommonObjects.Kinds = slices.DeleteFunc(engine.CommonObjects.Kinds, commonAccessKind)
+			if len(engine.CommonObjects.Kinds) == 0 {
+				engine.CommonObjects = nil
+				engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == CommonObjectsFeature })
+			}
 		}
 		if !slices.Contains(hostFeatures, HCLSourceFeature) {
 			engine.HclSource = nil
 		}
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
+		}
+		if !slices.Contains(hostFeatures, SchemaDeclarationsFeature) {
+			engine.Declarations = nil
+			if len(engine.GetPlanning()) == 0 {
+				engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == PlanningLifecycleFeature })
+			}
+		}
+		if !slices.Contains(hostFeatures, GoLimitsFeature) {
+			engine.GoHeaderKinds = nil
 		}
 		if !slices.Contains(hostFeatures, EntryKeysFeature) {
 			withoutEntryKeys(engine)

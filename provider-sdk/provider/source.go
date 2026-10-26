@@ -68,8 +68,8 @@ func (w *sourceWalk) document(document *protocol.SourceDocument) error {
 	default:
 		return sourceError("unknown source format")
 	}
-	if len(document.GetLimits()) != 0 && document.GetFormat() != protocol.SourceDocument_HCL {
-		return sourceError("header limits on a document that is not HCL")
+	if len(document.GetLimits()) != 0 && document.GetFormat() != protocol.SourceDocument_HCL && document.GetFormat() != protocol.SourceDocument_GO_ANNOTATIONS {
+		return sourceError("header limits require HCL or Go annotations")
 	}
 	bindings := make(map[string]bool)
 	for _, binding := range document.GetBindings() {

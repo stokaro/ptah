@@ -51,7 +51,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.4, as `provider-sdk/v0.6.0` does. `provider-sdk/v0.5.0`
+speaks contract 25.5. `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
 speaks contract 25.3, `provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0`
 speaks 25.1, and `provider-sdk/v0.2.0` speaks 25.0.
 
@@ -70,7 +70,12 @@ returns to 0.
   claims](#yaml-entry-keys-and-hcl-claims) and
   [source encoding](#source-encoding). Contract 25.4 adds
   [operator statements](#operator-statements) and
-  [scope selections](#scope-selections).
+  [scope selections](#scope-selections). Contract 25.5 adds
+  [grouped source encoding and Go coverage headers](#source-encoding),
+  [authored declaration planning](#authored-declaration-planning),
+  [independent access observations](#independent-access-observations),
+  [lifecycle placement](#lifecycle-placement) and
+  [sensitive execution inputs](#sensitive-execution-inputs).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -91,8 +96,10 @@ does not oblige a peer to use it.
   sides list its feature. `provider.TwoWayFeatures()` returns those features:
   `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
   `query.dialect`, `embeddings.store`, `schema.common-objects`,
-  `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`
-  and `scope.selections`. The embedding store's calls and `PrepareCommonObjects` are
+  `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`,
+  `scope.selections`, `source.encode-groups`, `source.go-limits`,
+  `schema.declarations`, `schema.common-access`, `planning.lifecycle` and
+  `units.sensitive-inputs`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
@@ -143,11 +150,13 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `Render` | One executable unit for every input change, in input order, or, in the `TEXT` form, a refusal of a change without a text form. A refused batch exposes no executable prefix. |
 | `AnalyzeSQL` | Complete owner-defined statement boundaries, tokens, and explicit safety dispositions. Unsupported syntax refuses the whole batch. |
 | `DecodeSource` | Complete offline interpretation of captured extension fragments, frozen model scope, and original source traces. |
-| `EncodeSource` | Offline: every value written by one fragment its claims read, with no position, or reported as one loss. |
+| `EncodeSource` | Offline: every value written once by claimed syntax parts, with no position, or reported as one loss. |
 | `ReadSQLSchema` | A complete offline reading of every SQL schema document of an engine that declares the `DOCUMENT` mode: declared objects, per-document declarations, coverage and positioned diagnostics, or an error and no schema. |
 | `ConvertValues` | An offline conversion between desired and observed models with preserved identity and a complete normalized result. |
 | `CompareModels` | A complete offline comparison of captured objects or facets, independent coverage sources, common context, and typed changes. |
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
+| `PlanDeclarations` | Complete offline creation contributions and ordered authored-object receipts, without observed state. |
+| `DescribeExecutionInputs` | Complete offline discovery of the exact unit batch's sensitive input references, without reading values. |
 | `PrepareTables` | Complete prepared key membership and declared facet adjustments from captured table state. |
 | `PrepareCommonObjects` | Offline: the declared views, sequences, roles and grants in the engine's spelling, each entry keeping its identity. |
 | `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
@@ -1314,9 +1323,28 @@ validates, spells and renders:
 
 Both transport boundaries refuse a kind the engine does not carry, an empty
 name, a grant without a role, privileges or a target, a role that is a member
-of itself, an identity repeated under the engine's identifier rules, and a
+of itself in a declaration, an identity repeated under the engine's identifier rules, and a
 prepared entry that changed its identity or its collection's length. The
 fixture does not serve this wire.
+
+### Independent access observations
+
+[ADR 0042](../docs/adr/0042-access-observations-have-independent-coverage.md)
+defines `schema.common-access`, negotiated beside `schema.common-objects`.
+`OBJECT_OWNER` and `ROLE_MEMBERSHIP` are independently covered common kinds.
+Complete role inspection implies neither. Uninspected coverage retains its
+reason and is never an empty collection.
+
+`ObservedCommonObjects.object_owners` names each object by `Reference` and its
+owner principal. Optional `owner_can_login` distinguishes unknown, known false
+and known true. Database-root references may have an empty name. The SDK refuses
+duplicate or conflicting owners after applying the engine's identifier rules.
+
+`ObservedCommonObjects.memberships` carries unique group/member pairs, including
+out-of-scope principals and self-memberships the server reports. When the engine
+advertises `ROLE_MEMBERSHIP`, observed roles must leave `member_of` empty. This
+keeps one membership representation and preserves facts that authored schema
+policy may refuse to create.
 
 ## Text units
 
@@ -1381,15 +1409,32 @@ minors do. Both features are two-way and need `source.decode`.
 ## Source encoding
 
 [ADR 0037](../docs/adr/0037-a-provider-encodes-the-source-it-decodes.md)
-decides this service. `EncodeSource` is the mirror of `DecodeSource`. The host
+and [ADR 0040](../docs/adr/0040-a-source-value-can-require-several-claimed-declarations.md)
+decide this service. `EncodeSource` is the mirror of `DecodeSource`. The host
 sends DESIRED values, native objects and facets with their table binding, in a
-format it writes (YAML, HCL or Go annotations), and the provider returns
-`EncodedFragment` entries: the fragments its claims read, each naming the values
-it writes, with no position, and for an HCL block of its own the placement among
-the writer's blocks. Every value is written once or reported once as an
-`EncodeLoss` with one line of text. A Go export also carries the bound tables'
+format it writes (YAML, HCL or Go annotations). Every value is written once or
+reported once as an `EncodeLoss` with one line of text. Every syntax part must
+match a negotiated claim, its scope and owner, and have no source position.
+HCL blocks also carry placement among the writer's blocks. A Go export carries the bound tables'
 columns, and the reply may give a field the Go type of its engine type. The
 provider never writes text of a format; the host writes the syntax.
+
+With the two-way feature `source.encode-groups`, the reply uses
+`EncodedSource.groups`: each group accounts for its `value_ids` once and writes
+them through ordered `EncodedSourcePart` entries. Each part must match a value
+in the group by model claim, binding and any explicit normalized subject; each
+value must match a part. This supports one facet that needs separate directives
+or keys without confusing distinct column owners on one table. Without the
+feature, the reply uses `EncodedFragment` entries, each with its own exact-once
+value accounting. A reply cannot mix the shapes. `EncodedSourceParts` exposes
+their ordered parts after validation. A peer without groups receives a loss
+when one fragment cannot preserve a value.
+
+The two-way feature `source.go-limits` declares `Engine.go_header_kinds` for Go
+not-described headers. Go input and negotiated encoded output accept only those
+kinds and unique kind/name pairs. The host writes and captures the header's
+kind, name, reason and provenance, then preserves its coverage through import.
+An unrepresentable access constraint or coverage state remains a loss or refusal.
 
 `source.encode` is a provider service, listed by the provider and each
 supporting engine beside `source.decode`. It adds no field to an existing
@@ -1401,6 +1446,62 @@ directions, prepare a declaration, render text and refuse a change without a
 text form, refuse a native unit in the `TEXT` form from a peer that is not the
 SDK server, and decode what an owner encoded back to the same canonical
 projection.
+
+## Authored declaration planning
+
+[ADR 0041](../docs/adr/0041-a-provider-plans-authored-declarations-without-inventing-observed-absence.md)
+defines `schema.declarations`. Each `Engine.declarations` assignment names a
+service, its desired model kinds and its operation kinds. `PlanDeclarations`
+takes an explicit engine and service, ordered desired objects, declared tables
+and types, common creation steps, target features, identifier rules and
+capability facts. It carries no current schema, coverage or session. An authored
+object is not evidence of observed absence.
+
+A successful complete result contains contributions and one declaration receipt
+per object in input order. Each receipt preserves the subject, names a strategy
+and accounts for creation steps. Every contributed step has a receipt.
+Dependencies name only contributed or supplied common steps. A completed refusal
+contains only diagnostics with an optional object index. Invalid or canceled
+calls expose no prefix. The host schedules the whole graph before rendering;
+the provider never substitutes a private graph or rewrites a common step.
+
+## Lifecycle placement
+
+[ADR 0044](../docs/adr/0044-lifecycle-operations-use-the-complete-common-sequence.md)
+defines the two-way feature `planning.lifecycle` and the `LIFECYCLE` operation
+phase. Its placement window spans the complete common sequence, narrowed by
+resource effects, explicit dependencies and rewrite constraints. The host
+negotiates the feature only when its scheduler implements that window. The SDK
+refuses the phase without negotiation. `DEPENDENT` keeps its point placement.
+
+## Sensitive execution inputs
+
+[ADR 0043](../docs/adr/0043-sensitive-input-references-are-approved-before-values-are-bound.md)
+defines `units.sensitive-inputs`. `DescribeExecutionInputs` inspects the exact
+ordered unit batch offline and returns complete, sorted, unique input
+references. It reads no values and performs no I/O. SQL and native units use the
+same boundary. The initial source is `ENVIRONMENT`, with an ASCII variable name.
+
+The host includes references in reviewable plan metadata and its approval digest.
+Its operator policy authorizes the references it may resolve. Immediately before
+dispatch it re-describes cloned units, requires the approved references to match
+and resolves their values. `ExecuteRequest` carries the selected engine,
+`expected_inputs` and exactly one ephemeral binding per approved reference.
+An explicitly empty value is valid; an absent binding is not. An engine without
+input discovery accepts no references or bindings. The SDK server repeats
+discovery and equality checks before invoking the executor.
+
+Values never enter units, plans, history, rendered SQL, diagnostics or logs.
+The provider checks the session's engine and binds values through its database
+interface. Failed discovery or cancellation refuses before execution; dispatched
+work retains the ordinary confirmation and uncertainty contract. A host lists
+the feature only when the approval and dispatch paths are implemented. Providers
+never fall back to inherited process environment values.
+
+`RunStatement` has no sensitive-input bindings. An authorized write-only
+statement that needs inputs uses `Execute` units. A query or result-bearing
+statement that needs such inputs refuses; it cannot borrow process environment
+values or silently discard its result contract.
 
 ## Operator statements
 

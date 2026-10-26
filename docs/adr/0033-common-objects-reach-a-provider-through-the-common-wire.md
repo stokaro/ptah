@@ -2,6 +2,9 @@
 
 Status: Accepted
 
+Amended by: [ADR 0042](0042-access-observations-have-independent-coverage.md),
+which adds independently covered ownership and membership observations.
+
 Deciders: Ptah maintainers
 
 Issue: [stokaro/ptah#4204](https://github.com/stokaro/ptah/issues/4204)
