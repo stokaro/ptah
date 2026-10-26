@@ -705,6 +705,10 @@ writes nothing, so a preview on a provider-served target takes no lock and does
 not wait for a running apply. Native execution support alone does not qualify
 an official provider's schema models or live database behavior.
 
+Uninspected common access kinds remain unknown coverage. Their presence in a
+diff does not block unrelated table changes. A provider without common-object
+planning still refuses role and grant mutations.
+
 ## Resolve failures
 
 Missing official providers include an engine ID, provider ID, repository URL,
