@@ -125,6 +125,13 @@ func (c *statementConn) BeginTx(ctx context.Context, opts driver.TxOptions) (dri
 
 type statementTx struct{ conn *statementConn }
 
+type statementForm uint8
+
+const (
+	statementRowsForm statementForm = iota
+	statementEffectForm
+)
+
 func (t statementTx) Commit() error {
 	tx := t.conn.tx
 	t.conn.tx = nil
@@ -138,7 +145,7 @@ func (t statementTx) Rollback() error {
 }
 
 func (c *statementConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	result, request, err := c.run(ctx, query, args)
+	result, request, err := c.run(ctx, query, args, statementRowsForm)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +155,7 @@ func (c *statementConn) QueryContext(ctx context.Context, query string, args []d
 // ExecContext runs a statement for its effect. A statement that returned rows
 // is released before the reply is handed back.
 func (c *statementConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	result, _, err := c.run(ctx, query, args)
+	result, _, err := c.run(ctx, query, args, statementEffectForm)
 	if err != nil {
 		return nil, err
 	}
@@ -163,9 +170,19 @@ func (c *statementConn) ExecContext(ctx context.Context, query string, args []dr
 // run sends one statement and turns any outcome but SUCCEEDED into an error:
 // the server's message for FAILED, the provider's refusal for REFUSED, and an
 // unknown outcome otherwise, which a transaction then cannot commit over.
-func (c *statementConn) run(ctx context.Context, query string, args []driver.NamedValue) (*protocol.StatementResult, *protocol.RunStatementRequest, error) {
+func (c *statementConn) run(ctx context.Context, query string, args []driver.NamedValue, form statementForm) (*protocol.StatementResult, *protocol.RunStatementRequest, error) {
 	if err := c.session.lockError(); err != nil {
 		return nil, nil, err
+	}
+	inputs, err := c.session.target.executionInputs(ctx, []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: query}}})
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(inputs) != 0 {
+		if form != statementEffectForm || c.readOnly || len(args) != 0 {
+			return nil, nil, unsupported("sensitive inputs for result-bearing, read-only, or parameterized statements")
+		}
+		return c.executeInputStatement(ctx, query)
 	}
 	values, err := statementArguments(args)
 	if err != nil {
@@ -192,6 +209,22 @@ func (c *statementConn) run(ctx context.Context, query string, args []driver.Nam
 		return nil, nil, err
 	}
 	return result, request, nil
+}
+
+// A write-only statement uses the exact approvals retained by the caller's
+// preparation phase. Execute checks those references before binding values;
+// discovering inputs here does not authorize any environment variable.
+func (c *statementConn) executeInputStatement(ctx context.Context, query string) (*protocol.StatementResult, *protocol.RunStatementRequest, error) {
+	var err error
+	if c.tx != nil {
+		err = c.tx.ExecuteSQL(ctx, query)
+	} else {
+		err = c.session.ExecuteSQL(ctx, query)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return &protocol.StatementResult{Outcome: protocol.StatementResult_SUCCEEDED}, &protocol.RunStatementRequest{}, nil
 }
 
 func statementOutcome(result *protocol.StatementResult) error {

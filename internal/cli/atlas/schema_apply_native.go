@@ -17,14 +17,14 @@ import (
 // applyAtlasNativeSchemaPlan keeps the batch selected by the shared planner
 // through approval. A SQL display or editor cannot represent this batch.
 func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions, conn *dbschema.DatabaseConnection, plan atlasschema.ApplyRuntimePlan, mode migrator.MigrationTxMode) (string, error) {
-	if err := validateAtlasNativeApplyOptions(opts); err != nil {
-		return "", err
-	}
 	if err := plan.Preflight(cmd.Context()); err != nil {
 		return "", err
 	}
 	units, err := plan.ReportUnits(cmd.Context(), opts.runtime)
 	if err != nil {
+		return "", err
+	}
+	if err := validateAtlasNativeApplyOptions(opts, units); err != nil {
 		return "", err
 	}
 	if err := displayAtlasNativeApplyPlan(cmd, conn, units, mode); err != nil {
@@ -44,7 +44,7 @@ func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions
 }
 
 func applyAtlasNativePlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, conn *dbschema.DatabaseConnection, plan atlasschema.PlanFile, mode migrator.MigrationTxMode, desired *schemamodel.Database) (string, error) {
-	if err := validateAtlasNativeApplyOptions(opts); err != nil {
+	if err := validateAtlasNativeApplyOptions(opts, plan.UnitReports()); err != nil {
 		return "", err
 	}
 	execution, err := plan.ExecutionPlan(cmd.Context(), conn, opts.runtime)
@@ -76,16 +76,23 @@ func applyAtlasNativePlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, 
 	return "Schema apply completed successfully.", nil
 }
 
-func validateAtlasNativeApplyOptions(opts atlasSchemaApplyOptions) error {
+func validateAtlasNativeApplyOptions(opts atlasSchemaApplyOptions, units []atlasschema.ApplyUnitReport) error {
+	subject, plural := "a native operation", "native operations"
+	for _, unit := range units {
+		if len(unit.Inputs) > 0 {
+			subject, plural = "approved execution inputs", "approved execution inputs"
+			break
+		}
+	}
 	switch {
 	case opts.edit:
-		return fmt.Errorf("%w: a native operation cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature)
+		return fmt.Errorf("%w: %s cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature, subject)
 	case opts.formatOutput:
-		return fmt.Errorf("%w: the Atlas SQL report format cannot represent native operations", ptaherr.ErrUnsupportedFeature)
+		return fmt.Errorf("%w: the Atlas SQL report format cannot represent %s", ptaherr.ErrUnsupportedFeature, plural)
 	case strings.TrimSpace(opts.devURL) != "":
-		return fmt.Errorf("%w: native operations cannot be rehearsed as SQL on --dev-url", ptaherr.ErrUnsupportedFeature)
+		return fmt.Errorf("%w: %s cannot be rehearsed as SQL on --dev-url", ptaherr.ErrUnsupportedFeature, plural)
 	case !opts.skipLint && len(opts.lintPolicy.RuleConfigs) != 0:
-		return fmt.Errorf("%w: the atlas.hcl SQL lint policy cannot judge native operations; review the owner assessments and use --skip-lint", ptaherr.ErrUnsupportedFeature)
+		return fmt.Errorf("%w: the atlas.hcl SQL lint policy cannot judge %s; review the owner assessments and use --skip-lint", ptaherr.ErrUnsupportedFeature, plural)
 	default:
 		return nil
 	}
@@ -108,6 +115,9 @@ func displayAtlasNativeApplyPlan(cmd *cobra.Command, conn *dbschema.DatabaseConn
 func printAtlasSchemaApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport) {
 	fmt.Fprintln(out, "Planned schema changes:")
 	for _, unit := range units {
+		for _, input := range unit.Inputs {
+			fmt.Fprintf(out, "Execution input: %s %s\n", input.Source, input.Name)
+		}
 		if unit.Native == nil {
 			fmt.Fprintln(out, unit.SQL)
 			continue

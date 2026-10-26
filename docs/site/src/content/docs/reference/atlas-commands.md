@@ -1227,6 +1227,12 @@ owner assessments through approval and execution. They are displayed by kind
 and subject; their opaque payloads are not printed. A dry run validates the
 complete batch and writes nothing.
 
+Execution input references are shown before approval and retained with their
+exact units. Values are read from the host environment only at dispatch. A
+missing value refuses the batch before its first statement. SQL editing,
+report templates, and dev-database rehearsal refuse these references because
+those paths cannot preserve the approved input binding.
+
 Native operations cannot enter a SQL editor, an Atlas SQL report template, or
 a SQL rehearsal on `--dev-url`. These options refuse before execution. An
 explicit `atlas.hcl` SQL lint policy also refuses native operations unless
@@ -1425,6 +1431,7 @@ plan document prints to stdout.
 
 The JSON plan preserves provider-native operations alongside SQL, including
 their owner binding, safety assessments, and transaction requirements.
+It also preserves approved execution input names, without their values.
 `schema apply --plan` verifies the source fingerprint and preflights the whole
 captured batch before approval. Save native operations with a `.json` output;
 HCL, SQL editing, and SQL report templates cannot represent them and refuse.

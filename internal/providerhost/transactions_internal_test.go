@@ -23,6 +23,19 @@ import (
 	"ptah.run/engine"
 )
 
+// The discarded transport buffer is private state; a black-box request cannot
+// observe whether its backing bytes were cleared after dispatch.
+func TestExecutionInputCleanupClearsBackingBytes(t *testing.T) {
+	c := qt.New(t)
+	value := []byte("private input")
+	request := &protocol.ExecuteRequest{InputBindings: []*protocol.ExecutionInputBinding{{Value: value}}}
+	clearExecutionInputs(request)
+	c.Assert(request.InputBindings, qt.IsNil)
+	c.Assert(value, qt.DeepEquals, make([]byte, len(value)))
+	clearExecutionInputs(request)
+	c.Assert(request.InputBindings, qt.IsNil)
+}
+
 func TestTransactionsRequireSelectedEngineAndGlobalService(t *testing.T) {
 	for _, row := range []struct {
 		name           string

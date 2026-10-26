@@ -128,7 +128,7 @@ func (t *transaction) ExecuteUnits(ctx context.Context, units []renderer.Fragmen
 	if err != nil {
 		return err
 	}
-	if len(prepared) == 0 {
+	if len(prepared.units) == 0 {
 		return nil
 	}
 	t.executionErr = t.session.dispatchUnits(ctx, t.id, prepared)

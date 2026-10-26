@@ -137,6 +137,9 @@ func (r Result) Validate(nodes int) error {
 		if err := fragment.Validate(); err != nil {
 			return fmt.Errorf("%w: input %d: %w", ErrInvalidResult, i, err)
 		}
+		if len(fragment.Inputs) != 0 && !r.ExecutableUnits {
+			return fmt.Errorf("%w: input references at %d require an exact execution unit", ErrInvalidResult, i)
+		}
 		if fragment.Native != nil && !r.ExecutableUnits {
 			return fmt.Errorf("%w: native input %d is not an execution unit", ErrInvalidResult, i)
 		}

@@ -92,10 +92,14 @@ func RunMigrationPreflight(ctx context.Context, req MigrationPreflightRequest) e
 // migrator hook that receives the migration plan selected under the migration
 // lock.
 func LockedMigrationPreflightHook(dryRun bool, opts preflight.Options, reporter MigrationPreflightReporter, stdout io.Writer) migrator.PreMigrationHook {
-	if !opts.Enabled() {
-		return nil
+	if reporter == nil {
+		reporter = stdoutReporter{}
 	}
 	return func(ctx context.Context, plan migrator.MigrationPlan) error {
+		ReportMigrationInputs(reporter.Printf, plan)
+		if !opts.Enabled() {
+			return nil
+		}
 		opts.CurrentVersion = plan.CurrentVersion
 		opts.TargetVersion = plan.TargetVersion
 		if err := RunMigrationPreflight(ctx, MigrationPreflightRequest{
@@ -106,11 +110,22 @@ func LockedMigrationPreflightHook(dryRun bool, opts preflight.Options, reporter 
 		}); err != nil {
 			return err
 		}
-		if reporter == nil {
-			reporter = stdoutReporter{}
-		}
 		reporter.Println()
 		return nil
+	}
+}
+
+// ReportMigrationInputs prints the names the selected statement bodies require
+// before approval hooks or execution can resolve their values.
+func ReportMigrationInputs(write func(string, ...any), plan migrator.MigrationPlan) {
+	for _, statement := range plan.Inputs {
+		version := statement.VersionKey
+		if version == "" {
+			version = fmt.Sprint(statement.Version)
+		}
+		for _, input := range statement.Inputs {
+			write("Execution input for migration %s statement %d: %s %s\n", version, statement.StatementIndex, input.Source, input.Name)
+		}
 	}
 }
 

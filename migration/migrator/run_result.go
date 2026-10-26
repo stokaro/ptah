@@ -50,6 +50,9 @@ const (
 
 // RunResult is the machine-readable record of one migration run.
 type RunResult struct {
+	// Inputs records the value-free references approved for exact statement
+	// digests before execution. Values are never part of a run document.
+	Inputs []MigrationInput `json:"inputs,omitempty"`
 	// ContractVersion is [RunContractVersion].
 	ContractVersion int `json:"contract_version"`
 	// Direction is the direction the run was asked for.
@@ -142,6 +145,7 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		result.Failure = runFailure(evidence.Err)
 	}
 	if evidence.Plan != nil {
+		result.Inputs = cloneMigrationInputs(evidence.Plan.Inputs)
 		result.Planned = slices.Clone(evidence.Plan.Versions)
 		result.PlannedKeys = slices.Clone(evidence.Plan.VersionKeys)
 	}

@@ -60,6 +60,8 @@ const (
 // back from SQL alone, as the Atlas plan format stores it, has only the text
 // verdict, no owner mark and no access assessment.
 type PlanStatement struct {
+	// Inputs are the value-free references approved with this exact statement.
+	Inputs []renderer.InputReference `json:"inputs,omitempty"`
 	// Transactions preserves the requirements of every owner operation that
 	// rendered this statement. Empty means no owner assessment is recorded.
 	Transactions []plangraph.Transaction `json:"transactions,omitempty"`
@@ -292,6 +294,7 @@ func PreparePlanFileReportingUndecided(
 	}
 	for i := range statements {
 		statements[i].Transactions = slices.Clone(computation.transactions[i])
+		statements[i].Inputs = slices.Clone(computation.units[i].Inputs)
 	}
 	// The data statements carry their own severity rather than the analyzer's.
 	// A DELETE of a reference row removes no table and tightens no constraint,
@@ -556,6 +559,9 @@ func splitPlanStatements(sqlText, dialect string) []string {
 // The runtime's owners judge the statements as they judge a planned one; an
 // error judging them returns no plan.
 func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runtime, sqlText string) (PlanFile, error) {
+	if p.HasInputReferences() {
+		return PlanFile{}, fmt.Errorf("edited SQL with approved execution inputs needs a new provider plan")
+	}
 	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
 	if err != nil {
 		return PlanFile{}, err

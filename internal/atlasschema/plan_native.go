@@ -36,9 +36,18 @@ func (p PlanFile) HasNative() bool {
 	return slices.ContainsFunc(p.Statements, func(statement PlanStatement) bool { return statement.Native != nil })
 }
 
+// HasInputReferences reports whether SQL projection would discard approved
+// execution-input metadata that must reach the selected provider unchanged.
+func (p PlanFile) HasInputReferences() bool {
+	return slices.ContainsFunc(p.Statements, func(statement PlanStatement) bool { return len(statement.Inputs) != 0 })
+}
+
 // errPlanNativeSQL refuses a path that can only run SQL over a plan holding a
 // native operation. Skipping the operation would apply a partial plan.
 func (p PlanFile) requireSQL() error {
+	if p.HasInputReferences() {
+		return fmt.Errorf("%w: plan %q holds approved execution inputs; apply it with the provider's runtime", renderer.ErrInvalidResult, p.Name)
+	}
 	if p.HasNative() {
 		return fmt.Errorf("%w: plan %q holds a provider-native operation; apply it with the provider's runtime",
 			renderer.ErrNativeSQL, p.Name)
@@ -55,6 +64,7 @@ func (p PlanFile) UnitReports() []ApplyUnitReport {
 	units := make([]ApplyUnitReport, len(p.Statements))
 	for i, statement := range p.Statements {
 		units[i].SQL = statement.SQL
+		units[i].Inputs = slices.Clone(statement.Inputs)
 		if statement.Native != nil {
 			units[i].Native = &NativeUnitReport{
 				Kind: statement.Native.Kind, Subject: statement.Native.Subject,
@@ -138,6 +148,12 @@ func classifyPlanUnits(
 // one without an owner verdict, or one whose copies of the operation's kind
 // disagree with the envelope.
 func validatePlanNative(plan PlanFile, statement PlanStatement) error {
+	if err := renderer.ValidateInputReferences(statement.Inputs); err != nil {
+		return err
+	}
+	if len(statement.Inputs) != 0 && plan.Provider == nil {
+		return errors.New("records execution inputs without the provider binding that described them")
+	}
 	native := statement.Native
 	if native == nil {
 		if strings.TrimSpace(statement.SQL) == "" {
@@ -189,7 +205,7 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 	next := 0
 	for i, statement := range p.Statements {
 		if statement.Native == nil {
-			units[i] = renderer.Fragment{SQL: statement.SQL}
+			units[i] = renderer.Fragment{SQL: statement.SQL, Inputs: slices.Clone(statement.Inputs)}
 			continue
 		}
 		payload, ok := decoded[next].(ast.ExtensionPayload)
@@ -197,7 +213,7 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 			return ApplyPlan{}, fmt.Errorf("%w: native operation %d of plan %q decodes to another kind than %q",
 				renderer.ErrInvalidResult, i+1, p.Name, statement.Native.Kind)
 		}
-		units[i] = renderer.Fragment{Native: payload}
+		units[i] = renderer.Fragment{Native: payload, Inputs: slices.Clone(statement.Inputs)}
 		next++
 	}
 	transactions := make([][]plangraph.Transaction, len(p.Statements))

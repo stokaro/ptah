@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ptaherr"
@@ -70,6 +71,9 @@ func cloneApplyUnits(units []renderer.Fragment) ([]renderer.Fragment, []string, 
 func validateApplyUnits(ctx context.Context, executor catalog.SchemaExecutor, units []renderer.Fragment, statements []string) error {
 	if typed, ok := executor.(dbschema.UnitExecutor); ok {
 		return typed.ValidateUnits(ctx, units)
+	}
+	if slices.ContainsFunc(units, func(unit renderer.Fragment) bool { return len(unit.Inputs) != 0 }) {
+		return fmt.Errorf("%w: executor does not support approved execution inputs", ptaherr.ErrUnsupportedFeature)
 	}
 	if statements == nil {
 		return fmt.Errorf("%w: executor does not support native operations", ptaherr.ErrUnsupportedFeature)

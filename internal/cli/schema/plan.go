@@ -317,7 +317,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 // printPlan lists the plan's statements for a person. A plan holding native
 // operations lists them by summary beside its SQL; see [printApplyUnits].
 func printPlan(out io.Writer, plan atlasschema.PlanFile) {
-	if !plan.HasNative() {
+	if !plan.HasNative() && !plan.HasInputReferences() {
 		printSchemaApplyPlan(out, plan.SQL())
 		return
 	}

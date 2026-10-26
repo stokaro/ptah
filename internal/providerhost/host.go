@@ -56,6 +56,9 @@ type target struct {
 // acting on it: an addition the list does not name stays out of every
 // exchange with the provider.
 var hostFeatures = []string{
+	// Rendered units retain approved input references; execution discovers the
+	// same references again and binds values only for the dispatch RPC.
+	provider.SensitiveInputsFeature,
 	// The migrator hands a migration's statement timeout to the provider with
 	// each unit; see session.BoundsStatements.
 	provider.StatementTimeoutFeature,

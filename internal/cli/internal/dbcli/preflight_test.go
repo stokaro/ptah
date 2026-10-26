@@ -3,13 +3,26 @@ package dbcli_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/renderer"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/migration/migrator"
 )
+
+func TestReportMigrationInputsNamesTheApprovedStatement(t *testing.T) {
+	c := qt.New(t)
+	var output strings.Builder
+	dbcli.ReportMigrationInputs(func(format string, args ...any) { fmt.Fprintf(&output, format, args...) }, migrator.MigrationPlan{Inputs: []migrator.MigrationInput{
+		{Version: 42, VersionKey: "20261026_rotation", StatementIndex: 3, Inputs: []renderer.InputReference{{Source: renderer.InputEnvironment, Name: "APP_TOKEN"}}},
+		{Version: 43, StatementIndex: 1, Inputs: []renderer.InputReference{{Source: renderer.InputEnvironment, Name: "DB_PASSWORD"}}},
+	}})
+	c.Assert(output.String(), qt.Equals, "Execution input for migration 20261026_rotation statement 3: environment APP_TOKEN\nExecution input for migration 43 statement 1: environment DB_PASSWORD\n")
+}
 
 func TestCombineMigrationHooks_NoHooks(t *testing.T) {
 	c := qt.New(t)

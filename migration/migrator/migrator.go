@@ -119,6 +119,9 @@ const (
 // MigrationPlan describes the migration work selected while holding the
 // migration lock.
 type MigrationPlan struct {
+	// Inputs binds value-free input names to the exact statements selected
+	// before the plan observer, guard, and approval hook run.
+	Inputs               []MigrationInput
 	Direction            MigrationDirection
 	CurrentVersion       int64
 	CurrentVersionKey    string
@@ -1860,7 +1863,12 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	if err != nil {
 		return err
 	}
+	ctx, inputs, err := m.prepareMigrationInputs(ctx, migrationsToApply, MigrationDirectionUp)
+	if err != nil {
+		return err
+	}
 	plan := MigrationPlan{
+		Inputs:               inputs,
 		Direction:            MigrationDirectionUp,
 		CurrentVersion:       currentVersion,
 		CurrentVersionKey:    currentVersionKey,
@@ -2172,7 +2180,12 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	if err := m.validateDownMigrations(migrationsToRollback); err != nil {
 		return err
 	}
+	ctx, inputs, err := m.prepareMigrationInputs(ctx, migrationsToRollback, MigrationDirectionDown)
+	if err != nil {
+		return err
+	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
+		Inputs:         inputs,
 		Direction:      MigrationDirectionDown,
 		CurrentVersion: currentVersion,
 		TargetVersion:  downTargetVersion(appliedMigrations, targetVersion),
@@ -2285,6 +2298,10 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 		return err
 	}
 	migrationsToApply := selection.apply
+	ctx, _, err = m.prepareMigrationInputs(ctx, migrationsToApply, MigrationDirectionUp)
+	if err != nil {
+		return err
+	}
 	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
 		return err
 	}
@@ -2316,6 +2333,7 @@ func notifyMigrationPlanObserver(ctx context.Context, observer MigrationPlanObse
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	observer(ctx, plan)
 }
 
@@ -2353,6 +2371,7 @@ func runMigrationPlanGuard(ctx context.Context, guard MigrationPlanGuard, plan M
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	return guard(ctx, plan)
 }
 
@@ -2362,6 +2381,7 @@ func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan Migrat
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	return hook(ctx, plan)
 }
 

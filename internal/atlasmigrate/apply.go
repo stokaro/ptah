@@ -121,6 +121,7 @@ type ApplyPlan struct {
 // ApplyResult contains execution metadata needed by CLI output and Atlas
 // template rendering.
 type ApplyResult struct {
+	Inputs           []migrator.MigrationInput
 	Status           *migrator.MigrationStatus
 	FinalStatus      *migrator.MigrationStatus
 	Migrations       []*migrator.Migration
@@ -322,6 +323,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		AssumedAppliedVersions:    p.assumedAppliedVersions,
 		AssumedAppliedVersionKeys: p.assumedAppliedKeys,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
+			result.Inputs = plan.Inputs
 			lockedPlanObserved = true
 			result.SelectedVersions = slices.Clone(plan.Versions)
 			result.SelectedKeys = slices.Clone(plan.VersionKeys)

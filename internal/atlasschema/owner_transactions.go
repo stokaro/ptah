@@ -60,6 +60,9 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 	if sqlText != original && hasOwnerTransactions(p.plan.transactions) {
 		return fmt.Errorf("%w: edited SQL with owner transaction requirements needs a new owner assessment", ptaherr.ErrUnsupportedFeature)
 	}
+	if sqlText != original && p.HasInputReferences() {
+		return fmt.Errorf("%w: edited SQL with approved execution inputs needs a new provider plan", ptaherr.ErrUnsupportedFeature)
+	}
 	return checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn)
 }
 

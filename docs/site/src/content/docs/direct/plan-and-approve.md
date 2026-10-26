@@ -140,6 +140,17 @@ subject, and the provider's own encoding of the operation. The plan binds the
 provider release, and `ptah schema apply --plan` runs the operation only
 through that release of the provider.
 
+A provider can also declare sensitive inputs for a SQL or native operation.
+The statement's `inputs` array records each input's `source` (`environment`)
+and variable `name`. Review these names with the operation: the plan signature
+covers both, and apply refuses a provider that requests different inputs.
+Values are read from the applying process's environment immediately before
+dispatch. They are absent from plans, previews, and provider process
+environments. A missing variable refuses the batch; an explicitly empty
+variable supplies an empty value. A dry run validates references without
+reading values. Editing or projecting such a plan to Atlas HCL is refused
+because it would discard its input approvals.
+
 An `--edit` that leaves the statements as they were, comments and whitespace
 aside, keeps every recorded verdict. After any other edit, a statement whose
 text the plan recorded keeps the strongest verdict recorded for that text, so a

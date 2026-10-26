@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/inputapproval"
 )
 
 type session struct {
@@ -114,26 +115,28 @@ func (s *session) ExecuteSQL(ctx context.Context, sql string, args ...any) error
 	if len(args) != 0 {
 		return unsupported("bound SQL parameters")
 	}
-	if s.IsDryRun() {
-		return nil
-	}
 	return s.execute(ctx, "", sql)
 }
 
 func (s *session) execute(ctx context.Context, transactionID, sql string) error {
-	units, err := s.prepareUnits(ctx, []renderer.Fragment{{SQL: sql}})
+	units, err := s.prepareUnits(ctx, []renderer.Fragment{{SQL: sql, Inputs: inputapproval.References(ctx, s.target.engine.GetId(), sql)}})
 	if err != nil {
 		return err
+	}
+	if s.IsDryRun() {
+		return nil
 	}
 	return s.dispatchUnits(ctx, transactionID, units)
 }
 
 type dryTransaction struct{ session *session }
 
-func (dryTransaction) ExecuteSQL(context.Context, string, ...any) error { return nil }
-func (dryTransaction) IsDryRun() bool                                   { return true }
-func (dryTransaction) Commit() error                                    { return nil }
-func (dryTransaction) Rollback() error                                  { return nil }
+func (t dryTransaction) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
+	return t.session.ExecuteSQL(ctx, sql, args...)
+}
+func (dryTransaction) IsDryRun() bool  { return true }
+func (dryTransaction) Commit() error   { return nil }
+func (dryTransaction) Rollback() error { return nil }
 
 func unsupported(operation string) error {
 	return fmt.Errorf("%w: the experimental provider contract does not support %s", ptaherr.ErrUnsupportedFeature, operation)
