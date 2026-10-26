@@ -332,6 +332,20 @@ func TestProviderRefusesNativeRowWrites(t *testing.T) {
 	c.Assert(diagnostics, qt.Contains, "the fixture provider renders a row write as a native operation, and rows are written as statement text")
 }
 
+// A provider that renders a write as a native operation and lists text units
+// writes it as statement text when the host asks for text, which the host
+// does for every row write, so the plan holds its INSERT.
+func TestProviderRendersRowWritesAsText(t *testing.T) {
+	c := qt.New(t)
+	spec := dataSpec(c)
+	spec.Environment = append(spec.Environment, "FIXTURE_ROW_WRITES=native-text")
+	f := newDataCLI(c, spec)
+	f.declare(c, "- code: NO\n  name: Norway\n")
+	out, diagnostics, code := f.command(c, "schema", "plan", "--root-dir", f.entities, "--output", f.planPath)
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(out, qt.Contains, `INSERT INTO "regions"`)
+}
+
 // The unkeyed read refuses a provider's session, whose owner reads in key
 // order.
 func TestProviderSessionNeedsAKeyedRead(t *testing.T) {

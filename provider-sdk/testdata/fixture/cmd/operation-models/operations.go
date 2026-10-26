@@ -187,7 +187,12 @@ func (p *owner) NormalizeValues(ctx context.Context, r *protocol.NormalizeValues
 	return result, nil
 }
 
+// Render writes each change as one unit. In the text form every unit is one
+// statement the fixture's analyzer reads and its executor runs read back from
+// a file; an operation whose SQL is not such a statement, a rebuild or a
+// rename, refuses the batch.
 func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protocol.RenderResult, error) {
+	text := r.GetForm() == protocol.RenderRequest_TEXT
 	result := &protocol.RenderResult{Complete: true}
 	for _, change := range r.GetChanges() {
 		if err := ctx.Err(); err != nil {
@@ -209,7 +214,13 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 		if err != nil {
 			return nil, err
 		}
-		if p.nativeUnits || p.rebuilds && rebuildOperation(change.GetNative()) {
+		if text {
+			if analysis, err := p.AnalyzeSQL(ctx, &protocol.AnalyzeSQLRequest{Engine: r.GetEngine(), Sources: []string{sql}}); err != nil || len(analysis.GetFiles()[0].GetStatements()) != 1 {
+				return &protocol.RenderResult{Refusal: &protocol.RenderRefusal{ChangeId: change.GetId(), Reason: protocol.RenderRefusal_NO_TEXT_FORM,
+					Message: "the fixture runs a table " + operationAction(change.GetNative()) + " only as a native operation"}}, nil
+			}
+		}
+		if !text && (p.nativeUnits || p.rebuilds && rebuildOperation(change.GetNative())) {
 			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Native{Native: proto.CloneOf(change.GetNative().GetValue().GetValue())}})
 		} else {
 			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: sql}})
@@ -275,8 +286,17 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 // a native unit: its statements are the fixture's own, which only its
 // executor reads.
 func rebuildOperation(native *protocol.NativeOperation) bool {
+	return operationAction(native) == "rebuild"
+}
+
+// operationAction is the action a native table operation performs, or empty
+// when its payload is not one.
+func operationAction(native *protocol.NativeOperation) string {
 	var op operation
-	return json.Unmarshal(native.GetValue().GetValue().GetPayload(), &op) == nil && op.Action == "rebuild"
+	if json.Unmarshal(native.GetValue().GetValue().GetPayload(), &op) != nil {
+		return ""
+	}
+	return op.Action
 }
 
 // renderRebuild writes the new table under a scratch name, copies the kept

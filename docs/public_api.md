@@ -949,6 +949,16 @@ refuses them. Use
 `Runtime.Render` applies the same check. Providers may work in process without
 serialization. `engine/builtin.New` selects the bundled implementations.
 
+`Request.Form` says which units the caller can use. `renderer.FormAny`, the zero
+value, takes SQL text and native operations, as a plan that runs through the
+owner that rendered it does. `renderer.FormText` takes SQL text only, for output
+a later run reads back as text; an owner refuses a change it performs only
+through a native call with an error wrapping `renderer.ErrNativeSQL`, and
+`renderer.Render` refuses a text reply that holds a native fragment the same
+way. The SQL functions of `migration/planner`, `migration/safety`'s rendered
+assessment and the migration file writers render in `FormText`;
+`planner.GenerateSchemaDiffRenderedPlan` renders in `FormAny`.
+
 A completed AST refusal sets `Complete` and returns `Diagnostics`, with no
 fragments or omissions. Each diagnostic may identify its request node with a
 zero-based `Input` index. The guard returns `BatchRefusalError`, preserving the

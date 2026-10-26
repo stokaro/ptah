@@ -25,7 +25,8 @@ const LedgerTable = "fixture_seed_ledger"
 type Provider struct {
 	backend.TransactionalProvider
 	// NativeWrites renders every row write as a native operation rather than
-	// SQL text, for a host test of the refusal that answers it.
+	// SQL text, for a host test of the refusal that answers it. A host that
+	// asks for the text form receives SQL text.
 	NativeWrites bool
 }
 

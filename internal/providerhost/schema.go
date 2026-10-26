@@ -97,7 +97,7 @@ func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaReques
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}
-	rendered, err := t.Render(ctx, renderer.Request{Target: request.Target, Capabilities: request.Capabilities, Nodes: nodes})
+	rendered, err := t.Render(ctx, renderer.Request{Target: request.Target, Capabilities: request.Capabilities, Nodes: nodes, Form: renderer.FormText})
 	if err != nil {
 		return renderer.SchemaResult{}, err
 	}

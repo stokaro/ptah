@@ -176,8 +176,9 @@ func hostRows(rows []*protocol.Row, columns []string) ([]map[string]any, error) 
 type rowWriter struct{ target *target }
 
 // RenderWrites asks the provider to spell each write. The host writes rows as
-// statement text, in plans and in migration files alike, so a write the
-// provider can perform only as a native operation is refused.
+// statement text, in plans and in migration files alike, so it asks for the
+// text form from a provider that negotiated provider.TextUnitsFeature, and a
+// write the provider can perform only as a native operation is refused.
 func (w rowWriter) RenderWrites(ctx context.Context, caps capability.Capabilities, writes []dataext.RowWrite) ([]string, error) {
 	t := w.target
 	if err := t.requireData(provider.RenderRowWritesFeature, "write declared rows"); err != nil {
@@ -190,6 +191,9 @@ func (w rowWriter) RenderWrites(ctx context.Context, caps capability.Capabilitie
 		return nil, nil
 	}
 	request := &protocol.RenderRowWritesRequest{Engine: t.engine.GetId(), Capabilities: capabilityFlags(caps), TargetFeatures: featureSet(t.engine.GetFeatures())}
+	if t.negotiated(provider.TextUnitsFeature) {
+		request.Form = protocol.RenderRequest_TEXT
+	}
 	for i, write := range writes {
 		wire, err := wireWrite(strconv.Itoa(i), write)
 		if err != nil {

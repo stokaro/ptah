@@ -26,6 +26,7 @@ sourceOfTruth:
   - "integration/providercli/provider_inference_e2e_test.go"
   - "integration/providercli/provider_inference_mcp_e2e_test.go"
   - "integration/providercli/provider_planning_policy_e2e_test.go"
+  - "integration/providercli/provider_text_units_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -104,7 +105,8 @@ tables and the saved plan.
 - `data.type-rows` types the declared and the live rows into one canonical form.
 - `data.read-rows` reads the live rows in key order.
 - `data.render-writes` spells every write. A plan and a data migration hold the
-  statements as text, and a write the provider can render only as a native
+  statements as text, so Ptah asks for the text form when the provider lists
+  `render.text-units`, and a write the provider can render only as a native
   operation is refused.
 - `data.seeds` runs each `ptah seed` file and records it in a ledger of its own
   in one step. It reports a key conflict, which `--idempotent` tolerates, and
@@ -624,8 +626,15 @@ platform, decodes the same definitions and applies the plan. Only the
 native JSON plan format holds them: the Atlas `.plan.hcl` format and
 `ptah-compat` refuse such a plan.
 
-Migration files still require a SQL projection. `--edit` and dev-database
-rehearsal refuse native plans.
+A migration file, `migrations plan`, `schema diff`, the compatibility `migrate
+diff` and `schema diff`, and a rendered schema are text, so Ptah asks the
+provider for SQL text units there. A provider that lists `render.text-units`
+writes each change as one statement its executor runs read back from a file,
+and refuses a change it performs only through a native call; Ptah then names
+the operation and writes nothing. A provider without the feature keeps its
+native units, and those commands refuse them. `schema plan`, `schema apply` and
+saved plans keep native operations. `--edit` and dev-database rehearsal refuse
+native plans.
 
 `--dry-run` lists the planned operations, decodes and preflights a saved plan,
 and writes nothing. The protocol does not establish a lock acquisition that

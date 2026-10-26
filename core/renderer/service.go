@@ -17,6 +17,24 @@ import (
 // such a reply is usable, even if some of its SQL could execute independently.
 var ErrInvalidResult = errors.New("invalid rendering result")
 
+// Form is the kind of execution unit a caller of [Render] can use.
+type Form uint8
+
+const (
+	// FormAny takes SQL text and native operations. It is the form of a plan
+	// that runs through the owner that rendered it, such as an apply or a
+	// saved plan.
+	FormAny Form = iota
+	// FormText takes SQL text only, for output a later run reads back as text:
+	// a migration file, a printed diff, a rendered schema. Each fragment is
+	// then a statement the owner's executor accepts read back from a file. An
+	// owner that holds a change it can perform only through a native call
+	// refuses the batch with an error wrapping [ErrNativeSQL] and returns no
+	// fragment. A service whose every fragment is SQL text renders this form
+	// as it renders [FormAny].
+	FormText
+)
+
 // Request describes an offline rendering batch for one target. Capabilities
 // are the caller's resolved server facts or explicit offline profile. Nodes
 // remain in semantic order. A service must not mutate either input.
@@ -27,6 +45,9 @@ type Request struct {
 	Capabilities capability.Capabilities
 	// Nodes is the complete ordered batch to render.
 	Nodes []ast.Node
+	// Form is the kind of units the caller uses. The zero value is
+	// [FormAny].
+	Form Form
 }
 
 // Result contains a complete rendered batch, preserving input-node provenance.
@@ -140,7 +161,8 @@ type Service interface {
 // It isolates the node slice, capability map, and returned report slices. Nodes
 // themselves remain read-only under the Service contract. Nil services, failed
 // or malformed replies, and cancellation return no result. No built-in service
-// is selected when the caller supplies none.
+// is selected when the caller supplies none. In [FormText] a reply that holds a
+// native operation is refused with [ErrNativeSQL].
 func Render(ctx context.Context, service Service, request Request) (Result, error) {
 	if err := schemaext.RequireRuntime(ctx, service); err != nil {
 		return Result{}, err
@@ -160,6 +182,11 @@ func Render(ctx context.Context, service Service, request Request) (Result, erro
 	}
 	if len(result.Diagnostics) != 0 {
 		return Result{}, newBatchRefusal(request.Target, inputs, result.Diagnostics)
+	}
+	if request.Form == FormText {
+		if i := slices.IndexFunc(result.Fragments, func(fragment Fragment) bool { return fragment.Native != nil }); i >= 0 {
+			return Result{}, fmt.Errorf("%w: a text rendering of input %d returned a native operation", ErrNativeSQL, i)
+		}
 	}
 	result.Fragments = slices.Clone(result.Fragments)
 	for i := range result.Fragments {

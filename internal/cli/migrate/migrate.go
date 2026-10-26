@@ -309,7 +309,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	rendered, err := renderer.Render(cmd.Context(), runtime, renderer.Request{Target: info.Dialect, Capabilities: info.Capabilities, Nodes: astNodes})
+	rendered, err := renderer.Render(cmd.Context(), runtime, renderer.Request{Target: info.Dialect, Capabilities: info.Capabilities, Nodes: astNodes, Form: renderer.FormText})
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}

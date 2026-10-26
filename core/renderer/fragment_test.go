@@ -74,3 +74,44 @@ func TestSQLProjectionRefusesIncompleteBatch(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
 	c.Assert(sql, qt.Equals, "")
 }
+
+// TestRenderInTheTextFormRefusesANativeFragment returns no result for a reply
+// that holds a native operation when the caller asked for SQL text, so a text
+// consumer never receives a prefix of a plan it cannot write. The same reply
+// is a valid result in the form that takes native operations.
+func TestRenderInTheTextFormRefusesANativeFragment(t *testing.T) {
+	payload := &nativeFragment{Data: []string{"original"}}
+	returned := renderer.Result{Complete: true, ExecutableUnits: true, Fragments: []renderer.Fragment{{SQL: "SELECT 1;"}, {Native: payload}}}
+	service := renderFunc(func(context.Context, renderer.Request) (renderer.Result, error) { return returned, nil })
+	nodes := []ast.Node{ast.NewRawSQL("first"), &ast.ExtensionStatement{Payload: payload}}
+
+	t.Run("text", func(t *testing.T) {
+		c := qt.New(t)
+		result, err := renderer.Render(c.Context(), service, renderer.Request{Nodes: nodes, Form: renderer.FormText})
+		c.Assert(err, qt.ErrorIs, renderer.ErrNativeSQL)
+		c.Assert(err, qt.ErrorMatches, `.*a text rendering of input 1 returned a native operation`)
+		c.Assert(result, qt.DeepEquals, renderer.Result{})
+	})
+	t.Run("any", func(t *testing.T) {
+		c := qt.New(t)
+		result, err := renderer.Render(c.Context(), service, renderer.Request{Nodes: nodes, Form: renderer.FormAny})
+		c.Assert(err, qt.IsNil)
+		c.Assert(result.Fragments, qt.HasLen, 2)
+	})
+}
+
+// TestRenderPassesTheFormToTheService hands the service the form the caller
+// asked for.
+func TestRenderPassesTheFormToTheService(t *testing.T) {
+	c := qt.New(t)
+	var received renderer.Form
+	service := renderFunc(func(_ context.Context, request renderer.Request) (renderer.Result, error) {
+		received = request.Form
+		return renderer.Result{Complete: true, Fragments: []renderer.Fragment{{SQL: "SELECT 1;"}}}, nil
+	})
+
+	_, err := renderer.Render(c.Context(), service, renderer.Request{Nodes: []ast.Node{ast.NewRawSQL("first")}, Form: renderer.FormText})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(received, qt.Equals, renderer.FormText)
+}
