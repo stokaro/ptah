@@ -226,6 +226,9 @@ func TestPlanningObjectContextPreservesParentNamespaceKnowledge(t *testing.T) {
 	c.Assert(provider.ValidatePlannedFeatures(d, request, result), qt.IsNil)
 	c.Assert(provider.PlanningObjectSubjects(request), qt.HasLen, 1)
 	c.Assert(proto.Equal(request, before), qt.IsTrue)
+	request.CurrentObjects.Coverage.Subjects[0].Knowledge = complete()
+	c.Assert(provider.ValidatePlannedFeatures(d, request, result), qt.IsNil)
+	c.Assert(provider.PlanningObjectSubjects(request), qt.HasLen, 1)
 	request.ChangedSubjects = []*protocol.ComparisonIdentity{proto.CloneOf(parent)}
 	c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorMatches, ".*changed subject is outside the captured native inventory")
 }
