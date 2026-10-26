@@ -66,7 +66,7 @@ func TestColumnBatchRetainsDomainOwnershipAndCapturedParents(t *testing.T) {
 		{Name: "plain", DataType: "Int64", IsNullable: "YES"},
 		{Name: "generated", DataType: "TEXT", IsNullable: "YES", GeneratedKind: "STORED", GeneratedExpression: new("plain")},
 	}}}}
-	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current, catalog.ServerInfo{Dialect: "custom", Capabilities: capability.Capabilities{}}, nil, runtime)
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current, catalog.ServerInfo{Dialect: "custom", Capabilities: capability.Capabilities{}.With(capability.DomainTypes, true)}, nil, runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(service.request.Tables, qt.HasLen, 1)
 	table := service.request.Tables[0]
