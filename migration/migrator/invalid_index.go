@@ -455,7 +455,13 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 	seen := make(map[migratorext.IndexName]struct{})
 	var unsafe []migratorext.IndexState
 	for i, statement := range statements {
-		if ownTransactionResumeAction(i, statement, conn.Info().Dialect, run) == noTransactionPrefixReplay {
+		// A lock changes no name a statement resolves, and outside a
+		// transaction PostgreSQL refuses it: replaying it here would refuse
+		// the migration for a reason that is not the preflight's, before
+		// any revision row exists. The statement meets the server's own
+		// answer when it runs.
+		if ownTransactionResumeAction(i, statement, conn.Info().Dialect, run) == noTransactionPrefixReplay &&
+			!locksTables(statement, conn.Info().Dialect) {
 			if err := executeSQLOn(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)
 			}
@@ -474,6 +480,12 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 		unsafe = append(unsafe, states...)
 	}
 	return unsafe, nil
+}
+
+// locksTables reports a LOCK statement.
+func locksTables(statement, dialect string) bool {
+	tokens := significantSQLTokens(statement, dialect)
+	return len(tokens) > 0 && tokens[0].MatchIdentifierValue("LOCK")
 }
 
 func (m *Migrator) collectPostgresDroppedIndexNames(

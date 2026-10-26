@@ -1167,8 +1167,8 @@ binary does.
 directory the way golang-migrate runs it, which opens no transaction around a
 file. A PostgreSQL file that opens and closes its own transaction runs as
 golang-migrate's default mode runs it, outside any transaction of the
-migrator's, with its revision row written after the file's last statement. A file whose one statement PostgreSQL
-refuses inside a transaction runs without one. The pinned community binary
+migrator's, with its revision row written after the file's last statement. A
+PostgreSQL file of one statement runs without one. The pinned community binary
 v1.3.0 wraps each file in a transaction of its own, so a file with its own
 block nests in it, and its `COMMIT` ends the binary's transaction early.
 

@@ -691,7 +691,9 @@ func discardSQLConnection(session *sql.Conn, label string) error {
 	discardErr := session.Raw(func(any) error {
 		return driver.ErrBadConn
 	})
-	if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) {
+	// A session the server or the driver already closed, such as one whose
+	// backend was terminated, has nothing left to discard.
+	if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) && !errors.Is(discardErr, sql.ErrConnDone) {
 		resultErr = errors.Join(resultErr, fmt.Errorf("discard %s: %w", label, discardErr))
 	}
 	resultErr = errors.Join(resultErr, closeSQLConnection(session, label))
