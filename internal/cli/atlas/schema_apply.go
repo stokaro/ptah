@@ -661,6 +661,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "Schema is synced, no changes to be made", nil
 		}
 
+		if plan.HasNativeUnits() {
+			return applyAtlasNativeSchemaPlan(cmd, opts, conn, plan, txMode)
+		}
+
 		sqlText, statements, err := atlasApplySQL(cmd.Context(), plan, opts, conn.Info().Dialect)
 		if err != nil {
 			return "", err
@@ -847,7 +851,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	plan, planFormat, err := atlasschema.ReadPlanDocument(cmd.Context(), opts.runtime, path)
+	plan, planFormat, err := atlasschema.ReadExecutionPlanDocument(cmd.Context(), opts.runtime, path)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -931,6 +935,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			if err := atlasschema.VerifyPlanTarget(cmd.Context(), conn, plan, opts.runtime); err != nil {
 				return "", err
 			}
+		}
+
+		if plan.HasNative() {
+			return applyAtlasNativePlanFile(cmd, opts, conn, plan, txMode, desired)
 		}
 
 		// Retain the saved boundaries for display, policy validation, rehearsal,

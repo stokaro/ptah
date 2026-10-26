@@ -77,13 +77,20 @@ func DetectPlanFormat(contents []byte) PlanFormat {
 	return PlanFormatHCL
 }
 
-// ReadPlanDocument loads and validates a local plan file in either supported
-// encoding, reporting which format it was. The Atlas-compatible apply path
-// uses it so Atlas-authored `.plan.hcl` files and Ptah's native `.plan.json`
-// files are both readable; the native command tree keeps [ReadPlanFile]. The
-// runtime's owners judge an Atlas-format plan's statements, which carry no
-// dialect; see [decodePlanHCL].
+// ReadPlanDocument loads a SQL-only plan in either supported encoding. Callers
+// that replay SQL use this reader so an opaque operation cannot be omitted.
 func ReadPlanDocument(ctx context.Context, runtime safety.Runtime, path string) (PlanFile, PlanFormat, error) {
+	plan, format, err := ReadExecutionPlanDocument(ctx, runtime, path)
+	if err == nil {
+		err = plan.requireSQL()
+	}
+	return plan, format, err
+}
+
+// ReadExecutionPlanDocument loads a complete plan in either supported encoding.
+// JSON preserves provider operations; HCL carries SQL only. The caller must
+// decode and preflight the captured execution units before dispatch.
+func ReadExecutionPlanDocument(ctx context.Context, runtime safety.Runtime, path string) (PlanFile, PlanFormat, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return PlanFile{}, "", fmt.Errorf("read plan file: %w", err)
@@ -92,11 +99,6 @@ func ReadPlanDocument(ctx context.Context, runtime safety.Runtime, path string) 
 	switch format {
 	case PlanFormatJSON:
 		plan, err := decodePlanJSON(contents, path)
-		if err == nil {
-			// The Atlas-compatible verbs replay SQL, and a native operation has
-			// none: skipping it would run a different plan than the file holds.
-			err = plan.requireSQL()
-		}
 		return plan, format, err
 	default:
 		plan, err := decodePlanHCL(ctx, runtime, contents, path)

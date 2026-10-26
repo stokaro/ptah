@@ -228,6 +228,10 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if plan.HasNative() && opts.edit {
+		return cmdutil.Fail(cmd, fmt.Errorf("a native operation cannot be edited as SQL; edit the desired schema and plan again"))
+	}
+
 	plan, err = plan.WithDirectiveHeader(cmd.Context(), runtime, opts.directives)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -299,7 +303,11 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	}
 
 	if opts.format == "" {
-		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+		if plan.HasNative() {
+			printAtlasSchemaApplyUnits(cmd.OutOrStdout(), plan.UnitReports())
+		} else {
+			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+		}
 	}
 	path := outputPath
 	if path == "" {
@@ -570,6 +578,9 @@ func resolveAtlasSchemaPlanDirectives(cmd *cobra.Command) ([]atlasschema.PlanDir
 // renderAtlasSchemaPlanFormat renders the plan through the operator's
 // --format template.
 func renderAtlasSchemaPlanFormat(format string, plan atlasschema.PlanFile) (string, error) {
+	if plan.HasNative() {
+		return "", fmt.Errorf("the Atlas SQL report format cannot represent native operations")
+	}
 	changes := make([]atlasreport.SchemaPlanChange, 0, len(plan.Statements))
 	for _, statement := range plan.Statements {
 		changes = append(changes, atlasreport.SchemaPlanChange{

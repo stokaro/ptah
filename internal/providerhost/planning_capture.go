@@ -48,6 +48,22 @@ func (c *planningCapture) table(table featureplan.Table) (*protocol.PlanningTabl
 }
 
 func (c *planningCapture) features(representation schemaext.Representation, objects schemaext.Objects, coverage schemaext.Coverage, records []schemaext.FacetRecord) (*protocol.CapturedFeatures, error) {
+	// A common table capture can carry knowledge from every runtime owner.
+	// Route only this provider's model knowledge into its wire context. Keep
+	// unknown models claiming this owner so codec validation still refuses them;
+	// actual payloads remain subject to the same strict ownership checks.
+	var kinds []schemaext.Kind
+	for key := range c.target.host.models {
+		if key.representation == representation {
+			kinds = append(kinds, key.kind)
+		}
+	}
+	for _, record := range coverage.KindRecords() {
+		if record.Model.Owner == c.target.host.description.GetProviderId() {
+			kinds = append(kinds, record.Model.Kind)
+		}
+	}
+	coverage = coverage.SelectKinds(kinds)
 	owned, err := c.objects(representation, schemaext.ObjectState{Objects: objects, Coverage: coverage})
 	if err != nil {
 		return nil, err
