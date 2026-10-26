@@ -37,23 +37,29 @@ func TestLifecycleCommonAccessFollowsReplacement(t *testing.T) {
 				windows.CommonDependencies = []featurehost.CommonDependency{{Before: 0, After: 1}}
 			}
 			graph, err := featurehost.NewGraph("example.org/host", []ast.Node{ast.NewComment("create role"), ast.NewComment("grant"), ast.NewComment("common drop")},
-				[]featureplan.CommonStep{{}, {Effects: grantEffects}, {Effects: drop.Effects}}, windows)
+				[]featureplan.CommonStep{{}, {Effects: grantEffects}, {Effects: []plangraph.Effect{{Subject: table, Action: plangraph.Drop}}}}, windows)
 			c.Assert(err, qt.IsNil)
 			common := func(name string) plangraph.StepID { return plangraph.StepID{Owner: "example.org/host", Name: name} }
 			var ids []string
 			for _, step := range graph.CommonSteps() {
-				if len(step.Effects) > 0 { ids = append(ids, step.ID.Name) }
+				if len(step.Effects) > 0 {
+					ids = append(ids, step.ID.Name)
+				}
 			}
 			c.Assert(ids, qt.DeepEquals, []string{"common/000001", "common/000002"})
 			nodes, err := graph.Schedule(c.Context(), featurehost.Result{
 				Contributions: []plangraph.Contribution[[]ast.Node]{
 					{Owner: drop.ID.Owner, Steps: []plangraph.Step[[]ast.Node]{drop, create}, Dependencies: []plangraph.Dependency{{Before: drop.ID, After: create.ID}}},
-					{Owner: restart.ID.Owner, Steps: []plangraph.Step[[]ast.Node]{restart}, Dependencies: []plangraph.Dependency{{Before: restart.ID, After: common("common/000001")}}},
+					{Owner: restart.ID.Owner, Steps: []plangraph.Step[[]ast.Node]{restart}, Dependencies: []plangraph.Dependency{{Before: restart.ID, After: common("common/000001")}, {Before: common("common/000002"), After: restart.ID}}},
 				},
-				Phases: map[plangraph.StepID]featureplan.Phase{drop.ID: featureplan.PhaseLifecycle, create.ID: featureplan.PhaseLifecycle, restart.ID: featureplan.PhaseLifecycle},
+				Phases:   map[plangraph.StepID]featureplan.Phase{drop.ID: featureplan.PhaseLifecycle, create.ID: featureplan.PhaseLifecycle, restart.ID: featureplan.PhaseLifecycle},
 				Rewrites: []plangraph.Rewrite{{Sources: []plangraph.StepID{common("common/000002")}, Replacement: drop.ID}},
 			})
-			if !movable { c.Assert(err, qt.ErrorIs, plangraph.ErrCycle); c.Assert(nodes, qt.IsNil); return }
+			if !movable {
+				c.Assert(err, qt.ErrorIs, plangraph.ErrCycle)
+				c.Assert(nodes, qt.IsNil)
+				return
+			}
 			c.Assert(err, qt.IsNil)
 			c.Assert(comments(nodes), qt.DeepEquals, []string{"create role", "drop table", "create input", "restart query", "grant"})
 		})
@@ -61,25 +67,33 @@ func TestLifecycleCommonAccessFollowsReplacement(t *testing.T) {
 }
 
 func TestLifecycleCommonRefusesUnknownAndUnorderedFootprints(t *testing.T) {
-	for _, test := range []struct{name string; indexes []int; metadata []featureplan.CommonStep; edges []featurehost.CommonDependency; want error}{
-		{name:"unknown footprint", indexes:[]int{0}, metadata:[]featureplan.CommonStep{{},{}}, want:schemaext.ErrInvalidValue},
-		{name:"outside span", indexes:[]int{2}, want:schemaext.ErrInvalidValue},
-		{name:"duplicate index", indexes:[]int{0,0}, want:schemaext.ErrInvalidValue},
-		{name:"unordered writes", indexes:[]int{0,1}, want:plangraph.ErrConflict},
-		{name:"ordered writes", indexes:[]int{0,1}, edges:[]featurehost.CommonDependency{{Before:0,After:1}}},
-		{name:"invalid dependency", indexes:[]int{0}, edges:[]featurehost.CommonDependency{{Before:0,After:2}},want:schemaext.ErrInvalidValue},
+	for _, test := range []struct {
+		name     string
+		indexes  []int
+		metadata []featureplan.CommonStep
+		edges    []featurehost.CommonDependency
+		want     error
+	}{
+		{name: "unknown footprint", indexes: []int{0}, metadata: []featureplan.CommonStep{{}, {}}, want: schemaext.ErrInvalidValue},
+		{name: "outside span", indexes: []int{2}, want: schemaext.ErrInvalidValue},
+		{name: "duplicate index", indexes: []int{0, 0}, want: schemaext.ErrInvalidValue},
+		{name: "unordered writes", indexes: []int{0, 1}, want: plangraph.ErrConflict},
+		{name: "ordered writes", indexes: []int{0, 1}, edges: []featurehost.CommonDependency{{Before: 0, After: 1}}},
+		{name: "invalid dependency", indexes: []int{0}, edges: []featurehost.CommonDependency{{Before: 0, After: 2}}, want: schemaext.ErrInvalidValue},
 	} {
-		t.Run(test.name,func(t *testing.T){
-			c:=qt.New(t)
-			metadata:=test.metadata
-			if metadata==nil {
-				effects:=[]plangraph.Effect{{Subject:objectidentity.ID{Kind:"object_access",Name:objectidentity.Part{Source:"query",Normalized:"query"}},Action:plangraph.Alter}}
-				metadata=[]featureplan.CommonStep{{Effects:effects},{Effects:effects}}
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			metadata := test.metadata
+			if metadata == nil {
+				effects := []plangraph.Effect{{Subject: objectidentity.ID{Kind: "object_access", Name: objectidentity.Part{Source: "query", Normalized: "query"}}, Action: plangraph.Alter}}
+				metadata = []featureplan.CommonStep{{Effects: effects}, {Effects: effects}}
 			}
-			graph,err:=featurehost.NewGraph("example.org/host",[]ast.Node{ast.NewComment("first"),ast.NewComment("second")},metadata,
-				featurehost.Windows{Lifecycle:&featurehost.Span{Start:0,End:2},LifecycleCommon:test.indexes,CommonDependencies:test.edges})
-			if err==nil { _,err=graph.Schedule(c.Context(),featurehost.Result{}) }
-			c.Assert(err,qt.ErrorIs,test.want)
+			graph, err := featurehost.NewGraph("example.org/host", []ast.Node{ast.NewComment("first"), ast.NewComment("second")}, metadata,
+				featurehost.Windows{Lifecycle: &featurehost.Span{Start: 0, End: 2}, LifecycleCommon: test.indexes, CommonDependencies: test.edges})
+			if err == nil {
+				_, err = graph.Schedule(c.Context(), featurehost.Result{})
+			}
+			c.Assert(err, qt.ErrorIs, test.want)
 		})
 	}
 }

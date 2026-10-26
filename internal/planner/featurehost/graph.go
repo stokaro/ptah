@@ -106,7 +106,7 @@ type Graph struct {
 	prerequisites bool
 	types         bool
 	lifecycle     bool
-	sequenceLast plangraph.StepID
+	sequenceLast  plangraph.StepID
 }
 
 // The windows in the order their positions must keep.
@@ -139,7 +139,9 @@ func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep,
 		return nil, fmt.Errorf("%w: %d metadata records for %d common nodes", schemaext.ErrInvalidValue, len(metadata), len(nodes))
 	}
 	movable, err := lifecycleCommon(windows, metadata, len(nodes))
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil,
 		types: windows.Types != nil, lifecycle: windows.Lifecycle != nil}
 	for i := 0; i <= len(nodes); i++ {
@@ -174,7 +176,7 @@ func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep,
 		}
 		graph.contribution.Dependencies = append(graph.contribution.Dependencies, plangraph.Dependency{
 			Before: plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", edge.Before)},
-			After: plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", edge.After)}})
+			After:  plangraph.StepID{Owner: owner, Name: fmt.Sprintf("common/%06d", edge.After)}})
 	}
 	return graph, nil
 }
@@ -313,6 +315,10 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 				plangraph.Dependency{Before: window[0], After: step.ID}, plangraph.Dependency{Before: step.ID, After: window[1]})
 		}
 	}
+	// Lifecycle inference must see the boundaries a claimed source transfers
+	// to its replacement. Otherwise an added physical-path effect can infer
+	// the reverse of an explicit edge still naming the common source.
+	common.Dependencies = append(common.Dependencies, rewriteBoundaries(common, features)...)
 	lifecycle, err := plangraph.LifecycleDependencies(ctx, append([]plangraph.Contribution[[]ast.Node]{common}, features.Contributions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
