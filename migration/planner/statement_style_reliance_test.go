@@ -443,9 +443,9 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a view removed with a routine that returns its rows, beside a CHECK the plan removes",
 			change: removedViewWithRoutineBesideACheck(setof),
 			want: []string{
-				`DROP VIEW "public"."item_skus" CASCADE`,
-				`ALTER TABLE "public"."owners" DROP CONSTRAINT IF EXISTS "owners_name_check"`,
-				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
+				`ALTER TABLE "public"."owners" DROP CONSTRAINT "owners_name_check"`,
+				`DROP FUNCTION "public"."list_skus"()`,
+				`DROP VIEW "public"."item_skus"`,
 			}},
 		{name: "a view removed with a routine whose body reads it and that a removed table's default calls",
 			change: removedViewWithRoutineADefaultCalls(),

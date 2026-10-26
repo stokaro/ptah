@@ -2015,7 +2015,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	releasedConstraints := released.ConstraintSet()
 	maps.Copy(releasedConstraints, foreignKeysReleased)
 	if p.exact() {
-		result = p.removeConstraints(result, diff, releasedConstraints, true)
+		result = p.removeConstraints(result, diff, releasedConstraints, constraintsBeforeRelations)
 	}
 
 	// 11.9. Remove triggers and view-like objects before the columns, the
@@ -2030,7 +2030,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeTableColumns(result, diff, earlyColumns)
 
 	// 12.5. Remove constraints (must be done before removing tables)
-	result = p.removeConstraints(result, diff, releasedConstraints, false)
+	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
 
 	// Feature operations that drop objects join the plan here: after the views
 	// and materialized views that may read them are dropped, and before the
@@ -2044,7 +2044,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = p.removeSequences(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
-	result = p.removeFunctions(result, diff, ahead, false)
+	result = p.removeFunctions(result, diff, ahead, routinesBeforeTypes)
 
 	// 14. Ordinarily roles leave after routines and before types. If a removed
 	// domain still holds a routine, keep roles until after that routine leaves.
@@ -2061,7 +2061,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// type. A removed domain whose CHECK or DEFAULT calls a removed routine
 	// leaves here, before that routine: PostgreSQL records the dependency.
 	types.Removal = featurehost.Span{Start: len(result), End: len(result)}
-	result = p.removeFunctions(result, diff, ahead, true)
+	result = p.removeFunctions(result, diff, ahead, routinesAfterTypes)
 	if postTypeRoutines {
 		result = p.removeRoles(result, diff)
 	}
@@ -2358,14 +2358,21 @@ func summarizeFunctionChanges(fnDiff difftypes.FunctionDiff) string {
 // written before the richer list existed, and a bare name still drops a routine
 // correctly on every schema that does not overload it.
 
-func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, afterTypes bool) []ast.Node {
+type routineRemovalPhase uint8
+
+const (
+	routinesBeforeTypes routineRemovalPhase = iota
+	routinesAfterTypes
+)
+
+func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, phase routineRemovalPhase) []ast.Node {
 	for _, routine := range diff.FunctionsRemoved {
-		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == afterTypes {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
 			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindFunction))
 		}
 	}
 	for _, routine := range diff.ProceduresRemoved {
-		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == afterTypes {
+		if !ahead.moves(routine) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
 			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindProcedure))
 		}
 	}
@@ -3462,12 +3469,20 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 //
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
+type constraintRemovalPhase uint8
+
+const (
+	constraintsBeforeRelations constraintRemovalPhase = iota
+	constraintsAfterColumns
+)
+
 func (p *Planner) removeConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	released map[constraintHostKey]struct{},
-	earlyChecks bool,
+	phase constraintRemovalPhase,
 ) []ast.Node {
+	earlyChecks := phase == constraintsBeforeRelations
 	// The pure-removal path keys its hosts by the same rule addNewConstraints
 	// does, for the same reason: the two sides of a modify spell one table two
 	// ways, and a verbatim key answers that they are two (stokaro/ptah#1987).
@@ -3565,35 +3580,8 @@ func (p *Planner) removeConstraints(
 		if (p.exact() && strings.EqualFold(strings.TrimSpace(info.Type), "CHECK") && !tableRemoved) != earlyChecks {
 			continue
 		}
-		key := info.Identity
-		if _, modified := modifySet[key]; modified {
-			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
-			continue
-		}
-		if replaced, found := replacedKeys[state.semantics.QualifiedTableIdentityKey(info.TableName)]; found &&
-			replaced.Identity == key {
-			// Dropped ahead of the primary key that replaces it.
-			continue
-		}
-		if _, dropped := droppedTables[state.semantics.QualifiedTableIdentityKey(info.TableName)]; dropped &&
-			strings.EqualFold(info.Type, "PRIMARY KEY") {
-			// The DROP TABLE below removes the key with its table. Dropping the
-			// key first is refused by CockroachDB, which takes a primary key
-			// drop only beside the ADD of its replacement, and on v26 also by
-			// the schema_locked flag its tables carry (stokaro/ptah#4277).
-			continue
-		}
-		if _, dropped := released[key]; dropped {
-			// Dropped ahead of the column changes, to free the name a
-			// column's own UNIQUE takes; a second drop would remove that key.
-			continue
-		}
-		if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {
-			// Hostless re-add: addNewConstraints already dropped every
-			// recorded removal host for this name before the re-add
-			// (emitModifyDropForName with unknown addedHosts). A second drop
-			// here would follow the re-add and delete the fresh constraint
-			// (issue #229).
+		if skipConstraintRemoval(info, state.semantics, replacedKeys, droppedTables,
+			modifySet, released, addedBareNamesHosted, addedHostCounts) {
 			continue
 		}
 		result = p.appendScopedDrop(result, info.TableName, info.Name, info.Identity, state)
@@ -3623,6 +3611,40 @@ func (p *Planner) removeConstraints(
 		result = append(result, p.dropConstraintNode(constraintName))
 	}
 	return result
+}
+
+// skipConstraintRemoval leaves drops owned by another planning phase to that
+// phase. A second drop can remove a freshly restored constraint.
+func skipConstraintRemoval(
+	info difftypes.ConstraintRemovalInfo,
+	semantics identifier.Semantics,
+	replacedKeys map[string]difftypes.ConstraintRemovalInfo,
+	droppedTables map[string]struct{},
+	modifySet, released map[constraintHostKey]struct{},
+	addedBareNamesHosted map[string]struct{},
+	addedHostCounts map[string]int,
+) bool {
+	key := info.Identity
+	if _, modified := modifySet[key]; modified {
+		return true
+	}
+	if replaced, found := replacedKeys[semantics.QualifiedTableIdentityKey(info.TableName)]; found && replaced.Identity == key {
+		return true
+	}
+	if _, dropped := droppedTables[semantics.QualifiedTableIdentityKey(info.TableName)]; dropped && strings.EqualFold(info.Type, "PRIMARY KEY") {
+		// PostgreSQL removes the key with its table. CockroachDB refuses an
+		// isolated primary key drop (stokaro/ptah#4277).
+		return true
+	}
+	if _, dropped := released[key]; dropped {
+		return true
+	}
+	if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {
+		// addNewConstraints already dropped every recorded host before the
+		// hostless re-add; repeating it would delete the new constraint.
+		return true
+	}
+	return false
 }
 
 // dropConstraintNode builds a self-contained DROP CONSTRAINT statement for a

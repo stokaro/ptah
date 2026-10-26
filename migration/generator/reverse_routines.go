@@ -189,49 +189,56 @@ func routineGrantsFromRemovals(removals difftypes.FunctionChanges, current *cata
 		if !ok {
 			continue
 		}
-		objectType := "FUNCTION"
-		if function.Kind == schemamodel.FunctionKindProcedure {
-			objectType = "PROCEDURE"
+		functionGranted, functionRevoked := routineGrantsForRestoredFunction(function, current.Grants)
+		granted = append(granted, functionGranted...)
+		revoked = append(revoked, functionRevoked...)
+	}
+	return granted, revoked
+}
+
+func routineGrantsForRestoredFunction(function catalog.Function, observed []catalog.Grant) (granted, revoked []difftypes.GrantRef) {
+	objectType := "FUNCTION"
+	if function.Kind == schemamodel.FunctionKindProcedure {
+		objectType = "PROCEDURE"
+	}
+	arguments := function.Signature()
+	// A routine privilege names no column, so the column is the read's,
+	// which is empty.
+	target := func(role, privilege, column string, withOption bool) difftypes.GrantRef {
+		return difftypes.GrantRef{Role: role, Privilege: privilege, ObjectType: objectType,
+			ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, WithOption: withOption}
+	}
+	publicExecutes := false
+	grantsObserved := false
+	for _, grant := range observed {
+		if !grantOnRoutine(grant, function, objectType) {
+			continue
 		}
-		arguments := function.Signature()
-		// A routine privilege names no column, so the column is the read's,
-		// which is empty.
-		target := func(role, privilege, column string, withOption bool) difftypes.GrantRef {
-			return difftypes.GrantRef{Role: role, Privilege: privilege, ObjectType: objectType,
-				ObjectName: function.QualifiedName(), Arguments: arguments, Column: column, WithOption: withOption}
-		}
-		publicExecutes := false
-		grantsObserved := false
-		for _, grant := range current.Grants {
-			if !grantOnRoutine(grant, function, objectType) {
+		grantsObserved = true
+		role := strings.TrimSpace(grant.Role)
+		privilege := strings.ToUpper(strings.TrimSpace(grant.Privilege))
+		if strings.EqualFold(role, "PUBLIC") && privilege == "EXECUTE" {
+			publicExecutes = true
+			if grant.Implicit || !grant.WithOption {
 				continue
 			}
-			grantsObserved = true
-			role := strings.TrimSpace(grant.Role)
-			privilege := strings.ToUpper(strings.TrimSpace(grant.Privilege))
-			if strings.EqualFold(role, "PUBLIC") && privilege == "EXECUTE" {
-				publicExecutes = true
-				if grant.Implicit || !grant.WithOption {
-					continue
-				}
-			}
-			if grant.Implicit && !strings.EqualFold(role, "PUBLIC") {
-				// The old owner is implicit in the old catalog, but the new
-				// routine belongs to the migrator. A blank privilege records
-				// that the ACL was read and the owner revoked EXECUTE.
-				if privilege != "" {
-					granted = append(granted, target(role, privilege, "", false))
-				}
-				continue
-			}
-			if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
-				continue
-			}
-			granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), grant.WithOption))
 		}
-		if grantsObserved && !publicExecutes {
-			revoked = append(revoked, target("PUBLIC", "EXECUTE", "", false))
+		if grant.Implicit && !strings.EqualFold(role, "PUBLIC") {
+			// The old owner is implicit in the old catalog, but the new
+			// routine belongs to the migrator. A blank privilege records
+			// that the ACL was read and the owner revoked EXECUTE.
+			if privilege != "" {
+				granted = append(granted, target(role, privilege, "", false))
+			}
+			continue
 		}
+		if grant.Implicit || strings.EqualFold(role, strings.TrimSpace(grant.GrantedBy)) {
+			continue
+		}
+		granted = append(granted, target(role, privilege, strings.TrimSpace(grant.Column), grant.WithOption))
+	}
+	if grantsObserved && !publicExecutes {
+		revoked = append(revoked, target("PUBLIC", "EXECUTE", "", false))
 	}
 	return granted, revoked
 }
