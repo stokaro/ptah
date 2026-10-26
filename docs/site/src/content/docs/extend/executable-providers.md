@@ -97,6 +97,11 @@ gets one profile for observed, desired and planned values. A provider that
 leaves them empty refuses every comparison between an inspected facet and a
 declared one with "comparison requires one captured target profile".
 
+An inspected catalog retains the opened session's database binding, including
+a selected dev realm, even when the selected scope is empty. Comparison and
+planning receive that binding so they can resolve absolute object references.
+A saved schema description does not carry it to another target.
+
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
