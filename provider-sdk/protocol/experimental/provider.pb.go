@@ -4134,7 +4134,7 @@ type Engine struct {
 	ScopeSelections []*ScopeSelection `protobuf:"bytes,18,rep,name=scope_selections,json=scopeSelections,proto3" json:"scope_selections,omitempty"`
 	// Offline authored creation services, under schema.declarations (25.5).
 	Declarations []*ModelDeclarations `protobuf:"bytes,19,rep,name=declarations,proto3" json:"declarations,omitempty"`
-	// Claimed ptah:not-described kinds in Go source, under source.go-limits.
+	// Claimed ptah:not-described kinds in Go source, under source.limits.
 	GoHeaderKinds []string `protobuf:"bytes,20,rep,name=go_header_kinds,json=goHeaderKinds,proto3" json:"go_header_kinds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -9958,7 +9958,7 @@ type SourceDocument struct {
 	Models []*ValueModel `protobuf:"bytes,7,rep,name=models,proto3" json:"models,omitempty"`
 	// The document's ptah:not-described entries in written order. HCL uses
 	// hcl_source.header_kinds under source.hcl (25.3); Go uses go_header_kinds
-	// under source.go-limits (25.5).
+	// under source.limits (25.5).
 	Limits        []*SchemaCoverageLimit `protobuf:"bytes,8,rep,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -10913,9 +10913,11 @@ func (x *DecodedSource) GetDocuments() []*DecodedSourceDocument {
 }
 
 type DecodedSourceDocument struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Coverage *ModelCoverage         `protobuf:"bytes,2,opt,name=coverage,proto3" json:"coverage,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Exact enrolled model inventory. Knowledge may be narrowed by the owner
+	// only with negotiated source.limits and claimed headers in the document.
+	Coverage *ModelCoverage `protobuf:"bytes,2,opt,name=coverage,proto3" json:"coverage,omitempty"`
 	// Exactly one result per fragment, in input order. An empty value list is an
 	// explicit owner statement that the fully interpreted fragment adds none.
 	Fragments     []*DecodedSourceFragment `protobuf:"bytes,3,rep,name=fragments,proto3" json:"fragments,omitempty"`
