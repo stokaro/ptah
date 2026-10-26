@@ -570,22 +570,26 @@ func FunctionsForCreateWithOrdering(
 // ViewLikesForCreate returns views and materialized views in dependency order
 // when their bodies reference other added view-like objects.
 func ViewLikesForCreate(objects []ViewLike) []ViewLike {
-	return viewLikesForCreate(objects, "")
+	return viewLikesForCreate(objects, "", orderScope{})
 }
 
 // ViewLikesForCreateForDialect returns view-like objects in dependency order
 // using the target dialect's identifier quoting rules. Qualified declarations
 // are matched by their canonical qualified spelling, while an unqualified body
 // reference resolves only when exactly one declaration has that bare name.
+//
+// An unqualified name is put in the dialect's default schema, which is the
+// right one only when the session's is the same; a planner that knows the
+// session asks [ViewLikesForCreateIn].
 func ViewLikesForCreateForDialect(objects []ViewLike, dialect string) []ViewLike {
-	return viewLikesForCreate(objects, dialect)
+	return viewLikesForCreate(objects, dialect, offlineScope(dialect))
 }
 
-func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
+func viewLikesForCreate(objects []ViewLike, dialect string, scope orderScope) []ViewLike {
 	if len(objects) < 2 {
 		return append([]ViewLike(nil), objects...)
 	}
-	graph := newViewLikeGraph(objects, dialect)
+	graph := newViewLikeGraph(objects, dialect, scope)
 	return graph.ordered(StableTopologicalSort(graph.ids, graph.reads))
 }
 
@@ -598,10 +602,14 @@ func viewLikesForCreate(objects []ViewLike, dialect string) []ViewLike {
 // A dependency cycle cannot be dropped one object at a time; the objects on
 // it keep their arrival order, as they do in the creation order.
 func ViewLikesForDropForDialect(objects []ViewLike, dialect string) []ViewLike {
+	return viewLikesForDrop(objects, dialect, offlineScope(dialect))
+}
+
+func viewLikesForDrop(objects []ViewLike, dialect string, scope orderScope) []ViewLike {
 	if len(objects) < 2 {
 		return append([]ViewLike(nil), objects...)
 	}
-	graph := newViewLikeGraph(objects, dialect)
+	graph := newViewLikeGraph(objects, dialect, scope)
 	readers := make(map[string][]string, len(graph.reads))
 	for _, reader := range graph.ids {
 		for _, read := range graph.reads[reader] {
@@ -619,7 +627,7 @@ type viewLikeGraph struct {
 	reads map[string][]string
 }
 
-func newViewLikeGraph(objects []ViewLike, dialect string) viewLikeGraph {
+func newViewLikeGraph(objects []ViewLike, dialect string, scope orderScope) viewLikeGraph {
 	graph := viewLikeGraph{
 		ids:   make([]string, 0, len(objects)),
 		byID:  make(map[string]ViewLike, len(objects)),
@@ -637,7 +645,7 @@ func newViewLikeGraph(objects []ViewLike, dialect string) viewLikeGraph {
 		id := viewLikeID(object, i)
 		for candidateName, candidateIDs := range idsByName {
 			if candidateName == object.Name ||
-				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, bareNameCounts) {
+				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, scope, bareNameCounts) {
 				continue
 			}
 			graph.reads[id] = append(graph.reads[id], candidateIDs...)
@@ -709,16 +717,17 @@ func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {
 // reads the object called name.
 //
 // It reads names part by part, as [ReferencesRelation] does, so
-// `analytics."zbase"` reads analytics.zbase, and it puts an unqualified name in
-// the dialect's default schema, so `public.zbase` reads a zbase declared
-// without one. Unlike [ReferencesRelation] it never guesses a schema it does
-// not know: an edge decides which object is created first, and an edge to an
-// object of another schema that has the same name reorders the creation or
-// closes a cycle, while a missing one leaves the arrival order. An unqualified
-// reference to a qualified object counts only where no other object of the
-// set has that bare name. The dialect's quoted spellings are asked too, which
-// is what reads a SQL Server name in brackets.
-func referencesViewLikeIdentifier(body, name, dialect string, bareNameCounts map[string]int) bool {
+// `analytics."zbase"` reads analytics.zbase, and it puts unqualified names
+// where scope says, so with public the default `public.zbase` reads a zbase
+// declared without a schema. Unlike [ReferencesRelation] it never guesses a
+// schema it does not know: an edge decides which object is created first, and
+// an edge to an object of another schema that has the same name reorders the
+// creation or closes a cycle, while a missing one leaves the arrival order.
+// An unqualified reference to a qualified object counts where scope's path
+// reaches the object's schema, or where no other object of the set has that
+// bare name. The dialect's quoted spellings are asked too, which is what reads
+// a SQL Server name in brackets.
+func referencesViewLikeIdentifier(body, name, dialect string, scope orderScope, bareNameCounts map[string]int) bool {
 	if dialect == "" {
 		return ReferencesIdentifier(body, name)
 	}
@@ -741,11 +750,7 @@ func referencesViewLikeIdentifier(body, name, dialect string, bareNameCounts map
 	}, dialect) {
 		return true
 	}
-	defaultSchema := identifier.ForDialect(dialect).DefaultSchema
-	inDefault := func(schema string) bool {
-		return defaultSchema != "" && strings.EqualFold(schema, defaultSchema)
-	}
-	if namesRead(codeNames(body, dialect), ref, inDefault) {
+	if namesRead(codeNames(body, dialect), ref, scope.resolution()) {
 		return true
 	}
 

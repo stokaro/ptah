@@ -328,29 +328,99 @@ func (s Selection) Resolve(ctx context.Context, q RowQuerier) (string, error) {
 // The NULL is refused with the same wording the session answer uses, because
 // the operator's mistake is the same one.
 func (s Selection) ResolveCarried(ctx context.Context, db TxBeginner) (string, error) {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
-	}
-	// Always rolled back: the transaction exists to scope a setting, never to
-	// change anything.
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.ExecContext(
-		ctx,
-		"SELECT set_config($1, $2, true)",
-		searchPathParam, s.Raw,
-	); err != nil {
-		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
-	}
 	var current sql.NullString
-	if err := tx.QueryRowContext(ctx, "SELECT current_schema()").Scan(&current); err != nil {
+	err := s.carried(ctx, db, func(tx *sql.Tx) error {
+		return tx.QueryRowContext(ctx, "SELECT current_schema()").Scan(&current)
+	})
+	if err != nil {
 		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
 	}
 	if !current.Valid || current.String == "" {
 		return "", fmt.Errorf("database URL selects schema %q, which does not exist in this database", s.Raw)
 	}
 	return current.String, nil
+}
+
+// searchPathQuery reads the schemas a name written without one resolves in,
+// in the order the server searches them. current_schemas(false) names only
+// schemas that exist, with a `$user` entry resolved to the role's schema where
+// there is one, and leaves out pg_catalog and the session's temporary schema,
+// which the server searches implicitly and which hold no declared relation.
+const searchPathQuery = "SELECT s FROM unnest(current_schemas(false)) WITH ORDINALITY AS path(s, n) ORDER BY n"
+
+// RowsQuerier is the part of *sql.DB and *sql.Tx [Selection.ResolveSearchPath]
+// needs.
+type RowsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// ResolveSearchPath asks the server which schemas a name written without one
+// resolves in for this session, in the order it searches them: for
+// `search_path=reporting,public`, both, while [Selection.Resolve] answers
+// reporting alone.
+//
+// Both answers are needed. An object created without a schema goes to the
+// first one, but PostgreSQL resolves `order_totals` to the first schema of
+// the path that has it, and prints back without a schema every relation the
+// path reaches, so a policy reading public.order_totals is read back as
+// `order_totals` under that path.
+func (s Selection) ResolveSearchPath(ctx context.Context, q RowsQuerier) ([]string, error) {
+	path, err := readSearchPath(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve PostgreSQL search path: %w", err)
+	}
+	return path, nil
+}
+
+// ResolveCarriedSearchPath is [Selection.ResolveSearchPath] for a connection
+// that could not send the selection, resolved the way
+// [Selection.ResolveCarried] resolves the schema.
+func (s Selection) ResolveCarriedSearchPath(ctx context.Context, db TxBeginner) ([]string, error) {
+	var path []string
+	err := s.carried(ctx, db, func(tx *sql.Tx) error {
+		var err error
+		path, err = readSearchPath(ctx, tx)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve PostgreSQL search path: %w", err)
+	}
+	return path, nil
+}
+
+// carried runs read in a transaction whose search_path is the URL's
+// selection, set with is_local and always rolled back; see
+// [Selection.ResolveCarried] for why.
+func (s Selection) carried(ctx context.Context, db TxBeginner, read func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	// Always rolled back: the transaction exists to scope a setting, never to
+	// change anything.
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "SELECT set_config($1, $2, true)", searchPathParam, s.Raw); err != nil {
+		return err
+	}
+	return read(tx)
+}
+
+func readSearchPath(ctx context.Context, q RowsQuerier) ([]string, error) {
+	rows, err := q.QueryContext(ctx, searchPathQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var path []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, err
+		}
+		path = append(path, schema)
+	}
+	return path, rows.Err()
 }
 
 // TxBeginner is the part of *sql.DB [Selection.ResolveCarried] needs: a

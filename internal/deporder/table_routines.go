@@ -144,7 +144,7 @@ func tableRoutineGraph(
 	}
 	for i, table := range tables {
 		for _, name := range routineNames {
-			if called[name] && namesObject(table.Expressions, name, dialect) {
+			if called[name] && namesObject(table.Expressions, name, dialect, offlineScope(dialect)) {
 				edges[tableNodeID(i)] = append(edges[tableNodeID(i)], routineNodeID(name))
 			}
 		}
@@ -160,7 +160,7 @@ func namedTables(tables []TableCreation, overloads []schemamodel.Function, diale
 			continue
 		}
 		for _, routine := range overloads {
-			if namesObject(RoutineOrderingBody(routine, resolves), table.Name, dialect) {
+			if namesObject(RoutineOrderingBody(routine, resolves), table.Name, dialect, offlineScope(dialect)) {
 				named = append(named, tableNodeID(i))
 				break
 			}
@@ -189,7 +189,7 @@ func calledRoutines(
 	var pending []string
 	for _, table := range tables {
 		for _, name := range routineNames {
-			if !called[name] && namesObject(table.Expressions, name, dialect) {
+			if !called[name] && namesObject(table.Expressions, name, dialect, offlineScope(dialect)) {
 				called[name] = true
 				pending = append(pending, name)
 			}

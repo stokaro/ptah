@@ -600,13 +600,16 @@ func TestWireDialectDetectionAgreesWithTheCapabilityResolver(t *testing.T) {
 
 // bannerDB is a server that answers the questions a PostgreSQL-wire or
 // MySQL-wire connection asks when it is described: the version banner, the
-// session's schema and CockroachDB's integer width.
+// session's schema and search path, and CockroachDB's integer width.
 func bannerDB(c *qt.C, version string) *dbtest.DB {
 	answers := map[string]dbtest.QueryResult{
 		"SELECT version()":        {Columns: []string{"version"}, Rows: [][]driver.Value{{version}}},
 		"SELECT VERSION()":        {Columns: []string{"VERSION()"}, Rows: [][]driver.Value{{version}}},
 		"SELECT current_schema()": {Columns: []string{"current_schema"}, Rows: [][]driver.Value{{"public"}}},
-		"SHOW default_int_size":   {Columns: []string{"default_int_size"}, Rows: [][]driver.Value{{"8"}}},
+		"SELECT s FROM unnest(current_schemas(false)) WITH ORDINALITY AS path(s, n) ORDER BY n": {
+			Columns: []string{"s"}, Rows: [][]driver.Value{{"public"}},
+		},
+		"SHOW default_int_size": {Columns: []string{"default_int_size"}, Rows: [][]driver.Value{{"8"}}},
 	}
 	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		answer, known := answers[query]

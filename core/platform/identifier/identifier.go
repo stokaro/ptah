@@ -97,8 +97,18 @@ const (
 // Semantics contains the identifier rules needed by schema comparison and
 // migration planning. CatalogCollation is diagnostic metadata; the comparison
 // fields are the authoritative rules.
+//
+// DefaultSchema is the schema an object named without one is created in.
+// SearchPath is every schema a name written without one may resolve in, in
+// the order the server searches them, the default schema first; on
+// PostgreSQL it is the session's current_schemas(false). It is empty where it
+// is not known, and a caller must then take an unqualified name to be in any
+// schema rather than in the default one: PostgreSQL resolves `orders` to the
+// first schema of the path that has it, and prints back without a schema
+// every relation the path reaches.
 type Semantics struct {
 	DefaultSchema    string         `json:"default_schema,omitempty"`
+	SearchPath       []string       `json:"search_path,omitempty"`
 	IndexNamespace   IndexNamespace `json:"index_namespace,omitempty"`
 	IndexNames       Comparison     `json:"index_names,omitempty"`
 	TableNames       Comparison     `json:"table_names,omitempty"`
@@ -252,6 +262,7 @@ func (s Semantics) WithResolvedNames(names []ResolvedName) Semantics {
 
 // Clone returns a deep copy.
 func (s Semantics) Clone() Semantics {
+	s.SearchPath = slices.Clone(s.SearchPath)
 	s.ResolvedNames = slices.Clone(s.ResolvedNames)
 	return s
 }
@@ -259,6 +270,7 @@ func (s Semantics) Clone() Semantics {
 // IsZero reports whether no identifier rules are present.
 func (s Semantics) IsZero() bool {
 	return s.DefaultSchema == "" &&
+		len(s.SearchPath) == 0 &&
 		s.IndexNamespace == "" &&
 		s.IndexNames == "" &&
 		s.TableNames == "" &&
@@ -272,6 +284,7 @@ func (s Semantics) IsZero() bool {
 // participate in equality.
 func (s Semantics) Equal(other Semantics) bool {
 	return s.DefaultSchema == other.DefaultSchema &&
+		slices.Equal(s.SearchPath, other.SearchPath) &&
 		s.IndexNamespace == other.IndexNamespace &&
 		s.IndexNames == other.IndexNames &&
 		s.TableNames == other.TableNames &&
