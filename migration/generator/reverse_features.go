@@ -43,6 +43,11 @@ func reverseFeatureChanges(ctx context.Context, forward, reverse *difftypes.Sche
 			return nil, fmt.Errorf("%w: reversal changed a captured subject", schemaext.ErrInvalidValue)
 		}
 	}
+	objectContext, err := reverseObjectContext(ctx, forward.Features, recovery[:len(forward.FeatureChanges)], dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
+	reverse.Features = objectContext
 	offset := len(forward.FeatureChanges)
 	reverse.FeatureChanges = reversedRecords(recovery[:offset])
 	semantics := forward.EffectiveIdentifierSemantics(dialect)

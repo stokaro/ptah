@@ -13,6 +13,7 @@ import (
 func Features(desired *schemamodel.Database, database *catalog.Database, diff *difftypes.SchemaDiff) {
 	diff.Features = difftypes.FeatureContext{
 		DesiredObjects:  desired.FeatureObjects,
+		DesiredCoverage: desired.FeatureCoverage,
 		CurrentObjects:  database.FeatureObjects,
 		CurrentCoverage: database.FeatureCoverage,
 	}

@@ -243,17 +243,24 @@ func (r *Runtime) prepareFeatureComparisons(ctx context.Context, request schemae
 // because each owner receives only the objects of its own kinds and no facets.
 func requiredBy(desired schemaext.FeatureState) ([]objectidentity.ID, error) {
 	var required []objectidentity.ID
-	add := func(value schemaext.Value) {
+	add := func(value schemaext.Value) error {
 		if requirer, ok := value.(schemaext.Requirer); ok {
-			required = append(required, requirer.Requires()...)
+			dependencies, err := requirer.Requires()
+			if err != nil {
+				return err
+			}
+			required = append(required, dependencies...)
 		}
+		return nil
 	}
 	objects, err := desired.Objects.All()
 	if err != nil {
 		return nil, err
 	}
 	for _, object := range objects {
-		add(object.Value)
+		if err := add(object.Value); err != nil {
+			return nil, err
+		}
 	}
 	for _, record := range desired.Facets {
 		values, err := record.Values.Values()
@@ -261,7 +268,9 @@ func requiredBy(desired schemaext.FeatureState) ([]objectidentity.ID, error) {
 			return nil, err
 		}
 		for _, value := range values {
-			add(value)
+			if err := add(value); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return required, nil

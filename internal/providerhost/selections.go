@@ -234,7 +234,11 @@ func (r requiredObjects) SelectObjects(_ context.Context, request selectext.Requ
 		if !ok {
 			return selectext.Result{}, fmt.Errorf("%w: %s holds %T, which is not the provider's model", schemaext.ErrInvalidValue, object.Ref, object.Value)
 		}
-		for _, required := range requirer.Requires() {
+		requiredObjects, err := requirer.Requires()
+		if err != nil {
+			return selectext.Result{}, err
+		}
+		for _, required := range requiredObjects {
 			if slices.Contains(keeps, string(required.Kind)) {
 				if !required.Database.Empty() {
 					value, ok := object.Value.(*resolvedModel)

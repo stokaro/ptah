@@ -26,22 +26,26 @@ type conversionValue struct {
 	Number int
 	// Needs lists, space-separated, the extensions the value requires; see
 	// [conversionValue.Requires].
-	Needs string
+	Needs      string
+	NeedsError bool
 }
 
 func (v *conversionValue) Kind() schemaext.Kind { return v.ID }
 func (v *conversionValue) Clone() schemaext.Value {
-	return &conversionValue{ID: v.ID, Number: v.Number, Needs: v.Needs}
+	return &conversionValue{ID: v.ID, Number: v.Number, Needs: v.Needs, NeedsError: v.NeedsError}
 }
 
 // Requires names the extensions Needs lists under the common extension kind,
 // and nothing for a value that lists none.
-func (v *conversionValue) Requires() []objectidentity.ID {
+func (v *conversionValue) Requires() ([]objectidentity.ID, error) {
+	if v.NeedsError {
+		return nil, schemaext.ErrInvalidValue
+	}
 	var required []objectidentity.ID
 	for name := range strings.FieldsSeq(v.Needs) {
 		required = append(required, requiredExtension(name))
 	}
-	return required
+	return required, nil
 }
 
 // requiredExtension is the identity a requirement of the extension name

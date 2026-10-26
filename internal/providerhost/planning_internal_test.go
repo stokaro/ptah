@@ -217,12 +217,13 @@ func TestPlanningOwnershipChangesFrozenContracts(t *testing.T) {
 		{"service", func(d *protocol.ModelPlanning) { d.Id = "other" }},
 		{"changes", func(d *protocol.ModelPlanning) { d.ChangeKinds[0] = "other" }},
 		{"parents", func(d *protocol.ModelPlanning) { d.ParentKinds[0] = "other" }},
+		{"objects", func(d *protocol.ModelPlanning) { d.ContextKinds[0] = "other" }},
 		{"operations", func(d *protocol.ModelPlanning) { d.OperationKinds[0] = "other" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := yamlIdentityTarget()
-			target.engine.Planning = []*protocol.ModelPlanning{{Id: "plan", ChangeKinds: []string{"change"}, ParentKinds: []string{"parent"}, OperationKinds: []string{"operation"}}}
+			target.engine.Planning = []*protocol.ModelPlanning{{Id: "plan", ChangeKinds: []string{"change"}, ParentKinds: []string{"parent"}, ContextKinds: []string{"object"}, OperationKinds: []string{"operation"}}}
 			contract := &modelContract{engines: map[string]*protocol.ValueModel{"fixture": target.engine.ValueModels[0]}}
 			before, err := target.identity(nil)
 			c.Assert(err, qt.IsNil)
@@ -241,10 +242,11 @@ func TestPlanningOwnershipChangesFrozenContracts(t *testing.T) {
 
 func TestPlanningContractIgnoresDeclarationOrder(t *testing.T) {
 	c := qt.New(t)
-	first := &protocol.ModelPlanning{Id: "a", ChangeKinds: []string{"b", "a"}, ParentKinds: []string{"d", "c"}, OperationKinds: []string{"f", "e"}}
+	first := &protocol.ModelPlanning{Id: "a", ChangeKinds: []string{"b", "a"}, ParentKinds: []string{"d", "c"}, ContextKinds: []string{"i", "h"}, OperationKinds: []string{"f", "e"}}
 	second := &protocol.ModelPlanning{Id: "b"}
 	before := planningContracts([]*protocol.ModelPlanning{first, second})
 	reordered := proto.CloneOf(first)
+	reordered.ContextKinds = []string{"h", "i"}
 	reordered.ChangeKinds, reordered.ParentKinds, reordered.OperationKinds = []string{"a", "b"}, []string{"c", "d"}, []string{"e", "f"}
 	c.Assert(planningContracts([]*protocol.ModelPlanning{second, reordered}), qt.DeepEquals, before)
 }

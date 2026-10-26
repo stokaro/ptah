@@ -121,3 +121,29 @@ func TestFeatureComparisonRejectsAmbiguousModelRole(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
 	c.Assert(runtime, qt.IsNil)
 }
+
+func TestFeatureComparisonRefusesUnresolvedRequirementsBeforeOwnersRun(t *testing.T) {
+	for _, test := range []struct {
+		name                    string
+		objectError, facetError bool
+	}{{"object", true, false}, {"facet", false, true}} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			calls := 0
+			runtime := mustRuntime(c, combinedProvider(comparisonFunc(func(ctx context.Context, r schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
+				calls++
+				return changedObject(ctx, r)
+			}), facetComparisonFunc(func(ctx context.Context, r schemaext.FacetComparisonRequest) (schemaext.FacetComparisonResult, error) {
+				calls++
+				return changedFacet(ctx, r)
+			})))
+			request := combinedRequest(c)
+			request.Desired.Facets[0].Values = must.Must(schemaext.NewFacets(&conversionValue{ID: conversionSecond, NeedsError: test.facetError}))
+			request.Desired.Objects = must.Must(schemaext.NewObjects(schemaext.Object{Ref: comparedRef(conversionFirst, "first"), Value: &conversionValue{ID: conversionFirst, NeedsError: test.objectError}}))
+			result, err := runtime.CompareFeatures(t.Context(), request)
+			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+			c.Assert(result, qt.DeepEquals, schemaext.ComparisonResult{})
+			c.Assert(calls, qt.Equals, 0)
+		})
+	}
+}

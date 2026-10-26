@@ -57,6 +57,9 @@ func (t *target) planningReply(request *protocol.PlanFeaturesRequest, reply *pro
 			Steps:    boundPlanningStepIDs(receipt.GetSteps()),
 		})
 	}
+	for _, receipt := range reply.GetObjects() {
+		result.Objects = append(result.Objects, featureplan.ObjectPlan{Subject: boundIdentity(receipt.GetSubject()), Kind: schemaext.Kind(receipt.GetKind()), Strategy: receipt.GetStrategy(), Steps: boundPlanningStepIDs(receipt.GetSteps())})
+	}
 	for _, parent := range reply.GetParents() {
 		receipt := parent.GetReceipt()
 		result.Parents = append(result.Parents, featureplan.ParentPlan{
@@ -116,6 +119,8 @@ func boundPlanningDiagnostic(diagnostic *protocol.PlanningDiagnostic) featurepla
 		result.Change = new(int(index.Change))
 	case *protocol.PlanningDiagnostic_Parent:
 		result.Parent = new(int(index.Parent))
+	case *protocol.PlanningDiagnostic_ContextObject:
+		result.ContextObject = new(int(index.ContextObject))
 	}
 	return result
 }

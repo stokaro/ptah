@@ -8,15 +8,18 @@ import (
 	"ptah.run/core/schemavalidation"
 )
 
-// Diagnostic records a completed refusal using transportable data. Change or
-// Parent identifies a zero-based request index; neither means a batch-wide
-// problem. Both cannot be set. A parent diagnostic requires a parent action.
+// Diagnostic records a completed refusal using transportable data. Change,
+// Parent, or ContextObject identifies a zero-based request index; no index
+// means a batch-wide problem. At most one index can be set. A parent diagnostic
+// requires a parent action.
 // For an indexed diagnostic, Problem.Kind names the change kind or parent model
 // kind. The selected runtime validates that assignment before returning it.
 type Diagnostic struct {
 	Problem schemavalidation.Diagnostic
 	Change  *int
 	Parent  *int
+	// ContextObject identifies an entry in Objects.AllSubjects().
+	ContextObject *int
 }
 
 // Clone returns an independent diagnostic, including its optional indexes.
@@ -26,6 +29,9 @@ func (d Diagnostic) Clone() Diagnostic {
 	}
 	if d.Parent != nil {
 		d.Parent = new(*d.Parent)
+	}
+	if d.ContextObject != nil {
+		d.ContextObject = new(*d.ContextObject)
 	}
 	return d
 }
@@ -38,22 +44,38 @@ func (r Result) ValidateOutcome(request Request) error {
 	if !r.Complete {
 		return fmt.Errorf("%w: planning did not complete", schemaext.ErrInvalidValue)
 	}
-	if len(r.Diagnostics) != 0 && (len(r.Contributions) != 0 || len(r.Changes) != 0 || len(r.Parents) != 0 || len(r.Rewrites) != 0) {
+	if len(r.Diagnostics) != 0 && (len(r.Contributions) != 0 || len(r.Changes) != 0 || len(r.Parents) != 0 || len(r.Rewrites) != 0 || len(r.Objects) != 0) {
 		return fmt.Errorf("%w: refused planning batch contains output", schemaext.ErrInvalidValue)
 	}
 	for _, diagnostic := range r.Diagnostics {
 		if err := (schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{diagnostic.Problem}}).Validate(); err != nil {
 			return fmt.Errorf("%w: %w", schemaext.ErrInvalidValue, err)
 		}
-		if diagnostic.Change != nil && diagnostic.Parent != nil {
-			return fmt.Errorf("%w: planning diagnostic names both a change and a parent", schemaext.ErrInvalidValue)
+		if err := diagnostic.validateInput(request); err != nil {
+			return err
 		}
-		if diagnostic.Change != nil && (*diagnostic.Change < 0 || *diagnostic.Change >= len(request.Changes)) {
-			return fmt.Errorf("%w: planning diagnostic change is outside the batch", schemaext.ErrInvalidValue)
+	}
+	return nil
+}
+
+func (d Diagnostic) validateInput(request Request) error {
+	count := 0
+	for _, index := range []*int{d.Change, d.Parent, d.ContextObject} {
+		if index != nil {
+			count++
 		}
-		if diagnostic.Parent != nil && (*diagnostic.Parent < 0 || *diagnostic.Parent >= len(request.Tables) || request.Tables[*diagnostic.Parent].Action == "") {
-			return fmt.Errorf("%w: planning diagnostic parent has no requested action", schemaext.ErrInvalidValue)
-		}
+	}
+	if count > 1 {
+		return fmt.Errorf("%w: planning diagnostic names more than one input", schemaext.ErrInvalidValue)
+	}
+	if d.ContextObject != nil && (*d.ContextObject < 0 || *d.ContextObject >= len(request.Objects.AllSubjects())) {
+		return fmt.Errorf("%w: planning context object is outside the batch", schemaext.ErrInvalidValue)
+	}
+	if d.Change != nil && (*d.Change < 0 || *d.Change >= len(request.Changes)) {
+		return fmt.Errorf("%w: planning diagnostic change is outside the batch", schemaext.ErrInvalidValue)
+	}
+	if d.Parent != nil && (*d.Parent < 0 || *d.Parent >= len(request.Tables) || request.Tables[*d.Parent].Action == "") {
+		return fmt.Errorf("%w: planning diagnostic parent has no requested action", schemaext.ErrInvalidValue)
 	}
 	return nil
 }

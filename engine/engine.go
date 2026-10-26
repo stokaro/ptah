@@ -239,6 +239,7 @@ type Runtime struct {
 	reversalServices    []schemaext.ReversalService
 	planning            map[conversionKey]int
 	parentPlanning      map[conversionKey]int
+	objectPlanning      map[conversionKey]int
 	planningServices    []ownedPlanning
 	declarations        map[conversionKey]int
 	declarationServices []ownedDeclarationPlanning
@@ -290,6 +291,7 @@ func New(providers ...Provider) (*Runtime, error) {
 		facetComparisons: make(map[conversionKey]int),
 		reports:          make(map[reportingKey]int), reversals: make(map[conversionKey]int), planning: make(map[conversionKey]int),
 		parentPlanning: make(map[conversionKey]int),
+		objectPlanning: make(map[conversionKey]int),
 		declarations:   make(map[conversionKey]int),
 		relations:      make(map[relationKey]int),
 		properties:     make(map[propertyKey]int),

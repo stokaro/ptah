@@ -18,7 +18,6 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbreplication"
 	"ptah.run/engine/builtin"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
@@ -409,15 +408,12 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
 	fillDistinctly(reflect.ValueOf(diff).Elem(), "")
 	diff.FeatureChanges = reverseCoverageFeatures()
-	// The feature context holds owned objects, which the generic filler
-	// cannot invent: each side gets one replication, so swapping the sides
-	// shows in the reversed diff.
-	held := ydbreplication.ReplicationSpec{Connection: ydbreplication.Connection{ConnectionString: "grpc://primary:2136/?database=/prod"},
-		Items: []ydbreplication.Item{{Source: "accounts", Target: "replica/accounts"}}}
+	// The context uses a registered synthetic model on this fixture's target.
 	diff.Features = difftypes.FeatureContext{
-		DesiredObjects: must.Must(schemaext.NewObjects(ydbreplication.DesiredReplicationObject("", "declared", "", held))),
-		CurrentObjects: must.Must(schemaext.NewObjects(ydbreplication.ObservedReplicationObject("", "held", held, ydbreplication.StateRunning))),
+		DesiredObjects: must.Must(schemaext.NewObjects(coverageObject("declared", 3))),
+		CurrentObjects: must.Must(schemaext.NewObjects(coverageObject("held", 2))),
 	}
+
 	// Captured children belong to their captured table. Keep the generated
 	// property values, but give their owner the same identity as that table.
 	for i := range diff.ObservedConstraintHosts {

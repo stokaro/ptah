@@ -251,9 +251,9 @@ func comparedExclusion(p *DesiredExclusion) Exclusion {
 
 // Requires returns the declaration's captured object dependencies in identity
 // order. The returned slice is independent; a nil receiver requires nothing.
-func (p *DesiredExclusion) Requires() []objectidentity.ID {
+func (p *DesiredExclusion) Requires() ([]objectidentity.ID, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
-	return sortedExclusionDependencies(p.Dependencies)
+	return sortedExclusionDependencies(p.Dependencies), nil
 }

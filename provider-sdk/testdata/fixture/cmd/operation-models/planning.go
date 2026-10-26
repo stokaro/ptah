@@ -32,6 +32,9 @@ func normalizeChange(input *protocol.ValueInput) (*protocol.NormalizedValue, err
 // PlanFeatures is offline. Executable table operations are derived from the
 // captured change, and only the host can order them against its common graph.
 func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeaturesRequest) (*protocol.PlannedFeatures, error) {
+	if request.GetPlanningId() == "object-context" {
+		return p.planObjectContext(ctx, request)
+	}
 	transactional, known := request.GetCapabilities()["transactional_ddl"]
 	if !known || transactional {
 		return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "table", Message: "Fixture requires explicit nontransactional DDL"}}}, nil

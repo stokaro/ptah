@@ -80,6 +80,7 @@ var hostFeatures = []string{
 	provider.PlanningPolicyFeature,
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
+	provider.PlanningObjectContextFeature,
 	// A migration file, a printed diff and a rendered schema ask for SQL
 	// text units, and a provider refuses a change it can make only natively;
 	// see target.Render and rowWriter.RenderWrites.
