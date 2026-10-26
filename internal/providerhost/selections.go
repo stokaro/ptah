@@ -246,7 +246,12 @@ func (r requiredObjects) SelectObjects(_ context.Context, request selectext.Requ
 						return selectext.Result{}, selectionError("a qualified requirement has no captured database binding")
 					}
 					database := value.normalized.GetValue().GetOwner().GetDatabase()
-					if database == "" || value.normalized.GetNormalizedOwner().GetDatabase() != database ||
+					normalizedDatabase := value.normalized.GetNormalizedOwner().GetDatabase()
+					if slices.Contains(value.wire.Features, provider.ValueContextFeature) {
+						database = value.normalized.GetValue().GetContext().GetDatabase()
+						normalizedDatabase = database
+					}
+					if database == "" || normalizedDatabase != database ||
 						required.Database.Source != database || required.Database.Normalized != database {
 						return selectext.Result{}, selectionError("a kept requirement belongs to a database outside its object's binding")
 					}

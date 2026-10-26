@@ -44,6 +44,12 @@ func TestProviderSourceBindingSurvivesCaptureAndRefusesAnotherTarget(t *testing.
 	}
 	c.Assert(json.Unmarshal(initial[0].Value.Payload, &pending), qt.IsNil)
 	c.Assert(pending.RequiresDatabaseContext, qt.IsTrue)
+	unresolved, err := unbound.Tables[0].Facets.Values()
+	c.Assert(err, qt.IsNil)
+	refusedDependencies, err := unresolved[0].(schemaext.Requirer).Requires()
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(refusedDependencies, qt.IsNil)
+
 	database, err := load(address)
 	c.Assert(err, qt.IsNil)
 	encoded, err := runtime.Codecs().EncodeFacets(c.Context(), schemaext.Desired, database.Tables[0].Facets)
@@ -61,6 +67,13 @@ func TestProviderSourceBindingSurvivesCaptureAndRefusesAnotherTarget(t *testing.
 	c.Assert(captured.RequiresDatabaseContext, qt.IsFalse)
 	c.Assert(captured.Subject.Database, qt.Equals, "")
 	c.Assert(captured.Subject.Name, qt.Equals, "records")
+	boundValues, err := database.Tables[0].Facets.Values()
+	c.Assert(err, qt.IsNil)
+	dependencies, err := boundValues[0].(schemaext.Requirer).Requires()
+	c.Assert(err, qt.IsNil)
+	c.Assert(dependencies, qt.HasLen, 1)
+	c.Assert(dependencies[0].Database.Source, qt.Equals, bound.Database)
+
 	restored, err := runtime.Codecs().DecodeFacets(c.Context(), schemaext.Desired, encoded)
 	c.Assert(err, qt.IsNil)
 	values, err := restored.Values()
