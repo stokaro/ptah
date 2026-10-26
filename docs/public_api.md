@@ -744,8 +744,9 @@ owners' steps. An operation's `Phase` selects the host window its step joins.
 Every host accepts `PhaseDefault`. The migration planners of the PostgreSQL
 family and of SQL Server accept `PhaseDependent`: each places the operation
 after its creations and changes and before its removals, in one window whose
-creations and drops the owner orders. Every other host, and a whole-schema
-render, refuses it.
+creations and drops the owner orders. The external provider host accepts that
+phase with the same ordering. Other embedded hosts and a whole-schema render
+refuse it.
 
 `PhasePrerequisite` is for an object every other object may use, such as a
 PostgreSQL extension. The migration planners of the PostgreSQL
@@ -763,9 +764,17 @@ routines that do and the tables. A step that drops a type no step of the phase
 creates again runs after the tables, routines and roles are removed and before
 the enums are. Both halves of a type dropped and created again ask for the
 phase and stay in the creation window, where the owner orders them; a split
-replacement in any other phase but the dependent one is refused. A
+replacement needs the dependent, type or lifecycle phase. A
 whole-schema render runs such a step after its enums and before the routines
 that name a type and the tables. Every other host refuses it.
+
+`PhaseLifecycle` places operations across a host-defined span of its common
+sequence. The external provider host offers the complete sequence when both
+sides negotiate `planning.lifecycle`. Resource effects and explicit dependencies
+order stops, replacements and restarts around common operations. Rewriting a
+common step preserves its incoming and outgoing dependencies. This phase does
+not change the dependent phase's insertion point. A host without a lifecycle
+span refuses the phase, and conflicting or cyclic dependencies return no plan.
 
 `schemaext.TypeDefiner` is a value whose object defines a named data type, and
 `schemaext.TypeCreator` is a change that creates, rebuilds or changes one in

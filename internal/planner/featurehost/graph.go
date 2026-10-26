@@ -43,6 +43,11 @@ type Windows struct {
 	Creation, Dependent, Removal int
 	Prerequisites                *PrerequisiteWindows
 	Types                        *TypeWindows
+	// Lifecycle is the window of [featureplan.PhaseLifecycle]. It lets
+	// operations surround the common changes whose resources they share.
+	// Effects, dependencies and rewrite boundaries constrain each step.
+	// Nil refuses lifecycle operations.
+	Lifecycle *Span
 }
 
 // PrerequisiteWindows are the two windows of [featureplan.PhasePrerequisite],
@@ -91,6 +96,7 @@ type Graph struct {
 	windows       [windowCount][2]plangraph.StepID
 	prerequisites bool
 	types         bool
+	lifecycle     bool
 }
 
 // The windows in the order their positions must keep.
@@ -102,11 +108,12 @@ const (
 	removalWindow
 	typeRemovalWindow
 	prerequisiteRemovalWindow
+	lifecycleWindow
 	windowCount
 )
 
 var windowNames = [windowCount]string{"prerequisite-creations", "type-creations", "feature-creations", "dependent-operations",
-	"feature-removals", "type-removals", "prerequisite-removals"}
+	"feature-removals", "type-removals", "prerequisite-removals", "lifecycle-operations"}
 
 // NewGraph builds the graph of nodes under owner. Metadata describes each node,
 // or is nil when the host knows none. IDs must be empty; the graph assigns them.
@@ -114,36 +121,17 @@ var windowNames = [windowCount]string{"prerequisite-creations", "type-creations"
 // identities reach feature owners without exposing mutable graph state. Windows
 // outside the sequence or out of order are refused.
 func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep, windows Windows) (*Graph, error) {
-	positions := map[int]Span{creationWindow: {windows.Creation, windows.Creation}, dependentWindow: {windows.Dependent, windows.Dependent}, removalWindow: {windows.Removal, windows.Removal}}
-	if windows.Prerequisites != nil {
-		positions[prerequisiteCreationWindow] = Span{windows.Prerequisites.Creation, windows.Prerequisites.Creation}
-		positions[prerequisiteRemovalWindow] = Span{windows.Prerequisites.Removal, windows.Prerequisites.Removal}
-	}
-	if windows.Types != nil {
-		positions[typeCreationWindow] = windows.Types.Creation
-		positions[typeRemovalWindow] = windows.Types.Removal
-	}
-	ordered := make([]int, 0, len(positions))
-	for _, window := range slices.Sorted(maps.Keys(positions)) {
-		ordered = append(ordered, positions[window].Start, positions[window].End)
-	}
-	if !slices.IsSorted(ordered) || ordered[0] < 0 || ordered[len(ordered)-1] > len(nodes) {
-		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, ordered, len(nodes))
+	positions, err := windowPositions(windows, len(nodes))
+	if err != nil {
+		return nil, err
 	}
 	if metadata != nil && len(metadata) != len(nodes) {
 		return nil, fmt.Errorf("%w: %d metadata records for %d common nodes", schemaext.ErrInvalidValue, len(metadata), len(nodes))
 	}
 	graph := &Graph{contribution: plangraph.Contribution[[]ast.Node]{Owner: owner}, prerequisites: windows.Prerequisites != nil,
-		types: windows.Types != nil}
+		types: windows.Types != nil, lifecycle: windows.Lifecycle != nil}
 	for i := 0; i <= len(nodes); i++ {
-		for _, window := range slices.Sorted(maps.Keys(positions)) {
-			if positions[window].Start == i {
-				graph.windows[window][0] = graph.marker("common/" + windowNames[window])
-			}
-			if positions[window].End == i {
-				graph.windows[window][1] = graph.marker("common/after-" + windowNames[window])
-			}
-		}
+		graph.markWindowsAt(positions, i)
 		if i == len(nodes) {
 			break
 		}
@@ -159,6 +147,56 @@ func NewGraph(owner string, nodes []ast.Node, metadata []featureplan.CommonStep,
 		graph.append(step, description)
 	}
 	return graph, nil
+}
+
+func (g *Graph) markWindowsAt(positions map[int]Span, index int) {
+	// The lifecycle span encloses insertion windows at either boundary too.
+	// Closing a point window before entering this span creates a false cycle
+	// when a lifecycle operation must precede an operation at that point.
+	if span, ok := positions[lifecycleWindow]; ok && span.Start == index {
+		g.windows[lifecycleWindow][0] = g.marker("common/" + windowNames[lifecycleWindow])
+	}
+	for _, window := range slices.Sorted(maps.Keys(positions)) {
+		if window == lifecycleWindow {
+			continue
+		}
+		if positions[window].Start == index {
+			g.windows[window][0] = g.marker("common/" + windowNames[window])
+		}
+		if positions[window].End == index {
+			g.windows[window][1] = g.marker("common/after-" + windowNames[window])
+		}
+	}
+	if span, ok := positions[lifecycleWindow]; ok && span.End == index {
+		g.windows[lifecycleWindow][1] = g.marker("common/after-" + windowNames[lifecycleWindow])
+	}
+}
+
+// windowPositions validates ordered insertion points and the separate lifecycle span.
+func windowPositions(windows Windows, count int) (map[int]Span, error) {
+	positions := map[int]Span{creationWindow: {windows.Creation, windows.Creation}, dependentWindow: {windows.Dependent, windows.Dependent}, removalWindow: {windows.Removal, windows.Removal}}
+	if windows.Prerequisites != nil {
+		positions[prerequisiteCreationWindow] = Span{windows.Prerequisites.Creation, windows.Prerequisites.Creation}
+		positions[prerequisiteRemovalWindow] = Span{windows.Prerequisites.Removal, windows.Prerequisites.Removal}
+	}
+	if windows.Types != nil {
+		positions[typeCreationWindow] = windows.Types.Creation
+		positions[typeRemovalWindow] = windows.Types.Removal
+	}
+	ordered := make([]int, 0, len(positions))
+	for _, window := range slices.Sorted(maps.Keys(positions)) {
+		ordered = append(ordered, positions[window].Start, positions[window].End)
+	}
+	if !slices.IsSorted(ordered) || ordered[0] < 0 || ordered[len(ordered)-1] > count {
+		return nil, fmt.Errorf("%w: feature windows %v are out of order or outside a sequence of %d nodes", schemaext.ErrInvalidValue, ordered, count)
+	}
+	if span := windows.Lifecycle; span != nil {
+		if span.Start < 0 || span.Start > span.End || span.End > count {
+			return nil, fmt.Errorf("%w: lifecycle span %v is outside a sequence of %d nodes", schemaext.ErrInvalidValue, *span, count)
+		}
+		positions[lifecycleWindow] = *span
+	}
+	return positions, nil
 }
 
 func (g *Graph) marker(name string) plangraph.StepID {
@@ -191,7 +229,8 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // sources' boundaries instead of joining a feature window. An explicit phase
 // adds its window constraints to those boundaries. Other steps join one window:
 // a step whose operation asked for [featureplan.PhaseDependent] joins the
-// dependent window; one that asked for [featureplan.PhasePrerequisite] joins the
+// dependent window; one that asked for [featureplan.PhaseLifecycle] joins
+// the lifecycle span; one that asked for [featureplan.PhasePrerequisite] joins the
 // prerequisite removal window when it drops an object and the prerequisite
 // creation window otherwise, and is refused by a graph without them; one that
 // asked for [featureplan.PhaseType] joins the type removal window when it
@@ -199,7 +238,7 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // window otherwise, and is refused by a graph without them; and any other
 // joins the removal window when it drops an object and the creation window
 // otherwise. A step that creates an object another step drops is refused
-// unless both are dependent or both ask for the type phase, because the
+// unless both ask for the same dependent, type or lifecycle phase, because the
 // windows would run the creation first. The effects of different
 // contributions are then ordered by [plangraph.LifecycleDependencies], so an
 // owner that creates an object precedes another owner that reads it. The
@@ -262,8 +301,10 @@ func (g *Graph) window(phase featureplan.Phase, drops, rebuilds bool) ([2]plangr
 	switch {
 	case phase == featureplan.PhaseDependent:
 		return g.windows[dependentWindow], nil
-	case phase == featureplan.PhasePrerequisite && !g.prerequisites, phase == featureplan.PhaseType && !g.types:
+	case phase == featureplan.PhasePrerequisite && !g.prerequisites, phase == featureplan.PhaseType && !g.types, phase == featureplan.PhaseLifecycle && !g.lifecycle:
 		return [2]plangraph.StepID{}, fmt.Errorf("%w: the %q phase has no window in this host", schemaext.ErrInvalidValue, phase)
+	case phase == featureplan.PhaseLifecycle:
+		return g.windows[lifecycleWindow], nil
 	case phase == featureplan.PhasePrerequisite && drops:
 		return g.windows[prerequisiteRemovalWindow], nil
 	case phase == featureplan.PhasePrerequisite:
@@ -279,11 +320,9 @@ func (g *Graph) window(phase featureplan.Phase, drops, rebuilds bool) ([2]plangr
 	}
 }
 
-// createdObjects is every object a step creates. A step of the type phase
-// that drops one of them rebuilds it rather than removes it. The creating
-// step asks for the type phase too, or is the dropping step itself:
-// [refuseSplitReplacements] has refused a drop and a creation of one object in
-// two steps of any other pair of phases before this is read.
+// createdObjects returns every object created by a feature step. A type-phase
+// drop of one of these objects is part of a replacement, so it shares the
+// type creation window with the replacement's creation.
 func createdObjects(features Result) map[objectidentity.Key]bool {
 	created := make(map[objectidentity.Key]bool)
 	for _, contribution := range features.Contributions {
@@ -298,13 +337,11 @@ func createdObjects(features Result) map[objectidentity.Key]bool {
 	return created
 }
 
-// refuseSplitReplacements refuses a step that creates an object another step
-// drops, unless both ask for the dependent phase or both for the type phase.
-// The default windows run every creation before every drop, and the
-// dependent window is not ordered against them by object, so the creation
-// would meet the object it replaces. Such a replacement is one step, or both
-// halves ask for the dependent phase or for the type phase, whose owner
-// orders them in one window.
+// refuseSplitReplacements requires a replacement to share one phase that
+// permits its drop and creation to be ordered together. Default creation and
+// removal windows put the creation first, which would meet the old object.
+// Dependent, type and lifecycle phases each permit an owner to order both
+// halves in one window. The graph still checks their effects and dependencies.
 func refuseSplitReplacements(features Result) error {
 	type use struct {
 		step  plangraph.StepID
@@ -327,11 +364,11 @@ func refuseSplitReplacements(features Result) error {
 				if !found || effect.Action != plangraph.Create || other.step == step.ID {
 					continue
 				}
-				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType) {
+				if phase := features.Phases[step.ID]; phase == other.phase && (phase == featureplan.PhaseDependent || phase == featureplan.PhaseType || phase == featureplan.PhaseLifecycle) {
 					continue
 				}
 				return fmt.Errorf("%w: feature step %s/%s creates %s, which step %s/%s drops; a replacement is one step, "+
-					"or both halves ask for the dependent or the type phase",
+					"or both halves ask for the dependent, type or lifecycle phase",
 					ptaherr.ErrInvalidSchemaDiff, step.ID.Owner, step.ID.Name, effect.Subject, other.step.Owner, other.step.Name)
 			}
 		}

@@ -128,7 +128,7 @@ func TestPlanner_RefusesASplitDefaultRebuild(t *testing.T) {
 	nodes, err := postgres.New().GenerateMigrationAST(context.Background(), runtime, rebuilt())
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches, `.*a replacement is one step, or both halves ask for the dependent or the type phase.*`)
+	c.Assert(err, qt.ErrorMatches, `.*a replacement is one step, or both halves ask for the dependent, type or lifecycle phase.*`)
 	c.Assert(nodes, qt.IsNil)
 }
 

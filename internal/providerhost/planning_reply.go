@@ -91,6 +91,7 @@ func (t *target) planningOperation(request *protocol.PlanFeaturesRequest, operat
 		protocol.PlanningOperation_DEPENDENT:    featureplan.PhaseDependent,
 		protocol.PlanningOperation_PREREQUISITE: featureplan.PhasePrerequisite,
 		protocol.PlanningOperation_TYPE:         featureplan.PhaseType,
+		protocol.PlanningOperation_LIFECYCLE:    featureplan.PhaseLifecycle,
 	}
 	return featureplan.Operation{
 		Role:    roles[operation.GetRole()],

@@ -50,6 +50,8 @@ func TestPhaseValid(t *testing.T) {
 		{phase: featureplan.PhaseDependent, want: true},
 		{phase: featureplan.PhasePrerequisite, want: true},
 		{phase: featureplan.PhaseType, want: true},
+		{phase: featureplan.PhaseLifecycle, want: true},
+		{phase: "Lifecycle", want: false},
 		{phase: "late", want: false},
 		{phase: "Type", want: false},
 		{phase: "Prerequisite", want: false},

@@ -19,8 +19,11 @@ import (
 // schedule joins the provider's steps with the host's sequence. A feature
 // object is created at creationStart, after the tables and columns it may
 // read and before the views, grants and comments that may name it, and the
-// dependent operations and removals join at removalStart, before the host
-// removes columns and tables.
+// removals join at removalStart, before the host removes columns and tables.
+// Lifecycle operations share the complete common sequence. Their effects and
+// explicit dependencies order them around common changes, including a native
+// object that replaces a table at the same physical path. Rewrite boundaries
+// still keep a claimed common operation in its original position.
 func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, creationStart, removalStart int) ([]ast.Node, error) {
 	request, names, err := p.planningContext(diff)
 	if err != nil {
@@ -32,6 +35,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 	}
 	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
 		Creation: creationStart, Dependent: removalStart, Removal: removalStart,
+		Lifecycle: &featurehost.Span{Start: 0, End: len(nodes)},
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
 		Types:         &featurehost.TypeWindows{Creation: featurehost.Span{}, Removal: featurehost.Span{Start: len(nodes), End: len(nodes)}},
 	})
@@ -39,7 +43,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 		return nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite, featureplan.PhaseType)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite, featureplan.PhaseType, featureplan.PhaseLifecycle)
 	if err != nil {
 		return nil, err
 	}
