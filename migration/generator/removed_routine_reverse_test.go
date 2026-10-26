@@ -7,8 +7,10 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/postgres/pgroutine"
@@ -72,4 +74,103 @@ func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsProperties(t 
 			c.Assert(sql, qt.Contains, test.want)
 		})
 	}
+}
+
+// securedFunction is a SECURITY DEFINER function the database holds, in the
+// schema the connection defaults to.
+var securedFunction = catalog.Function{Name: "f", Schema: "public", Parameters: "x integer", Returns: "integer",
+	Language: "sql", Security: "DEFINER", Volatility: "IMMUTABLE", Body: "SELECT x", IdentityArguments: new("x integer")}
+
+// executeGrant is a row the PostgreSQL reader reports for f.
+func executeGrant(role, grantor string, withOption, implicit bool) catalog.Grant {
+	return catalog.Grant{Role: role, Privilege: "EXECUTE", ObjectType: "FUNCTION", Schema: "public", ObjectName: "f",
+		Arguments: "x integer", GrantedBy: grantor, WithOption: withOption, Implicit: implicit}
+}
+
+// reverseOfRemoving plans the removal of every routine current holds and
+// renders the rollback.
+func reverseOfRemoving(c *qt.C, current *catalog.Database) (string, error) {
+	c.Helper()
+	runtime := must.Must(builtin.New())
+	desired := &schemamodel.Database{}
+	diff := must.Must(schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current,
+		catalog.ServerInfo{Dialect: platform.Postgres, Schema: "public"}, nil, runtime))
+	plan, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current,
+		Dialect: platform.Postgres, Capabilities: capability.Postgres18(),
+	})
+	if err != nil {
+		return "", err
+	}
+	return builtin.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)
+}
+
+// TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges
+// pins the privileges the rollback of a removed routine gives back. A new
+// routine is executable by PUBLIC, so one whose read reports no PUBLIC
+// EXECUTE has it revoked, and the privileges of every other role, grant option
+// included, are granted again. The owner's own privilege, granted by itself,
+// is the new routine's already, and a routine that holds its default ACL gets
+// no statement at all.
+func TestPlanBidirectionalSchemaDiff_RemovedRoutineComesBackWithItsPrivileges(t *testing.T) {
+	tests := []struct {
+		name    string
+		grants  []catalog.Grant
+		want    []string
+		notWant []string
+	}{
+		{
+			name: "a function revoked from PUBLIC and granted to a role",
+			grants: []catalog.Grant{
+				executeGrant("app_owner", "app_owner", false, false),
+				executeGrant("reporting", "app_owner", false, false),
+				executeGrant("auditor", "app_owner", true, false),
+			},
+			want: []string{
+				`REVOKE EXECUTE ON FUNCTION "public"."f"(x integer) FROM PUBLIC;`,
+				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO "reporting";`,
+				`GRANT EXECUTE ON FUNCTION "public"."f"(x integer) TO "auditor" WITH GRANT OPTION;`,
+			},
+			notWant: []string{`TO "app_owner"`},
+		},
+		{
+			name:    "a function that holds its default ACL",
+			grants:  []catalog.Grant{executeGrant("PUBLIC", "", false, true)},
+			notWant: []string{"REVOKE", "GRANT"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := reverseOfRemoving(c, &catalog.Database{Functions: []catalog.Function{securedFunction}, Grants: test.grants})
+
+			c.Assert(err, qt.IsNil)
+			for _, want := range test.want {
+				c.Assert(sql, qt.Contains, want)
+			}
+			for _, notWant := range test.notWant {
+				c.Assert(sql, qt.Not(qt.Contains), notWant)
+			}
+		})
+	}
+}
+
+// TestPlanBidirectionalSchemaDiff_RefusesARoutineTheReadDoesNotHold_FailurePath
+// pins the refusal of a rollback that would create a removed routine without
+// the declaration the database held: a diff that removes a routine the read
+// does not report has nothing to restore it from.
+func TestPlanBidirectionalSchemaDiff_RefusesARoutineTheReadDoesNotHold_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{FunctionsRemoved: difftypes.FunctionChanges{
+		{Function: schemamodel.Function{Name: "public.gone"}, Signature: new("")},
+	}}
+
+	_, err := generator.PlanBidirectionalSchemaDiff(c.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: must.Must(builtin.New()), Diff: diff, DesiredSchema: &schemamodel.Database{}, CurrentSchema: &catalog.Database{},
+		Dialect: platform.Postgres, Capabilities: capability.Postgres18(),
+	})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*cannot plan the rollback of removing public\.gone\(\): the database read holds no such routine to restore`)
 }

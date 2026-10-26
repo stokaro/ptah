@@ -739,6 +739,14 @@ view, policy, or trigger uses the function, the server refuses the drop with
 SQLSTATE 2BP01 and the migration stops, instead of removing an object the
 schema still declares. Measured on PostgreSQL 18.
 
+The rollback of a routine the schema stops declaring creates it again as the
+database held it, with its settings, its properties, its comment and its
+privileges. PostgreSQL lets PUBLIC execute a new routine, so one whose
+privilege PUBLIC lost has it revoked again, and the privileges of every other
+role are granted again, grant option included. A plan whose removed routine
+the read of the database does not hold refuses the rollback rather than
+creating the routine without them.
+
 A function with `OUT` or `INOUT` arguments may leave `RETURNS` out. PostgreSQL
 then records the type those arguments imply, and Ptah compares the declaration
 against that type: the type of the one such argument, or `record` for two or
