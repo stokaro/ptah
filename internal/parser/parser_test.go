@@ -847,6 +847,11 @@ func TestParser_ParseCreateViewColumnList(t *testing.T) {
 			want: `SELECT "id" AS "type", 'flat' AS "id" FROM "t"`,
 		},
 		{
+			name: "column list replaces existing select aliases",
+			sql:  `CREATE VIEW v (label, key) AS SELECT name AS shown, id AS old_key FROM t;`,
+			want: `SELECT name AS label, id AS key FROM t`,
+		},
+		{
 			name: "union names the columns by its first select",
 			sql:  `CREATE VIEW v (x) AS SELECT a FROM t UNION ALL SELECT b FROM u;`,
 			want: `SELECT a AS x FROM t UNION ALL SELECT b FROM u`,

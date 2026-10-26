@@ -16,6 +16,7 @@ package viewcolumns
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ErrUnreadableSelectList marks a body whose SELECT list this package declines
@@ -29,10 +30,9 @@ var ErrUnreadableSelectList = fmt.Errorf("view body select list cannot be read")
 // WithAliases returns body with each top-level select item aliased to the
 // matching name.
 //
-// An item that already ends in the name it would be given is left alone, so a
-// body an author wrote with its aliases is not rewritten into itself twice.
-// A name that is empty, or a count that does not match the select list, is
-// refused with [ErrUnreadableSelectList].
+// An item's explicit AS alias is replaced by the name from the view's column
+// list. An unreadable alias, an empty name, or a count that does not match the
+// select list is refused with [ErrUnreadableSelectList].
 func WithAliases(body string, names []string) (string, error) {
 	if len(names) == 0 {
 		return body, nil
@@ -56,7 +56,11 @@ func WithAliases(body string, names []string) (string, error) {
 			return "", fmt.Errorf("%w: column %d is a star, which expands to a number of columns the declaration cannot count",
 				ErrUnreadableSelectList, i+1)
 		}
-		aliased = append(aliased, aliasItem(item, name))
+		rewritten, err := aliasItem(item, name)
+		if err != nil {
+			return "", fmt.Errorf("column %d: %w", i+1, err)
+		}
+		aliased = append(aliased, rewritten)
 	}
 	return joinRewritten(parts, strings.Join(aliased, ", ")), nil
 }
@@ -79,26 +83,63 @@ func isStarItem(item string) bool {
 	return strings.HasSuffix(strings.TrimSpace(item), "*")
 }
 
-// aliasItem gives one select item its alias, leaving an item that already
-// carries it unchanged.
-func aliasItem(item, name string) string {
+// aliasItem gives one select item the declared name. An explicit alias in the
+// SELECT is replaced: the view's column list wins over that alias by position.
+// Keeping both would produce an invalid `expression AS old AS new` statement.
+func aliasItem(item, name string) (string, error) {
 	trimmed := strings.TrimSpace(item)
-	if strings.EqualFold(trailingAlias(trimmed), name) {
-		return trimmed
+	aliasAt := topLevelKeyword(trimmed, "AS")
+	if aliasAt < 0 {
+		return trimmed + " AS " + name, nil
 	}
-	return trimmed + " AS " + name
+	expression := strings.TrimSpace(trimmed[:aliasAt])
+	oldAlias := strings.TrimSpace(trimmed[aliasAt+len("AS"):])
+	if expression == "" || !isAliasIdentifier(oldAlias) {
+		return "", fmt.Errorf("%w: existing AS alias cannot be read", ErrUnreadableSelectList)
+	}
+	return expression + " AS " + name, nil
 }
 
-// trailingAlias returns the alias an item already ends with, or the empty
-// string. Only the explicit `AS name` spelling counts: a bare trailing word is
-// also a valid alias in SQL, but it is indistinguishable from the last token of
-// an expression without parsing one.
-func trailingAlias(item string) string {
-	fields := strings.Fields(item)
-	if len(fields) < 2 || !strings.EqualFold(fields[len(fields)-2], "as") {
-		return ""
+// isAliasIdentifier accepts one unquoted or quoted SQL identifier after AS.
+// A suffix this reader cannot identify is refused instead of being discarded.
+func isAliasIdentifier(alias string) bool {
+	if alias == "" {
+		return false
 	}
-	return strings.Trim(fields[len(fields)-1], `"`)
+	switch alias[0] {
+	case '"', '`':
+		return isQuotedAlias(alias, alias[0], alias[0])
+	case '[':
+		return isQuotedAlias(alias, '[', ']')
+	}
+	for i, r := range alias {
+		if i == 0 {
+			if r != '_' && !unicode.IsLetter(r) {
+				return false
+			}
+			continue
+		}
+		if r != '_' && r != '$' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isQuotedAlias(alias string, open, close byte) bool {
+	if len(alias) < 3 || alias[0] != open || alias[len(alias)-1] != close {
+		return false
+	}
+	for i := 1; i < len(alias)-1; i++ {
+		if alias[i] != close {
+			continue
+		}
+		if i+1 >= len(alias)-1 || alias[i+1] != close {
+			return false
+		}
+		i++
+	}
+	return true
 }
 
 // selectParts is a body cut into the text before its select list, the list
