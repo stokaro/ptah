@@ -55,15 +55,30 @@ existing format writer. The provider returns syntax data, never a text file.
 whether a provider's spelling preserves the model: encoder/decoder round-trip
 tests remain the provider's obligation.
 
-### Claim Go coverage headers in both directions
+### Preserve coverage from claimed headers
 
-The two-way feature `source.go-limits` adds `Engine.go_header_kinds`. Each kind
+The two-way feature `source.limits` adds `Engine.go_header_kinds`. Each kind
 is a unique lower-case identifier that fits one word of a coverage header.
 `SourceDocument.limits` may carry those headers for Go annotation input.
 An unclaimed kind or a repeated kind/name pair is invalid.
 
-When this feature is negotiated, `EncodedSource.limits` for Go follows the same
-claims and validation. The host writes each limit through its annotation
+The same feature lets HCL and Go decoding return narrowed knowledge when the
+input contains at least one claimed header. All headers must be valid and
+claimed. The result keeps the exact enrolled model inventory and uses valid
+knowledge states and structured subject or namespace boundaries. Without a
+negotiated feature or without headers, the complete authored-scope rule remains.
+
+The provider owns the meaning of a header name and which of its models it
+limits. The SDK validates ownership, inventory and knowledge shapes; it cannot
+prove an opaque header's semantic interpretation. Host/provider round-trip tests
+must prove that known limits retain their meaning and that lost or unrelated
+headers do not turn unknown knowledge into absence authority.
+
+When this feature is negotiated, `EncodedSource.limits` follows the format's
+header claims and validation for Go and HCL. An encode request in either format
+with narrowed coverage requires at least one claimed output limit; an empty
+list cannot carry that knowledge.
+The host writes each limit through its format's
 coverage-header mechanism and captures it when reading the document. It keeps
 the kind, name, reason and provenance. A header cannot upgrade unknown coverage
 to complete coverage. Unsupported coverage or an unrepresentable access
@@ -73,7 +88,7 @@ Negotiation removes Go header claims when the host does not support them.
 Encoding with the flat form remains available when it represents a value
 completely; a value needing several parts is a loss for that peer. New Go input
 limits require negotiation. The validation of replies to peers without
-`source.go-limits` retains the contract they negotiated.
+`source.limits` retains the contract they negotiated.
 
 ## Alternatives considered
 

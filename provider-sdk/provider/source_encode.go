@@ -343,10 +343,8 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 
 // validateEncodedExtras checks the header limits and the Go field types.
 func validateEncodedExtras(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
-	if request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS && slices.Contains(engine.GetFeatures(), GoLimitsFeature) {
-		if err := validateGoLimits(engine.GetGoHeaderKinds(), result.GetLimits()); err != nil {
-			return err
-		}
+	if err := validateEncodedLimits(engine, request, result); err != nil {
+		return err
 	}
 	for _, limit := range result.GetLimits() {
 		if !comparisonReason(limit.GetKind()) {

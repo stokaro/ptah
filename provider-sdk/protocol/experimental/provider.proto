@@ -164,7 +164,7 @@ message Engine {
   repeated ScopeSelection scope_selections = 18;
   // Offline authored creation services, under schema.declarations (25.5).
   repeated ModelDeclarations declarations = 19;
-  // Claimed ptah:not-described kinds in Go source, under source.go-limits.
+  // Claimed ptah:not-described kinds in Go source, under source.limits.
   repeated string go_header_kinds = 20;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
@@ -1005,7 +1005,7 @@ message SourceDocument {
   repeated ValueModel models = 7;
   // The document's ptah:not-described entries in written order. HCL uses
   // hcl_source.header_kinds under source.hcl (25.3); Go uses go_header_kinds
-  // under source.go-limits (25.5).
+  // under source.limits (25.5).
   repeated SchemaCoverageLimit limits = 8;
 }
 // SourcePathStep distinguishes a mapping key from a sequence index. A trace
@@ -1116,6 +1116,8 @@ message DecodedSource {
 }
 message DecodedSourceDocument {
   string id = 1;
+  // Exact enrolled model inventory. Knowledge may be narrowed by the owner
+  // only with negotiated source.limits and claimed headers in the document.
   ModelCoverage coverage = 2;
   // Exactly one result per fragment, in input order. An empty value list is an
   // explicit owner statement that the fully interpreted fragment adds none.

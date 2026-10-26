@@ -179,7 +179,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		return err
 	}
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
-		validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateGoLimitsEngine, validatePlanningLifecycleEngine,
+		validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
