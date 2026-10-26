@@ -26,9 +26,9 @@ func TestColumnDefaultReadbackPreservesAbsentLiteralAndExpression(t *testing.T) 
 		value string
 	}{
 		{"absent", nil, protocol.ColumnDefaultReceipt_ABSENT, ""},
-		{"literal zero", proto.String("0t"), protocol.ColumnDefaultReceipt_LITERAL, "0"},
-		{"empty literal", proto.String("''"), protocol.ColumnDefaultReceipt_LITERAL, ""},
-		{"expression", proto.String("Now()"), protocol.ColumnDefaultReceipt_EXPRESSION, "Now()"},
+		{"literal zero", new("0t"), protocol.ColumnDefaultReceipt_LITERAL, "0"},
+		{"empty literal", new("''"), protocol.ColumnDefaultReceipt_LITERAL, ""},
+		{"expression", new("Now()"), protocol.ColumnDefaultReceipt_EXPRESSION, "Now()"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -67,13 +67,13 @@ func TestColumnDefaultReadbackRejectsMissingAndInventedFacts(t *testing.T) {
 			r.Columns[0].Value = "5"
 		}},
 		{"absent with expression", func(r *protocol.ReadColumnDefaultsRequest, _ *protocol.ReadColumnDefaultsResult) {
-			r.Columns[0].Column.DefaultExpression = proto.String("5t")
+			r.Columns[0].Column.DefaultExpression = new("5t")
 		}},
 		{"invented literal", func(_ *protocol.ReadColumnDefaultsRequest, r *protocol.ReadColumnDefaultsResult) {
 			r.Columns[0].Kind = protocol.ColumnDefaultReceipt_LITERAL
 		}},
 		{"empty expression", func(r *protocol.ReadColumnDefaultsRequest, out *protocol.ReadColumnDefaultsResult) {
-			r.Columns[0].Column.DefaultExpression = proto.String("Now()")
+			r.Columns[0].Column.DefaultExpression = new("Now()")
 			out.Columns[0].Kind = protocol.ColumnDefaultReceipt_EXPRESSION
 		}},
 		{"expression without input", func(_ *protocol.ReadColumnDefaultsRequest, r *protocol.ReadColumnDefaultsResult) {
@@ -96,7 +96,7 @@ func TestColumnDefaultReadbackRejectsMissingAndInventedFacts(t *testing.T) {
 func TestCreationColumnsRequireCompleteNegotiatedPredictions(t *testing.T) {
 	c := qt.New(t)
 	d, request, result := creationExchange()
-	result.Tables[0].Columns = []*protocol.ObservedColumn{{Name: "id", DataType: "INT64", IsNullable: "NO", DefaultExpression: proto.String("0t")}}
+	result.Tables[0].Columns = []*protocol.ObservedColumn{{Name: "id", DataType: "INT64", IsNullable: "NO", DefaultExpression: new("0t")}}
 	c.Assert(provider.ValidateProjectedCreations(d, request, result), qt.ErrorIs, provider.ErrProtocol)
 	d.Features = append(d.Features, provider.ColumnsFeature)
 	d.Engines[0].Features = append(d.Engines[0].Features, provider.ColumnsFeature)

@@ -31,7 +31,7 @@ func runtimeColumnsExchange() (*protocol.Description, *protocol.CompareColumnsRe
 			Pairs:   []*protocol.ColumnComparisonPair{{Subject: column, CurrentSubject: proto.CloneOf(column), DesiredColumn: "id", CurrentColumn: "id", Aspects: []protocol.ColumnAspect{protocol.ColumnAspect_COLUMN_NULLABILITY}}}}}}
 	result := &protocol.ComparedColumns{Complete: true, Tables: []*protocol.ComparedColumnTable{{Subject: proto.CloneOf(table.Subject), CurrentSubject: proto.CloneOf(table.Subject),
 		Columns: []*protocol.ComparedColumn{{Subject: proto.CloneOf(column), CurrentSubject: proto.CloneOf(column), Aspects: []*protocol.ColumnAspectReceipt{{Aspect: protocol.ColumnAspect_COLUMN_NULLABILITY,
-			Receipt: &protocol.ColumnAspectReceipt_Nullability{Nullability: &protocol.ColumnNullability{Nullable: proto.Bool(false)}}}}}}}}}
+			Receipt: &protocol.ColumnAspectReceipt_Nullability{Nullability: &protocol.ColumnNullability{Nullable: new(false)}}}}}}}}}
 	return d, request, result
 }
 

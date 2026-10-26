@@ -21,7 +21,7 @@ func TestColumnRPCsPreserveOptionalFalseAndTypedEmptyDefaults(t *testing.T) {
 	c := qt.New(t)
 	d, request, expected := runtimeColumnsExchange()
 	defaults, expectedDefaults := runtimeDefaults(request)
-	defaults.Columns[0].Column.DefaultExpression = proto.String("''")
+	defaults.Columns[0].Column.DefaultExpression = new("''")
 	expectedDefaults.Columns[0].Kind = protocol.ColumnDefaultReceipt_LITERAL
 	owner := &columnOwner{comparison: expected, defaults: expectedDefaults}
 	adapter := negotiatedServer(Server{Description: d, Columns: owner}, provider.ColumnsFeature)
@@ -46,6 +46,6 @@ func TestColumnRPCsPreserveOptionalFalseAndTypedEmptyDefaults(t *testing.T) {
 	read, err := client.ReadColumnDefaults(c.Context(), defaults)
 	c.Assert(err, qt.IsNil)
 	c.Assert(proto.Equal(read, expectedDefaults), qt.IsTrue)
-	c.Assert(compared.Tables[0].Columns[0].Aspects[0].GetNullability().Nullable, qt.DeepEquals, proto.Bool(false))
+	c.Assert(compared.Tables[0].Columns[0].Aspects[0].GetNullability().Nullable, qt.DeepEquals, new(false))
 	c.Assert(read.Columns[0].Value, qt.Equals, "")
 }

@@ -30,7 +30,7 @@ func columnExchange() (*protocol.Description, *protocol.CompareColumnsRequest, *
 		Columns: []*protocol.ComparedColumn{{Subject: proto.CloneOf(column), CurrentSubject: proto.CloneOf(current), Aspects: []*protocol.ColumnAspectReceipt{
 			{Aspect: protocol.ColumnAspect_COLUMN_TYPE, Receipt: &protocol.ColumnAspectReceipt_Difference{Difference: &protocol.ColumnDifference{Relation: protocol.ColumnDifference_SAME}}},
 			{Aspect: protocol.ColumnAspect_COLUMN_DEFAULT, Receipt: &protocol.ColumnAspectReceipt_Difference{Difference: &protocol.ColumnDifference{Relation: protocol.ColumnDifference_CHANGED, Desired: "0"}}},
-			{Aspect: protocol.ColumnAspect_COLUMN_NULLABILITY, Receipt: &protocol.ColumnAspectReceipt_Nullability{Nullability: &protocol.ColumnNullability{Nullable: proto.Bool(false)}}},
+			{Aspect: protocol.ColumnAspect_COLUMN_NULLABILITY, Receipt: &protocol.ColumnAspectReceipt_Nullability{Nullability: &protocol.ColumnNullability{Nullable: new(false)}}},
 			{Aspect: protocol.ColumnAspect_COLUMN_SEQUENCE, Receipt: &protocol.ColumnAspectReceipt_Sequence{Sequence: &protocol.ColumnSequenceDifferences{}}},
 		}}}}}}
 	return d, request, result
@@ -43,7 +43,7 @@ func TestColumnComparisonPreservesCapturesAndExplicitFacts(t *testing.T) {
 	c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
 	c.Assert(provider.ValidateComparedColumns(d, request, result), qt.IsNil)
 	c.Assert(proto.Equal(before, request), qt.IsTrue)
-	c.Assert(result.Tables[0].Columns[0].Aspects[2].GetNullability().Nullable, qt.DeepEquals, proto.Bool(false))
+	c.Assert(result.Tables[0].Columns[0].Aspects[2].GetNullability().Nullable, qt.DeepEquals, new(false))
 	request.Tables[0].Current.Name = "renamed_from"
 	request.Tables[0].CurrentSubject.Name = &protocol.ComparisonPart{Source: "renamed_from", Normalized: "renamed_from"}
 	request.Tables[0].Pairs[0].CurrentSubject.Parent = proto.CloneOf(request.Tables[0].CurrentSubject.Name)
