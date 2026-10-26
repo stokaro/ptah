@@ -10,9 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 )
 
@@ -49,6 +51,68 @@ func TestHCLEncodedValue_HappyPath(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, row.want)
 		})
 	}
+}
+
+func groupedNativeHCL() (*hclEncoding, *protocol.EncodedSource) {
+	const kind = "example.org/fixture/node"
+	encoding := &hclEncoding{batch: &encodeBatch{request: &protocol.EncodeSourceRequest{}}, objects: make(map[string]schemaext.Object)}
+	group := &protocol.EncodedSourceGroup{}
+	for _, name := range []string{"first", "second"} {
+		subject := &protocol.Reference{Engine: "fixture", Kind: kind, Schema: "app", Name: name}
+		encoding.batch.request.Values = append(encoding.batch.request.Values, &protocol.EncodeSourceValue{Value: &protocol.NormalizedValue{Id: name,
+			Value: &protocol.Envelope{Kind: kind, Owner: proto.CloneOf(subject)}, NormalizedOwner: proto.CloneOf(subject)}})
+		encoding.objects[name] = schemaext.Object{Ref: objectidentity.ID{Kind: kind, Schema: objectidentity.Part{Source: "app", Normalized: "app"},
+			Name: objectidentity.Part{Source: name, Normalized: name}}, Targets: []string{name + "-engine"}}
+		group.ValueIds = append(group.ValueIds, name)
+		group.Parts = append(group.Parts, &protocol.EncodedSourcePart{Placement: protocol.EncodedFragment_AFTER_TABLES, Fragment: &protocol.SourceFragment{
+			Subject: proto.CloneOf(subject), HclBlock: &protocol.HCLSourceBlock{Site: protocol.HCLSourceBlock_TOP_LEVEL, Type: "node",
+				Naming: protocol.HCLSourceBlock_SCHEMA_AND_NAME, Models: []string{kind}},
+			Content: &protocol.SourceFragment_Block{Block: &protocol.SourceBlock{Type: "node", Labels: []*protocol.SourceLabel{{Value: "app"}, {Value: name}}}}}})
+	}
+	return encoding, &protocol.EncodedSource{Complete: true, Groups: []*protocol.EncodedSourceGroup{group}}
+}
+
+func TestHCLGroupsKeepEachNativeIdentityAndTargetScope(t *testing.T) {
+	c := qt.New(t)
+	encoding, reply := groupedNativeHCL()
+	parts := encoding.parts(reply)
+	c.Assert(parts, qt.HasLen, 2)
+	for i, name := range []string{"first", "second"} {
+		c.Assert(parts[i].GetValueIds(), qt.DeepEquals, []string{name})
+		block, err := encoding.block(parts[i])
+		c.Assert(err, qt.IsNil)
+		c.Assert(block.Object, qt.DeepEquals, encoding.objects[name].Ref)
+		c.Assert(block.Targets, qt.DeepEquals, encoding.objects[name].Targets)
+	}
+}
+
+func TestHCLGroupRefusesOneBlockWithSeveralNativeIdentities(t *testing.T) {
+	c := qt.New(t)
+	encoding, reply := groupedNativeHCL()
+	reply.Groups[0].Parts[0].Fragment.Subject = nil
+	parts := encoding.parts(reply)
+	block, err := encoding.block(parts[0])
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(block, qt.DeepEquals, hclext.EncodedBlock{})
+}
+
+func TestHCLGroupRefusesConflictingTargetsForOneIdentity(t *testing.T) {
+	c := qt.New(t)
+	encoding, reply := groupedNativeHCL()
+	second := encoding.objects["second"]
+	second.Ref = encoding.objects["first"].Ref
+	encoding.objects["second"] = second
+	reply.Groups[0].Parts[0].Fragment.Subject = nil
+	parts := encoding.parts(reply)
+	block, err := encoding.block(parts[0])
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(block, qt.DeepEquals, hclext.EncodedBlock{})
+	second.Targets = encoding.objects["first"].Targets
+	encoding.objects["second"] = second
+	block, err = encoding.block(parts[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(block.Object, qt.DeepEquals, second.Ref)
+	c.Assert(block.Targets, qt.DeepEquals, second.Targets)
 }
 
 // TestHCLEncodedValue_FailurePath refuses a value the claim does not read as

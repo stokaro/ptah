@@ -22,8 +22,18 @@ func (h *Host) sourceCoverage(engine string, format protocol.SourceDocument_Form
 		if contract == nil {
 			return schemaext.Coverage{}, fmt.Errorf("decoded source coverage model is not registered")
 		}
+		if len(record.GetRegions()) != 0 {
+			return schemaext.Coverage{}, unsupported("namespace-scoped decoded source coverage")
+		}
+		knowledge, err := sourceKnowledge(record.GetKnowledge())
+		if err != nil {
+			return schemaext.Coverage{}, err
+		}
+		if available := modelKnowledge(contract, format); available.State != schemaext.Complete {
+			knowledge = available
+		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
-			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(modelKnowledge(contract, format))})
+			Representation: schemaext.Desired, Version: 1, Definition: contract.signature}, Knowledge: schemaext.GlobalKnowledge(knowledge)})
 	}
 	var subjects []schemaext.SubjectCoverage
 	for _, record := range source.GetSubjects() {
@@ -72,6 +82,7 @@ func (h *Host) sourceSubject(engine string, source, normalized *protocol.Referen
 func sourceKnowledge(knowledge *protocol.ModelKnowledge) (schemaext.Knowledge, error) {
 	states := map[protocol.ModelKnowledge_State]schemaext.KnowledgeState{
 		protocol.ModelKnowledge_COMPLETE: schemaext.Complete, protocol.ModelKnowledge_ABSENT: schemaext.Absent, protocol.ModelKnowledge_DEFAULTED: schemaext.Defaulted,
+		protocol.ModelKnowledge_UNINSPECTED: schemaext.Uninspected, protocol.ModelKnowledge_UNREPRESENTABLE: schemaext.Unrepresentable,
 	}
 	state, ok := states[knowledge.GetState()]
 	if !ok {

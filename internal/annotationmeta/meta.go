@@ -544,6 +544,8 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("kind", "Object family, such as extension, schema, role or sequence.", valueString, true, false),
 			attr("name", "One object of that family. Omitted, the whole family is declined.", valueString, false, false),
+			attr("reason", "Why the object is undescribed, using a coverage reason token.", valueString, false, false),
+			attr("provenance", "How the limit was learned. Omitted, the source declares it; an empty value preserves unknown provenance.", valueString, false, false),
 		},
 	},
 	{

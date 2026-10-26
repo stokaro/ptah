@@ -665,6 +665,8 @@ object in it, so its absence is not a removal.
 | --- | --- | --- |
 | `kind` | Yes | Object family, such as `extension`, `schema`, `role` or `sequence`. |
 | `name` | No | One object of that family. Omitted, the whole family is declined. |
+| `reason` | No | Coverage reason, such as `not-inspected` or `outside-scope`. |
+| `provenance` | No | How the limit was learned, such as `observed`. Omitted means `declared`; an empty value preserves unknown provenance. |
 
 ```go
 //ptah:schema:notdescribed kind="extension" name="pg_trgm"
@@ -677,6 +679,11 @@ treats the silence as a limit of the description rather than as a statement that
 the database should not have the object. An extension a bootstrap step installs
 is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
+
+Exports retain the reason and provenance of a limit. Both attributes use the
+closed coverage vocabulary; an unknown token is refused. For example,
+`reason="not-inspected" provenance="observed"` preserves an unread family
+reported by an inspection.
 
 The source parser recognizes common kinds and the YDB kinds `coordination_node`,
 `streaming_query`, `resource_pool`, `resource_pool_classifier`, `secret`,

@@ -752,9 +752,15 @@ table, the routine or the view. A top-level block's value is a setting of the
 table it names. The provider also states what the document holds of its models,
 from the claims and from the `ptah:not-described` entries of the kinds the
 engine lists in `header_kinds`. A captured `ptah:feature-coverage` header is
-read by Ptah with the provider's model definitions. A decode reply records no
-subject a header leaves undescribed, so a provider can refuse a document by such
-an entry but cannot record the limit.
+read by Ptah with the provider's model definitions.
+
+With negotiated
+`source.limits`, claimed headers can narrow the model's or a subject's
+knowledge. The provider interprets the header and returns the exact enrolled
+model inventory with that knowledge. Ptah preserves incomplete knowledge;
+namespace-scoped source coverage is refused because the adapter cannot retain
+its bounds. Without this feature, a header cannot narrow a decode reply's
+coverage, so the provider must refuse a source whose limit it cannot preserve.
 
 `source.encode` lets the provider write its values back when Ptah writes HCL,
 as `ptah schema export --to hcl` does. Ptah sends the values and what the
@@ -765,12 +771,27 @@ key, a routine or a materialized view has no place in an encoding request and is
 reported as a loss too. The `ptah:not-described` entries the provider returns
 are written in the document's header.
 
+With negotiated `source.encode-groups`, one model value can require several
+ordered declarations. Each group accounts for its values once; each part must
+match a value's model, binding and subject. Ptah keeps each HCL native object's
+identity and target scope when placing its parts. A single HCL block cannot
+represent several distinct native object identities.
+
 Ptah writes Go annotations, as `ptah introspect` does, through the same call.
 The provider writes a value as a directive of its own at the table or among
 the standalone objects, or as attributes of `ptah:schema:table`,
 `ptah:schema:field` or `ptah:schema:index`, and it may give a field the Go type
 of its engine type. A Go export takes no loss: a value the provider cannot
-write, and a `ptah:not-described` entry it returns, refuse the export.
+write refuses the export. Negotiated `source.limits` lets an engine declare
+`go_header_kinds` that it reads and writes as `ptah:schema:notdescribed`
+annotations. Ptah preserves their reason and provenance, checks the closed
+evidence vocabulary, and sends each header to its owner when reading the
+source back. Unclaimed limits and limits returned without negotiation refuse
+the export.
+
+A native Go object reads back in the engine that owns its directive. An export
+preserves that scope implicitly and refuses another target scope. An unscoped
+object is representable only when its model belongs to that engine alone.
 
 An explicit export target must name an encoding engine or one of its aliases.
 Without a target, Ptah selects the provider's sole encoding engine and refuses

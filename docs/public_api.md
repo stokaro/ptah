@@ -447,7 +447,10 @@ is not selected.
   kind of its `Extension.Limits`, and an object name or none, which the
   writer writes as `ptah:schema:notdescribed` at the start of every file it
   generates. `Set.Encode` refuses a limit reading the source back would hand
-  to another owner or to none, and one written twice.
+  to another owner or to none, and one written twice. `Reason` and `Provenance`
+  preserve the limit's evidence using the closed `coverage` vocabulary. The
+  writer includes an explicit empty provenance when it is unknown; omitting
+  the attribute in authored source means `coverage.Declared`.
 - `AfterViews` places a directive among the standalone objects after the
   views and materialized views and before the roles, such as a YDB topic.
 - A `SlotFacets` also carries the declaration's `Options`, such as an index's

@@ -49,13 +49,14 @@ func (h *Host) annotationExtensions() []annotation.Extension {
 		return nil
 	}
 	extension := claimedExtension(h.description.GetProviderId(), h.goSource.claims)
+	extension.Limits = goHeaderKinds(h.description)
 	extension.File = func() annotation.FileDecoder { return &goFileDecoder{host: h} }
 	if slices.ContainsFunc(h.description.GetEngines(), func(engine *protocol.Engine) bool {
 		return h.targets[engine.GetId()].encodes() && len(engine.GetGoSourceDirectives()) > 0
 	}) {
 		extension.Encoder, extension.Encodes = goEncoder{host: h}, slices.Clone(extension.Kinds)
 	}
-	extension.Coverage = func([]coverage.Object) (schemaext.Coverage, error) { return h.goBaseCoverage() }
+	extension.Coverage = h.goCoverage
 	return []annotation.Extension{extension}
 }
 
@@ -76,6 +77,7 @@ func PublishedAnnotations(description *protocol.Description) (annotation.Extensi
 	}
 	providerID := description.GetProviderId()
 	extension := claimedExtension(providerID, claims)
+	extension.Limits = goHeaderKinds(description)
 	unread := func() error {
 		return fmt.Errorf("%w: provider %s reads its Go annotations; select it to read this file", ptaherr.ErrUnsupportedFeature, providerID)
 	}
@@ -154,7 +156,7 @@ func (h *Host) goBaseCoverage() (schemaext.Coverage, error) {
 		if len(engine.GetGoSourceDirectives()) == 0 {
 			continue
 		}
-		decoded, err := h.decodeGoSource(engine, nil, nil)
+		decoded, err := h.decodeGoSource(engine, nil, nil, nil)
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
@@ -174,11 +176,15 @@ func (h *Host) goBaseCoverage() (schemaext.Coverage, error) {
 // document. The annotation frontend passes no context to an owner, so the
 // request is not tied to the command's cancellation; it ends when the provider
 // process does.
-func (h *Host) decodeGoSource(engine *protocol.Engine, tables annotation.Tables, declarations []annotation.Declaration) (*protocol.DecodedSourceDocument, error) {
+func (h *Host) decodeGoSource(engine *protocol.Engine, tables annotation.Tables, declarations []annotation.Declaration, limits []coverage.Object) (*protocol.DecodedSourceDocument, error) {
 	ctx := context.Background()
 	request, err := providersource.GoAnnotations(ctx, engine, tables, declarations)
 	if err != nil {
 		return nil, err
+	}
+	for _, limit := range limits {
+		request.Documents[0].Limits = append(request.Documents[0].Limits, &protocol.SchemaCoverageLimit{Kind: string(limit.Kind), Name: limit.Name,
+			Reason: string(limit.Reason), Provenance: string(limit.Provenance)})
 	}
 	decoded, err := h.client.DecodeSource(ctx, request)
 	if err != nil {
@@ -217,7 +223,7 @@ func (d *goFileDecoder) Finish(tables annotation.Tables) ([]annotation.Contribut
 	var contributions []annotation.Contribution
 	for _, engine := range engines {
 		declarations := byEngine[engine.GetId()]
-		document, err := d.host.decodeGoSource(engine, tables, declarations)
+		document, err := d.host.decodeGoSource(engine, tables, declarations, nil)
 		if err != nil {
 			return nil, refuseDocument(declarations, err)
 		}

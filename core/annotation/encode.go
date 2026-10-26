@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/dialectscope"
 )
@@ -147,6 +148,11 @@ type EncodedLimit struct {
 	Kind string
 	// Name is the object the limit covers, or empty for the whole kind.
 	Name string
+	// Reason records why the source leaves this object undescribed.
+	Reason coverage.Reason
+	// Provenance records how the limit was learned. The writer preserves an
+	// explicitly unknown value instead of inferring authored evidence.
+	Provenance coverage.Provenance
 }
 
 // SlotAttributes are the attributes an owner adds to one of the frontend's
@@ -387,14 +393,18 @@ func (s Set) checkFieldTypes(index int, request EncodeRequest, types []FieldType
 // source back would hand to another owner or to none, and one it writes
 // twice.
 func (s Set) checkLimits(index int, limits []EncodedLimit) error {
-	written := make(map[EncodedLimit]bool, len(limits))
+	written := make(map[[2]string]bool, len(limits))
 	for _, limit := range limits {
-		reader, found := s.limits[strings.ToLower(strings.TrimSpace(limit.Kind))]
-		if !found || reader != index || written[limit] {
+		key := [2]string{strings.ToLower(strings.TrimSpace(limit.Kind)), limit.Name}
+		reader, found := s.limits[key[0]]
+		if !found || reader != index || written[key] {
 			return fmt.Errorf("%w: Go annotation encoder of %s wrote the limit of kind %q and name %q, which reading the source back does not hand to it, or wrote it twice",
 				schemaext.ErrInvalidValue, s.extensions[index].Owner, limit.Kind, limit.Name)
 		}
-		written[limit] = true
+		if !limit.Reason.Valid() || !limit.Provenance.Valid() {
+			return fmt.Errorf("%w: Go annotation encoder of %s wrote invalid limit evidence", schemaext.ErrInvalidValue, s.extensions[index].Owner)
+		}
+		written[key] = true
 	}
 	return nil
 }

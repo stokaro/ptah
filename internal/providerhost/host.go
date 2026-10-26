@@ -95,6 +95,10 @@ var hostFeatures = []string{
 	// blocks, read by the frontend and decoded by the provider; see
 	// Host.hclExtensions.
 	provider.HCLSourceFeature,
+	// Source groups retain exact value accounting across ordered syntax parts;
+	// claimed headers retain the owner's narrowed source coverage.
+	provider.EncodeGroupsFeature,
+	provider.SourceLimitsFeature,
 	// A command's scope names a provider's objects by the selector types its
 	// engines declare, and a grant rides the object it names; see
 	// newScopeSelections.

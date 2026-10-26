@@ -1777,6 +1777,14 @@
             "name": {
               "description": "One object of that family. Omitted, the whole family is declined.",
               "type": "string"
+            },
+            "provenance": {
+              "description": "How the limit was learned. Omitted, the source declares it; an empty value preserves unknown provenance.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Why the object is undescribed, using a coverage reason token.",
+              "type": "string"
             }
           },
           "required": [
