@@ -705,16 +705,17 @@ target.
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
 attached `ParentKinds` to their owner and declares the operation kinds it may
-return. Parent models require both desired and observed codecs. The runtime validates
+return. `ContextKinds` independently assigns named object assessment, including
+objects whose declarations are unchanged. Parent models require both desired and observed codecs. The runtime validates
 the entire request before dispatch. Local codecs isolate requests and replies
 without encoding or semantic service calls. Missing services, malformed replies,
 errors, and cancellation return no result. A successful result explicitly sets
 `Complete`, including a no-op.
 
 A completed refusal returns `Diagnostics` and no contributions or receipts.
-Diagnostics contain data and optional change or parent indexes. The runtime
-validates their assigned kinds and maps change indexes back to the caller's
-batch. It collects refusals from every selected service and discards all
+Diagnostics contain data and optional change, parent, or context-object indexes.
+Context-object indexes refer to `Request.Objects.AllSubjects()`. The runtime
+validates assigned kinds and remaps service indexes to the caller's batch. It collects refusals from every selected service and discards all
 operations if any service refuses. Provider failures and cancellation discard
 diagnostics as well. `Result.Err(request)` converts a validated outcome into
 `featureplan.RefusalError` for local callers, preserving schema and capability
@@ -746,12 +747,35 @@ that state. Unknown observations do not become absent because the child diff is
 empty. Missing receipts and incomplete responses are errors. Parent strategies
 may contribute steps, which must join the same graph as other changes.
 
+`Request.Objects` carries independent desired and observed object states with
+source coverage. Each context planner receives the complete named-object
+inventory of its owner on the selected target. Registered `ContextKinds` select
+which objects it must assess. The runtime calls that service even without
+changes or concrete values: unknown namespace coverage can hide a dependent
+object. Callers cannot narrow this assignment.
+
+`ObjectContext.Subjects(kinds)` returns the ordered union of native records and
+native subject coverage for assigned kinds; desired spelling wins. Kind-wide
+and parent-namespace coverage add no invented object identity. Each `ObjectPlan`
+receipt preserves one union subject, its model kind, a strategy, and any steps it
+requires. Missing, duplicate, reordered, or foreign receipts refuse the whole
+result. An unchanged object may account for lifecycle steps through its receipt.
+`ChangedSubjects` is derived from accepted changes before service batching; it
+adds no write ownership.
+
+Rollback context converts captured observations into declarations and applies
+only complete owner-provided forward projections to its current objects. A
+changed object without a projection becomes explicitly uninspected. Its prior
+observation and desired declaration cannot stand in for the unknown result.
+
 Each `ChangePlan` preserves its input subject and kind and records a strategy,
-including changes that need no operation. Its step references, together with parent
-receipts, account for every emitted operation. Operations retain typed payloads, grammatical placement,
+including changes that need no operation. Its step references, together with
+parent and object receipts, account for every emitted operation. Operations retain typed payloads, grammatical placement,
 single-line notes, and parent identities. A service reply must join the complete
 host graph before its operations can be used; dependencies may refer to other
-owners' steps. An operation's `Phase` selects the host window its step joins.
+owners' steps.
+
+An operation's `Phase` selects the host window its step joins.
 Every host accepts `PhaseDefault`. The migration planners of the PostgreSQL
 family and of SQL Server accept `PhaseDependent`: each places the operation
 after its creations and changes and before its removals, in one window whose
@@ -2841,6 +2865,9 @@ the value does not import the owner of the object. The runtime collects what
 the desired objects and facets require and sends it to every object owner as
 `schemaext.ObjectComparisonRequest.Required`, in identity order and each once.
 It refuses an identity without a kind or a name with `schemaext.ErrInvalidValue`.
+`Requires()` returns `([]objectidentity.ID, error)`. An unresolved dependency
+context returns an error before comparison, selection, or rendering; an empty
+list means the value has no dependencies.
 An owner does not plan the removal of an object `Required` names, even when the
 desired source claims to describe every object of its kind.
 

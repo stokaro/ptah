@@ -17,6 +17,11 @@ func (r *Runtime) snapshotPlanning(ctx context.Context, request featureplan.Requ
 	var err error
 	request.Identifiers = request.Identifiers.Clone()
 	request.ParentKinds = slices.Clone(request.ParentKinds)
+	request.ContextKinds = slices.Clone(request.ContextKinds)
+	request.Objects, err = r.snapshotPlanningObjects(ctx, request.Target, request.Objects)
+	if err != nil {
+		return featureplan.Request{}, err
+	}
 	request.Types.Desired, err = snapshotDefinedTypes(request.Types.Desired)
 	if err != nil {
 		return featureplan.Request{}, fmt.Errorf("declared planning types: %w", err)

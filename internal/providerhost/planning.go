@@ -25,6 +25,7 @@ func (t *target) registerPlanning(result *engine.Provider) {
 			Target:         t.engine.GetId(),
 			Kinds:          boundKinds(declaration.GetChangeKinds()),
 			ParentKinds:    boundKinds(declaration.GetParentKinds()),
+			ContextKinds:   boundKinds(declaration.GetContextKinds()),
 			OperationKinds: boundKinds(declaration.GetOperationKinds()),
 			Service:        modelPlanner{target: t, declaration: declaration},
 		})
@@ -49,6 +50,9 @@ func (s modelPlanner) PlanFeatures(ctx context.Context, request featureplan.Requ
 	if err != nil {
 		return featureplan.Result{}, err
 	}
+	if err := remapObjectDiagnostics(remote, request.Objects.AllSubjects(), &result); err != nil {
+		return featureplan.Result{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return featureplan.Result{}, err
 	}
@@ -59,7 +63,7 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 	if request.Target != s.target.engine.GetId() {
 		return nil, fmt.Errorf("%w: planning target changed", schemaext.ErrInvalidValue)
 	}
-	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath", "Policy"); err != nil {
+	if err := onlyFields(request, "Target", "Identifiers", "Capabilities", "Changes", "Tables", "Types", "CommonSteps", "ParentKinds", "DatabasePath", "Policy", "Objects", "ContextKinds"); err != nil {
 		return nil, err
 	}
 	identifiers, err := comparisonIdentifiers(request.Identifiers)
@@ -70,14 +74,16 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		return nil, err
 	}
 	remote := &protocol.PlanFeaturesRequest{
-		Engine:       request.Target,
-		PlanningId:   s.declaration.GetId(),
-		Identifiers:  identifiers,
-		Capabilities: make(map[string]bool),
-		ParentKinds:  comparisonKinds(request.ParentKinds),
-		DatabasePath: request.DatabasePath,
-		DesiredTypes: planningTypes(request.Types.Desired),
-		CurrentTypes: planningTypes(request.Types.Current),
+		Engine:          request.Target,
+		PlanningId:      s.declaration.GetId(),
+		Identifiers:     identifiers,
+		Capabilities:    make(map[string]bool),
+		ParentKinds:     comparisonKinds(request.ParentKinds),
+		ContextKinds:    comparisonKinds(request.ContextKinds),
+		ChangedSubjects: comparisonIdentities(request.Objects.ChangedSubjects),
+		DatabasePath:    request.DatabasePath,
+		DesiredTypes:    planningTypes(request.Types.Desired),
+		CurrentTypes:    planningTypes(request.Types.Current),
 	}
 	for name, value := range request.Capabilities.All() {
 		remote.Capabilities[string(name)] = value
@@ -85,6 +91,16 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 	capture := planningCapture{
 		comparisonCapture: comparisonCapture{target: s.target, request: &protocol.CompareModelsRequest{Engine: request.Target, TargetFeatures: featureSet(s.target.engine.GetFeatures())}},
 		identifiers:       request.Identifiers,
+	}
+	if len(request.ContextKinds) != 0 {
+		remote.DesiredObjects, err = capture.objects(schemaext.Desired, request.Objects.Desired)
+		if err != nil {
+			return nil, err
+		}
+		remote.CurrentObjects, err = capture.objects(schemaext.Observed, request.Objects.Current)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for i, change := range request.Changes {
 		value, err := capture.value(schemaext.Change, change.Value, strconv.Itoa(i))

@@ -68,7 +68,7 @@ func (*ObservedHypertable) Kind() schemaext.Kind { return HypertableKind }
 
 // Requires names the timescaledb extension, which a hypertable cannot exist
 // without; see [schemaext.Requirer].
-func (*DesiredHypertable) Requires() []objectidentity.ID { return requiresExtension() }
+func (*DesiredHypertable) Requires() ([]objectidentity.ID, error) { return requiresExtension(), nil }
 
 // Clone returns an independent declaration. A nil receiver remains typed nil.
 func (v *DesiredHypertable) Clone() schemaext.Value {

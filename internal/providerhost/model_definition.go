@@ -175,6 +175,7 @@ func comparisonContracts(declarations []*protocol.ModelComparison) []comparisonI
 // Planning ownership is part of each captured model's interpretation. Reordering
 // declarations or vocabulary members does not change the semantic assignment.
 type planningIdentityContract struct {
+	Context    []string `json:"context"`
 	ID         string   `json:"id"`
 	Changes    []string `json:"changes"`
 	Parents    []string `json:"parents"`
@@ -184,7 +185,11 @@ type planningIdentityContract struct {
 func planningContracts(declarations []*protocol.ModelPlanning) []planningIdentityContract {
 	result := make([]planningIdentityContract, 0, len(declarations))
 	for _, declaration := range declarations {
-		result = append(result, planningIdentityContract{ID: declaration.GetId(), Changes: featureSet(declaration.GetChangeKinds()), Parents: featureSet(declaration.GetParentKinds()), Operations: featureSet(declaration.GetOperationKinds())})
+		result = append(result, planningIdentityContract{
+			ID: declaration.GetId(), Changes: featureSet(declaration.GetChangeKinds()),
+			Parents: featureSet(declaration.GetParentKinds()), Context: featureSet(declaration.GetContextKinds()),
+			Operations: featureSet(declaration.GetOperationKinds()),
+		})
 	}
 	slices.SortFunc(result, func(a, b planningIdentityContract) int { return strings.Compare(a.ID, b.ID) })
 	return result

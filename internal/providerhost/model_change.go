@@ -1,6 +1,7 @@
 package providerhost
 
 import (
+	"fmt"
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -37,7 +38,14 @@ func (v *resolvedChange) AccessEffect() schemaext.AccessEffect {
 	return schemaext.AccessEffect{Access: assessments[facts.GetAccess()], Reason: facts.GetAccessReason()}
 }
 
-func (v *resolvedModel) Requires() []objectidentity.ID {
+func (v *resolvedModel) Requires() ([]objectidentity.ID, error) {
+	if v.normalized.GetRequiresDatabaseContext() {
+		return nil, fmt.Errorf("%w: model %q requires database context before dependency selection", schemaext.ErrInvalidValue, v.Kind())
+	}
+	return v.requiredObjects(), nil
+}
+
+func (v *resolvedModel) requiredObjects() []objectidentity.ID {
 	result := make([]objectidentity.ID, len(v.normalized.GetRequiredObjects()))
 	for i, subject := range v.normalized.GetRequiredObjects() {
 		result[i] = boundIdentity(subject)
@@ -86,7 +94,7 @@ type dependencyIdentity struct {
 }
 
 func (v *resolvedModel) dependencyIdentities() []dependencyIdentity {
-	required := v.Requires()
+	required := v.requiredObjects()
 	result := make([]dependencyIdentity, len(required))
 	for i, subject := range required {
 		result[i] = dependencyIdentity{Kind: string(subject.Kind), Database: subject.Database.Normalized, Catalog: subject.Catalog.Normalized,

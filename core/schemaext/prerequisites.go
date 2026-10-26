@@ -59,9 +59,10 @@ type SchemaInstallation interface {
 // it to each object owner as [ObjectComparisonRequest.Required]. An owner does
 // not plan the removal of an object it names, whatever the desired source
 // claims to describe: a declaration that uses an object declares that the
-// object is needed.
+// object is needed. A value whose dependencies need unresolved context returns
+// an error; callers must not treat that state as an empty dependency list.
 type Requirer interface {
-	Requires() []objectidentity.ID
+	Requires() ([]objectidentity.ID, error)
 }
 
 // ProvidedByChanges returns caps widened by every change whose value is a

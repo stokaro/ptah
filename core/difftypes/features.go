@@ -8,11 +8,13 @@ import "ptah.run/core/schemaext"
 //
 // DesiredObjects are the objects the target schema declares and
 // CurrentObjects the ones the database holds, each in its own representation.
+// DesiredCoverage preserves the source knowledge independently of the objects.
 // CurrentCoverage is what the read established about each kind, so a
 // planner can tell an object the read recorded and could not describe from
 // one the database does not hold.
 type FeatureContext struct {
 	DesiredObjects  schemaext.Objects
+	DesiredCoverage schemaext.Coverage
 	CurrentObjects  schemaext.Objects
 	CurrentCoverage schemaext.Coverage
 }

@@ -30,7 +30,11 @@ func (r *renderer) encodeOwnerBlocks(owners hclext.Set) (hclext.EncodeResult, er
 	r.ownerRequirements = make(map[objectidentity.Key][]objectidentity.ID)
 	for _, object := range objects {
 		if value, ok := object.Value.(schemaext.Requirer); ok {
-			r.ownerRequirements[object.Ref.Key()] = slices.Clone(value.Requires())
+			required, err := value.Requires()
+			if err != nil {
+				return hclext.EncodeResult{}, err
+			}
+			r.ownerRequirements[object.Ref.Key()] = slices.Clone(required)
 		}
 	}
 	return owners.Encode(context.Background(), request)
