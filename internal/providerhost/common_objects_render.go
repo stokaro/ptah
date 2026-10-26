@@ -117,11 +117,19 @@ func (t *target) accessOperation(node ast.Node) (*protocol.CommonObjectChange, *
 	engine := t.engine.GetId()
 	switch typed := node.(type) {
 	case *ast.GrantPrivilegeNode:
-		grant := t.wireGrant(typed.Role, typed.Privileges, typed.ObjectType, typed.ObjectName, typed.Arguments, typed.Columns)
+		grant, err := t.wireGrant(typed.Role, typed.Privileges, typed.ObjectType, typed.ObjectName, typed.Arguments, typed.Columns)
+		if err != nil {
+			return nil, nil, err
+		}
+		grant.Target.Database = typed.DatabasePath
 		grant.WithGrantOption, grant.Comment = typed.WithOption, typed.Comment
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_Grant{Grant: grant}}, grant.GetTarget(), nil
 	case *ast.RevokePrivilegeNode:
-		grant := t.wireGrant(typed.Role, typed.Privileges, typed.ObjectType, typed.ObjectName, typed.Arguments, typed.Columns)
+		grant, err := t.wireGrant(typed.Role, typed.Privileges, typed.ObjectType, typed.ObjectName, typed.Arguments, typed.Columns)
+		if err != nil {
+			return nil, nil, err
+		}
+		grant.Target.Database = typed.DatabasePath
 		grant.WithGrantOption, grant.Comment = typed.GrantOptionFor, typed.Comment
 		return &protocol.CommonObjectChange{Operation: &protocol.CommonObjectChange_Revoke{Revoke: grant}}, grant.GetTarget(), nil
 	case *ast.ObjectCommentNode:
@@ -216,19 +224,40 @@ func roleAlteration(node *ast.AlterRoleNode) (*protocol.RoleAlteration, error) {
 
 // wireGrant names a grant's target by the kind of object it is, as
 // declaredGrant does for a declaration.
-func (t *target) wireGrant(role string, privileges []string, objectType, objectName, arguments string, columns []string) *protocol.SQLGrant {
-	target := &protocol.Reference{Engine: t.engine.GetId(), Kind: strings.ToLower(objectType)}
+func (t *target) wireGrant(role string, privileges []string, objectType, objectName, arguments string, columns []string) (*protocol.SQLGrant, error) {
+	target, err := t.grantTarget(objectType, objectName)
+	if err != nil {
+		return nil, err
+	}
+	if arguments != "" {
+		target.Overload = strings.Split(arguments, ", ")
+	}
+	return &protocol.SQLGrant{Role: role, Privileges: slices.Clone(privileges), Target: target, Columns: slices.Clone(columns)}, nil
+}
+
+// grantTarget uses the provider's declared naming for native objects. A dot
+// in a database-wide name is part of that name, not a schema separator.
+func (t *target) grantTarget(objectType, objectName string) (*protocol.Reference, error) {
+	target := &protocol.Reference{Engine: t.engine.GetId(), Kind: strings.ToLower(grantObjectType(objectType))}
 	switch target.Kind {
 	case "database":
 	case "schema":
 		target.Name = objectName
 	default:
+		if t.host != nil && t.host.selections != nil {
+			grants := grantObjects{selected: t.host.selections.selected}
+			if grants.OwnsGrantType(objectType) {
+				identity, valid := grants.GrantObject(objectType, objectName)
+				if !valid {
+					return nil, unsupported("an invalid provider grant object name")
+				}
+				target.Schema, target.Name = identity.Schema.Source, identity.Name.Source
+				return target, nil
+			}
+		}
 		target.Schema, target.Name = splitQualified(objectName)
 	}
-	if arguments != "" {
-		target.Overload = strings.Split(arguments, ", ")
-	}
-	return &protocol.SQLGrant{Role: role, Privileges: slices.Clone(privileges), Target: target, Columns: slices.Clone(columns)}
+	return target, nil
 }
 
 // commentedReference is the object a comment node names.

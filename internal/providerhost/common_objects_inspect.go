@@ -16,10 +16,12 @@ import (
 // kind without one, a materialized view or a comment, has no record a
 // comparison would read, and the host refuses a read that leaves it out.
 var commonCoverageKinds = map[protocol.CommonObjectSupport_Kind]coverage.Kind{
-	protocol.CommonObjectSupport_VIEW:     coverage.View,
-	protocol.CommonObjectSupport_SEQUENCE: coverage.Sequence,
-	protocol.CommonObjectSupport_ROLE:     coverage.Role,
-	protocol.CommonObjectSupport_GRANT:    coverage.Grant,
+	protocol.CommonObjectSupport_VIEW:            coverage.View,
+	protocol.CommonObjectSupport_SEQUENCE:        coverage.Sequence,
+	protocol.CommonObjectSupport_ROLE:            coverage.Role,
+	protocol.CommonObjectSupport_GRANT:           coverage.Grant,
+	protocol.CommonObjectSupport_OBJECT_OWNER:    coverage.ObjectOwner,
+	protocol.CommonObjectSupport_ROLE_MEMBERSHIP: coverage.RoleMembership,
 }
 
 // commonObjects places what a read reports of the common objects beyond
@@ -29,18 +31,8 @@ var commonCoverageKinds = map[protocol.CommonObjectSupport_Kind]coverage.Kind{
 // does not hold, and an uninspected kind no coverage record can express, are
 // refused here.
 func (r reader) commonObjects(result *catalog.Database, observed *protocol.ObservedCommonObjects) error {
-	if observed == nil {
-		return nil
-	}
-	for _, entry := range observed.GetCoverage() {
-		if entry.GetKnowledge().GetState() == protocol.ModelKnowledge_COMPLETE {
-			continue
-		}
-		kind, recorded := commonCoverageKinds[entry.GetKind()]
-		if !recorded {
-			return unsupported(fmt.Sprintf("a read that leaves %s objects uninspected", strings.ToLower(entry.GetKind().String())))
-		}
-		result.NotDescribed = result.NotDescribed.With(coverage.Refused(kind))
+	if err := recordCommonCoverage(result, observed); err != nil {
+		return err
 	}
 	for _, view := range observed.GetViews() {
 		identity := view.GetIdentity()
@@ -68,6 +60,19 @@ func (r reader) commonObjects(result *catalog.Database, observed *protocol.Obser
 	for _, name := range observed.GetRolesOutOfScope() {
 		result.RolesOutOfScope = append(result.RolesOutOfScope, catalog.Role{Name: name})
 	}
+	for _, membership := range observed.GetMemberships() {
+		result.RoleMemberships = append(result.RoleMemberships, catalog.RoleMembership{Role: membership.GetGroup(), Member: membership.GetMember()})
+	}
+	for _, owner := range observed.GetObjectOwners() {
+		object := owner.GetObject()
+		if err := r.ownerBinding(object); err != nil {
+			return err
+		}
+		result.ObjectOwners = append(result.ObjectOwners, catalog.ObjectOwner{
+			Kind: object.GetKind(), Schema: object.GetSchema(), Name: object.GetName(), Owner: owner.GetOwner(),
+			OwnerCanLogin: copyPlanningPointer(owner.OwnerCanLogin),
+		})
+	}
 	for _, grant := range observed.GetGrants() {
 		result.Grants = append(result.Grants, observedGrants(grant)...)
 	}
@@ -75,6 +80,37 @@ func (r reader) commonObjects(result *catalog.Database, observed *protocol.Obser
 		if err := placeComment(result, comment.GetObject(), comment.GetText()); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func recordCommonCoverage(result *catalog.Database, observed *protocol.ObservedCommonObjects) error {
+	// Absence of a coverage row cannot establish an empty access catalog.
+	// These independent facts may be absent from an older provider contract.
+	for _, kind := range []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_OBJECT_OWNER, protocol.CommonObjectSupport_ROLE_MEMBERSHIP} {
+		if !slices.ContainsFunc(observed.GetCoverage(), func(entry *protocol.CommonObjectCoverage) bool { return entry.GetKind() == kind }) {
+			result.NotDescribed = result.NotDescribed.With(coverage.Refused(commonCoverageKinds[kind]))
+		}
+	}
+	for _, entry := range observed.GetCoverage() {
+		if entry.GetKnowledge().GetState() == protocol.ModelKnowledge_COMPLETE {
+			continue
+		}
+		kind, recorded := commonCoverageKinds[entry.GetKind()]
+		if !recorded {
+			return unsupported(fmt.Sprintf("a read that leaves %s objects uninspected", strings.ToLower(entry.GetKind().String())))
+		}
+		result.NotDescribed = result.NotDescribed.With(coverage.Refused(kind))
+	}
+	return nil
+}
+
+func (r reader) ownerBinding(object *protocol.Reference) error {
+	if object.GetDatabase() != "" && (r.session == nil || object.GetDatabase() != r.session.remote.GetDatabase()) {
+		return unsupported("object ownership outside the exact session database")
+	}
+	if object.GetCatalog() != "" || len(object.GetPath()) != 0 || len(object.GetOverload()) != 0 {
+		return unsupported("object ownership with catalog, parent path, or overload coordinates")
 	}
 	return nil
 }

@@ -268,7 +268,7 @@ func TestYDBReader_LeavesTheDatabaseOwnerOutOfTheDescription(t *testing.T) {
 
 			read := readScoped(c, openYDB(c, line), accessSchemas)
 
-			c.Assert(read.ObjectOwners, qt.Contains, catalog.ObjectOwner{Kind: "database", Owner: "root", OwnerCanLogin: true})
+			c.Assert(read.ObjectOwners, qt.Contains, catalog.ObjectOwner{Kind: "database", Owner: "root", OwnerCanLogin: new(true)})
 			c.Assert(names(read.Roles), qt.Not(qt.Contains), "root")
 			c.Assert(names(read.RolesOutOfScope), qt.Contains, "root")
 		})

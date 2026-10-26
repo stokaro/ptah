@@ -1689,7 +1689,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Roles:           slices.Clone(schema.Roles),
 		Grants:          slices.Clone(schema.Grants),
 		RoleMemberships: slices.Clone(schema.RoleMemberships),
-		ObjectOwners:    slices.Clone(schema.ObjectOwners),
+		ObjectOwners:    cloneObjectOwners(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
@@ -1715,6 +1715,14 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
 	}
+}
+
+func cloneObjectOwners(owners []catalog.ObjectOwner) []catalog.ObjectOwner {
+	result := slices.Clone(owners)
+	for i := range result {
+		result[i] = result[i].Clone()
+	}
+	return result
 }
 
 func cloneGenerated(schema *schemamodel.Database) *schemamodel.Database {

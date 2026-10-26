@@ -156,8 +156,11 @@ func (t *target) declaredGrant(grant schemamodel.Grant) (*protocol.SQLGrant, err
 			target.Overload = strings.Split(grant.RoutineArguments, ", ")
 		}
 	case grant.OnObject != "":
-		target.Kind = grant.ObjectKind
-		target.Schema, target.Name = splitQualified(grant.OnObject)
+		var err error
+		target, err = t.grantTarget(grant.ObjectKind, grant.OnObject)
+		if err != nil {
+			return nil, err
+		}
 	case grant.OnTable != "":
 		target.Kind = "table"
 		target.Schema, target.Name = splitQualified(grant.OnTable)

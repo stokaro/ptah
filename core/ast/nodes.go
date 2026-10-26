@@ -3000,6 +3000,9 @@ func (n *AlterRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode
 
 // GrantPrivilegeNode represents a PostgreSQL GRANT statement.
 type GrantPrivilegeNode struct {
+	// DatabasePath binds the target to the database captured by a live plan.
+	// Empty means that rendering has no database binding.
+	DatabasePath string
 	// Role is the role receiving the privilege.
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
@@ -3065,6 +3068,8 @@ func (n *GrantPrivilegeNode) Accept(visitor Visitor) error { return visitor.Visi
 
 // RevokePrivilegeNode represents a PostgreSQL REVOKE statement.
 type RevokePrivilegeNode struct {
+	// DatabasePath is the captured target database; see [GrantPrivilegeNode.DatabasePath].
+	DatabasePath string
 	// Role is the role losing the privilege.
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.

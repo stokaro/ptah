@@ -83,8 +83,8 @@ func TestReadObjectOwners_ResolvesTheOwnerAndWhetherItAuthenticates(t *testing.T
 	// The catalog's type codes are mapped into Ptah's vocabulary, so a consumer
 	// need not know what sys.objects.type 'SO' is.
 	c.Assert(owners, qt.DeepEquals, []catalog.ObjectOwner{
-		{Kind: "table", Schema: "dbo", Name: "users", Owner: "dbo", OwnerCanLogin: true},
-		{Kind: "sequence", Schema: "dbo", Name: "order_seq", Owner: "dbo", OwnerCanLogin: true},
-		{Kind: "schema", Name: "reporting", Owner: "alice", OwnerCanLogin: false},
+		{Kind: "table", Schema: "dbo", Name: "users", Owner: "dbo", OwnerCanLogin: new(true)},
+		{Kind: "sequence", Schema: "dbo", Name: "order_seq", Owner: "dbo", OwnerCanLogin: new(true)},
+		{Kind: "schema", Name: "reporting", Owner: "alice", OwnerCanLogin: new(false)},
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
@@ -51,6 +52,9 @@ func RoleMemberships(
 		held[difftypes.RoleMembershipRef{Role: membership.Role, Member: membership.Member}] = true
 	}
 	for membership := range declared {
+		if !desired.NotDescribed.Describes(coverage.RoleMembership, membership.Member) {
+			continue
+		}
 		if !held[membership] {
 			diff.RoleMembershipsAdded = append(diff.RoleMembershipsAdded, membership)
 			continue
@@ -58,6 +62,10 @@ func RoleMemberships(
 		diff.Matched.RoleMemberships++
 	}
 	for membership := range held {
+		if !desired.NotDescribed.Describes(coverage.RoleMembership, membership.Member) ||
+			!database.NotDescribed.Describes(coverage.RoleMembership, membership.Member) {
+			continue
+		}
 		if !declared[membership] && managed[membership.Role] && managed[membership.Member] {
 			diff.RoleMembershipsRemoved = append(diff.RoleMembershipsRemoved, membership)
 		}

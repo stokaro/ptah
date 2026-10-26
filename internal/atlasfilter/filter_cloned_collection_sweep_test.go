@@ -137,7 +137,7 @@ func clonedCollectionRows() []clonedCollectionRow {
 			field: "ObjectOwners", present: "owned_table", absent: "nosuch_owned_object",
 			seed: func(s *catalog.Database) {
 				s.ObjectOwners = append(s.ObjectOwners, catalog.ObjectOwner{
-					Kind: "table", Name: "owned_table", Owner: "owner_role", OwnerCanLogin: true,
+					Kind: "table", Name: "owned_table", Owner: "owner_role", OwnerCanLogin: new(true),
 				})
 			},
 		},

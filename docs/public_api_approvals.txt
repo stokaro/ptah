@@ -871,3 +871,9 @@ v0.14.0 ptah.run/migration/planner
 # does not hold it yet. Implementations and callers update directly. Pre-v1,
 # so no compatibility is owed.
 v0.15.0 ptah.run/core/dataext
+
+# ObjectOwner.OwnerCanLogin is optional so a read can distinguish unknown
+# login state from a principal known not to log in. Embedders handle nil before
+# analyzing ownership; Clone copies known values. Pre-v1, so compatibility with
+# the former Boolean field is not owed under the provider extraction policy.
+v0.16.0 ptah.run/catalog

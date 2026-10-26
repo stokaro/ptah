@@ -927,7 +927,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 			resolved = mapped
 		}
 		owners = append(owners, catalog.ObjectOwner{
-			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: canLogin,
+			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: new(canLogin),
 		})
 	}
 	if err := rows.Err(); err != nil {
