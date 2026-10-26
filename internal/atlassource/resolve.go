@@ -53,6 +53,7 @@ import (
 // Runtime is what a resolution needs of the selected providers.
 // *ptah.run/engine.Runtime implements it.
 type Runtime interface {
+	schemaext.TargetResolver
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
 	yamlext.Runtime

@@ -196,6 +196,7 @@ func DBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, dialect
 // read from, and the comparison rules through which a default its catalog
 // reports reads back as a value. *engine.Runtime satisfies it.
 type ConversionRuntime interface {
+	schemaext.TargetResolver
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
 	schemaprojection.ReadBackRuntime

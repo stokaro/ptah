@@ -885,3 +885,9 @@ v0.16.1 ptah.run/catalog
 # map keys. Pre-v1, so compatibility with the former comparable shape is not owed.
 v0.16.1 ptah.run/core/renderer
 v0.16.1 ptah.run/migration/planner
+
+# Catalog conversion resolves the selected target before contextful column
+# readback so engine aliases cannot become wire engine identities. ConversionRuntime
+# requires TargetResolver; engine.Runtime already supplies it. Pre-v1, so no
+# compatibility is owed to custom runtimes missing explicit target resolution.
+v0.16.1 ptah.run/atlascompat

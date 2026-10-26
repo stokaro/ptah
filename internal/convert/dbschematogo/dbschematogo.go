@@ -119,6 +119,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 // Runtime selects the feature conversion and the comparison rules of the
 // target a catalog was read from. *engine.Runtime satisfies it.
 type Runtime interface {
+	schemaext.TargetResolver
 	schemaext.ConversionRuntime
 	schemacomparison.Runtime
 	schemaprojection.ReadBackRuntime
