@@ -182,7 +182,8 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		return err
 	}
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
-		validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
+		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature,
+		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
@@ -240,6 +241,9 @@ func validateSemanticServices(value *protocol.Description) error {
 // extend, so an advertised behavior always has its underlying service.
 func validateContractAdditions(value *protocol.Description) error {
 	features := value.GetFeatures()
+	if slices.Contains(features, ValueContextFeature) && !slices.Contains(features, NormalizeValuesFeature) {
+		return fmt.Errorf("%w: value context requires normalization", ErrProtocol)
+	}
 	if slices.Contains(features, SensitiveInputsFeature) && !slices.Contains(features, ExecuteFeature) {
 		return fmt.Errorf("%w: sensitive inputs require execution", ErrProtocol)
 	}
@@ -313,9 +317,12 @@ func ValidateSchema(value *protocol.Schema) error {
 			return fmt.Errorf("%w: table identity is missing", ErrProtocol)
 		}
 		columns := make(map[string]bool)
-		for _, column := range table.GetColumns() {
-			if column.GetName() == "" || column.GetType() == "" || columns[column.GetName()] {
+		for i, column := range table.GetColumns() {
+			if column.GetName() == "" || columns[column.GetName()] {
 				return fmt.Errorf("%w: malformed or duplicate column", ErrProtocol)
+			}
+			if err := validateInspectedColumn(column, i+1); err != nil {
+				return err
 			}
 			columns[column.GetName()] = true
 		}
@@ -393,6 +400,11 @@ func ValidateUnit(unit *protocol.Unit) error {
 			return fmt.Errorf("%w: empty SQL unit", ErrProtocol)
 		}
 	case *protocol.Unit_Native:
+		if body != nil && body.Native.GetContext() != nil {
+			if err := ValidateDatabaseContext(body.Native.GetContext()); err != nil {
+				return err
+			}
+		}
 		if body == nil || body.Native.GetProviderId() == "" || body.Native.GetKind() == "" || body.Native.GetSchemaVersion() == 0 || body.Native.GetEncoding() == "" {
 			return fmt.Errorf("%w: invalid native unit envelope", ErrProtocol)
 		}
@@ -481,6 +493,9 @@ func ValidateExecuteRequest(description *protocol.Description, request *protocol
 		if err := ValidateUnit(unit); err != nil {
 			return err
 		}
+	}
+	if err := validateUnitContexts(description, request.GetEngine(), request.GetUnits()); err != nil {
+		return err
 	}
 	return validateExecuteInputs(description, request)
 }

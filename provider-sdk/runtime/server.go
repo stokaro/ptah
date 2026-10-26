@@ -46,40 +46,41 @@ var handshake = plugin.HandshakeConfig{
 // copied before serving. Advertised services must have implementations. Service
 // implementations must honor cancellation and isolate sessions and credentials.
 type Server struct {
-	Description     *protocol.Description
-	Sessions        provider.Sessions
-	Inspector       provider.Inspector
-	Renderer        provider.Renderer
-	Executor        provider.Executor
-	Transactions    provider.Transactions
-	History         provider.History
-	Metadata        provider.Metadata
-	Locks           provider.Locks
-	SQLAnalyzer     provider.SQLAnalyzer
-	ValueNormalizer provider.ValueNormalizer
-	SourceDecoder   provider.SourceDecoder
-	ValueConverter  provider.ValueConverter
-	ModelComparer   provider.ModelComparer
-	FeaturePlanner  provider.FeaturePlanner
-	Declarations    provider.DeclarationPlanner
-	Columns         provider.Columns
-	TablePreparer   provider.TablePreparer
-	TableCreations  provider.TableCreationProjector
-	Linter          provider.Linter
-	DevProvisioner  provider.DevProvisioner
-	DevCleaner      provider.DevCleaner
-	ReplayGuard     provider.ReplayGuard
-	SchemaValidator provider.SchemaValidator
-	SQLSchemaReader provider.SQLSchemaReader
-	RowTyper        provider.RowTyper
-	RowReader       provider.RowReader
-	RowWriter       provider.RowWriteRenderer
-	Seeds           provider.Seeds
-	EmbeddingStore  provider.EmbeddingStore
-	CommonObjects   provider.CommonObjectPreparer
-	SourceEncoder   provider.SourceEncoder
-	Statements      provider.StatementRunner
-	ExecutionInputs provider.ExecutionInputDescriber
+	Description      *protocol.Description
+	Sessions         provider.Sessions
+	Inspector        provider.Inspector
+	Renderer         provider.Renderer
+	Executor         provider.Executor
+	Transactions     provider.Transactions
+	History          provider.History
+	Metadata         provider.Metadata
+	Locks            provider.Locks
+	SQLAnalyzer      provider.SQLAnalyzer
+	ValueNormalizer  provider.ValueNormalizer
+	SourceDecoder    provider.SourceDecoder
+	ValueConverter   provider.ValueConverter
+	ModelComparer    provider.ModelComparer
+	FeaturePlanner   provider.FeaturePlanner
+	Declarations     provider.DeclarationPlanner
+	Columns          provider.Columns
+	DatabaseContexts provider.DatabaseContextResolver
+	TablePreparer    provider.TablePreparer
+	TableCreations   provider.TableCreationProjector
+	Linter           provider.Linter
+	DevProvisioner   provider.DevProvisioner
+	DevCleaner       provider.DevCleaner
+	ReplayGuard      provider.ReplayGuard
+	SchemaValidator  provider.SchemaValidator
+	SQLSchemaReader  provider.SQLSchemaReader
+	RowTyper         provider.RowTyper
+	RowReader        provider.RowReader
+	RowWriter        provider.RowWriteRenderer
+	Seeds            provider.Seeds
+	EmbeddingStore   provider.EmbeddingStore
+	CommonObjects    provider.CommonObjectPreparer
+	SourceEncoder    provider.SourceEncoder
+	Statements       provider.StatementRunner
+	ExecutionInputs  provider.ExecutionInputDescriber
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -109,6 +110,7 @@ func (s Server) Validate() error {
 		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
 		{provider.SchemaDeclarationsFeature, !nilService(s.Declarations)},
 		{provider.ColumnsFeature, !nilService(s.Columns)},
+		{provider.DatabaseContextFeature, !nilService(s.DatabaseContexts)},
 		{provider.PrepareTablesFeature, !nilService(s.TablePreparer)},
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
@@ -260,6 +262,11 @@ func (s *serverAdapter) Describe(ctx context.Context, request *protocol.Describe
 }
 
 func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	request = proto.CloneOf(request)
+	expected, err := s.addressContext(ctx, request)
+	if err != nil {
+		return nil, err
+	}
 	if request.GetEngine() == "" || request.GetAddress() == "" {
 		return nil, status.Error(codes.InvalidArgument, "engine and connection address are required")
 	}
@@ -270,7 +277,7 @@ func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.ValidateSession(request.GetEngine(), result); err != nil {
+	if err := provider.ValidateSessionContext(s.negotiated(), request.GetEngine(), expected, result); err != nil {
 		if result.GetId() != "" {
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), CallTimeout)
 			defer cancel()

@@ -55,6 +55,10 @@ a new record that names it, and its own status line is updated to point there.
 | [0043](0043-sensitive-input-references-are-approved-before-values-are-bound.md) | Sensitive input references are approved before values are bound | Accepted |
 | [0044](0044-lifecycle-operations-use-the-complete-common-sequence.md) | Lifecycle operations use the complete common sequence | Accepted |
 | [0045](0045-a-provider-states-common-column-comparison-and-readback-semantics.md) | A provider states common column comparison and readback semantics | Accepted |
+| [0046](0046-database-context-is-bound-before-provider-dependencies-are-used.md) | Database context is bound before provider dependencies are used | Accepted |
+| [0047](0047-common-view-facets-retain-authored-and-observed-state.md) | Common view facets retain authored and observed state | Accepted |
+| [0048](0048-common-column-observations-have-one-complete-wire-representation.md) | Common column observations have one complete wire representation | Accepted |
+| [0049](0049-native-object-context-is-assessed-without-inventing-schema-differences.md) | Native object context is assessed without inventing schema differences | Accepted |
 
 ## Writing one
 

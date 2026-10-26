@@ -13,7 +13,7 @@ func validateModelPlanning(description *protocol.Description, engine *protocol.E
 	}
 	services, changes, parents := make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	for _, service := range engine.GetPlanning() {
-		if !validName(service.GetId()) || services[service.GetId()] || len(service.GetChangeKinds())+len(service.GetParentKinds()) == 0 {
+		if !validName(service.GetId()) || services[service.GetId()] || len(service.GetChangeKinds())+len(service.GetParentKinds())+len(service.GetContextKinds()) == 0 {
 			return fmt.Errorf("%w: missing or duplicate planning service", ErrProtocol)
 		}
 		services[service.GetId()] = true
@@ -36,7 +36,7 @@ func validateModelPlanning(description *protocol.Description, engine *protocol.E
 			parents[kind] = true
 		}
 	}
-	return nil
+	return validatePlanningObjectAssignments(description, engine)
 }
 
 func findModelPlanning(description *protocol.Description, engine, id string) *protocol.ModelPlanning {
@@ -54,7 +54,7 @@ func findModelPlanning(description *protocol.Description, engine, id string) *pr
 }
 
 func validatePlanningVocabulary(description *protocol.Description, engine *protocol.Engine, service *protocol.ModelPlanning) error {
-	for _, kinds := range [][]string{service.GetChangeKinds(), service.GetParentKinds(), service.GetOperationKinds()} {
+	for _, kinds := range [][]string{service.GetChangeKinds(), service.GetParentKinds(), service.GetOperationKinds(), service.GetContextKinds()} {
 		if err := validateComparisonNames(kinds); err != nil {
 			return err
 		}

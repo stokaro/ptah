@@ -222,13 +222,36 @@ func TestIndependentProviderProcess(t *testing.T) {
 // joins the fixture module and the in-tree SDK for this build alone: the
 // fixture's go.mod and go.sum stay as committed, no workspace file enters the
 // tree, and the host's own tests keep building the fixture from its pinned tag.
-func buildFixture(c *qt.C, program string) string {
+func fixtureSDK(c *qt.C) string {
 	c.Helper()
 	_, source, _, ok := runtime.Caller(0)
 	c.Assert(ok, qt.IsTrue)
 	sdk, err := filepath.Abs(filepath.Join(filepath.Dir(source), ".."))
 	c.Assert(err, qt.IsNil)
+	return sdk
+}
+
+func buildFixture(c *qt.C, program string) string {
+	c.Helper()
+	sdk := fixtureSDK(c)
 	dir := filepath.Join(sdk, "testdata", "fixture")
+	return buildFixtureModule(c, program, dir, "./cmd/"+program, sdk)
+}
+
+// buildSDKFixture compiles an unreleased SDK proof without changing the
+// independent fixture module's published pin or adding a committed replace.
+func buildSDKFixture(c *qt.C, program string) string {
+	c.Helper()
+	sdk := fixtureSDK(c)
+	dir, err := filepath.EvalSymlinks(c.TempDir())
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.CopyFS(dir, os.DirFS(filepath.Join(sdk, "testdata", "fixture"))), qt.IsNil)
+	c.Assert(os.CopyFS(filepath.Join(dir, "cmd", program), os.DirFS(filepath.Join(sdk, "integration", "testdata", program))), qt.IsNil)
+	return buildFixtureModule(c, program, dir, "./cmd/"+program, sdk)
+}
+
+func buildFixtureModule(c *qt.C, program, dir, target, sdk string) string {
+	c.Helper()
 	workspace := filepath.Join(c.TempDir(), "go.work")
 	initialize := exec.CommandContext(c.Context(), "go", "work", "init", dir, sdk)
 	initialize.Dir = filepath.Dir(workspace)
@@ -236,7 +259,7 @@ func buildFixture(c *qt.C, program string) string {
 	output, err := initialize.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("fixture workspace: %s", output))
 	binary := filepath.Join(c.TempDir(), program+".exe")
-	command := exec.CommandContext(c.Context(), "go", "build", "-o", binary, "./cmd/"+program)
+	command := exec.CommandContext(c.Context(), "go", "build", "-o", binary, target)
 	command.Dir = dir
 	command.Env = append(os.Environ(), "GOWORK="+workspace)
 	output, err = command.CombinedOutput()
