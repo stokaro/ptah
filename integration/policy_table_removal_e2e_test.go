@@ -98,6 +98,28 @@ CREATE POLICY p_docs ON docs USING (member_id IN (SELECT id FROM current_members
 			},
 			secondState: otherState,
 		},
+		{
+			// Neither table can be dropped with RESTRICT while the other's
+			// policy reads it, on the target and in the cleanup of the dev
+			// database the second step replays the first on.
+			name: "two removed tables whose policies read each other's table",
+			first: `CREATE TABLE a (id bigint PRIMARY KEY, who text);
+CREATE TABLE b (id bigint PRIMARY KEY, who text);
+ALTER TABLE a ENABLE ROW LEVEL SECURITY;
+ALTER TABLE b ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pa ON a USING (EXISTS (SELECT 1 FROM b WHERE b.who = current_user));
+CREATE POLICY pb ON b USING (EXISTS (SELECT 1 FROM a WHERE a.who = current_user));
+`,
+			second: other,
+			firstState: rowSecurityState{
+				Relations: []string{"a table rls=true force=false", "b table rls=true force=false"},
+				Policies: []string{
+					"a.pa PERMISSIVE {public} ALL using=(EXISTS ( SELECT 1\n   FROM b\n  WHERE (b.who = CURRENT_USER))) check=",
+					"b.pb PERMISSIVE {public} ALL using=(EXISTS ( SELECT 1\n   FROM a\n  WHERE (a.who = CURRENT_USER))) check=",
+				},
+			},
+			secondState: otherState,
+		},
 	}
 }
 
