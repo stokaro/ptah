@@ -180,6 +180,10 @@ func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredReaderStopsTheDrop(t *te
 			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE FUNCTION count_a() RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(a) FROM t; END;\n",
 			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
 			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
+		{name: "a removed routine reads a column and takes a removed table row", steps: exactSteps(
+			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE TABLE u (id bigint PRIMARY KEY);\nCREATE FUNCTION count_a(arg u) RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(a) FROM t; END;\n",
+			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
+			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
 		{name: "a view removed with a routine that returns its rows", steps: exactSteps(
 			`CREATE TABLE t (id bigint PRIMARY KEY, a int);
 CREATE VIEW v AS SELECT id, a FROM t;

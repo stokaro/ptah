@@ -54,3 +54,31 @@ func TestPlanner_ExactStyleDropsRemovedRoutineBeforeItsColumn(t *testing.T) {
 		})
 	}
 }
+
+// A routine can read a removed column and take the row type of a different
+// removed table. The table drop is after column drops, so moving the routine
+// only ahead of that table must not make the column drop look independent.
+func TestPlanner_ExactStyleDropsRoutineBeforeColumnAndRowTypeTable(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
+			TableName: "t", ColumnsRemoved: difftypes.ColumnChanges{{Name: "a"}},
+		}},
+		TablesRemoved: difftypes.TableRemovals{{Name: "u"}},
+		FunctionsRemoved: difftypes.FunctionChanges{{
+			Function: schemamodel.Function{
+				Name: "count_a", Parameters: "row u", Returns: "bigint", Language: "sql",
+				Body: "BEGIN ATOMIC SELECT count(a) FROM t; END",
+			},
+			Signature: new("row u"),
+		}},
+	}
+	planner := postgres.New().WithStatementStyle(planext.StatementStyleExact)
+
+	nodes, err := planner.GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"drop function", "drop column", "drop table"})
+	c.Assert(droppedCascades(nodes)["column t.a"], qt.IsFalse)
+	c.Assert(droppedCascades(nodes)["table u"], qt.IsFalse)
+}
