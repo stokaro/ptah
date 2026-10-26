@@ -122,6 +122,14 @@ func reverseSchemaDiffWithPrior(
 		// And the same for the functions this direction creates: they are the
 		// ones that database held, and what they call is what it recorded.
 		DeclaredFunctions: difftypes.FunctionOrderingOf(prior),
+		// And the same for the indexes, grants and triggers a rebuild puts
+		// back: a rollback recreates a view of the pre-change database, with
+		// what that database declared on it.
+		DeclaredIndexes:  difftypes.IndexDeclarationsOf(prior),
+		DeclaredTriggers: priorTriggers(prior),
+		// A routine neither side changes is the same routine in both
+		// directions, with the same argument list.
+		RoutinesKept: slices.Clone(diff.RoutinesKept),
 		// Reverse the databases of a whole MySQL-family server: a created one
 		// is dropped, a dropped one is created with the character set and
 		// collation the pre-change server held, and a changed one is set back.
@@ -305,6 +313,7 @@ func reverseSchemaDiffWithPrior(
 	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
+	reversed.CurrentViewOptions = diff.CurrentViewOptions
 	return reversed
 }
 
@@ -409,6 +418,14 @@ func priorSchemas(prior *schemamodel.Database) []schemamodel.Schema {
 		return nil
 	}
 	return prior.Schemas
+}
+
+// priorTriggers is every trigger the pre-change database declared.
+func priorTriggers(prior *schemamodel.Database) []schemamodel.Trigger {
+	if prior == nil {
+		return nil
+	}
+	return prior.Triggers
 }
 
 // priorTables is every table the pre-change database declared.

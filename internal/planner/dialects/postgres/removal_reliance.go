@@ -188,7 +188,7 @@ func (p *Planner) routinesAheadOf(diff *difftypes.SchemaDiff, rebuild viewRebuil
 	for _, object := range rebuild.dropped() {
 		dropped = append(dropped, object.Name)
 	}
-	dropped = append(dropped, modifiedViewPaths(diff).dropped...)
+	dropped = append(dropped, namesOf(modifiedViewPaths(diff).dropped)...)
 	for _, routines := range []difftypes.FunctionChanges{diff.FunctionsRemoved, diff.ProceduresRemoved} {
 		for _, routine := range routines {
 			var named []string

@@ -73,6 +73,9 @@ func (r *Renderer) refuseViewDeclarations(subject string, node *ast.CreateViewNo
 	case len(node.Attributes) > 0:
 		return refuseFact("WITH "+strings.Join(node.Attributes, ", ")+" on "+subject,
 			"a YDB view takes the security_invoker option alone, which Ptah writes on every view")
+	case len(node.Options) > 0:
+		return refuseFact("WITH ("+strings.Join(node.Options, ", ")+") on "+subject,
+			"the options are PostgreSQL's, and a YDB view takes the security_invoker option alone, which Ptah writes on every view")
 	}
 	return nil
 }

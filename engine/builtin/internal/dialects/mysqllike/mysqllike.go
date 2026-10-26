@@ -669,6 +669,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Attributes(r.dialect, node.Name, node.Attributes); err != nil {
 		return err
 	}
+	if err := viewrefusal.Options(r.dialect, "view", node.Name, node.Options); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}

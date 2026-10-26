@@ -1376,7 +1376,8 @@ policies read each other are dropped in one `DROP TABLE`. The plan relies on
 - a view or table whose row type a removed routine names, when another object
   the plan removes calls the routine or the routine names more than one
   relation the plan drops; the routine is then removed after every table and
-  view;
+  view. A view the plan drops and creates again is not one of them: the plan
+  drops every routine that uses its row type before it;
 - a view or a column a row-level security policy of a removed table reads,
   since views and columns are dropped before tables;
 - a column a routine the plan removes reads in a SQL-standard body;
@@ -1384,9 +1385,7 @@ policies read each other are dropped in one `DROP TABLE`. The plan relies on
   `CREATE TYPE wrap AS (r t, n int)`. A removed domain, composite type or
   range type that names no such table, a removed extension and a removed
   default privilege hold no drop back. An object a feature owner removes and
-  cannot describe holds back every column and table drop;
-- a view dropped and created again under a declared view that reads it, which
-  the plan puts back with `CREATE OR REPLACE VIEW` after the drop.
+  cannot describe holds back every column and table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.

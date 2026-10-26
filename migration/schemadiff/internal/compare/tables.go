@@ -190,6 +190,11 @@ func TablesAndColumnsWithTableContext(
 	// The ordering inputs for creating functions: a body may call another
 	// function, and the additions are sorted by name rather than by either.
 	diff.DeclaredFunctions = difftypes.FunctionOrderingOf(desired)
+	// The indexes, grants and triggers a planner puts back on a view or a
+	// materialized view it drops and creates again -- usually ones this diff
+	// does not touch.
+	diff.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	diff.DeclaredTriggers = desired.Triggers
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			creation := difftypes.TableCreationFor(desired, table, tableDiffName(table.Schema, table.Name, dialect), semantics)

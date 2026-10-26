@@ -591,6 +591,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Attributes(DialectName, node.Name, node.Attributes); err != nil {
 		return err
 	}
+	if err := viewrefusal.Options(DialectName, "view", node.Name, node.Options); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -620,6 +623,9 @@ func (r *Renderer) renderDropView(node *ast.DropViewNode) error {
 }
 
 func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if err := viewrefusal.Options(DialectName, "materialized view", node.Name, node.Options); err != nil {
+		return err
+	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
