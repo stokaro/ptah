@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 5
+const ContractMinor uint32 = 6
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -44,7 +44,7 @@ const (
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
 		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
-		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature}
+		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:

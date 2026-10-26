@@ -62,6 +62,7 @@ type Server struct {
 	ModelComparer   provider.ModelComparer
 	FeaturePlanner  provider.FeaturePlanner
 	Declarations    provider.DeclarationPlanner
+	Columns         provider.Columns
 	TablePreparer   provider.TablePreparer
 	TableCreations  provider.TableCreationProjector
 	Linter          provider.Linter
@@ -107,6 +108,7 @@ func (s Server) Validate() error {
 		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
 		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
 		{provider.SchemaDeclarationsFeature, !nilService(s.Declarations)},
+		{provider.ColumnsFeature, !nilService(s.Columns)},
 		{provider.PrepareTablesFeature, !nilService(s.TablePreparer)},
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},

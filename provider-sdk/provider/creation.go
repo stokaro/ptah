@@ -94,10 +94,14 @@ func ValidateProjectedCreations(description *protocol.Description, request *prot
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete creation projection", ErrProtocol)
 	}
+	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
 	for i, output := range result.Tables {
 		input := request.Tables[i]
 		if !proto.Equal(input.Subject, output.GetSubject()) {
 			return fmt.Errorf("%w: creation projection changed table identity or order", ErrProtocol)
+		}
+		if err := validateCreationColumns(engine, input.Declaration, output); err != nil {
+			return err
 		}
 		if err := validateColumnKeys(input.Declaration, output); err != nil {
 			return err
