@@ -113,6 +113,14 @@ func (r reader) table(value *protocol.Table) (catalog.Table, error) {
 			return catalog.Table{}, fmt.Errorf("%w: duplicate normalized column identity", provider.ErrProtocol)
 		}
 		seen[key] = true
+		if slices.Contains(r.session.remote.GetFeatures(), provider.ObservedColumnsFeature) {
+			observed, err := catalogColumn(column.GetObserved())
+			if err != nil {
+				return catalog.Table{}, err
+			}
+			result.Columns = append(result.Columns, observed)
+			continue
+		}
 		nullable := "NO"
 		if column.GetNullable() {
 			nullable = "YES"

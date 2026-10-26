@@ -77,6 +77,14 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+Providers can negotiate `schema.observed-columns` to return complete common
+column facts during inspection. The host preserves type metadata, default
+presence, generated expressions, identity and sequence settings, comments, and
+constraints. Each column has one observed record with its exact name and
+position. Legacy scalar fields cannot accompany that record, and missing or
+contradictory facts refuse the whole snapshot. Native facets remain attached to
+the same column and carry only their separately owned settings.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
