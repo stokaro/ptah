@@ -93,12 +93,19 @@ func ResolveRoutineArguments(
 	if conn == nil {
 		return nil, fmt.Errorf("resolve routine arguments: database connection is nil")
 	}
-	if len(probes) == 0 || !isPostgresFamily(conn.Info().Dialect) {
+	if len(probes) == 0 || !SupportsRoutineArguments(conn.Info().Dialect) {
 		return nil, nil
 	}
 	return resolveProbes(ctx, conn, "resolve routine arguments", probes,
 		func(probe RoutineArgumentsProbe) string { return probe.Key },
 		resolveOneRoutineArguments)
+}
+
+// SupportsRoutineArguments reports whether this target can answer routine
+// probes. Rendering and execution use the same predicate so an unsupported
+// resolver does not demand a renderer for an unused probe.
+func SupportsRoutineArguments(dialect string) bool {
+	return isPostgresFamily(dialect)
 }
 
 // uncheckedBodies turns off body validation for the rest of the probe. The

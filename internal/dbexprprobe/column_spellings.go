@@ -36,6 +36,13 @@ type ColumnSpellingColumn struct {
 	Statement string
 }
 
+// SupportsColumnSpellings reports whether this target can answer column probes.
+// Rendering and execution share this predicate: an unsupported probe must not
+// require a renderer for statements that its resolver will never execute.
+func SupportsColumnSpellings(dialect string) bool {
+	return isPostgresFamily(dialect)
+}
+
 // ResolveColumnSpellings asks the connected server to spell each declared
 // column's type and default the way its catalog reports them.
 //
@@ -59,7 +66,7 @@ func ResolveColumnSpellings(
 	if conn == nil {
 		return nil, fmt.Errorf("resolve column spellings: database connection is nil")
 	}
-	if len(probes) == 0 || !isPostgresFamily(conn.Info().Dialect) {
+	if len(probes) == 0 || !SupportsColumnSpellings(conn.Info().Dialect) {
 		return nil, nil
 	}
 	resolved := make(map[string]config.ColumnSpelling)
