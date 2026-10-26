@@ -359,8 +359,13 @@ Set `PTAH_LOG_LEVEL=debug` to list the objects at debug level on stderr. Add
 field and the object's own fields. With JSON, the warning itself is a record
 too, at warning level, with `category` and `count`, so the stream holds no
 text line for it. The record is written at any log level, as the text line is.
-On the commands that take `--log-level` and `--log-format`, the flags work as
-the variables do.
+
+`migrations status`, `migrations up` and `migrations down` take `--log-level`
+and `--log-format` and log through a logger of their own. The objects and the
+warning join that log: at the level the flag sets, with its `correlation_id`
+and `command` fields, and under `--log-format json` on the stream the command
+writes its log to. Their warning ends with
+`PTAH_LOG_LEVEL=debug or --log-level debug lists them`.
 
 The strict compatibility profile, `PTAH_ATLAS_STRICT_COMPAT=1`, refuses both
 variables, as the community binary has neither, and its warning says where the

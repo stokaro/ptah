@@ -8,22 +8,25 @@
 // reports each [Category] once, with the number of objects it concerns, and
 // keeps the objects themselves for the debug log.
 //
-// The objects are logged as they are recorded, through log/slog at debug
-// level with the category and the record's fields, so the existing
-// PTAH_LOG_LEVEL=debug lists them and PTAH_LOG_FORMAT=json lists them as
-// records. The summary is written when the run ends, by [Report.Flush], and
-// says how to list the objects in the words of the surface the run is on; see
-// [Listing].
+// The objects and the summary are written when the run ends, by
+// [Report.Flush]: the objects through log/slog at debug level with the
+// category and the record's fields, so the existing PTAH_LOG_LEVEL=debug lists
+// them and PTAH_LOG_FORMAT=json lists them as records, and then the summary,
+// which says how to list the objects in the words of the surface the run is
+// on; see [Listing]. A command with a logger of its own hands it to the run,
+// and both go through it; see [UseLogger].
 //
 // Aggregation never hides a refusal: an error is returned, not recorded here.
 package rundiag
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 // A Category is one kind of warning a run can raise about many objects.
@@ -64,6 +67,10 @@ const (
 	// setting. A run outside the profile raises the same objects and lists
 	// them.
 	ListedOutsideStrictCompat Listing = "PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off"
+	// ListedAtDebugLevelOrFlag is [ListedAtDebugLevel] for a run whose
+	// command logs through a logger of its own, with a --log-level flag; see
+	// [UseLogger].
+	ListedAtDebugLevelOrFlag Listing = "PTAH_LOG_LEVEL=debug or --log-level debug lists them"
 )
 
 // Report collects the records of one run.
@@ -72,6 +79,7 @@ type Report struct {
 	stream  io.Writer
 	listing Listing
 	records bool
+	logger  *slog.Logger
 	buckets []*bucket
 }
 
@@ -89,6 +97,7 @@ type Options struct {
 	// text. A record carries the category, the number of objects, and for one
 	// object that object's fields. It is written on the stream the line would
 	// go to, whatever level the default logger keeps, as the line would be.
+	// [UseLogger] decides it again for a command that logs on its own.
 	Records bool
 }
 
@@ -103,12 +112,23 @@ type bucket struct {
 	records  []Record
 }
 
-// SetRecords decides [Options.Records] once the run knows what its log is,
-// such as after a command parsed a --log-format flag.
-func (r *Report) SetRecords(records bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.records = records
+// UseLogger makes logger the log of the run ctx carries, for a command that
+// starts a logger of its own from its --log-level and --log-format flags once
+// it has parsed them. The objects' records, and with json the warnings too,
+// are written through it when the run ends, so they take its level, its
+// format, its stream and the fields it adds to every record, such as a
+// correlation id. Without a run it does nothing.
+func UseLogger(ctx context.Context, logger *slog.Logger, json bool) {
+	report := From(ctx)
+	if report == nil || logger == nil {
+		return
+	}
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	report.logger, report.records = logger, json
+	if report.listing == ListedAtDebugLevel {
+		report.listing = ListedAtDebugLevelOrFlag
+	}
 }
 
 // New returns an empty report for a run as opts describe it.
@@ -163,11 +183,11 @@ func Warn(ctx context.Context, out io.Writer, category *Category, record Record)
 		_, err := fmt.Fprintf(out, "warning: %s\n", record.Line)
 		return err
 	}
-	report.add(ctx, out, category, record)
+	report.add(out, category, record)
 	return nil
 }
 
-func (r *Report) add(ctx context.Context, out io.Writer, category *Category, record Record) {
+func (r *Report) add(out io.Writer, category *Category, record Record) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	target := r.bucket(category, out)
@@ -176,8 +196,6 @@ func (r *Report) add(ctx context.Context, out io.Writer, category *Category, rec
 	}
 	target.keys[record.Key] = true
 	target.records = append(target.records, record)
-	attrs := append([]slog.Attr{slog.String("category", category.Name)}, record.Attrs...)
-	slog.LogAttrs(ctx, slog.LevelDebug, record.Line, attrs...)
 }
 
 func (r *Report) bucket(category *Category, out io.Writer) *bucket {
@@ -191,22 +209,34 @@ func (r *Report) bucket(category *Category, out io.Writer) *bucket {
 	return created
 }
 
-// Flush writes one warning per category to the writer its first record was
-// raised for, in the order the categories were first raised, and empties the
-// report. A category with one object writes that object's line; one with
-// several writes its summary and the report's [Listing]. With
-// [Options.Records] each warning is a log record instead.
+// Flush writes, for each category in the order it was first raised, its
+// objects' records at debug level and then one warning, and empties the
+// report. The records go through the logger [UseLogger] gave the run, or the
+// default logger, which keeps them at debug level only. A category with one
+// object warns with that object's line; one with several with its summary and
+// the report's [Listing]. The warning goes to the writer the first record was
+// raised for, or with [Options.Records] it is a log record instead, through
+// the run's logger when it has one, whatever level that logger keeps.
 func (r *Report) Flush() {
 	r.mu.Lock()
-	buckets, records := r.buckets, r.records
+	buckets, records, logger := r.buckets, r.records, r.logger
 	r.buckets = nil
 	r.mu.Unlock()
+	log := cmp.Or(logger, slog.Default())
+	ctx := context.Background()
 	for _, target := range buckets {
+		for _, record := range target.records {
+			log.LogAttrs(ctx, slog.LevelDebug, record.Line, append([]slog.Attr{slog.String("category", target.category.Name)}, record.Attrs...)...)
+		}
 		line, attrs := r.summary(target)
 		switch {
 		case line == "":
+		case records && logger != nil:
+			warning := slog.NewRecord(time.Now(), slog.LevelWarn, line, 0)
+			warning.AddAttrs(attrs...)
+			_ = logger.Handler().Handle(ctx, warning)
 		case records:
-			slog.New(slog.NewJSONHandler(target.out, nil)).LogAttrs(context.Background(), slog.LevelWarn, line, attrs...)
+			slog.New(slog.NewJSONHandler(target.out, nil)).LogAttrs(ctx, slog.LevelWarn, line, attrs...)
 		default:
 			fmt.Fprintf(target.out, "warning: %s\n", line)
 		}

@@ -287,9 +287,26 @@ func TestOpenMeterEntExportReadsWithoutADatabaseE2E(t *testing.T) {
 	stored := cutNamesOf(c, path)
 	cut := serverCutNames(catalogCutNames(c, databaseBuiltFrom(c, string(export))), string(export))
 
-	c.Assert(cut, qt.Not(qt.HasLen), 0)
+	c.Assert(cut, qt.HasLen, len(longIdentifiers(string(export))))
 	c.Assert(storedKeys(stored), qt.DeepEquals, storedKeys(cut))
 }
+
+// longIdentifiers is the distinct quoted identifiers longer than 63 bytes the
+// SQL file writes. The export quotes every name, and each it writes past the
+// limit names one object, so it is how many names the server cuts, counted
+// apart from the reader and the catalog both.
+func longIdentifiers(file string) []string {
+	var long []string
+	for _, match := range quotedIdentifier.FindAllStringSubmatch(file, -1) {
+		if len(match[1]) > 63 && !slices.Contains(long, match[1]) {
+			long = append(long, match[1])
+		}
+	}
+	return long
+}
+
+// quotedIdentifier is a double-quoted identifier.
+var quotedIdentifier = regexp.MustCompile(`"([^"]+)"`)
 
 // serverCutNames is the names of catalog that are the first 63 bytes of a
 // longer quoted identifier the SQL file writes. The export writes some names

@@ -105,18 +105,21 @@ func TestReport_FlushKeepsTheOrderCategoriesWereRaisedIn(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "warning: gadget g\nwarning: ww widgets; PTAH_LOG_LEVEL=debug lists them\n")
 }
 
-// Each object is logged once at debug level, with its category and fields,
-// which is what PTAH_LOG_LEVEL=debug shows.
+// Each object is logged once at debug level when the run ends, with its
+// category and fields, which is what PTAH_LOG_LEVEL=debug shows.
 func TestReport_LogsEachObjectOnceAtDebug(t *testing.T) {
 	c := qt.New(t)
 	var logged bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	defer slog.SetDefault(previous)
-	ctx := rundiag.With(context.Background(), rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel}))
+	c.Cleanup(func() { slog.SetDefault(previous) })
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
 
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
 	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, widgets, record("a")), qt.IsNil)
+	c.Assert(logged.String(), qt.Equals, "")
+	report.Flush()
 
 	c.Assert(strings.Count(logged.String(), "\n"), qt.Equals, 1)
 	c.Assert(logged.String(), qt.Contains, `level=DEBUG msg="widget a" category=widget key=a`)
@@ -206,22 +209,78 @@ func TestReport_RecordsAreLogRecords(t *testing.T) {
 	})
 }
 
-// A report decides it writes records when the run knows its log is JSON,
-// after it was created.
-func TestReport_SetRecordsDecidesAtFlush(t *testing.T) {
-	c := qt.New(t)
-	report := rundiag.New(rundiag.Options{})
-	ctx := rundiag.With(context.Background(), report)
-	var out bytes.Buffer
+// A command that logs through a JSON logger of its own hands it to the run:
+// the objects' records and the warning go through it, with the fields it adds
+// to every record, those raised before it was handed over too, and nothing
+// goes to the stream. The logger's level keeps the objects or drops them, and
+// the warning is written at any level.
+func TestUseLogger_WritesTheRunThroughAJSONLogger(t *testing.T) {
+	summary := map[string]any{
+		"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug or --log-level debug lists them",
+		"correlation_id": "c1", "category": "widget", "count": float64(2),
+	}
+	tests := []struct {
+		name  string
+		level slog.Level
+		want  []map[string]any
+	}{
+		{name: "at debug level", level: slog.LevelDebug, want: []map[string]any{
+			{"level": "DEBUG", "msg": "widget a", "correlation_id": "c1", "category": "widget", "key": "a"},
+			{"level": "DEBUG", "msg": "widget b", "correlation_id": "c1", "category": "widget", "key": "b"},
+			summary,
+		}},
+		{name: "at error level", level: slog.LevelError, want: []map[string]any{summary}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var stream, logged bytes.Buffer
+			report := rundiag.New(rundiag.Options{Stream: &stream})
+			ctx := rundiag.With(context.Background(), report)
+			logger := slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: test.level})).With("correlation_id", "c1")
 
-	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
-	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
-	report.SetRecords(true)
+			c.Assert(rundiag.Warn(ctx, &stream, widgets, record("a")), qt.IsNil)
+			rundiag.UseLogger(ctx, logger, true)
+			c.Assert(rundiag.Warn(ctx, &stream, widgets, record("b")), qt.IsNil)
+			report.Flush()
+
+			c.Assert(stream.String(), qt.Equals, "")
+			c.Assert(jsonRecords(c, logged.String()), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// With a text logger the objects go through it, and the warning stays a line
+// on the stream, naming the flag beside the variable.
+func TestUseLogger_KeepsTheLineWithATextLogger(t *testing.T) {
+	c := qt.New(t)
+	var stream, logged bytes.Buffer
+	report := rundiag.New(rundiag.Options{Stream: &stream})
+	ctx := rundiag.With(context.Background(), report)
+	rundiag.UseLogger(ctx, slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})), false)
+
+	c.Assert(rundiag.Warn(ctx, &stream, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &stream, widgets, record("b")), qt.IsNil)
 	report.Flush()
 
-	c.Assert(jsonRecords(c, out.String()), qt.DeepEquals, []map[string]any{
-		{"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug lists them", "category": "widget", "count": float64(2)},
-	})
+	c.Assert(stream.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug or --log-level debug lists them\n")
+	c.Assert(strings.Count(logged.String(), "level=DEBUG"), qt.Equals, 2)
+}
+
+// The strict compatibility profile's listing stays its own: no command there
+// has a --log-level flag to name.
+func TestUseLogger_KeepsTheStrictListing(t *testing.T) {
+	c := qt.New(t)
+	var stream bytes.Buffer
+	report := rundiag.New(rundiag.Options{Stream: &stream, Listing: rundiag.ListedOutsideStrictCompat})
+	ctx := rundiag.With(context.Background(), report)
+	rundiag.UseLogger(ctx, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), false)
+
+	c.Assert(rundiag.Warn(ctx, &stream, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &stream, widgets, record("b")), qt.IsNil)
+	report.Flush()
+
+	c.Assert(stream.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off\n")
 }
 
 // jsonRecords is the JSON lines of written, without their time.

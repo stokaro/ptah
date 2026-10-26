@@ -742,13 +742,18 @@ func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, err
 	if opts.logFormat == "json" {
 		logWriter = cmd.OutOrStdout()
 	}
-	return cliobs.Start(context.Background(), cliobs.Options{
+	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.down",
 		LogFormat:   opts.logFormat,
 		LogLevel:    opts.logLevel,
 		MetricsAddr: opts.metricsAddr,
 		LogWriter:   logWriter,
 	})
+	if err != nil {
+		return nil, err
+	}
+	runtime.ShareWithRun(cmd.Context())
+	return runtime, nil
 }
 
 // confirmRollbackPrompt routes the confirmation prompt to stdout, or to stderr

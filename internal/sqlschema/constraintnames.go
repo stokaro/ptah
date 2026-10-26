@@ -181,27 +181,41 @@ func nameAddedColumnForeignKeys(fields []schemamodel.Field, target alterTarget) 
 	return nil
 }
 
-// refuseRestatedColumnForeignKey refuses `ALTER TABLE ... ADD COLUMN IF NOT
-// EXISTS` restating a column that already exists with a `REFERENCES` clause,
-// on an engine that names unnamed foreign keys by [mysqlname].
+// refuseRestatedColumnKey refuses `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+// restating a column that already exists with a key the server adds anyway, on
+// an engine that names unnamed foreign keys by [mysqlname]: a `REFERENCES`
+// clause, or a `UNIQUE` or `PRIMARY KEY` the column does not have.
 //
 // The restatement is not the no-op the rest of the model reads it as. Measured
 // on MariaDB 11.8.9 and 12.3.3, `ALTER TABLE c ADD COLUMN IF NOT EXISTS a int
 // REFERENCES p(id)` on a table that already has `a int REFERENCES p(id)` skips
 // the column and still adds the key: the table ends with `c_ibfk_1` and
-// `c_ibfk_2`, or `1` and `2`, both over `a`. Read as a restatement, the model
-// holds one key, and a comparison with the database the file built plans to
-// drop the other. MySQL builds no key from the clause, and the parser refuses
-// it there.
-func refuseRestatedColumnForeignKey(field schemamodel.Field, target alterTarget, column string) error {
-	if field.Foreign == "" || !numbersForeignKeys(target.sourcePlatform) {
+// `c_ibfk_2`, or `1` and `2`, both over `a`. `ADD COLUMN IF NOT EXISTS a int
+// UNIQUE` on a plain `a int` skips the column and adds the index `a`, and
+// `PRIMARY KEY`, with or without `AUTO_INCREMENT`, adds the primary key on a
+// table that has none. Read as a restatement, the model holds no such key, and
+// a comparison with the database the file built plans to drop it. A column
+// that has the key already is left alone: the server adds no second one. MySQL
+// has no `IF NOT EXISTS` for a column, and the parser refuses it there.
+func refuseRestatedColumnKey(field, existing schemamodel.Field, target alterTarget, column string) error {
+	if !numbersForeignKeys(target.sourcePlatform) {
+		return nil
+	}
+	var clause, instead string
+	switch {
+	case field.Foreign != "":
+		clause, instead = "the foreign key its REFERENCES clause declares", "ADD FOREIGN KEY"
+	case field.Primary && !existing.Primary:
+		clause, instead = "the primary key its PRIMARY KEY declares", "ADD PRIMARY KEY"
+	case field.Unique && !existing.Unique:
+		clause, instead = "the index its UNIQUE declares", "ADD UNIQUE"
+	default:
 		return nil
 	}
 	return fmt.Errorf(
 		"%w: ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s restates a column that exists, and the "+
-			"server skips the column but still adds the foreign key its REFERENCES clause declares; "+
-			"declare the key with ALTER TABLE %s ADD FOREIGN KEY instead",
-		ErrUnmodeledStatement, target.written, column, target.written)
+			"server skips the column but still adds %s; declare the key with ALTER TABLE %s %s instead",
+		ErrUnmodeledStatement, target.written, column, clause, target.written, instead)
 }
 
 // refuseHeldForeignKeyName refuses a derived name another foreign key of the

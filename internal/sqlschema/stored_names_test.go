@@ -324,18 +324,6 @@ func TestReadStoredNames_RefusesWhatTheServerRefuses(t *testing.T) {
 			want: `.*foreign key "` + long + `_alpha" and foreign key "` + long + `_beta" in table "public.c" are both stored as.*`,
 		},
 		{
-			// A name already at the limit and a longer one cut to it.
-			name: "a 63-byte index and a longer one cut to it",
-			sql:  "CREATE TABLE t (a int, b int);\n" + `CREATE INDEX "` + long + `" ON t (a);` + "\n" + `CREATE INDEX "` + long + `_beta" ON t (b);`,
-			want: `.*index "` + long + `" and index "` + long + `_beta" in schema "public" are both stored as.*`,
-		},
-		{
-			// An index cut to a table's name collides with the table.
-			name: "an index cut to the name of a table",
-			sql:  `CREATE TABLE "` + long + `" (a int);` + "\n" + `CREATE INDEX "` + long + `_x" ON "` + long + `" (a);`,
-			want: `.*table "` + long + `" and index "` + long + `_x" in schema "public" are both stored as.*`,
-		},
-		{
 			// A unique constraint builds an index of its own name.
 			name: "a unique constraint and an index",
 			sql: "CREATE TABLE t (a int, b int, CONSTRAINT \"" + long + "_alpha\" UNIQUE (a));\n" +
@@ -405,6 +393,7 @@ func TestReadStoredNames_LeavesAServerThatKeepsLongNamesAlone(t *testing.T) {
 // PostgreSQL 15.19 refuses with `already exists` or `specified more than once`,
 // which the reader used to merge into one object (stokaro/ptah#4914).
 func TestReadStoredNames_RefusesANameDeclaredAgain(t *testing.T) {
+	long63 := strings.Repeat("k", 63)
 	tests := []struct {
 		name string
 		sql  string
@@ -419,6 +408,24 @@ func TestReadStoredNames_RefusesANameDeclaredAgain(t *testing.T) {
 		{name: "a table named like a primary key's index", sql: "CREATE TABLE t (a int, CONSTRAINT t_pk PRIMARY KEY (a));\nCREATE TABLE t_pk (x int);", want: `.*table "t_pk" in schema "public" takes the name of index of primary key "t_pk".*`},
 		{name: "a constraint added under a name in use", sql: "CREATE TABLE p (id int PRIMARY KEY);\nCREATE TABLE c (id int PRIMARY KEY, a int, CONSTRAINT fk FOREIGN KEY (a) REFERENCES p (id));\nALTER TABLE c ADD CONSTRAINT fk CHECK (a > 0);", want: `.*check "fk" in table "public.c" takes the name of foreign key "fk".*`},
 		{name: "a column written twice", sql: "CREATE TABLE t (a int, a int);", want: `.*column "a" in table "public.t" takes the name of column "a".*`},
+		// A name written as the 63 bytes the server keeps names the object
+		// stored under them, so a longer name cut to it, in either order, is
+		// that name declared again.
+		{
+			name: "a 63-byte index and a longer one cut to it",
+			sql:  "CREATE TABLE t (a int, b int);\n" + `CREATE INDEX "` + long63 + `" ON t (a);` + "\n" + `CREATE INDEX "` + long63 + `_beta" ON t (b);`,
+			want: `.*index "` + long63 + `_beta" in schema "public" takes the name of index "` + long63 + `".*`,
+		},
+		{
+			name: "a long index and the 63 bytes it is cut to",
+			sql:  "CREATE TABLE t (a int, b int);\n" + `CREATE INDEX "` + long63 + `_beta" ON t (a);` + "\n" + `CREATE INDEX "` + long63 + `" ON t (b);`,
+			want: `.*index "` + long63 + `" in schema "public" takes the name of index "` + long63 + `_beta".*`,
+		},
+		{
+			name: "an index cut to the name of a table",
+			sql:  `CREATE TABLE "` + long63 + `" (a int);` + "\n" + `CREATE INDEX "` + long63 + `_x" ON "` + long63 + `" (a);`,
+			want: `.*index "` + long63 + `_x" in schema "public" takes the name of table "` + long63 + `".*`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -445,6 +452,13 @@ func TestReadStoredNames_AcceptsWhatTheServerAccepts(t *testing.T) {
 		{name: "a quoted name beside its folded spelling", sql: `CREATE TABLE "Docs" (id int);` + "\nCREATE TABLE docs (id int);"},
 		{name: "an index dropped and created again", sql: "CREATE TABLE t (a int);\nCREATE INDEX ix ON t (a);\nDROP INDEX ix;\nCREATE INDEX ix ON t (a);"},
 		{name: "a view replaced", sql: "CREATE TABLE t (a int);\nCREATE VIEW v AS SELECT a FROM t;\nCREATE OR REPLACE VIEW v AS SELECT a FROM t;"},
+		{
+			// DROP TABLE drops the table's triggers with it.
+			name: "a trigger on a table dropped and created again",
+			sql: "CREATE TABLE t (a int);\n" + triggerFunction +
+				"CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();\nDROP TABLE t;\nCREATE TABLE t (a int);\n" +
+				"CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

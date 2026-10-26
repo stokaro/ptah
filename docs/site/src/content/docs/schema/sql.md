@@ -110,12 +110,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
 
 `IF NOT EXISTS` skips the statement for a column the table already has, as
 the server skips it: the first declaration stands, whatever type, default or
-constraint the second one writes. This is the rule `CREATE TABLE ... IF NOT
-EXISTS` follows, described under
+constraint the second one writes. PostgreSQL and CockroachDB skip the whole
+subcommand, its keys and sequence included. This is the rule `CREATE TABLE ...
+IF NOT EXISTS` follows, described under
 [`--dialect` decides how the file is read](#--dialect-decides-how-the-file-is-read-not-only-how-it-is-written).
 Without `IF NOT EXISTS`, a column declared again is refused, as the server
-refuses it. On MariaDB a restated column with a `REFERENCES` clause is refused
-too, because the server skips the column and still adds the foreign key.
+refuses it.
+
+On MariaDB a restated column that adds a key is refused: a `REFERENCES`
+clause, or a `UNIQUE` or `PRIMARY KEY` the column does not have. MariaDB skips
+the column and still adds the key, which a restatement cannot say. Declare the
+key with `ALTER TABLE ... ADD FOREIGN KEY`, `ADD UNIQUE` or `ADD PRIMARY KEY`.
 
 ## Limit ON DELETE to some columns
 
@@ -465,10 +470,10 @@ warning: 47 names are longer than 63 bytes; the server keeps their first 63 byte
 ```
 
 `PTAH_LOG_LEVEL=debug` lists each name written and kept, and
-`PTAH_LOG_FORMAT=json` or `--log-format json` lists them as records with
-`written`, `stored`, `kind`, `scope`, `source` and `limit` fields, followed by
-the summary as a record with `category` and `count`. The summary record is
-written at any log level, as the text line is. The strict compatibility
+`PTAH_LOG_FORMAT=json` lists them as records with `written`, `stored`, `kind`,
+`scope`, `source` and `limit` fields, followed by the summary as a record with
+`category` and `count`. The summary record is written at any log level, as the
+text line is. The strict compatibility
 profile refuses both variables. See
 [Warnings about many objects](../../operate/troubleshooting/#warnings-about-many-objects).
 
@@ -492,9 +497,9 @@ refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
 definition alike, are read as one, as the server keeps one. A schema directory
 refuses an object that a later file declares again in its own words.
 
-A guard on a name written twice is read the way the server runs it, in one
-file or across the files of a schema directory, so a database built from the
-file and the file itself compare equal:
+On PostgreSQL and YugabyteDB, a guard on a name written twice is read the way
+the server runs it, in one file or across the files of a schema directory, so
+a database built from the file and the file itself compare equal:
 
 - A `CREATE TABLE`, `CREATE INDEX`, `CREATE SEQUENCE` or `CREATE MATERIALIZED
   VIEW ... IF NOT EXISTS` is skipped whole when its name is taken in the
@@ -503,10 +508,27 @@ file and the file itself compare equal:
 - Another kind of object can hold the name, such as a view of the table's
   name, and so can a name the server derives: `t_pkey` for the primary key of
   `t`, `t_a_key` for a `UNIQUE` column `a`, and `t_id_seq` for the sequence of
-  a `serial` or identity column `id`.
+  a `serial` or identity column `id`. An identity column's `SEQUENCE NAME`
+  names its sequence instead.
+- Keys of one `CREATE TABLE` that are equal build one index, the primary key's
+  first: `id int PRIMARY KEY UNIQUE` holds `t_pkey` alone. `ALTER TABLE` folds
+  no keys.
+- A name is free again once the server drops it. A `DROP TABLE` drops the
+  indexes, keys and column sequences of its table, and a `DROP COLUMN` the
+  column's own key and sequence. A sequence a default only draws from stays.
 - A `CREATE OR REPLACE` view, function, procedure or trigger replaces the
   definition of the object the server finds, `public.v` and `v` alike. The
   last definition counts, and a comment on the first one stays.
+
+On other engines the reader skips a guarded statement for the object it names
+alone: a `CREATE TABLE` or `CREATE SEQUENCE ... IF NOT EXISTS` of a table or a
+sequence the file already declares. MySQL, MariaDB and SQL Server hold one routine per name, so a
+`CREATE OR REPLACE` or `CREATE OR ALTER` replaces the routine of its name,
+whatever arguments either takes. MariaDB drops a routine's comment on `OR
+REPLACE`, so only the replacement's comment stays there. On CockroachDB a
+guarded table whose name a view or a sequence holds is still read as a new
+table
+([`stokaro/ptah#5042`](https://github.com/stokaro/ptah/issues/5042)).
 
 A `CREATE EXTENSION IF NOT EXISTS` of an extension declared differently is
 still refused

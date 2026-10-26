@@ -455,18 +455,18 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue := resolvedOpts.revisionTableFormat
 	connectTimeoutValue := resolvedOpts.connectTimeout
 
-	logWriter := commandLogWriter(cmd, opts.logFormat)
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
 		LogFormat:   opts.logFormat,
 		LogLevel:    opts.logLevel,
 		MetricsAddr: opts.metricsAddr,
-		LogWriter:   logWriter,
+		LogWriter:   commandLogWriter(cmd, opts.logFormat),
 	})
 	if err != nil {
 		return err
 	}
 	defer shutdownObservability(runtime)
+	runtime.ShareWithRun(cmd.Context())
 	// Under --json the document is the output, so everything written for a
 	// person goes to standard error. A `=== MIGRATE UP ===` banner in front of
 	// it would reach the caller as a parse error rather than as a help.
