@@ -126,15 +126,15 @@ func isAliasIdentifier(alias string) bool {
 	return true
 }
 
-func isQuotedAlias(alias string, open, close byte) bool {
-	if len(alias) < 3 || alias[0] != open || alias[len(alias)-1] != close {
+func isQuotedAlias(alias string, open, closing byte) bool {
+	if len(alias) < 3 || alias[0] != open || alias[len(alias)-1] != closing {
 		return false
 	}
 	for i := 1; i < len(alias)-1; i++ {
-		if alias[i] != close {
+		if alias[i] != closing {
 			continue
 		}
-		if i+1 >= len(alias)-1 || alias[i+1] != close {
+		if i+1 >= len(alias)-1 || alias[i+1] != closing {
 			return false
 		}
 		i++
