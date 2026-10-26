@@ -2368,6 +2368,9 @@ it declares, compares a column's sequence start and increment on a target with
 `capability.SerialSequenceOptions`, and reads a default the catalog reports as a
 typed literal back as its value.
 
+`atlascompat.ConversionRuntime` includes `schemaext.TargetResolver` so catalog
+readback binds an engine alias to its canonical target before dispatch.
+
 `Rules.ColumnService` selects a contextful offline batch owner for common
 columns. It is exclusive with `Rules.Columns`. `ColumnsRequest` preserves
 complete desired and current parents and the host's exact ordered column pairs.
