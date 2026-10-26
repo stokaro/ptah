@@ -1171,18 +1171,30 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 		SetSettings(function.Settings).
 		SetBody(function.Body).
 		SetComment(function.Comment)
-	// A SQL-standard body is SQL rather than a string, and PostgreSQL refuses
-	// it in dollar quotes (stokaro/ptah#4981). A read reports it as the
-	// server prints it, starting at its keyword.
+
+	functionNode.Facets = function.Facets
+
+	return functionNode
+}
+
+// FromFunctionFor is [FromFunction] for targetPlatform. On the PostgreSQL
+// family a LANGUAGE sql routine whose body starts with `BEGIN ATOMIC` or
+// `RETURN` has a SQL-standard body, which is SQL rather than a string:
+// PostgreSQL refuses it in dollar quotes (stokaro/ptah#4981), and a read
+// reports it as the server prints it, starting at its keyword. Every other
+// target keeps the body as it is: a MySQL, MariaDB or SQL Server function
+// body that starts with RETURN is the routine's own statement.
+func FromFunctionFor(function schemamodel.Function, targetPlatform string) *ast.CreateFunctionNode {
+	functionNode := FromFunction(function)
+	if !platform.IsPostgresFamily(targetPlatform) || !strings.EqualFold(strings.TrimSpace(function.Language), "sql") {
+		return functionNode
+	}
 	switch body := strings.TrimSpace(function.Body); {
 	case hasKeyword(body, "BEGIN ATOMIC"):
 		functionNode.SetAtomicBody(body)
 	case hasKeyword(body, "RETURN"):
 		functionNode.SetReturnBody(strings.TrimSpace(body[len("RETURN"):]))
 	}
-
-	functionNode.Facets = function.Facets
-
 	return functionNode
 }
 
@@ -1817,7 +1829,7 @@ func appendPreTableStatements(
 
 	// Before the types, so a domain CHECK can call the routine as a column
 	// default can.
-	if err := appendRoutineStatements(visit, database, placements, deporder.RoutineBeforeTypes); err != nil {
+	if err := appendRoutineStatements(visit, database, targetPlatform, placements, deporder.RoutineBeforeTypes); err != nil {
 		return err
 	}
 
@@ -1838,7 +1850,7 @@ func appendPreTableStatements(
 		typeWindow(true)
 		typeWindow(false)
 	}
-	return appendRoutineStatements(visit, database, placements, deporder.RoutineAfterTypes)
+	return appendRoutineStatements(visit, database, targetPlatform, placements, deporder.RoutineAfterTypes)
 }
 
 // CollectDatabase collects the nodes [WalkDatabase] visits into an
@@ -1913,7 +1925,7 @@ func appendTableStatements(
 				if function.Name != step.Name {
 					continue
 				}
-				if err := visit(FromFunction(function)); err != nil {
+				if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 					return nil, err
 				}
 			}
@@ -2125,6 +2137,7 @@ func appendRoleStatements(visit func(ast.Node) error, database schemamodel.Datab
 func appendRoutineStatements(
 	visit func(ast.Node) error,
 	database schemamodel.Database,
+	targetPlatform string,
 	placements map[string]deporder.RoutinePlacement,
 	placement deporder.RoutinePlacement,
 ) error {
@@ -2132,7 +2145,7 @@ func appendRoutineStatements(
 		if placements[function.Name] != placement {
 			continue
 		}
-		if err := visit(FromFunction(function)); err != nil {
+		if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 			return err
 		}
 	}
@@ -2240,7 +2253,7 @@ func appendOrderedViewLikeStatements(
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, targetPlatform) {
 		if object.Routine {
 			for _, function := range routinesByName[object.Name] {
-				if err := visit(FromFunction(function)); err != nil {
+				if err := visit(FromFunctionFor(function, targetPlatform)); err != nil {
 					return err
 				}
 			}

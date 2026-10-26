@@ -84,7 +84,7 @@ func (p *Planner) addNewFunctions(
 ) []ast.Node {
 	for _, fn := range orderedAddedRoutines(diff) {
 		if placements[fn.Name] == placement {
-			result = append(result, modelast.FromFunction(fn))
+			result = append(result, modelast.FromFunctionFor(fn, p.targetDialect()))
 		}
 	}
 	return result
@@ -176,7 +176,7 @@ func (p *Planner) relationRoutines(
 	}
 	for _, fn := range orderedAddedRoutines(diff) {
 		if placements[fn.Name] == deporder.RoutineWithRelations {
-			add(fn, []ast.Node{modelast.FromFunction(fn)})
+			add(fn, []ast.Node{modelast.FromFunctionFor(fn, p.targetDialect())})
 		}
 	}
 	for _, fnDiff := range diff.FunctionsModified {
