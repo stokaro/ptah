@@ -6,6 +6,7 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 
+	"ptah.run/core/renderer"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/schemadiff"
@@ -141,7 +142,7 @@ type PlanReport struct {
 	// PlanPath is where --save or --output wrote the plan document, and empty
 	// under --dry-run.
 	PlanPath string `json:"plan_path,omitempty"`
-	// Plan is the plan document's content, present when Outcome is changes.
+	// Plan is the document content, present when the run has operations or notes.
 	// See PlanDigest for why it is not the document's bytes.
 	Plan *PlanFile `json:"plan,omitempty"`
 	// Undecided are the declared objects the comparison withheld, and absent
@@ -207,6 +208,13 @@ func NewPlanReport(evidence PlanEvidence) PlanReport {
 	}
 	if evidence.Plan == nil || !evidence.Plan.HasChanges() {
 		report.Outcome = PlanOutcomeNoChanges
+		if evidence.Plan != nil && len(evidence.Plan.Annotations) != 0 {
+			report.Plan = evidence.Plan
+			if len(evidence.Document) != 0 {
+				report.PlanDigest = digest.FromBytes(evidence.Document).String()
+				report.PlanPath = evidence.Path
+			}
+		}
 		return report
 	}
 	report.Outcome = PlanOutcomeChanges
@@ -234,6 +242,8 @@ type ApplyReport struct {
 	// order, and absent when it stopped before it had any. The outcome says
 	// what became of them: under applied they are what ran.
 	Units []ApplyUnitReport `json:"units,omitempty"`
+	// Annotations are non-executable notes positioned among Units.
+	Annotations []renderer.Annotation `json:"annotations,omitempty"`
 	// Undecided is [PlanReport.Undecided] for this run: next to applied it
 	// names what the run did not create, and next to no-changes it means the
 	// database is not shown to match. It is absent when nothing was withheld,
@@ -261,6 +271,8 @@ type ApplyEvidence struct {
 	PlanDigest string
 	// Units are the operations the run listed as its planned changes.
 	Units []ApplyUnitReport
+	// Annotations are the non-executable notes shown with Units.
+	Annotations []renderer.Annotation
 	// Undecided are the declared objects the comparison withheld, from
 	// [ApplyRuntimePlan.Undecided].
 	Undecided schemadiff.Diagnostics
@@ -288,6 +300,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 		PlanName:        evidence.PlanName,
 		PlanDigest:      evidence.PlanDigest,
 		Units:           evidence.Units,
+		Annotations:     slices.Clone(evidence.Annotations),
 		Undecided:       evidence.Undecided.Clone(),
 		Outcome:         evidence.Completed,
 	}

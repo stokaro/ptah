@@ -151,6 +151,15 @@ variable supplies an empty value. A dry run validates references without
 reading values. Editing or projecting such a plan to Atlas HCL is refused
 because it would discard its input approvals.
 
+A JSON plan can also carry `annotations`: ordered notes with `text` and a
+zero-based `before` position in the statement list. A position equal to the
+statement count places a note after the last operation. Notes alone can be
+saved and previewed without creating executable statements. Apply preserves
+them in its report and runs only the statements. Notes do not affect schema
+fingerprints, but changing them changes the saved document's digest and its
+approval. The Atlas `.plan.hcl` format refuses positioned notes because it
+cannot preserve this distinction.
+
 An `--edit` that leaves the statements as they were, comments and whitespace
 aside, keeps every recorded verdict. After any other edit, a statement whose
 text the plan recorded keeps the strongest verdict recorded for that text, so a

@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
@@ -94,6 +95,9 @@ func (p ApplyRuntimePlan) ExecuteSQL(ctx context.Context, sqlText string) error 
 // against the transaction mode opens on conn. It does not replace target
 // fingerprint verification or SQL-based preflight.
 func (p PlanFile) PreflightTransaction(mode migrator.MigrationTxMode, conn *dbschema.DatabaseConnection) error {
+	if err := renderer.ValidateAnnotations(p.Annotations, len(p.Statements)); err != nil {
+		return err
+	}
 	return checkOwnerTransactions(p.OwnerTransactions(), mode, conn)
 }
 
@@ -120,6 +124,9 @@ func (p PlanFile) Execute(ctx context.Context, conn *dbschema.DatabaseConnection
 	}
 	if err := p.PreflightTransaction(mode, conn); err != nil {
 		return err
+	}
+	if !p.HasChanges() {
+		return nil
 	}
 	return ApplyStatements(ctx, conn, mode, p.StatementSQL())
 }

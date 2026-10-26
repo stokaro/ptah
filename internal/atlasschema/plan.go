@@ -108,6 +108,9 @@ type PlanFile struct {
 	RowsFingerprint string          `json:"rows_fingerprint,omitempty"`
 	Destructive     bool            `json:"destructive"`
 	Statements      []PlanStatement `json:"statements"`
+	// Annotations are ordered display notes. They are not statements and do
+	// not contribute to schema fingerprints or execution requirements.
+	Annotations []renderer.Annotation `json:"annotations,omitempty"`
 }
 
 // PlanRowSet is one declared row set a plan read: the table, the key columns a
@@ -325,6 +328,7 @@ func PreparePlanFileReportingUndecided(
 		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
 		Statements:       statements,
+		Annotations:      computation.executionAnnotations(),
 	}, computation.undecided, nil
 }
 
@@ -562,6 +566,10 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	if p.HasInputReferences() {
 		return PlanFile{}, fmt.Errorf("edited SQL with approved execution inputs needs a new provider plan")
 	}
+	// The editor's text is authoritative, including any notes it retained.
+	// Keeping positional notes too would duplicate them or attach them to
+	// a different statement after the edit.
+	p.Annotations = nil
 	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil)
 	if err != nil {
 		return PlanFile{}, err
@@ -672,7 +680,7 @@ func (p PlanFile) HasChanges() bool {
 // statement, because that is where they were written and where every reader
 // that honors one looks; see plandirective.go.
 func (p PlanFile) SQL() string {
-	return FormatMigrationSQL(p.StatementSQL())
+	return annotatedSQL(p.StatementSQL(), p.Annotations)
 }
 
 // WithDirectiveHeader returns a copy of the plan whose first statement carries
@@ -688,7 +696,13 @@ func (p PlanFile) WithDirectiveHeader(ctx context.Context, runtime safety.Runtim
 	if header == "" {
 		return p, nil
 	}
-	return p.WithStatementsFromSQL(ctx, runtime, header+p.SQL())
+	annotations := slices.Clone(p.Annotations)
+	updated, err := p.WithStatementsFromSQL(ctx, runtime, header+FormatMigrationSQL(p.StatementSQL()))
+	if err != nil {
+		return PlanFile{}, err
+	}
+	updated.Annotations = annotations
+	return updated, nil
 }
 
 // StatementSQL returns the ordered plan statement SQL texts, one per
@@ -705,6 +719,9 @@ func (p PlanFile) StatementSQL() []string {
 // MarshalPlanFile renders the canonical plan document. The output is
 // deterministic for identical plan contents.
 func MarshalPlanFile(plan PlanFile) ([]byte, error) {
+	if err := renderer.ValidateAnnotations(plan.Annotations, len(plan.Statements)); err != nil {
+		return nil, err
+	}
 	if err := validatePlanProvider(plan.Provider); err != nil {
 		return nil, err
 	}
@@ -915,8 +932,11 @@ func validatePlanFile(plan PlanFile) error {
 	if err := validatePlanRowSets(plan); err != nil {
 		return err
 	}
-	if len(plan.Statements) == 0 {
-		return errors.New("plan contains no statements")
+	if err := renderer.ValidateAnnotations(plan.Annotations, len(plan.Statements)); err != nil {
+		return err
+	}
+	if len(plan.Statements) == 0 && len(plan.Annotations) == 0 {
+		return errors.New("plan contains no statements or annotations")
 	}
 	for i, statement := range plan.Statements {
 		if err := validatePlanNative(plan, statement); err != nil {

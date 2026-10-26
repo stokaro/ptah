@@ -28,6 +28,9 @@ func AssessUnits(ctx context.Context, runtime Runtime, target string, units []re
 		if err != nil {
 			return nil, err
 		}
+		if cloned.Annotation != nil {
+			return nil, fmt.Errorf("%w: annotation is not an execution unit", renderer.ErrInvalidResult)
+		}
 		snapshots[i] = cloned
 		if cloned.Native == nil {
 			statements = append(statements, cloned.SQL)

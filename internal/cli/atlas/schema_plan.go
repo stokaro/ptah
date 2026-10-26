@@ -239,7 +239,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if !plan.HasChanges() {
+	if !plan.HasChanges() && len(plan.Annotations) == 0 {
 		// With --format the operator asked for a document to parse, and a
 		// synced schema is one of its answers. Printing the sentence here
 		// instead would hand a JSON consumer a line of English on the one
@@ -307,7 +307,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 
 	if opts.format == "" {
 		if plan.HasNative() || plan.HasInputReferences() {
-			printAtlasSchemaApplyUnits(cmd.OutOrStdout(), plan.UnitReports())
+			printAtlasSchemaApplyUnits(cmd.OutOrStdout(), plan.UnitReports(), plan.Annotations)
 		} else {
 			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
 		}
@@ -357,7 +357,7 @@ func editAtlasSchemaPlan(ctx context.Context, runtime safety.Runtime, plan atlas
 	if err != nil {
 		return atlasschema.PlanFile{}, err
 	}
-	if !plan.HasChanges() {
+	if !plan.HasChanges() && len(plan.Annotations) == 0 {
 		return atlasschema.PlanFile{}, fmt.Errorf(
 			"the edited plan contains no SQL statement; nothing was saved")
 	}

@@ -344,13 +344,7 @@ func (p RenderedPlan) PlannedStatements() ([]PlannedStatement, error) {
 
 func (p RenderedPlan) sqlStatements(fragments []string) []PlannedStatement {
 	if p.Result.ExecutableUnits {
-		units := make([]PlannedStatement, 0, len(fragments))
-		for node, sql := range fragments {
-			if sql != "" {
-				units = append(units, PlannedStatement{SQL: sql, Node: node})
-			}
-		}
-		return units
+		return p.exactStatements(fragments)
 	}
 	var statements []PlannedStatement
 	carry := ""
@@ -595,4 +589,27 @@ func wrapRenderError(dialect string, err error) error {
 		Err:     err,
 		Message: err.Error(),
 	}
+}
+
+func (p RenderedPlan) exactStatements(fragments []string) []PlannedStatement {
+	units := make([]PlannedStatement, 0, len(fragments))
+	carry := ""
+	for node, sql := range fragments {
+		if p.Result.Fragments[node].Annotation != nil {
+			carry += sql
+			continue
+		}
+		if sql != "" {
+			units = append(units, PlannedStatement{SQL: carry + sql, Node: node})
+			carry = ""
+		}
+	}
+	if carry != "" {
+		if len(units) == 0 {
+			units = append(units, PlannedStatement{SQL: carry, Node: -1})
+		} else {
+			units[len(units)-1].SQL += "\n" + carry
+		}
+	}
+	return units
 }

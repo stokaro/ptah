@@ -682,6 +682,11 @@ Apply JSON reports use contract version `3` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
 provider payloads and are reports, not execution plans.
 
+Planner notes stay in the host as ordered annotations. They do not enter the
+provider's rendering or execution batch and do not count as operations.
+SQL previews prefix every line as a comment. JSON plans retain each note's
+position, including trailing notes and plans with notes alone.
+
 A saved plan records each native operation in the provider's own encoding,
 with the codec owner, version and definition digest, beside the provider
 binding. `ptah schema apply --plan` decodes the operations through the selected
