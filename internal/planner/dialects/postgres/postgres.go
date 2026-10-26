@@ -2400,7 +2400,7 @@ func (p *Planner) addNewViewLikeObjects(
 	// spelling -- `"analytics"."base"` -- matches no declaration, gains no
 	// dependency edge, and is created AFTER the view that reads it, so the plan
 	// renders cleanly and fails when it runs.
-	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForCreateIn(objects, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
 		if object.Routine {
 			// Every overload of the name and its replacement statements, once.
 			result = append(result, routineNodes[object.Name]...)
@@ -2477,7 +2477,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 		result = append(result, p.dropViewNode(name, p.cascades(p.viewDropRelies(diff, name, owned))))
 	}
 
-	for _, object := range deporder.ViewLikesForCreateForDialect(changes.recreate(diff, semantics), p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForCreateIn(changes.recreate(diff, semantics), p.targetDialect(), semantics) {
 		if !owned.has(object) {
 			result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, cleared, semantics)
 		}
@@ -2661,7 +2661,7 @@ func viewLikesLostToCascade(
 		gone := frontier[0]
 		frontier = frontier[1:]
 		for _, candidate := range candidates {
-			if taken[candidate.Name] || !deporder.ReferencesIdentifier(candidate.Body, gone) {
+			if taken[candidate.Name] || !deporder.ReferencesRelation(candidate.Body, gone, semantics) {
 				continue
 			}
 			taken[candidate.Name] = true
@@ -2686,7 +2686,7 @@ func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff,
 			removed = append(removed, object)
 		}
 	}
-	for _, object := range deporder.ViewLikesForDropForDialect(removed, p.targetDialect()) {
+	for _, object := range deporder.ViewLikesForDropIn(removed, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
 		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name))))
 	}
 	return result

@@ -1290,6 +1290,23 @@ plans its changes alone, as for a SQL Server extended property. A receipt that
 gives an attachment to a child or a facet, names something other than a table,
 or repeats a dependency is refused.
 
+`RelationReader` is implemented by a captured value whose stored definition
+reads relations by name, as a PostgreSQL row-security policy's expressions do.
+A host that plans `DROP ... CASCADE` of a relation asks each captured value
+whether the drop takes it along, without knowing its model.
+`ReadsRelation(relation)` answers with nothing known about the session, so an
+unqualified name may be in any schema.
+
+A value that also implements
+`RelationReaderInSchema` is asked through `ReadsRelationIn(reader, relation,
+semantics)` with the `identifier.Semantics` of the session that read it: a
+relation named without a schema is in `DefaultSchema`, and a name written
+without one in the definition may be in any schema of `SearchPath`; any other
+reader is asked `ReadsRelation`. Both tests are syntactic and err toward
+reading the relation, which keeps the value: known semantics turn an answer to
+false only where the definition names the relation's name somewhere the
+relation is not.
+
 `RelationSnapshot.CaptureRelated` captures the connected feature context around
 structured object references. It retains each multi-table object once, with its
 complete definition, and includes other values sharing its dependencies.
@@ -5113,7 +5130,12 @@ restore.
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract. `identifier.FromDescriptor` reads the
 defaults from a dialect descriptor, and `ForDialect` is that function over the
-process dialect registry.
+process dialect registry. `Semantics.DefaultSchema` is where an object named
+without a schema is created, and `Semantics.SearchPath` every schema a name
+written without one resolves in, in search order: on PostgreSQL the session's
+`current_schemas(false)`. An empty path is not known, and a reader of
+unqualified names takes one to be in any schema. `Equal` and `IsZero` compare
+the path too, and `Clone` copies it.
 
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
 data only. Beside its names and aliases, protocol family, default schema,

@@ -79,9 +79,35 @@ func PlaceRoutines(
 	dialect string,
 	resolves BodyResolution,
 ) map[string]RoutinePlacement {
+	return placeRoutines(routines, dependencies, created, dialect, offlineScope(dialect), resolves)
+}
+
+// PlaceRoutinesIn is [PlaceRoutines] with names resolving in the session
+// semantics describe rather than in the dialect's default schema: under
+// `search_path=app`, `RETURNS SETOF app.t` names a t declared without a
+// schema. A schema semantics do not know places nothing.
+func PlaceRoutinesIn(
+	routines []schemamodel.Function,
+	dependencies map[string][]string,
+	created RoutineCreation,
+	dialect string,
+	resolves BodyResolution,
+	semantics identifier.Semantics,
+) map[string]RoutinePlacement {
+	return placeRoutines(routines, dependencies, created, dialect, sessionScope(semantics), resolves)
+}
+
+func placeRoutines(
+	routines []schemamodel.Function,
+	dependencies map[string][]string,
+	created RoutineCreation,
+	dialect string,
+	scope orderScope,
+	resolves BodyResolution,
+) map[string]RoutinePlacement {
 	placements := make(map[string]RoutinePlacement, len(routines))
 	for _, routine := range routines {
-		placement := placeRoutine(routine, created, dialect, resolves)
+		placement := placeRoutine(routine, created, dialect, scope, resolves)
 		if current, known := placements[routine.Name]; !known || placement > current {
 			placements[routine.Name] = placement
 		}
@@ -109,19 +135,19 @@ func PlaceRoutines(
 }
 
 // placeRoutine is the placement one routine's own definition needs.
-func placeRoutine(routine schemamodel.Function, created RoutineCreation, dialect string, resolves BodyResolution) RoutinePlacement {
+func placeRoutine(routine schemamodel.Function, created RoutineCreation, dialect string, scope orderScope, resolves BodyResolution) RoutinePlacement {
 	signature := RoutineSignatureText(routine)
 	resolvedBody := ""
 	if resolves != nil && resolves(routine) {
 		resolvedBody = routine.Body
 	}
 	for _, relation := range created.Relations {
-		if namesObject(signature, relation, dialect) || namesObject(resolvedBody, relation, dialect) {
+		if namesObject(signature, relation, dialect, scope) || namesObject(resolvedBody, relation, dialect, scope) {
 			return RoutineWithRelations
 		}
 	}
 	for _, userType := range created.Types {
-		if namesObject(signature, userType, dialect) || namesObject(resolvedBody, userType, dialect) {
+		if namesObject(signature, userType, dialect, scope) || namesObject(resolvedBody, userType, dialect, scope) {
 			return RoutineAfterTypes
 		}
 	}
@@ -149,34 +175,30 @@ func RoutineOrderingBody(routine schemamodel.Function, resolves BodyResolution) 
 // namesObject reports whether text names object, in any of the spellings a view
 // body can use for it.
 //
-// An object declared without a schema is created in the dialect's default
-// schema, and a definition may name it there: `CREATE TABLE t` and
+// An object declared without a schema is created in the default schema scope
+// names, and a definition may name it there: `CREATE TABLE t` and
 // `RETURNS SETOF public.t` on PostgreSQL. Matched by its declared spelling
 // alone, `t` is not referenced by `public.t`, so the routine goes first and is
 // refused with `type "public.t" does not exist` (stokaro/ptah#4039).
-func namesObject(text, object, dialect string) bool {
+func namesObject(text, object, dialect string, scope orderScope) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
 	bareNameCounts := map[string]int{strings.ToLower(viewLikeBareName(object)): 1}
-	if referencesViewLikeIdentifier(text, object, dialect, bareNameCounts) {
+	if referencesViewLikeIdentifier(text, object, dialect, scope, bareNameCounts) {
 		return true
 	}
-	inDefaultSchema, ok := defaultSchemaSpelling(object, dialect)
-	return ok && referencesViewLikeIdentifier(text, inDefaultSchema, dialect, bareNameCounts)
+	inDefaultSchema, ok := defaultSchemaSpelling(object, scope)
+	return ok && referencesViewLikeIdentifier(text, inDefaultSchema, dialect, scope, bareNameCounts)
 }
 
-// defaultSchemaSpelling is object qualified with dialect's default schema, for
+// defaultSchemaSpelling is object qualified with scope's default schema, for
 // an object declared without one. It reports false for a qualified object and
-// for a dialect with no default schema.
-func defaultSchemaSpelling(object, dialect string) (string, bool) {
+// for a scope with no default schema.
+func defaultSchemaSpelling(object string, scope orderScope) (string, bool) {
 	ref, ok := tableref.Parse(object)
-	if !ok || ref.Qualified {
+	if !ok || ref.Qualified || scope.defaultSchema == "" {
 		return "", false
 	}
-	schema := identifier.ForDialect(dialect).DefaultSchema
-	if schema == "" {
-		return "", false
-	}
-	return tableref.Canonical(schema, ref.Name), true
+	return tableref.Canonical(scope.defaultSchema, ref.Name), true
 }

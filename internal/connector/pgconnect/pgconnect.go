@@ -142,6 +142,14 @@ func (Service) Describe(
 	// there. MySQL, MariaDB, Oracle and SQL Server pin the same field from
 	// the same place, for the reason stokaro/ptah#1244 records.
 	info.IdentifierSemantics.DefaultSchema = info.Schema
+	// Every schema an unqualified name resolves in, which on a search_path
+	// naming several schemas is more than the default one; see
+	// [schemaselection.Selection.ResolveSearchPath]. A server that cannot
+	// answer leaves the path unknown, and a reader of unqualified names then
+	// takes one to be in any schema, which errs toward keeping what it reads.
+	if path, err := resolveSearchPath(ctx, opened, request.Parsed); err == nil {
+		info.IdentifierSemantics.SearchPath = path
+	}
 	info.DefaultIntSize = cockroachDefaultIntSize(ctx, db, info.Dialect)
 	return info, nil
 }
@@ -162,6 +170,15 @@ func resolveSchema(ctx context.Context, opened *connector.Pool, parsedURL *url.U
 	// `search_path` naming several schemas, a schema the URL did not name,
 	// and the connection default.
 	return selection.Resolve(ctx, opened.DB)
+}
+
+// resolveSearchPath is [resolveSchema] for the whole search path.
+func resolveSearchPath(ctx context.Context, opened *connector.Pool, parsedURL *url.URL) ([]string, error) {
+	selection := schemaselection.FromParsedURL(parsedURL)
+	if state, ok := opened.Native.(pool); ok && state.carried {
+		return selection.ResolveCarriedSearchPath(ctx, opened.DB)
+	}
+	return selection.ResolveSearchPath(ctx, opened.DB)
 }
 
 // detectPostgresWireDialect names the product behind a PostgreSQL-wire connection from

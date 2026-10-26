@@ -5,15 +5,24 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/deporder"
 )
 
-// relationReference is one question to [deporder.ReferencesRelation].
+// relationReference is one question to [deporder.ReferencesRelation], asked
+// in a session whose default schema and search path are given; empty is not
+// known.
 type relationReference struct {
 	name          string
 	body          string
 	relation      string
 	defaultSchema string
+	searchPath    []string
+}
+
+// semantics is the session a row describes.
+func (r relationReference) semantics() identifier.Semantics {
+	return identifier.Semantics{DefaultSchema: r.defaultSchema, SearchPath: r.searchPath}
 }
 
 // TestReferencesRelation_Reads pins the spellings that name a relation. A
@@ -62,11 +71,11 @@ func TestReferencesRelation_Reads(t *testing.T) {
 			// With the default schema known, a bare order_totals is not
 			// reporting's, so only the dotted name can read it.
 			name: "spaces around the dot", body: "SELECT total FROM reporting . order_totals",
-			relation: "reporting.order_totals", defaultSchema: "public",
+			relation: "reporting.order_totals", defaultSchema: "public", searchPath: []string{"public"},
 		},
 		{
 			name: "a line break around the dot", body: "SELECT total FROM reporting\n\t.order_totals",
-			relation: "reporting.order_totals", defaultSchema: "public",
+			relation: "reporting.order_totals", defaultSchema: "public", searchPath: []string{"public"},
 		},
 		{
 			name: "a database in front", body: "SELECT total FROM shop.reporting.order_totals",
@@ -116,11 +125,28 @@ func TestReferencesRelation_Reads(t *testing.T) {
 			name: "a bare relation in a non-public default schema", body: "SELECT id FROM app.items",
 			relation: "items", defaultSchema: "app",
 		},
+		{
+			// PostgreSQL prints a relation the path reaches without its
+			// schema, so under reporting, public a policy reading
+			// public.order_totals reads back as `order_totals`.
+			name: "a bare reference to a relation further along the search path", body: "SELECT 1 FROM order_totals",
+			relation: "public.order_totals", defaultSchema: "reporting", searchPath: []string{"reporting", "public"},
+		},
+		{
+			name: "a bare reference to a relation outside the default schema, path not known", body: "SELECT id FROM item_skus",
+			relation: "reporting.item_skus", defaultSchema: "public",
+		},
+		{
+			// `İ` lower-cases to two runes, which strings.EqualFold does not
+			// match against the one it was.
+			name: "a quoted name that lower-cases to more runes", body: `SELECT id FROM "İtems"`,
+			relation: `"İtems"`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(deporder.ReferencesRelation(test.body, test.relation, test.defaultSchema), qt.IsTrue,
+			c.Assert(deporder.ReferencesRelation(test.body, test.relation, test.semantics()), qt.IsTrue,
 				qt.Commentf("body: %s", test.body))
 		})
 	}
@@ -147,7 +173,17 @@ func TestReferencesRelation_DoesNotRead(t *testing.T) {
 		},
 		{
 			name: "a bare reference and a relation outside the default schema", body: "SELECT id FROM item_skus",
-			relation: "reporting.item_skus", defaultSchema: "public",
+			relation: "reporting.item_skus", defaultSchema: "public", searchPath: []string{"public"},
+		},
+		{
+			name: "a bare reference and a relation off the search path", body: "SELECT 1 FROM order_totals",
+			relation: "analytics.order_totals", defaultSchema: "reporting", searchPath: []string{"reporting", "public"},
+		},
+		{
+			// An object declared without a schema is created in the default
+			// schema alone, wherever else the path reaches.
+			name: "a bare relation and a reference into a later schema of the path", body: "SELECT 1 FROM public.order_totals",
+			relation: "order_totals", defaultSchema: "reporting", searchPath: []string{"reporting", "public"},
 		},
 		{
 			// The expression PostgreSQL prints for a policy reading
@@ -205,8 +241,30 @@ func TestReferencesRelation_DoesNotRead(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(deporder.ReferencesRelation(test.body, test.relation, test.defaultSchema), qt.IsFalse,
+			c.Assert(deporder.ReferencesRelation(test.body, test.relation, test.semantics()), qt.IsFalse,
 				qt.Commentf("body: %s", test.body))
+		})
+	}
+}
+
+// TestReferencesIdentifier_KnowsNoSchema pins what [deporder.ReferencesIdentifier]
+// means for its callers that have no comparison to ask: an unqualified name
+// may be in any schema, on either side. Read as public, the first row would
+// miss a reader of reporting.items that a drop of items, in a reporting
+// default, takes with it.
+func TestReferencesIdentifier_KnowsNoSchema(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		relation string
+	}{
+		{name: "a qualified reference to a bare relation", body: "SELECT id FROM reporting.items", relation: "items"},
+		{name: "a bare reference to a qualified relation", body: "SELECT id FROM items", relation: "reporting.items"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(deporder.ReferencesIdentifier(test.body, test.relation), qt.IsTrue)
 		})
 	}
 }

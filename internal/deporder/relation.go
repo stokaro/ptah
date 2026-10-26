@@ -1,18 +1,21 @@
 package deporder
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/tableref"
 )
 
 // ReferencesIdentifier reports whether the SQL body references name as a
-// standalone or qualified identifier. It is [ReferencesRelation] with the
-// default schema unknown, and it backs the schema-scope cross-reference
-// diagnostics and the PostgreSQL planner's questions about what a drop takes
-// with it.
+// standalone or qualified identifier. It is [ReferencesRelation] with nothing
+// known about the session, so an unqualified name may be in any schema, and
+// it backs the schema-scope cross-reference diagnostics and the PostgreSQL
+// planner's questions about what a drop takes with it where no comparison
+// says where names resolve.
 //
 // Only the code of the body counts. A name that appears inside a string
 // literal, a dollar-quoted string, a line comment or a block comment names
@@ -30,12 +33,12 @@ import (
 // reference to base_view. Their contents are opaque, so a quotation mark or a
 // comment marker inside one cannot open a literal or a comment.
 func ReferencesIdentifier(body, name string) bool {
-	return ReferencesRelation(body, name, "")
+	return ReferencesRelation(body, name, identifier.Semantics{})
 }
 
 // ReferencesRelation reports whether a name in the code of the SQL body can
-// name relation, a bare or schema-qualified name in [tableref] form, when an
-// unqualified name resolves in defaultSchema.
+// name relation, a bare or schema-qualified name in [tableref] form, where
+// names resolve as semantics says.
 //
 // A name in the body is a run of parts joined by dots, each part bare or
 // quoted, with spaces allowed around a dot. It is matched from its end: its
@@ -45,52 +48,82 @@ func ReferencesIdentifier(body, name string) bool {
 // `order_totals.total`, does not name the relation `order_totals`. The body
 // `FROM "reporting".order_totals` reads reporting.order_totals.
 //
-// Parts compare without regard to case, quoted or not. PostgreSQL folds an
-// unquoted part to lower case and keeps a quoted one as written, but a
-// relation name a caller passes does not record whether its declaration quoted
-// it, and the planners that ask also serve engines whose quoted names ignore
-// case. Folding both costs a rebuild or a refusal where two relations differ
-// only in case; telling them apart would cost a reader the drop takes without
-// a word.
+// Parts compare as [strings.ToLower] folds them, quoted or not. PostgreSQL
+// folds an unquoted part to lower case and keeps a quoted one as written, but
+// a relation name a caller passes does not record whether its declaration
+// quoted it, and the planners that ask also serve engines whose quoted names
+// ignore case. Folding both costs a rebuild or a refusal where two relations
+// differ only in case; telling them apart would cost a reader the drop takes
+// without a word.
 //
 // Two schemas written out are one schema only when they are equal:
-// `reporting.item_skus` never reads public.item_skus. An unqualified name, in
-// relation or in the body, is in defaultSchema, as the planner resolves one: a
-// bare `item_skus` reads public.item_skus when defaultSchema is public, and
-// reads no reporting.item_skus. An empty defaultSchema means the schema is not
-// known, and an unqualified name then matches a qualified one in any schema,
-// because the answer has to err toward "reads it": everything that reads a
-// dropped relation is either rebuilt or refused, and what is missed is dropped
-// with CASCADE.
+// `reporting.item_skus` never reads public.item_skus. An unqualified name means
+// one thing in relation and another in the body:
+//
+//   - A relation named without a schema is in semantics.DefaultSchema, where
+//     the planner creates an object declared without one. With public the
+//     default, `public.item_skus` reads item_skus and `reporting.item_skus`
+//     does not.
+//   - A name written without a schema in the body may be in any schema of
+//     semantics.SearchPath. PostgreSQL resolves it to the first schema of the
+//     path that has it, and prints back without a schema every relation the
+//     path reaches: under `search_path=reporting,public` a policy that reads
+//     public.order_totals is read back as `order_totals`. A bare
+//     `order_totals` then reads public.order_totals and
+//     reporting.order_totals, and no order_totals in a schema off the path.
+//
+// What semantics leaves out errs toward "reads it": without a default schema,
+// an unqualified relation may be in any schema, and without a search path, so
+// may an unqualified name in the body. Everything that reads a dropped
+// relation is either rebuilt or refused, and what is missed is dropped with
+// CASCADE.
 //
 // Only the code of the body counts; see [ReferencesIdentifier]. A relation that
 // [tableref.Parse] does not accept names nothing.
-func ReferencesRelation(body, relation, defaultSchema string) bool {
+func ReferencesRelation(body, relation string, semantics identifier.Semantics) bool {
 	ref, ok := tableref.Parse(relation)
 	if !ok {
 		return false
 	}
-	resolves := func(schema string) bool {
-		return defaultSchema == "" || strings.EqualFold(schema, defaultSchema)
-	}
-	return namesRead(codeNames(body, ""), ref, resolves)
+	return namesRead(codeNames(body, ""), ref, sessionResolution(semantics))
 }
 
-// namesRead reports whether one of names, read from a body, names ref.
-//
-// inDefault tells whether an unqualified name may be in schema. The question is
-// the same for both sides of a pairing: a bare name in the body against a
-// qualified relation, and a qualified name in the body against a bare one.
-// [ReferencesRelation] answers it with the default schema it was given, or yes
-// when it was given none; the creation order answers it with the dialect's
-// default schema, or no; see [referencesViewLikeIdentifier].
-func namesRead(names []dottedName, ref tableref.Ref, inDefault func(schema string) bool) bool {
+// resolution says where an unqualified name may be, for each side of a
+// pairing. The two differ: an object is created in one schema, while a name
+// is looked up along a path.
+type resolution struct {
+	// relationIn reports whether a relation named without a schema may be in
+	// schema, which a qualified name in the body names.
+	relationIn func(schema string) bool
+	// nameReaches reports whether a name written without a schema in the body
+	// may name a relation in schema.
+	nameReaches func(schema string) bool
+}
+
+// sessionResolution is where names resolve in a session described by
+// semantics; see [ReferencesRelation].
+func sessionResolution(semantics identifier.Semantics) resolution {
+	defaultSchema := foldName(semantics.DefaultSchema)
+	path := make([]string, 0, len(semantics.SearchPath))
+	for _, schema := range semantics.SearchPath {
+		path = append(path, foldName(schema))
+	}
+	return resolution{
+		relationIn: func(schema string) bool {
+			return defaultSchema == "" || foldName(schema) == defaultSchema
+		},
+		nameReaches: func(schema string) bool {
+			return len(path) == 0 || slices.Contains(path, foldName(schema))
+		},
+	}
+}
+
+// namesRead reports whether one of names, read from a body and folded, names
+// ref, with unqualified names resolved by where.
+func namesRead(names []dottedName, ref tableref.Ref, where resolution) bool {
+	own := foldName(ref.Name)
 	for _, name := range names {
-		last := len(name) - 1
-		if !strings.EqualFold(name[last], ref.Name) {
-			continue
-		}
-		if namesSchema(name, ref, inDefault) {
+		if name[len(name)-1] == own && namesSchema(name, ref, where) {
 			return true
 		}
 	}
@@ -99,18 +132,25 @@ func namesRead(names []dottedName, ref tableref.Ref, inDefault func(schema strin
 
 // namesSchema reports whether name, whose last part already equals ref's own
 // name, is in ref's schema.
-func namesSchema(name dottedName, ref tableref.Ref, inDefault func(schema string) bool) bool {
+func namesSchema(name dottedName, ref tableref.Ref, where resolution) bool {
 	qualified := len(name) > 1
 	switch {
 	case !qualified && !ref.Qualified:
 		return true
 	case !qualified:
-		return inDefault(ref.Schema)
+		return where.nameReaches(ref.Schema)
 	case ref.Qualified:
-		return strings.EqualFold(name[len(name)-2], ref.Schema)
+		return name[len(name)-2] == foldName(ref.Schema)
 	default:
-		return inDefault(name[len(name)-2])
+		return where.relationIn(name[len(name)-2])
 	}
+}
+
+// foldName is how a name compares here: as [codeNames] folds the body, so a
+// name and its spelling in a body fold alike. [strings.EqualFold] does not
+// agree with it: `İ` lower-cases to two runes and folds to none of them.
+func foldName(name string) string {
+	return strings.ToLower(name)
 }
 
 // dottedName is one name in the code of a body: its parts in order, each as
