@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -628,6 +627,9 @@ func toDatabase(
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
+		if document.skips(stmt) {
+			continue
+		}
 		if err := appendStatement(ctx, &database, document, stmt, sourcePlatform); err != nil {
 			return schemamodel.Database{}, err
 		}
@@ -668,9 +670,9 @@ func appendStatement(
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node, sourcePlatform)
 	case *ast.CreateFunctionNode:
-		appendFunction(database, node, sourcePlatform)
+		appendFunction(database, document, node, sourcePlatform)
 	case *ast.CreateTriggerNode:
-		appendTrigger(database, node, sourcePlatform)
+		appendTrigger(database, document, node, sourcePlatform)
 	case *ast.CreateSequenceNode:
 		appendSequence(database, document, node, sourcePlatform)
 	case *ast.CreateRoleNode:
@@ -705,13 +707,13 @@ func appendFamilyStatement(
 	if handled, err := applyOwnerStatement(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if handled, err := appendRoutine(database, stmt, sourcePlatform); handled {
+	if handled, err := appendRoutine(database, document, stmt, sourcePlatform); handled {
 		return true, err
 	}
 	if handled, err := appendPrivilegeDeclaration(database, stmt, sourcePlatform); handled {
 		return true, err
 	}
-	if appendView(database, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
+	if appendView(database, document, stmt, sourcePlatform) || appendNamespace(database, stmt, sourcePlatform) {
 		return true, nil
 	}
 	return changeDeclared(ctx, database, document, stmt, sourcePlatform)
@@ -793,7 +795,7 @@ const unmodeledStatementQuote = 80
 // dropped in silence, and the routine nodes were missed anyway. A comment is
 // read by whoever is already thinking about the switch, which is never the
 // person adding a node kind (stokaro/ptah#932, stokaro/ptah#2435).
-func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) (bool, error) {
+func appendRoutine(database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string) (bool, error) {
 	node, isRoutine := stmt.(*ast.RoutineNode)
 	if !isRoutine {
 		return false, nil
@@ -802,7 +804,9 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node, sourcePlatform
 	if err != nil {
 		return true, err
 	}
-	database.Functions = append(database.Functions, function)
+	if !node.Replace || !replaceFunction(declaredIn(database, document), function, sourcePlatform) {
+		database.Functions = append(database.Functions, function)
+	}
 	return true, nil
 }
 
@@ -1249,36 +1253,25 @@ func applyAlterTableAddColumn(
 	if base != nil {
 		known = append(slices.Clip(base.Fields), database.Fields...)
 	}
-	var columns []schemamodel.Field
 	var names []string
 	for _, existing := range known {
 		if existing.StructName == structName {
-			columns = append(columns, existing)
 			names = append(names, existing.Name)
 		}
 	}
-	if index := resolveDeclaredName(sourcePlatform, field.Name, names); index >= 0 {
-		existing := columns[index]
+	if resolveDeclaredName(sourcePlatform, field.Name, names) >= 0 {
 		if !operation.IfNotExists {
 			return fmt.Errorf(
 				"ALTER TABLE %s ADD COLUMN %s names a column the table already declares",
 				tableName, operation.Column.Name)
 		}
-		// The spelling reached the column, so it is the definitions that have
-		// to agree, not the case they were written in.
 		if err := refuseRestatedColumnForeignKey(field, target, operation.Column.Name); err != nil {
 			return err
 		}
-		restated := field
-		restated.Name = existing.Name
-		adoptDerivedConstraintNames(&restated, existing, target)
-		if !reflect.DeepEqual(existing, restated) {
-			return fmt.Errorf(
-				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s declares the column differently from the "+
-					"table's own declaration; the server keeps the first and ignores this one, so the "+
-					"document has to say one thing",
-				tableName, operation.Column.Name)
-		}
+		// The server skips the statement and keeps the column it has, as it
+		// skips a CREATE TABLE IF NOT EXISTS of a table it has, measured on
+		// PostgreSQL 15.19: "column ... already exists, skipping". So does the
+		// reader, whatever the statement says of the column.
 		return nil
 	}
 	if err := refuseMySQLColumnCheckReference(field, append(names, field.Name), target); err != nil {
@@ -1296,28 +1289,6 @@ func applyAlterTableAddColumn(
 	}
 	database.Fields = append(database.Fields, field)
 	return nil
-}
-
-// adoptDerivedConstraintNames gives the CHECK and the foreign key a restated
-// column leaves unnamed the names the declared column carries, where the source
-// dialect derives names for unnamed constraints.
-//
-// The declared column's unnamed constraints were given the names its server
-// gives them -- PostgreSQL's derived names, or on MariaDB the column's own name
-// for its CHECK -- and the restatement creates nothing: the server skips the
-// whole column, so it has no name of its own to disagree with. Compared as written,
-// `ALTER TABLE t ADD COLUMN IF NOT EXISTS a int CHECK (a > 0)` restating `a int
-// CHECK (a > 0)` differs in the name alone and is refused.
-func adoptDerivedConstraintNames(restated *schemamodel.Field, existing schemamodel.Field, target alterTarget) {
-	if !namesConstraintsLikePostgres(target.sourcePlatform) && !namesColumnChecksAfterColumns(target.sourcePlatform) {
-		return
-	}
-	if restated.CheckName == "" {
-		restated.CheckName = existing.CheckName
-	}
-	if restated.ForeignKeyName == "" {
-		restated.ForeignKeyName = existing.ForeignKeyName
-	}
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary

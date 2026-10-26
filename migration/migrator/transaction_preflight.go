@@ -25,12 +25,16 @@ import (
 // It runs only for transactional execution. A file marked `no_transaction`
 // runs each statement in its own transaction, where both shapes are legal, and
 // checking it would refuse the very workflow the directive exists for.
+//
+// remedy, when set, words the way out in place of the finding's own, for a
+// file whose directory has no directive for it; see [unwrappedRemedy].
 func preflightTransactionRequirements(
 	conn *dbschema.DatabaseConnection,
 	filename,
 	sql string,
 	statements []string,
 	mode migrationExecutionMode,
+	remedy func(txrequire.Reason) string,
 ) error {
 	if mode != migrationExecutionTransactional || conn == nil {
 		return nil
@@ -41,13 +45,29 @@ func preflightTransactionRequirements(
 		return nil
 	}
 	finding := result.Findings[0]
+	advice := finding.Remedy
+	if remedy != nil {
+		advice = remedy(finding.Reason)
+	}
 	return &MigrationExecutionError{
 		Err: fmt.Errorf("%s cannot run inside a transaction: %s%s; %s",
-			filename, statementLocation(finding.Statement), finding.Message, finding.Remedy),
+			filename, statementLocation(finding.Statement), finding.Message, advice),
 		Statement:      finding.Statement.SQL,
 		StatementIndex: finding.Statement.Index + 1,
 		Total:          len(statements),
 	}
+}
+
+// unwrappedRemedy is the way out of a refusal for a file of a directory whose
+// runner opens no transaction around a file. Such a runner has no directive
+// for the purpose, and a file of one statement already runs without a
+// transaction (see [WithOwnTransactions]), so the advice is to move the
+// statement into one.
+func unwrappedRemedy(reason txrequire.Reason) string {
+	if reason == txrequire.ReasonEnumValueUsed {
+		return "end the transaction with COMMIT after the ALTER TYPE ... ADD VALUE, or move this statement into a later migration file"
+	}
+	return "move the statement into a migration file of its own, which runs without a transaction"
 }
 
 // statementLocation names where the offending statement is, and says nothing

@@ -16,7 +16,12 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, removalStart int) ([]ast.Node, error) {
+// schedule joins the provider's steps with the host's sequence. A feature
+// object is created at creationStart, after the tables and columns it may
+// read and before the views, grants and comments that may name it, and the
+// dependent operations and removals join at removalStart, before the host
+// removes columns and tables.
+func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, creationStart, removalStart int) ([]ast.Node, error) {
 	request, names, err := p.planningContext(diff)
 	if err != nil {
 		return nil, err
@@ -26,7 +31,7 @@ func (p commonPlanner) schedule(ctx context.Context, runtime featureplan.Runtime
 		return nil, err
 	}
 	graph, err := featurehost.NewGraph("ptah.run/provider-common", nodes, metadata, featurehost.Windows{
-		Creation: removalStart, Dependent: removalStart, Removal: removalStart,
+		Creation: creationStart, Dependent: removalStart, Removal: removalStart,
 		Prerequisites: &featurehost.PrerequisiteWindows{Creation: 0, Removal: len(nodes)},
 		Types:         &featurehost.TypeWindows{Creation: featurehost.Span{}, Removal: featurehost.Span{Start: len(nodes), End: len(nodes)}},
 	})
@@ -69,6 +74,14 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node) ([]fe
 	}
 	metadata := make([]featureplan.CommonStep, len(nodes))
 	for i, node := range nodes {
+		common, isCommon, err := commonObjectMetadata(builder, parents, node)
+		if err != nil {
+			return nil, err
+		}
+		if isCommon {
+			metadata[i] = common
+			continue
+		}
 		name, action := "", plangraph.Action("")
 		switch typed := node.(type) {
 		case *ast.CreateTableNode:

@@ -288,9 +288,10 @@ migration directory. Elsewhere in a replay each of these statements is refused
 on its own. In a golang-migrate directory, replay runs a file the way
 `ptah-compat migrate apply` runs it, which is how golang-migrate's default mode
 runs it: a file that opens its own transaction runs in the transactions the
-file sent as one query runs in, and a file whose one statement PostgreSQL
-refuses inside a transaction, such as `CREATE INDEX CONCURRENTLY`, runs without
-one; see
+file sent as one query runs in, and a file of one statement runs without one.
+The reading there also accepts what golang-migrate applies: a `COMMIT` outside
+a block, a `BEGIN` inside one, and `SAVEPOINT`, `RELEASE` and `ROLLBACK TO`
+inside one; see
 [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory).
 `LOCK TABLE` is accepted for the same reason as `SET LOCAL`; a lock on a table in
 a protected namespace is refused.

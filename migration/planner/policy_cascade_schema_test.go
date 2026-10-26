@@ -47,11 +47,12 @@ var (
 	}
 )
 
-// publicSemantics is what a connection whose default schema is public
-// reports.
-func publicSemantics() *identifier.Semantics {
+// sessionSemantics is what a connection whose search path is path reports:
+// the first schema is the default one.
+func sessionSemantics(path ...string) *identifier.Semantics {
 	semantics := identifier.ForDialect(platform.Postgres)
-	semantics.DefaultSchema = "public"
+	semantics.DefaultSchema = path[0]
+	semantics.SearchPath = path
 	return &semantics
 }
 
@@ -112,7 +113,7 @@ func TestGenerateSchemaDiffSQL_KeepsAPolicyOnANamesake_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			sql, err := planner.GenerateSchemaDiffSQL(context.Background(), must.Must(builtin.New()),
-				namesakeDiff(c, test, publicSemantics()), platform.Postgres)
+				namesakeDiff(c, test, sessionSemantics("public")), platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, "DROP VIEW")
@@ -138,4 +139,21 @@ func TestGenerateSchemaDiffSQL_RefusesANamesakeInAnUnknownSchema_FailurePath(t *
 			c.Assert(sql, qt.Equals, "")
 		})
 	}
+}
+
+// TestGenerateSchemaDiffSQL_RefusesAPolicyAlongTheSearchPath_FailurePath pins
+// a search path that names two schemas. PostgreSQL prints back without a schema
+// every relation the path reaches, so under public, reporting the policy's
+// unqualified `active_tenants` may be reporting.active_tenants, which the
+// column type change rebuilds; the drop would take the policy. The same policy
+// under the path public alone is the happy path above.
+func TestGenerateSchemaDiffSQL_RefusesAPolicyAlongTheSearchPath_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	sql, err := planner.GenerateSchemaDiffSQL(context.Background(), must.Must(builtin.New()),
+		namesakeDiff(c, reportingViewPolicy, sessionSemantics("public", "reporting")), platform.Postgres)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s).*reporting\.active_tenants.*public\.orders\.audit_visible.*`)
+	c.Assert(sql, qt.Equals, "")
 }

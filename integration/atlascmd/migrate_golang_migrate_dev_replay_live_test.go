@@ -82,37 +82,128 @@ func TestGolangMigrateLoneConcurrentIndexDevReplayLive(t *testing.T) {
 	})
 }
 
-func TestGolangMigrateNestedTransactionDevReplayLive(t *testing.T) {
+// The forms of transaction control golang-migrate applies beyond a block the
+// file opens and closes, measured with v4.20.1 through both PostgreSQL drivers
+// on PostgreSQL 15.19: a COMMIT outside a block, savepoints inside one, a BEGIN
+// inside one, and a lone statement PostgreSQL refuses inside a transaction
+// block. Lint, validate and apply all accept each of them.
+func TestGolangMigrateUnwrappedFormsDevReplayLive(t *testing.T) {
 	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
-	files := withGolangMigrateBase(map[string]string{
-		"20240827000000_nested.up.sql":   "BEGIN;\nCREATE TABLE t1 (id int);\nBEGIN;\nINSERT INTO t1 VALUES (1);\nCOMMIT;\n",
-		"20240827000000_nested.down.sql": "DROP TABLE t1;\n",
-	})
+	tests := []struct {
+		name string
+		body string
+		// wantTable is a table the apply leaves.
+		wantTable string
+	}{
+		{
+			name: "a COMMIT outside a block",
+			body: "CREATE TYPE color AS ENUM ('red');\nALTER TYPE color ADD VALUE 'green';\nCOMMIT;\n" +
+				"CREATE TABLE t1 (c color DEFAULT 'green');\nINSERT INTO t1 VALUES ('green');\n",
+			wantTable: "t1",
+		},
+		{
+			name: "savepoints inside a block",
+			body: "BEGIN;\nCREATE TABLE t1 (id int);\nSAVEPOINT s;\nCREATE TABLE t2 (id int);\nROLLBACK TO SAVEPOINT s;\n" +
+				"RELEASE SAVEPOINT s;\nCOMMIT;\n",
+			wantTable: "t1",
+		},
+		{
+			name:      "a BEGIN inside a block",
+			body:      "BEGIN;\nCREATE TABLE t1 (id int);\nBEGIN;\nINSERT INTO t1 VALUES (1);\nCOMMIT;\n",
+			wantTable: "t1",
+		},
+		{
+			name:      "a lone VACUUM",
+			body:      "VACUUM base;\n",
+			wantTable: "base",
+		},
+	}
+	for _, test := range tests {
+		files := withGolangMigrateBase(map[string]string{
+			"20240827000000_t.up.sql":   test.body,
+			"20240827000000_t.down.sql": "SELECT 1;\n",
+		})
+		for _, command := range [][]string{
+			{"migrate", "lint", "--latest", "1"},
+			{"migrate", "validate"},
+		} {
+			t.Run(test.name+"/"+command[1], func(t *testing.T) {
+				c := qt.New(t)
+				dir := writeHashedLayoutDirectory(c, "golang-migrate", files)
+				args := slices.Concat(command, []string{"--dir", "file://" + dir + "?format=golang-migrate",
+					"--dev-url", newCleanGateDatabase(c, adminURL, nil)})
 
-	const refusal = `(?s).*at statement 3: a transaction is already open since statement 1.*`
-	for _, command := range [][]string{
-		{"migrate", "lint", "--latest", "1"},
-		{"migrate", "validate"},
-	} {
-		t.Run(command[1], func(t *testing.T) {
+				out, err := runCompat(c, args...)
+
+				c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+			})
+		}
+		t.Run(test.name+"/apply", func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeHashedLayoutDirectory(c, "golang-migrate", files)
-			args := slices.Concat(command, []string{"--dir", "file://" + dir + "?format=golang-migrate",
-				"--dev-url", newCleanGateDatabase(c, adminURL, nil)})
+			db, out, err := applyGolangMigrateDirectory(c, adminURL, files)
 
-			out, err := runCompat(c, args...)
-
-			c.Assert(err, qt.ErrorMatches, refusal, qt.Commentf("output:\n%s", out))
+			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+			c.Assert(tableExistsIn(c, db, test.wantTable), qt.IsTrue)
 		})
 	}
+}
 
-	t.Run("apply", func(t *testing.T) {
-		c := qt.New(t)
-		db, out, err := applyGolangMigrateDirectory(c, adminURL, files)
+// The forms Ptah refuses are refused for the same reason by lint, validate
+// and apply, before anything runs: a ROLLBACK, which golang-migrate applies,
+// a savepoint outside a block, where golang-migrate fails too, and a block
+// the file leaves open, which golang-migrate's two drivers settle in opposite
+// ways.
+func TestGolangMigrateRefusedFormsDevReplayLive(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	tests := []struct {
+		name    string
+		body    string
+		refusal string
+	}{
+		{
+			name:    "a ROLLBACK",
+			body:    "BEGIN;\nCREATE TABLE t1 (id int);\nROLLBACK;\nCREATE TABLE t2 (id int);\n",
+			refusal: `(?s).*at statement 3: ROLLBACK takes the file's own work back.*`,
+		},
+		{
+			name:    "a savepoint outside a block",
+			body:    "CREATE TABLE t1 (id int);\nSAVEPOINT s;\nRELEASE SAVEPOINT s;\n",
+			refusal: `(?s).*at statement 2: SAVEPOINT outside a transaction the file opened.*`,
+		},
+		{
+			name:    "a block the file leaves open",
+			body:    "CREATE TABLE t1 (id int);\nBEGIN;\nCREATE TABLE t2 (id int);\n",
+			refusal: `(?s).*at statement 2: the transaction is never closed by the file.*`,
+		},
+	}
+	for _, test := range tests {
+		files := withGolangMigrateBase(map[string]string{
+			"20240827000000_t.up.sql":   test.body,
+			"20240827000000_t.down.sql": "SELECT 1;\n",
+		})
+		for _, command := range [][]string{
+			{"migrate", "lint", "--latest", "1"},
+			{"migrate", "validate"},
+		} {
+			t.Run(test.name+"/"+command[1], func(t *testing.T) {
+				c := qt.New(t)
+				dir := writeHashedLayoutDirectory(c, "golang-migrate", files)
+				args := slices.Concat(command, []string{"--dir", "file://" + dir + "?format=golang-migrate",
+					"--dev-url", newCleanGateDatabase(c, adminURL, nil)})
 
-		c.Assert(err, qt.ErrorMatches, refusal, qt.Commentf("output:\n%s", out))
-		c.Assert(tableExistsIn(c, db, "t1"), qt.IsFalse)
-	})
+				out, err := runCompat(c, args...)
+
+				c.Assert(err, qt.ErrorMatches, test.refusal, qt.Commentf("output:\n%s", out))
+			})
+		}
+		t.Run(test.name+"/apply", func(t *testing.T) {
+			c := qt.New(t)
+			db, out, err := applyGolangMigrateDirectory(c, adminURL, files)
+
+			c.Assert(err, qt.ErrorMatches, test.refusal, qt.Commentf("output:\n%s", out))
+			c.Assert(tableExistsIn(c, db, "t1"), qt.IsFalse)
+		})
+	}
 }
 
 // The replay runs a file that opens its own transactions in the transactions

@@ -10,6 +10,34 @@ import (
 	"ptah.run/core/schemaext"
 )
 
+// ParentKinds returns, sorted and once each, the model kinds the parent
+// planning services of a target are assigned: the attached models whose state
+// a table on that target holds, and which an owner accounts for when the host
+// creates, alters, rebuilds or drops the table
+// ([featureplan.Request.ParentKinds]). [Runtime.PlanFeatures] refuses such an
+// action on a table that holds state of a kind outside the list. An unknown
+// target is refused with [ptaherr.ErrUnsupportedDialect]; a nil runtime knows
+// no kinds. It implements [featureplan.ParentVocabulary].
+func (r *Runtime) ParentKinds(targetName string) ([]schemaext.Kind, error) {
+	if r == nil {
+		return nil, nil
+	}
+	target, found := r.lookup(targetName)
+	if !found {
+		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, targetName)
+	}
+	// Registration refuses a second parent planning service for a kind on a
+	// target, so each kind is listed once.
+	var kinds []schemaext.Kind
+	for _, service := range r.planningServices {
+		if service.Target == target.name {
+			kinds = append(kinds, service.ParentKinds...)
+		}
+	}
+	slices.Sort(kinds)
+	return kinds, nil
+}
+
 func hasParentActions(tables []featureplan.Table) bool {
 	return slices.ContainsFunc(tables, func(table featureplan.Table) bool { return table.Action != "" })
 }

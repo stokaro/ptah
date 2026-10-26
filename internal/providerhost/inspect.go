@@ -86,6 +86,9 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 		}
 		result.Tables = append(result.Tables, captured)
 	}
+	if err := r.commonObjects(result, snapshot.GetCommonObjects()); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

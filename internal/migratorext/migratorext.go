@@ -192,9 +192,9 @@ type Services struct {
 	// left unusable. Nil means the engine leaves none.
 	Indexes IndexGuard
 	// OwnTransactions reads a migration body, split into statements, for the
-	// transactions it opens and closes itself; see internal/filetx. Nil reads
-	// none, so a migrator that runs such bodies as written wraps every body of
-	// the engine as usual.
+	// transactions it opens and closes itself, as a runner that sends the body
+	// as it is runs them; see internal/filetx. Nil reads none, so a migrator
+	// that runs such bodies as written wraps every body of the engine as usual.
 	OwnTransactions func(statements []string) (filetx.Blocks, error)
 	// TriggerGrant reports that the catalog shows a table's triggers only to
 	// an account holding the TRIGGER privilege, so a run that must prove a

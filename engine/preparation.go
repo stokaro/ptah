@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/ptaherr"
@@ -132,4 +134,64 @@ func (r *Runtime) LowerDesired(ctx context.Context, request schemapreparation.Lo
 		return nil, fmt.Errorf("%w: target %q lowered the desired schema to nothing", schemapreparation.ErrInvalid, selected.name)
 	}
 	return lowered, nil
+}
+
+// SpellDesired rewrites the values of a desired schema's common objects into
+// the spelling the selected target's reader reports, through the target's
+// spelling service, for a comparison to read; see [Target.Spelling]. A target
+// without one, or a nil desired schema, returns request.Desired unchanged. The
+// request is not cloned, so a service must not modify it. An unregistered
+// target fails with [ptaherr.ErrUnsupportedDialect], and a nil result, or one
+// that adds, drops or renames a view, materialized view, sequence or role, or
+// adds or drops a grant, with [schemapreparation.ErrInvalid].
+func (r *Runtime) SpellDesired(ctx context.Context, request schemapreparation.LoweringRequest) (*schemamodel.Database, error) {
+	if err := schemaext.RequireRuntime(ctx, r); err != nil {
+		return nil, err
+	}
+	selected, found := r.lookup(request.Target)
+	if !found {
+		return nil, fmt.Errorf("%w: %q", ptaherr.ErrUnsupportedDialect, request.Target)
+	}
+	if selected.spelling == nil || request.Desired == nil {
+		return request.Desired, nil
+	}
+	request.Target = selected.name
+	spelled, err := selected.spelling.LowerDesired(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := sameCommonObjects(request.Desired, spelled); err != nil {
+		return nil, fmt.Errorf("%w: target %q %w", schemapreparation.ErrInvalid, selected.name, err)
+	}
+	return spelled, nil
+}
+
+// sameCommonObjects refuses a spelling that is not the declaration it spelled:
+// the same views, materialized views, sequences and roles under the same names
+// and in the same order, and as many grants and revocations.
+func sameCommonObjects(declared, spelled *schemamodel.Database) error {
+	if spelled == nil {
+		return errors.New("spelled the desired schema as nothing")
+	}
+	names := func(count int, name func(int) string) []string {
+		result := make([]string, count)
+		for i := range result {
+			result[i] = name(i)
+		}
+		return result
+	}
+	same := slices.Equal(names(len(declared.Views), func(i int) string { return declared.Views[i].Name }), names(len(spelled.Views), func(i int) string { return spelled.Views[i].Name })) &&
+		slices.Equal(names(len(declared.MaterializedViews), func(i int) string { return declared.MaterializedViews[i].Name }),
+			names(len(spelled.MaterializedViews), func(i int) string { return spelled.MaterializedViews[i].Name })) &&
+		slices.Equal(names(len(declared.Sequences), func(i int) string { return declared.Sequences[i].QualifiedName() }),
+			names(len(spelled.Sequences), func(i int) string { return spelled.Sequences[i].QualifiedName() })) &&
+		slices.Equal(names(len(declared.Roles), func(i int) string { return declared.Roles[i].Name }), names(len(spelled.Roles), func(i int) string { return spelled.Roles[i].Name })) &&
+		len(declared.Grants) == len(spelled.Grants) && len(declared.RevokedGrants) == len(spelled.RevokedGrants)
+	if !same {
+		return errors.New("changed which common objects the declaration holds")
+	}
+	return nil
 }

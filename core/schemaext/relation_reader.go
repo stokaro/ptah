@@ -1,5 +1,7 @@
 package schemaext
 
+import "ptah.run/core/platform/identifier"
+
 // RelationReader is implemented by a captured value whose stored definition
 // reads relations by name, as a row-security policy's expressions do. A server
 // records the dependency, so dropping such a relation with CASCADE drops the
@@ -14,27 +16,29 @@ type RelationReader interface {
 	ReadsRelation(relation string) bool
 }
 
-// RelationReaderInSchema is a [RelationReader] that can also be told the
-// schema an unqualified name resolves to, and so tell apart two relations of
-// one name in different schemas. A host asks it through [ReadsRelationIn].
+// RelationReaderInSchema is a [RelationReader] that can also be told where
+// unqualified names resolve, and so tell apart two relations of one name in
+// different schemas. A host asks it through [ReadsRelationIn].
 type RelationReaderInSchema interface {
 	RelationReader
-	// ReadsRelationIn is ReadsRelation with defaultSchema, the schema an
-	// unqualified name resolves to, both in relation and in the definition. An
-	// empty defaultSchema means it is not known, and the answer is then
-	// ReadsRelation's. The test stays syntactic and errs on the same side: a
-	// known schema turns an answer to false only where the definition names
-	// the relation's name in another schema.
-	ReadsRelationIn(relation, defaultSchema string) bool
+	// ReadsRelationIn is ReadsRelation with the identifier semantics of the
+	// session that reads the definition: a relation named without a schema
+	// is in semantics.DefaultSchema, and a name written without one in the
+	// definition may be in any schema of semantics.SearchPath. What semantics
+	// leaves out is not known, and the answer then errs as ReadsRelation's
+	// does, toward reading the relation; zero semantics give ReadsRelation's
+	// answer. A known schema turns an answer to false only where the
+	// definition names the relation's name somewhere the relation is not.
+	ReadsRelationIn(relation string, semantics identifier.Semantics) bool
 }
 
-// ReadsRelationIn asks reader whether its definition reads relation, an
-// unqualified name resolving in defaultSchema. A reader that implements
-// [RelationReaderInSchema] answers with defaultSchema; any other reader is
-// asked [RelationReader.ReadsRelation], whose answer does not depend on it.
-func ReadsRelationIn(reader RelationReader, relation, defaultSchema string) bool {
+// ReadsRelationIn asks reader whether its definition reads relation, names
+// resolving as semantics says. A reader that implements
+// [RelationReaderInSchema] answers with semantics; any other reader is asked
+// [RelationReader.ReadsRelation], whose answer does not depend on them.
+func ReadsRelationIn(reader RelationReader, relation string, semantics identifier.Semantics) bool {
 	if scoped, ok := reader.(RelationReaderInSchema); ok {
-		return scoped.ReadsRelationIn(relation, defaultSchema)
+		return scoped.ReadsRelationIn(relation, semantics)
 	}
 	return reader.ReadsRelation(relation)
 }

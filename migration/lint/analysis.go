@@ -15,11 +15,11 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/filetx"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
-	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -559,7 +559,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	}
 	withOwners(files, runtime.SQL())
 	attachStatements(files, split, opts.Dialect, target, opts.Compatibility, registered, scope)
-	markAloneOutsideATransaction(files, opts, target)
+	markAloneOutsideATransaction(files, opts)
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
 		return Analysis{}, err
@@ -814,11 +814,11 @@ func prepareFile(
 
 // markAloneOutsideATransaction marks, in a run whose files run in
 // transactions they open themselves, each up file that names no transaction
-// mode and whose one statement the engine refuses inside a transaction, as
-// one that runs without a transaction. Its runner sends the statement on its
-// own, and the migrator applies and replays it the same way; the answer is
-// [txrequire.AloneOutsideATransaction], the one they ask.
-func markAloneOutsideATransaction(files []File, opts Options, target Target) {
+// mode and holds one statement ([filetx.RunsAlone]) as one that runs without a
+// transaction. Its runner sends the statement on its own, and the migrator
+// applies and replays it the same way on PostgreSQL, the engine whose rules
+// read the mark.
+func markAloneOutsideATransaction(files []File, opts Options) {
 	if opts.TransactionOwner != lintext.TransactionOwnerFile {
 		return
 	}
@@ -831,7 +831,7 @@ func markAloneOutsideATransaction(files []File, opts Options, target Target) {
 		for j := range file.Statements {
 			statements = append(statements, file.Statements[j].SQL)
 		}
-		file.NoTransaction = txrequire.AloneOutsideATransaction(opts.Dialect, target.Capabilities, statements)
+		file.NoTransaction = filetx.RunsAlone(statements)
 	}
 }
 

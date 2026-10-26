@@ -178,13 +178,16 @@ func TestStream_IsNilWithoutARun(t *testing.T) {
 	c.Assert(rundiag.Stream(rundiag.With(context.Background(), rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel}))), qt.IsNil)
 }
 
-// A run whose log is JSON writes its warnings as records at warning level,
-// with the category and the number of objects, and writes no line.
+// A run whose log is JSON writes its warnings as JSON records at warning
+// level, with the category and the number of objects, on the stream a line
+// would go to, and writes no line. The default logger's level does not drop
+// them: a default logger that keeps errors alone sees nothing, and the
+// records are still written.
 func TestReport_RecordsAreLogRecords(t *testing.T) {
 	c := qt.New(t)
 	var logged bytes.Buffer
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelError})))
 	c.Cleanup(func() { slog.SetDefault(previous) })
 	report := rundiag.New(rundiag.Options{Records: true})
 	ctx := rundiag.With(context.Background(), report)
@@ -196,18 +199,42 @@ func TestReport_RecordsAreLogRecords(t *testing.T) {
 	c.Assert(rundiag.Warn(ctx, &out, gadgets, rundiag.Record{Key: "g", Line: "gadget g", Attrs: []slog.Attr{slog.String("key", "g")}}), qt.IsNil)
 	report.Flush()
 
-	c.Assert(out.String(), qt.Equals, "")
-	var records []map[string]any
-	for line := range strings.SplitSeq(strings.TrimSpace(logged.String()), "\n") {
-		var record map[string]any
-		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil)
-		delete(record, "time")
-		records = append(records, record)
-	}
-	c.Assert(records, qt.DeepEquals, []map[string]any{
+	c.Assert(logged.String(), qt.Equals, "")
+	c.Assert(jsonRecords(c, out.String()), qt.DeepEquals, []map[string]any{
 		{"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug lists them", "category": "widget", "count": float64(2)},
 		{"level": "WARN", "msg": "gadget g", "category": "gadget", "count": float64(1), "key": "g"},
 	})
+}
+
+// A report decides it writes records when the run knows its log is JSON,
+// after it was created.
+func TestReport_SetRecordsDecidesAtFlush(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	report.SetRecords(true)
+	report.Flush()
+
+	c.Assert(jsonRecords(c, out.String()), qt.DeepEquals, []map[string]any{
+		{"level": "WARN", "msg": "ww widgets; PTAH_LOG_LEVEL=debug lists them", "category": "widget", "count": float64(2)},
+	})
+}
+
+// jsonRecords is the JSON lines of written, without their time.
+func jsonRecords(c *qt.C, written string) []map[string]any {
+	c.Helper()
+	var records []map[string]any
+	for line := range strings.SplitSeq(strings.TrimSpace(written), "\n") {
+		var record map[string]any
+		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil, qt.Commentf("%s", line))
+		delete(record, "time")
+		records = append(records, record)
+	}
+	return records
 }
 
 func TestTruncatedNames_SummaryNamesTheLimitTheRecordsShare(t *testing.T) {

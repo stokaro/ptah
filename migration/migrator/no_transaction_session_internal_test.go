@@ -50,10 +50,21 @@ func TestOwnTransactionResumeAction(t *testing.T) {
 		"SET search_path = app", "BEGIN", "LOCK TABLE a IN ACCESS EXCLUSIVE MODE", "SET LOCAL lock_timeout = '1s'",
 		"SET application_name = 'owntx'", "COMMIT", "CREATE TABLE b (id int)",
 	}
-	blocks, err := filetx.Read(statements)
+	blocks, err := filetx.ReadUnwrapped(statements)
 	qt.New(t).Assert(err, qt.IsNil)
 	oneQuery := ownTransactionRun{blocks: blocks, statements: statements, transactions: blocks.AsOneQuery(len(statements)), oneQuery: true}
 	perStatement := ownTransactionRun{blocks: blocks, statements: statements, transactions: blocks}
+	// A second file: control the unwrapped reading accepts, and statements
+	// whose text sets no session state, inside committed transactions.
+	more := []string{
+		"DO $$ BEGIN CREATE TABLE c (id int); END $$", "SELECT setval('s', 10)", "COMMIT", "BEGIN", "BEGIN",
+		"SAVEPOINT s", "ROLLBACK TO SAVEPOINT s", "WITH v AS (SELECT 1) INSERT INTO c SELECT * FROM v", "CALL p()",
+		"DO $$ BEGIN PERFORM set_config('search_path', 'x', false); END $$", "SELECT pg_advisory_lock(1)", "COMMIT",
+	}
+	moreBlocks, err := filetx.ReadUnwrapped(more)
+	qt.New(t).Assert(err, qt.IsNil)
+	moreOneQuery := ownTransactionRun{blocks: moreBlocks, statements: more, transactions: moreBlocks.AsOneQuery(len(more)), oneQuery: true}
+	morePerStatement := ownTransactionRun{blocks: moreBlocks, statements: more, transactions: moreBlocks}
 	tests := []struct {
 		name      string
 		run       ownTransactionRun
@@ -74,6 +85,18 @@ func TestOwnTransactionResumeAction(t *testing.T) {
 			name: "a MySQL lock no transaction holds", run: ownTransactionRun{}, index: 0, statement: "LOCK TABLES a WRITE",
 			dialect: "mysql", want: noTransactionPrefixReplay,
 		},
+		{name: "a DO in a committed transaction", run: moreOneQuery, index: 0, statement: more[0], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a SELECT in a committed transaction", run: moreOneQuery, index: 1, statement: more[1], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a COMMIT outside a block", run: moreOneQuery, index: 2, statement: more[2], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a COMMIT outside a block run per statement", run: morePerStatement, index: 2, statement: more[2], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a BEGIN inside a block", run: moreOneQuery, index: 4, statement: more[4], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a savepoint", run: moreOneQuery, index: 5, statement: more[5], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a rollback to a savepoint", run: moreOneQuery, index: 6, statement: more[6], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a WITH in a committed transaction", run: moreOneQuery, index: 7, statement: more[7], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a CALL in a committed transaction", run: moreOneQuery, index: 8, statement: more[8], dialect: "postgres", want: noTransactionPrefixDurable},
+		{name: "a DO that sets a session setting", run: moreOneQuery, index: 9, statement: more[9], dialect: "postgres", want: noTransactionPrefixReject},
+		{name: "a session advisory lock", run: moreOneQuery, index: 10, statement: more[10], dialect: "postgres", want: noTransactionPrefixReject},
+		{name: "a DO no transaction holds", run: morePerStatement, index: 0, statement: more[0], dialect: "postgres", want: noTransactionPrefixReject},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
