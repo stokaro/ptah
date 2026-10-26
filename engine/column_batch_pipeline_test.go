@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -76,9 +75,9 @@ func TestColumnBatchRetainsDomainOwnershipAndCapturedParents(t *testing.T) {
 	c.Assert(table.Desired.Table.Comment, qt.Equals, "source")
 	c.Assert(table.Current.Table.Comment, qt.Equals, "catalog")
 	c.Assert(table.Pairs, qt.HasLen, 2)
-	c.Assert(slices.Contains(table.Pairs[0].Aspects, schemacomparison.ColumnType), qt.IsFalse)
-	c.Assert(slices.Contains(table.Pairs[1].Aspects, schemacomparison.ColumnType), qt.IsTrue)
-	c.Assert(slices.Contains(table.Pairs[1].Aspects, schemacomparison.ColumnSequence), qt.IsFalse)
+	c.Assert(table.Pairs[0].Aspects, qt.Not(qt.Contains), schemacomparison.ColumnType)
+	c.Assert(table.Pairs[1].Aspects, qt.Contains, schemacomparison.ColumnType)
+	c.Assert(table.Pairs[1].Aspects, qt.Not(qt.Contains), schemacomparison.ColumnSequence)
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].ColumnName, qt.Equals, "domain")
