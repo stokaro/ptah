@@ -111,6 +111,9 @@ func validatePlanningReceipts(request *protocol.PlanFeaturesRequest, result *pro
 	if index != len(result.GetParents()) {
 		return fmt.Errorf("%w: extra planning parent receipts", ErrProtocol)
 	}
+	if err := validatePlanningObjectReceipts(request, result, steps); err != nil {
+		return err
+	}
 	for _, accounted := range steps {
 		if !accounted {
 			return fmt.Errorf("%w: planning operation has no receipt", ErrProtocol)

@@ -22,6 +22,9 @@ type ModelComparer interface {
 // ValidateComparisonRequest checks negotiated ownership and captured context
 // before dispatch. It does not infer absence from an empty object collection.
 func ValidateComparisonRequest(description *protocol.Description, request *protocol.CompareModelsRequest) error {
+	if err := requireResolvedContext(request); err != nil {
+		return err
+	}
 	if request == nil || !slices.Contains(description.GetFeatures(), CompareModelsFeature) {
 		return fmt.Errorf("%w: model comparison is unavailable", ErrProtocol)
 	}
@@ -59,6 +62,9 @@ func ValidateComparisonRequest(description *protocol.Description, request *proto
 // ValidateComparedModels refuses partial replies, foreign models, and changes
 // to excluded facets. Engine validation subsequently enforces migration policy.
 func ValidateComparedModels(description *protocol.Description, request *protocol.CompareModelsRequest, result *protocol.ComparedModels) error {
+	if err := requireResolvedContext(result); err != nil {
+		return err
+	}
 	if err := ValidateComparisonRequest(description, request); err != nil {
 		return err
 	}

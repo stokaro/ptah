@@ -8,7 +8,7 @@ import (
 )
 
 func validatePlanningDiagnostics(request *protocol.PlanFeaturesRequest, result *protocol.PlannedFeatures) error {
-	if len(result.GetContributions())+len(result.GetChanges())+len(result.GetParents())+len(result.GetRewrites()) != 0 {
+	if len(result.GetContributions())+len(result.GetChanges())+len(result.GetParents())+len(result.GetRewrites())+len(result.GetObjects()) != 0 {
 		return fmt.Errorf("%w: refused planning batch contains successful output", ErrProtocol)
 	}
 	for _, diagnostic := range result.GetDiagnostics() {
@@ -34,6 +34,11 @@ func validatePlanningDiagnostics(request *protocol.PlanFeaturesRequest, result *
 			}
 			if !slices.Contains(request.GetParentKinds(), diagnostic.GetKind()) {
 				return fmt.Errorf("%w: planning diagnostic parent kind is unassigned", ErrProtocol)
+			}
+		case *protocol.PlanningDiagnostic_ContextObject:
+			objects := PlanningObjectSubjects(request)
+			if index == nil || uint64(index.ContextObject) >= uint64(len(objects)) || diagnostic.GetKind() != objects[index.ContextObject].GetKind() {
+				return planningObjectError("diagnostic object is outside its assigned inventory")
 			}
 		case nil:
 		default:

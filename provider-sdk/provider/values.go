@@ -44,6 +44,9 @@ func ValidateValueInputs(description *protocol.Description, request *protocol.No
 		default:
 			return fmt.Errorf("%w: unknown value representation", ErrProtocol)
 		}
+		if err := validateValueContext(description, request.GetEngine(), features, input.GetValue()); err != nil {
+			return err
+		}
 		if err := validateValueEnvelope(description.GetProviderId(), request.GetEngine(), features, input.GetValue()); err != nil {
 			return err
 		}
@@ -56,6 +59,14 @@ func ValidateValueInputs(description *protocol.Description, request *protocol.No
 }
 
 func validateValueEnvelope(owner, engine string, features map[string]bool, value *protocol.Envelope) error {
+	if value.GetContext() != nil {
+		if !features[ValueContextFeature] {
+			return fmt.Errorf("%w: value context was not negotiated", ErrProtocol)
+		}
+		if err := ValidateDatabaseContext(value.GetContext()); err != nil {
+			return err
+		}
+	}
 	if value == nil || owner == "" || value.GetProviderId() != owner || strings.TrimSpace(value.GetKind()) == "" ||
 		value.GetSchemaVersion() == 0 || strings.TrimSpace(value.GetEncoding()) == "" {
 		return fmt.Errorf("%w: invalid value envelope or foreign owner", ErrProtocol)
@@ -89,15 +100,15 @@ func ValidateNormalizedValues(description *protocol.Description, request *protoc
 	}
 	for i, input := range request.GetValues() {
 		output := result.GetValues()[i]
+		if err := validateContextReadiness(description, request, output); err != nil {
+			return err
+		}
 		if err := validateNormalizationFacts(input.GetRepresentation(), output); err != nil {
 			return err
 		}
-		before, after := input.GetValue(), output.GetValue()
-		if output.GetId() != input.GetId() || after == nil || before.GetProviderId() != after.GetProviderId() ||
-			before.GetKind() != after.GetKind() || before.GetSchemaVersion() != after.GetSchemaVersion() ||
-			before.GetEncoding() != after.GetEncoding() || before.GetDefinitionSha256() != after.GetDefinitionSha256() || !slices.Equal(before.GetRequiredFeatures(), after.GetRequiredFeatures()) ||
-			!proto.Equal(before.GetOwner(), after.GetOwner()) {
-			return fmt.Errorf("%w: normalized value changed input ownership or metadata", ErrProtocol)
+		before := input.GetValue()
+		if err := validateNormalizedMetadata(input, output); err != nil {
+			return err
 		}
 		model := findValueModel(description, request.GetEngine(), before.GetKind(), input.GetRepresentation())
 		if !validValueReference(output.GetNormalizedOwner(), request.GetEngine()) ||
@@ -135,4 +146,15 @@ func valueTarget(description *protocol.Description, name string, targetFeatures 
 		features[feature] = true
 	}
 	return engine, features, nil
+}
+
+func validateNormalizedMetadata(input *protocol.ValueInput, output *protocol.NormalizedValue) error {
+	before, after := input.GetValue(), output.GetValue()
+	if output.GetId() != input.GetId() || after == nil || before.GetProviderId() != after.GetProviderId() ||
+		before.GetKind() != after.GetKind() || before.GetSchemaVersion() != after.GetSchemaVersion() ||
+		before.GetEncoding() != after.GetEncoding() || before.GetDefinitionSha256() != after.GetDefinitionSha256() || !slices.Equal(before.GetRequiredFeatures(), after.GetRequiredFeatures()) ||
+		!proto.Equal(before.GetOwner(), after.GetOwner()) || !proto.Equal(before.GetContext(), after.GetContext()) {
+		return fmt.Errorf("%w: normalized value changed input ownership or metadata", ErrProtocol)
+	}
+	return nil
 }

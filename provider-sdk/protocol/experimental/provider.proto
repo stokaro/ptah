@@ -13,6 +13,7 @@ option go_package = "github.com/stokaro/ptah/provider-sdk/protocol/experimental;
 service Provider {
   rpc Describe(DescribeRequest) returns (Description);
   rpc Open(OpenRequest) returns (Session);
+  rpc ResolveDatabaseContext(DatabaseContextRequest) returns (DatabaseContext);
   rpc Close(CloseRequest) returns (Empty);
   rpc Inspect(InspectRequest) returns (Schema);
   rpc Render(RenderRequest) returns (RenderResult);
@@ -439,6 +440,21 @@ message Envelope {
   bytes payload = 6;
   repeated string required_features = 7;
   string definition_sha256 = 8;
+  // Bound interpretation context, separate from the authored owner identity.
+  // Contract 25.7, negotiated under values.context.
+  DatabaseContext context = 9;
+}
+// DatabaseContext contains no address or credentials. The provider interprets
+// both roots; the host compares them exactly and never parses their paths.
+message DatabaseContext {
+  string database = 1;
+  string source_database = 2;
+}
+// DatabaseContextRequest asks for pure address parsing without opening a session
+// or resolving credentials. The address is never retained in the receipt.
+message DatabaseContextRequest {
+  string engine = 1;
+  string address = 2;
 }
 message OpenRequest {
   string engine = 1;
@@ -457,6 +473,8 @@ message Session {
   // Established server facts. A present false value is distinct from an absent
   // fact. The host validates its capability vocabulary and dependencies.
   map<string, bool> capabilities = 8;
+  // Contract 25.7, negotiated under database.context.
+  DatabaseContext context = 9;
 }
 message CloseRequest {
   string session_id = 1;
@@ -525,6 +543,9 @@ message ObservedView {
   string body = 2;
   string check_option = 3;
   repeated string attributes = 4;
+  // Native observed settings owned by this exact common view.
+  // Contract 25.7, negotiated under schema.common-view-facets.
+  repeated Envelope facets = 5;
 }
 message ObservedSequence {
   // Kind "sequence".
@@ -587,6 +608,9 @@ message Column {
   bool primary_key = 4;
   optional string default_expression = 5;
   repeated Envelope facets = 6;
+  // Exclusive common column facts under schema.observed-columns, contract 25.7.
+  // Name matches the attachment identity; the legacy scalar facts stay empty.
+  ObservedColumn observed = 7;
 }
 message Disposition {
   Reference object = 1;
@@ -641,6 +665,9 @@ message CommonObjectChange {
 message ViewCreation {
   SQLView view = 1;
   bool replace = 2;
+  // Actual captured observation for a replacement. Absence means unknown.
+  // Contract 25.7, negotiated under schema.common-view-facets.
+  ObservedView current = 3;
 }
 message SequenceAlteration {
   // The identity the read reported.
@@ -902,6 +929,10 @@ message NormalizedValue {
   ChangeSemantics change_semantics = 7;
   // Required only for OPERATION, reconstructed from the captured payload.
   OperationSemantics operation_semantics = 8;
+  // Dependencies are unresolved until the caller supplies database context.
+  // In this state required_objects is empty and dependency consumers refuse.
+  // Contract 25.7, negotiated under values.context.
+  bool requires_database_context = 9;
 }
 
 // SourcePosition uses a zero-based offset into the original encoded bytes and
@@ -1197,6 +1228,9 @@ message SQLView {
   string comment = 6;
   repeated string attributes = 7;
   repeated string depends_on = 8;
+  // Desired facets and their knowledge, bound to this exact common view.
+  // The objects collection is empty. Contract 25.7, schema.common-view-facets.
+  CapturedFeatures features = 9;
 }
 message SQLSequence {
   string schema = 1;
@@ -1550,6 +1584,8 @@ message ModelPlanning {
   repeated string change_kinds = 2;
   repeated string parent_kinds = 3;
   repeated string operation_kinds = 4;
+  // Contract 25.7, under planning.object-context. Assessed without a change.
+  repeated string context_kinds = 5;
 }
 message ModelDeclarations {
   string id = 1;
@@ -1658,7 +1694,7 @@ message PlanningDiagnostic {
   string object = 3;
   string feature = 4;
   string message = 5;
-  oneof input { uint32 change = 6; uint32 parent = 7; }
+  oneof input { uint32 change = 6; uint32 parent = 7; uint32 context_object = 8; }
 }
 message PlanningType { ComparisonIdentity identity = 1; repeated string references = 2; }
 message PlanningTable {
@@ -1691,6 +1727,14 @@ message PlanFeaturesRequest {
   ObservedCommonObjects current_common = 14;
   // The operator's planning policy. Contract 25.3, under planning.policy.
   PlanningPolicy policy = 15;
+  // Contract 25.7, under planning.object-context. Complete owner-local native
+  // states retain coverage; context_kinds assigns assessment, not visibility.
+  ComparisonState desired_objects = 16;
+  ComparisonState current_objects = 17;
+  repeated string context_kinds = 18;
+  // Sorted accepted native-change subjects from the complete host batch.
+  // Read-only context; this list grants no operation ownership.
+  repeated ComparisonIdentity changed_subjects = 19;
 }
 // PlanningPolicy is a request, not a prediction: an engine without the
 // behavior plans as it would without it.
@@ -1721,6 +1765,9 @@ message PlannedFeatures {
   repeated PlanningRewrite rewrites = 5;
   // A completed refusal carries diagnostics and no successful output.
   repeated PlanningDiagnostic diagnostics = 6;
+  // Exact ordered assigned-object union receipts. Contract 25.7, under
+  // planning.object-context. Empty steps explicitly acknowledge no work.
+  repeated PlanningReceipt objects = 7;
 }
 
 // Captured feature collections retain excluded facets and independent coverage

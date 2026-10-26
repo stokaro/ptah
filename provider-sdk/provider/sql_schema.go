@@ -160,6 +160,9 @@ func ValidateSQLSchema(description *protocol.Description, request *protocol.Read
 		func() error { return validateSQLObjects(rules, result) },
 		func() error { return validateSQLCommonAdditions(engine, result) },
 		func() error {
+			return validateDeclaredViewFacets(description, engine, request.GetTargetFeatures(), rules, result.GetViews())
+		},
+		func() error {
 			return validateSQLNativeObjects(description, engine, features, result)
 		},
 		func() error { return validateSQLTraces(request, result) },
