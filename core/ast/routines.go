@@ -39,6 +39,10 @@ type RoutineNode struct {
 	Dialect string
 	// Kind identifies whether this is a CREATE FUNCTION or CREATE PROCEDURE.
 	Kind RoutineKind
+	// Replace records that the statement replaces a routine of the same
+	// signature that exists: CREATE OR REPLACE, or SQL Server's CREATE OR
+	// ALTER. SQL holds the clause either way.
+	Replace bool
 	// Name is the routine name as the statement writes it, with any schema
 	// qualifier and identifier quoting.
 	Name string

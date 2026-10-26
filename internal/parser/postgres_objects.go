@@ -659,7 +659,8 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 		return nil, fmt.Errorf("expected VIEW after MATERIALIZED: %w", err)
 	}
 	p.skipWhitespace()
-	if _, err := p.parseOptionalIfNotExists(); err != nil {
+	ifNotExists, err := p.parseOptionalIfNotExists()
+	if err != nil {
 		return nil, err
 	}
 	p.skipWhitespace()
@@ -670,6 +671,7 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 	}
 	p.skipWhitespace()
 	node := ast.NewCreateMaterializedView(name)
+	node.IfNotExists = ifNotExists
 	p.claimOwnerViewClauses(node)
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after materialized view name: %w", err)

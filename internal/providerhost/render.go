@@ -146,6 +146,9 @@ func (t *target) reference(name string) (*protocol.Reference, error) {
 }
 
 func (t *target) change(node ast.Node) (*protocol.Change, error) {
+	if change, common, err := t.commonObjectChange(node); common {
+		return change, err
+	}
 	switch node := node.(type) {
 	case *ast.ExtensionStatement:
 		if node == nil {
