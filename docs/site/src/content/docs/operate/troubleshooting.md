@@ -358,8 +358,9 @@ Set `PTAH_LOG_LEVEL=debug` to list the objects at debug level on stderr. Add
 `PTAH_LOG_FORMAT=json` to read them as JSON records, each with a `category`
 field and the object's own fields. With JSON, the warning itself is a record
 too, at warning level, with `category` and `count`, so the stream holds no
-text line for it. The commands that take `--log-level` and `--log-format` read
-the same variables.
+text line for it. The record is written at any log level, as the text line is.
+On the commands that take `--log-level` and `--log-format`, the flags work as
+the variables do.
 
 The strict compatibility profile, `PTAH_ATLAS_STRICT_COMPAT=1`, refuses both
 variables, as the community binary has neither, and its warning says where the

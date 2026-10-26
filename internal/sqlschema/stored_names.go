@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgname"
+	"ptah.run/internal/routineargs"
 	"ptah.run/internal/rundiag"
 )
 
@@ -93,6 +96,14 @@ type storedNames struct {
 	// file numbers the file being read, counted from one, so a name an
 	// earlier file of a schema directory declared is told from this file's.
 	file int
+	// skipped are the statements the server skips: a CREATE ... IF NOT EXISTS
+	// whose name its namespace already holds, measured on PostgreSQL 15.19.
+	// The conversion skips exactly these; see [Document.skips].
+	skipped map[ast.Node]bool
+	// derived holds the names the statement being followed leaves to the
+	// server, claimed once its written names are: the server derives a name
+	// past every name the statement writes, wherever in it that name stands.
+	derived []func()
 }
 
 type storedEntry struct {
@@ -106,6 +117,11 @@ const (
 	relationSpace   = "relation"
 	constraintSpace = "constraint"
 	columnSpace     = "column"
+	// routineSpace holds functions and procedures, unique per schema and
+	// argument types, as pg_proc keeps them.
+	routineSpace = "routine"
+	// triggerSpace holds triggers, unique per table.
+	triggerSpace = "trigger"
 )
 
 func newStoredNames(sourcePlatform string) *storedNames {
@@ -113,6 +129,7 @@ func newStoredNames(sourcePlatform string) *storedNames {
 		sourcePlatform: sourcePlatform,
 		defaultSchema:  factsOf(sourcePlatform).defaultSchema,
 		spaces:         make(map[string]map[string]storedEntry),
+		skipped:        make(map[ast.Node]bool),
 	}
 }
 
@@ -149,10 +166,15 @@ func (r relation) tableKey() string { return r.schema + "." + r.stored }
 func spaceKey(space, owner string) string { return space + ":" + owner }
 
 func scopeLabel(space, owner string) string {
-	if space == relationSpace {
+	switch space {
+	case relationSpace:
 		return fmt.Sprintf("schema %q", owner)
+	case routineSpace:
+		schema, arguments, _ := strings.Cut(owner, "\x00")
+		return fmt.Sprintf("schema %q with arguments (%s)", schema, arguments)
+	default:
+		return fmt.Sprintf("table %q", owner)
 	}
-	return fmt.Sprintf("table %q", owner)
 }
 
 // onExisting is what a statement does when its name is already stored.
@@ -223,7 +245,10 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 		names[stored] = storedEntry{kind: kind, written: written, file: s.file}
 		return false, nil
 	}
-	if previous.written != written {
+	// A name written as the bytes the server keeps of an earlier name is that
+	// earlier object, as the server reads it; any other second spelling stored
+	// the same way is a second object.
+	if previous.written != written && written != stored {
 		return true, storedNameCollision(previous, kind, written, scopeLabel(space, owner), stored, rule)
 	}
 	if rule == skipExisting {
@@ -240,6 +265,55 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 			ErrNameInUse, kind, written, scopeLabel(space, owner), previous.kind, previous.written)
 	}
 	return true, nil
+}
+
+// claimDerived enters a name the server derives for an object the statement
+// leaves unnamed, such as a serial column's sequence or an unnamed primary
+// key's index. The name was chosen free in its namespace, as the server
+// chooses it, and records no cut: the file wrote no name.
+func (s *storedNames) claimDerived(space, owner, kind, name string) {
+	key := spaceKey(space, owner)
+	if s.spaces[key] == nil {
+		s.spaces[key] = make(map[string]storedEntry)
+	}
+	if _, found := s.spaces[key][name]; !found {
+		s.spaces[key][name] = storedEntry{kind: kind, written: name, file: s.file}
+	}
+}
+
+// taken reports whether a namespace holds a name, for choosing a derived one.
+func (s *storedNames) taken(space, owner string) func(string) bool {
+	return func(name string) bool {
+		_, found := s.spaces[spaceKey(space, owner)][name]
+		return found
+	}
+}
+
+// keyNameTaken reports whether the derived name of a constraint that builds an
+// index is taken in schema: by a relation, or by a constraint of any table of
+// the schema, which is where the server looks when it picks one.
+func (s *storedNames) keyNameTaken(schema string) func(string) bool {
+	prefix := spaceKey(constraintSpace, schema+".")
+	return func(name string) bool {
+		if s.taken(relationSpace, schema)(name) {
+			return true
+		}
+		for key, names := range s.spaces {
+			if _, found := names[name]; found && strings.HasPrefix(key, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// claimDerivedNames claims the names the statement followed last leaves to the
+// server, in the order it writes the objects.
+func (s *storedNames) claimDerivedNames() {
+	for _, claim := range s.derived {
+		claim()
+	}
+	s.derived = nil
 }
 
 // storedNameCollision is the refusal of written, which the server stores as
@@ -297,8 +371,19 @@ func (s *storedNames) dropTable(table relation) {
 	delete(s.spaces, spaceKey(columnSpace, table.tableKey()))
 }
 
-// follow records the names one statement declares, drops or renames.
+// follow records the names one statement declares, drops or renames, and
+// then the names the server derives for what it leaves unnamed.
 func (s *storedNames) follow(statement ast.Node) error {
+	s.derived = nil
+	if err := s.followWritten(statement); err != nil {
+		return err
+	}
+	s.claimDerivedNames()
+	return nil
+}
+
+// followWritten records the names one statement writes.
+func (s *storedNames) followWritten(statement ast.Node) error {
 	switch node := statement.(type) {
 	case *ast.CreateTableNode:
 		return s.createTable(node)
@@ -307,15 +392,22 @@ func (s *storedNames) follow(statement ast.Node) error {
 	case *ast.AlterTableNode:
 		return s.alterTable(node)
 	case *ast.CreateViewNode:
-		return s.declareRelation("view", node.Name, existingRule[node.Replace])
+		_, err := s.declareRelation("view", node.Name, existingRule[node.Replace])
+		return err
 	case *ast.CreateMaterializedViewNode:
-		return s.declareRelation("materialized view", node.Name, refuseExisting)
+		rule := existingRule[node.IfNotExists]
+		return s.skipIfExisted(node, rule)(s.declareRelation("materialized view", node.Name, rule))
 	case *ast.CreateSequenceNode:
-		name := node.Name
-		if node.Schema != "" {
-			name = node.Schema + "." + node.Name
-		}
-		return s.declareRelation("sequence", name, existingRule[node.IfNotExists])
+		rule := existingRule[node.IfNotExists]
+		return s.skipIfExisted(node, rule)(s.declareRelation("sequence", schemaQualified(node.Schema, node.Name), rule))
+	case *ast.CreateFunctionNode:
+		return s.routine(string(ast.RoutineKindFunction), node.Name, node.Parameters, node.Replace)
+	case *ast.RoutineNode:
+		return s.routine(strings.ToLower(string(node.Kind)), node.Name, node.Parameters, node.Replace)
+	case *ast.CreateTriggerNode:
+		table := s.relation(node.Table)
+		_, err := s.declare(triggerSpace, table.tableKey(), "trigger", node.Name, existingRule[node.Replace])
+		return err
 	case *ast.DropTableNode:
 		for _, name := range append([]string{node.Name}, node.Names...) {
 			if strings.TrimSpace(name) != "" {
@@ -335,18 +427,44 @@ func (s *storedNames) follow(statement ast.Node) error {
 	case *ast.DropMaterializedViewNode:
 		s.dropRelation(node.Name)
 	case *ast.DropSequenceNode:
-		name := node.Name
-		if node.Schema != "" {
-			name = node.Schema + "." + node.Name
-		}
-		s.dropRelation(name)
+		s.dropRelation(schemaQualified(node.Schema, node.Name))
 	}
 	return nil
 }
 
-func (s *storedNames) declareRelation(kind, raw string, rule onExisting) error {
+// schemaQualified is name as a statement writes it, with the schema the node
+// holds apart in front when there is one.
+func schemaQualified(schema, name string) string {
+	if schema == "" {
+		return name
+	}
+	return schema + "." + name
+}
+
+func (s *storedNames) declareRelation(kind, raw string, rule onExisting) (existed bool, err error) {
 	name := s.relation(raw)
-	_, err := s.declareName(relationSpace, name.schema, kind, name.written, rule)
+	return s.declareName(relationSpace, name.schema, kind, name.written, rule)
+}
+
+// skipIfExisted records statement as one the server skips when its name was
+// already in use and rule skips such a statement, as IF NOT EXISTS does, and
+// passes the error on.
+func (s *storedNames) skipIfExisted(statement ast.Node, rule onExisting) func(existed bool, err error) error {
+	return func(existed bool, err error) error {
+		if err == nil && existed && rule == skipExisting {
+			s.skipped[statement] = true
+		}
+		return err
+	}
+}
+
+// routine records a function or a procedure, which pg_proc keeps unique per
+// schema, name and argument types: an overload with other arguments is
+// another routine, and a function and a procedure of one signature collide.
+func (s *storedNames) routine(kind, raw, parameters string, replace bool) error {
+	name := s.relation(raw)
+	owner := name.schema + "\x00" + routineargs.InputTypes(parameters)
+	_, err := s.declareName(routineSpace, owner, kind, name.written, existingRule[replace])
 	return err
 }
 
@@ -361,7 +479,7 @@ func (s *storedNames) createTable(node *ast.CreateTableNode) error {
 	if err != nil || existed {
 		// A table declared again declares nothing new on it: the server either
 		// skipped the statement or refused it, and the reader decides which.
-		return err
+		return s.skipIfExisted(node, existingRule[node.IfNotExists])(existed, err)
 	}
 	for _, column := range node.Columns {
 		if err := s.column(table, column, refuseExisting); err != nil {
@@ -406,7 +524,45 @@ func (s *storedNames) column(table relation, column *ast.ColumnNode, rule onExis
 			return err
 		}
 	}
+	s.derived = append(s.derived, func() { s.claimColumnDerivedNames(table, column) })
 	return nil
+}
+
+// claimColumnDerivedNames enters the names the server gives what a column
+// declares without naming it: the sequence of a serial or identity column,
+// and the index of a column PRIMARY KEY or UNIQUE. They take a place in the
+// schema's relation namespace, so a later CREATE ... IF NOT EXISTS of the name
+// is skipped, as the server skips it.
+func (s *storedNames) claimColumnDerivedNames(table relation, column *ast.ColumnNode) {
+	stored := storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(column.Name)))
+	if column.IdentityGeneration != "" || isSerialType(column.Type) {
+		s.claimDerived(relationSpace, table.schema, "sequence", pgname.Constraint(table.stored, []string{stored}, "seq", s.taken(relationSpace, table.schema)))
+	}
+	taken := s.keyNameTaken(table.schema)
+	if column.Primary {
+		s.claimIndexConstraintName(table, "primary key", pgname.PrimaryKey(table.stored, taken))
+	}
+	if column.Unique {
+		s.claimIndexConstraintName(table, "unique constraint", pgname.Unique(table.stored, []string{stored}, nil, taken))
+	}
+}
+
+// claimIndexConstraintName enters the derived name of an unnamed constraint
+// that builds an index, on the table and in the schema.
+func (s *storedNames) claimIndexConstraintName(table relation, kind, name string) {
+	s.claimDerived(constraintSpace, table.tableKey(), kind, name)
+	s.claimDerived(relationSpace, table.schema, "index of "+kind, name)
+}
+
+// isSerialType reports whether a column type is one of PostgreSQL's serial
+// shorthands, which create a sequence named for the column.
+func isSerialType(columnType string) bool {
+	switch strings.ToLower(strings.TrimSpace(columnType)) {
+	case "serial", "serial4", "bigserial", "serial8", "smallserial", "serial2":
+		return true
+	default:
+		return false
+	}
 }
 
 func constraintKind(kind ast.ConstraintType) string {
@@ -430,6 +586,10 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 	}
 	kind := constraintKind(constraint.Type)
 	if constraint.Type == ast.PrimaryKeyConstraint || constraint.Type == ast.UniqueConstraint {
+		if strings.TrimSpace(constraint.Name) == "" {
+			s.derived = append(s.derived, func() { s.claimIndexConstraintName(table, kind, s.derivedKeyName(table, constraint)) })
+			return nil
+		}
 		return s.indexConstraint(table, kind, constraint.Name)
 	}
 	_, err := s.declare(constraintSpace, table.tableKey(), kind, constraint.Name, refuseExisting)
@@ -447,14 +607,32 @@ func (s *storedNames) indexConstraint(table relation, kind, name string) error {
 	return err
 }
 
+// derivedKeyName is the name the server gives an unnamed table PRIMARY KEY or
+// UNIQUE constraint.
+func (s *storedNames) derivedKeyName(table relation, constraint *ast.ConstraintNode) string {
+	taken := s.keyNameTaken(table.schema)
+	if constraint.Type == ast.PrimaryKeyConstraint {
+		return pgname.PrimaryKey(table.stored, taken)
+	}
+	columns := make([]string, 0, len(constraint.Columns))
+	for _, column := range constraint.Columns {
+		columns = append(columns, storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(column))))
+	}
+	include := make([]string, 0, len(constraint.IncludeColumns))
+	for _, column := range constraint.IncludeColumns {
+		include = append(include, storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(column))))
+	}
+	return pgname.Unique(table.stored, columns, include, taken)
+}
+
 func (s *storedNames) index(node *ast.IndexNode) error {
 	if strings.TrimSpace(node.Name) == "" {
 		return nil
 	}
 	// An index lives in the schema of the table it is on.
 	table := s.relation(node.Table)
-	_, err := s.declare(relationSpace, table.schema, "index", node.Name, existingRule[node.IfNotExists])
-	return err
+	rule := existingRule[node.IfNotExists]
+	return s.skipIfExisted(node, rule)(s.declare(relationSpace, table.schema, "index", node.Name, rule))
 }
 
 func (s *storedNames) alterTable(node *ast.AlterTableNode) error {
@@ -515,6 +693,31 @@ func (s *storedNames) renameTable(table *relation, newName string) error {
 	return nil
 }
 
+// seed enters the relation names of base, the earlier documents a document
+// was handed rather than read itself, so a statement of this document finds
+// them in use as the server would.
+func (s *storedNames) seed(base *schemamodel.Database) {
+	if base == nil {
+		return
+	}
+	schemas := map[string]bool{"": true}
+	for _, table := range base.Tables {
+		schemas[table.Schema] = true
+	}
+	for _, sequence := range base.Sequences {
+		schemas[sequence.Schema] = true
+	}
+	for schema := range schemas {
+		owner := schema
+		if owner == "" {
+			owner = s.defaultSchema
+		}
+		for name := range pgname.RelationNames([]*schemamodel.Database{base}, schema) {
+			s.claimDerived(relationSpace, owner, "relation", name)
+		}
+	}
+}
+
 // followStoredNames checks the names statements declare against the names the
 // document already holds and reports each name it cuts to notice. It runs
 // before the conversion, which records only the stored names and could not
@@ -533,6 +736,7 @@ func (d *Document) followStoredNames(statements *ast.StatementList, dialect stri
 	}
 	if d.names == nil || d.names.sourcePlatform != dialect {
 		d.names = newStoredNames(dialect)
+		d.names.seed(d.base)
 	}
 	d.names.duplicate = nil
 	d.names.file++

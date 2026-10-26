@@ -6,6 +6,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -81,6 +83,10 @@ func TestPostgresStoredNamesMatchTheCatalogE2E(t *testing.T) {
 	}
 }
 
+// longNamesTriggerFunction is a trigger function for the trigger rows to
+// execute.
+const longNamesTriggerFunction = "CREATE FUNCTION trg() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;\n"
+
 // TestPostgresStoredNameCollisionsAgreeWithTheServerE2E runs each file on the
 // server and through the reader: the reader refuses exactly the files the
 // server refuses, for a name cut to one already in use and for a name
@@ -125,6 +131,36 @@ func TestPostgresStoredNameCollisionsAgreeWithTheServerE2E(t *testing.T) {
 			name: "indexes cut to one name in two schemas",
 			sql: "CREATE SCHEMA s1;\nCREATE SCHEMA s2;\nCREATE TABLE s1.t (a int);\nCREATE TABLE s2.t (a int);\n" +
 				`CREATE INDEX "` + long + `_alpha" ON s1.t (a);` + "\n" + `CREATE INDEX "` + long + `_beta" ON s2.t (a);`,
+		},
+		{
+			name: "two functions with the same argument types",
+			sql: `CREATE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE FUNCTION "` + long + `_beta"() RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+			refused: true,
+		},
+		{
+			name: "a function and a procedure of one signature",
+			sql: `CREATE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE PROCEDURE "` + long + `_beta"() LANGUAGE sql AS $$ SELECT 2 $$;`,
+			refused: true,
+		},
+		{
+			name: "functions cut to one name with other argument types",
+			sql: `CREATE FUNCTION "` + long + `_alpha"(int) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE FUNCTION "` + long + `_beta"(text) RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+		},
+		{
+			name: "two triggers on one table",
+			sql: "CREATE TABLE t (a int);\n" + longNamesTriggerFunction +
+				`CREATE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE TRIGGER "` + long + `_beta" BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION trg();`,
+			refused: true,
+		},
+		{
+			name: "triggers cut to one name on two tables",
+			sql: "CREATE TABLE t1 (a int);\nCREATE TABLE t2 (a int);\n" + longNamesTriggerFunction +
+				`CREATE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t1 FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE TRIGGER "` + long + `_beta" BEFORE INSERT ON t2 FOR EACH ROW EXECUTE FUNCTION trg();`,
 		},
 		// A name written twice, which the reader used to merge
 		// (stokaro/ptah#4914).
@@ -185,6 +221,17 @@ func TestPostgresStoredNameCollisionUnderAGuardIsRefusedE2E(t *testing.T) {
 			name: "two views written OR REPLACE",
 			sql:  `CREATE OR REPLACE VIEW "` + long + `_alpha" AS SELECT 1 AS a;` + "\n" + `CREATE OR REPLACE VIEW "` + long + `_beta" AS SELECT 2 AS a;`,
 		},
+		{
+			name: "two functions written OR REPLACE",
+			sql: `CREATE OR REPLACE FUNCTION "` + long + `_alpha"() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;` + "\n" +
+				`CREATE OR REPLACE FUNCTION "` + long + `_beta"() RETURNS int LANGUAGE sql AS $$ SELECT 2 $$;`,
+		},
+		{
+			name: "two triggers written OR REPLACE",
+			sql: "CREATE TABLE t (a int);\n" + longNamesTriggerFunction +
+				`CREATE OR REPLACE TRIGGER "` + long + `_alpha" BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();` + "\n" +
+				`CREATE OR REPLACE TRIGGER "` + long + `_beta" BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION trg();`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -227,20 +274,31 @@ func TestPostgresLongNamesRoundTripE2E(t *testing.T) {
 }
 
 // TestOpenMeterEntExportReadsWithoutADatabaseE2E reads the SQL OpenMeter's Ent
-// exporter writes, pinned in testdata, with no database: its 40 foreign keys
-// and 7 indexes named past 63 bytes are read under the names PostgreSQL
-// keeps, which the catalog of a database the same SQL built confirms.
+// exporter writes, pinned in testdata, with no database: the names it writes
+// past 63 bytes are read under the names PostgreSQL keeps, and they are the
+// names the catalog of a database the same SQL built holds cut, no more and
+// no fewer.
 func TestOpenMeterEntExportReadsWithoutADatabaseE2E(t *testing.T) {
 	c := qt.New(t)
-	export, err := os.ReadFile(filepath.Join("testdata", "openmeter", "ent-export.sql"))
+	path := filepath.Join("testdata", "openmeter", "ent-export.sql")
+	export, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 
-	stored, err := storedNamesOf(c, string(export))
+	stored := cutNamesOf(c, path)
+	cut := serverCutNames(catalogCutNames(c, databaseBuiltFrom(c, string(export))), string(export))
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(stored, qt.HasLen, 47)
-	catalog := catalogNames(c, databaseBuiltFrom(c, string(export)))
-	for _, name := range stored {
-		c.Assert(catalog, qt.Contains, name, qt.Commentf("%q is not in the catalog", name))
-	}
+	c.Assert(cut, qt.Not(qt.HasLen), 0)
+	c.Assert(storedKeys(stored), qt.DeepEquals, storedKeys(cut))
+}
+
+// serverCutNames is the names of catalog that are the first 63 bytes of a
+// longer quoted identifier the SQL file writes. The export writes some names
+// of exactly 63 bytes itself, and the server keeps those as written; it also
+// refers to a cut foreign key by its stored name, as in
+// `ALTER CONSTRAINT "ledger_breakage_records_ledger_transactions_source_breakage_rec"`,
+// so a quoted 63-byte name alone does not tell the two apart.
+func serverCutNames(catalog []sqlschema.StoredName, file string) []sqlschema.StoredName {
+	return slices.DeleteFunc(catalog, func(name sqlschema.StoredName) bool {
+		return !regexp.MustCompile(`"` + regexp.QuoteMeta(name.Stored) + `[^"]+"`).MatchString(file)
+	})
 }

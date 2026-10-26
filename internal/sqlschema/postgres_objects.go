@@ -68,13 +68,10 @@ func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
 	}
 }
 
-func appendView(database *schemamodel.Database, statement ast.Node, sourcePlatform string) bool {
+func appendView(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) bool {
 	switch node := statement.(type) {
 	case *ast.CreateViewNode:
-		view := toView(node, sourcePlatform)
-		if !node.Replace || !replaceView(database, view, sourcePlatform) {
-			database.Views = append(database.Views, view)
-		}
+		appendCreateView(database, document, node, sourcePlatform)
 	case *ast.CreateMaterializedViewNode:
 		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node, sourcePlatform))
 	default:
