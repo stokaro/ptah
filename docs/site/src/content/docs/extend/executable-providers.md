@@ -86,8 +86,14 @@ comments, collation, and facets. A column step reads its table and creates or
 drops one column of it. The host refuses a plan that leaves such a step
 unclaimed, and the error names the table and the column. A removed table
 reaches the provider with its captured state, and the drop is a step the
-provider must claim in the same way. Changes to existing columns, indexes, and
-table comments are refused. These services do not grant common SQL rendering.
+provider must claim in the same way.
+
+A service that declares parent assessment
+also receives changes to existing columns in the complete table capture. It
+must return a parent receipt, including when its own rules find no change.
+Missing receipts and refusals discard the plan. Index changes remain refused;
+common-object support carries table and column comments. These services do not
+grant common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It
@@ -106,6 +112,11 @@ inspection snapshot it returns (`target_features`) as in its engine description
 gets one profile for observed, desired and planned values. A provider that
 leaves them empty refuses every comparison between an inspected facet and a
 declared one with "comparison requires one captured target profile".
+
+An inspected catalog retains the opened session's database binding, including
+a selected dev realm, even when the selected scope is empty. Comparison and
+planning receive that binding so they can resolve absolute object references.
+A saved schema description does not carry it to another target.
 
 `schema.validate` separately checks captured declarations offline and returns
 typed diagnostics. It requires neither SQL rendering nor a database session.
@@ -681,6 +692,11 @@ Apply JSON reports use contract version `3` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
 provider payloads and are reports, not execution plans.
 
+Planner notes stay in the host as ordered annotations. They do not enter the
+provider's rendering or execution batch and do not count as operations.
+SQL previews prefix every line as a comment. JSON plans retain each note's
+position, including trailing notes and plans with notes alone.
+
 A saved plan records each native operation in the provider's own encoding,
 with the codec owner, version and definition digest, beside the provider
 binding. `ptah schema apply --plan` decodes the operations through the selected
@@ -714,6 +730,10 @@ and writes nothing. The protocol does not establish a lock acquisition that
 writes nothing, so a preview on a provider-served target takes no lock and does
 not wait for a running apply. Native execution support alone does not qualify
 an official provider's schema models or live database behavior.
+
+Uninspected common access kinds remain unknown coverage. Their presence in a
+diff does not block unrelated table changes. A provider without common-object
+planning still refuses role and grant mutations.
 
 ## Resolve failures
 

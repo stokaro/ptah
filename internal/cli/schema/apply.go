@@ -554,7 +554,9 @@ func runSchemaApplyOnLockedSession(
 		return "", err
 	}
 	run.evidence.Undecided = plan.Undecided()
+	run.evidence.Annotations = plan.Annotations()
 	if !plan.HasChanges() {
+		atlasschema.WriteUnitReports(run.human, nil, plan.Annotations())
 		printNothingPlanned(run.human, run.evidence.Undecided)
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
@@ -727,6 +729,10 @@ func runSchemaApplyPlanFileOnLockedSession(
 
 	printPlan(run.human, plan)
 	run.evidence.Units = plan.UnitReports()
+	run.evidence.Annotations = plan.Annotations
+	if !plan.HasChanges() {
+		return atlasschema.ApplyOutcomeNoChanges, nil
+	}
 	if plan.HasNative() || plan.HasInputReferences() {
 		return runSchemaApplyNativePlanFile(ctx, cmd, opts, conn, plan, txMode, run)
 	}

@@ -37,7 +37,7 @@ type commonPlanner struct {
 // the common-object wire receives.
 var commonObjectFields = []string{"SequencesAdded", "SequencesRemoved", "SequencesModified", "ViewsAdded", "ViewsRemoved", "ViewsModified",
 	"MaterializedViewsAdded", "MaterializedViewsRemoved", "MaterializedViewsModified", "ObjectCommentsChanged", "DeclaredViewLikes",
-	"CurrentGrants", "CurrentNotDescribed", "RolesAdded", "RolesRemoved", "RolesModified", "RoleMembershipsAdded", "RoleMembershipsRemoved",
+	"CurrentGrants", "RolesAdded", "RolesRemoved", "RolesModified", "RoleMembershipsAdded", "RoleMembershipsRemoved",
 	"GrantsAdded", "GrantsRemoved", "GrantOptionsAdded", "GrantOptionsRevoked"}
 
 func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
@@ -116,11 +116,13 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 // commonObjectSteps plans the common objects beyond tables for a provider
 // that carries them. It first refuses a diff field the planner has no step
 // for; for a provider without the common-object wire that includes every
-// field of those objects.
+// mutation field of those objects. CurrentNotDescribed is observation
+// context even when none of those objects is writable; refusing it would
+// block table changes merely because access was not inspected.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "Matched"}
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
 	}
@@ -135,12 +137,18 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 
 func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals []ast.Node, err error) {
 	fields := []string{"TableName", "ColumnsAdded", "ColumnsRemoved", "Desired", "Current", "ColumnKeyNames", "FeatureChanges"}
+	ownedColumns := !p.commonTables && p.assessParents
+	if ownedColumns {
+		// The owner receives complete captured columns and must account for
+		// the parent change. Shared column spellings cannot preempt that decision.
+		fields = append(fields, "ColumnsModified")
+	}
 	if p.commonObjects {
 		// A comment travels on the common-object wire; see commentNodes. A
 		// column change other than its comment is not one the wire carries.
 		fields = append(fields, "CommentChange", "ColumnsModified")
 		for _, column := range table.ColumnsModified {
-			if !commentOnly(column) {
+			if !ownedColumns && !commentOnly(column) {
 				return nil, nil, unsupported(fmt.Sprintf("changing column %s of table %s beyond its comment", column.ColumnName, table.TableName))
 			}
 		}

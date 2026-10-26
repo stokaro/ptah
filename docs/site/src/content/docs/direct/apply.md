@@ -430,8 +430,10 @@ refusal means that nothing reached the database.
 | `error` | The message printed on standard error, for `refused` and `failed` |
 | `schema_diagnostics` | Every diagnostic a provider reported when it refused the SQL schema documents it read: `code`, `severity`, `path`, `start` and `end` (byte `offset`, `line`, `column`) and `message` |
 
-`plan`, `plan_digest` and `plan_path` appear only with `changes`. `no-changes`
-means no statement was planned, and no file is written. The database matches
+`plan` also appears with `no-changes` when it contains notes. A saved or
+previewed document includes `plan_digest`, and a saved file includes `plan_path`.
+`no-changes` means no statement was planned. A plan with notes alone can
+still be saved. The database matches
 the desired schema unless `undecided` is present.
 `failed` means the plan could not be computed or saved, for a reason that has
 no refusal code. The document does not depend on when it was written, so two
@@ -456,6 +458,7 @@ Schema plan reports retain contract version `2` and their saved SQL plan format.
 | `outcome` | How the run ended; see the next table |
 | `plan_name`, `plan_digest` | The `name` the `--plan` file records, and the SHA-256 of the bytes that were read. The file is read once, so with `--require-approval` these are also the bytes the signature was checked against |
 | `units` | The planned operations in order. Each entry has `sql` or a `native` summary with its kind, subject, severity, reason, and access assessment |
+| `annotations` | Non-executable notes with `text` and a zero-based `before` position in `units`. A position equal to the unit count is a trailing note |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
 | `refusal` | Why the apply refused; see below |
 | `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |

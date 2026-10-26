@@ -187,6 +187,9 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 	if conn == nil {
 		return ApplyPlan{}, errors.New("schema apply execution requires database connection")
 	}
+	if err := renderer.ValidateAnnotations(p.Annotations, len(p.Statements)); err != nil {
+		return ApplyPlan{}, err
+	}
 	var envelopes []schemaext.Envelope
 	for _, statement := range p.Statements {
 		if statement.Native != nil {
@@ -222,7 +225,7 @@ func (p PlanFile) ExecutionPlan(ctx context.Context, conn *dbschema.DatabaseConn
 	}
 	return ApplyPlan{
 		target: info.Dialect, capabilities: info.Capabilities, provider: p.Provider,
-		units: units, transactions: transactions,
+		units: units, transactions: transactions, annotations: slices.Clone(p.Annotations),
 	}, nil
 }
 

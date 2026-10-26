@@ -144,6 +144,7 @@ type ApplyPlan struct {
 	capabilities capability.Capabilities
 	provider     *PlanProviderBinding
 	units        []renderer.Fragment
+	annotations  []renderer.Annotation
 	transactions [][]plangraph.Transaction
 	owned        []safety.StatementAssessment
 }
@@ -235,7 +236,7 @@ func (p ApplyPlan) SQL() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return FormatMigrationSQL(statements), nil
+	return annotatedSQL(statements, p.annotations), nil
 }
 
 // Statements returns an independent SQL projection with execution boundaries.
@@ -1212,5 +1213,6 @@ func reportSkipped(diagnostics io.Writer, skipped []schemaext.SkippedObject) {
 func (c applyComputation) executionPlan() ApplyPlan {
 	plan := c.ApplyPlan
 	plan.units, plan.transactions, plan.owned = c.executionUnits(), c.executionTransactions(), c.executionAssessments()
+	plan.annotations = c.executionAnnotations()
 	return plan
 }

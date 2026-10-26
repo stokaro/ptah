@@ -2,6 +2,7 @@ package planner
 
 import (
 	"fmt"
+	"slices"
 
 	"ptah.run/core/renderer"
 )
@@ -24,6 +25,12 @@ func (p RenderedPlan) Units() ([]PlannedUnit, error) {
 		return nil, fmt.Errorf("%w: refused batch has no execution units", renderer.ErrInvalidResult)
 	}
 	if !p.Result.ExecutableUnits {
+		p.Result.Fragments = slices.Clone(p.Result.Fragments)
+		for i, fragment := range p.Result.Fragments {
+			if fragment.Annotation != nil {
+				p.Result.Fragments[i] = renderer.Fragment{}
+			}
+		}
 		statements, err := p.PlannedStatements()
 		if err != nil {
 			return nil, err
@@ -40,7 +47,7 @@ func (p RenderedPlan) Units() ([]PlannedUnit, error) {
 		if err != nil {
 			return nil, err
 		}
-		if cloned.SQL == "" && cloned.Native == nil {
+		if cloned.Annotation != nil || (cloned.SQL == "" && cloned.Native == nil) {
 			continue
 		}
 		result = append(result, PlannedUnit{Fragment: cloned, Node: i})

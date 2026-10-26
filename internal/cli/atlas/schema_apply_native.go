@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
@@ -27,7 +28,7 @@ func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions
 	if err := validateAtlasNativeApplyOptions(opts, units); err != nil {
 		return "", err
 	}
-	if err := displayAtlasNativeApplyPlan(cmd, conn, units, mode); err != nil {
+	if err := displayAtlasNativeApplyPlan(cmd, conn, units, plan.Annotations(), mode); err != nil {
 		return "", err
 	}
 	if opts.dryRun {
@@ -54,7 +55,7 @@ func applyAtlasNativePlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, 
 	if err := execution.Preflight(cmd.Context(), conn, mode); err != nil {
 		return "", err
 	}
-	if err := displayAtlasNativeApplyPlan(cmd, conn, plan.UnitReports(), mode); err != nil {
+	if err := displayAtlasNativeApplyPlan(cmd, conn, plan.UnitReports(), plan.Annotations, mode); err != nil {
 		return "", err
 	}
 	if opts.dryRun {
@@ -98,7 +99,7 @@ func validateAtlasNativeApplyOptions(opts atlasSchemaApplyOptions, units []atlas
 	}
 }
 
-func displayAtlasNativeApplyPlan(cmd *cobra.Command, conn *dbschema.DatabaseConnection, units []atlasschema.ApplyUnitReport, mode migrator.MigrationTxMode) error {
+func displayAtlasNativeApplyPlan(cmd *cobra.Command, conn *dbschema.DatabaseConnection, units []atlasschema.ApplyUnitReport, annotations []renderer.Annotation, mode migrator.MigrationTxMode) error {
 	var statements []string
 	for _, unit := range units {
 		if unit.Native == nil {
@@ -108,24 +109,11 @@ func displayAtlasNativeApplyPlan(cmd *cobra.Command, conn *dbschema.DatabaseConn
 	if err := validateAtlasSchemaApplyDiffPolicy(mode, conn.Info(), statements); err != nil {
 		return err
 	}
-	printAtlasSchemaApplyUnits(cmd.OutOrStdout(), units)
+	printAtlasSchemaApplyUnits(cmd.OutOrStdout(), units, annotations)
 	return nil
 }
 
-func printAtlasSchemaApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport) {
+func printAtlasSchemaApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport, annotations []renderer.Annotation) {
 	fmt.Fprintln(out, "Planned schema changes:")
-	for _, unit := range units {
-		for _, input := range unit.Inputs {
-			fmt.Fprintf(out, "Execution input: %s %s\n", input.Source, input.Name)
-		}
-		if unit.Native == nil {
-			fmt.Fprintln(out, unit.SQL)
-			continue
-		}
-		native := unit.Native
-		fmt.Fprintf(out, "Native operation: %s\n  %s: %s (%s)\n", native.Kind, native.Subject, native.Reason, native.Severity)
-		if native.Access != "" {
-			fmt.Fprintf(out, "  Access %s: %s\n", native.Access, native.AccessReason)
-		}
-	}
+	atlasschema.WriteUnitReports(out, units, annotations)
 }

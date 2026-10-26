@@ -43,7 +43,7 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err != nil {
 		return nil, err
 	}
-	result := &catalog.Database{}
+	result := &catalog.Database{DatabasePath: r.session.remote.GetDatabase()}
 	result.ReservedNames, err = r.reservedNames(snapshot)
 	if err != nil {
 		return nil, err

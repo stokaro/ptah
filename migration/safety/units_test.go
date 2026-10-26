@@ -85,3 +85,11 @@ func TestAssessUnitsRejectsCancellationWithoutPrefix(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(assessments, qt.IsNil)
 }
+
+func TestAssessUnitsRefusesAnnotationAsWork(t *testing.T) {
+	c := qt.New(t)
+	text := "review"
+	assessments, err := safety.AssessUnits(c.Context(), must.Must(builtin.New()), "sqlite", []renderer.Fragment{{SQL: "SELECT 1;"}, {Annotation: &text}}, make([]safety.StatementAssessment, 2))
+	c.Assert(err, qt.ErrorIs, renderer.ErrInvalidResult)
+	c.Assert(assessments, qt.IsNil)
+}

@@ -13,7 +13,8 @@ import (
 // ErrNativeSQL identifies a native operation that cannot be represented as SQL.
 var ErrNativeSQL = fmt.Errorf("%w: native operations cannot be represented as SQL", ptaherr.ErrUnsupportedFeature)
 
-// Fragment holds either SQL text or a typed native operation, never both.
+// Fragment holds SQL text, a typed native operation, or an annotation.
+// Annotation text is host-owned prose and never an execution unit.
 // Empty SQL accounts for a node that emits no work. A native payload remains
 // owner-defined data; its methods must not execute it or call a provider.
 // Persistence requires an explicit operation codec, not default JSON encoding.
@@ -22,7 +23,8 @@ type Fragment struct {
 	Native ast.ExtensionPayload
 	// Inputs are approved references for this exact body. They contain no
 	// values; execution must refuse a different input set before resolving it.
-	Inputs []InputReference
+	Inputs     []InputReference
+	Annotation *string
 }
 
 // SQLFragments wraps SQL text in node order without parsing or changing bytes.
@@ -45,6 +47,13 @@ func (f Fragment) Validate() error {
 
 // Clone returns an independent snapshot and validates the payload boundary.
 func (f Fragment) Clone() (Fragment, error) {
+	if f.Annotation != nil {
+		if f.SQL != "" || f.Native != nil || len(f.Inputs) != 0 {
+			return Fragment{}, fmt.Errorf("%w: annotation has an executable body", ErrInvalidResult)
+		}
+		text := *f.Annotation
+		return Fragment{Annotation: &text}, nil
+	}
 	if err := ValidateInputReferences(f.Inputs); err != nil {
 		return Fragment{}, err
 	}
@@ -72,7 +81,8 @@ func (f Fragment) MarshalJSON() ([]byte, error) {
 		return nil, schemaext.ErrExplicitCodec
 	}
 	return json.Marshal(struct {
-		SQL    string           `json:"sql"`
-		Inputs []InputReference `json:"inputs,omitempty"`
-	}{f.SQL, f.Inputs})
+		SQL        string           `json:"sql"`
+		Inputs     []InputReference `json:"inputs,omitempty"`
+		Annotation *string          `json:"annotation,omitempty"`
+	}{f.SQL, f.Inputs, f.Annotation})
 }

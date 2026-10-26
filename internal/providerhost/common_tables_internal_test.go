@@ -11,10 +11,12 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemavalidation"
@@ -96,4 +98,50 @@ func TestCommonTablePlannerIgnoresMatchedCounts(t *testing.T) {
 	nodes, err := planner.GenerateMigrationAST(c.Context(), runtime, &difftypes.SchemaDiff{Matched: difftypes.MatchedCounts{Tables: 1, Columns: 1}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
+}
+
+func commonTableCoverageFixture(c *qt.C) (*target, *engine.Runtime, *difftypes.SchemaDiff) {
+	c.Helper()
+	selected := &target{engine: &protocol.Engine{Id: "fixture", Features: []string{provider.CommonTableIdentityFeature}}, host: &Host{description: &protocol.Description{}}}
+	runtime, err := engine.New(engine.Provider{ID: "example.org/fixture", Targets: []engine.Target{selected.registration()}})
+	c.Assert(err, qt.IsNil)
+	limits := coverage.Set{}.With(coverage.Refused(coverage.ObjectOwner)).With(coverage.Refused(coverage.RoleMembership))
+	diff := &difftypes.SchemaDiff{CurrentNotDescribed: limits,
+		TablesAdded: difftypes.TableChanges{{Name: "items", Table: schemamodel.Table{Name: "items"}, Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER"}}}}}
+	return selected, runtime, diff
+}
+
+func TestCommonTablePlannerRetainsUnknownAccess(t *testing.T) {
+	c := qt.New(t)
+	selected, runtime, diff := commonTableCoverageFixture(c)
+	limits := diff.CurrentNotDescribed
+	nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	c.Assert(nodes[0].(*ast.CreateTableNode).Name, qt.Equals, "items")
+	c.Assert(diff.CurrentNotDescribed, qt.DeepEquals, limits)
+}
+
+func TestUnknownAccessDoesNotEnableCommonMutations(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		roles  difftypes.RoleChanges
+		grants []difftypes.GrantRef
+		want   string
+	}{
+		{"role mutation", difftypes.RoleChanges{{Name: "reader"}}, nil, "RolesAdded"},
+		{"grant mutation", nil, []difftypes.GrantRef{{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items"}}, "GrantsAdded"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selected, runtime, diff := commonTableCoverageFixture(c)
+			limits := diff.CurrentNotDescribed
+			diff.RolesAdded, diff.GrantsAdded = test.roles, test.grants
+			nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, ".*SchemaDiff\\."+test.want)
+			c.Assert(nodes, qt.IsNil)
+			c.Assert(diff.CurrentNotDescribed, qt.DeepEquals, limits)
+		})
+	}
 }

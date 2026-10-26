@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/migration/migrator"
@@ -36,7 +37,7 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 	}
 	run.evidence.Units = units
 	fmt.Fprintln(run.human, "Planned changes:")
-	printApplyUnits(run.human, units)
+	printApplyUnits(run.human, units, plan.Annotations())
 	if opts.dryRun {
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
@@ -61,21 +62,8 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 
 // printApplyUnits lists SQL statements as written and a native operation by its
 // kind, subject and captured assessments. The operation's bytes are not shown.
-func printApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport) {
-	for _, unit := range units {
-		for _, input := range unit.Inputs {
-			fmt.Fprintf(out, "Execution input: %s %s\n", input.Source, input.Name)
-		}
-		if unit.Native == nil {
-			fmt.Fprintln(out, unit.SQL)
-			continue
-		}
-		native := unit.Native
-		fmt.Fprintf(out, "Native operation: %s\n  %s: %s (%s)\n", native.Kind, native.Subject, native.Reason, native.Severity)
-		if native.Access != "" {
-			fmt.Fprintf(out, "  Access %s: %s\n", native.Access, native.AccessReason)
-		}
-	}
+func printApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport, annotations []renderer.Annotation) {
+	atlasschema.WriteUnitReports(out, units, annotations)
 }
 
 // runSchemaApplyNativePlanFile applies a saved plan that holds provider-native

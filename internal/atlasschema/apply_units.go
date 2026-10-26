@@ -58,6 +58,9 @@ func cloneApplyUnits(units []renderer.Fragment) ([]renderer.Fragment, []string, 
 		if err != nil {
 			return nil, nil, err
 		}
+		if cloned.Annotation != nil {
+			return nil, nil, fmt.Errorf("%w: annotation is not an execution unit", renderer.ErrInvalidResult)
+		}
 		prepared[i] = cloned
 		native = native || cloned.Native != nil
 		statements = append(statements, cloned.SQL)
