@@ -54,6 +54,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0042](0042-access-observations-have-independent-coverage.md) | Access observations have independent coverage | Accepted |
 | [0043](0043-sensitive-input-references-are-approved-before-values-are-bound.md) | Sensitive input references are approved before values are bound | Accepted |
 | [0044](0044-lifecycle-operations-use-the-complete-common-sequence.md) | Lifecycle operations use the complete common sequence | Accepted |
+| [0045](0045-a-provider-states-common-column-comparison-and-readback-semantics.md) | A provider states common column comparison and readback semantics | Accepted |
 
 ## Writing one
 

@@ -31,7 +31,7 @@ func TestCompatProviderExecutionInputs(t *testing.T) {
 			source := filepath.Join(f.dir, "desired.yaml")
 			c.Assert(os.WriteFile(source, []byte("tables:\n  needs_input:\n    columns:\n      id: {type: INTEGER, not_null: true}\n      added: {type: REAL}\n"), 0o600), qt.IsNil)
 			to := "file://" + filepath.ToSlash(source)
-			const input = "PTAH_FIXTURE_EXECUTION_INPUT"
+			const input = "FIXTURE_EXECUTION_INPUT"
 			const value = "fixture-private-value"
 			computed := []string{"schema", "apply", "--url", f.address, "--to", to, "--tx-mode", "none"}
 			out, diagnostics, code := f.run(f.withManifest(), append(computed, "--dry-run")...)

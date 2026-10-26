@@ -19,7 +19,7 @@ import (
 	"ptah.run/migration/migrator"
 )
 
-const executionInputName = "PTAH_FIXTURE_EXECUTION_INPUT"
+const executionInputName = "FIXTURE_EXECUTION_INPUT"
 
 func TestProviderInputValuesAreResolvedOnlyAtDispatch(t *testing.T) {
 	for _, test := range []struct {
@@ -99,7 +99,7 @@ func TestProviderMissingInputRefusesBeforeSQLPrefix(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Preflight(c.Context(), conn, migrator.MigrationTxModeNone), qt.IsNil)
 	err = plan.Execute(c.Context(), conn, migrator.MigrationTxModeNone)
-	c.Assert(err, qt.ErrorMatches, `provider execution input environment variable "PTAH_FIXTURE_EXECUTION_INPUT" is not set`)
+	c.Assert(err, qt.ErrorMatches, `provider execution input environment variable "FIXTURE_EXECUTION_INPUT" is not set`)
 	c.Assert(providerTablePresent(c, conn, "common"), qt.IsFalse)
 	c.Assert(providerTablePresent(c, conn, "needs_input"), qt.IsFalse)
 }

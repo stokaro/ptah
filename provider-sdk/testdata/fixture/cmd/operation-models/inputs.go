@@ -9,7 +9,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 )
 
-const fixtureInputName = "PTAH_FIXTURE_EXECUTION_INPUT"
+const fixtureInputName = "FIXTURE_EXECUTION_INPUT"
 
 func (p *owner) DescribeExecutionInputs(ctx context.Context, request *protocol.DescribeExecutionInputsRequest) (*protocol.ExecutionInputs, error) {
 	if err := ctx.Err(); err != nil {
