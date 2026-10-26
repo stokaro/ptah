@@ -147,6 +147,11 @@ func compareReportingUndecidedAdditions(
 		compare.ServerSchemas(diff, desired, database.Schemas, identifierSemantics)
 	}
 
+	columnFacts, err := compare.ResolveColumnFacts(ctx, desired, database, opts.Dialect, identifierSemantics, caps, prepared.bySubject, rules.ColumnService)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+
 	// Compare tables and their column structures
 	compare.TablesAndColumnsWithTableContext(
 		desired,
@@ -161,6 +166,7 @@ func compareReportingUndecidedAdditions(
 			Columns:              opts.ColumnSpellings,
 			DefaultIntSize:       defaultIntSize,
 			ColumnRules:          rules.Columns,
+			OwnerColumns:         columnFacts,
 			GeneratedExpressions: rules.GeneratedExpressions,
 		},
 		caps,

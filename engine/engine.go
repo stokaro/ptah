@@ -435,6 +435,9 @@ func (r *Runtime) Codecs() schemaext.Registry {
 }
 
 func (r *Runtime) register(owner string, declared Target) error {
+	if declared.Comparison.Columns != nil && declared.Comparison.ColumnService != nil {
+		return fmt.Errorf("%w: a target cannot select both column rules and a column batch owner", ErrInvalidRegistration)
+	}
 	selection, err := schemaext.NewTargetSelection(declared.Name, declared.Aliases...)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
@@ -452,6 +455,7 @@ func (r *Runtime) register(owner string, declared Target) error {
 		{"creation projection", declared.Creations},
 		{"constraint projection", declared.Constraints},
 		{"column comparison", declared.Comparison.Columns},
+		{"column batch", declared.Comparison.ColumnService},
 		{"index comparison", declared.Comparison.Indexes},
 		{"index definition comparison", declared.Comparison.IndexDefinitions},
 		{"index predicate comparison", declared.Comparison.IndexPredicates},

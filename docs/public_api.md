@@ -2368,6 +2368,27 @@ it declares, compares a column's sequence start and increment on a target with
 `capability.SerialSequenceOptions`, and reads a default the catalog reports as a
 typed literal back as its value.
 
+`Rules.ColumnService` selects a contextful offline batch owner for common
+columns. It is exclusive with `Rules.Columns`. `ColumnsRequest` preserves
+complete desired and current parents and the host's exact ordered column pairs.
+Each pair names the delegated type, default, nullability, and sequence aspects.
+`AcceptColumns` requires every requested receipt, in order, with both identities
+unchanged. Explicit nullability overrides descriptor inference while authored
+fields remain intact. Domain identities and generated expressions retain their
+separate owners; sequence start and increment are delegated only when the target
+supports them. Sequence restart remains an operation operand.
+
+`ColumnDefaultsRequest` includes every observed column, including columns needed
+for rollback after removal. `AcceptColumnDefaults` distinguishes absent defaults,
+explicit empty literals, and expressions. Missing or malformed receipts refuse
+the conversion without falling back to common parsing. Selected column services
+also bypass live type and default spelling probes.
+
+`schemaprojection.TableCreation.Columns` carries complete ordered common-column
+predictions when `ColumnsPrepared` is true. Acceptance requires exact column
+names, types, and nullability. The shared projection preserves source facets
+under their existing owners and never treats a prediction as catalog inspection.
+
 The index rules decide when an index is the declared one:
 
 - `Rules.Indexes` compares an index's kind and build settings, and a target

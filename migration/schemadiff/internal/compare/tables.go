@@ -129,6 +129,8 @@ type TableContext struct {
 	DefaultIntSize int
 	// ColumnRules are the target's column rules, nil where it registers none.
 	ColumnRules schemacomparison.Columns
+	// OwnerColumns holds contextful receipts accepted before common comparison.
+	OwnerColumns ColumnFacts
 	// GeneratedExpressions reads a generated column's expression on the
 	// target, nil where it registers no rule for it.
 	GeneratedExpressions schemacomparison.GeneratedExpressions
@@ -242,10 +244,7 @@ func TablesAndColumnsWithTableContext(
 			// accepts. [ptah.run/internal/sqlitevirtual.ValidateComparison]
 			// refuses the same by name, earlier, at the seams that can return
 			// an error. See stokaro/ptah#1028.
-			if _, defined := schemaext.DefiningKind(dbTable.Facets); defined {
-				continue
-			}
-			if _, defined := schemaext.DefiningKind(genTable.Facets); defined {
+			if tableDefinesColumns(genTable.Facets, dbTable.Facets) {
 				continue
 			}
 			tableDiff, matchedColumns := tableColumnsWithSemantics(

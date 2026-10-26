@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemaprojection"
@@ -41,6 +42,14 @@ func (t *target) projectOwnedTableCreations(ctx context.Context, request schemap
 	for _, output := range projected.Tables {
 		created := schemaprojection.TableCreation{Subject: boundIdentity(output.Subject),
 			ColumnPrimaryKeysPrepared: output.ColumnPrimaryKeysPrepared, ColumnPrimaryKeys: slices.Clone(output.ColumnPrimaryKeys)}
+		created.ColumnsPrepared = slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature)
+		for _, column := range output.Columns {
+			predicted, err := projectedColumn(column)
+			if err != nil {
+				return schemaprojection.TableCreationResult{}, err
+			}
+			created.Columns = append(created.Columns, predicted)
+		}
 		created.Facets, err = service.resolvedFacetRecords(profile, schemaext.Desired, output.DesiredFacets)
 		if err != nil {
 			return schemaprojection.TableCreationResult{}, err

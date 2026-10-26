@@ -201,3 +201,25 @@ func TestField_YDBDefaultIsTheValueItsLiteralWasWrittenFrom(t *testing.T) {
 		})
 	}
 }
+
+func TestFieldUsesTypedOwnerDefault(t *testing.T) {
+	for _, row := range []struct {
+		name              string
+		receipt           schemacomparison.ColumnDefaultReceipt
+		set               bool
+		value, expression string
+	}{
+		{name: "empty literal", receipt: schemacomparison.ColumnDefaultReceipt{Kind: schemacomparison.DefaultLiteral}, set: true},
+		{name: "literal", receipt: schemacomparison.ColumnDefaultReceipt{Kind: schemacomparison.DefaultLiteral, Value: "literal()"}, set: true, value: "literal()"},
+		{name: "expression", receipt: schemacomparison.ColumnDefaultReceipt{Kind: schemacomparison.DefaultExpression, Value: "clock()"}, expression: "clock()"},
+		{name: "absent", receipt: schemacomparison.ColumnDefaultReceipt{Kind: schemacomparison.DefaultAbsent}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			field := catalogfield.Field(catalog.Column{Name: "id", DataType: "BIGINT", ColumnDefault: new("unparsed()")}, catalogfield.Options{Default: &row.receipt})
+			c.Assert(field.DefaultSet, qt.Equals, row.set)
+			c.Assert(field.Default, qt.Equals, row.value)
+			c.Assert(field.DefaultExpr, qt.Equals, row.expression)
+		})
+	}
+}

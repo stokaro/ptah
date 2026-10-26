@@ -82,6 +82,9 @@ func (t *target) registration() engine.Target {
 	if slices.Contains(t.engine.GetFeatures(), provider.ProjectTableCreationsFeature) {
 		result.Creations = t
 	}
+	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
+		result.Comparison.ColumnService = columnService{target: t}
+	}
 	if t.supportsLint() {
 		result.Annotator = t
 	}

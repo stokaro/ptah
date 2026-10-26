@@ -14,12 +14,14 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/mysqlindex"
@@ -52,6 +54,18 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if err != nil {
 		return nil, err
 	}
+	columnTarget := dialect
+	if rules.ColumnService != nil {
+		selected, err := runtime.ResolveTarget(dialect)
+		if err != nil {
+			return nil, err
+		}
+		columnTarget = selected.Name()
+	}
+	defaults, err := columnsemantics.Defaults(ctx, rules.ColumnService, columnTarget, identifier.ForDialect(columnTarget), capability.ForDialect(columnTarget), dbSchema.Tables)
+	if err != nil {
+		return nil, err
+	}
 	database := newDatabase()
 	database.Facets = dbSchema.Facets
 	convertSchemas(database, dbSchema.Schemas)
@@ -67,7 +81,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	tablePrimaryKeys := primaryKeysByTable(dbSchema, dialect)
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
 	tableStructNames := convertTablesAndFields(
-		database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns, rules.Columns,
+		database, dbSchema, columnKeys.byColumn, tablePrimaryKeys, tablePKColumns, rules.Columns, defaults,
 	)
 
 	// One decision, consulted by both pools below. A unique constraint and its
@@ -198,6 +212,7 @@ func convertTablesAndFields(
 	tablePrimaryKeys map[string]tablePrimaryKey,
 	tablePKColumns map[string]map[string]bool,
 	columnRules schemacomparison.Columns,
+	defaults map[columnsemantics.Column]*schemacomparison.ColumnDefaultReceipt,
 ) map[string]string {
 	tableStructNames := assignTableStructNames(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
@@ -253,6 +268,7 @@ func convertTablesAndFields(
 			// comparison reaches too. What is added here is what that package
 			// deliberately does not know: the Go source a field was parsed
 			// from (stokaro/ptah#2315).
+			opts.Default = defaults[columnsemantics.Column{Schema: dbTable.Schema, Table: dbTable.Name, Name: dbColumn.Name}]
 			field := catalogfield.Field(dbColumn, opts)
 			field.StructName = structName
 			field.FieldName = generateFieldName(dbColumn.Name)
