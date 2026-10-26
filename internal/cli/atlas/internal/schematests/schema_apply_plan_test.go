@@ -260,7 +260,7 @@ func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 		{
 			name:    "no_statements",
 			rewrite: func(document map[string]any) { document["statements"] = make([]any, 0) },
-			want:    `invalid plan file .*: plan contains no statements`,
+			want:    `invalid plan file .*: plan contains no statements or annotations`,
 		},
 		{
 			name:    "missing_fingerprint",
