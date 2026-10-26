@@ -28,7 +28,7 @@ type owner struct {
 	nativeUnits       bool
 	transactionalDDL  bool
 	ownedLifecycle    bool
- ownedEdits bool
+	ownedEdits        bool
 	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
 	// place, as a rebuild of its table when the host's planning policy asks
 	// for one, and refuses it in the words of that policy when it does not.
@@ -145,7 +145,9 @@ func main() {
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
-	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit", ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit", ownedEdits: mode == "owned-edit",
+	p := &owner{Provider: &backend.Provider{},
+		nativeUnits:    mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit",
+		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit", ownedEdits: mode == "owned-edit",
 		rebuilds: mode == "policy", transactionalDDL: transactional, operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if inputMode != "" {
