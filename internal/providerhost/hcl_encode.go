@@ -16,7 +16,8 @@ import (
 )
 
 // encodingEngine is the engine whose provider writes a document's values: the
-// one the document is written for, or the only engine that encodes HCL.
+// one the document is written for, or, without a target, the only engine that
+// encodes HCL.
 func (o *hclOwner) encodingEngine(written string) (*target, error) {
 	var encoding []*target
 	for _, engine := range o.engines {
@@ -29,7 +30,7 @@ func (o *hclOwner) encodingEngine(written string) (*target, error) {
 		}
 		encoding = append(encoding, selected)
 	}
-	if len(encoding) != 1 {
+	if written != "" || len(encoding) != 1 {
 		return nil, fmt.Errorf("%w: provider %s writes HCL for %d engines, and the document is written for %q, which names none of them", ptaherr.ErrUnsupportedFeature,
 			o.host.description.GetProviderId(), len(encoding), written)
 	}

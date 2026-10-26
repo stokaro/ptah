@@ -753,6 +753,10 @@ the standalone objects, or as attributes of `ptah:schema:table`,
 of its engine type. A Go export takes no loss: a value the provider cannot
 write, and a `ptah:not-described` entry it returns, refuse the export.
 
+An explicit export target must name an encoding engine or one of its aliases.
+Without a target, Ptah selects the provider's sole encoding engine and refuses
+an ambiguous choice.
+
 A provider can also claim the group of its own engine in a table's `platform`
 key, where the common syntax holds platform properties. The claim is a
 `TABLE` key `platform.<engine>`, and the engine is one the provider declares, by

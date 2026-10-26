@@ -9,7 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/annotation"
 	"ptah.run/core/goschema"
+	"ptah.run/core/hclext"
+	"ptah.run/core/ptaherr"
 	"ptah.run/engine"
 	"ptah.run/internal/atlashcl"
 	"ptah.run/internal/convert/goschematogo"
@@ -183,4 +186,21 @@ func TestProviderGoExport_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(scopedRetentions(c, runtime, again), qt.DeepEquals, want)
 	c.Assert(want, qt.DeepEquals, []string{`table records {"seconds":5}`, `column body {"seconds":7}`, `index by_body {"seconds":9}`})
+}
+
+// TestProviderSourceExport_RefusesAnotherTarget drives the runtime's public
+// source encoders with an explicit target the selected provider does not own.
+// Selecting a sole provider must not let its field types or blocks cross into
+// another engine's source.
+func TestProviderSourceExport_RefusesAnotherTarget(t *testing.T) {
+	c := qt.New(t)
+	runtime := hclClaimsProvider(c)
+
+	goResult, goErr := runtime.Annotations().Encode(c.Context(), annotation.EncodeRequest{Target: "postgres"})
+	hclResult, hclErr := runtime.HCL().Encode(c.Context(), hclext.EncodeRequest{Target: "postgres"})
+
+	c.Assert(goErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(goResult, qt.DeepEquals, annotation.EncodeResult{})
+	c.Assert(hclErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(hclResult, qt.DeepEquals, hclext.EncodeResult{})
 }

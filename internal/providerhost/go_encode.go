@@ -17,8 +17,8 @@ import (
 type goEncoder struct{ host *Host }
 
 // goEncodingEngine is the engine whose provider writes a source's values: the
-// one the source is written for, or the only engine that encodes and claims
-// Go directives.
+// one the source is written for, or, without a target, the only engine that
+// encodes and claims Go directives.
 func (g goEncoder) goEncodingEngine(written string) (*target, error) {
 	var encoding []*target
 	for _, engine := range g.host.description.GetEngines() {
@@ -31,7 +31,7 @@ func (g goEncoder) goEncodingEngine(written string) (*target, error) {
 		}
 		encoding = append(encoding, selected)
 	}
-	if len(encoding) != 1 {
+	if written != "" || len(encoding) != 1 {
 		return nil, fmt.Errorf("%w: provider %s writes Go annotations for %d engines, and the source is written for %q, which names none of them",
 			ptaherr.ErrUnsupportedFeature, g.host.description.GetProviderId(), len(encoding), written)
 	}
