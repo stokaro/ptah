@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
+	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -165,6 +166,15 @@ type statementExecutionHooks struct {
 	// ownTransactions marks the files of a directory written for a runner
 	// that opens no transaction around a file; see [WithOwnTransactions].
 	ownTransactions bool
+}
+
+// refusalRemedy words the way out of a transaction preflight refusal for the
+// directory, or returns nil for the finding's own.
+func (h statementExecutionHooks) refusalRemedy() func(txrequire.Reason) string {
+	if h.ownTransactions {
+		return unwrappedRemedy
+	}
+	return nil
 }
 
 type statementProgressRecorder func(context.Context, StatementEvent) error
@@ -1079,7 +1089,7 @@ func executeMigrationFileSQL(
 	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
 		return err
 	}
-	if err := preflightTransactionRequirements(conn, filename, sql, statements, mode, hooks.ownTransactions); err != nil {
+	if err := preflightTransactionRequirements(conn, filename, sql, statements, mode, hooks.refusalRemedy()); err != nil {
 		return err
 	}
 	for i, stmt := range statements {
