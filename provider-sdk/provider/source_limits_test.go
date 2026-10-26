@@ -131,3 +131,21 @@ func TestSourceEncodingCannotDiscardNarrowedKnowledge(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceLimitsDoNotChangeYAMLEncoding(t *testing.T) {
+	c := qt.New(t)
+	d, request, result := encodeExchange()
+	request.Coverage.Kinds[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "not inspected"}
+	result.Limits = nil
+	c.Assert(provider.ValidateEncodedSource(d, request, result), qt.IsNil)
+	goLimitClaims(d)
+	model := d.Engines[0].ValueModels[0]
+	model.SourceFormats = append(model.SourceFormats, protocol.SourceDocument_GO_ANNOTATIONS)
+	d.Engines[0].GoSourceDirectives = []*protocol.GoSourceDirective{{Scope: protocol.GoSourceDirective_TABLE, Directive: "ptah:fixture:retention",
+		Selector: "retention", Models: []string{model.Kind}}}
+	request.Coverage.Kinds[0].Model = proto.CloneOf(model)
+	c.Assert(provider.ValidateDescription(d, nil), qt.IsNil)
+	c.Assert(provider.ValidateEncodedSource(d, request, result), qt.IsNil)
+	result.Limits = []*protocol.SchemaCoverageLimit{{Kind: "yaml-limit"}}
+	c.Assert(provider.ValidateEncodedSource(d, request, result), qt.IsNil)
+}

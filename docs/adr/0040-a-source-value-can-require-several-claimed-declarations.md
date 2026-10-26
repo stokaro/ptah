@@ -75,8 +75,9 @@ must prove that known limits retain their meaning and that lost or unrelated
 headers do not turn unknown knowledge into absence authority.
 
 When this feature is negotiated, `EncodedSource.limits` follows the format's
-header claims and validation. An encode request with narrowed coverage requires
-at least one claimed output limit; an empty list cannot carry that knowledge.
+header claims and validation for Go and HCL. An encode request in either format
+with narrowed coverage requires at least one claimed output limit; an empty
+list cannot carry that knowledge.
 The host writes each limit through its format's
 coverage-header mechanism and captures it when reading the document. It keeps
 the kind, name, reason and provenance. A header cannot upgrade unknown coverage
