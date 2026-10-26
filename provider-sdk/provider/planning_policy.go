@@ -14,6 +14,10 @@ import (
 // it, and so does each engine that honors it. Contract 25.3.
 const PlanningPolicyFeature = "planning.policy"
 
+// PlanningStatementStyleFeature proves that both sides honor the selected
+// statement style in feature-owner operations. Contract 25.8.
+const PlanningStatementStyleFeature = "planning.statement-style"
+
 // planningPolicyNegotiated reports whether both sides listed the feature for
 // an engine.
 func planningPolicyNegotiated(description *protocol.Description, engine *protocol.Engine) bool {
@@ -28,6 +32,16 @@ func validatePlanningPolicy(description *protocol.Description, engine *protocol.
 	}
 	if !planningPolicyNegotiated(description, engine) {
 		return fmt.Errorf("%w: %s was not negotiated", ErrProtocol, PlanningPolicyFeature)
+	}
+	switch policy.GetStatementStyle() {
+	case protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_ANNOTATED:
+	case protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT:
+		if !slices.Contains(description.GetFeatures(), PlanningStatementStyleFeature) ||
+			!slices.Contains(engine.GetFeatures(), PlanningStatementStyleFeature) {
+			return fmt.Errorf("%w: exact planning needs %s", ErrProtocol, PlanningStatementStyleFeature)
+		}
+	default:
+		return fmt.Errorf("%w: unknown planning statement style %d", ErrProtocol, policy.GetStatementStyle())
 	}
 	if !diagnosticLine(policy.GetTableRebuildRequest()) {
 		return fmt.Errorf("%w: a planning policy names how the operator asks for a table rebuild", ErrProtocol)

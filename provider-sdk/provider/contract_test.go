@@ -17,7 +17,7 @@ func version(major, minor uint32) *protocol.ContractVersion {
 func TestContractVersion_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(proto.Equal(provider.Contract(), version(provider.Revision, provider.ContractMinor)), qt.IsTrue)
-	c.Assert(provider.ContractString(provider.Contract()), qt.Equals, "25.7")
+	c.Assert(provider.ContractString(provider.Contract()), qt.Equals, "25.8")
 	// A peer of minor 0 announces no version and declares no minimum.
 	c.Assert(proto.Equal(provider.MinimumContract(&protocol.Description{Revision: 25}), version(25, 0)), qt.IsTrue)
 	c.Assert(proto.Equal(provider.HostContract(&protocol.DescribeRequest{Revision: 25}), version(25, 0)), qt.IsTrue)
@@ -82,7 +82,7 @@ func TestMinimumContractDescription_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			description := dataDescription()
 			description.MinContract = test.minimum
-			c.Assert(provider.ValidateDescription(description, nil), qt.ErrorMatches, `.*minimum contract .* is outside contract 25\.7`)
+			c.Assert(provider.ValidateDescription(description, nil), qt.ErrorMatches, `.*minimum contract .* is outside contract 25\.8`)
 		})
 	}
 	c := qt.New(t)

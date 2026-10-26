@@ -77,6 +77,54 @@ func TestPlanningPolicy_FailurePath(t *testing.T) {
 	}
 }
 
+func TestPlanningStatementStyle_ExactNeedsNegotiation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*protocol.Description, *protocol.PlanFeaturesRequest)
+		valid  bool
+	}{
+		{name: "both sides advertise", valid: true},
+		{name: "provider omits the feature", mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
+			d.Features = d.Features[:len(d.Features)-1]
+		}},
+		{name: "engine omits the feature", mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
+			d.Engines[0].Features = d.Engines[0].Features[:len(d.Engines[0].Features)-1]
+		}},
+		{name: "unknown style", mutate: func(_ *protocol.Description, r *protocol.PlanFeaturesRequest) {
+			r.Policy.StatementStyle = 99
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			d, request := policyExchange()
+			d.Features = append(d.Features, provider.PlanningStatementStyleFeature)
+			d.Engines[0].Features = append(d.Engines[0].Features, provider.PlanningStatementStyleFeature)
+			request.Policy.StatementStyle = protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT
+			if test.mutate != nil {
+				test.mutate(d, request)
+			}
+			err := provider.ValidatePlanningRequest(d, request)
+			if test.valid {
+				c.Assert(err, qt.IsNil)
+			} else {
+				c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+			}
+		})
+	}
+}
+
+func TestPlanningStatementStyleFeatureNeedsPolicy(t *testing.T) {
+	c := qt.New(t)
+	d, _ := policyExchange()
+	d.Features = append(d.Features, provider.PlanningStatementStyleFeature)
+	d.Features = []string{provider.NormalizeValuesFeature, provider.PlanFeaturesFeature, provider.PlanningStatementStyleFeature}
+	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorIs, provider.ErrProtocol)
+	d.Features = append(d.Features, provider.PlanningPolicyFeature)
+	d.Engines[0].Features = []string{provider.PlanningStatementStyleFeature}
+	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorIs, provider.ErrProtocol)
+}
+
 func TestPlanningPolicyFeatureNeedsPlanningOrComparison(t *testing.T) {
 	c := qt.New(t)
 	d := description()
