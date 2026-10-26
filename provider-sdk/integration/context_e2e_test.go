@@ -22,7 +22,7 @@ import (
 
 func TestIndependentProviderBindsContextWithoutOpeningAndPreservesObservationFacts(t *testing.T) {
 	c := qt.New(t)
-	binary := buildSDKFixture(c, "value-context")
+	binary := buildSDKFixture(c, "sdk-value-context")
 	data, err := os.ReadFile(binary)
 	c.Assert(err, qt.IsNil)
 	checksum := sha256.Sum256(data)
