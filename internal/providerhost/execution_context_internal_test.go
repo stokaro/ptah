@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"ptah.run/core/objectidentity"
@@ -39,11 +40,12 @@ func TestNativeUnitPreparationRequiresExactBoundSessionContext(t *testing.T) {
 			contract := &modelContract{key: modelKey{kind: kind, representation: schemaext.Operation}, signature: "contract"}
 			session := &session{target: &target{engine: &protocol.Engine{Id: "fixture"}, host: &Host{models: map[modelKey]*modelContract{contract.key: contract}}}, remote: &protocol.Session{Context: row.session}}
 			input := []renderer.Fragment{{SQL: "SELECT 1"}, {Native: &resolvedOperation{model: model}}}
+			before := proto.CloneOf(envelope)
 			units, fragments, err := session.encodeUnits(c.Context(), input)
 			c.Assert(err, qt.ErrorIs, row.wantErr)
 			c.Assert(units, qt.CmpEquals(protocmp.Transform()), row.want)
 			c.Assert(fragments, qt.HasLen, len(row.want))
-			c.Assert(envelope.GetContext(), qt.CmpEquals(protocmp.Transform()), bound)
+			c.Assert(envelope, qt.CmpEquals(protocmp.Transform()), before)
 		})
 	}
 }

@@ -131,24 +131,27 @@ func TestScopedInspectionCoverageSurvivesComparisonBinding(t *testing.T) {
 }
 
 func TestScopeRequirementsUseCapturedContextWithoutChangingOwner(t *testing.T) {
+	requirements := func(source, normalized string) []*protocol.ComparisonIdentity {
+		return []*protocol.ComparisonIdentity{{Kind: "example.org/pool", Database: &protocol.ComparisonPart{Source: source, Normalized: normalized}, Name: &protocol.ComparisonPart{Source: "fast", Normalized: "fast"}}}
+	}
 	for _, row := range []struct {
 		name                                   string
 		context                                *protocol.DatabaseContext
-		source, normalized                     string
+		required                               []*protocol.ComparisonIdentity
 		ownerDatabase, normalizedOwnerDatabase string
 		pending, refused                       bool
 		want                                   []objectidentity.ID
 	}{
-		{name: "bound", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/realm", normalized: "/realm", want: []objectidentity.ID{{Kind: "example.org/pool", Name: scopePart("fast")}}},
-		{name: "foreign", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/foreign", normalized: "/foreign", refused: true},
-		{name: "changed spelling", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, source: "/REALM", normalized: "/realm", refused: true},
-		{name: "missing context", source: "/realm", normalized: "/realm", refused: true},
+		{name: "bound", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, required: requirements("/realm", "/realm"), want: []objectidentity.ID{{Kind: "example.org/pool", Name: scopePart("fast")}}},
+		{name: "foreign", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, required: requirements("/foreign", "/foreign"), refused: true},
+		{name: "changed spelling", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"}, required: requirements("/REALM", "/realm"), refused: true},
+		{name: "missing context", required: requirements("/realm", "/realm"), refused: true},
 		{name: "owner identity differs from context", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
-			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity", want: []objectidentity.ID{{Kind: "example.org/pool", Name: scopePart("fast")}}},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", required: requirements("/identity", "/identity"), want: []objectidentity.ID{{Kind: "example.org/pool", Name: scopePart("fast")}}},
 		{name: "physical root is not owner identity", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
-			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", source: "/realm", normalized: "/realm", refused: true},
+			ownerDatabase: "/identity", normalizedOwnerDatabase: "/identity", required: requirements("/realm", "/realm"), refused: true},
 		{name: "owner normalization changed", context: &protocol.DatabaseContext{Database: "/realm", SourceDatabase: "/authored"},
-			ownerDatabase: "/IDENTITY", normalizedOwnerDatabase: "/identity", source: "/identity", normalized: "/identity", refused: true},
+			ownerDatabase: "/IDENTITY", normalizedOwnerDatabase: "/identity", required: requirements("/identity", "/identity"), refused: true},
 		{name: "pending", pending: true, refused: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -163,7 +166,7 @@ func TestScopeRequirementsUseCapturedContextWithoutChangingOwner(t *testing.T) {
 			value := &resolvedModel{kind: "example.org/queue", wire: modelWire{Features: []string{provider.ValueContextFeature}}, normalized: &protocol.NormalizedValue{
 				Value: &protocol.Envelope{Owner: owner, Context: row.context}, NormalizedOwner: normalizedOwner, RequiresDatabaseContext: row.pending,
 			}}
-			value.normalized.RequiredObjects = []*protocol.ComparisonIdentity{{Kind: "example.org/pool", Database: &protocol.ComparisonPart{Source: row.source, Normalized: row.normalized}, Name: &protocol.ComparisonPart{Source: "fast", Normalized: "fast"}}}
+			value.normalized.RequiredObjects = row.required
 			kept, err := schemaext.NewObjects(schemaext.Object{Ref: objectidentity.ID{Kind: "example.org/queue", Schema: scopePart("main"), Name: scopePart("jobs")}, Value: value})
 			c.Assert(err, qt.IsNil)
 			result, err := selection.extension.Service.SelectObjects(c.Context(), selectext.Request{Kept: kept})
