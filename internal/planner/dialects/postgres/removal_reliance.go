@@ -183,11 +183,17 @@ func routineKey(routine difftypes.RoutineChange) string {
 // routineInUse reports whether something the plan knows of may still use
 // routine when a step before the routine step drops a relation: a view or
 // materialized view the declaration holds, removes or rebuilds whose body
-// names it, another removed routine whose body names it, or a captured object
-// of a removed table that reads it.
+// names it, another removed routine whose body names it, a captured object of
+// a removed table that reads it, or a definition of a removed table or a
+// dropped column that names it, such as a default, a CHECK, a generated
+// column or an index expression. A CHECK the plan removes from a table it
+// keeps carries no definition to read, so it counts as one that names it.
 func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, rebuild viewRebuild) bool {
 	name := unqualified(routine.Name)
-	bodies := make([]string, 0)
+	if removesCheckOfKeptTable(diff) {
+		return true
+	}
+	bodies := tableDefinitions(diff)
 	for _, view := range diff.DeclaredViewLikes.Views {
 		bodies = append(bodies, view.Body)
 	}
@@ -210,6 +216,51 @@ func routineInUse(diff *difftypes.SchemaDiff, routine difftypes.RoutineChange, r
 	return slices.ContainsFunc(diff.TablesRemoved, func(removal difftypes.TableRemoval) bool {
 		return capturedReads(removal.Current.OwnedObjects, name, defaultSchema(diff))
 	})
+}
+
+// tableDefinitions is the text of every definition the plan drops with a
+// removed table or a dropped column that may call a routine: a column's
+// default and generation expression, a CHECK clause and an index definition.
+func tableDefinitions(diff *difftypes.SchemaDiff) []string {
+	var definitions []string
+	for _, removal := range diff.TablesRemoved {
+		for _, column := range removal.Current.Table.Columns {
+			definitions = append(definitions, derefText(column.ColumnDefault), derefText(column.GeneratedExpression))
+		}
+		for _, constraint := range removal.Current.Constraints {
+			definitions = append(definitions, derefText(constraint.CheckClause))
+		}
+		for _, index := range removal.Current.Indexes {
+			definitions = append(definitions, index.Definition)
+		}
+	}
+	for _, table := range diff.TablesModified {
+		for _, column := range table.ColumnsRemoved {
+			definitions = append(definitions, column.Default, column.DefaultExpr, column.GeneratedExpression, column.Check)
+		}
+	}
+	return definitions
+}
+
+// removesCheckOfKeptTable reports whether the plan removes a CHECK from a
+// table it keeps. The removal names the constraint and not its clause, which
+// may call a routine.
+func removesCheckOfKeptTable(diff *difftypes.SchemaDiff) bool {
+	removed := make(map[string]bool, len(diff.TablesRemoved))
+	for _, removal := range diff.TablesRemoved {
+		removed[bareName(removal.Name)] = true
+	}
+	return slices.ContainsFunc(diff.ConstraintsRemoved, func(constraint difftypes.ConstraintRemovalInfo) bool {
+		return strings.EqualFold(strings.TrimSpace(constraint.Type), "CHECK") && !removed[bareName(constraint.TableName)]
+	})
+}
+
+// derefText is the text text points at, empty for nil.
+func derefText(text *string) string {
+	if text == nil {
+		return ""
+	}
+	return *text
 }
 
 // removedRoutineReadsColumn reports whether a routine the plan removes reads
@@ -292,16 +343,38 @@ func removalOutlivesDrop(diff *difftypes.SchemaDiff, relation string, ahead rout
 // not say whether it removes state, or whose object cannot answer, counts as
 // one that reads relation.
 func removedFeatureReads(diff *difftypes.SchemaDiff, relation string) bool {
+	return removedFeatureMatches(diff, func(object schemaext.Value) bool {
+		reader, ok := object.(schemaext.RelationReader)
+		return !ok || schemaext.ReadsRelationIn(reader, relation, defaultSchema(diff))
+	})
+}
+
+// removedFeatureReadsColumns is [removedFeatureReads] for a column drop of
+// table. A type an owner defines, such as a composite type, depends on a
+// table's row type and on no column: PostgreSQL drops a column of a table
+// whose row type a composite attribute names without CASCADE, and refuses
+// only the table's drop. So a type the plan removes holds back no column drop,
+// and any other object answers as it does for the table.
+func removedFeatureReadsColumns(diff *difftypes.SchemaDiff, table string) bool {
+	return removedFeatureMatches(diff, func(object schemaext.Value) bool {
+		if _, defines := object.(schemaext.TypeDefiner); defines {
+			return false
+		}
+		reader, ok := object.(schemaext.RelationReader)
+		return !ok || schemaext.ReadsRelationIn(reader, table, defaultSchema(diff))
+	})
+}
+
+// removedFeatureMatches reports whether a database-scope feature change that
+// may remove state removes an object reads answers true for. A change whose
+// object the read did not hold counts as a match.
+func removedFeatureMatches(diff *difftypes.SchemaDiff, reads func(schemaext.Value) bool) bool {
 	for _, change := range diff.FeatureChanges {
 		if _, says := change.Value.(schemaext.StateRemoval); says && !schemaext.RemovesState(change.Value) {
 			continue
 		}
 		object, found, err := diff.Features.CurrentObjects.Get(change.Subject)
-		if err != nil || !found {
-			return true
-		}
-		reader, ok := object.Value.(schemaext.RelationReader)
-		if !ok || schemaext.ReadsRelationIn(reader, relation, defaultSchema(diff)) {
+		if err != nil || !found || reads(object.Value) {
 			return true
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 )
@@ -107,6 +108,41 @@ func TestPlanner_ExactStyleAsksRemovedFeatureObjects_HappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(droppedCascades(nodes), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPlanner_ExactStyleMatchesARowTypeOfAnySchemaWhenTheSchemaIsUnknown pins
+// the row type a removed routine names when the diff does not know the
+// default schema: an unqualified relation may then be in any schema, so a
+// parameter of `reporting.item_skus` may be its row type, and the routine is
+// dropped ahead of the view. Where both name a schema, two schemas are two
+// row types, and the view drops first.
+func TestPlanner_ExactStyleMatchesARowTypeOfAnySchemaWhenTheSchemaIsUnknown(t *testing.T) {
+	tests := []struct {
+		name     string
+		relation string
+		want     []string
+	}{
+		{name: "an unqualified relation", relation: "item_skus", want: []string{"drop function", "drop view"}},
+		{name: "a relation in another schema", relation: "public.item_skus", want: []string{"drop view", "drop function"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{
+				ViewsRemoved: difftypes.ViewChanges{{Name: test.relation, Body: "SELECT 1 AS id"}},
+				FunctionsRemoved: difftypes.FunctionChanges{{
+					Function:  schemamodel.Function{Name: "sku_of", Parameters: "r reporting.item_skus", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+					Signature: new("r reporting.item_skus"),
+				}},
+			}
+			planner := postgres.New().WithStatementStyle(planext.StatementStyleExact)
+
+			nodes, err := planner.GenerateMigrationAST(context.Background(), must.Must(builtin.New()), diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(phaseOrder(nodes), qt.DeepEquals, test.want)
 		})
 	}
 }

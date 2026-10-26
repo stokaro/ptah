@@ -70,11 +70,12 @@ func (p *Planner) cascades(relied bool) bool {
 //   - a captured object of a table it removes that reads the table, such as a
 //     row-level security policy;
 //   - an owner operation that may drop a standalone object in a later window,
-//     whose object reads the table or cannot say; see [removedFeatureReads].
+//     whose object reads the table's columns or cannot say; see
+//     [removedFeatureReadsColumns].
 func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string) bool {
 	return removedRoutineReadsColumn(diff, tableDiff.TableName, column) ||
 		removedTableReads(diff, tableDiff.TableName, nil) ||
-		removedFeatureReads(diff, tableDiff.TableName)
+		removedFeatureReadsColumns(diff, tableDiff.TableName)
 }
 
 // tableDropRelies reports whether dropping the table name relies on CASCADE,

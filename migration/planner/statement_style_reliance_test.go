@@ -51,6 +51,27 @@ func removedViewAndTableWithRoutine(routine catalog.Function) styleChange {
 	})}
 }
 
+// removedViewWithRoutineADefaultCalls removes item_skus, the routine
+// next_sku, whose SQL-standard body reads it, and the table orders, whose
+// column default calls next_sku.
+func removedViewWithRoutineADefaultCalls() styleChange {
+	return styleChange{declared: styleDeclared(), held: styleHeldWith(func(h *catalog.Database) {
+		h.Views = []catalog.View{itemSkusView}
+		h.Functions = []catalog.Function{styleRoutine("next_sku", "", "integer", "BEGIN ATOMIC SELECT count(*)::int FROM item_skus; END")}
+		h.Tables = append(h.Tables, styleTable("orders", styleKey("id"),
+			catalog.Column{Name: "code", DataType: "integer", UDTName: "int4", IsNullable: "YES", ColumnDefault: new("next_sku()")}))
+	})}
+}
+
+// removedViewWithRoutineBesideACheck removes item_skus and a routine that
+// returns its rows, and a CHECK on owners, which the plan keeps.
+func removedViewWithRoutineBesideACheck(routine catalog.Function) styleChange {
+	change := removedViewWithRoutine(routine)
+	change.held.Constraints = append(change.held.Constraints, catalog.Constraint{Name: "owners_name_check", TableName: "owners",
+		Schema: "public", Type: "CHECK", ColumnName: "name", ColumnNames: []string{"name"}, CheckClause: new("(name <> '')")})
+	return change
+}
+
 // removedTableWithRoutine removes the table archive together with a routine.
 func removedTableWithRoutine(routine catalog.Function) styleChange {
 	return styleChange{declared: styleDeclared(), held: styleHeldWith(func(h *catalog.Database) {
@@ -89,6 +110,21 @@ func droppedColumnBesideRemovedDomain() styleChange {
 		h.Tables[0].Columns = append(h.Tables[0].Columns, styleColumn("email"))
 		h.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
 			Ref: pgtype.Ref(pgtype.DomainKind, "public", "positive_int"), Value: &pgtype.ObservedDomain{BaseType: "integer"},
+		}))
+		h.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Observed))
+	})}
+}
+
+// droppedColumnBesideComposite drops owners.email and removes the composite
+// type wrap, whose attribute r is the row type of owners.
+func droppedColumnBesideComposite() styleChange {
+	declared := styleDeclared()
+	declared.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Desired))
+	return styleChange{declared: declared, held: styleHeldWith(func(h *catalog.Database) {
+		h.Tables[0].Columns = append(h.Tables[0].Columns, styleColumn("email"))
+		h.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref:   pgtype.Ref(pgtype.CompositeKind, "public", "wrap"),
+			Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "r", Type: "owners"}}},
 		}))
 		h.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Observed))
 	})}
@@ -291,6 +327,26 @@ func integerColumnBecomesBigint() styleChange {
 	})}
 }
 
+// domainColumnBecomesText turns tickets.s, a column of the domain dstatus over
+// the enum status with a default, into text, and removes both types.
+func domainColumnBecomesText() styleChange {
+	return styleChange{declared: styleDeclaredWith(func(d *schemamodel.Database) {
+		d.Tables = append(d.Tables, schemamodel.Table{StructName: "Ticket", Name: "tickets"})
+		d.Fields = append(d.Fields,
+			schemamodel.Field{StructName: "Ticket", Name: "id", Type: "integer", Primary: true},
+			schemamodel.Field{StructName: "Ticket", Name: "s", Type: "text", Nullable: true, Default: "a", DefaultSet: true})
+		d.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Desired))
+	}), held: styleHeldWith(func(h *catalog.Database) {
+		h.Enums = append(h.Enums, catalog.Enum{Name: "status", Schema: "public", Values: []string{"a", "b"}})
+		h.Tables = append(h.Tables, styleTable("tickets", styleKey("id"),
+			catalog.Column{Name: "s", DataType: "USER-DEFINED", UDTName: "dstatus", IsNullable: "YES", ColumnDefault: new("'a'::status")}))
+		h.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
+			Ref: pgtype.Ref(pgtype.DomainKind, "public", "dstatus"), Value: &pgtype.ObservedDomain{BaseType: "status"},
+		}))
+		h.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Observed))
+	})}
+}
+
 // matviewIndexRemovedUnderRetype retypes items.sku under the materialized
 // view sku_counts and removes its index.
 func matviewIndexRemovedUnderRetype() styleChange {
@@ -384,6 +440,20 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 				`DROP VIEW IF EXISTS "public"."sku_list"`,
 				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
 			}},
+		{name: "a view removed with a routine that returns its rows, beside a CHECK the plan removes",
+			change: removedViewWithRoutineBesideACheck(setof),
+			want: []string{
+				`DROP VIEW "public"."item_skus" CASCADE`,
+				`ALTER TABLE "public"."owners" DROP CONSTRAINT IF EXISTS "owners_name_check"`,
+				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
+			}},
+		{name: "a view removed with a routine whose body reads it and that a removed table's default calls",
+			change: removedViewWithRoutineADefaultCalls(),
+			want: []string{
+				`DROP VIEW "public"."item_skus" CASCADE`,
+				`DROP TABLE IF EXISTS "public"."orders"`,
+				`DROP FUNCTION IF EXISTS "public"."next_sku"()`,
+			}},
 		{name: "a view and a table removed with a routine that names both",
 			change: removedViewAndTableWithRoutine(styleRoutine("pair", "r item_skus", "SETOF archive", "SELECT * FROM archive")),
 			want: []string{
@@ -434,6 +504,18 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 				`DROP FUNCTION "public"."list_archive"()`,
 				`DROP TABLE "public"."archive"`,
 			}},
+		{name: "a table removed with a routine whose SQL-standard body reads it",
+			change: removedTableWithRoutine(styleRoutine("count_archive", "", "bigint", "RETURN (SELECT count(*) FROM archive)")),
+			want: []string{
+				`DROP FUNCTION "public"."count_archive"()`,
+				`DROP TABLE "public"."archive"`,
+			}},
+		{name: "a view removed with a routine whose result table has a column of its row type",
+			change: removedViewWithRoutine(styleRoutine("sku_rows", "", "TABLE(r item_skus)", "SELECT 1")),
+			want: []string{
+				`DROP FUNCTION "public"."sku_rows"()`,
+				`DROP VIEW "public"."item_skus"`,
+			}},
 		{name: "a table removed with a routine that does not name it",
 			change: removedTableWithRoutine(styleRoutine("one", "", "integer", "SELECT 1")),
 			want: []string{
@@ -474,6 +556,12 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
 			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN IF EXISTS \"public\".\"positive_int\" CASCADE",
 		}},
+		{name: "a column dropped beside a composite type that names its table's row type",
+			change: droppedColumnBesideComposite(),
+			want: []string{
+				`ALTER TABLE "owners" DROP COLUMN "email"`,
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE IF EXISTS \"public\".\"wrap\" CASCADE",
+			}},
 		{name: "a table removed beside a composite type that names another type",
 			change: removedTableBesideComposite("text"),
 			want: []string{
@@ -523,6 +611,12 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			`ALTER TABLE "tickets" ALTER COLUMN "s" DROP DEFAULT`,
 			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE status[] USING "s"::text[]::status[]`,
 			`ALTER TABLE "tickets" ALTER COLUMN "s" SET DEFAULT '{a}'`,
+		}},
+		{name: "a column that leaves a domain over an enum", change: domainColumnBecomesText(), want: []string{
+			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE text`,
+			`ALTER TABLE "tickets" ALTER COLUMN "s" SET DEFAULT 'a'`,
+			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN IF EXISTS \"public\".\"dstatus\" CASCADE",
+			`DROP TYPE IF EXISTS "public"."status"`,
 		}},
 		{name: "a column retyped between built-in types", change: integerColumnBecomesBigint(), want: []string{
 			`ALTER TABLE "tickets" ALTER COLUMN "n" TYPE bigint`,

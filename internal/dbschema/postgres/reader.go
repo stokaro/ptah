@@ -3617,16 +3617,31 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 // readSQLStandardBodies reads the body of every SQL routine in functions whose
 // pg_proc.prosrc is empty: one with a SQL-standard body, `BEGIN ATOMIC ...
 // END` or `RETURN expression`, which PostgreSQL 14 and later keep parsed in
-// prosqlbody instead. pg_get_function_sqlbody prints it on every version that
-// has one, and a server without SQL-standard bodies never leaves prosrc empty,
-// so no other server is asked.
+// prosqlbody instead, and pg_get_function_sqlbody prints.
+//
+// An empty prosrc is not proof of such a body: `CREATE FUNCTION f() RETURNS
+// void LANGUAGE sql AS ”` leaves it empty on every version. The server is
+// asked once, before the first body is read, whether it has
+// pg_get_function_sqlbody, because a query naming a function the server lacks
+// fails as a whole (42883 on PostgreSQL 13). Without it the body stays empty.
 //
 // A body read as the empty string reads nothing: a plan could not tell what
 // the routine depends on, and a rollback would create it with an empty one.
 func (r *Reader) readSQLStandardBodies(ctx context.Context, schemaName string, functions []catalog.Function) error {
+	asked, available := false, false
 	for i, fn := range functions {
 		if fn.Body != "" || !strings.EqualFold(fn.Language, "sql") || fn.IdentityArguments == nil {
 			continue
+		}
+		if !asked {
+			asked = true
+			if err := r.db.QueryRowContext(ctx,
+				`SELECT to_regproc('pg_catalog.pg_get_function_sqlbody') IS NOT NULL`).Scan(&available); err != nil {
+				return fmt.Errorf("failed to ask whether the server prints SQL-standard bodies: %w", err)
+			}
+		}
+		if !available {
+			return nil
 		}
 		var body sql.NullString
 		err := r.db.QueryRowContext(ctx, `

@@ -300,3 +300,35 @@ func TestFunctionsWithDialect_FoldsOnlyTheRoutineHalfOfAQualifiedName(t *testing
 		})
 	}
 }
+
+// TestFunctionsWithSemantics_ABeginAtomicBodyNamingNoLanguageIsSQL pins the
+// language of a declaration that names none and whose body is BEGIN ATOMIC:
+// PostgreSQL takes it as LANGUAGE sql, the catalog reports sql, and the two
+// compare equal. A quoted body that names no language is still the target's
+// plpgsql.
+func TestFunctionsWithSemantics_ABeginAtomicBodyNamingNoLanguageIsSQL(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		modified int
+	}{
+		{name: "a BEGIN ATOMIC body", body: "BEGIN ATOMIC SELECT 1; END", modified: 0},
+		{name: "a quoted body", body: "SELECT 1", modified: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+
+			compare.FunctionsWithSemantics(
+				&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "integer", Body: test.body}}},
+				&catalog.Database{Functions: []catalog.Function{{Schema: "public", Name: "f", Returns: "integer", Language: "sql",
+					Security: "INVOKER", Volatility: "VOLATILE", Body: test.body}}},
+				diff, platform.Postgres, identifier.ForDialect(platform.Postgres), nil,
+				schemacomparison.RoutineDefaults{Language: "plpgsql", Security: "INVOKER"},
+			)
+
+			c.Assert(diff.FunctionsModified, qt.HasLen, test.modified, qt.Commentf("%v", diff.FunctionsModified))
+		})
+	}
+}

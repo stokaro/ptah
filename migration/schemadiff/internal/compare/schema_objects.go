@@ -1095,8 +1095,20 @@ func withTargetDefaults(declared *schemamodel.Function, reported *catalog.Functi
 		return
 	}
 	defaults := routines.Defaults()
+	if declared.Language == "" && strings.EqualFold(defaults.Language, "plpgsql") && opensAtomicBody(declared.Body) {
+		// PostgreSQL takes a SQL-standard body as LANGUAGE sql where the
+		// routine names no language, and the renderer writes it so.
+		declared.Language = "sql"
+	}
 	declared.Language, reported.Language = omittedAs(defaults.Language, declared.Language, reported.Language)
 	declared.Security, reported.Security = omittedAs(defaults.Security, declared.Security, reported.Security)
+}
+
+// opensAtomicBody reports whether body starts with the words BEGIN ATOMIC, in
+// any case.
+func opensAtomicBody(body string) bool {
+	words := strings.Fields(body)
+	return len(words) >= 2 && strings.EqualFold(words[0], "BEGIN") && strings.EqualFold(words[1], "ATOMIC")
 }
 
 // omittedAs reads an empty value on either side as the target's.

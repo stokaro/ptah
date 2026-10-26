@@ -1179,20 +1179,24 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 
 // FromFunctionFor is [FromFunction] for targetPlatform. On the PostgreSQL
 // family a LANGUAGE sql routine whose body starts with `BEGIN ATOMIC` or
-// `RETURN` has a SQL-standard body, which is SQL rather than a string:
+// `RETURN`, or a routine naming no language whose body starts with `BEGIN
+// ATOMIC`, has a SQL-standard body, which is SQL rather than a string:
 // PostgreSQL refuses it in dollar quotes (stokaro/ptah#4981), and a read
 // reports it as the server prints it, starting at its keyword. Every other
 // target keeps the body as it is: a MySQL, MariaDB or SQL Server function
 // body that starts with RETURN is the routine's own statement.
 func FromFunctionFor(function schemamodel.Function, targetPlatform string) *ast.CreateFunctionNode {
 	functionNode := FromFunction(function)
-	if !platform.IsPostgresFamily(targetPlatform) || !strings.EqualFold(strings.TrimSpace(function.Language), "sql") {
+	if !platform.IsPostgresFamily(targetPlatform) {
 		return functionNode
 	}
+	language := strings.TrimSpace(function.Language)
 	switch body := strings.TrimSpace(function.Body); {
-	case hasKeyword(body, "BEGIN ATOMIC"):
-		functionNode.SetAtomicBody(body)
-	case hasKeyword(body, "RETURN"):
+	case hasKeyword(body, "BEGIN ATOMIC") && (language == "" || strings.EqualFold(language, "sql")):
+		// PostgreSQL takes a SQL-standard body as LANGUAGE sql where the
+		// routine names no language, so the routine is written in it.
+		functionNode.SetAtomicBody(body).SetLanguage("sql")
+	case hasKeyword(body, "RETURN") && strings.EqualFold(language, "sql"):
 		functionNode.SetReturnBody(strings.TrimSpace(body[len("RETURN"):]))
 	}
 	return functionNode

@@ -205,6 +205,9 @@ type change struct {
 	// from and to are the two names of a rename; to is also the grantee of a
 	// grant and the member of a membership.
 	from, to string
+	// others are the other tables one DROP TABLE names, which the wording
+	// names after name, one change each.
+	others []string
 }
 
 func (c change) inverse() change {
@@ -224,6 +227,16 @@ func (c change) inverse() change {
 }
 
 func (c change) String() string {
+	if len(c.others) > 0 {
+		names := append([]string{c.name}, c.others...)
+		parts := make([]string, 0, len(names))
+		for _, name := range names {
+			one := c
+			one.name, one.others = name, nil
+			parts = append(parts, one.String())
+		}
+		return strings.Join(parts, ", ")
+	}
 	switch c.kind {
 	case kindTable:
 		return c.tableWording()
@@ -326,7 +339,11 @@ func describe(node ast.Node) (change, bool) {
 		if len(names) == 0 {
 			return change{}, false
 		}
-		return change{verb: drop, kind: kindTable, name: bare(names[0])}, true
+		others := make([]string, 0, len(names)-1)
+		for _, name := range names[1:] {
+			others = append(others, bare(name))
+		}
+		return change{verb: drop, kind: kindTable, name: bare(names[0]), others: others}, true
 	case *ast.AlterTableNode:
 		return describeAlterTable(n), true
 	case *ast.AlterTableEnableRLSNode:

@@ -35,6 +35,12 @@ func TestOfAndUndone_HappyPath(t *testing.T) {
 			undone: `create "items" table`,
 		},
 		{
+			name:   "two tables one statement drops",
+			node:   ast.NewDropTable("public.b").SetNames([]string{"public.b", "public.a"}),
+			of:     `drop "b" table, drop "a" table`,
+			undone: `create "b" table, create "a" table`,
+		},
+		{
 			name: "an added column",
 			node: &ast.AlterTableNode{Name: "owners", Operations: []ast.AlterOperation{
 				&ast.AddColumnOperation{Column: ast.NewColumn("email", "varchar")},

@@ -881,11 +881,12 @@ style the drop is `DROP VIEW ... CASCADE` or `DROP MATERIALIZED VIEW ...
 CASCADE`, so grants on a dropped object and any object that depends on it and
 that the schema does not declare go with it. In the exact style that `ptah-compat
 migrate diff` writes, the drop has no `CASCADE`, and an undeclared dependent
-stops the migration at the drop instead. The exception is an object whose row
-type a routine the plan removes takes or returns, or that a policy of a table
-the plan removes reads: both are dropped later, so the drop relies on
-`CASCADE`. A removed view or table goes after the routines that name its row
-type; see the exact style in the
+stops the migration at the drop instead. The exception is a rebuilt object
+whose row type a routine the plan removes takes or returns, or that a policy of
+a table the plan removes reads. Both are dropped after the rebuild, so the
+rebuild's drop relies on `CASCADE`. A view or table the plan removes for good
+is handled differently: the routine that names its row type is dropped right
+before it, and the drop needs no `CASCADE`. See the exact style in the
 [`migrate diff` documentation](../../atlas/migrate-commands/).
 
 A plan with no retyped column and no
