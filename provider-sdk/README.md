@@ -1738,7 +1738,8 @@ context assignments retain their ordinary request shape and carry no object
 context fields.
 
 `PlannedFeatures.objects` accounts for every assigned-kind subject in records
-and subject coverage. `provider.PlanningObjectSubjects` returns this ordered
+and native-subject coverage. Parent namespace claims remain captured knowledge
+and create no object receipt. `provider.PlanningObjectSubjects` returns this ordered
 union as independent copies, pairing normalized identities and preferring
 desired spelling. Each receipt preserves exact identity and kind, states a
 strategy, and names contributed steps once. Empty steps explicitly mean no work.

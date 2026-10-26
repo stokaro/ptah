@@ -104,11 +104,6 @@ func validatePlanningObjectState(description *protocol.Description, engine *prot
 			return planningObjectError("record does not bind its native model and exact owner")
 		}
 	}
-	for _, covered := range state.GetCoverage().GetSubjects() {
-		if covered.GetKind() != covered.GetSubject().GetKind() {
-			return planningObjectError("coverage subject does not name its native model")
-		}
-	}
 	return nil
 }
 
@@ -134,7 +129,8 @@ func planningObjectIdentityMatches(request *protocol.PlanFeaturesRequest, record
 // validated request. It includes records and subject coverage for assigned
 // context kinds, pairs normalized identities, and prefers desired spelling.
 // Returned subjects share no writable state with the request. Kind-wide unknown
-// coverage has no invented subject and remains in the request for assessment.
+// coverage and parent namespace coverage have no invented object subject and
+// remain in the request for assessment.
 func PlanningObjectSubjects(request *protocol.PlanFeaturesRequest) []*protocol.ComparisonIdentity {
 	if len(request.GetContextKinds()) == 0 {
 		return nil
@@ -145,7 +141,7 @@ func PlanningObjectSubjects(request *protocol.PlanFeaturesRequest) []*protocol.C
 func planningObjectSubjects(request *protocol.PlanFeaturesRequest, kinds []string) []*protocol.ComparisonIdentity {
 	var subjects []*protocol.ComparisonIdentity
 	add := func(kind string, subject *protocol.ComparisonIdentity) {
-		if kinds != nil && !slices.Contains(kinds, kind) {
+		if subject.GetKind() != kind || (kinds != nil && !slices.Contains(kinds, kind)) {
 			return
 		}
 		subjects = append(subjects, proto.CloneOf(subject))

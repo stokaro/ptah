@@ -90,7 +90,10 @@ The public host contract mirrors these facts with
 
 `PlannedFeatures.objects` contains an exact ordered receipt for every
 `(model kind, subject)` in the union of the desired and current records and
-subject coverage for the assigned context kinds. Kind-level unknown coverage
+native-subject coverage for the assigned context kinds. A table subject that
+records a child namespace remains in the captured coverage but creates no native
+object receipt; its subject kind differs from the covered model kind.
+Kind-level unknown coverage
 also reaches the provider and may require a diagnostic; it creates no invented
 subject. Receipt order is model kind in bytewise order, then structured subject
 order. Structured order is `schemaext.CompareRefs` in the host and

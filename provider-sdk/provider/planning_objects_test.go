@@ -214,3 +214,18 @@ func TestMixedPlanningEngineKeepsOrdinaryRequestsWithoutObjectContext(t *testing
 	request.DesiredObjects = &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED, Coverage: &protocol.ComparisonCoverage{}}
 	c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorMatches, ".*service has no object assessment assignment")
 }
+
+func TestPlanningObjectContextPreservesParentNamespaceKnowledge(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	d, request, result := planningObjectsExchange()
+	parent := &protocol.ComparisonIdentity{Kind: "table", Name: &protocol.ComparisonPart{Source: "items", Normalized: "items"}}
+	request.CurrentObjects.Coverage.Subjects = []*protocol.ComparisonSubjectCoverage{{Kind: request.ContextKinds[0], Subject: parent,
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "Children were not inspected"}}}
+	before := proto.CloneOf(request)
+	c.Assert(provider.ValidatePlannedFeatures(d, request, result), qt.IsNil)
+	c.Assert(provider.PlanningObjectSubjects(request), qt.HasLen, 1)
+	c.Assert(proto.Equal(request, before), qt.IsTrue)
+	request.ChangedSubjects = []*protocol.ComparisonIdentity{proto.CloneOf(parent)}
+	c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorMatches, ".*changed subject is outside the captured native inventory")
+}
