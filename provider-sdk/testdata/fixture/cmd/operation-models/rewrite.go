@@ -27,8 +27,12 @@ func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table 
 		if column == nil {
 			if p.ownedLifecycle && table.GetAction() == protocol.PlanningTable_CREATE {
 				step, rewrite, err := p.planAuthoredParent(request, table, common, i)
-				if err != nil { return nil, nil, err }
-				if step != nil { steps, rewrites = append(steps, step), append(rewrites, rewrite) }
+				if err != nil {
+					return nil, nil, err
+				}
+				if step != nil {
+					steps, rewrites = append(steps, step), append(rewrites, rewrite)
+				}
 				continue
 			}
 			if p.ownedLifecycle && table.GetAction() == protocol.PlanningTable_DROP && droppedTable(common) {

@@ -114,6 +114,6 @@ func (p *owner) planAuthoredParent(request *protocol.PlanFeaturesRequest, table 
 	metadata.Transaction, metadata.Impact, metadata.Reason = protocol.PlanningMetadata_FORBIDDEN, value.OperationSemantics.Impact, value.OperationSemantics.Reason
 	step := &protocol.PlanningStep{Id: &protocol.StepIdentity{Owner: "example.org/fixture", Name: value.Id},
 		Operation: &protocol.PlanningOperation{Value: value, Role: protocol.NativeOperation_STATEMENT, Phase: protocol.PlanningOperation_LIFECYCLE},
-		Metadata: metadata}
+		Metadata:  metadata}
 	return step, &protocol.PlanningRewrite{Sources: []*protocol.StepIdentity{proto.CloneOf(common.Id)}, Replacement: proto.CloneOf(step.Id)}, nil
 }

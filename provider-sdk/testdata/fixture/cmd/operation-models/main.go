@@ -31,8 +31,8 @@ type owner struct {
 	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
 	// place, as a rebuild of its table when the host's planning policy asks
 	// for one, and refuses it in the words of that policy when it does not.
-	rebuilds bool
-	inputMode string
+	rebuilds   bool
+	inputMode  string
 	inputCalls atomic.Int64
 }
 
