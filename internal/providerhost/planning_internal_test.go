@@ -323,6 +323,30 @@ func TestPlanningCoverageRoutingRetainsOwnedIdentityRefusals(t *testing.T) {
 	}
 }
 
+func TestPlanningCoverageRoutesOnlyTheSelectedEngine(t *testing.T) {
+	c := qt.New(t)
+	service, value := planningFixture(c)
+	current := service.target.host.models[modelKey{kind: value.Kind(), representation: schemaext.Desired}]
+	const otherKind schemaext.Kind = "example.org/fixture/other-engine"
+	other := *current
+	other.key = modelKey{kind: otherKind, representation: schemaext.Desired}
+	other.engines = map[string]*protocol.ValueModel{"other": {Kind: string(otherKind)}}
+	service.target.host.models[other.key] = &other
+	complete, err := schemaext.NewScopedKnowledge(schemaext.Knowledge{State: schemaext.Complete})
+	c.Assert(err, qt.IsNil)
+	coverage, err := schemaext.NewCoverage(schemaext.Desired, []schemaext.KindCoverage{
+		{Model: schemaext.CodecIdentity{Owner: service.target.host.description.ProviderId, Kind: value.Kind(), Representation: schemaext.Desired, Version: 1, Definition: current.signature}, Knowledge: complete},
+		{Model: schemaext.CodecIdentity{Owner: service.target.host.description.ProviderId, Kind: otherKind, Representation: schemaext.Desired, Version: 1, Definition: other.signature}, Knowledge: complete},
+	}, nil)
+	c.Assert(err, qt.IsNil)
+	capture := &planningCapture{comparisonCapture: comparisonCapture{target: service.target, request: &protocol.CompareModelsRequest{Engine: "fixture"}}}
+	declaration, err := capture.declaration(planningParent(), schemacapture.TableDeclaration{Table: schemamodel.Table{Name: "Records"}, FeatureCoverage: coverage})
+	c.Assert(err, qt.IsNil)
+	c.Assert(declaration.Features.Facets.Coverage.Kinds, qt.HasLen, 1)
+	c.Assert(declaration.Features.Facets.Coverage.Kinds[0].Model.Kind, qt.Equals, string(value.Kind()))
+	c.Assert(coverage.KindRecords(), qt.HasLen, 2)
+}
+
 func TestPlanningRequestRefusesMixedCaptureProfiles(t *testing.T) {
 	c := qt.New(t)
 	service, value := planningFixture(c)
