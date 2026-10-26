@@ -101,6 +101,7 @@ func TestComparisonRules_FailurePath(t *testing.T) {
 
 func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 	var columns *sequenceColumns
+	var batch *batchColumns
 	var indexes *equalIndexes
 	var views *equalViews
 	var routines *sqlRoutines
@@ -113,6 +114,7 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 		rules   schemacomparison.Rules
 		message string
 	}{
+		{name: "column batch", rules: schemacomparison.Rules{ColumnService: batch}, message: `.*typed-nil column batch service`},
 		{name: "column rules", rules: schemacomparison.Rules{Columns: columns}, message: `.*typed-nil column comparison service`},
 		{name: "index rules", rules: schemacomparison.Rules{Indexes: indexes}, message: `.*typed-nil index comparison service`},
 		{name: "view rules", rules: schemacomparison.Rules{Views: views}, message: `.*typed-nil view comparison service`},
@@ -133,4 +135,15 @@ func TestNew_RefusesTypedNilComparisonRules(t *testing.T) {
 			c.Assert(runtime, qt.IsNil)
 		})
 	}
+}
+
+// Embedding supplies the batch methods; registration must reject conflicting
+// owners before it invokes either service.
+type batchColumns struct{ schemacomparison.ColumnService }
+
+func TestNewRefusesCompetingColumnOwners(t *testing.T) {
+	c := qt.New(t)
+	runtime, err := engine.New(rulesProvider(schemacomparison.Rules{Columns: sequenceColumns{}, ColumnService: batchColumns{}}))
+	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
+	c.Assert(runtime, qt.IsNil)
 }

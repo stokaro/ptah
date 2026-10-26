@@ -110,7 +110,16 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	columns, err := resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime)
+	rules, err := runtime.ComparisonRules(target.Name())
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	// A column batch owner supplies the offline type and default facts. Domain
+	// identities retain common comparison ownership and need no spelling probe.
+	var columns map[string]config.ColumnSpelling
+	if rules.ColumnService == nil {
+		columns, err = resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime)
+	}
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}

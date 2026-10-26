@@ -123,6 +123,13 @@ func projectedFacetCoverage(source schemaext.Coverage, slots []creationFacetSlot
 
 func applyPreparedColumnKeys(db *catalog.Database, tables []schemaprojection.TableCreation) {
 	for i, table := range tables {
+		if table.ColumnsPrepared {
+			for j, predicted := range table.Columns {
+				facets := db.Tables[i].Columns[j].Facets
+				db.Tables[i].Columns[j] = predicted.Clone()
+				db.Tables[i].Columns[j].Facets = facets
+			}
+		}
 		if !table.ColumnPrimaryKeysPrepared {
 			continue
 		}

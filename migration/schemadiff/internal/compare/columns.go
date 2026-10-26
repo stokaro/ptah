@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/catalogfield"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/cockroachtype"
+	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -169,16 +170,8 @@ func tableColumnsWithSemantics(
 	for _, field := range prepared.Desired.Fields {
 		preparedKeys[semantics.ColumnIdentityKey(field.Name)] = field.Primary
 	}
-	genColumns := make(map[string]schemamodel.Field)
-	for _, field := range genFields {
-		genColumns[semantics.ColumnIdentityKey(field.Name)] = field
-	}
+	genColumns, dbColumns := tableColumnMaps(desired, genTable, dbTable, semantics)
 	keyColumns := sqlitekey.KeyColumns(genTable, genFields)
-
-	dbColumns := make(map[string]catalog.Column)
-	for _, col := range dbTable.Columns {
-		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
-	}
 
 	desiredDomains := desiredDomainIdentities(desired, semantics)
 
@@ -191,7 +184,7 @@ func tableColumnsWithSemantics(
 
 	for identity, column := range dbColumns {
 		if _, exists := genColumns[identity]; !exists {
-			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, spellings.ColumnRules))
+			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, spellings.ColumnRules, spellings.OwnerColumns.Defaults[columnsemantics.Column{Schema: dbTable.Schema, Table: dbTable.Name, Name: column.Name}]))
 		}
 	}
 
@@ -222,6 +215,7 @@ func tableColumnsWithSemantics(
 				defaultIntSize:       spellings.DefaultIntSize,
 				serialSequences:      caps.Has(capability.SerialSequenceOptions),
 				rules:                spellings.ColumnRules,
+				receipts:             spellings.OwnerColumns.Compared[objectidentity.NewBuilder(semantics).ColumnParts(genTable.Schema, genTable.Name, genCol.Name).Key()],
 				generated:            spellings.GeneratedExpressions,
 			})
 			// A comment-only difference has no entry in Changes, and it is
@@ -421,7 +415,8 @@ type columnContext struct {
 	// column's sequence, on a target with [capability.SerialSequenceOptions].
 	serialSequences bool
 	// rules are the target's column rules, nil where it registers none.
-	rules schemacomparison.Columns
+	rules    schemacomparison.Columns
+	receipts map[schemacomparison.ColumnAspect]schemacomparison.ColumnAspectReceipt
 	// generated reads a generated column's expression on the target, nil
 	// where it registers no rule for it.
 	generated schemacomparison.GeneratedExpressions
@@ -490,7 +485,9 @@ func columnsWithDesiredDomains(
 	sameType := spelled && strings.EqualFold(spelling.Type, strings.TrimSpace(dbRawType))
 	declared := genCol
 	declared.Type = resolvedDeclaredType(genCol.Type, dialect, ctx.defaultIntSize)
-	if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
+		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
+	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
 		colDiff.Changes["type"] = change
 	}
 
@@ -507,11 +504,21 @@ func columnsWithDesiredDomains(
 	if ctx.rules != nil && ctx.rules.AlwaysNotNull(genCol) {
 		genNullable = false
 	}
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnNullability]; owned {
+		genNullable = *receipt.Nullable
+	}
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
 	}
-	if ctx.serialSequences && ctx.rules != nil {
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnSequence]; owned {
+		for _, change := range receipt.Sequence.Changes {
+			colDiff.Changes[string(change.Attribute)] = fmt.Sprintf("%s -> %s", change.Current, change.Desired)
+		}
+		if len(receipt.Sequence.Changes) > 0 {
+			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
+		}
+	} else if ctx.serialSequences && ctx.rules != nil {
 		if changes := ctx.rules.SequenceChanges(genCol, dbCol); len(changes) > 0 {
 			maps.Copy(colDiff.Changes, changes)
 			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
@@ -539,7 +546,9 @@ func columnsWithDesiredDomains(
 		colDiff.Changes["generated"] = diff
 	}
 
-	if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx.rules); change != "" {
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnDefault]; owned {
+		applyColumnDifference(colDiff.Changes, "default", receipt.Difference)
+	} else if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx.rules); change != "" {
 		colDiff.Changes[key] = change
 	}
 	maps.Copy(colDiff.Changes, autoIncrementChange(genCol, dbCol, dialect))
@@ -802,17 +811,8 @@ func columnTypeChange(
 	desiredDomains map[string]domainIdentity,
 	rules schemacomparison.Columns,
 ) string {
-	dbDomain, dbIsDomain := dbColumnDomainIdentity(dbCol)
-	desiredDomain, desiredIsDomain := desiredColumnDomainIdentity(genCol.Type, desiredDomains)
-	if dbIsDomain || desiredIsDomain {
-		if dbIsDomain && domainIdentitiesMatch(dbDomain, desiredDomain) {
-			return ""
-		}
-		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
-	}
-
-	if sameQualifiedTypeName(genCol.Type, dbRawType, dbCol.UDTSchema, dialect) {
-		return ""
+	if change, owned := commonColumnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); owned {
+		return change
 	}
 
 	// A target that registers column rules compares the type itself, as YDB
@@ -1478,8 +1478,8 @@ func normalizeGeneratedExpression(expression string, spelling schemacomparison.G
 // The forward direction is unaffected: a DECLARED field carries its own foreign
 // key, the constraint comparison reports none for it, and the column path is
 // the only one that emits it.
-func removedColumn(reported catalog.Column, rules schemacomparison.Columns) schemamodel.Field {
-	field := catalogfield.Field(reported, catalogfield.Options{Columns: rules})
+func removedColumn(reported catalog.Column, rules schemacomparison.Columns, defaultValue *schemacomparison.ColumnDefaultReceipt) schemamodel.Field {
+	field := catalogfield.Field(reported, catalogfield.Options{Columns: rules, Default: defaultValue})
 	field.Primary = false
 	field.Foreign = ""
 	field.ForeignKeyName = ""
@@ -1529,4 +1529,10 @@ func gainedKeyNames(
 		names[column] = name
 	}
 	return names
+}
+
+func applyColumnDifference(changes map[string]string, key string, difference *schemacomparison.ColumnDifference) {
+	if difference.Relation == schemacomparison.ColumnChanged {
+		changes[key] = fmt.Sprintf("%s -> %s", difference.Current, difference.Desired)
+	}
 }

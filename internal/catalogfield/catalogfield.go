@@ -63,6 +63,8 @@ type Options struct {
 	// nil where it registers none. They decide whether a reported default is
 	// a literal written from a value; see [Field].
 	Columns schemacomparison.Columns
+	// Default is the validated owner readback receipt, including explicit absence.
+	Default *schemacomparison.ColumnDefaultReceipt
 }
 
 // Field describes one reported column as a field of the desired-schema model.
@@ -101,7 +103,9 @@ func Field(column catalog.Column, opts Options) schemamodel.Field {
 	if column.GeneratedExpression != nil {
 		field.GeneratedExpression = *column.GeneratedExpression
 	}
-	if column.ColumnDefault != nil && serialType(column) == "" {
+	if opts.Default != nil {
+		setOwnedDefault(&field, *opts.Default)
+	} else if column.ColumnDefault != nil && serialType(column) == "" {
 		setDefault(&field, *column.ColumnDefault, opts.Columns)
 	}
 	if opts.ForeignKey != nil {
@@ -291,4 +295,13 @@ func IsNotNullRow(constraint catalog.Constraint) bool {
 	}
 	clause := strings.ToUpper(strings.TrimSpace(*constraint.CheckClause))
 	return strings.HasSuffix(clause, " IS NOT NULL") && strings.Count(clause, " IS NOT NULL") == 1
+}
+
+func setOwnedDefault(field *schemamodel.Field, receipt schemacomparison.ColumnDefaultReceipt) {
+	switch receipt.Kind {
+	case schemacomparison.DefaultLiteral:
+		field.Default, field.DefaultSet = receipt.Value, true
+	case schemacomparison.DefaultExpression:
+		field.DefaultExpr = receipt.Value
+	}
 }

@@ -67,6 +67,16 @@ CREATE prediction. Computed values stay within captured owner identities and
 preserve exclusions. Native CREATE planning must replace the host graph step
 with provider operations that retain its dependencies.
 
+Providers can declare `schema.columns` with `schema.project-table-creations`
+for common-column comparison and readback. The host sends complete captured
+parents and its selected column pairs. The provider must return every requested
+type, default, nullability, and sequence receipt. Empty literal defaults remain
+distinct from absent defaults. Effective nullability can differ from the source
+without rewriting the authored field. The same owner predicts complete columns
+for file-to-file comparison. Missing facts refuse the operation; they do not
+select a built-in parser or a live spelling probe. Domain identities and
+generated expressions remain separately owned.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,

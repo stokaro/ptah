@@ -19,6 +19,8 @@ import (
 type Rules struct {
 	// Columns compares column definitions and reads a reported default.
 	Columns Columns
+	// ColumnService owns contextful column batches. It cannot coexist with Columns.
+	ColumnService ColumnService
 	// Indexes compares index definitions.
 	Indexes Indexes
 	// IndexDefinitions compares whole index definitions, in place of the

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 
+	"ptah.run/catalog"
 	"ptah.run/core/internal/capturefacets"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/capability"
@@ -69,7 +70,12 @@ func (r TableCreationRequest) Clone() TableCreationRequest {
 // an empty prepared list means the table has no primary-key columns.
 type TableCreation struct {
 	Subject objectidentity.ID
-	Facets  []schemaext.FacetRecord
+	// Columns contains complete effective common-column predictions when prepared.
+	// These values do not establish catalog inspection and carry no feature facets.
+	Columns []catalog.Column
+	// ColumnsPrepared distinguishes no override from a complete empty inventory.
+	ColumnsPrepared bool
+	Facets          []schemaext.FacetRecord
 	// Observed holds what a CREATE of the declaration leaves that its
 	// declared values do not convert to, because it depends on the table
 	// rather than on the value alone: a conversion sees one value at a time,
@@ -94,6 +100,10 @@ type TableCreationResult struct {
 func (r TableCreationResult) Clone() TableCreationResult {
 	r.Tables = slices.Clone(r.Tables)
 	for i := range r.Tables {
+		r.Tables[i].Columns = slices.Clone(r.Tables[i].Columns)
+		for j := range r.Tables[i].Columns {
+			r.Tables[i].Columns[j] = r.Tables[i].Columns[j].Clone()
+		}
 		r.Tables[i].Facets = slices.Clone(r.Tables[i].Facets)
 		r.Tables[i].Observed = slices.Clone(r.Tables[i].Observed)
 		r.Tables[i].ColumnPrimaryKeys = slices.Clone(r.Tables[i].ColumnPrimaryKeys)
@@ -150,6 +160,9 @@ func validateTableCreation(input TableCreationInput, output TableCreation, seman
 	if !reflect.DeepEqual(input.Subject, output.Subject) {
 		return fmt.Errorf("%w: creation projection changed table identity", ErrInvalid)
 	}
+	if err := validateCreationColumns(input, output); err != nil {
+		return err
+	}
 	if err := validateCreationFacets(input, output.Facets, semantics); err != nil {
 		return err
 	}
@@ -190,6 +203,24 @@ func validateCreationFacets(input TableCreationInput, records []schemaext.FacetR
 				(slices.Contains(original.Values.DeclaredKinds(), kind) && !slices.Contains(original.Values.Kinds(), kind)) {
 				return fmt.Errorf("%w: creation projection changed a facet exclusion or binding", ErrInvalid)
 			}
+		}
+	}
+	return nil
+}
+
+func validateCreationColumns(input TableCreationInput, output TableCreation) error {
+	if !output.ColumnsPrepared {
+		if len(output.Columns) != 0 {
+			return fmt.Errorf("%w: creation columns have no completion receipt", ErrInvalid)
+		}
+		return nil
+	}
+	if len(input.Declaration.Fields) != len(output.Columns) {
+		return fmt.Errorf("%w: incomplete creation columns", ErrInvalid)
+	}
+	for i, column := range output.Columns {
+		if column.Name != input.Declaration.Fields[i].Name || column.RawType() == "" || (column.IsNullable != "YES" && column.IsNullable != "NO") || !column.Facets.IsZero() {
+			return fmt.Errorf("%w: creation column changes identity, omits facts or supplies unbound facets", ErrInvalid)
 		}
 	}
 	return nil
