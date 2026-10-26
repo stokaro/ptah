@@ -144,11 +144,12 @@ func NewPostgreSQLWriterForRunner(
 			// The object kinds whose cleanup branches are gated. A caller that
 			// does not name its dialect gets the full query, which is what
 			// every PostgreSQL-family engine can answer.
-			capability.Functions:      true,
-			capability.Procedures:     true,
-			capability.DomainTypes:    true,
-			capability.CompositeTypes: true,
-			capability.RangeTypes:     true,
+			capability.Functions:        true,
+			capability.Procedures:       true,
+			capability.DomainTypes:      true,
+			capability.CompositeTypes:   true,
+			capability.RangeTypes:       true,
+			capability.RowLevelSecurity: true,
 			// pg_inherits, for the same reason: a caller that does not name its
 			// dialect gets the full set of checks.
 			capability.CatalogPartitions: true,
@@ -669,6 +670,18 @@ func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx 
 	return nil
 }
 
+// collectAllObjects lists the objects a cleanup of scope drops, in the order
+// it drops them: the extensions, the foreign keys, the row-security policies,
+// the views, the tables and the other relations, the routines, the types and
+// the collations, then the default privileges it takes back.
+//
+// Every relation is dropped with RESTRICT, and a policy holds back each
+// relation its expressions read. Two tables whose policies read each other's
+// table cannot go first one before the other, and a drop retried after
+// another succeeds never gets further. A policy of a managed table goes with
+// its table anyway and nothing depends on a policy, so dropping the policies
+// first changes what the cleanup removes in no way, and leaves RESTRICT to
+// refuse a relation that something outside the cleanup reads.
 func (w *PostgreSQLWriter) collectAllObjects(
 	ctx context.Context,
 	tx cleanupConn,
@@ -748,6 +761,20 @@ func (w *PostgreSQLWriter) collectAllObjects(
 
 			UNION ALL
 
+{{BRANCH_POLICY_BEGIN}}			SELECT
+				5,
+				0,
+				'policy'::text,
+				n.nspname,
+				pol.polname,
+				c.relname,
+				{{DROP_EXPR_3}}
+			FROM pg_policy pol
+			JOIN pg_class c ON c.oid = pol.polrelid
+			JOIN managed_namespaces n ON n.oid = c.relnamespace{{EXTENSION_OWNED_POLICY_FILTER}}{{BRANCH_POLICY_END}}
+
+			UNION ALL
+
 			SELECT
 				CASE c.relkind
 					WHEN 'v' THEN 10
@@ -768,7 +795,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				n.nspname,
 				c.relname,
 				NULL::text,
-				{{DROP_EXPR_3}}
+				{{DROP_EXPR_4}}
 			FROM pg_class c
 			JOIN managed_namespaces n ON n.oid = c.relnamespace
 			LEFT JOIN view_order ON view_order.oid = c.oid
@@ -787,7 +814,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				n.nspname,
 				p.proname,
 				NULL::text,
-				{{DROP_EXPR_4}}
+				{{DROP_EXPR_5}}
 			FROM pg_proc p
 			JOIN managed_namespaces n ON n.oid = p.pronamespace
 			WHERE (p.prokind = 'f' OR p.prokind = 'p' OR p.prokind = 'a' OR p.prokind = 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}{{EXTENSION_OWNED_PROC_FILTER}}{{BRANCH_ROUTINE_END}}
@@ -801,7 +828,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				n.nspname,
 				t.typname,
 				NULL::text,
-				{{DROP_EXPR_5}}
+				{{DROP_EXPR_6}}
 			FROM pg_type t
 			JOIN managed_namespaces n ON n.oid = t.typnamespace
 			LEFT JOIN pg_class c ON c.oid = t.typrelid
@@ -819,7 +846,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				n.nspname,
 				c.collname,
 				NULL::text,
-				{{DROP_EXPR_6}}
+				{{DROP_EXPR_7}}
 			FROM pg_collation c
 			JOIN managed_namespaces n ON n.oid = c.collnamespace{{EXTENSION_OWNED_COLLATION_FILTER}}
 		)
@@ -1130,6 +1157,7 @@ func withoutExtensionOwnedFilters(query string) string {
 	return strings.NewReplacer(
 		"{{EXTENSION_OWNED_CTE}}", "",
 		"{{EXTENSION_OWNED_CONSTRAINT_FILTER}}", "",
+		"{{EXTENSION_OWNED_POLICY_FILTER}}", "",
 		"{{EXTENSION_OWNED_RELATION_FILTER}}", "",
 		"{{EXTENSION_OWNED_PROC_FILTER}}", "",
 		"{{EXTENSION_OWNED_TYPE_FILTER}}", "",
@@ -1144,6 +1172,9 @@ func withExtensionOwnedFilters(query string) string {
 	return strings.NewReplacer(
 		"{{EXTENSION_OWNED_CTE}}", extensionOwnedCTE,
 		"{{EXTENSION_OWNED_CONSTRAINT_FILTER}}", notExtensionOwned("AND", "pg_constraint", "con.oid"),
+		// A policy goes with its table, so a kept extension's table keeps its
+		// policies.
+		"{{EXTENSION_OWNED_POLICY_FILTER}}", notExtensionOwned("WHERE", "pg_class", "c.oid"),
 		"{{EXTENSION_OWNED_RELATION_FILTER}}", notExtensionOwned("AND", "pg_class", "c.oid"),
 		"{{EXTENSION_OWNED_PROC_FILTER}}", notExtensionOwned("AND", "pg_proc", "p.oid"),
 		"{{EXTENSION_OWNED_TYPE_FILTER}}", notExtensionOwned("AND", "pg_type", "t.oid"),
@@ -1290,7 +1321,7 @@ const realViewDependencies = `SELECT
 			  AND referenced.relkind IN ('v', 'm')
 			  AND dependent.oid <> referenced.oid`
 
-// cleanupDropExpressions are the six server-side statement builders, one per
+// cleanupDropExpressions are the server-side statement builders, one per
 // branch of cleanup_objects, in the order the branches appear.
 //
 // They are templated out of the query rather than written inline so the same
@@ -1307,6 +1338,7 @@ var cleanupDropExpressions = []string{
 					c.relname,
 					con.conname
 				)`,
+	`format('DROP POLICY IF EXISTS %I ON %I.%I', pol.polname, n.nspname, c.relname)`,
 	`format(
 					CASE c.relkind
 						WHEN 'v' THEN 'DROP VIEW IF EXISTS %I.%I RESTRICT'
@@ -1397,6 +1429,14 @@ func buildCleanupStatement(object postgresCleanupObject, caps capability.Capabil
 		// error rather than a stricter statement.
 		return "DROP EXTENSION IF EXISTS " + sqlident.Quote(platform.Postgres, object.Name) + " RESTRICT", nil
 	}
+	if object.Kind == "policy" {
+		// Nothing depends on a policy, so its drop takes no RESTRICT.
+		if object.Qualifier == "" {
+			return "", fmt.Errorf("cleanup: policy %q names no table to drop it from", object.Name)
+		}
+		return "DROP POLICY IF EXISTS " + sqlident.Quote(platform.Postgres, object.Name) + " ON " +
+			sqlident.Quote(platform.Postgres, object.Schema) + "." + sqlident.Quote(platform.Postgres, object.Qualifier), nil
+	}
 	if object.Kind == "constraint" {
 		if object.Qualifier == "" {
 			return "", fmt.Errorf("cleanup: constraint %q names no table to drop it from", object.Name)
@@ -1415,7 +1455,7 @@ func buildCleanupStatement(object postgresCleanupObject, caps capability.Capabil
 	return "DROP " + verb + " IF EXISTS " + name + " RESTRICT", nil
 }
 
-// applyCleanupDropExpressions fills the six branch placeholders.
+// applyCleanupDropExpressions fills the branch placeholders.
 //
 // With format available the server assembles each statement, which is what
 // every PostgreSQL-family engine has always done. Without it the column comes
@@ -1447,11 +1487,13 @@ func applyCleanupDropExpressions(query string, assembly dropAssembly) string {
 // would have removed. Spanner reports false for every key below and true only
 // for views, which is why the two branches that stay are the ones that can
 // return rows.
-// Only two branches are gated, and the reason is that only two have a key. The
-// registry has no capability for extensions or collations, so gating those on a
-// name that does not exist would read false for EVERY dialect and delete the
-// branch on real PostgreSQL too -- which is what this nearly did.
+// Only three branches are gated, and the reason is that only three have a key.
+// The registry has no capability for extensions or collations, so gating those
+// on a name that does not exist would read false for EVERY dialect and delete
+// the branch on real PostgreSQL too -- which is what this nearly did. The
+// policy branch reads pg_policy under the key the reader reads it under.
 var cleanupBranchKeys = map[string][]capability.Capability{
+	"POLICY":   {capability.RowLevelSecurity},
 	"ROUTINE":  {capability.Functions, capability.Procedures},
 	"USERTYPE": {capability.DomainTypes, capability.CompositeTypes, capability.RangeTypes},
 }
@@ -1902,9 +1944,9 @@ func readDefaultPrivilegeRows(
 // default privileges the realm cleanup returns to the built-in ones, sorted by
 // schema, name and kind. The default privileges scope.KeptDefaultPrivileges
 // names are not listed where this server can keep them: a reset returns them
-// to what they are now, which takes nothing away. A constraint or an index
-// is left out, since it is dropped with the relation it belongs to, which is
-// listed. Where the realm cleanup removes large objects, which is PostgreSQL
+// to what they are now, which takes nothing away. A constraint, an index or
+// a row-security policy is left out, since it is dropped with the relation it
+// belongs to, which is listed. Where the realm cleanup removes large objects, which is PostgreSQL
 // itself, the lowest one is listed last, whatever the schemas: a replay of a
 // dev database whose URL pins one schema still resets the realm, and removes
 // them.
@@ -1947,7 +1989,7 @@ func (w *PostgreSQLWriter) ResetObjects(ctx context.Context, scope dbreset.Scope
 	}
 	objects := make([]dbreset.Object, 0, len(collected))
 	for _, object := range collected {
-		if object.Kind == "constraint" || object.Kind == "index" {
+		if object.Kind == "constraint" || object.Kind == "index" || object.Kind == "policy" {
 			continue
 		}
 		objects = append(objects, dbreset.Object{Kind: object.Kind, Schema: object.Schema, Name: object.Name})

@@ -82,6 +82,13 @@ func TestBuildCleanupStatementMatchesTheServerSideForm(t *testing.T) {
 		object: postgresCleanupObject{Kind: "table", Schema: "public", Name: `a"b`},
 		caps:   capability.Postgres17(),
 		want:   `DROP TABLE IF EXISTS "public"."a""b" RESTRICT`,
+	}, {
+		// A policy is reached through its table, as a constraint is, and
+		// nothing depends on a policy for RESTRICT to refuse.
+		name:   "a policy is dropped through its table",
+		object: postgresCleanupObject{Kind: "policy", Schema: "public", Name: "p_docs", Qualifier: `do"cs`},
+		caps:   capability.Postgres17(),
+		want:   `DROP POLICY IF EXISTS "p_docs" ON "public"."do""cs"`,
 	}}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -109,6 +116,10 @@ func TestBuildCleanupStatementRefusesRatherThanSkips(t *testing.T) {
 	// constraint on a schema that has two by that name.
 	_, err = buildCleanupStatement(postgresCleanupObject{Kind: "constraint", Schema: "public", Name: "fk"}, capability.Postgres17())
 	c.Assert(err, qt.ErrorMatches, `cleanup: constraint "fk" names no table.*`)
+
+	// So is a policy without its table: a policy name is unique only per table.
+	_, err = buildCleanupStatement(postgresCleanupObject{Kind: "policy", Schema: "public", Name: "p"}, capability.Postgres17())
+	c.Assert(err, qt.ErrorMatches, `cleanup: policy "p" names no table.*`)
 }
 
 func TestCleanupQueryAsksTheServerToAssembleWhereItCan(t *testing.T) {
