@@ -958,11 +958,16 @@ capabilities. `engine.New` freezes the caller's provider selection and rejects
 conflicting target names or aliases. An empty runtime has no built-ins.
 `Runtime.Render` propagates service failures and cancellation without partial
 SQL. An accepted result sets `Complete` and contains one `Fragments` entry per
-input node. A `renderer.Fragment` holds SQL text or a typed native operation,
-never both. Empty SQL accounts for a node that emits nothing. SQL fragments
+input node. A `renderer.Fragment` holds SQL text, a typed native operation, or
+host-owned `Annotation` prose, exclusively. An annotation has no input references.
+Empty SQL accounts for a node that emits nothing. SQL fragments
 can contain several statements. `ExecutableUnits` preserves exact operation
 boundaries and is required for native fragments. The boundary clones native
-payloads and refuses invalid clones.
+payloads and annotation text and refuses invalid clones. `renderer.Comment`
+prefixes every physical line when projecting annotation text into SQL comments.
+`renderer.Annotation` positions notes before a unit or after the final unit;
+`ValidateAnnotations` refuses unordered and out-of-range positions. Planner
+execution units exclude notes, including trailing and annotation-only plans.
 
 `Result.SQL()` joins SQL without adding separators and returns an error if any
 fragment is native or the result is invalid. `Result.SQLFragments()` preserves
@@ -5642,7 +5647,8 @@ selected session or transaction. `ValidateUnits` checks the complete batch
 without writes or transaction creation. `ExecuteUnits` repeats validation
 before dispatch; a local refusal sends no prefix. Native values must retain
 the selected provider's captured model binding.
-Dry runs validate but do not dispatch.
+Dry runs validate but do not dispatch. Execution and assessment boundaries refuse
+annotation fragments; callers retain positioned notes separately from units.
 
 `renderer.Fragment.Inputs` records sorted `renderer.InputReference` values
 beside the exact operation they describe. `Source` is `InputEnvironment` and
