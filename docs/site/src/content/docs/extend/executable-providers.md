@@ -30,6 +30,7 @@ sourceOfTruth:
   - "integration/providercli/provider_common_objects_e2e_test.go"
   - "integration/providercli/provider_entry_keys_e2e_test.go"
   - "integration/providercli/provider_hcl_claims_e2e_test.go"
+  - "integration/providercli/provider_declarations_e2e_test.go"
 owns:
   - cli-ptah-providers-list
   - cli-ptah-providers-check
@@ -100,6 +101,18 @@ declared one with "comparison requires one captured target profile".
 typed diagnostics. It requires neither SQL rendering nor a database session.
 The host rejects declaration families it cannot transport completely; a valid
 declaration does not establish that its migration can be planned or applied.
+
+`schema.declarations` gives `ptah schema render` an offline creation path for
+provider-owned objects. The host validates the whole schema, sends complete
+captured tables to their creation planners, and asks declaration planners for
+standalone objects and assigned table children. This path requires
+`schema.validate` and uses the caller's capability facts. It opens no database
+session and makes no claim about objects that already exist.
+
+The host joins every contribution with its common creation steps before asking
+for SQL text. A missing receipt, an unclaimed table creation, a dependency cycle,
+or a provider refusal returns no SQL prefix. A provider-only operation without
+a text form cannot appear in a rendered schema.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected

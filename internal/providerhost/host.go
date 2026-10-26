@@ -106,6 +106,9 @@ var hostFeatures = []string{
 	// engines declare, and a grant rides the object it names; see
 	// newScopeSelections.
 	provider.ScopeSelectionsFeature,
+	// Offline schema rendering plans authored objects without an observed
+	// catalog; see target.renderDeclarations.
+	provider.SchemaDeclarationsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

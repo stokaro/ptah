@@ -45,6 +45,7 @@ func (h *Host) Provider() engine.Provider {
 		result.Targets = append(result.Targets, selected.registration())
 		selected.registerComparisons(&result)
 		selected.registerPlanning(&result)
+		selected.registerDeclarations(&result)
 		if selected.supportsLint() {
 			result.Lint = append(result.Lint, selected.lint())
 		}
@@ -68,6 +69,9 @@ func (t *target) registration() engine.Target {
 	if t.supportsCommonTables() {
 		result.SchemaRendering, result.Validation = t, t
 		result.Preparation, result.Creations = t, t
+	}
+	if len(t.engine.GetDeclarations()) > 0 {
+		result.SchemaRendering = t
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ValidateSchemaFeature) {
 		result.Validation = t
@@ -115,6 +119,9 @@ func (t *target) requireCommonTables() error {
 func (t *target) RenderSchema(ctx context.Context, request renderer.SchemaRequest) (renderer.SchemaResult, error) {
 	if request.Schema == nil {
 		return renderer.SchemaResult{}, fmt.Errorf("provider schema is required")
+	}
+	if len(t.engine.GetDeclarations()) > 0 {
+		return t.renderDeclarations(ctx, request)
 	}
 	if _, err := t.declaredCommonObjects(request.Schema); err != nil {
 		return renderer.SchemaResult{}, err

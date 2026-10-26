@@ -54,7 +54,7 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" {
+	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" && mode != "declarations" {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {
@@ -75,7 +75,7 @@ func main() {
 		d.Features = append(d.Features, provider.TextUnitsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TextUnitsFeature)
 	}
-	if mode == "owned" {
+	if mode == "owned" || mode == "declarations" {
 		// The provider owns the table lifecycle: the host never interprets a
 		// table operation, and the provider claims each column step itself.
 		d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
@@ -144,13 +144,17 @@ func main() {
 	d.Features = append(d.Features, provider.PlanFeaturesFeature)
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
-	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned" && mode != "policy", ownedLifecycle: mode == "owned",
+	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned" && mode != "policy" && mode != "declarations", ownedLifecycle: mode == "owned" || mode == "declarations",
 		rebuilds: mode == "policy", transactionalDDL: transactional, operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if inputMode != "" {
 		server.ExecutionInputs = p
 		server.History = p
 		server.Statements = &statements.Service{Sessions: p}
+	}
+	if mode == "declarations" {
+		configureDeclarations(d)
+		server.Declarations, server.SchemaValidator = p, p
 	}
 	if p.transactionalDDL {
 		server.Transactions = p
