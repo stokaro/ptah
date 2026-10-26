@@ -203,7 +203,8 @@ func (e *StalePlanError) Error() string {
 // PreparePlanFile computes the declarative migration plan from the connected
 // database (the plan source and later apply target) to the desired schema
 // files, and packages it as a fingerprinted local plan document. A plan with
-// no statements means nothing is planned; callers should not save it.
+// no statements means no executable work. An annotation-only plan can still
+// be saved for review.
 func PreparePlanFile(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
