@@ -96,6 +96,25 @@ func TestHCLGroupRefusesOneBlockWithSeveralNativeIdentities(t *testing.T) {
 	c.Assert(block, qt.DeepEquals, hclext.EncodedBlock{})
 }
 
+func TestHCLGroupRefusesConflictingTargetsForOneIdentity(t *testing.T) {
+	c := qt.New(t)
+	encoding, reply := groupedNativeHCL()
+	second := encoding.objects["second"]
+	second.Ref = encoding.objects["first"].Ref
+	encoding.objects["second"] = second
+	reply.Groups[0].Parts[0].Fragment.Subject = nil
+	parts := encoding.parts(reply)
+	block, err := encoding.block(parts[0])
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(block, qt.DeepEquals, hclext.EncodedBlock{})
+	second.Targets = encoding.objects["first"].Targets
+	encoding.objects["second"] = second
+	block, err = encoding.block(parts[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(block.Object, qt.DeepEquals, second.Ref)
+	c.Assert(block.Targets, qt.DeepEquals, second.Targets)
+}
+
 // TestHCLEncodedValue_FailurePath refuses a value the claim does not read as
 // its attribute's kind.
 func TestHCLEncodedValue_FailurePath(t *testing.T) {

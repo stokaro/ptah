@@ -289,8 +289,8 @@ func (e *hclEncoding) block(encoded *protocol.EncodedFragment) (hclext.EncodedBl
 	}
 	for _, id := range encoded.GetValueIds() {
 		if object, written := e.objects[id]; written {
-			if block.Object.Kind != "" && block.Object != object.Ref {
-				return hclext.EncodedBlock{}, unsupported("one HCL block representing several native object identities")
+			if block.Object.Kind != "" && (block.Object != object.Ref || !slices.Equal(block.Targets, object.Targets)) {
+				return hclext.EncodedBlock{}, unsupported("one HCL block representing several native object identities or target scopes")
 			}
 			block.Object, block.Targets = object.Ref, slices.Clone(object.Targets)
 		}
