@@ -1254,18 +1254,20 @@ func applyAlterTableAddColumn(
 		known = append(slices.Clip(base.Fields), database.Fields...)
 	}
 	var names []string
+	var columns []schemamodel.Field
 	for _, existing := range known {
 		if existing.StructName == structName {
 			names = append(names, existing.Name)
+			columns = append(columns, existing)
 		}
 	}
-	if resolveDeclaredName(sourcePlatform, field.Name, names) >= 0 {
+	if declared := resolveDeclaredName(sourcePlatform, field.Name, names); declared >= 0 {
 		if !operation.IfNotExists {
 			return fmt.Errorf(
 				"ALTER TABLE %s ADD COLUMN %s names a column the table already declares",
 				tableName, operation.Column.Name)
 		}
-		if err := refuseRestatedColumnForeignKey(field, target, operation.Column.Name); err != nil {
+		if err := refuseRestatedColumnKey(field, columns[declared], target, operation.Column.Name); err != nil {
 			return err
 		}
 		// The server skips the statement and keeps the column it has, as it

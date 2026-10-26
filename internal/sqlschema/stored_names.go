@@ -1,10 +1,12 @@
 package sqlschema
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -101,8 +103,11 @@ type storedNames struct {
 	// The conversion skips exactly these; see [Document.skips].
 	skipped map[ast.Node]bool
 	// derived holds the names the statement being followed leaves to the
-	// server, claimed once its written names are: the server derives a name
-	// past every name the statement writes, wherever in it that name stands.
+	// server, claimed once its written names are. That is the server's order
+	// for the CHECK and NOT NULL constraints a CREATE TABLE writes, which it
+	// creates before any index; an index a key builds takes its name at its
+	// own turn instead, so a later key written under that name is refused by
+	// the server, and by the conversion for one CREATE TABLE.
 	derived []func()
 }
 
@@ -111,6 +116,25 @@ type storedEntry struct {
 	written string
 	// file numbers the file of a schema directory that declared the name.
 	file int
+	ownership
+}
+
+// ownership is what removes a name with something else: the table whose DROP
+// TABLE drops the index on it, the index of one of its keys, or a serial or
+// identity sequence, and the columns whose DROP COLUMN drops it too, such as
+// a column's own key, sequence and constraints. An index or a table key over
+// a column needs no column here: the conversion refuses a DROP COLUMN that
+// one still reads, as it models no cascade, so one a DROP COLUMN leaves is
+// one the server keeps.
+type ownership struct {
+	table   string
+	columns []string
+}
+
+// droppedWith reports whether a DROP COLUMN of column on table removes the
+// name.
+func (o ownership) droppedWith(table, column string) bool {
+	return o.table == table && slices.Contains(o.columns, column)
 }
 
 const (
@@ -245,10 +269,10 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 		names[stored] = storedEntry{kind: kind, written: written, file: s.file}
 		return false, nil
 	}
-	// A name written as the bytes the server keeps of an earlier name is that
-	// earlier object, as the server reads it; any other second spelling stored
-	// the same way is a second object.
-	if previous.written != written && written != stored {
+	// A name written as the bytes the server keeps is the object stored under
+	// them, whichever of the two spellings comes first; any other second
+	// spelling stored the same way is a second object.
+	if previous.written != written && written != stored && previous.written != stored {
 		return true, storedNameCollision(previous, kind, written, scopeLabel(space, owner), stored, rule)
 	}
 	if rule == skipExisting {
@@ -271,13 +295,27 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 // leaves unnamed, such as a serial column's sequence or an unnamed primary
 // key's index. The name was chosen free in its namespace, as the server
 // chooses it, and records no cut: the file wrote no name.
-func (s *storedNames) claimDerived(space, owner, kind, name string) {
+func (s *storedNames) claimDerived(space, owner, kind, name string, owned ownership) {
 	key := spaceKey(space, owner)
 	if s.spaces[key] == nil {
 		s.spaces[key] = make(map[string]storedEntry)
 	}
 	if _, found := s.spaces[key][name]; !found {
-		s.spaces[key][name] = storedEntry{kind: kind, written: name, file: s.file}
+		s.spaces[key][name] = storedEntry{kind: kind, written: name, file: s.file, ownership: owned}
+	}
+}
+
+// own ties the name a declaration has just entered to what removes it with
+// it. A name the namespace held before keeps the owner it had.
+func (s *storedNames) own(space, owner, raw string, existed bool, owned ownership) {
+	if existed || strings.TrimSpace(raw) == "" {
+		return
+	}
+	key := spaceKey(space, owner)
+	stored := storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)))
+	if entry, found := s.spaces[key][stored]; found && entry.table == "" {
+		entry.ownership = owned
+		s.spaces[key][stored] = entry
 	}
 }
 
@@ -364,11 +402,48 @@ func repeatsIndexConstraint(before []*ast.ConstraintNode, constraint *ast.Constr
 	})
 }
 
-// dropTable forgets a table and everything declared on it.
+// dropTable forgets a table and everything declared on it: its constraints,
+// columns and triggers, and the indexes and sequences it owns. A sequence it
+// does not own, such as one a column default draws from, stays.
 func (s *storedNames) dropTable(table relation) {
-	delete(s.spaces[spaceKey(relationSpace, table.schema)], table.stored)
-	delete(s.spaces, spaceKey(constraintSpace, table.tableKey()))
-	delete(s.spaces, spaceKey(columnSpace, table.tableKey()))
+	relations := s.spaces[spaceKey(relationSpace, table.schema)]
+	delete(relations, table.stored)
+	for name, entry := range relations {
+		if entry.table == table.tableKey() {
+			delete(relations, name)
+		}
+	}
+	for _, space := range []string{constraintSpace, columnSpace, triggerSpace} {
+		delete(s.spaces, spaceKey(space, table.tableKey()))
+	}
+}
+
+// dropColumn forgets a column of table and the names the server drops with
+// it: the keys and indexes over it, and its own sequence and constraints.
+func (s *storedNames) dropColumn(table relation, raw string) {
+	s.drop(columnSpace, table.tableKey(), raw)
+	column := s.storedColumn(raw)
+	for _, key := range []string{spaceKey(relationSpace, table.schema), spaceKey(constraintSpace, table.tableKey())} {
+		for name, entry := range s.spaces[key] {
+			if entry.droppedWith(table.tableKey(), column) {
+				delete(s.spaces[key], name)
+			}
+		}
+	}
+}
+
+// storedColumn is a column name as the server stores it.
+func (s *storedNames) storedColumn(raw string) string {
+	return storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)))
+}
+
+// storedColumns is [storedNames.storedColumn] for each of columns.
+func (s *storedNames) storedColumns(columns []string) []string {
+	stored := make([]string, 0, len(columns))
+	for _, column := range columns {
+		stored = append(stored, s.storedColumn(column))
+	}
+	return stored
 }
 
 // follow records the names one statement declares, drops or renames, and
@@ -482,76 +557,275 @@ func (s *storedNames) createTable(node *ast.CreateTableNode) error {
 		return s.skipIfExisted(node, existingRule[node.IfNotExists])(existed, err)
 	}
 	for _, column := range node.Columns {
-		if err := s.column(table, column, refuseExisting); err != nil {
+		if _, err := s.column(table, column, refuseExisting); err != nil {
 			return err
 		}
 	}
+	keys := s.tableKeys(node)
 	for i, constraint := range node.Constraints {
-		if repeatsIndexConstraint(node.Constraints[:i], constraint) {
+		if constraint == nil || repeatsIndexConstraint(node.Constraints[:i], constraint) {
 			continue
 		}
-		if err := s.constraint(table, constraint); err != nil {
-			return err
+		if !buildsIndex(constraint) {
+			if err := s.constraint(table, constraint); err != nil {
+				return err
+			}
+			continue
+		}
+		// A key folded into another, or one left unnamed, declares no name
+		// here; the key that names its index declares it.
+		if key := keys.namedBy(constraint); key != nil {
+			if err := s.indexConstraint(table, key.kind(), key.name, key.ownership(table)); err != nil {
+				return err
+			}
+		}
+	}
+	for _, key := range keys {
+		if key.name == "" {
+			s.derived = append(s.derived, func() {
+				s.claimIndexConstraintName(table, key.kind(), s.foldedKeyName(table, key), key.ownership(table))
+			})
 		}
 	}
 	for _, owned := range node.OwnedConstraints {
-		if err := s.indexConstraint(table, "constraint", owned.Name); err != nil {
+		if err := s.indexConstraint(table, "constraint", owned.Name, ownership{table: table.tableKey()}); err != nil {
 			return err
 		}
 	}
 	for _, index := range node.Indexes {
-		if _, err := s.declare(relationSpace, table.schema, "index", index.Name, existingRule[index.IfNotExists]); err != nil {
+		existed, err := s.declare(relationSpace, table.schema, "index", index.Name, existingRule[index.IfNotExists])
+		if err != nil {
 			return err
+		}
+		s.own(relationSpace, table.schema, index.Name, existed, ownership{table: table.tableKey()})
+	}
+	return nil
+}
+
+// foldedKey is the keys of one CREATE TABLE the server builds one index for.
+// transformIndexConstraints puts the primary key first and folds each later
+// key whose columns, INCLUDE columns, NULLS clause and deferral equal an
+// earlier one's into it; when the earlier key has no name, it takes the later
+// key's. Measured on PostgreSQL 15.19 and 18.6: `id int PRIMARY KEY, CONSTRAINT
+// k UNIQUE (id)` builds one index, the primary key named k, and `CONSTRAINT k1
+// UNIQUE (a), CONSTRAINT k2 UNIQUE (a)` builds k1 alone. ALTER TABLE folds no
+// keys: `ADD UNIQUE (a), ADD UNIQUE (a)` builds t_a_key and t_a_key1.
+type foldedKey struct {
+	primary bool
+	// name is the name the index takes, empty for one the server derives,
+	// and namedBy the constraint that wrote it.
+	name      string
+	namedBy   *ast.ConstraintNode
+	columns   []string
+	include   []string
+	signature string
+}
+
+func (k *foldedKey) kind() string {
+	if k.primary {
+		return "primary key"
+	}
+	return "unique constraint"
+}
+
+func (k *foldedKey) ownership(table relation) ownership {
+	return ownership{table: table.tableKey(), columns: append(slices.Clone(k.columns), k.include...)}
+}
+
+type foldedKeys []*foldedKey
+
+// namedBy is the key whose name constraint writes, or nil for a constraint
+// whose key took no name from it.
+func (keys foldedKeys) namedBy(constraint *ast.ConstraintNode) *foldedKey {
+	for _, key := range keys {
+		if key.namedBy == constraint {
+			return key
 		}
 	}
 	return nil
 }
 
-func (s *storedNames) column(table relation, column *ast.ColumnNode, rule onExisting) error {
-	existed, err := s.declare(columnSpace, table.tableKey(), "column", column.Name, rule)
+// tableKeys folds the keys a CREATE TABLE writes as the server does. The
+// parser lifts every named key, and every key with a clause of its own, into
+// the table's constraints in the order the statement writes them, so the
+// columns' own keys are unnamed and plain, and where they stand among the rest
+// changes no name.
+func (s *storedNames) tableKeys(node *ast.CreateTableNode) foldedKeys {
+	var written []foldedKey
+	for _, column := range node.Columns {
+		columns := []string{s.storedColumn(column.Name)}
+		if column.Primary {
+			written = append(written, foldedKey{primary: true, columns: columns})
+		}
+		if column.Unique {
+			written = append(written, foldedKey{columns: columns})
+		}
+	}
+	for i, constraint := range node.Constraints {
+		if constraint == nil || !buildsIndex(constraint) || repeatsIndexConstraint(node.Constraints[:i], constraint) {
+			continue
+		}
+		key := foldedKey{
+			primary: constraint.Type == ast.PrimaryKeyConstraint,
+			name:    strings.TrimSpace(constraint.Name),
+			columns: s.storedColumns(constraint.Columns),
+			include: s.storedColumns(constraint.IncludeColumns),
+		}
+		if key.name != "" {
+			key.namedBy = constraint
+		}
+		key.signature = keyClauses(constraint)
+		written = append(written, key)
+	}
+	slices.SortStableFunc(written, func(a, b foldedKey) int {
+		return cmp.Compare(boolRank(b.primary), boolRank(a.primary))
+	})
+	var keys foldedKeys
+	for _, key := range written {
+		key.signature = strings.Join(key.columns, "\x00") + "\x01" + strings.Join(key.include, "\x00") + "\x01" + key.signature
+		index := slices.IndexFunc(keys, func(earlier *foldedKey) bool { return earlier.signature == key.signature })
+		if index < 0 {
+			keys = append(keys, &key)
+			continue
+		}
+		if keys[index].name == "" && key.name != "" {
+			keys[index].name, keys[index].namedBy = key.name, key.namedBy
+		}
+	}
+	return keys
+}
+
+// keyClauses is what a key writes beyond its columns that keeps it apart from
+// an equal one: its NULLS clause and its deferral. A column's own key writes
+// neither.
+func keyClauses(constraint *ast.ConstraintNode) string {
+	var clauses []string
+	if constraint.NullsDistinct != nil && !*constraint.NullsDistinct {
+		clauses = append(clauses, "nulls not distinct")
+	}
+	if constraint.Deferrable {
+		clauses = append(clauses, "deferrable "+strings.ToLower(cmp.Or(constraint.Initially, "immediate")))
+	}
+	return strings.Join(clauses, " ")
+}
+
+func boolRank(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+// buildsIndex reports whether a constraint builds an index of its own name.
+func buildsIndex(constraint *ast.ConstraintNode) bool {
+	return constraint.Type == ast.PrimaryKeyConstraint || constraint.Type == ast.UniqueConstraint
+}
+
+// foldedKeyName is the name the server derives for an unnamed key.
+func (s *storedNames) foldedKeyName(table relation, key *foldedKey) string {
+	taken := s.keyNameTaken(table.schema)
+	if key.primary {
+		return pgname.PrimaryKey(table.stored, taken)
+	}
+	return pgname.Unique(table.stored, key.columns, key.include, taken)
+}
+
+// column records a column and the names it writes for its own constraints,
+// and leaves the name of its sequence to be derived. Its PRIMARY KEY and
+// UNIQUE are the caller's: a CREATE TABLE folds them with the table's keys.
+func (s *storedNames) column(table relation, column *ast.ColumnNode, rule onExisting) (existed bool, err error) {
+	existed, err = s.declare(columnSpace, table.tableKey(), "column", column.Name, rule)
 	if err != nil || existed {
-		return err
+		return existed, err
 	}
 	owner := table.tableKey()
-	if _, err := s.declare(constraintSpace, owner, "check", column.CheckName, refuseExisting); err != nil {
-		return err
-	}
-	if _, err := s.declare(constraintSpace, owner, "not-null constraint", column.NotNullConstraintName, refuseExisting); err != nil {
-		return err
-	}
+	owned := ownership{table: owner, columns: []string{s.storedColumn(column.Name)}}
+	names := []struct{ kind, name string }{{"check", column.CheckName}, {"not-null constraint", column.NotNullConstraintName}}
 	if column.ForeignKey != nil {
-		if _, err := s.declare(constraintSpace, owner, "foreign key", column.ForeignKey.Name, refuseExisting); err != nil {
-			return err
-		}
+		names = append(names, struct{ kind, name string }{"foreign key", column.ForeignKey.Name})
 	}
-	s.derived = append(s.derived, func() { s.claimColumnDerivedNames(table, column) })
-	return nil
+	for _, named := range names {
+		existed, err := s.declare(constraintSpace, owner, named.kind, named.name, refuseExisting)
+		if err != nil {
+			return false, err
+		}
+		s.own(constraintSpace, owner, named.name, existed, owned)
+	}
+	s.derived = append(s.derived, func() { s.claimColumnSequence(table, column) })
+	return false, nil
 }
 
-// claimColumnDerivedNames enters the names the server gives what a column
-// declares without naming it: the sequence of a serial or identity column,
-// and the index of a column PRIMARY KEY or UNIQUE. They take a place in the
-// schema's relation namespace, so a later CREATE ... IF NOT EXISTS of the name
-// is skipped, as the server skips it.
-func (s *storedNames) claimColumnDerivedNames(table relation, column *ast.ColumnNode) {
-	stored := storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(column.Name)))
+// claimColumnSequence enters the name of the sequence a serial or identity
+// column builds, which the column owns. An identity column's SEQUENCE NAME is
+// that name; one in an unwritten schema is left out, because the server puts
+// it in the first schema of the search path, which a file does not state.
+func (s *storedNames) claimColumnSequence(table relation, column *ast.ColumnNode) {
+	stored := s.storedColumn(column.Name)
+	owned := ownership{table: table.tableKey(), columns: []string{stored}}
+	if written, named := identitySequenceName(column.IdentityOptions); named {
+		if written == "" {
+			return
+		}
+		sequence := s.relation(written)
+		if len(splitSQLIdentifier(written)) > 1 || sequence.schema == table.schema {
+			s.claimDerived(relationSpace, sequence.schema, "sequence", sequence.stored, owned)
+		}
+		return
+	}
 	if column.IdentityGeneration != "" || isSerialType(column.Type) {
-		s.claimDerived(relationSpace, table.schema, "sequence", pgname.Constraint(table.stored, []string{stored}, "seq", s.taken(relationSpace, table.schema)))
+		name := pgname.Constraint(table.stored, []string{stored}, "seq", s.taken(relationSpace, table.schema))
+		s.claimDerived(relationSpace, table.schema, "sequence", name, owned)
 	}
+}
+
+// identitySequenceName reads the SEQUENCE NAME an identity column's options
+// write. named reports the clause; name is empty for one it cannot read.
+func identitySequenceName(options string) (name string, named bool) {
+	at := sequenceNameClause.FindStringIndex(options)
+	if at == nil {
+		return "", false
+	}
+	rest := strings.TrimSpace(options[at[1]:])
+	end, quoted := 0, false
+	for end < len(rest) {
+		character := rest[end]
+		switch {
+		case character == '"':
+			quoted = !quoted
+		case !quoted && (character == ' ' || character == '\t' || character == '\n' || character == ')' || character == ','):
+			return rest[:end], true
+		}
+		end++
+	}
+	if quoted {
+		return "", true
+	}
+	return rest, true
+}
+
+// sequenceNameClause is the SEQUENCE NAME clause of identity options.
+var sequenceNameClause = regexp.MustCompile(`(?i)\bSEQUENCE\s+NAME\s+`)
+
+// claimColumnKeys enters the names of the keys a column ALTER TABLE ADD
+// COLUMN adds writes for itself. One column's PRIMARY KEY and UNIQUE build one
+// index, as within a CREATE TABLE.
+func (s *storedNames) claimColumnKeys(table relation, column *ast.ColumnNode) {
+	stored := s.storedColumn(column.Name)
+	owned := ownership{table: table.tableKey(), columns: []string{stored}}
 	taken := s.keyNameTaken(table.schema)
-	if column.Primary {
-		s.claimIndexConstraintName(table, "primary key", pgname.PrimaryKey(table.stored, taken))
-	}
-	if column.Unique {
-		s.claimIndexConstraintName(table, "unique constraint", pgname.Unique(table.stored, []string{stored}, nil, taken))
+	switch {
+	case column.Primary:
+		s.claimIndexConstraintName(table, "primary key", pgname.PrimaryKey(table.stored, taken), owned)
+	case column.Unique:
+		s.claimIndexConstraintName(table, "unique constraint", pgname.Unique(table.stored, []string{stored}, nil, taken), owned)
 	}
 }
 
 // claimIndexConstraintName enters the derived name of an unnamed constraint
 // that builds an index, on the table and in the schema.
-func (s *storedNames) claimIndexConstraintName(table relation, kind, name string) {
-	s.claimDerived(constraintSpace, table.tableKey(), kind, name)
-	s.claimDerived(relationSpace, table.schema, "index of "+kind, name)
+func (s *storedNames) claimIndexConstraintName(table relation, kind, name string, owned ownership) {
+	s.claimDerived(constraintSpace, table.tableKey(), kind, name, owned)
+	s.claimDerived(relationSpace, table.schema, "index of "+kind, name, owned)
 }
 
 // isSerialType reports whether a column type is one of PostgreSQL's serial
@@ -585,25 +859,35 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 		return nil
 	}
 	kind := constraintKind(constraint.Type)
-	if constraint.Type == ast.PrimaryKeyConstraint || constraint.Type == ast.UniqueConstraint {
+	owned := ownership{table: table.tableKey(), columns: append(s.storedColumns(constraint.Columns), s.storedColumns(constraint.IncludeColumns)...)}
+	if buildsIndex(constraint) {
 		if strings.TrimSpace(constraint.Name) == "" {
-			s.derived = append(s.derived, func() { s.claimIndexConstraintName(table, kind, s.derivedKeyName(table, constraint)) })
+			s.derived = append(s.derived, func() { s.claimIndexConstraintName(table, kind, s.derivedKeyName(table, constraint), owned) })
 			return nil
 		}
-		return s.indexConstraint(table, kind, constraint.Name)
+		return s.indexConstraint(table, kind, constraint.Name, owned)
 	}
-	_, err := s.declare(constraintSpace, table.tableKey(), kind, constraint.Name, refuseExisting)
+	if constraint.Type != ast.ForeignKeyConstraint {
+		// A CHECK may read any column, and which ones is not followed here, so
+		// it goes with its table alone.
+		owned.columns = nil
+	}
+	existed, err := s.declare(constraintSpace, table.tableKey(), kind, constraint.Name, refuseExisting)
+	s.own(constraintSpace, table.tableKey(), constraint.Name, existed || err != nil, owned)
 	return err
 }
 
 // indexConstraint records a constraint that builds an index of its own name,
 // which lives in the schema's relation namespace as well as on the table. A cut
 // name is the constraint's, reported once.
-func (s *storedNames) indexConstraint(table relation, kind, name string) error {
-	if _, err := s.declare(constraintSpace, table.tableKey(), kind, name, refuseExisting); err != nil {
+func (s *storedNames) indexConstraint(table relation, kind, name string, owned ownership) error {
+	existed, err := s.declare(constraintSpace, table.tableKey(), kind, name, refuseExisting)
+	if err != nil {
 		return err
 	}
-	_, err := s.claim(relationSpace, table.schema, "index of "+kind, name, refuseExisting)
+	s.own(constraintSpace, table.tableKey(), name, existed, owned)
+	existed, err = s.claim(relationSpace, table.schema, "index of "+kind, name, refuseExisting)
+	s.own(relationSpace, table.schema, name, existed || err != nil, owned)
 	return err
 }
 
@@ -632,7 +916,12 @@ func (s *storedNames) index(node *ast.IndexNode) error {
 	// An index lives in the schema of the table it is on.
 	table := s.relation(node.Table)
 	rule := existingRule[node.IfNotExists]
-	return s.skipIfExisted(node, rule)(s.declare(relationSpace, table.schema, "index", node.Name, rule))
+	existed, err := s.declare(relationSpace, table.schema, "index", node.Name, rule)
+	if err := s.skipIfExisted(node, rule)(existed, err); err != nil {
+		return err
+	}
+	s.own(relationSpace, table.schema, node.Name, existed, ownership{table: table.tableKey()})
+	return nil
 }
 
 func (s *storedNames) alterTable(node *ast.AlterTableNode) error {
@@ -649,12 +938,20 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 	owner := table.tableKey()
 	switch op := operation.(type) {
 	case *ast.AddColumnOperation:
-		return s.column(*table, op.Column, existingRule[op.IfNotExists])
+		existed, err := s.column(*table, op.Column, existingRule[op.IfNotExists])
+		if err == nil && !existed {
+			added := *table
+			s.derived = append(s.derived, func() { s.claimColumnKeys(added, op.Column) })
+		}
+		return err
 	case *ast.AddConstraintOperation:
 		return s.constraint(*table, op.Constraint)
 	case *ast.AddIndexOperation:
 		if op.Index != nil && strings.TrimSpace(op.Index.Name) != "" {
-			_, err := s.declare(relationSpace, table.schema, "index", op.Index.Name, existingRule[op.Index.IfNotExists])
+			existed, err := s.declare(relationSpace, table.schema, "index", op.Index.Name, existingRule[op.Index.IfNotExists])
+			if err == nil {
+				s.own(relationSpace, table.schema, op.Index.Name, existed, ownership{table: table.tableKey()})
+			}
 			return err
 		}
 	case *ast.DropConstraintOperation:
@@ -663,8 +960,9 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 			s.drop(relationSpace, table.schema, op.ConstraintName)
 		}
 	case *ast.DropColumnOperation:
-		s.drop(columnSpace, owner, op.ColumnName)
+		s.dropColumn(*table, op.ColumnName)
 	case *ast.RenameColumnOperation:
+		s.renameOwnedColumn(owner, s.storedColumn(op.OldName), s.storedColumn(op.NewName))
 		return s.rename(columnSpace, owner, "column", op.OldName, op.NewName)
 	case *ast.RenameConstraintOperation:
 		return s.rename(constraintSpace, owner, "constraint", op.From, op.To)
@@ -683,19 +981,47 @@ func (s *storedNames) renameTable(table *relation, newName string) error {
 	if _, err := s.declareName(relationSpace, table.schema, "table", renamed.written, refuseExisting); err != nil {
 		return err
 	}
-	for _, space := range []string{constraintSpace, columnSpace} {
+	for _, space := range []string{constraintSpace, columnSpace, triggerSpace} {
 		if names, ok := s.spaces[spaceKey(space, table.tableKey())]; ok {
 			delete(s.spaces, spaceKey(space, table.tableKey()))
 			s.spaces[spaceKey(space, renamed.tableKey())] = names
+		}
+	}
+	for _, names := range s.spaces {
+		for name, entry := range names {
+			if entry.table == table.tableKey() {
+				entry.table = renamed.tableKey()
+				names[name] = entry
+			}
 		}
 	}
 	*table = renamed
 	return nil
 }
 
+// renameOwnedColumn moves the names a column of table owns to its new name.
+func (s *storedNames) renameOwnedColumn(table, from, to string) {
+	for _, names := range s.spaces {
+		for name, entry := range names {
+			if entry.table == table && slices.Contains(entry.columns, from) {
+				entry.columns = slices.Clone(entry.columns)
+				for i, column := range entry.columns {
+					if column == from {
+						entry.columns[i] = to
+					}
+				}
+				names[name] = entry
+			}
+		}
+	}
+}
+
 // seed enters the relation names of base, the earlier documents a document
 // was handed rather than read itself, so a statement of this document finds
-// them in use as the server would.
+// them in use as the server would: its relations, the indexes of its named
+// keys, and the index of a primary key it left unnamed, which no fold
+// removes. The derived name of a UNIQUE is left out, because a fold may have
+// removed the key. An index or key goes with its table.
 func (s *storedNames) seed(base *schemamodel.Database) {
 	if base == nil {
 		return
@@ -708,14 +1034,56 @@ func (s *storedNames) seed(base *schemamodel.Database) {
 		schemas[sequence.Schema] = true
 	}
 	for schema := range schemas {
-		owner := schema
-		if owner == "" {
-			owner = s.defaultSchema
-		}
+		owner := cmp.Or(schema, s.defaultSchema)
 		for name := range pgname.RelationNames([]*schemamodel.Database{base}, schema) {
-			s.claimDerived(relationSpace, owner, "relation", name)
+			s.claimDerived(relationSpace, owner, "relation", name, ownership{})
+		}
+		s.seedKeys(base, schema, owner)
+	}
+	for _, index := range base.Indexes {
+		table := s.relation(cmp.Or(index.TableName, tableNameOf(base, index.StructName)))
+		if entry, found := s.spaces[spaceKey(relationSpace, table.schema)][index.Name]; found && entry.table == "" {
+			entry.ownership = ownership{table: table.tableKey()}
+			s.spaces[spaceKey(relationSpace, table.schema)][index.Name] = entry
 		}
 	}
+}
+
+// seedKeys enters the index names of the keys base gives the tables of schema.
+func (s *storedNames) seedKeys(base *schemamodel.Database, schema, owner string) {
+	for _, table := range base.Tables {
+		if table.Schema != schema {
+			continue
+		}
+		stored := relation{schema: owner, written: table.Name, stored: table.Name}
+		owned := ownership{table: stored.tableKey()}
+		switch {
+		case table.PrimaryKeyName != "":
+			s.claimIndexConstraintName(stored, "primary key", table.PrimaryKeyName, owned)
+		case hasPrimaryKey([]*schemamodel.Database{base}, table):
+			s.claimIndexConstraintName(stored, "primary key", pgname.PrimaryKey(table.Name, s.keyNameTaken(owner)), owned)
+		}
+		for _, constraint := range base.Constraints {
+			kind, builds := keyKinds[strings.ToUpper(constraint.Type)]
+			if builds && constraint.Name != "" && constraint.StructName == table.StructName {
+				s.claimIndexConstraintName(stored, kind, constraint.Name, owned)
+			}
+		}
+	}
+}
+
+// keyKinds names the model's constraint types that build an index.
+var keyKinds = map[string]string{"PRIMARY KEY": "primary key", "UNIQUE": "unique constraint"}
+
+// tableNameOf is the qualified name of the table base declares under
+// structName, or empty.
+func tableNameOf(base *schemamodel.Database, structName string) string {
+	for _, table := range base.Tables {
+		if table.StructName == structName {
+			return table.QualifiedName()
+		}
+	}
+	return ""
 }
 
 // followStoredNames checks the names statements declare against the names the

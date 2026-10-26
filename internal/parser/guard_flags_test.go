@@ -25,6 +25,8 @@ func TestParser_RecordsWhetherARoutineReplaces(t *testing.T) {
 		{name: "OR ALTER FUNCTION", sql: "CREATE OR ALTER FUNCTION dbo.f() RETURNS int AS BEGIN RETURN 1; END", dialect: platform.SQLServer, replace: true},
 		{name: "OR ALTER PROCEDURE", sql: "CREATE OR ALTER PROCEDURE dbo.p AS BEGIN SELECT 1; END", dialect: platform.SQLServer, replace: true},
 		{name: "a plain SQL Server PROCEDURE", sql: "CREATE PROCEDURE dbo.p AS BEGIN SELECT 1; END", dialect: platform.SQLServer},
+		{name: "OR REPLACE DEFINER FUNCTION", sql: "CREATE OR REPLACE DEFINER=`root`@`localhost` FUNCTION f() RETURNS int RETURN 1;", dialect: platform.MariaDB, replace: true},
+		{name: "a DEFINER FUNCTION", sql: "CREATE DEFINER=`root`@`localhost` FUNCTION f() RETURNS int RETURN 1;", dialect: platform.MariaDB},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

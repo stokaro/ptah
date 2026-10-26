@@ -224,13 +224,12 @@ func TestRunContext_ReportsCutNamesAsRecordsInAJSONLog(t *testing.T) {
 	c.Assert(recordLevels(c, stderr.String()), qt.DeepEquals, []string{"WARN truncated-name 3"})
 }
 
-// --log-format json on a command that takes it makes the summary a JSON
-// record too: `migrations status` reading a project file that holds two
-// settings Atlas ignores.
-func TestRunContext_ReportsRecordsUnderTheLogFormatFlag(t *testing.T) {
-	c := qt.New(t)
+// statusProject writes a project file that holds two settings Atlas ignores,
+// for `migrations status`, and makes its directory the working directory.
+func statusProject(c *qt.C) {
+	c.Helper()
 	dir := c.TempDir()
-	t.Chdir(dir)
+	c.Chdir(dir)
 	c.Assert(os.Mkdir("migrations", 0o755), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url     = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "status.db"))+`"
@@ -241,16 +240,92 @@ func TestRunContext_ReportsRecordsUnderTheLogFormatFlag(t *testing.T) {
   }
 }
 `), 0o600), qt.IsNil)
+}
+
+// A command that takes --log-level and --log-format writes the run's records
+// through its own logger: `migrations status` reading a project file that
+// holds two settings Atlas ignores. Under JSON the command logs on standard
+// output, and the objects and the warning join that log with its
+// correlation_id and command fields, at the level the flag or PTAH_LOG_LEVEL
+// sets, so the error stream holds nothing of them.
+func TestRunContext_ReportsRecordsUnderTheLogFormatFlag(t *testing.T) {
+	tests := []struct {
+		name  string
+		level string
+		args  []string
+		want  []string
+	}{
+		{name: "the format flag", args: []string{"--log-format", "json"}, want: []string{"WARN ignored-atlas-hcl 2"}},
+		{
+			name: "the format and level flags", args: []string{"--log-format", "json", "--log-level", "debug"},
+			want: []string{"DEBUG ignored-atlas-hcl 0", "DEBUG ignored-atlas-hcl 0", "WARN ignored-atlas-hcl 2"},
+		},
+		{
+			name: "the format flag and PTAH_LOG_LEVEL", level: "debug", args: []string{"--log-format", "json"},
+			want: []string{"DEBUG ignored-atlas-hcl 0", "DEBUG ignored-atlas-hcl 0", "WARN ignored-atlas-hcl 2"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			statusProject(c)
+			t.Setenv(cliobs.LogLevelEnvVar, test.level)
+			cmd := root.NewRootCommand()
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+
+			code := root.RunContext(c.Context(), cmd, append([]string{"migrations", "status", "--config", "atlas.hcl", "--env", "local"}, test.args...)...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
+			c.Assert(stderr.String(), qt.Equals, "")
+			c.Assert(categorizedRecords(c, stdout.String(), "migrations.status"), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A --log-format value the command refuses starts no logger of its own, so the
+// run warns the way the variables say, in text.
+func TestRunContext_ReportsTextUnderARefusedLogFormat(t *testing.T) {
+	c := qt.New(t)
+	statusProject(c)
 	cmd := root.NewRootCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	code := root.RunContext(c.Context(), cmd, "migrations", "status", "--config", "atlas.hcl", "--env", "local", "--log-format", "json")
+	code := root.RunContext(c.Context(), cmd, "migrations", "status", "--config", "atlas.hcl", "--env", "local", "--log-format", "JSON")
 
-	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String()))
-	c.Assert(warningLinesOf(stdout.String()+stderr.String()), qt.HasLen, 0)
-	c.Assert(recordLevels(c, lastLine(stderr.String())), qt.DeepEquals, []string{"WARN ignored-atlas-hcl 2"})
+	c.Assert(code, qt.Not(qt.Equals), 0)
+	c.Assert(stderr.String(), qt.Contains, `invalid --log-format value "JSON"`)
+	c.Assert(warningLinesOf(stderr.String()), qt.DeepEquals, []string{
+		"warning: 2 atlas.hcl settings are ignored for Atlas compatibility and have no effect; PTAH_LOG_LEVEL=debug lists them",
+	})
+}
+
+// categorizedRecords is the run's records in a JSON log, the lines with a
+// category, as level, category and count, each asserted to carry command and
+// a correlation id.
+func categorizedRecords(c *qt.C, logged, command string) []string {
+	c.Helper()
+	var categorized []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logged), "\n") {
+		var record struct {
+			Level         string  `json:"level"`
+			Category      string  `json:"category"`
+			Count         float64 `json:"count"`
+			Command       string  `json:"command"`
+			CorrelationID string  `json:"correlation_id"`
+		}
+		c.Assert(json.Unmarshal([]byte(line), &record), qt.IsNil, qt.Commentf("%s", line))
+		if record.Category == "" {
+			continue
+		}
+		c.Assert(record.Command, qt.Equals, command, qt.Commentf("%s", line))
+		c.Assert(record.CorrelationID, qt.Not(qt.Equals), "", qt.Commentf("%s", line))
+		categorized = append(categorized, record.Level+" "+record.Category+" "+strconv.Itoa(int(record.Count)))
+	}
+	return categorized
 }
 
 // warningLinesOf is the text warning lines of output.

@@ -174,9 +174,7 @@ func runCommand(cmd *cobra.Command, args ...string) int {
 	return interruptExitCode(cmd, sig)
 }
 
-// executeWithRecovery runs cmd and returns the command that ran, or cmd when
-// none did, with the error the exit-code contract makes of what it returned.
-func executeWithRecovery(cmd *cobra.Command) (executed *cobra.Command, err error) {
+func executeWithRecovery(cmd *cobra.Command) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = exitcode.New(2, cmdutil.InternalError(recovered))
@@ -184,11 +182,11 @@ func executeWithRecovery(cmd *cobra.Command) (executed *cobra.Command, err error
 		}
 	}()
 
-	executed, err = cmd.ExecuteC()
+	executed, err := cmd.ExecuteC()
 	if executed == nil {
 		executed = cmd
 	}
-	return executed, cmdutil.NormalizeCommandError(executed, err, 2)
+	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
 // rootShortDescription is the product in one line.

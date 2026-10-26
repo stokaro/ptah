@@ -524,30 +524,65 @@ func TestToDatabase_AColumnsForeignKeyIndexHoldsItsName_FailurePath(t *testing.T
 }
 
 // TestRead_MariaDBRestatedColumnKey_FailurePath refuses a restated column that
-// carries REFERENCES. Measured on MariaDB 11.8.9 and 12.3.3, the server skips
-// the column and still adds a second key over it, which a restatement cannot
-// say.
+// carries a key the server adds although it skips the column. Measured on
+// MariaDB 11.8.9 and 12.3.3: REFERENCES adds a second foreign key over the
+// column, UNIQUE adds the index `a` to a column without one, and PRIMARY KEY,
+// with or without AUTO_INCREMENT, adds the primary key to a table without one.
+// A restatement cannot say any of these.
 func TestRead_MariaDBRestatedColumnKey_FailurePath(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name   string
+		table  string
+		column string
+		want   string
+	}{
+		{name: "a foreign key", table: "id int PRIMARY KEY, a int REFERENCES p(id)", column: "a int REFERENCES p(id)", want: "the foreign key its REFERENCES clause declares.*ADD FOREIGN KEY"},
+		{name: "a unique key", table: "id int PRIMARY KEY, a int", column: "a int UNIQUE", want: "the index its UNIQUE declares.*ADD UNIQUE"},
+		{name: "a primary key", table: "a int, b int", column: "a int PRIMARY KEY", want: "the primary key its PRIMARY KEY declares.*ADD PRIMARY KEY"},
+		{name: "an AUTO_INCREMENT primary key", table: "a int, b int", column: "a int AUTO_INCREMENT PRIMARY KEY", want: "the primary key its PRIMARY KEY declares.*ADD PRIMARY KEY"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(mysqlNamingParents+
-		"CREATE TABLE c (id int PRIMARY KEY, a int REFERENCES p(id));\n"+
-		"ALTER TABLE c ADD COLUMN IF NOT EXISTS a int REFERENCES p(id);"), platform.MariaDB)
+			database, _, err := sqlschema.Read([]byte(mysqlNamingParents+
+				"CREATE TABLE c ("+test.table+");\n"+
+				"ALTER TABLE c ADD COLUMN IF NOT EXISTS "+test.column+";"), platform.MariaDB)
 
-	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
-	c.Assert(err, qt.ErrorMatches, `(?s).*skips the column but still adds the foreign key.*`)
-	c.Assert(database.Fields, qt.HasLen, 0)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+			c.Assert(err, qt.ErrorMatches, `(?s).*skips the column but still adds `+test.want+`.*`)
+			c.Assert(database.Fields, qt.HasLen, 0)
+		})
+	}
 }
 
 // TestRead_MariaDBRestatedColumnWithoutKey is the control: a restated column
-// with no REFERENCES creates nothing on the server and is read as nothing.
+// that adds no key creates nothing on the server and is read as nothing.
+// Measured on MariaDB 11.8.9 and 12.3.3, a column that has its UNIQUE or
+// PRIMARY KEY already gets no second one, and a CHECK or another type changes
+// nothing.
 func TestRead_MariaDBRestatedColumnWithoutKey(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name   string
+		table  string
+		column string
+	}{
+		{name: "a plain column", table: "id int PRIMARY KEY, a int REFERENCES p(id), b int", column: "b int"},
+		{name: "a unique column", table: "id int PRIMARY KEY, a int REFERENCES p(id), b int UNIQUE", column: "b int UNIQUE"},
+		{name: "a primary key column", table: "id int PRIMARY KEY, a int REFERENCES p(id), b int", column: "id int PRIMARY KEY"},
+		{name: "a check", table: "id int PRIMARY KEY, a int REFERENCES p(id), b int", column: "b int CHECK (b > 0)"},
+		{name: "another type", table: "id int PRIMARY KEY, a int REFERENCES p(id), b int", column: "b varchar(10) NOT NULL DEFAULT 'x'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	database, _, err := sqlschema.Read([]byte(mysqlNamingParents+
-		"CREATE TABLE c (id int PRIMARY KEY, a int REFERENCES p(id), b int);\n"+
-		"ALTER TABLE c ADD COLUMN IF NOT EXISTS b int;"), platform.MariaDB)
+			database, _, err := sqlschema.Read([]byte(mysqlNamingParents+
+				"CREATE TABLE c ("+test.table+");\n"+
+				"ALTER TABLE c ADD COLUMN IF NOT EXISTS "+test.column+";"), platform.MariaDB)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(columnForeignKeysOf(database), qt.DeepEquals, []string{"c_ibfk_1(a)"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(columnForeignKeysOf(database), qt.DeepEquals, []string{"c_ibfk_1(a)"})
+		})
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"ptah.run/internal/rundiag"
 	"ptah.run/migration/migrator"
 )
 
@@ -210,6 +211,13 @@ func (r *Runtime) Logger() *slog.Logger {
 		return slog.Default()
 	}
 	return r.logger
+}
+
+// ShareWithRun makes the command logger the log of the run ctx carries, so the
+// warnings the run aggregates, and the objects they count, are written through
+// it with the command's level, format and fields; see [rundiag.UseLogger].
+func (r *Runtime) ShareWithRun(ctx context.Context) {
+	rundiag.UseLogger(ctx, r.Logger(), !r.HumanOutput())
 }
 
 // Observer returns the migration observer.

@@ -312,6 +312,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	defer shutdownObservability(runtime)
+	runtime.ShareWithRun(cmd.Context())
 	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
 
 	if dbURL == "" {

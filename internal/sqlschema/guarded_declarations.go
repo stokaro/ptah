@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 )
@@ -164,23 +165,48 @@ func replaceView(declared []*schemamodel.Database, view schemamodel.View, source
 }
 
 // replaceFunction puts function in the place of the routine it replaces, for a
-// CREATE OR REPLACE FUNCTION or PROCEDURE, and reports whether there was one.
-// A routine is found by its kind, its name and its argument types, as the
-// server finds it: an overload with other arguments is another routine.
+// CREATE OR REPLACE FUNCTION or PROCEDURE, or SQL Server's CREATE OR ALTER, and
+// reports whether there was one. A routine is found by its kind and its name,
+// as the server finds it, and on a server that overloads routines by its
+// argument types too: an overload with other arguments is another routine
+// there. The comment of the routine replaced stays where the server keeps it.
 func replaceFunction(declared []*schemamodel.Database, function schemamodel.Function, sourcePlatform string) bool {
+	overloads := routinesOverload(sourcePlatform)
 	for _, database := range declared {
 		for i := range database.Functions {
 			existing := database.Functions[i]
 			if existing.IsProcedure() == function.IsProcedure() &&
 				unqualified(existing.Name, sourcePlatform) == unqualified(function.Name, sourcePlatform) &&
-				routineargs.InputTypes(existing.Parameters) == routineargs.InputTypes(function.Parameters) {
-				function.Comment = cmp.Or(function.Comment, existing.Comment)
+				(!overloads || routineargs.InputTypes(existing.Parameters) == routineargs.InputTypes(function.Parameters)) {
+				if keepsRoutineComment(sourcePlatform) {
+					function.Comment = cmp.Or(function.Comment, existing.Comment)
+				}
 				database.Functions[i] = function
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// routinesOverload reports whether the dialect's server tells two routines of
+// one name apart by their argument types. The PostgreSQL family does, and its
+// routines are written with a quoted body. MySQL 8.4.11, MariaDB 11.8.9 and
+// SQL Server 2022 hold one routine per name, measured where the renderer
+// refuses two overloads for them; MariaDB 11.8.9 and 12.3.3 take `CREATE OR
+// REPLACE PROCEDURE q(a int)` in the place of `q()`.
+func routinesOverload(sourcePlatform string) bool {
+	return factsOf(sourcePlatform).routines == descriptor.RoutineQuotedBody
+}
+
+// keepsRoutineComment reports whether the dialect's server keeps a routine's
+// comment through CREATE OR REPLACE. PostgreSQL replaces the routine in place,
+// and its comment stays. The MySQL family's routines are written as compound
+// statements, and MariaDB 11.8.9 and 12.3.3 drop the comment: `CREATE OR
+// REPLACE FUNCTION f()` after `CREATE FUNCTION f() ... COMMENT 'old'` leaves
+// an empty ROUTINE_COMMENT.
+func keepsRoutineComment(sourcePlatform string) bool {
+	return factsOf(sourcePlatform).routines != descriptor.RoutineCompoundStatement
 }
 
 // replaceTrigger puts trigger in the place of the trigger of its name on its

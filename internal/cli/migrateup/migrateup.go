@@ -467,6 +467,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	defer shutdownObservability(runtime)
+	runtime.ShareWithRun(cmd.Context())
 	// Under --json the document is the output, so everything written for a
 	// person goes to standard error. A `=== MIGRATE UP ===` banner in front of
 	// it would reach the caller as a parse error rather than as a help.
