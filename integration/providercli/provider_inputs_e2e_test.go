@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/core/plangraph"
 	"ptah.run/core/renderer"
@@ -32,7 +33,7 @@ func TestProviderInputValuesAreResolvedOnlyAtDispatch(t *testing.T) {
 			t.Setenv(executionInputName, "unused-during-planning")
 			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_INPUT_MODE=" + test.mode})
 			conn, _ := transactionConnection(c, host, "")
-			rendered := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "needs_input")
+			rendered := nativeExecutionPlanWithFeatures(c, runtime, conn, plangraph.TransactionForbidden, []string{provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature}, "needs_input")
 			c.Assert(rendered.Result.Fragments[0].Inputs, qt.HasLen, 0)
 			c.Assert(rendered.Result.Fragments[1].Inputs, qt.DeepEquals, []renderer.InputReference{{Source: renderer.InputEnvironment, Name: executionInputName}})
 			plan, err := atlasschema.CaptureApplyPlan(conn.Info(), rendered)
@@ -52,19 +53,19 @@ func TestProviderInputValuesAreResolvedOnlyAtDispatch(t *testing.T) {
 func TestProviderInputChangesRefuseTheWholeBatch(t *testing.T) {
 	for _, test := range []struct {
 		name, mode string
-		removeApproval bool
+		change     func(*renderer.Fragment)
 	}{
-		{"description changed", "changed", false},
-		{"batch requests additional input", "batch-extra", false},
-		{"approval stripped", "stable", true},
+		{"description changed", "changed", func(*renderer.Fragment) {}},
+		{"batch requests additional input", "batch-extra", func(*renderer.Fragment) {}},
+		{"approval stripped", "stable", func(fragment *renderer.Fragment) { fragment.Inputs = nil }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			t.Setenv(executionInputName, "fixture-private-value")
 			host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_INPUT_MODE=" + test.mode})
 			conn, _ := transactionConnection(c, host, "")
-			rendered := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "needs_input")
-			removeInputApproval(&rendered.Result.Fragments[1], test.removeApproval)
+			rendered := nativeExecutionPlanWithFeatures(c, runtime, conn, plangraph.TransactionForbidden, []string{provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature}, "needs_input")
+			test.change(&rendered.Result.Fragments[1])
 			err := applyCapturedPlan(c.Context(), conn, migrator.MigrationTxModeNone, rendered)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "fixture-private-value")
@@ -74,18 +75,12 @@ func TestProviderInputChangesRefuseTheWholeBatch(t *testing.T) {
 	}
 }
 
-func removeInputApproval(fragment *renderer.Fragment, remove bool) {
-	if remove {
-		fragment.Inputs = nil
-	}
-}
-
 func TestProviderInputCancellationRefusesBeforeDispatch(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(executionInputName, "fixture-private-value")
 	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_INPUT_MODE=stable"})
 	conn, _ := transactionConnection(c, host, "")
-	rendered := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "needs_input")
+	rendered := nativeExecutionPlanWithFeatures(c, runtime, conn, plangraph.TransactionForbidden, []string{provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature}, "needs_input")
 	ctx, cancel := context.WithCancel(c.Context())
 	cancel()
 	executor := conn.Writer().(dbschema.UnitExecutor)
@@ -99,7 +94,7 @@ func TestProviderMissingInputRefusesBeforeSQLPrefix(t *testing.T) {
 	c.Assert(os.Unsetenv(executionInputName), qt.IsNil)
 	host, runtime := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_INPUT_MODE=stable"})
 	conn, _ := transactionConnection(c, host, "")
-	rendered := nativeExecutionPlan(c, runtime, conn, plangraph.TransactionForbidden, "needs_input")
+	rendered := nativeExecutionPlanWithFeatures(c, runtime, conn, plangraph.TransactionForbidden, []string{provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature}, "needs_input")
 	plan, err := atlasschema.CaptureApplyPlan(conn.Info(), rendered)
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Preflight(c.Context(), conn, migrator.MigrationTxModeNone), qt.IsNil)
@@ -114,7 +109,7 @@ func TestProviderMigrationInputsReachApprovalBeforeUpAndDown(t *testing.T) {
 	t.Setenv(executionInputName, "fixture-private-value")
 	host, _ := yamlProviderEnvironment(c, "operation-models", []string{"FIXTURE_RENDER_MODE=native", "FIXTURE_INPUT_MODE=stable"})
 	conn, _ := transactionConnection(c, host, "")
-	migration := migrator.CreateMigrationFromSQL(1, "input", `CREATE TABLE "needs_input" (id INTEGER);`, `DROP TABLE "needs_input";`)
+	migration := migrator.CreateMigrationFromSQL(1, "input", `CREATE TABLE "needs_input" ("id" INTEGER);`, `DROP TABLE "needs_input";`)
 	migration.DownTxMode = migrationfile.FileTxModeNone
 	runner := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).WithTransactionMode(migrator.MigrationTxModeNone).
 		WithMigrationsTable("main", "_input_revisions").WithoutMigrationLock()
@@ -141,7 +136,7 @@ func TestProviderOperatorInputsUseOnlyApprovedWriteUnits(t *testing.T) {
 	operator, closeOperator, err := conn.OperatorStatements()
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(closeOperator(), qt.IsNil) })
-	const sql = `CREATE TABLE "needs_input" (id INTEGER);`
+	const sql = `CREATE TABLE "needs_input" ("id" INTEGER);`
 	_, err = operator.ExecContext(c.Context(), sql)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(providerTablePresent(c, conn, "needs_input"), qt.IsFalse)
@@ -149,7 +144,7 @@ func TestProviderOperatorInputsUseOnlyApprovedWriteUnits(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	approved, err := inputapproval.With(c.Context(), "fixture", prepared)
 	c.Assert(err, qt.IsNil)
-	rows, err := operator.QueryContext(approved, sql)
+	rows, err := operator.QueryContext(approved, sql) //nolint:rowserrcheck // A refused query must return no iterator to inspect or close.
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(rows, qt.IsNil)
 	c.Assert(providerTablePresent(c, conn, "needs_input"), qt.IsFalse)

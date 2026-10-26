@@ -24,8 +24,12 @@ import (
 
 func nativeExecutionPlan(c *qt.C, runtime *engine.Runtime, conn *dbschema.DatabaseConnection, transaction plangraph.Transaction, names ...string) planner.RenderedPlan {
 	c.Helper()
+	return nativeExecutionPlanWithFeatures(c, runtime, conn, transaction, nil, names...)
+}
+
+func nativeExecutionPlanWithFeatures(c *qt.C, runtime *engine.Runtime, conn *dbschema.DatabaseConnection, transaction plangraph.Transaction, features []string, names ...string) planner.RenderedPlan {
+	c.Helper()
 	nodes := []ast.Node{&ast.CreateTableNode{Name: "common", Columns: []*ast.ColumnNode{{Name: "id", Type: "INTEGER", Primary: true}}}}
-	var features []string
 	if conn.Info().Capabilities.Has(capability.TransactionalDDL) {
 		features = append(features, provider.TransactionsFeature)
 	}
