@@ -108,6 +108,9 @@ func (e *goEncoding) capture(request annotation.EncodeRequest) error {
 		e.tables[e.batch.bind(table.Schema, table.Name)] = table
 	}
 	for _, object := range request.Objects {
+		if err := e.batch.goObjectScope(object.Value.Kind(), object.Targets); err != nil {
+			return err
+		}
 		if _, err := e.batch.add(protocol.SourceModelValue_NATIVE_OBJECT, "", object.Value); err != nil {
 			return err
 		}
@@ -131,6 +134,22 @@ func (e *goEncoding) capture(request annotation.EncodeRequest) error {
 			Nullable: field.Nullable, PrimaryKey: field.Key})
 	}
 	return e.batch.coverage(request.Coverage)
+}
+
+// A decoded native Go object is scoped to the engine whose directive reads it.
+// The wire carries no per-object target list. An unscoped object is equivalent
+// only when the model belongs to this engine alone; other scopes must not be
+// discarded while writing an otherwise valid directive.
+func (b *encodeBatch) goObjectScope(kind schemaext.Kind, targets []string) error {
+	engine := b.target.engine
+	if len(targets) == 1 && (targets[0] == engine.GetId() || slices.Contains(engine.GetAliases(), targets[0])) {
+		return nil
+	}
+	contract := b.target.host.models[modelKey{kind: kind, representation: schemaext.Desired}]
+	if len(targets) == 0 && contract != nil && len(contract.engines) == 1 && contract.engines[engine.GetId()] != nil {
+		return nil
+	}
+	return fmt.Errorf("%w: Go annotations cannot preserve the target scope of native model %q", ptaherr.ErrUnsupportedFeature, kind)
 }
 
 // goDirectiveSlots maps each of the frontend's directives a claim adds

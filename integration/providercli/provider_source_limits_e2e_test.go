@@ -16,54 +16,52 @@ import (
 	"ptah.run/internal/convert/goschematogo"
 )
 
-// TestProviderSourceLimits_RoundTrip exercises the subprocess, provider coverage
+// TestProviderSourceLimits_GoRoundTrip exercises the subprocess, provider coverage
 // conversion, source writer and source reader. Dropping either the header or
 // its decoded knowledge would turn unknown retention into absence authority.
-func TestProviderSourceLimits_RoundTrip(t *testing.T) {
-	_, runtime := yamlProviderEnvironment(qt.New(t), "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1"})
-	for _, test := range []struct {
-		name      string
-		roundTrip func(*qt.C, *engine.Runtime) (schemaext.Coverage, schemaext.Coverage)
-	}{
-		{"Go", goLimitRoundTrip},
-		{"HCL", hclLimitRoundTrip},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			before, after := test.roundTrip(c, runtime)
-			c.Assert(before.KindRecords(), qt.HasLen, 1)
-			c.Assert(before.KindRecords()[0].Knowledge.Unscoped(), qt.DeepEquals, schemaext.Knowledge{State: schemaext.Uninspected,
-				Reason: `{"reason":"not-inspected","provenance":"observed"}`})
-			c.Assert(after.KindRecords(), qt.DeepEquals, before.KindRecords())
-			c.Assert(after.SubjectRecords(), qt.DeepEquals, before.SubjectRecords())
-		})
-	}
+func TestProviderSourceLimits_GoRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1"})
+	before, after := goLimitRoundTrip(c, runtime)
+	checkSourceLimitRoundTrip(c, before, after)
 }
 
-func TestProviderSourceGroups_RoundTrip(t *testing.T) {
-	_, runtime := yamlProviderEnvironment(qt.New(t), "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_GROUPS=1"})
-	for _, test := range []struct {
-		name      string
-		roundTrip func(*qt.C, *engine.Runtime) (schemaext.Coverage, schemaext.Coverage)
-	}{
-		{"Go", goLimitRoundTrip},
-		{"HCL", hclLimitRoundTrip},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			before, after := test.roundTrip(c, runtime)
-			c.Assert(after.KindRecords(), qt.DeepEquals, before.KindRecords())
-			c.Assert(after.SubjectRecords(), qt.DeepEquals, before.SubjectRecords())
-		})
-	}
+func TestProviderSourceLimits_HCLRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1"})
+	before, after := hclLimitRoundTrip(c, runtime)
+	checkSourceLimitRoundTrip(c, before, after)
 }
 
-func goLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (schemaext.Coverage, schemaext.Coverage) {
+func TestProviderSourceGroups_GoRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_GROUPS=1"})
+	before, after := goLimitRoundTrip(c, runtime)
+	checkSourceLimitRoundTrip(c, before, after)
+}
+
+func TestProviderSourceGroups_HCLRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_GROUPS=1"})
+	before, after := hclLimitRoundTrip(c, runtime)
+	checkSourceLimitRoundTrip(c, before, after)
+}
+
+func checkSourceLimitRoundTrip(c *qt.C, before, after schemaext.Coverage) {
+	c.Helper()
+	c.Assert(before.KindRecords(), qt.HasLen, 1)
+	c.Assert(before.KindRecords()[0].Knowledge.Unscoped(), qt.DeepEquals, schemaext.Knowledge{State: schemaext.Uninspected,
+		Reason: `{"reason":"not-inspected","provenance":"observed"}`})
+	c.Assert(after.KindRecords(), qt.DeepEquals, before.KindRecords())
+	c.Assert(after.SubjectRecords(), qt.DeepEquals, before.SubjectRecords())
+}
+
+func goLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (before, after schemaext.Coverage) {
 	c.Helper()
 	source := strings.Replace(hclExportSource, "package models", "package models\n\n//ptah:schema:notdescribed kind=\"retention\" reason=\"not-inspected\" provenance=\"observed\"\ntype _ struct{}", 1)
 	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", source)
 	c.Assert(err, qt.IsNil)
-	before := db.FeatureCoverage
+	before = db.FeatureCoverage
 	files, err := goschematogo.Render(c.Context(), &db, goschematogo.Options{Annotations: runtime.Annotations(), Runtime: runtime,
 		PackageName: "models", SingleFile: true, Dialect: "fixture"})
 	c.Assert(err, qt.IsNil)
@@ -72,19 +70,19 @@ func goLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (schemaext.Coverage, sch
 	c.Assert(written, qt.Contains, `//ptah:schema:notdescribed kind="retention" reason="not-inspected" provenance="observed"`)
 	again, err := goschema.ParseSource(runtime.Annotations(), files[0].Name, written)
 	c.Assert(err, qt.IsNil)
-	after := again.FeatureCoverage
+	after = again.FeatureCoverage
 	control, err := goschema.ParseSource(runtime.Annotations(), "records.go", hclExportSource)
 	c.Assert(err, qt.IsNil)
 	c.Assert(control.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)
 	return before, after
 }
 
-func hclLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (schemaext.Coverage, schemaext.Coverage) {
+func hclLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (before, after schemaext.Coverage) {
 	c.Helper()
 	source := strings.Replace(hclClaimsDocument, `// ptah:not-described retention "audits"`, "// ptah:not-described retention reason=not-inspected provenance=observed", 1)
 	db, err := atlashcl.ParseWithOptions(c.Context(), []byte(source), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
-	before := db.FeatureCoverage
+	before = db.FeatureCoverage
 	result, err := atlashclrender.Render(db, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
@@ -92,7 +90,7 @@ func hclLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (schemaext.Coverage, sc
 	c.Assert(written, qt.Contains, "// ptah:not-described retention reason=not-inspected provenance=observed")
 	again, err := atlashcl.ParseWithOptions(c.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
-	after := again.FeatureCoverage
+	after = again.FeatureCoverage
 	control, err := atlashcl.ParseWithOptions(c.Context(), []byte(strings.Replace(source, "// ptah:not-described retention reason=not-inspected provenance=observed\n", "", 1)), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	c.Assert(control.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)

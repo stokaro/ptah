@@ -789,6 +789,10 @@ evidence vocabulary, and sends each header to its owner when reading the
 source back. Unclaimed limits and limits returned without negotiation refuse
 the export.
 
+A native Go object reads back in the engine that owns its directive. An export
+preserves that scope implicitly and refuses another target scope. An unscoped
+object is representable only when its model belongs to that engine alone.
+
 An explicit export target must name an encoding engine or one of its aliases.
 Without a target, Ptah selects the provider's sole encoding engine and refuses
 an ambiguous choice.
