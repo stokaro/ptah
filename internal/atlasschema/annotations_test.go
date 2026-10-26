@@ -18,13 +18,13 @@ import (
 func TestCapturedAnnotationsDoNotExecuteOrChangeUnitBytes(t *testing.T) {
 	for _, test := range []struct {
 		name  string
-		only  bool
+		sql   string
 		mode  migrator.MigrationTxMode
 		count int
 	}{
-		{"mixed autocommit", false, migrator.MigrationTxModeNone, 1},
-		{"mixed transaction", false, migrator.MigrationTxModeAll, 1},
-		{"notes only", true, migrator.MigrationTxModeAll, 0},
+		{"mixed autocommit", "CREATE TABLE actual (id INTEGER);", migrator.MigrationTxModeNone, 1},
+		{"mixed transaction", "CREATE TABLE actual (id INTEGER);", migrator.MigrationTxModeAll, 1},
+		{"notes only", "", migrator.MigrationTxModeAll, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -33,16 +33,14 @@ func TestCapturedAnnotationsDoNotExecuteOrChangeUnitBytes(t *testing.T) {
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 			first, last := "review\nCREATE TABLE injected (id INTEGER);", ""
 			fragments := []renderer.Fragment{{Annotation: &first}, {}, {Annotation: &last}}
-			if !test.only {
-				fragments[1].SQL = "CREATE TABLE actual (id INTEGER);"
-			}
+			fragments[1].SQL = test.sql
 			rendered := planner.RenderedPlan{Request: renderer.Request{Target: "sqlite", Capabilities: conn.Info().Capabilities, Nodes: []ast.Node{ast.NewComment(first), ast.NewRawSQL(fragments[1].SQL), ast.NewComment(last)}}, Result: renderer.Result{Complete: true, ExecutableUnits: true, Fragments: fragments}, Dialect: "sqlite"}
 			plan, err := atlasschema.CaptureApplyPlan(conn.Info(), rendered)
 			c.Assert(err, qt.IsNil)
 			units, err := plan.Units()
 			c.Assert(err, qt.IsNil)
 			c.Assert(units, qt.HasLen, test.count)
-			c.Assert(plan.HasChanges(), qt.Equals, !test.only)
+			c.Assert(plan.HasChanges(), qt.Equals, test.count > 0)
 			notes := plan.Annotations()
 			c.Assert(notes, qt.DeepEquals, []renderer.Annotation{{Before: 0, Text: first}, {Before: test.count, Text: last}})
 			notes[0].Text = "changed"
@@ -52,7 +50,7 @@ func TestCapturedAnnotationsDoNotExecuteOrChangeUnitBytes(t *testing.T) {
 			c.Assert(plan.Preflight(c.Context(), conn, test.mode), qt.IsNil)
 			c.Assert(sqliteTableExists(c, path, "actual"), qt.IsFalse)
 			c.Assert(plan.Execute(c.Context(), conn, test.mode), qt.IsNil)
-			c.Assert(sqliteTableExists(c, path, "actual"), qt.Equals, !test.only)
+			c.Assert(sqliteTableExists(c, path, "actual"), qt.Equals, test.count > 0)
 			c.Assert(sqliteTableExists(c, path, "injected"), qt.IsFalse)
 		})
 	}
@@ -61,18 +59,15 @@ func TestCapturedAnnotationsDoNotExecuteOrChangeUnitBytes(t *testing.T) {
 func TestSavedAnnotationsRoundTripAndPreserveSchemaFingerprints(t *testing.T) {
 	for _, test := range []struct {
 		name  string
-		only  bool
 		count int
 	}{
-		{"mixed SQL and native", false, 2},
-		{"only notes", true, 0},
+		{"mixed SQL and native", 2},
+		{"only notes", 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			plan := planWithNative(c)
-			if test.only {
-				plan.Statements = nil
-			}
+			plan.Statements = plan.Statements[:test.count]
 			plan.Annotations = []renderer.Annotation{{Before: 0, Text: "first\n*/ SELECT 1;"}, {Before: test.count, Text: ""}}
 			encoded, err := atlasschema.MarshalPlanFile(plan)
 			c.Assert(err, qt.IsNil)
@@ -81,7 +76,7 @@ func TestSavedAnnotationsRoundTripAndPreserveSchemaFingerprints(t *testing.T) {
 			c.Assert(decoded.Annotations, qt.DeepEquals, plan.Annotations)
 			c.Assert(decoded.FromFingerprint, qt.Equals, plan.FromFingerprint)
 			c.Assert(decoded.ToFingerprint, qt.Equals, plan.ToFingerprint)
-			c.Assert(decoded.HasChanges(), qt.Equals, !test.only)
+			c.Assert(decoded.HasChanges(), qt.Equals, test.count > 0)
 			c.Assert(decoded.UnitReports(), qt.HasLen, test.count)
 			var preview bytes.Buffer
 			atlasschema.WriteUnitReports(&preview, decoded.UnitReports(), decoded.Annotations)
@@ -96,6 +91,14 @@ func TestSavedAnnotationsRoundTripAndPreserveSchemaFingerprints(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, ".*cannot preserve positioned annotations.*")
 		})
 	}
+}
+
+func TestAnnotationsPreserveExecutionInputPreview(t *testing.T) {
+	c := qt.New(t)
+	units := []atlasschema.ApplyUnitReport{{SQL: "SELECT 1;", Inputs: []renderer.InputReference{{Source: "environment", Name: "TOKEN"}}}}
+	var out bytes.Buffer
+	atlasschema.WriteUnitReports(&out, units, []renderer.Annotation{{Before: 0, Text: "review"}, {Before: 1, Text: "done"}})
+	c.Assert(out.String(), qt.Equals, "-- review\nExecution input: environment TOKEN\nSELECT 1;\n-- done\n")
 }
 
 func TestSavedAnnotationsRefuseInvalidPositions(t *testing.T) {

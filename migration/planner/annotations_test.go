@@ -12,23 +12,22 @@ import (
 
 func TestPlannedAnnotationsNeverBecomeExecutionUnits(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		exact, only bool
-		wantNodes   []int
-		wantBefore  []int
+		name          string
+		exact         bool
+		first, second string
+		wantNodes     []int
+		wantBefore    []int
 	}{
-		{"exact", true, false, []int{1, 3}, []int{0, 1, 2}},
-		{"script", false, false, []int{1, 3}, []int{0, 1, 2}},
-		{"exact notes only", true, true, make([]int, 0), []int{0, 0, 0}},
-		{"script notes only", false, true, make([]int, 0), []int{0, 0, 0}},
+		{"exact", true, "SELECT 1;", "SELECT 2;", []int{1, 3}, []int{0, 1, 2}},
+		{"script", false, "SELECT 1;", "SELECT 2;", []int{1, 3}, []int{0, 1, 2}},
+		{"exact notes only", true, "", "", make([]int, 0), []int{0, 0, 0}},
+		{"script notes only", false, "", "", make([]int, 0), []int{0, 0, 0}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			first, middle, last := "before", "", "trailing\n*/ DROP TABLE users;"
 			fragments := []renderer.Fragment{{Annotation: &first}, {}, {Annotation: &middle}, {}, {Annotation: &last}}
-			if !test.only {
-				fragments[1].SQL, fragments[3].SQL = "SELECT 1;", "SELECT 2;"
-			}
+			fragments[1].SQL, fragments[3].SQL = test.first, test.second
 			plan := planner.RenderedPlan{Request: renderer.Request{Nodes: make([]ast.Node, len(fragments))}, Result: renderer.Result{Complete: true, ExecutableUnits: test.exact, Fragments: fragments}, Dialect: "sqlite"}
 			units, err := plan.Units()
 			c.Assert(err, qt.IsNil)

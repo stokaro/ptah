@@ -23,7 +23,7 @@ type Fragment struct {
 	Native ast.ExtensionPayload
 	// Inputs are approved references for this exact body. They contain no
 	// values; execution must refuse a different input set before resolving it.
-	Inputs []InputReference
+	Inputs     []InputReference
 	Annotation *string
 }
 
@@ -81,8 +81,8 @@ func (f Fragment) MarshalJSON() ([]byte, error) {
 		return nil, schemaext.ErrExplicitCodec
 	}
 	return json.Marshal(struct {
-		SQL    string           `json:"sql"`
-		Inputs []InputReference `json:"inputs,omitempty"`
-	}{f.SQL, f.Inputs})
-	Annotation *string
+		SQL        string           `json:"sql"`
+		Inputs     []InputReference `json:"inputs,omitempty"`
+		Annotation *string          `json:"annotation,omitempty"`
+	}{f.SQL, f.Inputs, f.Annotation})
 }
