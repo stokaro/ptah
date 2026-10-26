@@ -374,57 +374,68 @@ func TestPlanningRequestRefusesMixedCaptureProfiles(t *testing.T) {
 }
 
 func TestPlanningReplyBindsOperationsAndGraphMetadata(t *testing.T) {
-	c := qt.New(t)
-	service, value := planningFixture(c)
-	key := modelKey{kind: "example.org/fixture/operation", representation: schemaext.Operation}
-	service.target.host.models[key] = &modelContract{key: key, signature: "operation", engines: map[string]*protocol.ValueModel{"fixture": {Kind: string(key.kind), Representation: protocol.ValueInput_OPERATION}}}
-	operation := proto.CloneOf(value.normalized)
-	operation.Value.Kind = string(key.kind)
-	operation.OperationSemantics = &protocol.OperationSemantics{Impact: protocol.ChangeSemantics_DESTRUCTIVE, Reason: "Drops retained state"}
-	parent := comparisonIdentity(planningParent())
-	id := &protocol.StepIdentity{Owner: "example.org/fixture", Name: "rewrite"}
-	source := &protocol.StepIdentity{Owner: "ptah.run/common", Name: "add-column"}
-	reply := &protocol.PlannedFeatures{
-		Complete: true,
-		Contributions: []*protocol.PlanningContribution{
-			{
-				Owner: id.Owner,
-				Steps: []*protocol.PlanningStep{
+	for _, test := range []struct {
+		name  string
+		wire  protocol.PlanningOperation_Phase
+		phase featureplan.Phase
+	}{
+		{"dependent", protocol.PlanningOperation_DEPENDENT, featureplan.PhaseDependent},
+		{"lifecycle", protocol.PlanningOperation_LIFECYCLE, featureplan.PhaseLifecycle},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			service, value := planningFixture(c)
+			key := modelKey{kind: "example.org/fixture/operation", representation: schemaext.Operation}
+			service.target.host.models[key] = &modelContract{key: key, signature: "operation", engines: map[string]*protocol.ValueModel{"fixture": {Kind: string(key.kind), Representation: protocol.ValueInput_OPERATION}}}
+			operation := proto.CloneOf(value.normalized)
+			operation.Value.Kind = string(key.kind)
+			operation.OperationSemantics = &protocol.OperationSemantics{Impact: protocol.ChangeSemantics_DESTRUCTIVE, Reason: "Drops retained state"}
+			parent := comparisonIdentity(planningParent())
+			id := &protocol.StepIdentity{Owner: "example.org/fixture", Name: "rewrite"}
+			source := &protocol.StepIdentity{Owner: "ptah.run/common", Name: "add-column"}
+			reply := &protocol.PlannedFeatures{
+				Complete: true,
+				Contributions: []*protocol.PlanningContribution{
 					{
-						Id:        id,
-						Operation: &protocol.PlanningOperation{Value: operation, Role: protocol.NativeOperation_ALTER_TABLE, Parent: parent, Notes: []string{"Owner requires this order"}, Phase: protocol.PlanningOperation_DEPENDENT},
-						Metadata:  &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_REQUIRED, Placement: protocol.PlanningMetadata_EARLY, Impact: protocol.ChangeSemantics_DESTRUCTIVE, Reason: "Drops retained state", Effects: []*protocol.PlanningEffect{{Subject: parent, Action: protocol.PlanningEffect_ALTER}}},
+						Owner: id.Owner,
+						Steps: []*protocol.PlanningStep{
+							{
+								Id:        id,
+								Operation: &protocol.PlanningOperation{Value: operation, Role: protocol.NativeOperation_ALTER_TABLE, Parent: parent, Notes: []string{"Owner requires this order"}, Phase: test.wire},
+								Metadata:  &protocol.PlanningMetadata{Transaction: protocol.PlanningMetadata_REQUIRED, Placement: protocol.PlanningMetadata_EARLY, Impact: protocol.ChangeSemantics_DESTRUCTIVE, Reason: "Drops retained state", Effects: []*protocol.PlanningEffect{{Subject: parent, Action: protocol.PlanningEffect_ALTER}}},
+							},
+						},
+						Dependencies: []*protocol.PlanningDependency{{Before: source, After: id}},
 					},
 				},
-				Dependencies: []*protocol.PlanningDependency{{Before: source, After: id}},
-			},
-		},
-		Rewrites: []*protocol.PlanningRewrite{{Sources: []*protocol.StepIdentity{source}, Replacement: id}},
-		Changes:  []*protocol.PlanningReceipt{{Subject: parent, Kind: "example.org/fixture/change", Strategy: "Rewrite", Steps: []*protocol.StepIdentity{id}}},
-		Parents: []*protocol.PlanningParentReceipt{
-			{Action: protocol.PlanningTable_ALTER, Receipt: &protocol.PlanningReceipt{Subject: parent, Kind: "example.org/fixture/value", Strategy: "Preserved", Steps: []*protocol.StepIdentity{id}}},
-		},
+				Rewrites: []*protocol.PlanningRewrite{{Sources: []*protocol.StepIdentity{source}, Replacement: id}},
+				Changes:  []*protocol.PlanningReceipt{{Subject: parent, Kind: "example.org/fixture/change", Strategy: "Rewrite", Steps: []*protocol.StepIdentity{id}}},
+				Parents: []*protocol.PlanningParentReceipt{
+					{Action: protocol.PlanningTable_ALTER, Receipt: &protocol.PlanningReceipt{Subject: parent, Kind: "example.org/fixture/value", Strategy: "Preserved", Steps: []*protocol.StepIdentity{id}}},
+				},
+			}
+			result, err := service.target.planningReply(&protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"captured"}}, reply)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Complete, qt.IsTrue)
+			step := result.Contributions[0].Steps[0]
+			c.Assert(step.Transaction, qt.Equals, plangraph.TransactionRequired)
+			c.Assert(step.Placement, qt.Equals, plangraph.PlacementEarly)
+			c.Assert(step.Impact, qt.DeepEquals, schemaext.Effect{Impact: schemaext.Destructive, Reason: "Drops retained state"})
+			c.Assert(step.Effects, qt.DeepEquals, []plangraph.Effect{{Subject: planningParent(), Action: plangraph.Alter}})
+			c.Assert(step.Payload.Role, qt.Equals, ast.AlterExtension)
+			c.Assert(step.Payload.Phase, qt.Equals, test.phase)
+			c.Assert(step.Payload.Parent, qt.DeepEquals, planningParent())
+			c.Assert(step.Payload.Payload.(*resolvedOperation).model.wire.Features, qt.DeepEquals, []string{"captured"})
+			c.Assert(result.Parents[0].Action, qt.Equals, featureplan.AlterTable)
+			c.Assert(result.Rewrites[0].Sources, qt.DeepEquals, []plangraph.StepID{{Owner: source.Owner, Name: source.Name}})
+			c.Assert(result.Contributions[0].Dependencies[0].Before, qt.DeepEquals, result.Rewrites[0].Sources[0])
+			c.Assert(result.Changes[0].Steps[0], qt.DeepEquals, step.ID)
+			reply.Contributions[0].Steps[0].Operation.Notes[0] = "changed"
+			reply.Contributions[0].Steps[0].Operation.Value.Value.Payload[0] = 'x'
+			c.Assert(step.Payload.Notes, qt.DeepEquals, []string{"Owner requires this order"})
+			c.Assert(string(step.Payload.Payload.(*resolvedOperation).model.wire.Payload), qt.Equals, "{}")
+		})
 	}
-	result, err := service.target.planningReply(&protocol.PlanFeaturesRequest{Engine: "fixture", TargetFeatures: []string{"captured"}}, reply)
-	c.Assert(err, qt.IsNil)
-	c.Assert(result.Complete, qt.IsTrue)
-	step := result.Contributions[0].Steps[0]
-	c.Assert(step.Transaction, qt.Equals, plangraph.TransactionRequired)
-	c.Assert(step.Placement, qt.Equals, plangraph.PlacementEarly)
-	c.Assert(step.Impact, qt.DeepEquals, schemaext.Effect{Impact: schemaext.Destructive, Reason: "Drops retained state"})
-	c.Assert(step.Effects, qt.DeepEquals, []plangraph.Effect{{Subject: planningParent(), Action: plangraph.Alter}})
-	c.Assert(step.Payload.Role, qt.Equals, ast.AlterExtension)
-	c.Assert(step.Payload.Phase, qt.Equals, featureplan.PhaseDependent)
-	c.Assert(step.Payload.Parent, qt.DeepEquals, planningParent())
-	c.Assert(step.Payload.Payload.(*resolvedOperation).model.wire.Features, qt.DeepEquals, []string{"captured"})
-	c.Assert(result.Parents[0].Action, qt.Equals, featureplan.AlterTable)
-	c.Assert(result.Rewrites[0].Sources, qt.DeepEquals, []plangraph.StepID{{Owner: source.Owner, Name: source.Name}})
-	c.Assert(result.Contributions[0].Dependencies[0].Before, qt.DeepEquals, result.Rewrites[0].Sources[0])
-	c.Assert(result.Changes[0].Steps[0], qt.DeepEquals, step.ID)
-	reply.Contributions[0].Steps[0].Operation.Notes[0] = "changed"
-	reply.Contributions[0].Steps[0].Operation.Value.Value.Payload[0] = 'x'
-	c.Assert(step.Payload.Notes, qt.DeepEquals, []string{"Owner requires this order"})
-	c.Assert(string(step.Payload.Payload.(*resolvedOperation).model.wire.Payload), qt.Equals, "{}")
 }
 
 // commonPlanRecorder observes the production host request without a process.
@@ -499,6 +510,50 @@ func TestCommonPlanningContextRefusesAmbiguousParents(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(request, qt.DeepEquals, featureplan.Request{})
 			c.Assert(names, qt.IsNil)
+		})
+	}
+}
+
+// phasePlanRuntime returns an early operation with no resource dependency, so
+// its position measures the host's phase window alone.
+type phasePlanRuntime struct {
+	*engine.Runtime
+	phase featureplan.Phase
+}
+
+func (r *phasePlanRuntime) PlanFeatures(context.Context, featureplan.Request) (featureplan.Result, error) {
+	return featureplan.Result{Complete: true, Contributions: []plangraph.Contribution[featureplan.Operation]{{
+		Owner: "example.org/phase", Steps: []plangraph.Step[featureplan.Operation]{{
+			ID:        plangraph.StepID{Owner: "example.org/phase", Name: "native"},
+			Payload:   featureplan.Operation{Role: ast.StatementExtension, Payload: &creationOperation{name: "native"}, Phase: r.phase},
+			Placement: plangraph.PlacementEarly,
+		}},
+	}}}, nil
+}
+
+func TestCommonPlannerKeepsDependentPhaseBetweenCommonChanges(t *testing.T) {
+	for _, test := range []struct {
+		phase          featureplan.Phase
+		native, create int
+	}{
+		{featureplan.PhaseDependent, 1, 0},
+		{featureplan.PhaseLifecycle, 0, 1},
+	} {
+		t.Run(string(test.phase), func(t *testing.T) {
+			c := qt.New(t)
+			base, err := engine.New()
+			c.Assert(err, qt.IsNil)
+			rules := identifier.ForDialect("sqlite")
+			diff := &difftypes.SchemaDiff{IdentifierSemantics: &rules,
+				TablesAdded:   []difftypes.TableCreation{{Name: "new", Table: schemamodel.Table{Name: "new"}, Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER"}}}},
+				TablesRemoved: difftypes.TableRemovals{{Name: "old", Current: schemacapture.TableObservation{Table: catalog.Table{Name: "old"}}}},
+			}
+			nodes, err := (commonPlanner{target: "fixture", commonTables: true}).GenerateMigrationAST(c.Context(), &phasePlanRuntime{Runtime: base, phase: test.phase}, diff)
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 3)
+			c.Assert(nodes[test.native].(*ast.ExtensionStatement).Payload.(*creationOperation).name, qt.Equals, "native")
+			c.Assert(nodes[test.create].(*ast.CreateTableNode).Name, qt.Equals, "new")
+			c.Assert(nodes[2].(*ast.DropTableNode).Name, qt.Equals, "old")
 		})
 	}
 }

@@ -173,7 +173,7 @@ func TestGraph_TypeWindows_FailurePath(t *testing.T) {
 			typeResult(featureplan.PhaseDefault, typeStep(plangraph.Drop, "zip"), typeStep(plangraph.Create, "zip")))
 
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-		c.Assert(err, qt.ErrorMatches, `.*creates domain zip, which step .* drops; a replacement is one step, or both halves ask for the dependent or the type phase`)
+		c.Assert(err, qt.ErrorMatches, `.*creates domain zip, which step .* drops; a replacement is one step, or both halves ask for the dependent, type or lifecycle phase`)
 		c.Assert(nodes, qt.IsNil)
 	})
 

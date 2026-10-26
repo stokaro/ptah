@@ -206,11 +206,18 @@ const (
 	// step after its enums and before the routines that name a type and the
 	// tables; every other host refuses it.
 	PhaseType Phase = "type"
+	// PhaseLifecycle places an operation inside a host-defined span of the
+	// common sequence, without an implicit creation-before-removal order.
+	// The owner supplies resource effects and explicit dependencies to order
+	// stops, replacements and restarts around common operations. Rewrites
+	// preserve the dependencies of their source steps. A host without a
+	// lifecycle span refuses this phase.
+	PhaseLifecycle Phase = "lifecycle"
 )
 
 // Valid reports whether p is a phase this contract defines.
 func (p Phase) Valid() bool {
-	return p == PhaseDefault || p == PhaseDependent || p == PhasePrerequisite || p == PhaseType
+	return p == PhaseDefault || p == PhaseDependent || p == PhasePrerequisite || p == PhaseType || p == PhaseLifecycle
 }
 
 // ChangePlan accounts for one input change, preserving its subject and kind.
