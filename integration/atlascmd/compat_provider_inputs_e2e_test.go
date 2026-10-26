@@ -26,8 +26,8 @@ func TestCompatProviderExecutionInputs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			f := newCompatProviderFixture(c, compatProviderBinaries{
-				compat: buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat"),
-				provider: testutils.BuildFixtureProvider(c, "operation-models"),
+				compat:      buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat"),
+				provider:    testutils.BuildFixtureProvider(c, "operation-models"),
 				environment: []string{"FIXTURE_RENDER_MODE=native-cli", "FIXTURE_INPUT_MODE=stable"},
 			})
 			test.seed(c, f)

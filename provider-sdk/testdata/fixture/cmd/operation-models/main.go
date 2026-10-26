@@ -48,6 +48,7 @@ func main() {
 	d.SemanticIdentity += "-native-operations"
 	mode := os.Getenv("FIXTURE_RENDER_MODE")
 	inputMode := os.Getenv("FIXTURE_INPUT_MODE")
+	transactional := mode == "native-transactional" || inputMode == "transactional"
 	if inputMode != "" {
 		d.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: 5}
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
@@ -59,7 +60,7 @@ func main() {
 	if mode != "" {
 		d.SemanticIdentity += "-" + mode
 	}
-	if mode == "native-transactional" {
+	if transactional {
 		d.Features = append(d.Features, provider.TransactionsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TransactionsFeature)
 	}
@@ -144,7 +145,7 @@ func main() {
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
 	p := &owner{Provider: &backend.Provider{}, nativeUnits: mode != "" && mode != "owned" && mode != "policy", ownedLifecycle: mode == "owned",
-		rebuilds: mode == "policy", transactionalDDL: mode == "native-transactional", operationEnvelope: envelope, inputMode: inputMode}
+		rebuilds: mode == "policy", transactionalDDL: transactional, operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if inputMode != "" {
 		server.ExecutionInputs = p

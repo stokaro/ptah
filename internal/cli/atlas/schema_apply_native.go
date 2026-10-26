@@ -17,7 +17,7 @@ import (
 // applyAtlasNativeSchemaPlan keeps the batch selected by the shared planner
 // through approval. A SQL display or editor cannot represent this batch.
 func applyAtlasNativeSchemaPlan(cmd *cobra.Command, opts atlasSchemaApplyOptions, conn *dbschema.DatabaseConnection, plan atlasschema.ApplyRuntimePlan, mode migrator.MigrationTxMode) (string, error) {
-		if err := plan.Preflight(cmd.Context()); err != nil {
+	if err := plan.Preflight(cmd.Context()); err != nil {
 		return "", err
 	}
 	units, err := plan.ReportUnits(cmd.Context(), opts.runtime)
