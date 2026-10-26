@@ -877,3 +877,4 @@ v0.15.0 ptah.run/core/dataext
 # analyzing ownership; Clone copies known values. Pre-v1, so compatibility with
 # the former Boolean field is not owed under the provider extraction policy.
 v0.16.0 ptah.run/catalog
+v0.16.1 ptah.run/catalog
