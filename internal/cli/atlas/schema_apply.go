@@ -647,6 +647,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return "", displayAtlasSchemaApplyError(err, opts.toURLs)
 		}
 		if !plan.HasChanges() {
+			atlasschema.WriteUnitReports(cmd.ErrOrStderr(), nil, plan.Annotations())
 			if formatOutput {
 				return "", writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, nil)
 			}
@@ -937,6 +938,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			}
 		}
 
+		if !plan.HasChanges() {
+			atlasschema.WriteUnitReports(cmd.OutOrStdout(), nil, plan.Annotations)
+			return "Schema is synced, no changes to be made", nil
+		}
 		if plan.HasNative() || plan.HasInputReferences() {
 			return applyAtlasNativePlanFile(cmd, opts, conn, plan, txMode, desired)
 		}

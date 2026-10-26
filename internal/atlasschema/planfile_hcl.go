@@ -199,6 +199,9 @@ func decodePlanHCL(ctx context.Context, runtime safety.Runtime, contents []byte,
 // authority and the two cannot drift.
 func CheckPlanFormatSupported(plan PlanFile, format PlanFormat) error {
 	if format == PlanFormatHCL {
+		if len(plan.Annotations) != 0 {
+			return errors.New("the Atlas .plan.hcl format cannot preserve positioned annotations; write the native JSON plan format")
+		}
 		for _, statement := range plan.Statements {
 			if len(statement.Transactions) > 0 {
 				return errors.New("the Atlas .plan.hcl format cannot preserve owner transaction requirements; write the native JSON plan format")

@@ -71,6 +71,9 @@ func (s *session) encodeUnits(ctx context.Context, units []renderer.Fragment) ([
 		if err != nil {
 			return nil, nil, err
 		}
+		if fragment.Annotation != nil {
+			return nil, nil, fmt.Errorf("%w: annotation is not an execution unit", renderer.ErrInvalidResult)
+		}
 		fragments[i] = fragment
 		wire := &protocol.Unit{ChangeId: strconv.Itoa(i)}
 		if fragment.Native == nil {

@@ -1600,6 +1600,10 @@ and model definition. Missing codecs refuse fingerprinting. Plans generated
 with a different fingerprint format must be regenerated and reviewed before
 applying them.
 
+Positioned planner notes require JSON output. Notes retain their order beside
+SQL and native operations, including after the last operation. They do not
+count as statements or run during apply. The `.plan.hcl` format refuses them.
+
 An `--output` path ending in `.json` writes the native JSON plan
 (`format_version` 1) instead, which additionally records per-statement safety
 severity, the dialect, exclude patterns, and the schemas the plan reads beyond

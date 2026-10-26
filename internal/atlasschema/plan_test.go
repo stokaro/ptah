@@ -311,7 +311,7 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 		{
 			name:     "no_statements",
 			contents: `{"format_version":1,"dialect":"sqlite","from_fingerprint":"sha256:ab","statements":[]}`,
-			want:     `invalid plan file .*: plan contains no statements`,
+			want:     `invalid plan file .*: plan contains no statements or annotations`,
 		},
 		{
 			name:     "empty_statement_sql",

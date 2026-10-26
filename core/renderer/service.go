@@ -63,7 +63,7 @@ type Result struct {
 	// the fragments, so a SQL-only batch joins into a complete script.
 	Fragments []Fragment
 	// ExecutableUnits means each nonempty fragment is already one exact
-	// execution unit. Consumers must preserve its bytes and boundary rather
+	// execution unit, except annotations. Consumers preserve its bytes and boundary rather
 	// than split it with a host SQL grammar. Script concatenation must still
 	// be valid; separators remain the rendering owner's responsibility.
 	ExecutableUnits bool
@@ -101,6 +101,9 @@ func (r Result) SQLFragments() ([]string, error) {
 			return nil, fmt.Errorf("%w: input %d", ErrNativeSQL, i)
 		}
 		fragments[i] = fragment.SQL
+		if fragment.Annotation != nil {
+			fragments[i] = Comment(*fragment.Annotation)
+		}
 	}
 	return fragments, nil
 }

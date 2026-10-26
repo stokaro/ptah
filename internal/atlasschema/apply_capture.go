@@ -47,8 +47,14 @@ func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (A
 	if err != nil {
 		return ApplyPlan{}, err
 	}
+	annotations, err := rendered.Annotations()
+	if err != nil {
+		return ApplyPlan{}, err
+	}
+	positions := make([]int, len(units)+1)
 	var indexes []int
-	for _, unit := range units {
+	for i, unit := range units {
+		positions[i] = len(plan.units)
 		if !rendered.Result.ExecutableUnits && strings.TrimSpace(sqlutil.StripCommentsForDialect(unit.Fragment.SQL, rendered.Dialect)) == "" {
 			// A comment-only unit is never executed alone. It trails the
 			// statements, so it stays readable in the plan by riding on the
@@ -60,6 +66,11 @@ func CaptureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan) (A
 		}
 		plan.units = append(plan.units, unit.Fragment)
 		indexes = append(indexes, unit.Node)
+	}
+	positions[len(units)] = len(plan.units)
+	for _, annotation := range annotations {
+		annotation.Before = positions[annotation.Before]
+		plan.annotations = append(plan.annotations, annotation)
 	}
 	plan.transactions, err = txrequire.OwnerRequirements(rendered.Request.Nodes, indexes)
 	if err != nil {
@@ -81,12 +92,18 @@ func (p ApplyPlan) Preflight(ctx context.Context, conn *dbschema.DatabaseConnect
 	if conn == nil {
 		return errors.New("schema apply execution requires database connection")
 	}
+	if err := renderer.ValidateAnnotations(p.annotations, len(p.units)); err != nil {
+		return err
+	}
 	info := conn.Info()
 	if p.target != info.Dialect || !maps.Equal(p.capabilities.Map(), info.Capabilities.Map()) {
 		return fmt.Errorf("%w: captured apply target capabilities changed", renderer.ErrInvalidResult)
 	}
 	if err := verifyPlanProvider(p.provider, info); err != nil {
 		return err
+	}
+	if !p.HasChanges() {
+		return nil
 	}
 	if err := checkOwnerTransactions(p.transactions, mode, conn); err != nil {
 		return err
@@ -106,6 +123,9 @@ func (p ApplyPlan) Preflight(ctx context.Context, conn *dbschema.DatabaseConnect
 func (p ApplyPlan) Execute(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode) error {
 	if err := p.Preflight(ctx, conn, mode); err != nil {
 		return err
+	}
+	if !p.HasChanges() {
+		return nil
 	}
 	return applyUnits(ctx, conn, mode, p.units)
 }

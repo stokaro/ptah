@@ -280,7 +280,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
-	if !plan.HasChanges() {
+	if !plan.HasChanges() && len(plan.Annotations) == 0 {
 		printNothingPlanned(human, undecided)
 		return atlasschema.PlanEvidence{Plan: &plan, Undecided: undecided}, nil
 	}
@@ -322,5 +322,5 @@ func printPlan(out io.Writer, plan atlasschema.PlanFile) {
 		return
 	}
 	fmt.Fprintln(out, "Planned changes:")
-	printApplyUnits(out, plan.UnitReports())
+	printApplyUnits(out, plan.UnitReports(), plan.Annotations)
 }

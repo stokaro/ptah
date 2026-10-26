@@ -28,8 +28,18 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	for name, value := range request.Capabilities.All() {
 		capabilities[string(name)] = value
 	}
+	fragments := make([]renderer.Fragment, len(request.Nodes))
+	indexes := make([]int, 0, len(request.Nodes))
 	changes := make([]*protocol.Change, 0, len(request.Nodes))
 	for i, node := range request.Nodes {
+		if comment, ok := node.(*ast.CommentNode); ok {
+			if comment == nil {
+				return renderer.Result{}, unsupported("nil comment node")
+			}
+			text := comment.Text
+			fragments[i] = renderer.Fragment{Annotation: &text}
+			continue
+		}
 		change, err := t.change(node)
 		if err != nil {
 			return renderer.Result{}, err
@@ -39,9 +49,10 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 			native.Value.Id = change.Id
 		}
 		changes = append(changes, change)
+		indexes = append(indexes, i)
 	}
 	if len(changes) == 0 {
-		return renderer.Result{Complete: true}, nil
+		return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil
 	}
 	remote := &protocol.RenderRequest{Engine: t.engine.GetId(), Changes: changes, TargetFeatures: t.engine.GetFeatures(), Capabilities: capabilities}
 	// A provider that did not negotiate text units renders as it always does,
@@ -56,7 +67,6 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 	if refusal := result.GetRefusal(); refusal != nil {
 		return renderer.Result{}, t.textRefusal(request.Nodes, refusal)
 	}
-	fragments := make([]renderer.Fragment, 0, len(result.GetUnits()))
 	for i, unit := range result.GetUnits() {
 		fragment, err := t.renderedFragment(changes[i], unit)
 		if err != nil {
@@ -66,7 +76,7 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 		if err != nil {
 			return renderer.Result{}, err
 		}
-		fragments = append(fragments, fragment)
+		fragments[indexes[i]] = fragment
 	}
 	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil
 }
