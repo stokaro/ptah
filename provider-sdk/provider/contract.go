@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 7
+const ContractMinor uint32 = 8
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -43,7 +43,7 @@ const (
 // declares Engine.common_objects, so their calls are two-way too.
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
-		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
+		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, PlanningObjectContextFeature}
 }

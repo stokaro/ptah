@@ -1756,6 +1756,14 @@ message PlanningPolicy {
   repeated ComparisonIdentity concurrent_index_drop_subjects = 7;
   // Make a column NOT NULL without filling its NULL rows first.
   bool omit_null_backfill = 8;
+  // Statement spelling selected for this plan. Contract 25.8, under
+  // planning.statement-style.
+  PlanningStatementStyle statement_style = 9;
+}
+
+enum PlanningStatementStyle {
+  PLANNING_STATEMENT_STYLE_ANNOTATED = 0;
+  PLANNING_STATEMENT_STYLE_EXACT = 1;
 }
 message PlannedFeatures {
   bool complete = 1;

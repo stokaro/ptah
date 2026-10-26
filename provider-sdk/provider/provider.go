@@ -189,13 +189,16 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 			return err
 		}
 	}
-	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature} {
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
 	}
 	if slices.Contains(engine.GetFeatures(), LintStatementFactsFeature) && !slices.Contains(engine.GetFeatures(), LintFeature) {
 		return fmt.Errorf("%w: lint statement facts require engine lint", ErrProtocol)
+	}
+	if slices.Contains(engine.GetFeatures(), PlanningStatementStyleFeature) && !slices.Contains(engine.GetFeatures(), PlanningPolicyFeature) {
+		return fmt.Errorf("%w: %s requires %s", ErrProtocol, PlanningStatementStyleFeature, PlanningPolicyFeature)
 	}
 	return ValidateQueryDialect(engine.GetQueryDialect())
 }
@@ -252,6 +255,9 @@ func validateContractAdditions(value *protocol.Description) error {
 	}
 	if slices.Contains(features, PlanningPolicyFeature) && !slices.Contains(features, PlanFeaturesFeature) && !slices.Contains(features, CompareModelsFeature) {
 		return fmt.Errorf("%w: a planning policy requires planning or comparison", ErrProtocol)
+	}
+	if slices.Contains(features, PlanningStatementStyleFeature) && !slices.Contains(features, PlanningPolicyFeature) {
+		return fmt.Errorf("%w: %s requires %s", ErrProtocol, PlanningStatementStyleFeature, PlanningPolicyFeature)
 	}
 	for _, feature := range []string{EntryKeysFeature, HCLSourceFeature, EncodeSourceFeature} {
 		if slices.Contains(features, feature) && !slices.Contains(features, DecodeSourceFeature) {

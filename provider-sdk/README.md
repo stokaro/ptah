@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.7. `provider-sdk/v0.8.0` speaks 25.6.
+speaks contract 25.8. `provider-sdk/v0.9.0` speaks 25.7.
+`provider-sdk/v0.8.0` speaks 25.6.
 `provider-sdk/v0.7.0` speaks 25.5.
 `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
 speaks contract 25.3, `provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0`
@@ -86,7 +87,8 @@ returns to 0.
   [database interpretation context](#database-interpretation-context),
   [view facets and replacement observations](#view-facets-and-replacement-observations),
   [complete column observations](#complete-column-observations), and
-  [native object assessment](#native-object-assessment).
+  [native object assessment](#native-object-assessment). Contract 25.8 adds
+  [statement style for feature owners](#planning-policy).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -107,7 +109,8 @@ does not oblige a peer to use it.
   sides list its feature. `provider.TwoWayFeatures()` returns those features:
   `units.statement-timeout`, `lint.statement-facts`, `database.dev-realms`,
   `query.dialect`, `embeddings.store`, `schema.common-objects`,
-  `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`,
+  `render.text-units`, `planning.policy`, `planning.statement-style`,
+  `source.entry-keys`, `source.hcl`,
   `scope.selections`, `source.encode-groups`, `source.limits`,
   `schema.declarations`, `schema.common-access`, `planning.lifecycle`,
   `units.sensitive-inputs`, `schema.columns`, `database.context`,
@@ -1441,6 +1444,14 @@ a two-way feature an engine lists beside planning or comparison:
   online alteration, concurrent index builds and drops for every index or the
   listed ones, and making a column `NOT NULL` without filling its rows. A policy
   is a request: an engine without the behavior plans as it would without it.
+- Contract 25.8 adds `PlanningPolicy.statement_style`. The two-way feature
+  `planning.statement-style` requires `planning.policy` on the provider and
+  engine. `ANNOTATED` is the zero value; `EXACT` asks a feature owner to omit
+  guards and cascading drops where its operation does not rely on them. An
+  exact request is refused unless both sides advertise the feature, so an
+  older owner cannot silently ignore the field. Unknown enum values are
+  refused. [ADR 0050](../docs/adr/0050-statement-style-reaches-feature-owners.md)
+  defines the owner behavior and safety boundary.
 - `RequestedChange.written` carries an object as the operator wrote it, such as
   a secret's path for a rotation, set instead of `subject`. A comparison service
   that recognizes the spelling answers it once in
