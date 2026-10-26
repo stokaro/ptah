@@ -54,6 +54,10 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 			continue
 		}
 		steps, rewrites, err := p.planColumnRewrites(request, table)
+ if p.ownedEdits {
+  steps, err = p.planOwnedEdit(table)
+  rewrites = nil
+ }
 		if err != nil {
 			return &protocol.PlannedFeatures{Complete: true, Diagnostics: []*protocol.PlanningDiagnostic{{
 				Code: protocol.PlanningDiagnostic_UNSUPPORTED_FEATURE, Kind: "column", Message: err.Error(),
@@ -65,7 +69,8 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		for _, step := range steps {
 			ids = append(ids, proto.CloneOf(step.Id))
 		}
-		for _, kind := range request.GetParentKinds() {
+		if p.ownedEdits && table.GetDesired().GetName() == "omitted" { continue }
+ for _, kind := range request.GetParentKinds() {
 			result.Parents = append(result.Parents, &protocol.PlanningParentReceipt{Action: table.GetAction(), Receipt: &protocol.PlanningReceipt{
 				Subject: proto.CloneOf(table.GetSubject()), Kind: kind, Strategy: "Assess common operations and replace supported column additions", Steps: ids}})
 		}
