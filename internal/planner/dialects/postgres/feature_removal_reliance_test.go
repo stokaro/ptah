@@ -167,11 +167,9 @@ func TestPlanner_ExactStyleReleasesRemovedCheckBeforeRoutineAndView(t *testing.T
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"drop constraint", "drop function", "drop view"})
-	for _, node := range nodes {
-		if drop, ok := node.(*ast.DropViewNode); ok {
-			c.Assert(drop.Cascade, qt.IsFalse)
-		}
-	}
+	drop, ok := nodes[2].(*ast.DropViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Cascade, qt.IsFalse)
 }
 
 // TestPlanner_ExactStyleReleasesGeneratedColumnBeforeRoutineAndView pins the
@@ -196,9 +194,7 @@ func TestPlanner_ExactStyleReleasesGeneratedColumnBeforeRoutineAndView(t *testin
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(phaseOrder(nodes), qt.DeepEquals, []string{"drop column", "drop function", "drop view"})
-	for _, node := range nodes {
-		if drop, ok := node.(*ast.DropViewNode); ok {
-			c.Assert(drop.Cascade, qt.IsFalse)
-		}
-	}
+	drop, ok := nodes[2].(*ast.DropViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Cascade, qt.IsFalse)
 }
