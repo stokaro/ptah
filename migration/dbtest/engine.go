@@ -2,6 +2,7 @@ package dbtest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -662,13 +663,17 @@ func runEphemeralCase(
 
 // runner executes steps against a single shared database connection.
 type runner struct {
-	runtime       engine.SchemaRuntime
-	conn          *dbschema.DatabaseConnection
-	migrationsDir string
-	migrationsFS  fs.FS
-	dirFormat     migrationfile.DirFormat
-	desiredSchema *schemamodel.Database
-	seedDir       string
+	runtime engine.SchemaRuntime
+	conn    *dbschema.DatabaseConnection
+	// operator is the handle exec and assert steps run on, and
+	// releaseOperator releases it; see [runner.statements].
+	operator        dbschema.OperatorStatements
+	releaseOperator func() error
+	migrationsDir   string
+	migrationsFS    fs.FS
+	dirFormat       migrationfile.DirFormat
+	desiredSchema   *schemamodel.Database
+	seedDir         string
 	// externalTimeout bounds one external step. Zero selects
 	// [DefaultExternalTimeout].
 	externalTimeout time.Duration
@@ -694,10 +699,45 @@ func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
 	result := CaseResult{Name: c.Name, Passed: true, Steps: make([]StepResult, 0, len(c.Steps))}
 	bodyErr := r.runCaseBody(ctx, c, &result)
 	r.runCaseCleanup(ctx, c, &result)
-	if bodyErr != nil {
-		return result, bodyErr
+	if err := errors.Join(bodyErr, r.releaseStatements()); err != nil {
+		return result, err
 	}
 	return result, nil
+}
+
+// statements returns the handle the case's exec and assert steps run their
+// SQL on: the connection itself on a database/sql engine, and the provider's
+// statement handle on a provider's engine, opened by the first step that needs
+// it and released when the case ends. The steps run the author's own SQL, so
+// they never reach a provider as anything but its statements.
+func (r *runner) statements() (dbschema.OperatorStatements, error) {
+	if r.operator == nil {
+		statements, release, err := r.conn.OperatorStatements()
+		if err != nil {
+			return nil, err
+		}
+		r.operator, r.releaseOperator = statements, release
+	}
+	return r.operator, nil
+}
+
+// releaseStatements releases the handle [runner.statements] opened, if any.
+func (r *runner) releaseStatements() error {
+	if r.releaseOperator == nil {
+		return nil
+	}
+	release := r.releaseOperator
+	r.operator, r.releaseOperator = nil, nil
+	return release()
+}
+
+// query runs an assert step's query on the case's statement handle.
+func (r *runner) query(ctx context.Context, query string) (*sql.Rows, error) {
+	statements, err := r.statements()
+	if err != nil {
+		return nil, err
+	}
+	return statements.QueryContext(ctx, query)
 }
 
 // runCaseBody runs the steps the author wrote, stopping at the first failure.
@@ -775,6 +815,14 @@ func (r *runner) runCaseCleanup(ctx context.Context, c Case, result *CaseResult)
 
 func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail string) {
 	kind, _ := step.kind()
+	if kind == stepKindExec || kind == stepKindAssert {
+		// The handle is opened before the step's SQL runs, so an engine that
+		// runs no statement fails the step rather than handing an
+		// expected-error assertion the refusal as the error it expects.
+		if _, err := r.statements(); err != nil {
+			return false, fmt.Sprintf("run the step's SQL: %v", err)
+		}
+	}
 	switch kind {
 	case stepKindMigrateTo:
 		return r.migrateTo(ctx, step.MigrateTo)
@@ -871,8 +919,12 @@ func (r *runner) newMigrator() (*migrator.Migrator, error) {
 	return m, nil
 }
 
-func (r *runner) runExec(ctx context.Context, sql string) (passed bool, detail string) {
-	if _, err := r.conn.ExecContext(ctx, sql); err != nil {
+func (r *runner) runExec(ctx context.Context, statement string) (passed bool, detail string) {
+	statements, err := r.statements()
+	if err != nil {
+		return false, fmt.Sprintf("exec failed: %v", err)
+	}
+	if _, err := statements.ExecContext(ctx, statement); err != nil {
 		return false, fmt.Sprintf("exec failed: %v", err)
 	}
 	return true, "exec ok"
@@ -938,7 +990,7 @@ func (r *runner) runAssert(ctx context.Context, a *Assertion) (passed bool, deta
 }
 
 func (r *runner) assertRowCount(ctx context.Context, query string, want int) (passed bool, detail string) {
-	rows, err := r.conn.QueryContext(ctx, query)
+	rows, err := r.query(ctx, query)
 	if err != nil {
 		return false, fmt.Sprintf("row_count query failed: %v", err)
 	}
@@ -958,7 +1010,7 @@ func (r *runner) assertRowCount(ctx context.Context, query string, want int) (pa
 }
 
 func (r *runner) assertScalar(ctx context.Context, query, want string) (passed bool, detail string) {
-	rows, err := r.conn.QueryContext(ctx, query)
+	rows, err := r.query(ctx, query)
 	if err != nil {
 		return false, fmt.Sprintf("scalar query failed: %v", err)
 	}
@@ -1032,7 +1084,7 @@ func (r *runner) assertResultSet(
 // scanResultSet reads the whole result, formatting each value the way every
 // other comparison in this package formats one.
 func (r *runner) scanResultSet(ctx context.Context, query string) ([]string, [][]string, error) {
-	queried, err := r.conn.QueryContext(ctx, query)
+	queried, err := r.query(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1198,7 +1250,7 @@ func (r *runner) assertAnyError(ctx context.Context, query string) (passed bool,
 // scanFirstValue runs query and returns its first column of its first row,
 // formatted the way every value comparison in this package formats one.
 func (r *runner) scanFirstValue(ctx context.Context, query string) (string, error) {
-	rows, err := r.conn.QueryContext(ctx, query)
+	rows, err := r.query(ctx, query)
 	if err != nil {
 		return "", err
 	}
@@ -1247,7 +1299,7 @@ func isTruthyValue(value string) bool {
 // runExpectingError runs query and returns any error it produces, draining the
 // result set so errors that only surface during row iteration are observed.
 func (r *runner) runExpectingError(ctx context.Context, query string) error {
-	rows, err := r.conn.QueryContext(ctx, query)
+	rows, err := r.query(ctx, query)
 	if err != nil {
 		return err
 	}
