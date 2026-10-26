@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgtype"
 )
@@ -55,26 +56,31 @@ func TestObservedTypes_ReadRelationsByRowType(t *testing.T) {
 // default schema known: an unqualified type name is in that schema, so it is
 // not the row type of a relation of the same name in another schema.
 func TestObservedTypes_ReadRelationsInTheDefaultSchema(t *testing.T) {
+	public := identifier.Semantics{DefaultSchema: "public", SearchPath: []string{"public"}}
 	tests := []struct {
-		name     string
-		value    schemaext.RelationReaderInSchema
-		relation string
-		want     bool
+		name      string
+		value     schemaext.RelationReaderInSchema
+		relation  string
+		semantics identifier.Semantics
+		want      bool
 	}{
 		{name: "an unqualified attribute type and a relation in the default schema",
-			value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "r", Type: "archive"}}}, relation: "public.archive", want: true},
+			value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "r", Type: "archive"}}}, relation: "public.archive", semantics: public, want: true},
 		{name: "an unqualified attribute type and a relation in another schema",
-			value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "r", Type: "archive"}}}, relation: "audit.archive"},
+			value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{{Name: "r", Type: "archive"}}}, relation: "audit.archive", semantics: public},
 		{name: "a qualified base type and an unqualified relation",
-			value: &pgtype.ObservedDomain{BaseType: "audit.archive"}, relation: "archive"},
+			value: &pgtype.ObservedDomain{BaseType: "audit.archive"}, relation: "archive", semantics: public},
 		{name: "a range over the row type in the default schema",
-			value: &pgtype.ObservedRange{Subtype: "public.archive"}, relation: "archive", want: true},
+			value: &pgtype.ObservedRange{Subtype: "public.archive"}, relation: "archive", semantics: public, want: true},
+		{name: "an unqualified type reaches another schema on the search path",
+			value: &pgtype.ObservedDomain{BaseType: "archive"}, relation: "reporting.archive",
+			semantics: identifier.Semantics{DefaultSchema: "public", SearchPath: []string{"public", "reporting"}}, want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := test.value.ReadsRelationIn(test.relation, "public")
+			got := test.value.ReadsRelationIn(test.relation, test.semantics)
 
 			c.Assert(got, qt.Equals, test.want)
 		})
