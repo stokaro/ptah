@@ -18,6 +18,9 @@ import (
 // execution. Native payloads never enter a SQL editor or a SQL rehearsal.
 func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaApplyOptions, plan atlasschema.ApplyRuntimePlan, run *applyRun) (atlasschema.ApplyOutcome, error) {
 	if opts.edit {
+		if plan.HasInputReferences() {
+			return "", fmt.Errorf("%w: approved execution inputs cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature)
+		}
 		return "", fmt.Errorf("%w: a native operation cannot be edited as SQL; edit the desired schema and plan again", ptaherr.ErrUnsupportedFeature)
 	}
 	if err := plan.Preflight(ctx); err != nil {
@@ -60,6 +63,9 @@ func applyNativeSchemaPlan(ctx context.Context, cmd *cobra.Command, opts schemaA
 // kind, subject and captured assessments. The operation's bytes are not shown.
 func printApplyUnits(out io.Writer, units []atlasschema.ApplyUnitReport) {
 	for _, unit := range units {
+		for _, input := range unit.Inputs {
+			fmt.Fprintf(out, "Execution input: %s %s\n", input.Source, input.Name)
+		}
 		if unit.Native == nil {
 			fmt.Fprintln(out, unit.SQL)
 			continue

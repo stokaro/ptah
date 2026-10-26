@@ -559,7 +559,7 @@ func runSchemaApplyOnLockedSession(
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 
-	if plan.HasNativeUnits() {
+	if plan.HasNativeUnits() || plan.HasInputReferences() {
 		return applyNativeSchemaPlan(ctx, cmd, opts, plan, run)
 	}
 
@@ -727,7 +727,7 @@ func runSchemaApplyPlanFileOnLockedSession(
 
 	printPlan(run.human, plan)
 	run.evidence.Units = plan.UnitReports()
-	if plan.HasNative() {
+	if plan.HasNative() || plan.HasInputReferences() {
 		return runSchemaApplyNativePlanFile(ctx, cmd, opts, conn, plan, txMode, run)
 	}
 	if opts.dryRun {

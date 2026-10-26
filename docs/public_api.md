@@ -5644,10 +5644,41 @@ before dispatch; a local refusal sends no prefix. Native values must retain
 the selected provider's captured model binding.
 Dry runs validate but do not dispatch.
 
+`renderer.Fragment.Inputs` records sorted `renderer.InputReference` values
+beside the exact operation they describe. `Source` is `InputEnvironment` and
+`Name` is a portable environment variable identifier. `Clone` copies the
+references, and `ValidateInputReferences` rejects unknown sources, invalid
+names, duplicates, and unsorted lists. A fragment with input references must
+be an exact execution unit.
+
+A provider that negotiates `units.sensitive-inputs` describes each unit's
+references during rendering without reading values. Saved schema plans and
+review output preserve those names; the plan digest covers them. Preflight
+checks that discovery still matches. Immediately before dispatch, the host
+describes the exact batch again, requires the approved set, and resolves its
+values from the host environment. An absent variable refuses the batch; a
+present empty value remains empty. Values enter only the execution RPC and
+are cleared from its binding buffers when it returns. They never enter a
+plan, unit, or provider process environment.
+
+`dbschema.UnitInputPreparer.PrepareUnitInputs` discovers the references for
+exact SQL or native bodies before approval. Returned bodies and ordering are
+unchanged. Versioned migrations use this service before their plan observer,
+guard, and preflight hook. `migrator.MigrationPlan.Inputs` records each
+statement's digest, revision identity, and references. Execution retains that
+approved set across the SQL writer interface and checks it again before
+dispatch. `migrator.RunResult.Inputs` preserves the same value-free evidence.
+An undeclared SQL body acquires no input approvals during execution.
+
+Input-bearing operator statements can run through the approved execution-unit
+path when the caller requests only their effect. Result-bearing, read-only,
+and parameterized operator statements refuse sensitive inputs.
+
 Callers own target verification, approval, lock acquisition, and transaction
 policy. The interface does not infer approval or transaction requirements from
 payloads. SQL-only executors must refuse a native batch before executing any
-SQL prefix. A transaction that dispatched a failed execution cannot commit;
+SQL prefix. SQL-only executors also refuse units with approved input
+references. A transaction that dispatched a failed execution cannot commit;
 rollback remains available.
 
 `dbschema.UnitExecutionError` records `Applied` and `Total` for a dispatched

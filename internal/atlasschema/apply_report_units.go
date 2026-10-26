@@ -2,7 +2,9 @@ package atlasschema
 
 import (
 	"context"
+	"slices"
 
+	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/migration/safety"
 )
@@ -10,8 +12,9 @@ import (
 // ApplyUnitReport describes one planned SQL or native operation. Native reports
 // summarize captured effects and identity; they are not executable artifacts.
 type ApplyUnitReport struct {
-	SQL    string            `json:"sql,omitempty"`
-	Native *NativeUnitReport `json:"native,omitempty"`
+	SQL    string                    `json:"sql,omitempty"`
+	Native *NativeUnitReport         `json:"native,omitempty"`
+	Inputs []renderer.InputReference `json:"inputs,omitempty"`
 }
 
 // NativeUnitReport describes the owner and effects without publishing opaque
@@ -51,6 +54,7 @@ func (p ApplyRuntimePlan) ReportUnits(ctx context.Context, runtime safety.Runtim
 	report := make([]ApplyUnitReport, len(units))
 	for i, unit := range units {
 		report[i].SQL = unit.SQL
+		report[i].Inputs = slices.Clone(unit.Inputs)
 		if unit.Native != nil {
 			assessment := assessments[i]
 			report[i].Native = &NativeUnitReport{Kind: unit.Native.Kind(), Subject: assessment.Subject, Severity: assessment.Severity, Reason: assessment.Reason, Access: assessment.Access, AccessReason: assessment.AccessReason}

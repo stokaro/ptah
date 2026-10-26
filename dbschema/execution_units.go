@@ -23,6 +23,14 @@ type UnitExecutor interface {
 	ExecuteUnits(context.Context, []renderer.Fragment) error
 }
 
+// UnitInputPreparer discovers value-free references before the caller asks for
+// approval. Returned fragments preserve every body and its order. Discovery
+// performs no writes, reads no input values, and returns independent snapshots.
+// Callers retain the references with the exact units they approve.
+type UnitInputPreparer interface {
+	PrepareUnitInputs(context.Context, []renderer.Fragment) ([]renderer.Fragment, error)
+}
+
 // UnitExecutionError retains the acknowledged prefix of a dispatched batch.
 // Applied confirms execution within the selected transaction, not its commit.
 // Unconfirmed units may have taken effect; this error never authorizes retry.

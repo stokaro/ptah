@@ -517,7 +517,7 @@ func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
 	c.Assert(report.Error, qt.Equals, err.Error())
-	c.Assert(report.Units, qt.Contains, atlasschema.ApplyUnitReport{SQL: `INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`})
+	c.Assert(report.Units, qt.Any(qt.DeepEquals), atlasschema.ApplyUnitReport{SQL: `INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
 }
 

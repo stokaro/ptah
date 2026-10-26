@@ -62,6 +62,10 @@ func (t *target) Render(ctx context.Context, request renderer.Request) (renderer
 		if err != nil {
 			return renderer.Result{}, err
 		}
+		fragment.Inputs, err = t.renderedInputs(ctx, unit)
+		if err != nil {
+			return renderer.Result{}, err
+		}
 		fragments = append(fragments, fragment)
 	}
 	return renderer.Result{Complete: true, Fragments: fragments, ExecutableUnits: true}, nil

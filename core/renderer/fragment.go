@@ -3,6 +3,7 @@ package renderer
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/ptaherr"
@@ -19,6 +20,9 @@ var ErrNativeSQL = fmt.Errorf("%w: native operations cannot be represented as SQ
 type Fragment struct {
 	SQL    string
 	Native ast.ExtensionPayload
+	// Inputs are approved references for this exact body. They contain no
+	// values; execution must refuse a different input set before resolving it.
+	Inputs []InputReference
 }
 
 // SQLFragments wraps SQL text in node order without parsing or changing bytes.
@@ -41,6 +45,10 @@ func (f Fragment) Validate() error {
 
 // Clone returns an independent snapshot and validates the payload boundary.
 func (f Fragment) Clone() (Fragment, error) {
+	if err := ValidateInputReferences(f.Inputs); err != nil {
+		return Fragment{}, err
+	}
+	f.Inputs = slices.Clone(f.Inputs)
 	if f.Native == nil {
 		return f, nil
 	}
@@ -51,7 +59,8 @@ func (f Fragment) Clone() (Fragment, error) {
 	if err != nil {
 		return Fragment{}, fmt.Errorf("%w: %w", ErrInvalidResult, err)
 	}
-	return Fragment{Native: payload}, nil
+	f.Native = payload
+	return f, nil
 }
 
 // MarshalJSON prevents encoding a native Go type without its owner's codec.
@@ -63,6 +72,7 @@ func (f Fragment) MarshalJSON() ([]byte, error) {
 		return nil, schemaext.ErrExplicitCodec
 	}
 	return json.Marshal(struct {
-		SQL string `json:"sql"`
-	}{f.SQL})
+		SQL    string           `json:"sql"`
+		Inputs []InputReference `json:"inputs,omitempty"`
+	}{f.SQL, f.Inputs})
 }

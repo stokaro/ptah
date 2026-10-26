@@ -9,9 +9,23 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/migration/migrator"
 )
+
+func TestRunResultRetainsIndependentApprovedInputReferences(t *testing.T) {
+	c := qt.New(t)
+	plan := migrator.MigrationPlan{Inputs: []migrator.MigrationInput{{Version: 42, VersionKey: "42_rotate", StatementIndex: 2, StatementDigest: "sha256:statement",
+		Inputs: []renderer.InputReference{{Source: renderer.InputEnvironment, Name: "DB_PASSWORD"}}}}}
+	result := migrator.NewRunResult(migrator.RunEvidence{Plan: &plan})
+	plan.Inputs[0].Inputs[0].Name = "CHANGED"
+	plan.Inputs[0].StatementDigest = "changed"
+	c.Assert(result.Inputs, qt.HasLen, 1)
+	c.Assert(result.Inputs[0].Inputs[0].Name, qt.Equals, "DB_PASSWORD")
+	c.Assert(result.Inputs[0].StatementDigest, qt.Equals, "sha256:statement")
+	c.Assert(result.Inputs[0].VersionKey, qt.Equals, "42_rotate")
+}
 
 // TestNewRunResult_ClassifiesFromTheEvidence pins the rule that decides what a
 // run did. Every row carries evidence a caller could actually hold: a dirty row

@@ -13,6 +13,9 @@ import (
 // Execute translates native operations inside the owning process. Every unit is
 // validated before the SQLite backend can write the first one.
 func (p *owner) Execute(ctx context.Context, request *protocol.ExecuteRequest) (*protocol.Execution, error) {
+	if !p.validInputBindings(request) {
+		return nativeRefusal(), nil
+	}
 	translated := proto.CloneOf(request)
 	for _, unit := range translated.GetUnits() {
 		if err := ctx.Err(); err != nil {

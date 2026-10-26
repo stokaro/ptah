@@ -33,7 +33,7 @@ func (s *session) ExecuteUnits(ctx context.Context, units []renderer.Fragment) e
 	if err != nil {
 		return err
 	}
-	if s.IsDryRun() || len(prepared) == 0 {
+	if s.IsDryRun() || len(prepared.units) == 0 {
 		return nil
 	}
 	return s.dispatchUnits(ctx, "", prepared)
@@ -42,44 +42,58 @@ func (s *session) ExecuteUnits(ctx context.Context, units []renderer.Fragment) e
 // prepareUnits resolves every local operation before the first execution RPC.
 // Model signatures include executable and semantic identity. No SQL prefix is
 // sent when a later native value belongs to a different frozen selection.
-func (s *session) prepareUnits(ctx context.Context, units []renderer.Fragment) ([]*protocol.Unit, error) {
-	if err := ctx.Err(); err != nil {
+func (s *session) prepareUnits(ctx context.Context, units []renderer.Fragment) (*preparedExecution, error) {
+	prepared, fragments, err := s.encodeUnits(ctx, units)
+	if err != nil {
 		return nil, err
+	}
+	inputs, err := s.approvedInputs(ctx, fragments, prepared)
+	if err != nil {
+		return nil, err
+	}
+	return &preparedExecution{units: prepared, inputs: inputs}, nil
+}
+
+func (s *session) encodeUnits(ctx context.Context, units []renderer.Fragment) ([]*protocol.Unit, []renderer.Fragment, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
 	if s.closed.Load() {
-		return nil, fmt.Errorf("provider session is closed")
+		return nil, nil, fmt.Errorf("provider session is closed")
 	}
 	if err := s.lockError(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	prepared := make([]*protocol.Unit, len(units))
+	fragments := make([]renderer.Fragment, len(units))
 	for i, unit := range units {
 		fragment, err := unit.Clone()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		fragments[i] = fragment
 		wire := &protocol.Unit{ChangeId: strconv.Itoa(i)}
 		if fragment.Native == nil {
 			wire.Body = &protocol.Unit_Sql{Sql: fragment.SQL}
 		} else {
 			value, err := s.target.operationValue(fragment.Native)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			wire.Body = &protocol.Unit_Native{Native: proto.CloneOf(value.normalized.GetValue())}
 		}
 		if err := provider.ValidateUnit(wire); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		prepared[i] = wire
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return prepared, nil
+	return prepared, fragments, nil
 }
 
-func (s *session) dispatchUnits(ctx context.Context, transactionID string, units []*protocol.Unit) error {
+func (s *session) dispatchUnits(ctx context.Context, transactionID string, prepared *preparedExecution) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -89,7 +103,11 @@ func (s *session) dispatchUnits(ctx context.Context, transactionID string, units
 	if err := s.lockError(); err != nil {
 		return err
 	}
-	request := &protocol.ExecuteRequest{SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID, Units: units}
+	request := &protocol.ExecuteRequest{SessionId: s.remote.GetId(), RequestId: rand.Text(), TransactionId: transactionID, Units: prepared.units}
+	defer clearExecutionInputs(request)
+	if err := s.bindExecutionInputs(ctx, request, prepared.inputs); err != nil {
+		return err
+	}
 	// A migration's statement timeout reaches the provider with the units,
 	// and the provider stops a unit that runs longer; see BoundsStatements.
 	if timeout, bounded := statementtimeout.From(ctx); bounded {
@@ -100,7 +118,7 @@ func (s *session) dispatchUnits(ctx context.Context, transactionID string, units
 		return nil
 	}
 	if outcome, ok := errors.AsType[*provider.ExecutionError](err); ok {
-		return &dbschema.UnitExecutionError{Err: nativeOutcomeError(err), Applied: int(outcome.Applied), Total: len(units)}
+		return &dbschema.UnitExecutionError{Err: nativeOutcomeError(err), Applied: int(outcome.Applied), Total: len(prepared.units)}
 	}
 	return nativeOutcomeError(err)
 }

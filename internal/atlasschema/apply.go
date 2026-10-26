@@ -1075,6 +1075,12 @@ func (p ApplyRuntimePlan) HasNativeUnits() bool {
 	return slices.ContainsFunc(p.plan.units, func(unit renderer.Fragment) bool { return unit.Native != nil })
 }
 
+// HasInputReferences reports whether the captured plan approves inputs whose
+// references must remain attached to their execution units.
+func (p ApplyRuntimePlan) HasInputReferences() bool {
+	return slices.ContainsFunc(p.plan.units, func(unit renderer.Fragment) bool { return len(unit.Inputs) != 0 })
+}
+
 // Preflight checks the complete captured batch and its transaction requirements
 // without opening a transaction or writing to the database.
 func (p ApplyRuntimePlan) Preflight(ctx context.Context) error {

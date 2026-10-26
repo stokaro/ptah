@@ -430,6 +430,7 @@ func runAtlasMigrateApplyTarget(
 	result, err := plan.ExecuteWithPreflight(
 		cmd.Context(),
 		func(_ context.Context, lockedPlan migrator.MigrationPlan) error {
+			dbcli.ReportMigrationInputs(cmd.PrintErrf, lockedPlan)
 			emitApplyStart(lockedPlan.Versions, lockedPlan.VersionKeys)
 			return nil
 		},
