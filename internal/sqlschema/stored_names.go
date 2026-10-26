@@ -305,15 +305,35 @@ func (s *storedNames) claimDerived(space, owner, kind, name string, owned owners
 	}
 }
 
-// own ties the name a declaration has just entered to what removes it with
-// it. A name the namespace held before keeps the owner it had.
-func (s *storedNames) own(space, owner, raw string, existed bool, owned ownership) {
-	if existed || strings.TrimSpace(raw) == "" {
+// declareOwned is [storedNames.declare] for a name that goes with what owned
+// names. A name the namespace held before keeps the owner it had.
+func (s *storedNames) declareOwned(space, owner, kind, raw string, rule onExisting, owned ownership) (existed bool, err error) {
+	existed, err = s.declare(space, owner, kind, raw, rule)
+	if err == nil && !existed {
+		s.setOwner(space, owner, raw, owned)
+	}
+	return existed, err
+}
+
+// claimOwned is [storedNames.claim] for a name that goes with what owned
+// names.
+func (s *storedNames) claimOwned(space, owner, kind, raw string, rule onExisting, owned ownership) (existed bool, err error) {
+	existed, err = s.claim(space, owner, kind, raw, rule)
+	if err == nil && !existed {
+		s.setOwner(space, owner, raw, owned)
+	}
+	return existed, err
+}
+
+// setOwner ties a name a declaration has just entered to what removes it with
+// it.
+func (s *storedNames) setOwner(space, owner, raw string, owned ownership) {
+	if strings.TrimSpace(raw) == "" {
 		return
 	}
 	key := spaceKey(space, owner)
 	stored := storedIdentifier(s.sourcePlatform, foldedIdentifierPart(s.sourcePlatform, strings.TrimSpace(raw)))
-	if entry, found := s.spaces[key][stored]; found && entry.table == "" {
+	if entry, found := s.spaces[key][stored]; found {
 		entry.ownership = owned
 		s.spaces[key][stored] = entry
 	}
@@ -593,11 +613,9 @@ func (s *storedNames) createTable(node *ast.CreateTableNode) error {
 		}
 	}
 	for _, index := range node.Indexes {
-		existed, err := s.declare(relationSpace, table.schema, "index", index.Name, existingRule[index.IfNotExists])
-		if err != nil {
+		if _, err := s.declareOwned(relationSpace, table.schema, "index", index.Name, existingRule[index.IfNotExists], ownership{table: table.tableKey()}); err != nil {
 			return err
 		}
-		s.own(relationSpace, table.schema, index.Name, existed, ownership{table: table.tableKey()})
 	}
 	return nil
 }
@@ -677,9 +695,7 @@ func (s *storedNames) tableKeys(node *ast.CreateTableNode) foldedKeys {
 		key.signature = keyClauses(constraint)
 		written = append(written, key)
 	}
-	slices.SortStableFunc(written, func(a, b foldedKey) int {
-		return cmp.Compare(boolRank(b.primary), boolRank(a.primary))
-	})
+	slices.SortStableFunc(written, primaryFirst)
 	var keys foldedKeys
 	for _, key := range written {
 		key.signature = strings.Join(key.columns, "\x00") + "\x01" + strings.Join(key.include, "\x00") + "\x01" + key.signature
@@ -709,11 +725,17 @@ func keyClauses(constraint *ast.ConstraintNode) string {
 	return strings.Join(clauses, " ")
 }
 
-func boolRank(value bool) int {
-	if value {
+// primaryFirst orders a primary key before the other keys, and keeps the
+// order of the rest.
+func primaryFirst(a, b foldedKey) int {
+	switch {
+	case a.primary == b.primary:
+		return 0
+	case a.primary:
+		return -1
+	default:
 		return 1
 	}
-	return 0
 }
 
 // buildsIndex reports whether a constraint builds an index of its own name.
@@ -745,11 +767,9 @@ func (s *storedNames) column(table relation, column *ast.ColumnNode, rule onExis
 		names = append(names, struct{ kind, name string }{"foreign key", column.ForeignKey.Name})
 	}
 	for _, named := range names {
-		existed, err := s.declare(constraintSpace, owner, named.kind, named.name, refuseExisting)
-		if err != nil {
+		if _, err := s.declareOwned(constraintSpace, owner, named.kind, named.name, refuseExisting, owned); err != nil {
 			return false, err
 		}
-		s.own(constraintSpace, owner, named.name, existed, owned)
 	}
 	s.derived = append(s.derived, func() { s.claimColumnSequence(table, column) })
 	return false, nil
@@ -872,8 +892,7 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 		// it goes with its table alone.
 		owned.columns = nil
 	}
-	existed, err := s.declare(constraintSpace, table.tableKey(), kind, constraint.Name, refuseExisting)
-	s.own(constraintSpace, table.tableKey(), constraint.Name, existed || err != nil, owned)
+	_, err := s.declareOwned(constraintSpace, table.tableKey(), kind, constraint.Name, refuseExisting, owned)
 	return err
 }
 
@@ -881,13 +900,10 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 // which lives in the schema's relation namespace as well as on the table. A cut
 // name is the constraint's, reported once.
 func (s *storedNames) indexConstraint(table relation, kind, name string, owned ownership) error {
-	existed, err := s.declare(constraintSpace, table.tableKey(), kind, name, refuseExisting)
-	if err != nil {
+	if _, err := s.declareOwned(constraintSpace, table.tableKey(), kind, name, refuseExisting, owned); err != nil {
 		return err
 	}
-	s.own(constraintSpace, table.tableKey(), name, existed, owned)
-	existed, err = s.claim(relationSpace, table.schema, "index of "+kind, name, refuseExisting)
-	s.own(relationSpace, table.schema, name, existed || err != nil, owned)
+	_, err := s.claimOwned(relationSpace, table.schema, "index of "+kind, name, refuseExisting, owned)
 	return err
 }
 
@@ -916,12 +932,7 @@ func (s *storedNames) index(node *ast.IndexNode) error {
 	// An index lives in the schema of the table it is on.
 	table := s.relation(node.Table)
 	rule := existingRule[node.IfNotExists]
-	existed, err := s.declare(relationSpace, table.schema, "index", node.Name, rule)
-	if err := s.skipIfExisted(node, rule)(existed, err); err != nil {
-		return err
-	}
-	s.own(relationSpace, table.schema, node.Name, existed, ownership{table: table.tableKey()})
-	return nil
+	return s.skipIfExisted(node, rule)(s.declareOwned(relationSpace, table.schema, "index", node.Name, rule, ownership{table: table.tableKey()}))
 }
 
 func (s *storedNames) alterTable(node *ast.AlterTableNode) error {
@@ -948,10 +959,7 @@ func (s *storedNames) alterOperation(table *relation, operation ast.AlterOperati
 		return s.constraint(*table, op.Constraint)
 	case *ast.AddIndexOperation:
 		if op.Index != nil && strings.TrimSpace(op.Index.Name) != "" {
-			existed, err := s.declare(relationSpace, table.schema, "index", op.Index.Name, existingRule[op.Index.IfNotExists])
-			if err == nil {
-				s.own(relationSpace, table.schema, op.Index.Name, existed, ownership{table: table.tableKey()})
-			}
+			_, err := s.declareOwned(relationSpace, table.schema, "index", op.Index.Name, existingRule[op.Index.IfNotExists], ownership{table: table.tableKey()})
 			return err
 		}
 	case *ast.DropConstraintOperation:

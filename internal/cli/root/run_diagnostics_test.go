@@ -339,12 +339,6 @@ func warningLinesOf(output string) []string {
 	return warnings
 }
 
-// lastLine is the last line of output.
-func lastLine(output string) string {
-	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
-	return lines[len(lines)-1]
-}
-
 // The words a summary uses to list its objects name the switches they mean,
 // so renaming a variable cannot leave a summary pointing at the old name.
 func TestDiagnosticsListings_NameTheirSwitches(t *testing.T) {

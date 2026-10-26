@@ -455,13 +455,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue := resolvedOpts.revisionTableFormat
 	connectTimeoutValue := resolvedOpts.connectTimeout
 
-	logWriter := commandLogWriter(cmd, opts.logFormat)
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
 		LogFormat:   opts.logFormat,
 		LogLevel:    opts.logLevel,
 		MetricsAddr: opts.metricsAddr,
-		LogWriter:   logWriter,
+		LogWriter:   commandLogWriter(cmd, opts.logFormat),
 	})
 	if err != nil {
 		return err
