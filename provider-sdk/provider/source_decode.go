@@ -54,6 +54,9 @@ func ValidateSourceRequest(description *protocol.Description, request *protocol.
 		if err := validateHCLSourceFragments(description, request.GetEngine(), document, kinds); err != nil {
 			return err
 		}
+		if err := validateGoSourceLimits(description, request.GetEngine(), document); err != nil {
+			return err
+		}
 		if len(document.GetFragments()) != 0 && len(kinds) == 0 {
 			return sourceError("fragments require explicit model scope")
 		}

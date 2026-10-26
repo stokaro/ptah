@@ -405,7 +405,7 @@ func TestHCLFragmentsOfAnEngineWithoutClaims(t *testing.T) {
 	yaml.Limits = []*protocol.SchemaCoverageLimit{{Kind: "retention"}}
 	yaml.Models = []*protocol.ValueModel{proto.CloneOf(d.Engines[0].ValueModels[0])}
 	request.Documents = []*protocol.SourceDocument{yaml}
-	c.Assert(provider.ValidateSourceRequest(d, request), qt.ErrorMatches, `.*header limits on a document that is not HCL`)
+	c.Assert(provider.ValidateSourceRequest(d, request), qt.ErrorMatches, `.*header limits require HCL or Go annotations`)
 }
 
 // A decoded value of an HCL fragment belongs to a model its block claim

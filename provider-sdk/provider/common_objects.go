@@ -18,6 +18,14 @@ import (
 // beside Engine.common_objects, the kinds it carries. Contract 25.3.
 const CommonObjectsFeature = "schema.common-objects"
 
+// CommonAccessFeature enables independently covered object ownership and role
+// membership observations. Both peers negotiate it beside CommonObjectsFeature.
+const CommonAccessFeature = "schema.common-access"
+
+func commonAccessKind(kind protocol.CommonObjectSupport_Kind) bool {
+	return kind == protocol.CommonObjectSupport_OBJECT_OWNER || kind == protocol.CommonObjectSupport_ROLE_MEMBERSHIP
+}
+
 // CommonObjectPreparer returns a declaration of common objects in the
 // engine's own spelling, offline. It may change how a value is spelled, such
 // as a view body or a privilege name, and never what an entry is. A failure is
@@ -38,6 +46,10 @@ func commonObjectError(reason string) error {
 // known kinds once each.
 func validateCommonObjectSupport(description *protocol.Description, engine *protocol.Engine) error {
 	listed := slices.Contains(engine.GetFeatures(), CommonObjectsFeature)
+	access := slices.Contains(engine.GetFeatures(), CommonAccessFeature)
+	if access && (!listed || !slices.Contains(description.GetFeatures(), CommonAccessFeature)) {
+		return commonObjectError("common access requires the engine's common objects and the provider's feature")
+	}
 	if listed && !slices.Contains(description.GetFeatures(), CommonObjectsFeature) {
 		return commonObjectError("an engine lists the feature without the provider")
 	}
@@ -52,6 +64,9 @@ func validateCommonObjectSupport(description *protocol.Description, engine *prot
 		return commonObjectError("an engine declares no kind")
 	}
 	for i, kind := range support.GetKinds() {
+		if commonAccessKind(kind) && !access {
+			return commonObjectError("access kinds require common access negotiation")
+		}
 		if _, known := protocol.CommonObjectSupport_Kind_name[int32(kind)]; !known || kind == protocol.CommonObjectSupport_KIND_UNSPECIFIED ||
 			slices.Contains(support.GetKinds()[:i], kind) {
 			return commonObjectError("an unknown or repeated kind")
@@ -243,6 +258,7 @@ func validateObservedCommonObjects(engine *protocol.Engine, observed *protocol.O
 		func() error { return validateObservedRoles(complete, observed) },
 		func() error { return validateObservedGrants(complete, observed.GetGrants()) },
 		func() error { return validateObservedComments(engine.GetId(), complete, observed.GetComments()) },
+		func() error { return validateObservedAccess(engine, kinds, complete, observed) },
 	} {
 		if err := check(); err != nil {
 			return err

@@ -49,6 +49,11 @@ a new record that names it, and its own status line is updated to point there.
 | [0037](0037-a-provider-encodes-the-source-it-decodes.md) | A provider encodes the source it decodes | Accepted |
 | [0038](0038-a-provider-runs-the-operators-statements-and-returns-what-they-read.md) | A provider runs the operator's statements and returns what they read | Accepted |
 | [0039](0039-a-provider-declares-how-a-scope-names-its-objects-and-which-grants-name-them.md) | A provider declares how a scope names its objects and which grants name them | Accepted |
+| [0040](0040-a-source-value-can-require-several-claimed-declarations.md) | A source value can require several claimed declarations | Accepted |
+| [0041](0041-a-provider-plans-authored-declarations-without-inventing-observed-absence.md) | A provider plans authored declarations without inventing observed absence | Accepted |
+| [0042](0042-access-observations-have-independent-coverage.md) | Access observations have independent coverage | Accepted |
+| [0043](0043-sensitive-input-references-are-approved-before-values-are-bound.md) | Sensitive input references are approved before values are bound | Accepted |
+| [0044](0044-lifecycle-operations-use-the-complete-common-sequence.md) | Lifecycle operations use the complete common sequence | Accepted |
 
 ## Writing one
 

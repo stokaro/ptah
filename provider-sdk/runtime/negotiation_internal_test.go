@@ -155,7 +155,7 @@ func TestMinimumContractDecidesWhoStarts(t *testing.T) {
 	c.Assert(described, qt.IsNotNil)
 	described.MinContract.Minor = provider.ContractMinor + 1
 	got, err = negotiate(described, Options{})
-	c.Assert(err, qt.ErrorMatches, `provider requires contract 25\.5 or a later minor of it; this host speaks 25\.4`)
+	c.Assert(err, qt.ErrorMatches, `provider requires contract 25\.6 or a later minor of it; this host speaks 25\.5`)
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
 	c.Assert(got, qt.IsNil)
 }
@@ -209,7 +209,7 @@ func TestServerRefusesAMinimumAboveItsSDK(t *testing.T) {
 	description.Features = []string{provider.LintFeature}
 	description.MinContract = &protocol.ContractVersion{Major: provider.Revision, Minor: provider.ContractMinor + 1}
 	server := Server{Description: description, Sessions: &sessionOwner{}, Linter: &factsLinter{}}
-	c.Assert(server.Validate(), qt.ErrorMatches, `.*minimum contract 25\.5 is outside contract 25\.4`)
+	c.Assert(server.Validate(), qt.ErrorMatches, `.*minimum contract 25\.6 is outside contract 25\.5`)
 	description.MinContract.Minor = provider.ContractMinor
 	c.Assert(server.Validate(), qt.IsNil)
 }

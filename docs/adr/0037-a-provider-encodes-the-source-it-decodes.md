@@ -2,6 +2,9 @@
 
 Status: Accepted
 
+Superseded in part: [ADR 0040](0040-a-source-value-can-require-several-claimed-declarations.md)
+replaces the one-fragment accounting rule when grouped encoding is negotiated.
+
 Deciders: Ptah maintainers
 
 Issue: [stokaro/ptah#4204](https://github.com/stokaro/ptah/issues/4204)

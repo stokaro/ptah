@@ -31,6 +31,8 @@ const (
 	Provider_ConvertValues_FullMethodName             = "/ptah.provider.experimental.Provider/ConvertValues"
 	Provider_CompareModels_FullMethodName             = "/ptah.provider.experimental.Provider/CompareModels"
 	Provider_PlanFeatures_FullMethodName              = "/ptah.provider.experimental.Provider/PlanFeatures"
+	Provider_PlanDeclarations_FullMethodName          = "/ptah.provider.experimental.Provider/PlanDeclarations"
+	Provider_DescribeExecutionInputs_FullMethodName   = "/ptah.provider.experimental.Provider/DescribeExecutionInputs"
 	Provider_PrepareTables_FullMethodName             = "/ptah.provider.experimental.Provider/PrepareTables"
 	Provider_ProjectTableCreations_FullMethodName     = "/ptah.provider.experimental.Provider/ProjectTableCreations"
 	Provider_ValidateSchema_FullMethodName            = "/ptah.provider.experimental.Provider/ValidateSchema"
@@ -112,6 +114,8 @@ type ProviderClient interface {
 	ConvertValues(ctx context.Context, in *ConvertValuesRequest, opts ...grpc.CallOption) (*NormalizedValues, error)
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
+	PlanDeclarations(ctx context.Context, in *PlanDeclarationsRequest, opts ...grpc.CallOption) (*PlannedDeclarations, error)
+	DescribeExecutionInputs(ctx context.Context, in *DescribeExecutionInputsRequest, opts ...grpc.CallOption) (*ExecutionInputs, error)
 	PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error)
 	ProjectTableCreations(ctx context.Context, in *ProjectTableCreationsRequest, opts ...grpc.CallOption) (*ProjectedTableCreations, error)
 	ValidateSchema(ctx context.Context, in *ValidateSchemaRequest, opts ...grpc.CallOption) (*SchemaValidation, error)
@@ -301,6 +305,26 @@ func (c *providerClient) PlanFeatures(ctx context.Context, in *PlanFeaturesReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PlannedFeatures)
 	err := c.cc.Invoke(ctx, Provider_PlanFeatures_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PlanDeclarations(ctx context.Context, in *PlanDeclarationsRequest, opts ...grpc.CallOption) (*PlannedDeclarations, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PlannedDeclarations)
+	err := c.cc.Invoke(ctx, Provider_PlanDeclarations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) DescribeExecutionInputs(ctx context.Context, in *DescribeExecutionInputsRequest, opts ...grpc.CallOption) (*ExecutionInputs, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionInputs)
+	err := c.cc.Invoke(ctx, Provider_DescribeExecutionInputs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -890,6 +914,8 @@ type ProviderServer interface {
 	ConvertValues(context.Context, *ConvertValuesRequest) (*NormalizedValues, error)
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
+	PlanDeclarations(context.Context, *PlanDeclarationsRequest) (*PlannedDeclarations, error)
+	DescribeExecutionInputs(context.Context, *DescribeExecutionInputsRequest) (*ExecutionInputs, error)
 	PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error)
 	ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error)
 	ValidateSchema(context.Context, *ValidateSchemaRequest) (*SchemaValidation, error)
@@ -1000,6 +1026,12 @@ func (UnimplementedProviderServer) CompareModels(context.Context, *CompareModels
 }
 func (UnimplementedProviderServer) PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlanFeatures not implemented")
+}
+func (UnimplementedProviderServer) PlanDeclarations(context.Context, *PlanDeclarationsRequest) (*PlannedDeclarations, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PlanDeclarations not implemented")
+}
+func (UnimplementedProviderServer) DescribeExecutionInputs(context.Context, *DescribeExecutionInputsRequest) (*ExecutionInputs, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DescribeExecutionInputs not implemented")
 }
 func (UnimplementedProviderServer) PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PrepareTables not implemented")
@@ -1402,6 +1434,42 @@ func _Provider_PlanFeatures_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).PlanFeatures(ctx, req.(*PlanFeaturesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PlanDeclarations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlanDeclarationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PlanDeclarations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PlanDeclarations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PlanDeclarations(ctx, req.(*PlanDeclarationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_DescribeExecutionInputs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeExecutionInputsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).DescribeExecutionInputs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_DescribeExecutionInputs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).DescribeExecutionInputs(ctx, req.(*DescribeExecutionInputsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2468,6 +2536,14 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlanFeatures",
 			Handler:    _Provider_PlanFeatures_Handler,
+		},
+		{
+			MethodName: "PlanDeclarations",
+			Handler:    _Provider_PlanDeclarations_Handler,
+		},
+		{
+			MethodName: "DescribeExecutionInputs",
+			Handler:    _Provider_DescribeExecutionInputs_Handler,
 		},
 		{
 			MethodName: "PrepareTables",

@@ -178,12 +178,14 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	if err := validateEmbeddingEngine(description, engine); err != nil {
 		return err
 	}
-	for _, check := range []func(*protocol.Description, *protocol.Engine) error{validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections} {
+	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
+		validateCommonObjectSupport, validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateGoLimitsEngine, validatePlanningLifecycleEngine,
+	} {
 		if err := check(description, engine); err != nil {
 			return err
 		}
 	}
-	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, StatementsFeature} {
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
@@ -231,11 +233,13 @@ func validateSemanticServices(value *protocol.Description) error {
 	return validateContractAdditions(value)
 }
 
-// validateContractAdditions checks the services the features of contract 25.3
-// extend: text units extend rendering, the planning policy extends planning or
-// comparison, and every source claim and encoding extends source decoding.
+// validateContractAdditions checks the services that negotiated additions
+// extend, so an advertised behavior always has its underlying service.
 func validateContractAdditions(value *protocol.Description) error {
 	features := value.GetFeatures()
+	if slices.Contains(features, SensitiveInputsFeature) && !slices.Contains(features, ExecuteFeature) {
+		return fmt.Errorf("%w: sensitive inputs require execution", ErrProtocol)
+	}
 	if slices.Contains(features, TextUnitsFeature) && !slices.Contains(features, RenderFeature) && !slices.Contains(features, RenderRowWritesFeature) {
 		return fmt.Errorf("%w: text units require rendering", ErrProtocol)
 	}
@@ -475,7 +479,7 @@ func ValidateExecuteRequest(description *protocol.Description, request *protocol
 			return err
 		}
 	}
-	return nil
+	return validateExecuteInputs(description, request)
 }
 
 // CheckExecuted is CheckExecution for the request that produced result. A stop

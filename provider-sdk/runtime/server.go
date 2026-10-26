@@ -61,6 +61,7 @@ type Server struct {
 	ValueConverter  provider.ValueConverter
 	ModelComparer   provider.ModelComparer
 	FeaturePlanner  provider.FeaturePlanner
+	Declarations    provider.DeclarationPlanner
 	TablePreparer   provider.TablePreparer
 	TableCreations  provider.TableCreationProjector
 	Linter          provider.Linter
@@ -77,6 +78,7 @@ type Server struct {
 	CommonObjects   provider.CommonObjectPreparer
 	SourceEncoder   provider.SourceEncoder
 	Statements      provider.StatementRunner
+	ExecutionInputs provider.ExecutionInputDescriber
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -104,6 +106,7 @@ func (s Server) Validate() error {
 		{provider.ConvertValuesFeature, !nilService(s.ValueConverter)},
 		{provider.CompareModelsFeature, !nilService(s.ModelComparer)},
 		{provider.PlanFeaturesFeature, !nilService(s.FeaturePlanner)},
+		{provider.SchemaDeclarationsFeature, !nilService(s.Declarations)},
 		{provider.PrepareTablesFeature, !nilService(s.TablePreparer)},
 		{provider.ProjectTableCreationsFeature, !nilService(s.TableCreations)},
 		{provider.ValidateSchemaFeature, !nilService(s.SchemaValidator)},
@@ -120,6 +123,7 @@ func (s Server) Validate() error {
 		{provider.CommonObjectsFeature, !nilService(s.CommonObjects)},
 		{provider.EncodeSourceFeature, !nilService(s.SourceEncoder)},
 		{provider.StatementsFeature, !nilService(s.Statements)},
+		{provider.SensitiveInputsFeature, !nilService(s.ExecutionInputs)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -331,6 +335,9 @@ func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRe
 	}
 	if err := provider.ValidateExecuteRequest(s.negotiated(), request); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := s.checkExecutionInputs(ctx, request); err != nil {
+		return nil, err
 	}
 	result, err := s.server.Executor.Execute(s.owner(ctx), request)
 	if err == nil && result.GetStatementTimedOut() && request.GetStatementTimeoutNanoseconds() <= 0 {
