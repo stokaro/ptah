@@ -51,7 +51,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.5. `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
+speaks contract 25.6. `provider-sdk/v0.7.0` speaks 25.5.
+`provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
 speaks contract 25.3, `provider-sdk/v0.4.0` speaks 25.2, `provider-sdk/v0.3.0`
 speaks 25.1, and `provider-sdk/v0.2.0` speaks 25.0.
 
@@ -75,7 +76,8 @@ returns to 0.
   [authored declaration planning](#authored-declaration-planning),
   [independent access observations](#independent-access-observations),
   [lifecycle placement](#lifecycle-placement) and
-  [sensitive execution inputs](#sensitive-execution-inputs).
+  [sensitive execution inputs](#sensitive-execution-inputs). Contract 25.6 adds
+  [common column semantics](#common-column-semantics).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -98,8 +100,8 @@ does not oblige a peer to use it.
   `query.dialect`, `embeddings.store`, `schema.common-objects`,
   `render.text-units`, `planning.policy`, `source.entry-keys`, `source.hcl`,
   `scope.selections`, `source.encode-groups`, `source.limits`,
-  `schema.declarations`, `schema.common-access`, `planning.lifecycle` and
-  `units.sensitive-inputs`. The embedding store's calls and `PrepareCommonObjects` are
+  `schema.declarations`, `schema.common-access`, `planning.lifecycle`,
+  `units.sensitive-inputs` and `schema.columns`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
@@ -1599,3 +1601,36 @@ The SDK conformance tests in `runtime` page a statement's result, release one
 before its last page, refuse a malformed reply from a peer that is not the SDK
 server, leave a write whose reply cannot be read unknown, and negotiate the
 scope selections in both directions.
+
+
+## Common column semantics
+
+[ADR 0045](../docs/adr/0045-a-provider-states-common-column-comparison-and-readback-semantics.md)
+defines `schema.columns`. The provider and engine advertise this two-way
+feature together with `schema.project-table-creations`. It does not grant
+common-table planning authority. `runtime.Server.Columns` supplies the
+`provider.Columns` implementation.
+
+`CompareColumns` receives full declared and observed parent tables and the
+host's explicit column pairs. Separate desired and current identities preserve
+renames. Requested aspects are closed: `COLUMN_TYPE`, `COLUMN_DEFAULT`,
+`COLUMN_NULLABILITY` and `COLUMN_SEQUENCE`. A complete ordered reply repeats
+both identities and provides exactly one receipt for each requested aspect.
+Type/default receipts state `SAME` or `CHANGED`; effective nullability requires
+an explicit boolean, including false. Sequence deltas can change only identity
+start and increment. Restart operations remain with the column-operation owner.
+Domains and generated expressions retain their existing comparison owners.
+
+`ReadColumnDefaults` interprets every supplied observed column, including
+observed-only rollback columns. A typed receipt distinguishes absent defaults,
+literals and expressions. Empty literals are valid. Absence requires absent
+input and empty output; an expression requires nonempty input and output.
+Neither service reads a database or substitutes defaults for unavailable facts.
+Cancellation and incomplete replies expose no successful prefix.
+
+With this feature negotiated, every `ProjectedTableCreation.columns` list
+predicts the complete declared column inventory in order. Names remain exact;
+effective type and nullability are required. Authored declarations remain
+unchanged, and predictions establish no catalog inspection. An unnegotiated
+peer refuses these new fields. The host consumes effective receipts separately
+from the source fields used for export and operation operands.

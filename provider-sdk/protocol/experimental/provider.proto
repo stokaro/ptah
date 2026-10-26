@@ -24,6 +24,8 @@ service Provider {
   rpc CompareModels(CompareModelsRequest) returns (ComparedModels);
   rpc PlanFeatures(PlanFeaturesRequest) returns (PlannedFeatures);
   rpc PlanDeclarations(PlanDeclarationsRequest) returns (PlannedDeclarations);
+  rpc CompareColumns(CompareColumnsRequest) returns (ComparedColumns);
+  rpc ReadColumnDefaults(ReadColumnDefaultsRequest) returns (ReadColumnDefaultsResult);
   rpc DescribeExecutionInputs(DescribeExecutionInputsRequest) returns (ExecutionInputs);
   rpc PrepareTables(PrepareTablesRequest) returns (PreparedTables);
   rpc ProjectTableCreations(ProjectTableCreationsRequest) returns (ProjectedTableCreations);
@@ -2270,6 +2272,8 @@ message ProjectedTableCreation {
   repeated ComparisonRecord desired_facets = 4;
   // Observed overrides apply after conversion. They are predictions, not reads.
   repeated ComparisonRecord observed_facets = 5;
+  // schema.columns: complete ordered CREATE predictions, never observations.
+  repeated ObservedColumn columns = 6;
 }
 message ProjectedTableCreations {
   bool complete = 1;
@@ -3680,4 +3684,94 @@ message StatementRows {
 message CloseStatementRequest {
   string session_id = 1;
   string page_token = 2;
+}
+
+// schema.columns owns offline equivalence and readback of captured common
+// columns. The host owns pairing, domains, generated expressions and operations.
+message CompareColumnsRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated ColumnComparisonTable tables = 5;
+}
+message ColumnComparisonTable {
+  ComparisonIdentity subject = 1;
+  DeclaredTable desired = 2;
+  ObservedTable current = 3;
+  repeated ColumnComparisonPair pairs = 4;
+  ComparisonIdentity current_subject = 5;
+}
+enum ColumnAspect {
+  COLUMN_ASPECT_UNSPECIFIED = 0;
+  COLUMN_TYPE = 1;
+  COLUMN_DEFAULT = 2;
+  COLUMN_NULLABILITY = 3;
+  COLUMN_SEQUENCE = 4;
+}
+message ColumnComparisonPair {
+  ComparisonIdentity subject = 1;
+  string desired_column = 2;
+  string current_column = 3;
+  repeated ColumnAspect aspects = 4;
+  ComparisonIdentity current_subject = 5;
+}
+message ComparedColumns {
+  bool complete = 1;
+  repeated ComparedColumnTable tables = 2;
+}
+message ComparedColumnTable {
+  ComparisonIdentity subject = 1;
+  repeated ComparedColumn columns = 2;
+  ComparisonIdentity current_subject = 3;
+}
+message ComparedColumn {
+  ComparisonIdentity subject = 1;
+  repeated ColumnAspectReceipt aspects = 2;
+  ComparisonIdentity current_subject = 3;
+}
+message ColumnAspectReceipt {
+  ColumnAspect aspect = 1;
+  oneof receipt {
+    ColumnDifference difference = 2;
+    ColumnNullability nullability = 3;
+    ColumnSequenceDifferences sequence = 4;
+  }
+}
+message ColumnDifference {
+  enum Relation { RELATION_UNSPECIFIED = 0; SAME = 1; CHANGED = 2; }
+  Relation relation = 1;
+  string current = 2;
+  string desired = 3;
+}
+message ColumnNullability { optional bool nullable = 1; }
+message ColumnSequenceDifferences {
+  repeated ColumnSequenceDifference changes = 1;
+}
+message ColumnSequenceDifference {
+  enum Attribute { ATTRIBUTE_UNSPECIFIED = 0; IDENTITY_START = 1; IDENTITY_INCREMENT = 2; }
+  Attribute attribute = 1;
+  string current = 2;
+  string desired = 3;
+}
+message ReadColumnDefaultsRequest {
+  string engine = 1;
+  ComparisonIdentifiers identifiers = 2;
+  map<string, bool> capabilities = 3;
+  repeated string target_features = 4;
+  repeated ObservedColumnDefaultInput columns = 5;
+}
+message ObservedColumnDefaultInput {
+  ComparisonIdentity subject = 1;
+  ObservedColumn column = 2;
+}
+message ReadColumnDefaultsResult {
+  bool complete = 1;
+  repeated ColumnDefaultReceipt columns = 2;
+}
+message ColumnDefaultReceipt {
+  ComparisonIdentity subject = 1;
+  enum Kind { KIND_UNSPECIFIED = 0; ABSENT = 1; LITERAL = 2; EXPRESSION = 3; }
+  Kind kind = 2;
+  string value = 3;
 }

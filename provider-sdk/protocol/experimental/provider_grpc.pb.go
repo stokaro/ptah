@@ -32,6 +32,8 @@ const (
 	Provider_CompareModels_FullMethodName             = "/ptah.provider.experimental.Provider/CompareModels"
 	Provider_PlanFeatures_FullMethodName              = "/ptah.provider.experimental.Provider/PlanFeatures"
 	Provider_PlanDeclarations_FullMethodName          = "/ptah.provider.experimental.Provider/PlanDeclarations"
+	Provider_CompareColumns_FullMethodName            = "/ptah.provider.experimental.Provider/CompareColumns"
+	Provider_ReadColumnDefaults_FullMethodName        = "/ptah.provider.experimental.Provider/ReadColumnDefaults"
 	Provider_DescribeExecutionInputs_FullMethodName   = "/ptah.provider.experimental.Provider/DescribeExecutionInputs"
 	Provider_PrepareTables_FullMethodName             = "/ptah.provider.experimental.Provider/PrepareTables"
 	Provider_ProjectTableCreations_FullMethodName     = "/ptah.provider.experimental.Provider/ProjectTableCreations"
@@ -115,6 +117,8 @@ type ProviderClient interface {
 	CompareModels(ctx context.Context, in *CompareModelsRequest, opts ...grpc.CallOption) (*ComparedModels, error)
 	PlanFeatures(ctx context.Context, in *PlanFeaturesRequest, opts ...grpc.CallOption) (*PlannedFeatures, error)
 	PlanDeclarations(ctx context.Context, in *PlanDeclarationsRequest, opts ...grpc.CallOption) (*PlannedDeclarations, error)
+	CompareColumns(ctx context.Context, in *CompareColumnsRequest, opts ...grpc.CallOption) (*ComparedColumns, error)
+	ReadColumnDefaults(ctx context.Context, in *ReadColumnDefaultsRequest, opts ...grpc.CallOption) (*ReadColumnDefaultsResult, error)
 	DescribeExecutionInputs(ctx context.Context, in *DescribeExecutionInputsRequest, opts ...grpc.CallOption) (*ExecutionInputs, error)
 	PrepareTables(ctx context.Context, in *PrepareTablesRequest, opts ...grpc.CallOption) (*PreparedTables, error)
 	ProjectTableCreations(ctx context.Context, in *ProjectTableCreationsRequest, opts ...grpc.CallOption) (*ProjectedTableCreations, error)
@@ -315,6 +319,26 @@ func (c *providerClient) PlanDeclarations(ctx context.Context, in *PlanDeclarati
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PlannedDeclarations)
 	err := c.cc.Invoke(ctx, Provider_PlanDeclarations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) CompareColumns(ctx context.Context, in *CompareColumnsRequest, opts ...grpc.CallOption) (*ComparedColumns, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComparedColumns)
+	err := c.cc.Invoke(ctx, Provider_CompareColumns_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadColumnDefaults(ctx context.Context, in *ReadColumnDefaultsRequest, opts ...grpc.CallOption) (*ReadColumnDefaultsResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadColumnDefaultsResult)
+	err := c.cc.Invoke(ctx, Provider_ReadColumnDefaults_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -915,6 +939,8 @@ type ProviderServer interface {
 	CompareModels(context.Context, *CompareModelsRequest) (*ComparedModels, error)
 	PlanFeatures(context.Context, *PlanFeaturesRequest) (*PlannedFeatures, error)
 	PlanDeclarations(context.Context, *PlanDeclarationsRequest) (*PlannedDeclarations, error)
+	CompareColumns(context.Context, *CompareColumnsRequest) (*ComparedColumns, error)
+	ReadColumnDefaults(context.Context, *ReadColumnDefaultsRequest) (*ReadColumnDefaultsResult, error)
 	DescribeExecutionInputs(context.Context, *DescribeExecutionInputsRequest) (*ExecutionInputs, error)
 	PrepareTables(context.Context, *PrepareTablesRequest) (*PreparedTables, error)
 	ProjectTableCreations(context.Context, *ProjectTableCreationsRequest) (*ProjectedTableCreations, error)
@@ -1029,6 +1055,12 @@ func (UnimplementedProviderServer) PlanFeatures(context.Context, *PlanFeaturesRe
 }
 func (UnimplementedProviderServer) PlanDeclarations(context.Context, *PlanDeclarationsRequest) (*PlannedDeclarations, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlanDeclarations not implemented")
+}
+func (UnimplementedProviderServer) CompareColumns(context.Context, *CompareColumnsRequest) (*ComparedColumns, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CompareColumns not implemented")
+}
+func (UnimplementedProviderServer) ReadColumnDefaults(context.Context, *ReadColumnDefaultsRequest) (*ReadColumnDefaultsResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadColumnDefaults not implemented")
 }
 func (UnimplementedProviderServer) DescribeExecutionInputs(context.Context, *DescribeExecutionInputsRequest) (*ExecutionInputs, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DescribeExecutionInputs not implemented")
@@ -1452,6 +1484,42 @@ func _Provider_PlanDeclarations_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ProviderServer).PlanDeclarations(ctx, req.(*PlanDeclarationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_CompareColumns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompareColumnsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).CompareColumns(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_CompareColumns_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).CompareColumns(ctx, req.(*CompareColumnsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadColumnDefaults_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadColumnDefaultsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadColumnDefaults(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadColumnDefaults_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadColumnDefaults(ctx, req.(*ReadColumnDefaultsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2540,6 +2608,14 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlanDeclarations",
 			Handler:    _Provider_PlanDeclarations_Handler,
+		},
+		{
+			MethodName: "CompareColumns",
+			Handler:    _Provider_CompareColumns_Handler,
+		},
+		{
+			MethodName: "ReadColumnDefaults",
+			Handler:    _Provider_ReadColumnDefaults_Handler,
 		},
 		{
 			MethodName: "DescribeExecutionInputs",

@@ -122,6 +122,9 @@ func ValidateDescription(value *protocol.Description, required []string) error {
 }
 
 func validateEngineServices(description *protocol.Description, engine *protocol.Engine) error {
+	if err := validateColumnsFeature(description, engine); err != nil {
+		return err
+	}
 	if err := validateOwnedSchemaServices(description, engine); err != nil {
 		return err
 	}
