@@ -95,7 +95,9 @@ records a child namespace remains in the captured coverage but creates no native
 object receipt; its subject kind differs from the covered model kind.
 Kind-level unknown coverage
 also reaches the provider and may require a diagnostic; it creates no invented
-subject. Receipt order is model kind in bytewise order, then structured subject
+subject.
+
+Receipt order is model kind in bytewise order, then structured subject
 order. Structured order is `schemaext.CompareRefs` in the host and
 `provider.CompareIdentities` in the SDK: identity kind, normalized database,
 catalog, schema, path components, parent, name, and signature components.
