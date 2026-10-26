@@ -23,15 +23,15 @@ func validateObservedPrimaryKeysFeature(description *protocol.Description, engin
 
 func validateInspectedPrimaryKeys(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
 	negotiated := EngineOffers(description, engine.GetId(), ObservedPrimaryKeysFeature) && slices.Contains(snapshot.GetTargetFeatures(), ObservedPrimaryKeysFeature)
+	if negotiated && !slices.Contains(snapshot.GetTargetFeatures(), ObservedColumnsFeature) {
+		return fmt.Errorf("%w: observed primary keys require negotiated column observations", ErrProtocol)
+	}
 	for _, table := range snapshot.GetTables() {
 		if !negotiated {
 			if table.GetPrimaryKey() != nil {
 				return fmt.Errorf("%w: observed primary key was not negotiated", ErrProtocol)
 			}
 			continue
-		}
-		if !slices.Contains(snapshot.GetTargetFeatures(), ObservedColumnsFeature) {
-			return fmt.Errorf("%w: observed primary keys require negotiated column observations", ErrProtocol)
 		}
 		if err := validateInspectedPrimaryKey(table); err != nil {
 			return err

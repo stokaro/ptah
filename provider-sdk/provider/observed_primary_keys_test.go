@@ -63,6 +63,10 @@ func TestObservedPrimaryKeyRequiresCompleteNegotiatedRecord(t *testing.T) {
 			s.TargetFeatures = slices.DeleteFunc(s.TargetFeatures, func(f string) bool { return f == provider.ObservedPrimaryKeysFeature })
 		}},
 		{"missing record", func(_ *protocol.Description, s *protocol.Schema) { s.Tables[0].PrimaryKey = nil }},
+		{"empty snapshot without column negotiation", func(_ *protocol.Description, s *protocol.Schema) {
+			s.Tables = nil
+			s.TargetFeatures = slices.DeleteFunc(s.TargetFeatures, func(f string) bool { return f == provider.ObservedColumnsFeature })
+		}},
 		{"another table", func(_ *protocol.Description, s *protocol.Schema) { s.Tables[0].PrimaryKey.TableName = "other" }},
 		{"another schema", func(_ *protocol.Description, s *protocol.Schema) { s.Tables[0].PrimaryKey.Schema = "other" }},
 		{"another type", func(_ *protocol.Description, s *protocol.Schema) { s.Tables[0].PrimaryKey.Type = "UNIQUE" }},
