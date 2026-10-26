@@ -71,6 +71,9 @@ func reverseSchemaDiffWithPrior(
 	dialect string,
 ) *difftypes.SchemaDiff {
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	var routineGrants struct{ granted, revoked []difftypes.GrantRef }
+	routineGrants.granted, routineGrants.revoked = routineGrantsFromRemovals(
+		append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema)
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
@@ -223,10 +226,13 @@ func reverseSchemaDiffWithPrior(
 		// from the schema beside it.
 		RoleMembershipsAdded:   diff.RoleMembershipsRemoved,
 		RoleMembershipsRemoved: diff.RoleMembershipsAdded,
-		GrantsAdded:            diff.GrantsRemoved,       // Grants to remove become grants to add
-		GrantsRemoved:          diff.GrantsAdded,         // Grants to add become grants to revoke
-		GrantOptionsAdded:      diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
-		GrantOptionsRevoked:    diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
+		// Grants to remove become grants to add, and grants to add become grants
+		// to revoke. A routine the rollback creates again also gets back the
+		// privileges the pre-change database held on it.
+		GrantsAdded:         append(slices.Clone(diff.GrantsRemoved), routineGrants.granted...),
+		GrantsRemoved:       append(slices.Clone(diff.GrantsAdded), routineGrants.revoked...),
+		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
+		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete

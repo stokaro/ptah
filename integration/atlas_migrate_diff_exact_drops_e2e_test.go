@@ -3,16 +3,19 @@
 package integration_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool/envbooltest"
 )
@@ -249,17 +252,32 @@ func TestCompatMigrateDiffStatementStyleE2E_SQLStandardBodiesFromAHandWrittenMig
 }
 
 // TestCompatMigrateDiffStatementStyleE2E_RemovedRoutineComesBackWithItsProperties
-// removes a SECURITY DEFINER function with a pinned search_path and other
-// properties, runs the rollback, and reads the function back: it holds every
-// property it had. Without them the function would run with the caller's
-// search_path.
+// removes a SECURITY DEFINER function with a pinned search_path, other
+// properties and privileges of its own, runs the rollback, and reads the
+// function back: it holds every property it had, PUBLIC still may not execute
+// it, and the role it was granted to still may. Without them the function
+// would run with the caller's search_path, for any caller.
 func TestCompatMigrateDiffStatementStyleE2E_RemovedRoutineComesBackWithItsProperties(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+	admin, err := sql.Open("pgx", dbtarget.URL(c, dbtarget.PostgreSQL))
+	c.Assert(err, qt.IsNil)
+	role := fmt.Sprintf("ptah_rollback_reader_%d", time.Now().UnixNano())
+	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+quoteE2EIdent(role)+" NOLOGIN")
+	c.Assert(err, qt.IsNil)
+	// Registered before the databases are created, so it runs after they are
+	// dropped and nothing holds a privilege for the role any more.
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+quoteE2EIdent(role))
+		c.Check(dropErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
+	})
 	pairs := readMigrationPairs(c, diffStatementStyleSteps(c, exactSteps(
 		"CREATE TABLE keep (id bigint PRIMARY KEY);\n"+
 			"CREATE FUNCTION f(x int) RETURNS int LANGUAGE sql IMMUTABLE STRICT LEAKPROOF PARALLEL SAFE SECURITY DEFINER "+
-			"SET search_path = pg_catalog AS $$ SELECT x $$;\n",
+			"SET search_path = pg_catalog AS $$ SELECT x $$;\n"+
+			"REVOKE ALL ON FUNCTION f(int) FROM PUBLIC;\n"+
+			"GRANT EXECUTE ON FUNCTION f(int) TO "+quoteE2EIdent(role)+";\n",
 		"CREATE TABLE keep (id bigint PRIMARY KEY);\n")))
 	target := statementStyleTarget(c)
 	for _, statement := range []string{pairs[0].Up, pairs[1].Up, pairs[1].Down} {
@@ -267,11 +285,14 @@ func TestCompatMigrateDiffStatementStyleE2E_RemovedRoutineComesBackWithItsProper
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
 
-	var strict, leakproof, definer bool
+	var strict, leakproof, definer, public, granted bool
 	var parallel, config string
-	err := target.QueryRowContext(c.Context(), `SELECT proisstrict, proleakproof, prosecdef, proparallel::text,
-		array_to_string(proconfig, ',') FROM pg_proc WHERE proname = 'f'`).Scan(&strict, &leakproof, &definer, &parallel, &config)
+	err = target.QueryRowContext(c.Context(), `SELECT proisstrict, proleakproof, prosecdef, proparallel::text,
+		array_to_string(proconfig, ','), has_function_privilege('public', oid, 'EXECUTE'), has_function_privilege($1, oid, 'EXECUTE')
+		FROM pg_proc WHERE proname = 'f'`, role).Scan(&strict, &leakproof, &definer, &parallel, &config, &public, &granted)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert([]any{strict, leakproof, definer, parallel, config}, qt.DeepEquals, []any{true, true, true, "s", "search_path=pg_catalog"})
+	c.Assert(public, qt.IsFalse, qt.Commentf("PUBLIC may execute the restored function:\n%s", pairs[1].Down))
+	c.Assert(granted, qt.IsTrue, qt.Commentf("%s may not execute the restored function:\n%s", role, pairs[1].Down))
 }
