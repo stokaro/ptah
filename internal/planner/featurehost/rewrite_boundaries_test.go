@@ -18,8 +18,9 @@ func TestRewriteBoundaryProjectionPreservesClaimValidation(t *testing.T) {
 		name   string
 		mutate func(*featurehost.Result)
 		want   error
+ nodes, readers int
 	}{
-		{name: "multiple independent replacements"},
+		{name: "multiple independent replacements",mutate:func(*featurehost.Result){},nodes:6,readers:2},
 		{name: "unknown source", mutate: func(r *featurehost.Result) { r.Rewrites[0].Sources[0].Name = "missing" }, want: plangraph.ErrInvalid},
 		{name: "duplicate source", mutate: func(r *featurehost.Result) { r.Rewrites[1].Sources = r.Rewrites[0].Sources }, want: plangraph.ErrInvalid},
 		{name: "foreign source", mutate: func(r *featurehost.Result) { r.Rewrites[0].Sources[0] = r.Contributions[0].Steps[1].ID }, want: plangraph.ErrInvalid},
@@ -61,24 +62,18 @@ func TestRewriteBoundaryProjectionPreservesClaimValidation(t *testing.T) {
 				result.Phases[drop.ID], result.Phases[create.ID], result.Phases[read.ID] = featureplan.PhaseLifecycle, featureplan.PhaseLifecycle, featureplan.PhaseLifecycle
 			}
 			result.Contributions = []plangraph.Contribution[[]ast.Node]{writers, readers}
-			if test.mutate != nil {
-				test.mutate(&result)
-			}
+			test.mutate(&result)
 			graph, err := featurehost.NewGraph("example.org/host", nodes, metadata, featurehost.Windows{Lifecycle: &featurehost.Span{Start: 0, End: 2}})
 			c.Assert(err, qt.IsNil)
 			scheduled, err := graph.Schedule(c.Context(), result)
 			c.Assert(err, qt.ErrorIs, test.want)
-			if test.want != nil {
-				c.Assert(scheduled, qt.IsNil)
-				return
-			}
 			got := comments(scheduled)
-			c.Assert(got, qt.HasLen, 6)
+			c.Assert(got, qt.HasLen, test.nodes)
 			positions := make(map[string]int)
 			for index, name := range got {
 				positions[name] = index
 			}
-			for i := range 2 {
+			for i := range test.readers {
 				name := fmt.Sprintf("input%d", i)
 				c.Assert(positions["drop "+name] < positions["create "+name], qt.IsTrue)
 				c.Assert(positions["create "+name] < positions["read "+name], qt.IsTrue)
