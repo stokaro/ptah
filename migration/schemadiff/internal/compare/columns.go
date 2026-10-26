@@ -495,35 +495,12 @@ func columnsWithDesiredDomains(
 	// NOT NULL whatever the field says, and the reader reports it that way, so
 	// the generated side is normalized to match or every primary key would show
 	// a permanent diff.
-	genNullable := genCol.Nullable
-	if genCol.Primary && primaryKeyImpliesNotNull(dialect) {
-		genNullable = false
-	}
-	// A target may create a column NOT NULL whatever its declaration says,
-	// as YDB does a Serial column.
-	if ctx.rules != nil && ctx.rules.AlwaysNotNull(genCol) {
-		genNullable = false
-	}
-	if receipt, owned := ctx.receipts[schemacomparison.ColumnNullability]; owned {
-		genNullable = *receipt.Nullable
-	}
+	genNullable := columnNullable(genCol, dialect, ctx)
 	dbNullable := dbCol.IsNullable == "YES"
 	if genNullable != dbNullable {
 		colDiff.Changes["nullable"] = fmt.Sprintf("%t -> %t", dbNullable, genNullable)
 	}
-	if receipt, owned := ctx.receipts[schemacomparison.ColumnSequence]; owned {
-		for _, change := range receipt.Sequence.Changes {
-			colDiff.Changes[string(change.Attribute)] = fmt.Sprintf("%s -> %s", change.Current, change.Desired)
-		}
-		if len(receipt.Sequence.Changes) > 0 {
-			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
-		}
-	} else if ctx.serialSequences && ctx.rules != nil {
-		if changes := ctx.rules.SequenceChanges(genCol, dbCol); len(changes) > 0 {
-			maps.Copy(colDiff.Changes, changes)
-			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
-		}
-	}
+	applyColumnSequence(&colDiff, genCol, dbCol, ctx)
 
 	// Compare primary key
 	genPrimary := genCol.Primary
@@ -1534,5 +1511,36 @@ func gainedKeyNames(
 func applyColumnDifference(changes map[string]string, key string, difference *schemacomparison.ColumnDifference) {
 	if difference.Relation == schemacomparison.ColumnChanged {
 		changes[key] = fmt.Sprintf("%s -> %s", difference.Current, difference.Desired)
+	}
+}
+
+// Effective nullability is authoritative only when its owner returned the
+// requested receipt. In-process rules retain their existing descriptor policy.
+func columnNullable(field schemamodel.Field, dialect string, ctx columnContext) bool {
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnNullability]; owned {
+		return *receipt.Nullable
+	}
+	if field.Primary && primaryKeyImpliesNotNull(dialect) {
+		return false
+	}
+	if ctx.rules != nil && ctx.rules.AlwaysNotNull(field) {
+		return false
+	}
+	return field.Nullable
+}
+
+func applyColumnSequence(colDiff *difftypes.ColumnDiff, genCol schemamodel.Field, dbCol catalog.Column, ctx columnContext) {
+	if receipt, owned := ctx.receipts[schemacomparison.ColumnSequence]; owned {
+		for _, change := range receipt.Sequence.Changes {
+			colDiff.Changes[string(change.Attribute)] = fmt.Sprintf("%s -> %s", change.Current, change.Desired)
+		}
+		if len(receipt.Sequence.Changes) > 0 {
+			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
+		}
+	} else if ctx.serialSequences && ctx.rules != nil {
+		if changes := ctx.rules.SequenceChanges(genCol, dbCol); len(changes) > 0 {
+			maps.Copy(colDiff.Changes, changes)
+			colDiff.CurrentSequenceRestart = dbCol.SequenceRestart
+		}
 	}
 }

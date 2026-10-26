@@ -54,13 +54,7 @@ func acceptColumnAspect(receipt ColumnAspectReceipt) error {
 		if receipt.Sequence == nil || receipt.Nullable != nil || receipt.Difference != nil {
 			return fmt.Errorf("%w: sequence comparison needs one receipt", ErrColumns)
 		}
-		seen := make(map[SequenceAttribute]bool)
-		for _, change := range receipt.Sequence.Changes {
-			if (change.Attribute != SequenceStart && change.Attribute != SequenceIncrement) || seen[change.Attribute] || change.Current == change.Desired {
-				return fmt.Errorf("%w: invalid sequence delta", ErrColumns)
-			}
-			seen[change.Attribute] = true
-		}
+		return acceptSequenceChanges(receipt.Sequence.Changes)
 	default:
 		return fmt.Errorf("%w: unknown column aspect", ErrColumns)
 	}
@@ -127,6 +121,17 @@ func acceptColumnDefault(input ObservedColumnDefault, receipt ColumnDefaultRecei
 		}
 	default:
 		return fmt.Errorf("%w: unknown default kind", ErrColumns)
+	}
+	return nil
+}
+
+func acceptSequenceChanges(changes []ColumnSequenceDifference) error {
+	seen := make(map[SequenceAttribute]bool)
+	for _, change := range changes {
+		if (change.Attribute != SequenceStart && change.Attribute != SequenceIncrement) || seen[change.Attribute] || change.Current == change.Desired {
+			return fmt.Errorf("%w: invalid sequence delta", ErrColumns)
+		}
+		seen[change.Attribute] = true
 	}
 	return nil
 }

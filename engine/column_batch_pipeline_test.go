@@ -2,7 +2,11 @@ package engine_test
 
 import (
 	"context"
+	"slices"
+	"testing"
+
 	qt "github.com/frankban/quicktest"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemacomparison"
@@ -10,8 +14,6 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/engine"
 	"ptah.run/migration/schemadiff"
-	"slices"
-	"testing"
 )
 
 type inspectingColumns struct {

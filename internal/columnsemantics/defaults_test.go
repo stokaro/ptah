@@ -3,13 +3,15 @@ package columnsemantics_test
 import (
 	"context"
 	"errors"
+	"testing"
+
 	qt "github.com/frankban/quicktest"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/internal/columnsemantics"
-	"testing"
 )
 
 type defaultsService struct {

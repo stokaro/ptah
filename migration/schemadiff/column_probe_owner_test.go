@@ -3,13 +3,15 @@ package schemadiff_test
 import (
 	"context"
 	"errors"
+	"testing"
+
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
+
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
-	"testing"
 )
 
 type columnProbeRuntime struct{ *selectedProbeRuntime }
