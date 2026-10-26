@@ -81,16 +81,16 @@ func TestPlanningStatementStyle_ExactNeedsNegotiation(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*protocol.Description, *protocol.PlanFeaturesRequest)
-		valid  bool
+		want   error
 	}{
-		{name: "both sides advertise", valid: true},
-		{name: "provider omits the feature", mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
+		{name: "both sides advertise", mutate: func(*protocol.Description, *protocol.PlanFeaturesRequest) {}},
+		{name: "provider omits the feature", want: provider.ErrProtocol, mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
 			d.Features = d.Features[:len(d.Features)-1]
 		}},
-		{name: "engine omits the feature", mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
+		{name: "engine omits the feature", want: provider.ErrProtocol, mutate: func(d *protocol.Description, _ *protocol.PlanFeaturesRequest) {
 			d.Engines[0].Features = d.Engines[0].Features[:len(d.Engines[0].Features)-1]
 		}},
-		{name: "unknown style", mutate: func(_ *protocol.Description, r *protocol.PlanFeaturesRequest) {
+		{name: "unknown style", want: provider.ErrProtocol, mutate: func(_ *protocol.Description, r *protocol.PlanFeaturesRequest) {
 			r.Policy.StatementStyle = 99
 		}},
 	}
@@ -101,15 +101,8 @@ func TestPlanningStatementStyle_ExactNeedsNegotiation(t *testing.T) {
 			d.Features = append(d.Features, provider.PlanningStatementStyleFeature)
 			d.Engines[0].Features = append(d.Engines[0].Features, provider.PlanningStatementStyleFeature)
 			request.Policy.StatementStyle = protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT
-			if test.mutate != nil {
-				test.mutate(d, request)
-			}
-			err := provider.ValidatePlanningRequest(d, request)
-			if test.valid {
-				c.Assert(err, qt.IsNil)
-			} else {
-				c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
-			}
+			test.mutate(d, request)
+			c.Assert(provider.ValidatePlanningRequest(d, request), qt.ErrorIs, test.want)
 		})
 	}
 }

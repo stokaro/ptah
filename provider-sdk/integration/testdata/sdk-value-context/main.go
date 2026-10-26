@@ -19,7 +19,7 @@ import (
 
 func main() {
 	description := backend.Description()
-	description.SemanticIdentity += "-value-context"
+	description.SemanticIdentity += "-sdk-value-context"
 	features := []string{provider.DatabaseContextFeature, provider.ValueContextFeature, provider.CommonObjectsFeature, provider.CommonViewFacetsFeature, provider.ObservedColumnsFeature, provider.PlanningObjectContextFeature}
 	description.Features = append(description.Features, provider.PlanFeaturesFeature)
 	description.Features = append(description.Features, features...)

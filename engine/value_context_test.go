@@ -93,14 +93,23 @@ func TestValueContextBindingRefusesIncompleteRepliesAndCancellation(t *testing.T
 	t.Parallel()
 	failure := errors.New("binding refused")
 	for _, test := range []struct {
-		name string
-		mode string
-		want error
+		name    string
+		respond func(context.CancelFunc, schemaext.ValueContextRequest) ([]schemaext.Value, error)
+		want    error
 	}{
-		{name: "missing", mode: "missing", want: schemaext.ErrInvalidValue},
-		{name: "reordered", mode: "reordered", want: schemaext.ErrInvalidValue},
-		{name: "failed", mode: "failed", want: failure},
-		{name: "canceled", mode: "canceled", want: context.Canceled},
+		{name: "missing", respond: func(_ context.CancelFunc, r schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+			return r.Values[:1], nil
+		}, want: schemaext.ErrInvalidValue},
+		{name: "reordered", respond: func(_ context.CancelFunc, r schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+			return []schemaext.Value{r.Values[1], r.Values[0]}, nil
+		}, want: schemaext.ErrInvalidValue},
+		{name: "failed", respond: func(_ context.CancelFunc, r schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+			return r.Values[:1], failure
+		}, want: failure},
+		{name: "canceled", respond: func(cancel context.CancelFunc, r schemaext.ValueContextRequest) ([]schemaext.Value, error) {
+			cancel()
+			return r.Values, nil
+		}, want: context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -108,17 +117,7 @@ func TestValueContextBindingRefusesIncompleteRepliesAndCancellation(t *testing.T
 			ctx, cancel := context.WithCancel(c.Context())
 			c.Cleanup(cancel)
 			service := valueContextFunc(func(_ context.Context, request schemaext.ValueContextRequest) ([]schemaext.Value, error) {
-				switch test.mode {
-				case "missing":
-					return request.Values[:1], nil
-				case "reordered":
-					return []schemaext.Value{request.Values[1], request.Values[0]}, nil
-				case "failed":
-					return request.Values[:1], failure
-				case "canceled":
-					cancel()
-				}
-				return request.Values, nil
+				return test.respond(cancel, request)
 			})
 			runtime := mustRuntime(c, contextProvider(service))
 			result, err := runtime.BindValueContexts(ctx, schemaext.ValueContextRequest{Target: "custom", Context: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db"}, Representation: schemaext.Desired, Values: []schemaext.Value{&conversionValue{ID: conversionFirst}, &conversionValue{ID: conversionSecond}}})

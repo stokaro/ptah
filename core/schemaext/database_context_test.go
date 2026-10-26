@@ -13,25 +13,21 @@ func TestDatabaseContextRequiresExactNonSecretRootSpellings(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		value schemaext.DatabaseContext
-		valid bool
+		want  error
 	}{
-		{name: "exact", value: schemaext.DatabaseContext{Database: "/database/realm", SourceDatabase: "/database"}, valid: true},
-		{name: "opaque", value: schemaext.DatabaseContext{Database: "target:tenant", SourceDatabase: "author:tenant"}, valid: true},
-		{name: "empty"},
-		{name: "missing source", value: schemaext.DatabaseContext{Database: "/db"}},
-		{name: "space", value: schemaext.DatabaseContext{Database: " /db", SourceDatabase: "/db"}},
-		{name: "newline", value: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db\nother"}},
-		{name: "separator", value: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db\u2028other"}},
+		{name: "exact", value: schemaext.DatabaseContext{Database: "/database/realm", SourceDatabase: "/database"}},
+		{name: "opaque", value: schemaext.DatabaseContext{Database: "target:tenant", SourceDatabase: "author:tenant"}},
+		{name: "empty", want: schemaext.ErrInvalidValue},
+		{name: "missing source", want: schemaext.ErrInvalidValue, value: schemaext.DatabaseContext{Database: "/db"}},
+		{name: "space", want: schemaext.ErrInvalidValue, value: schemaext.DatabaseContext{Database: " /db", SourceDatabase: "/db"}},
+		{name: "newline", want: schemaext.ErrInvalidValue, value: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db\nother"}},
+		{name: "separator", want: schemaext.ErrInvalidValue, value: schemaext.DatabaseContext{Database: "/db", SourceDatabase: "/db\u2028other"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			err := test.value.Validate()
-			if test.valid {
-				c.Assert(err, qt.IsNil)
-			} else {
-				c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
-			}
+			c.Assert(err, qt.ErrorIs, test.want)
 		})
 	}
 }
