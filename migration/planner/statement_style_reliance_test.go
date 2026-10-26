@@ -526,8 +526,8 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a column dropped beside a routine whose SQL-standard body reads its table",
 			change: droppedColumnWithRoutine(styleRoutine("owner_emails", "", "SETOF character varying", "BEGIN ATOMIC SELECT email FROM owners; END")),
 			want: []string{
-				`ALTER TABLE "owners" DROP COLUMN "email" CASCADE`,
-				`DROP FUNCTION IF EXISTS "public"."owner_emails"()`,
+				`DROP FUNCTION "public"."owner_emails"()`,
+				`ALTER TABLE "owners" DROP COLUMN "email"`,
 			}},
 		{name: "a column dropped beside a routine whose SQL-standard body reads another column",
 			change: droppedColumnWithRoutine(styleRoutine("owner_names", "", "SETOF character varying", "BEGIN ATOMIC SELECT name FROM owners; END")),
@@ -538,8 +538,8 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a column dropped beside a routine whose SQL-standard body selects every column",
 			change: droppedColumnWithRoutine(styleRoutine("owner_rows", "", "SETOF owners", "BEGIN ATOMIC SELECT * FROM owners; END")),
 			want: []string{
-				`ALTER TABLE "owners" DROP COLUMN "email" CASCADE`,
-				`DROP FUNCTION IF EXISTS "public"."owner_rows"()`,
+				`DROP FUNCTION "public"."owner_rows"()`,
+				`ALTER TABLE "owners" DROP COLUMN "email"`,
 			}},
 		{name: "a column dropped beside a routine whose quoted body reads its table",
 			change: droppedColumnWithRoutine(styleRoutine("owner_emails", "", "SETOF character varying", "SELECT email FROM owners")),

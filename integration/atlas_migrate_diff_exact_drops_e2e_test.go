@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +176,10 @@ func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredReaderStopsTheDrop(t *te
 			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE FUNCTION unrelated() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n",
 			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
 			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
+		{name: "a column a removed SQL-standard routine reads", steps: exactSteps(
+			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE FUNCTION count_a() RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(a) FROM t; END;\n",
+			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
+			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
 		{name: "a view removed with a routine that returns its rows", steps: exactSteps(
 			`CREATE TABLE t (id bigint PRIMARY KEY, a int);
 CREATE VIEW v AS SELECT id, a FROM t;
@@ -219,9 +224,9 @@ CREATE FUNCTION count_v() RETURNS bigint LANGUAGE sql STABLE RETURN (SELECT coun
 // TestCompatMigrateDiffStatementStyleE2E_SQLStandardBodiesFromAHandWrittenMigration
 // diffs a declaration that removes the column, the view and both routines of
 // a hand-written first migration. The plan reads each body from the server:
-// the routine that reads the view is dropped ahead of it, so the view drops
-// without CASCADE; the one that reads the column is dropped after it, so the
-// column drop relies on CASCADE. The rollback creates both routines again with
+// the routine that reads the view is dropped ahead of it, and the one that
+// reads the column is dropped ahead of that column. Neither drop needs CASCADE.
+// The rollback creates both routines again with
 // their bodies, after the column and the view they read, and the files run
 // forward, back and forward again.
 func TestCompatMigrateDiffStatementStyleE2E_SQLStandardBodiesFromAHandWrittenMigration(t *testing.T) {
@@ -245,7 +250,10 @@ func TestCompatMigrateDiffStatementStyleE2E_SQLStandardBodiesFromAHandWrittenMig
 	pairs := readMigrationPairs(c, dir)
 	c.Assert(pairs, qt.HasLen, 2)
 	c.Assert(pairs[1].Up, qt.Contains, "DROP FUNCTION \"count_v\"();\n-- drop \"v\" view\nDROP VIEW \"v\";\n")
-	c.Assert(pairs[1].Up, qt.Contains, `ALTER TABLE "t" DROP COLUMN "a" CASCADE;`)
+	c.Assert(pairs[1].Up, qt.Contains, `DROP FUNCTION "count_a"();`)
+	c.Assert(pairs[1].Up, qt.Contains, `ALTER TABLE "t" DROP COLUMN "a";`)
+	c.Assert(strings.Index(pairs[1].Up, `DROP FUNCTION "count_a"();`) <
+		strings.Index(pairs[1].Up, `ALTER TABLE "t" DROP COLUMN "a";`), qt.IsTrue)
 	c.Assert(pairs[1].Down, qt.Contains, "BEGIN ATOMIC\n SELECT count(t.a) AS count\n    FROM t;\nEND;")
 	c.Assert(pairs[1].Down, qt.Contains, "RETURN (SELECT count(*) AS count FROM v);")
 	applyBothWays(c, statementStyleTarget(c), pairs)
