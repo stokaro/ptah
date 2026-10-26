@@ -1177,8 +1177,9 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 	return functionNode
 }
 
-// FromFunctionFor is [FromFunction] for targetPlatform. On the PostgreSQL
-// family a LANGUAGE sql routine whose body starts with `BEGIN ATOMIC` or
+// FromFunctionFor is [FromFunction] for targetPlatform. On a target whose
+// routine grammar quotes the body, which is PostgreSQL's, a LANGUAGE sql
+// routine whose body starts with `BEGIN ATOMIC` or
 // `RETURN`, or a routine naming no language whose body starts with `BEGIN
 // ATOMIC`, has a SQL-standard body, which is SQL rather than a string:
 // PostgreSQL refuses it in dollar quotes (stokaro/ptah#4981), and a read
@@ -1187,7 +1188,7 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 // body that starts with RETURN is the routine's own statement.
 func FromFunctionFor(function schemamodel.Function, targetPlatform string) *ast.CreateFunctionNode {
 	functionNode := FromFunction(function)
-	if !platform.IsPostgresFamily(targetPlatform) {
+	if describe(targetPlatform).Grammar.Routines.Body != descriptor.RoutineQuotedBody {
 		return functionNode
 	}
 	language := strings.TrimSpace(function.Language)
