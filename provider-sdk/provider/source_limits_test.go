@@ -58,18 +58,17 @@ func TestClaimedSourceLimitsPreserveNarrowedKnowledge(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		exchange func() (*protocol.Description, *protocol.DecodeSourceRequest, *protocol.DecodedSource)
+		headers  []string
 	}{
-		{"Go", goSourceExchange},
-		{"HCL", hclExchange},
+		{"Go", goSourceExchange, []string{"retention"}},
+		{"HCL", hclExchange, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			d, request, result := test.exchange()
 			d.Features = append(d.Features, provider.SourceLimitsFeature)
 			d.Engines[0].Features = append(d.Engines[0].Features, provider.SourceLimitsFeature)
-			if request.Documents[0].Format == protocol.SourceDocument_GO_ANNOTATIONS {
-				d.Engines[0].GoHeaderKinds = []string{"retention"}
-			}
+			d.Engines[0].GoHeaderKinds = test.headers
 			request.Documents[0].Limits = []*protocol.SchemaCoverageLimit{{Kind: "retention", Reason: "not-inspected", Provenance: "observed"}}
 			unknown := &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "The source preserves an uninspected model"}
 			result.Documents[0].Coverage.Kinds[0].Knowledge = unknown

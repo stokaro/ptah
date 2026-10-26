@@ -88,3 +88,23 @@ func sourceCoverageRequiresLimits(coverage *protocol.ModelCoverage) bool {
 	}
 	return false
 }
+
+func validateEncodedLimits(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
+	if slices.Contains(engine.GetFeatures(), SourceLimitsFeature) &&
+		(request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS || request.GetFormat() == protocol.SourceDocument_HCL) {
+		if sourceCoverageRequiresLimits(request.GetCoverage()) && len(result.GetLimits()) == 0 {
+			return encodeError("narrowed coverage requires a claimed source limit")
+		}
+		var kinds []string
+		switch request.GetFormat() {
+		case protocol.SourceDocument_GO_ANNOTATIONS:
+			kinds = engine.GetGoHeaderKinds()
+		case protocol.SourceDocument_HCL:
+			kinds = engine.GetHclSource().GetHeaderKinds()
+		}
+		if err := validateHeaderLimits(kinds, result.GetLimits()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
