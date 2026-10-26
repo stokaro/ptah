@@ -11,7 +11,11 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
+	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
+	"ptah.run/internal/tableidentity"
 )
 
 func scopeDescription() *protocol.Description {
@@ -74,4 +78,52 @@ func TestScopeSelectionsKeepDistinctObjectNames(t *testing.T) {
 	c.Assert(selection.fit(objectidentity.ID{Kind: "example.org/queue", Schema: scopePart("main"), Name: scopePart("jobs")}), qt.IsNil)
 	c.Assert(selection.fit(objectidentity.ID{Kind: "example.org/pool", Name: scopePart("fast.pool")}), qt.IsNil)
 	c.Assert(selection.fit(objectidentity.ID{Kind: "example.org/unselected", Database: scopePart("other"), Name: scopePart("jobs")}), qt.IsNil)
+}
+
+func TestScopeSelectionsBindOnlyTheOpenedDatabase(t *testing.T) {
+	for _, test := range []struct {
+		name, source, normalized, session string
+		refused                           bool
+	}{
+		{name: "unbound", session: "/local"},
+		{name: "session", source: "/local", normalized: "/local", session: "/local"},
+		{name: "foreign", source: "/other", normalized: "/other", session: "/local", refused: true},
+		{name: "normalization changed", source: "/LOCAL", normalized: "/local", session: "/local", refused: true},
+		{name: "unverified", source: "/local", normalized: "/local", refused: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selection, err := newScopeSelections(scopeDescription())
+			c.Assert(err, qt.IsNil)
+			ref := objectidentity.ID{Kind: "example.org/queue", Database: objectidentity.Part{Source: test.source, Normalized: test.normalized}, Schema: scopePart("main"), Name: scopePart("jobs")}
+			bound, err := selection.inSession(ref, test.session)
+			c.Assert(err != nil, qt.Equals, test.refused)
+			c.Assert(bound.Database.Empty(), qt.IsTrue)
+			c.Assert(ref.Database.Source, qt.Equals, test.source)
+		})
+	}
+}
+
+func TestScopedInspectionCoverageSurvivesComparisonBinding(t *testing.T) {
+	c := qt.New(t)
+	selection, err := newScopeSelections(scopeDescription())
+	c.Assert(err, qt.IsNil)
+	semantics := identifier.Semantics{DefaultSchema: "main"}
+	r := reader{session: &session{target: &target{host: &Host{selections: selection}}, remote: &protocol.Session{Engine: "example", Database: "/opened"}, info: catalog.ServerInfo{IdentifierSemantics: semantics}}}
+	domain, err := r.observedNamespaceKnowledge("example.org/queue", schemaext.Knowledge{State: schemaext.Uninspected, Reason: "outside the inspected database"}, []*protocol.ModelNamespaceKnowledge{{
+		Scope:     &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: "/opened", Normalized: "/opened"}, Schema: &protocol.NamespaceComponent{Source: "main", Normalized: "main"}},
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE},
+	}})
+	c.Assert(err, qt.IsNil)
+	model := schemaext.CodecIdentity{Owner: "example.org/queue", Kind: "example.org/queue", Representation: schemaext.Observed, Version: 1, Definition: "definition"}
+	coverage, err := schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: domain}}, nil)
+	c.Assert(err, qt.IsNil)
+	selected, err := schemaext.NewTargetSelection("example")
+	c.Assert(err, qt.IsNil)
+	bound, err := tableidentity.BindComparisonCoverage(coverage, selected, semantics)
+	c.Assert(err, qt.IsNil)
+	ref := objectidentity.ID{Kind: "example.org/queue", Schema: scopePart("main"), Name: scopePart("jobs")}
+	c.Assert(bound.Lookup(model.Kind, ref).State, qt.Equals, schemaext.Complete)
+	ref.Database = scopePart("/other")
+	c.Assert(bound.Lookup(model.Kind, ref).State, qt.Equals, schemaext.Uninspected)
 }

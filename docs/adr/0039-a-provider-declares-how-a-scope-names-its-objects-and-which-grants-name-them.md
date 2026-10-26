@@ -108,6 +108,12 @@ alone, and a `SCHEMA_OR_DATABASE` one a name and an optional schema. The host
 refuses a scope over an object whose identity does not fit, naming the kind,
 rather than keep or drop it on a guess.
 
+An inspected value can retain its session database in its captured envelope.
+The host verifies that the source and normalized database match the opened
+session exactly, then removes that qualification from the selector identity
+and its namespace coverage. A required object can use the same verified
+database binding. A foreign or differently normalized database is refused.
+
 ### What a kept object keeps
 
 `keeps_required` replaces the owner's selection service for the case YDB has.

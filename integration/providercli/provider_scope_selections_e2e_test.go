@@ -159,7 +159,7 @@ func TestProviderScopeSelectionsNameItsObjects_FailurePath(t *testing.T) {
 	host, _ := yamlProviderCommand(c, "scope-selections")
 	db, err := observedConnection(c, host, "misfit").Reader().ReadSchema()
 	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
-	c.Assert(err, qt.ErrorMatches, `.*the provider reports example.org/fixture/queue .*, which its in-schema scope selection does not name`)
+	c.Assert(err, qt.ErrorMatches, `.*observed example.org/fixture/queue belongs to a database outside the exact session binding`)
 	c.Assert(db, qt.IsNil)
 }
 
@@ -209,5 +209,20 @@ func TestProviderScopeSelectionsOfTwoEngines_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(host, qt.IsNil)
 		})
+	}
+}
+
+// Live session qualification remains in the captured values but does not
+// change how a selector names an object or keeps its prerequisite.
+func TestProviderScopeSelectionsBindTheSessionDatabase(t *testing.T) {
+	c := qt.New(t)
+	host, runtime := yamlProviderCommand(c, "scope-selections")
+	db, err := observedConnection(c, host, "bound").Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	kept, err := atlasfilter.ScopeDatabase(db, atlasfilter.Scope{Selections: runtime.Selections(), Include: []string{"main.jobs-fast[type=queue]"}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(selected(kept.FeatureObjects), qt.DeepEquals, []string{"pool fast", "queue main.jobs-fast"})
+	for _, ref := range db.FeatureObjects.Refs() {
+		c.Assert(ref.Database.Empty(), qt.IsTrue)
 	}
 }

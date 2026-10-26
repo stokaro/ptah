@@ -62,9 +62,10 @@ func observedKnowledge(value *protocol.ModelKnowledge) (schemaext.Knowledge, err
 	return schemaext.Knowledge{State: state, Reason: value.GetReason()}, nil
 }
 
-// Native objects retain wire namespace coordinates. Common tables and columns
-// use disjoint subject-kind scopes with the session database removed and the
-// column's final path component moved into Parent, as observedIdentity does.
+// Native selector scopes remove only the verified session database. Other
+// native scopes retain wire coordinates. Common tables and columns use disjoint
+// subject-kind scopes with the session database removed and the column's final
+// path component moved into Parent, as observedIdentity does.
 func (r reader) observedNamespaceKnowledge(kind schemaext.Kind, outside schemaext.Knowledge, regions []*protocol.ModelNamespaceKnowledge) (schemaext.KnowledgeDomain, error) {
 	var claims []schemaext.NamespaceKnowledge
 	for _, region := range regions {
@@ -84,6 +85,12 @@ func (r reader) observedNamespaceKnowledge(kind schemaext.Kind, outside schemaex
 			SubjectKinds: []objectidentity.Kind{objectidentity.Kind(kind)}, Targets: []string{r.session.remote.GetEngine()},
 			Database: namespacePart(scope.GetDatabase()), Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...),
 		}, Knowledge: knowledge})
+		if r.session.target.host.selections.selects(objectidentity.Kind(kind)) {
+			claims[len(claims)-1].Scope.Database = &objectidentity.Part{}
+			// A selection describes standalone objects, never table-owned facets.
+			// Preserve that bound when shared comparison binds table identities.
+			claims[len(claims)-1].Scope.Parent = &objectidentity.Part{}
+		}
 		common, err := r.commonNamespaceScopes(scope)
 		if err != nil {
 			return schemaext.KnowledgeDomain{}, err
