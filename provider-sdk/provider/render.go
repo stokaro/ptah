@@ -100,6 +100,9 @@ func validateRenderOperation(description *protocol.Description, engine *protocol
 		if operation == nil || operation.CreateTable == nil {
 			return fmt.Errorf("%w: missing table creation", ErrProtocol)
 		}
+		if operation.CreateTable.GetPrimaryKey() != nil {
+			return fmt.Errorf("%w: an inspected primary key is not a table creation operand", ErrProtocol)
+		}
 	case *protocol.Change_DropTable:
 		if operation == nil || operation.DropTable == nil {
 			return fmt.Errorf("%w: missing table removal", ErrProtocol)

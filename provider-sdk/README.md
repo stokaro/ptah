@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.8. `provider-sdk/v0.9.0` speaks 25.7.
+speaks contract 25.9. `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
 `provider-sdk/v0.7.0` speaks 25.5.
 `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`
@@ -88,7 +88,8 @@ returns to 0.
   [view facets and replacement observations](#view-facets-and-replacement-observations),
   [complete column observations](#complete-column-observations), and
   [native object assessment](#native-object-assessment). Contract 25.8 adds
-  [statement style for feature owners](#planning-policy).
+  [statement style for feature owners](#planning-policy). Contract 25.9 adds
+  [ordered primary-key observations](#ordered-primary-key-observations).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -1728,6 +1729,30 @@ reordered, conflicting, or unnegotiated observations are refused. Native facets
 retain independent evidence and cannot supply a second writable copy of a
 common default or sequence setting. Providers refuse unrepresentable extras
 rather than dropping them during conversion.
+
+## Ordered primary-key observations
+
+`schema.observed-primary-keys` carries each inspected table's complete primary
+key in `Table.primary_key`, using `ObservedConstraint`. The provider and engine
+both declare this two-way feature, which requires `schema.observed-columns`.
+A peer refuses the record without negotiation.
+
+The record binds the exact table name and schema and has type `PRIMARY KEY`.
+Its `column_names` retains key order, which can differ from table-column order.
+Every key member is a known, unique column whose observed primary-key flag is
+true. A missing record means the table has no primary key, so all membership
+flags must be false. Included columns are known, unique and separate from key
+members. The singular `column_name` alias remains empty.
+
+The record preserves its name, method, comment, included columns, deferral,
+enforcement and hash-shard settings. Foreign-key, check, unique-null and
+dependency attributes refuse. An initial mode requires deferral and is
+`IMMEDIATE` or `DEFERRED`. The record is inspection evidence, never a table
+creation operand. The host maps it into the common catalog without sorting
+its members or inventing a name. The common source declaration owns the
+writable key; native observations can retain independent evidence.
+[ADR 0051](../docs/adr/0051-inspected-primary-keys-retain-their-common-order.md)
+defines the ownership and export controls.
 
 ## Native object assessment
 

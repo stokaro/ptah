@@ -600,6 +600,9 @@ message Table {
   repeated Envelope facets = 3;
   // Required in inspection replies, including tables with no model facets.
   Reference normalized_identity = 4;
+  // Complete common primary key in inspection, including its column order.
+  // Contract 25.9, negotiated under schema.observed-primary-keys.
+  ObservedConstraint primary_key = 5;
 }
 message Column {
   string name = 1;

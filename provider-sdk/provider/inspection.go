@@ -35,6 +35,9 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := validateInspectedColumns(description, engine, snapshot); err != nil {
 		return nil, err
 	}
+	if err := validateInspectedPrimaryKeys(description, engine, snapshot); err != nil {
+		return nil, err
+	}
 	if err := validateObservedCommonObjects(engine, snapshot.GetCommonObjects()); err != nil {
 		return nil, err
 	}
