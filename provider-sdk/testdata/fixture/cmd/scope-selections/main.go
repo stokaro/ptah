@@ -4,7 +4,8 @@
 // ends in "-<pool>" runs on that pool and requires it, and a scope that keeps
 // the queue keeps the pool. The kinds carry retention values and claim no
 // SQLite capability. A table named "misfit" makes the read report a queue
-// qualified by its database, which the queue's naming cannot read.
+// qualified by another database. A table named "bound" binds every object
+// and requirement to the session database.
 //
 // FIXTURE_SECOND_ENGINE adds an engine beside the first: "same" selects the
 // two kinds alike, "selector" names the queue by another selector type,
@@ -118,8 +119,13 @@ func (s *selector) Inspect(ctx context.Context, request *protocol.InspectRequest
 		{Engine: "fixture", Kind: poolKind, Name: "slow"},
 	}
 	for _, table := range snapshot.GetTables() {
+		if table.GetIdentity().GetName() == "bound" {
+			for _, ref := range natives {
+				ref.Database = table.GetIdentity().GetDatabase()
+			}
+		}
 		if table.GetIdentity().GetName() == "misfit" {
-			natives[0].Database = table.GetIdentity().GetDatabase()
+			natives[0].Database = "another-database"
 		}
 	}
 	for _, model := range s.description.Engines[0].GetValueModels() {
@@ -167,7 +173,9 @@ func (s *selector) NormalizeValues(ctx context.Context, request *protocol.Normal
 			value.NormalizedOwner = normalizedOwner(value.GetValue().GetOwner())
 		}
 		if pool, runs := routedPool(value.GetValue().GetOwner()); runs {
-			value.RequiredObjects = []*protocol.ComparisonIdentity{{Kind: poolKind, Name: &protocol.ComparisonPart{Source: pool, Normalized: strings.ToLower(pool)}}}
+			value.RequiredObjects = []*protocol.ComparisonIdentity{{Kind: poolKind,
+				Database: &protocol.ComparisonPart{Source: value.Value.Owner.Database, Normalized: value.Value.Owner.Database},
+				Name:     &protocol.ComparisonPart{Source: pool, Normalized: strings.ToLower(pool)}}}
 		}
 		result.Values = append(result.Values, value)
 	}

@@ -140,6 +140,27 @@ func (s *scopeSelections) fit(ref objectidentity.ID) error {
 	return nil
 }
 
+func (s *scopeSelections) selects(kind objectidentity.Kind) bool {
+	if s == nil {
+		return false
+	}
+	_, found := s.selected[kind]
+	return found
+}
+
+// inSession removes only the opened database's exact qualification. A foreign
+// or differently normalized database cannot become a local selector identity.
+func (s *scopeSelections) inSession(ref objectidentity.ID, database string) (objectidentity.ID, error) {
+	if !s.selects(ref.Kind) || ref.Database.Empty() {
+		return ref, nil
+	}
+	if database == "" || ref.Database.Source != database || ref.Database.Normalized != database {
+		return objectidentity.ID{}, selectionError("observed %s belongs to a database outside the exact session binding", ref.Kind)
+	}
+	ref.Database = objectidentity.Part{}
+	return ref, nil
+}
+
 // grantObjects reads the object a grant names when the grant's object type is
 // a selection's grant object type, with the selection's naming and the
 // identifier rules of its engine.
@@ -215,6 +236,18 @@ func (r requiredObjects) SelectObjects(_ context.Context, request selectext.Requ
 		}
 		for _, required := range requirer.Requires() {
 			if slices.Contains(keeps, string(required.Kind)) {
+				if !required.Database.Empty() {
+					value, ok := object.Value.(*resolvedModel)
+					if !ok {
+						return selectext.Result{}, selectionError("a qualified requirement has no captured database binding")
+					}
+					database := value.normalized.GetValue().GetOwner().GetDatabase()
+					if database == "" || value.normalized.GetNormalizedOwner().GetDatabase() != database ||
+						required.Database.Source != database || required.Database.Normalized != database {
+						return selectext.Result{}, selectionError("a kept requirement belongs to a database outside its object's binding")
+					}
+					required.Database = objectidentity.Part{}
+				}
 				result.Requires = append(result.Requires, required)
 			}
 		}

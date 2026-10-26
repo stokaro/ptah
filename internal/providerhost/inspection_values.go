@@ -70,14 +70,12 @@ func observedFacets(values []observedValue, engine string) (schemaext.Facets, er
 
 // Common identities omit the session database and encode a column's table as
 // Parent. Check every discarded or moved component against the session's naming
-// rules first. Native identities retain the owner's structured components.
+// rules first. A selected native identity also omits the verified session
+// database: its scope names an object within that database. The captured value
+// retains the database binding as inspection evidence.
 func (r reader) observedIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
 	if source.GetKind() != "table" && source.GetKind() != "column" {
-		id, err := sourceIdentity(source, normalized)
-		if err != nil {
-			return objectidentity.ID{}, err
-		}
-		return id, r.session.target.host.selections.fit(id)
+		return r.observedNativeIdentity(source, normalized)
 	}
 	if source.GetDatabase() != r.session.remote.GetDatabase() || normalized.GetDatabase() != source.GetDatabase() ||
 		source.GetCatalog() != "" || normalized.GetCatalog() != "" || len(source.GetOverload()) != 0 || len(normalized.GetOverload()) != 0 {
@@ -110,4 +108,17 @@ func (r reader) observedIdentity(source, normalized *protocol.Reference) (object
 		return objectidentity.ID{}, unsupported("common observed facet name normalization")
 	}
 	return result, nil
+}
+
+func (r reader) observedNativeIdentity(source, normalized *protocol.Reference) (objectidentity.ID, error) {
+	id, err := sourceIdentity(source, normalized)
+	if err != nil {
+		return objectidentity.ID{}, err
+	}
+	selected := r.session.target.host.selections
+	id, err = selected.inSession(id, r.session.remote.GetDatabase())
+	if err != nil {
+		return objectidentity.ID{}, err
+	}
+	return id, selected.fit(id)
 }
