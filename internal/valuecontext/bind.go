@@ -65,7 +65,10 @@ func BindSource(ctx context.Context, runtime schemaext.ValueContextRuntime, targ
 
 // Bind replaces values only after the complete owner batch succeeds. Values
 // outside the selected target retain their captured state and source bindings.
-func Bind(ctx context.Context, runtime schemaext.ValueContextRuntime, target string, bound schemaext.DatabaseContext, representation schemaext.Representation, objects schemaext.Objects, slots []*schemaext.Facets) (schemaext.Objects, error) {
+func Bind(
+	ctx context.Context, runtime schemaext.ValueContextRuntime, target string, bound schemaext.DatabaseContext,
+	representation schemaext.Representation, objects schemaext.Objects, slots []*schemaext.Facets,
+) (schemaext.Objects, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return schemaext.Objects{}, err
 	}
@@ -73,19 +76,19 @@ func Bind(ctx context.Context, runtime schemaext.ValueContextRuntime, target str
 	if err != nil {
 		return schemaext.Objects{}, err
 	}
-	inputs, values, objectIndexes, facetIndexes, err := selectedValues(selection, objects, slots)
+	capture, err := selectedValues(selection, objects, slots)
 	if err != nil {
 		return schemaext.Objects{}, err
 	}
-	kinds := make([]schemaext.Kind, len(values))
-	for i, value := range values {
+	kinds := make([]schemaext.Kind, len(capture.values))
+	for i, value := range capture.values {
 		kinds[i] = value.Kind()
 	}
-	resolved, err := runtime.BindValueContexts(ctx, schemaext.ValueContextRequest{Target: selection.Name(), Context: bound, Representation: representation, Values: values})
+	resolved, err := runtime.BindValueContexts(ctx, schemaext.ValueContextRequest{Target: selection.Name(), Context: bound, Representation: representation, Values: capture.values})
 	if err != nil {
 		return schemaext.Objects{}, err
 	}
-	if len(resolved) != len(values) {
+	if len(resolved) != len(capture.values) {
 		return schemaext.Objects{}, fmt.Errorf("%w: context binding changed the source inventory", schemaext.ErrInvalidValue)
 	}
 	for i, value := range resolved {
@@ -96,10 +99,10 @@ func Bind(ctx context.Context, runtime schemaext.ValueContextRuntime, target str
 			return schemaext.Objects{}, fmt.Errorf("%w: context binding reordered the source inventory", schemaext.ErrInvalidValue)
 		}
 	}
-	for i, index := range objectIndexes {
-		inputs[index].Value = resolved[i]
+	for i, index := range capture.objectIndexes {
+		capture.objects[index].Value = resolved[i]
 	}
-	result, err := schemaext.NewObjects(inputs...)
+	result, err := schemaext.NewObjects(capture.objects...)
 	if err != nil {
 		return schemaext.Objects{}, err
 	}
@@ -107,8 +110,8 @@ func Bind(ctx context.Context, runtime schemaext.ValueContextRuntime, target str
 	for i, slot := range slots {
 		groups[i] = *slot
 	}
-	for i, slot := range facetIndexes {
-		groups[slot], err = groups[slot].Replace(resolved[len(objectIndexes)+i])
+	for i, slot := range capture.facetIndexes {
+		groups[slot], err = groups[slot].Replace(resolved[len(capture.objectIndexes)+i])
 		if err != nil {
 			return schemaext.Objects{}, err
 		}
@@ -122,31 +125,36 @@ func Bind(ctx context.Context, runtime schemaext.ValueContextRuntime, target str
 	return result, nil
 }
 
-func selectedValues(selection schemaext.TargetSelection, objects schemaext.Objects, slots []*schemaext.Facets) ([]schemaext.Object, []schemaext.Value, []int, []int, error) {
+type bindingInputs struct {
+	objects       []schemaext.Object
+	values        []schemaext.Value
+	objectIndexes []int
+	facetIndexes  []int
+}
+
+func selectedValues(selection schemaext.TargetSelection, objects schemaext.Objects, slots []*schemaext.Facets) (bindingInputs, error) {
 	inputs, err := objects.All()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return bindingInputs{}, err
 	}
-	var values []schemaext.Value
-	var objectIndexes []int
+	result := bindingInputs{objects: inputs}
 	for i, object := range inputs {
 		if selection.Includes(object.Targets) {
-			objectIndexes = append(objectIndexes, i)
-			values = append(values, object.Value)
+			result.objectIndexes = append(result.objectIndexes, i)
+			result.values = append(result.values, object.Value)
 		}
 	}
-	var facetIndexes []int
 	for i, slot := range slots {
 		items, err := slot.Values()
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return bindingInputs{}, err
 		}
 		for _, value := range items {
 			if selection.Includes(slot.TargetScope(value.Kind())) {
-				facetIndexes = append(facetIndexes, i)
-				values = append(values, value)
+				result.facetIndexes = append(result.facetIndexes, i)
+				result.values = append(result.values, value)
 			}
 		}
 	}
-	return inputs, values, objectIndexes, facetIndexes, nil
+	return result, nil
 }
