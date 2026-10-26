@@ -259,3 +259,17 @@ type Runtime interface {
 	schemaext.ModelRuntime
 	Service
 }
+
+// ParentVocabulary is a runtime that names the attached model kinds of a
+// target: the kinds its parent planning services are assigned
+// ([Request.ParentKinds]). A table on the target holds objects or settings of
+// these kinds, and the runtime refuses a parent action on a table that holds
+// state of any other kind. A host that captures a table's state for a later
+// plan therefore makes namespace claims under the table for these kinds only.
+// A rollback that recreates a removed table asks the runtime which kinds those
+// are.
+type ParentVocabulary interface {
+	// ParentKinds returns the attached kinds of target, sorted and once each.
+	// An unknown target is an error.
+	ParentKinds(target string) ([]schemaext.Kind, error)
+}

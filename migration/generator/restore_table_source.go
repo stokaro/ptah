@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -18,12 +19,18 @@ import (
 // restoreTableSource builds the rollback input from captured removal operands.
 // The surrounding catalog still supplies unrelated objects and type vocabulary.
 // A table and its children cannot be recovered from a later copy of that catalog.
-func restoreTableSource(diff *difftypes.SchemaDiff, source *catalog.Database, dialect string) (*catalog.Database, error) {
+// vocabulary names the model kinds a table on the target carries; see
+// [restoreTableCoverage] and [attachedKinds] for a nil vocabulary.
+func restoreTableSource(diff *difftypes.SchemaDiff, source *catalog.Database, dialect string, vocabulary featureplan.ParentVocabulary) (*catalog.Database, error) {
 	if len(diff.TablesRemoved) == 0 {
 		return source, nil
 	}
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	parents, err := capturedRemovalParents(diff.TablesRemoved, dialect, semantics)
+	if err != nil {
+		return nil, err
+	}
+	attached, err := attachedKinds(vocabulary, dialect)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +53,27 @@ func restoreTableSource(diff *difftypes.SchemaDiff, source *catalog.Database, di
 		result.Constraints = append(result.Constraints, captured.Constraints...)
 		result.Triggers = append(result.Triggers, captured.Triggers...)
 	}
-	result.FeatureObjects, result.FeatureCoverage, err = restoreTableFeatures(result.FeatureObjects, result.FeatureCoverage, diff.TablesRemoved, parents, dialect, semantics)
+	result.FeatureObjects, result.FeatureCoverage, err = restoreTableFeatures(result.FeatureObjects, result.FeatureCoverage, diff.TablesRemoved, parents, attached, dialect, semantics)
 	if err != nil {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// attachedKinds reports which model kinds a table on dialect carries. Without
+// a vocabulary every kind counts as attached: each removed table then keeps a
+// local claim for every captured kind, which can make the rollback refuse a
+// recreated table that holds owned state, and never lets it borrow knowledge
+// its capture did not have.
+func attachedKinds(vocabulary featureplan.ParentVocabulary, dialect string) (func(schemaext.Kind) bool, error) {
+	if vocabulary == nil {
+		return func(schemaext.Kind) bool { return true }, nil
+	}
+	kinds, err := vocabulary.ParentKinds(dialect)
+	if err != nil {
+		return nil, err
+	}
+	return func(kind schemaext.Kind) bool { return slices.Contains(kinds, kind) }, nil
 }
 
 func capturedRemovalParents(removals difftypes.TableRemovals, dialect string, semantics identifier.Semantics) (map[objectidentity.Key]objectidentity.ID, error) {
@@ -108,7 +131,7 @@ func restoredSubject(ref objectidentity.ID, parents map[objectidentity.Key]objec
 
 func restoreTableFeatures(
 	objects schemaext.Objects, coverage schemaext.Coverage, removals difftypes.TableRemovals,
-	parents map[objectidentity.Key]objectidentity.ID, dialect string, semantics identifier.Semantics,
+	parents map[objectidentity.Key]objectidentity.ID, attached func(schemaext.Kind) bool, dialect string, semantics identifier.Semantics,
 ) (schemaext.Objects, schemaext.Coverage, error) {
 	keep := func(ref objectidentity.ID) bool { return !restoredSubject(ref, parents) }
 	objects = objects.Select(keep)
@@ -119,16 +142,25 @@ func restoreTableFeatures(
 			return schemaext.Objects{}, schemaext.Coverage{}, err
 		}
 	}
-	coverage, err := restoreTableCoverage(coverage, removals, parents, dialect, semantics)
+	coverage, err := restoreTableCoverage(coverage, removals, parents, attached, dialect, semantics)
 	if err != nil {
 		return schemaext.Objects{}, schemaext.Coverage{}, err
 	}
 	return objects, coverage, nil
 }
 
-// Captured kind-wide knowledge becomes local to the restored table. Importing
-// it as a global claim would describe unrelated tables the capture never read.
-func restoreTableCoverage(source schemaext.Coverage, removals difftypes.TableRemovals, parents map[objectidentity.Key]objectidentity.ID, dialect string, semantics identifier.Semantics) (schemaext.Coverage, error) {
+// Captured kind-wide knowledge of an attached model becomes local to the
+// restored table. Importing it as a global claim would describe unrelated
+// tables the capture never read. A model no table on the target carries, such
+// as PostgreSQL default privileges, has no namespace under the table, so it
+// keeps only a claim the capture made on the table itself. A claim derived
+// from its kind-wide knowledge would read as captured table state, which the
+// rollback's CREATE TABLE would then need that model's parent planning to
+// account for.
+func restoreTableCoverage(
+	source schemaext.Coverage, removals difftypes.TableRemovals, parents map[objectidentity.Key]objectidentity.ID,
+	attached func(schemaext.Kind) bool, dialect string, semantics identifier.Semantics,
+) (schemaext.Coverage, error) {
 	if direction := source.Representation(); direction != "" && direction != schemaext.Observed {
 		return schemaext.Coverage{}, fmt.Errorf("%w: rollback source requires observed feature coverage", ptaherr.ErrInvalidSchemaDiff)
 	}
@@ -153,7 +185,9 @@ func restoreTableCoverage(source schemaext.Coverage, removals difftypes.TableRem
 	for _, removal := range removals {
 		parent := tableidentity.Subject(removal.Current.Table.Schema, removal.Current.Table.Name, dialect, semantics)
 		for kind := range kinds {
-			subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: parent, Knowledge: removal.Current.FeatureCoverage.Lookup(kind, parent)})
+			if _, claimed := removal.Current.FeatureCoverage.SubjectKnowledge(kind, parent); claimed || attached(kind) {
+				subjects = append(subjects, schemaext.SubjectCoverage{Kind: kind, Subject: parent, Knowledge: removal.Current.FeatureCoverage.Lookup(kind, parent)})
+			}
 		}
 		for _, record := range removal.Current.FeatureCoverage.SubjectRecords() {
 			if record.Subject.Key() != parent.Key() {
