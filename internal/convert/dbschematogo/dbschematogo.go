@@ -54,7 +54,15 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if err != nil {
 		return nil, err
 	}
-	defaults, err := columnsemantics.Defaults(ctx, rules.ColumnService, dialect, identifier.ForDialect(dialect), capability.ForDialect(dialect), dbSchema.Tables)
+	columnTarget := dialect
+	if rules.ColumnService != nil {
+		selected, err := runtime.ResolveTarget(dialect)
+		if err != nil {
+			return nil, err
+		}
+		columnTarget = selected.Name()
+	}
+	defaults, err := columnsemantics.Defaults(ctx, rules.ColumnService, columnTarget, identifier.ForDialect(columnTarget), capability.ForDialect(columnTarget), dbSchema.Tables)
 	if err != nil {
 		return nil, err
 	}

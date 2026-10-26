@@ -41,7 +41,7 @@ func TestProviderColumnsComparisonReadbackAndPrediction(t *testing.T) {
 	c.Assert(desired.Fields[0].Primary, qt.IsFalse)
 	c.Assert(*current.Tables[0].Columns[1].ColumnDefault, qt.Equals, "typed()")
 
-	read, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), current, "fixture", runtime)
+	read, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), current, "fixture-columns", runtime)
 	c.Assert(err, qt.IsNil)
 	c.Assert(read.Fields[1].DefaultSet, qt.IsTrue)
 	c.Assert(read.Fields[1].Default, qt.Equals, "")

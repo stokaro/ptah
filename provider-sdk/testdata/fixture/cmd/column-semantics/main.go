@@ -20,6 +20,7 @@ func main() {
 	features := []string{provider.ColumnsFeature, provider.ProjectTableCreationsFeature, provider.PrepareTablesFeature, provider.ValidateSchemaFeature}
 	description.Features = append(description.Features, features...)
 	engine := description.Engines[0]
+	engine.Aliases = append(engine.Aliases, "fixture-columns")
 	engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
 	engine.Features = append(engine.Features, features...)
 	owner := &columns{Provider: &backend.Provider{}}
