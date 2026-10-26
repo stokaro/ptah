@@ -37,7 +37,7 @@ type commonPlanner struct {
 // the common-object wire receives.
 var commonObjectFields = []string{"SequencesAdded", "SequencesRemoved", "SequencesModified", "ViewsAdded", "ViewsRemoved", "ViewsModified",
 	"MaterializedViewsAdded", "MaterializedViewsRemoved", "MaterializedViewsModified", "ObjectCommentsChanged", "DeclaredViewLikes",
-	"CurrentGrants", "CurrentNotDescribed", "RolesAdded", "RolesRemoved", "RolesModified", "RoleMembershipsAdded", "RoleMembershipsRemoved",
+	"CurrentGrants", "RolesAdded", "RolesRemoved", "RolesModified", "RoleMembershipsAdded", "RoleMembershipsRemoved",
 	"GrantsAdded", "GrantsRemoved", "GrantOptionsAdded", "GrantOptionsRevoked"}
 
 func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
@@ -116,11 +116,13 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 // commonObjectSteps plans the common objects beyond tables for a provider
 // that carries them. It first refuses a diff field the planner has no step
 // for; for a provider without the common-object wire that includes every
-// field of those objects.
+// mutation field of those objects. CurrentNotDescribed is observation
+// context even when none of those objects is writable; refusing it would
+// block table changes merely because access was not inspected.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "Matched"}
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
 	}
