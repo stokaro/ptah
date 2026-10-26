@@ -161,10 +161,11 @@ type Database struct {
 	// older lines an object at the database root too. A plan built against
 	// this read names those objects with it.
 	//
-	// Empty from every other reader, and from a description that did not come
-	// from a live read. It describes where the database is rather than what
-	// it holds, so it is never serialized: a description applied to another
-	// database is planned against that database's path.
+	// An executable provider supplies its exact session database binding,
+	// including a selected dev realm. Empty from readers that supply no such
+	// context, and from a description that did not come from a live read. It
+	// describes where the database is rather than what it holds, so it is never
+	// serialized: a description applied elsewhere uses the target's binding.
 	DatabasePath string `json:"-"`
 
 	// CurrentAccount is the account the reading connection ran as, such as
