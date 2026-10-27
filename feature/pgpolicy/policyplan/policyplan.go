@@ -65,6 +65,9 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	if err := validateRequest(ctx, request.Target); err != nil {
 		return featureplan.Result{}, err
 	}
+	if !request.Policy.Statements.Valid() {
+		return featureplan.Result{}, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, request.Policy.Statements)
+	}
 	for _, kind := range request.ParentKinds {
 		if kind != pgpolicy.PolicyKind && kind != pgpolicy.TableStateKind {
 			return featureplan.Result{}, fmt.Errorf("%w: row-security planning assesses only its own models, not %q", schemaext.ErrInvalidValue, kind)
@@ -105,6 +108,11 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 			if refused != nil {
 				return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{*refused}}, nil
 			}
+			steps, err := planEarlyPolicyDrops(roles, index, table, request.Policy.Statements, parents)
+			if err != nil {
+				return featureplan.Result{}, err
+			}
+			contribution.Steps = append(contribution.Steps, steps...)
 			result.Parents = append(result.Parents, parents...)
 		}
 	}
@@ -115,6 +123,55 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		return featureplan.Result{}, err
 	}
 	return result, nil
+}
+
+func planEarlyPolicyDrops(roles objectidentity.Builder, index int, table featureplan.Table, style featureplan.StatementStyle, parents []featureplan.ParentPlan) ([]plangraph.Step[featureplan.Operation], error) {
+	if table.Action != featureplan.DropTable || style != featureplan.StatementStyleExact ||
+		!slices.ContainsFunc(parents, func(parent featureplan.ParentPlan) bool { return parent.Kind == pgpolicy.PolicyKind }) {
+		return nil, nil
+	}
+	steps, ids, err := dropRemovedTablePolicies(roles, index, table)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) != 0 {
+		for i := range parents {
+			if parents[i].Kind == pgpolicy.PolicyKind {
+				parents[i].Steps = ids
+				parents[i].Strategy = "drop the table's captured policies before views and columns they may read"
+			}
+		}
+	}
+	return steps, nil
+}
+
+// dropRemovedTablePolicies releases the captured policies of a removed table
+// before the common planner drops views or columns they read. The table still
+// carries its row-security switches until its own DROP TABLE.
+func dropRemovedTablePolicies(roles objectidentity.Builder, index int, table featureplan.Table) ([]plangraph.Step[featureplan.Operation], []plangraph.StepID, error) {
+	objects, err := table.Current.OwnedObjects.All()
+	if err != nil {
+		return nil, nil, err
+	}
+	var steps []plangraph.Step[featureplan.Operation]
+	var ids []plangraph.StepID
+	for position, object := range objects {
+		observed, ok := object.Value.(*pgpolicy.ObservedPolicy)
+		if !ok {
+			continue
+		}
+		if pgpolicy.Table(object.Ref).Key() != table.Subject.Key() {
+			return nil, nil, fmt.Errorf("%w: captured policy %s is not on removed table %s", schemaext.ErrInvalidValue, object.Ref, table.Subject)
+		}
+		change := &pgpolicy.PolicyChange{Before: observed, Access: pgpolicy.PolicyAccess(observed, nil, pgpolicy.ExpressionsSame)}
+		planned, err := planPolicy(roles, fmt.Sprintf("removed/%06d/policy/%06d", index, position), object.Ref, change, featureplan.PhaseDependent)
+		if err != nil {
+			return nil, nil, err
+		}
+		steps = append(steps, planned.steps...)
+		ids = append(ids, planned.plan.Steps...)
+	}
+	return steps, ids, nil
 }
 
 // PlanDeclarations creates each authored policy for a whole-schema render,
