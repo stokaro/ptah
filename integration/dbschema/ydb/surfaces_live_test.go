@@ -159,7 +159,9 @@ func TestYDBSchemaStats_CountsWhatTheReaderDescribes(t *testing.T) {
 // TestYDBSchemaSecurity_HappyPath_ReadsTheAccessModel analyzes a database
 // holding a group nobody is a member of, granted a permission on a table: the
 // group is reported as granting to nobody, and the row-level security rule,
-// which YDB gives nothing to check, is listed as not checked.
+// which YDB gives nothing to check, is listed as not checked. The directory
+// holding the table is owned by root@builtin, a subject .sys/auth_users does
+// not list, so OWN01 names it as not checked rather than refusing the report.
 func TestYDBSchemaSecurity_HappyPath_ReadsTheAccessModel(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -184,6 +186,7 @@ func TestYDBSchemaSecurity_HappyPath_ReadsTheAccessModel(t *testing.T) {
 			c.Assert(stdout, qt.Contains, `"code": "ROL04"`)
 			c.Assert(stdout, qt.Contains, `"name": "`+names.group+`"`)
 			c.Assert(stdout, qt.Matches, `(?s).*"code": "PRV01",\s*"reason": "the target does not model row-level security".*`)
+			c.Assert(stdout, qt.Matches, `(?s).*"code": "OWN01",\s*"reason": "the read did not establish whether [^"]*root@builtin[^"]* can log in, so the objects they own were not checked".*`)
 		})
 	}
 }

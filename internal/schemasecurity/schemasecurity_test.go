@@ -32,7 +32,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		owners []schemasecurity.ObjectOwner
 		// wantCodes are the finding codes, in the order Analyze sorts them.
 		wantCodes []string
-		// wantSkipped are the rules that did not run at all.
+		// wantSkipped are the rules SkippedRules names.
 		wantSkipped []string
 	}{
 		{
@@ -301,9 +301,9 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			dialect:  "postgres",
 			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
-				{Kind: "table", Name: "users", Owner: "app_user", OwnerCanLogin: true},
-				{Kind: "table", Name: "orders", Owner: "app_user", OwnerCanLogin: true},
-				{Kind: "schema", Name: "public", Owner: "app_user", OwnerCanLogin: true},
+				{Kind: "table", Name: "users", Owner: "app_user", OwnerCanLogin: new(true)},
+				{Kind: "table", Name: "orders", Owner: "app_user", OwnerCanLogin: new(true)},
+				{Kind: "schema", Name: "public", Owner: "app_user", OwnerCanLogin: new(true)},
 			},
 			// One finding, not three: the rule is about the owner, and a row
 			// per object would bury every other finding on a real schema.
@@ -315,24 +315,26 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			dialect:  "postgres",
 			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
-				{Kind: "table", Name: "users", Owner: "app_owner"},
-				{Kind: "schema", Name: "public", Owner: "app_owner"},
+				{Kind: "table", Name: "users", Owner: "app_owner", OwnerCanLogin: new(false)},
+				{Kind: "schema", Name: "public", Owner: "app_owner", OwnerCanLogin: new(false)},
 			},
 			wantCodes:   make([]string, 0),
 			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
 		},
 		{
-			// An owner Ptah does not describe as a role cannot be classified,
-			// and guessing that an unknown owner can log in would report every
-			// object of every database read by a restricted account.
-			name:     "an owner this description does not define is not reported",
+			// An owner whose login state the read did not establish cannot be
+			// classified. Guessing that it can log in would report every object
+			// of every database read by a restricted account, and guessing that
+			// it cannot would hide the finding, so the rule names it as not
+			// checked instead.
+			name:     "an owner of unknown login state is not reported",
 			dialect:  "postgres",
 			database: &schemamodel.Database{},
 			owners: []schemasecurity.ObjectOwner{
 				{Kind: "table", Name: "users", Owner: "postgres"},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
 		},
 		{
 			name:        "an empty schema reports nothing",
@@ -371,6 +373,37 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			c.Assert(skipped, qt.DeepEquals, test.wantSkipped)
 		})
 	}
+}
+
+// TestAnalyze_OwnersOfUnknownLoginStateAreNamedAsNotChecked reads a database
+// where one owner can log in and the read did not establish whether two others
+// can, as on YDB, whose system subjects are not in .sys/auth_users. The rule
+// still reports the owner it can answer for, and names the others under the
+// skipped rules once each, rather than taking them for roles that cannot log
+// in.
+func TestAnalyze_OwnersOfUnknownLoginStateAreNamedAsNotChecked(t *testing.T) {
+	c := qt.New(t)
+
+	report := schemasecurity.Analyze(&schemamodel.Database{}, schemasecurity.Options{
+		ObjectOwners: []schemasecurity.ObjectOwner{
+			{Kind: "database", Owner: "root", OwnerCanLogin: new(true)},
+			{Kind: "schema", Name: "shop", Owner: "root@builtin"},
+			{Kind: "schema", Name: "audit", Owner: "root@builtin"},
+			{Kind: "resource pool", Name: "default", Owner: "metadata@system"},
+			{Kind: "table", Name: "orders", Owner: "store", OwnerCanLogin: new(false)},
+		},
+		RoleMemberships: make([]schemasecurity.RoleMembership, 0),
+		RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0),
+	})
+
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Code, qt.Equals, "OWN01")
+	c.Assert(report.Findings[0].Subject, qt.Equals, schemasecurity.Subject{Kind: "role", Name: "root"})
+	c.Assert(report.SkippedRules, qt.DeepEquals, []schemasecurity.SkippedRule{
+		{Code: "PRV01", Reason: "the target does not model row-level security"},
+		{Code: "OWN01", Reason: "the read did not establish whether metadata@system, root@builtin can log in, " +
+			"so the objects they own were not checked"},
+	})
 }
 
 // TestAnalyze_FindingsCarryTheValuesTheirSuggestionNames pins the structured
