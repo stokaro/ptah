@@ -957,6 +957,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `postgres` | 15 | certified | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
 | `postgres` | 14 | certified | `Postgres14` | version-ladder | `postgres:14` | yes | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
+| `mysql` | 26.7 | legacy-tested | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
 | `mysql` | 8.4 | certified | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
 | `mariadb` | 12.3 | certified | `MariaDB1011` | version-ladder | `mariadb:12.3` | yes | yes |
@@ -983,7 +984,6 @@ nightly, from the workflow's Run button, or when somebody comments
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1` | no | yes |
 | `ydb` | 26.2 | certified | `YDB262` | version-ladder | `ydbplatform/local-ydb:26.2` | yes | yes |
 | `ydb` | 25.1 | certified | `YDB251` | version-ladder | `ydbplatform/local-ydb:25.1` | yes | yes |
-| `mysql` | 26.7 | best-effort | `MySQL84` | version-ladder | `mysql:26.7` | yes | no: upstream support ended on 2026-10-20 (endoflife.date/mysql) |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: upstream support ended on 2026-08-29 (endoflife.date/clickhouse) |
 | `ydb` | 26.1 | best-effort | `YDB261` | version-ladder | `ydbplatform/local-ydb:26.1` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |
 | `ydb` | 25.4 | best-effort | `YDB254` | version-ladder | `ydbplatform/local-ydb:25.4` | yes | no: YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date |

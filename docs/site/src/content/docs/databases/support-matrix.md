@@ -80,6 +80,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `postgres` | 15 | certified | `Postgres16` | yes |
 | `postgres` | 14 | certified | `Postgres14` | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | yes |
+| `mysql` | 26.7 | legacy-tested | `MySQL84` | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | yes |
 | `mysql` | 8.4 | certified | `MySQL84` | yes |
 | `mariadb` | 12.3 | certified | `MariaDB1011` | yes |
@@ -106,20 +107,18 @@ the declared set cannot say one thing here and another in a workflow file.
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `ydb` | 26.2 | certified | `YDB262` | yes |
 | `ydb` | 25.1 | certified | `YDB251` | yes |
-| `mysql` | 26.7 | best-effort | `MySQL84` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 | `ydb` | 26.1 | best-effort | `YDB261` | no |
 | `ydb` | 25.4 | best-effort | `YDB254` | no |
 | `ydb` | 25.3 | best-effort | `YDB253` | no |
 | `ydb` | 25.2 | best-effort | `YDB252` | no |
 
-Declared release lines: 38. Probed on every pull request: 32.
+Declared release lines: 38. Probed on every pull request: 33.
 
-Support levels across the 38 declared lines: 29 certified, 2 legacy-tested, 7 best-effort.
+Support levels across the 38 declared lines: 29 certified, 3 legacy-tested, 6 best-effort.
 
 Lines that are declared and not probed, and why:
 
-- `mysql` 26.7 — upstream support ended on 2026-10-20 (endoflife.date/mysql).
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
 - `ydb` 26.1 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
 - `ydb` 25.4 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
