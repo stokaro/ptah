@@ -957,7 +957,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `postgres` | 15 | certified | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
 | `postgres` | 14 | certified | `Postgres14` | version-ladder | `postgres:14` | yes | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
-| `mysql` | 26.7 | certified | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
+| `mysql` | 26.7 | legacy-tested | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
 | `mysql` | 8.4 | certified | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
 | `mariadb` | 12.3 | certified | `MariaDB1011` | version-ladder | `mariadb:12.3` | yes | yes |

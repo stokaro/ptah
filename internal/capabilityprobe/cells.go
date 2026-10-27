@@ -381,11 +381,19 @@ var Cells = []Cell{
 	// are "supported until the next Innovation release" while an LTS series
 	// follows the Lifetime Support Policy. All three lines are supported today
 	// and 26.7 is the one whose window closes without a published date.
+	//
+	// Re-read 2026-10-27: endoflife.date reports 26.7 past end of life on
+	// 2026-10-20, the day 26.10 was released. 26.7 is legacy-tested rather
+	// than best-effort because the integration suite and docker-compose.yaml
+	// still start it, and a line something exercises may not declare that
+	// nothing does.
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL26,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.7",
-		Note: "measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
+		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "mysql:26.7",
+		Note: "past upstream support since 2026-10-20 (endoflife.date/mysql), and kept because the " +
+			"integration suite and docker-compose.yaml start this line; " +
+			"measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
 			"rows agree with MySQL84; role_management remains undecidable because the probe deliberately " +
 			"does not create a privileged account",
 	},

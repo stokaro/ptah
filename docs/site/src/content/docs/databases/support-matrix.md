@@ -80,7 +80,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `postgres` | 15 | certified | `Postgres16` | yes |
 | `postgres` | 14 | certified | `Postgres14` | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | yes |
-| `mysql` | 26.7 | certified | `MySQL84` | yes |
+| `mysql` | 26.7 | legacy-tested | `MySQL84` | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | yes |
 | `mysql` | 8.4 | certified | `MySQL84` | yes |
 | `mariadb` | 12.3 | certified | `MariaDB1011` | yes |
@@ -115,7 +115,7 @@ the declared set cannot say one thing here and another in a workflow file.
 
 Declared release lines: 38. Probed on every pull request: 33.
 
-Support levels across the 38 declared lines: 30 certified, 2 legacy-tested, 6 best-effort.
+Support levels across the 38 declared lines: 29 certified, 3 legacy-tested, 6 best-effort.
 
 Lines that are declared and not probed, and why:
 
