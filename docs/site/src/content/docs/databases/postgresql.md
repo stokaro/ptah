@@ -954,8 +954,8 @@ What a rebuild does not keep:
   declare, such as a view in a schema the run leaves out. In Ptah's own
   statement style the drop carries `CASCADE` and takes it; in the exact style
   the drop has no `CASCADE`, and the server stops the migration at the drop.
-  The exact style keeps `CASCADE` only on a drop of an object a policy of a
-  table the plan removes reads, since that policy goes with its table later;
+  The exact style drops a policy of a removed table before a view or column it
+  reads, so the later drop also needs no `CASCADE`;
 - a materialized view's rows and tablespace. `CREATE MATERIALIZED VIEW` runs
   the query again and puts the view in the default tablespace.
 

@@ -64,6 +64,9 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	if err := validateRequest(ctx, request.Target); err != nil {
 		return featureplan.Result{}, err
 	}
+	if !request.Policy.Statements.Valid() {
+		return featureplan.Result{}, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, request.Policy.Statements)
+	}
 	if len(request.ParentKinds) != 0 {
 		return featureplan.Result{}, fmt.Errorf("%w: a user type belongs to no table", schemaext.ErrInvalidValue)
 	}
@@ -82,7 +85,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		problem.Kind = string(refused.changeKind)
 		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Problem: problem, Change: new(refused.index)}}}, nil
 	}
-	steps := planChanges(changes, request.Types, request.CommonSteps)
+	steps := planChanges(changes, request.Types, request.CommonSteps, request.Policy.Statements)
 	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(changes))}
 	for i, planned := range changes {
 		result.Changes[i] = featureplan.ChangePlan{Subject: planned.subject, Kind: planned.changeKind, Strategy: planned.strategy(), Steps: planned.steps}
@@ -419,13 +422,14 @@ func (w windows) contribution() plangraph.Contribution[featureplan.Operation] {
 }
 
 // planChanges orders the steps of a batch of changes.
-func planChanges(changes []*change, types featureplan.TypeContext, common []featureplan.CommonStep) windows {
+func planChanges(changes []*change, types featureplan.TypeContext, common []featureplan.CommonStep, style featureplan.StatementStyle) windows {
 	markRebuilt(changes, types.Current, common)
 	var plan windows
+	exact := style == featureplan.StatementStyleExact
 	// The drops of rebuilt types run against the database as it stands, so
 	// they are ordered by what the current definitions name.
 	for _, planned := range dropOrder(changes, types.Current) {
-		plan.creation.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType, &pgtype.Drop{Target: pgtype.TargetOf(planned.subject)},
+		plan.creation.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType, &pgtype.Drop{Target: pgtype.TargetOf(planned.subject), IfExists: !exact},
 			"Recreate modified "+pgtype.Label(planned.subject)+"; drop is non-CASCADE and fails if the "+rebuildNoun(planned)+" is in use"))
 	}
 	creations := slices.Concat(byKind(changes, func(c *change) bool { return !c.before }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind),
@@ -439,7 +443,7 @@ func planChanges(changes []*change, types featureplan.TypeContext, common []feat
 	}
 	for _, planned := range removalOrder(byKind(changes, func(c *change) bool { return !c.after }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind), types.Current) {
 		plan.removal.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType,
-			&pgtype.Drop{Target: pgtype.TargetOf(planned.subject), Cascade: true},
+			&pgtype.Drop{Target: pgtype.TargetOf(planned.subject), IfExists: !exact, Cascade: !exact},
 			"WARNING: Make sure no columns use this "+pgtype.Label(planned.subject)+"!"))
 	}
 	for _, planned := range byKind(changes, func(c *change) bool { return c.survives() && c.commented && !c.rebuilt },

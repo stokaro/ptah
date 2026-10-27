@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemacapture"
@@ -55,10 +56,15 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	if diff == nil || !hasFeatureChanges(target, diff) {
 		return nodes, nil
 	}
+	statements, err := p.featureStatementStyle()
+	if err != nil {
+		return nil, err
+	}
 	semantics := diff.EffectiveIdentifierSemantics(target)
 	request := featureplan.Request{Target: target, Identifiers: semantics, Capabilities: p.capabilities(), Changes: slices.Clone(diff.FeatureChanges),
 		DatabasePath: diff.CurrentDatabasePath,
-		Types:        p.typeContext(diff)}
+		Types:        p.typeContext(diff),
+		Policy:       featureplan.Policy{Statements: statements}}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range diff.TablesModified {
@@ -125,11 +131,16 @@ func hasFeatureChanges(target string, diff *difftypes.SchemaDiff) bool {
 // dependent phase takes the same position, which is after every creation and
 // change it may name and before every drop.
 func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Runtime, result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	statements, err := p.featureStatementStyle()
+	if err != nil {
+		return nil, err
+	}
 	target := p.targetDialect()
 	request := featureplan.Request{
 		Target: target, Identifiers: diff.EffectiveIdentifierSemantics(target), Capabilities: p.capabilities(),
 		DatabasePath: diff.CurrentDatabasePath,
 		Types:        p.typeContext(diff),
+		Policy:       featureplan.Policy{Statements: statements},
 	}
 	names := make(map[objectidentity.Key]string)
 	builder := objectidentity.NewBuilder(request.Identifiers)
@@ -176,4 +187,15 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 		result = append(result, step.Payload...)
 	}
 	return result, nil
+}
+
+func (p *Planner) featureStatementStyle() (featureplan.StatementStyle, error) {
+	switch p.statements {
+	case planext.StatementStyleAnnotated:
+		return featureplan.StatementStyleAnnotated, nil
+	case planext.StatementStyleExact:
+		return featureplan.StatementStyleExact, nil
+	default:
+		return 0, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, p.statements)
+	}
 }

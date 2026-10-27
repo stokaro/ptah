@@ -308,8 +308,8 @@ const (
 // the policy the plan removes: the declaration drops the view and the policy
 // that reads it, so the drop of the view loses nothing the schema declares.
 // The plan drops the policy first, and the view after it needs no CASCADE.
-// The exact style keeps IF EXISTS on the view: the policy's drop is an owner
-// operation, which may remove objects the plan cannot name.
+// The exact style drops the policy explicitly, so the later view drop needs
+// neither CASCADE nor an existence guard.
 func TestGenerateSchemaDiffSQL_RemovesAPolicyWithTheViewItReads_HappyPath(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -319,7 +319,7 @@ func TestGenerateSchemaDiffSQL_RemovesAPolicyWithTheViewItReads_HappyPath(t *tes
 		{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
 			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW IF EXISTS "active_tenants" CASCADE`}},
 		{name: "the exact style", style: planext.StatementStyleExact,
-			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW IF EXISTS "active_tenants"`}},
+			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW "active_tenants"`}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

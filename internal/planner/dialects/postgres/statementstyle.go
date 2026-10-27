@@ -5,14 +5,16 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/tableref"
 )
 
 // The statement style decides how a plan's statements spell their comments,
-// existence guards and CASCADE, and never which objects the plan creates,
-// changes or drops.
+// existence guards and CASCADE. A feature owner may make an implicit drop
+// explicit early enough to release a dependency before a common drop.
 //
 // Comments. A comment that only describes the statements beside it is an
 // [ast.NewDescriptiveComment] node, which migration/planner leaves out of an
@@ -73,9 +75,9 @@ func (p *Planner) cascades(relied bool) bool {
 //   - an owner operation that may drop a standalone object in a later window,
 //     whose object reads the table's columns or cannot say; see
 //     [removedFeatureReadsColumns].
-func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string, ahead routinesAhead) bool {
+func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, column string, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
 	return removedRoutineReadsColumn(diff, tableDiff.TableName, column, ahead) ||
-		removedTableReads(diff, tableDiff.TableName, nil) ||
+		removedTableReadsExcept(diff, tableDiff.TableName, nil, droppedPolicies) ||
 		removedFeatureReadsColumns(diff, tableDiff.TableName)
 }
 
@@ -94,9 +96,9 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff,
 //   - an owner operation that may drop a standalone object that reads the
 //     table, such as a type whose attribute is the table's row type, or one
 //     whose object cannot say; see [removedFeatureReads].
-func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, ahead routinesAhead) bool {
+func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
 	return removedRoutineNames(diff, name, ahead) ||
-		removedTableReads(diff, name, droppedBefore) ||
+		removedTableReadsExcept(diff, name, droppedBefore, droppedPolicies) ||
 		removedFeatureReads(diff, name)
 }
 
@@ -171,6 +173,9 @@ func (g *guardState) init() {
 
 func (g *guardState) settle(node ast.Node) {
 	if ast.PlacementOf(node) != ast.NoExtension {
+		if isolatedPolicyDrop(node) {
+			return
+		}
 		g.anything = true
 		return
 	}
@@ -201,6 +206,21 @@ func (g *guardState) settle(node ast.Node) {
 	case *ast.RawSQLNode, *ast.DoBlockNode, *ast.OpaqueRoutineNode:
 		g.anything = true
 	}
+}
+
+// isolatedPolicyDrop is an owner statement whose only effect on object
+// existence is to remove its named policy. It cannot make a later view,
+// column or table drop need an existence guard.
+func isolatedPolicyDrop(node ast.Node) bool {
+	if ast.PlacementOf(node) != ast.IsolatedExtension {
+		return false
+	}
+	operations := ast.OwnerOperations(node)
+	if len(operations) != 1 {
+		return false
+	}
+	policy, ok := operations[0].(*pgpolicy.PolicyOperation)
+	return ok && policy != nil && policy.Change.Before != nil && policy.Change.After == nil
 }
 
 func (g *guardState) settleDropIndex(n *ast.DropIndexNode) {

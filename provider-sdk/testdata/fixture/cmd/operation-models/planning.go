@@ -45,7 +45,7 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		step, err := planTableChange(change, strconv.Itoa(i))
+		step, err := p.planTableChange(change, strconv.Itoa(i), request.GetPolicy().GetStatementStyle())
 		if err != nil {
 			return nil, err
 		}
@@ -86,9 +86,26 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 	return result, nil
 }
 
-func planTableChange(change *protocol.PlanningChange, id string) (*protocol.PlanningStep, error) {
+func (p *owner) planTableChange(change *protocol.PlanningChange, id string, style protocol.PlanningStatementStyle) (*protocol.PlanningStep, error) {
 	envelope := proto.CloneOf(change.GetValue().GetValue())
 	envelope.Kind = operationKind
+	if p.statementStyle {
+		var op operation
+		if err := json.Unmarshal(envelope.Payload, &op); err != nil {
+			return nil, err
+		}
+		if op.Action == "drop" {
+			if style != protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_ANNOTATED && style != protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT {
+				return nil, fmt.Errorf("unknown statement style %d", style)
+			}
+			op.IfExists = new(style == protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_ANNOTATED)
+			var err error
+			envelope.Payload, err = json.Marshal(op)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	value, err := normalize(&protocol.ValueInput{Id: "table/" + id, Value: envelope, Representation: protocol.ValueInput_OPERATION})
 	if err != nil {
 		return nil, err

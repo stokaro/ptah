@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/catalog"
@@ -64,6 +65,35 @@ func planningParent() objectidentity.ID {
 		Schema:   objectidentity.Part{Source: "Main", Normalized: "main", Quoted: true},
 		Name:     objectidentity.Part{Source: "Records", Normalized: "records", Quoted: true},
 	}
+}
+
+func TestPlanningStatementStyleNeedsOwnerNegotiation(t *testing.T) {
+	c := qt.New(t)
+	service, _ := planningFixture(c)
+	service.target.host.description.Features = []string{provider.PlanningPolicyFeature}
+	service.target.engine.Features = []string{provider.PlanningPolicyFeature}
+	annotated := featureplan.Policy{TableRebuildRequest: "--allow-table-rebuild"}
+
+	wire, err := service.target.planningPolicy(annotated)
+	c.Assert(err, qt.IsNil)
+	c.Assert(wire.StatementStyle, qt.Equals, protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_ANNOTATED)
+
+	exact := annotated
+	exact.Statements = featureplan.StatementStyleExact
+	wire, err = service.target.planningPolicy(exact)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(wire, qt.IsNil)
+
+	service.target.host.description.Features = append(service.target.host.description.Features, provider.PlanningStatementStyleFeature)
+	service.target.engine.Features = append(service.target.engine.Features, provider.PlanningStatementStyleFeature)
+	wire, err = service.target.planningPolicy(exact)
+	c.Assert(err, qt.IsNil)
+	c.Assert(wire.StatementStyle, qt.Equals, protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT)
+
+	exact.Statements = 99
+	wire, err = service.target.planningPolicy(exact)
+	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(wire, qt.IsNil)
 }
 
 func TestPlanningRequestRetainsCapturedCommonFacts(t *testing.T) {

@@ -54,13 +54,11 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if !p.commonTables && !p.assessParents && (len(diff.TablesAdded) > 0 || len(diff.TablesModified) > 0 || len(diff.TablesRemoved) > 0) {
 		return nil, unsupported("common table planning without " + provider.CommonTableIdentityFeature)
 	}
-	// The statement style is accepted and changes nothing: the common
-	// statements below carry no comment, existence guard or CASCADE, and an
-	// owner operation keeps its own spelling in every style. The rest of the
-	// policy reaches the provider as a request (see policy); a provider
-	// without the behavior plans as it would without it, as the host's own
-	// planners do. Skipped change kinds are not a request a provider can
-	// honor, so they stay refused.
+	// The common statements below carry no comment, existence guard or
+	// CASCADE, so the statement style changes nothing here. Owner operations
+	// receive the style in their planning request and control their own
+	// spelling. Skipped change kinds are not a request a provider can honor,
+	// so they stay refused.
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
 		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err

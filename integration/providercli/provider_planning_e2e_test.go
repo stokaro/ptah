@@ -35,7 +35,7 @@ import (
 
 const planningChangeModel = schemaext.Kind("example.org/fixture/table-change")
 
-func planningChange(c *qt.C, runtime *engine.Runtime, name, payload string) schemaext.ChangeValue {
+func planningChange(c *qt.C, runtime *engine.Runtime, name, payload string, features ...string) schemaext.ChangeValue {
 	c.Helper()
 	identity, found := runtime.Codecs().Identity(planningChangeModel, schemaext.Change)
 	c.Assert(found, qt.IsTrue)
@@ -43,7 +43,7 @@ func planningChange(c *qt.C, runtime *engine.Runtime, name, payload string) sche
 	var wire map[string]any
 	c.Assert(json.Unmarshal(envelope.Payload, &wire), qt.IsNil)
 	wire["subject"] = map[string]any{"engine": "fixture", "kind": "table", "schema": "main", "name": name}
-	wire["features"] = []string{"tables", "columns", "schema.common-table-identity.v1"}
+	wire["features"] = append([]string{"tables", "columns", "schema.common-table-identity.v1"}, features...)
 	var err error
 	envelope.Payload, err = json.Marshal(wire)
 	c.Assert(err, qt.IsNil)

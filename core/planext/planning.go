@@ -56,8 +56,8 @@ const (
 	// in this style too. The PostgreSQL-family and MySQL-family planners mark
 	// their descriptive comments, and the PostgreSQL-family planner also
 	// settles guards and CASCADE; the other built-in planners plan as in the
-	// annotated style. An owner operation renders its own statement and keeps
-	// its own spelling, guards and CASCADE included (stokaro/ptah#5000).
+	// annotated style. Feature owners that negotiate planning.statement-style
+	// receive this choice and set their own guards and CASCADE accordingly.
 	StatementStyleExact
 )
 

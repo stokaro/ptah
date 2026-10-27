@@ -215,6 +215,27 @@ func TestPlanPolicies_AccountsForATablesOperation(t *testing.T) {
 	}
 }
 
+func TestPlanPolicies_ExactDropsRemovedTablesPoliciesEarly(t *testing.T) {
+	c := qt.New(t)
+	request := planning()
+	request.Policy.Statements = featureplan.StatementStyleExact
+	current := observedOrders
+	current.OwnedObjects = objects(c, observedPolicy(c, "orders", "tenant", permissiveObserved))
+	request.Tables = []featureplan.Table{{Subject: tableRef("orders"), Action: featureplan.DropTable, Current: current}}
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(summary(result.Contributions), qt.DeepEquals, []string{
+		"removed/000000/policy/000000 *pgpolicy.PolicyOperation drop ptah.run/pgpolicy/policy app.orders.tenant, read table app.orders allowed dependent",
+	})
+	c.Assert(result.Parents, qt.HasLen, 2)
+	c.Assert(result.Parents[0].Kind, qt.Equals, pgpolicy.PolicyKind)
+	c.Assert(result.Parents[0].Steps, qt.DeepEquals, []plangraph.StepID{{Owner: pgpolicy.Owner, Name: "removed/000000/policy/000000"}})
+	c.Assert(result.Parents[1].Kind, qt.Equals, pgpolicy.TableStateKind)
+	c.Assert(result.Parents[1].Steps, qt.HasLen, 0)
+}
+
 // TestPlanPolicies_CreatesACreatedTablesPolicies pins a table the plan
 // creates: each of its policies is created in the dependent phase, with its
 // comment after it and access unchanged, since no role could read the table
