@@ -101,6 +101,7 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		if err != nil {
 			return nil, err
 		}
+		canonicalizePlanningObjectDatabases(remote)
 	}
 	for i, change := range request.Changes {
 		value, err := capture.value(schemaext.Change, change.Value, strconv.Itoa(i))

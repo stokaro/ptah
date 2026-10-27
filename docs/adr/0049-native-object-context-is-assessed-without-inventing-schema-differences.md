@@ -165,4 +165,7 @@ spellings. The host's selected object identity can omit that database after
 verifying it against the opened session. A request with an empty subject database
 therefore requires both owner database spellings to equal its nonempty
 `database_path` before localization. Every other coordinate remains exact.
-A foreign database or a missing binding is refused.
+A foreign database or a missing binding is refused. The host sends an empty
+identity database as an absent wire part in records, subject coverage, and the
+changed-subject inventory. It retains the captured owners and namespace scope
+parts; omitting a namespace part would widen its coverage.
