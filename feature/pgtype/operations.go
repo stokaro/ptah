@@ -142,13 +142,12 @@ func CreateRangeOf(ref objectidentity.ID, declared *DesiredRange) *CreateRange {
 		Collation: declared.Collation, Canonical: declared.Canonical, SubtypeDiff: declared.SubtypeDiff}
 }
 
-// Drop writes DROP DOMAIN for a domain and DROP TYPE otherwise, IF EXISTS,
-// and CASCADE where the operation says so. A type removed for good is dropped
-// with CASCADE; one dropped to be created again is not, so the drop fails
-// while anything still uses it rather than taking the users with it.
+// Drop writes DROP DOMAIN for a domain and DROP TYPE otherwise, with the
+// existence guard and CASCADE selected by the owner for the statement style.
 type Drop struct {
-	Target  Target `json:"target"`
-	Cascade bool   `json:"cascade"`
+	Target   Target `json:"target"`
+	IfExists bool   `json:"if_exists"`
+	Cascade  bool   `json:"cascade"`
 }
 
 // Comment writes COMMENT ON DOMAIN for a domain and COMMENT ON TYPE
@@ -560,7 +559,7 @@ var (
 		Allowed:  []string{"target", "subtype", "subtype_opclass", "collation", "canonical", "subtype_diff"},
 		Required: []string{"target", "subtype", "subtype_opclass", "collation", "canonical", "subtype_diff"}}
 	dropShape = schemaext.ObjectShape{Name: "type drop",
-		Allowed: []string{"target", "cascade"}, Required: []string{"target", "cascade"}}
+		Allowed: []string{"target", "if_exists", "cascade"}, Required: []string{"target", "if_exists", "cascade"}}
 	commentShape = schemaext.ObjectShape{Name: "type comment",
 		Allowed: []string{"target", "comment"}, Required: []string{"target", "comment"}}
 )
@@ -595,7 +594,7 @@ func OperationCodecs() []schemaext.Codec {
 		operationCodec(&CreateRange{}, createRangeShape, (*CreateRange).Validate, (*CreateRange).Copy, nil,
 			`"subtype":`+textDefinition+`,"subtype_opclass":{"type":"string"},"collation":{"type":"string"},`+
 				`"canonical":{"type":"string"},"subtype_diff":{"type":"string"}`, nil),
-		operationCodec(&Drop{}, dropShape, (*Drop).Validate, (*Drop).Copy, nil, `"cascade":{"type":"boolean"}`, nil),
+		operationCodec(&Drop{}, dropShape, (*Drop).Validate, (*Drop).Copy, nil, `"if_exists":{"type":"boolean"},"cascade":{"type":"boolean"}`, nil),
 		operationCodec(&Comment{}, commentShape, (*Comment).Validate, (*Comment).Copy, nil, `"comment":{"type":"string"}`, nil),
 	}
 }

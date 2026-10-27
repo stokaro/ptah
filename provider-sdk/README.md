@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.8. `provider-sdk/v0.9.0` speaks 25.7.
+speaks contract 25.8, as `provider-sdk/v0.10.0` does. `provider-sdk/v0.9.0`
+speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
 `provider-sdk/v0.7.0` speaks 25.5.
 `provider-sdk/v0.6.0` speaks 25.4. `provider-sdk/v0.5.0`

@@ -216,6 +216,33 @@ CREATE FUNCTION list_v() RETURNS SETOF v LANGUAGE sql STABLE AS $$ SELECT * FROM
 	}
 }
 
+func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredDomainColumnStopsDrop(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+	pairs := readMigrationPairs(c, diffStatementStyleSteps(c, exactSteps(
+		"CREATE DOMAIN posint AS integer CHECK (VALUE > 0);\nCREATE TABLE t (id bigint PRIMARY KEY);\n",
+		"CREATE TABLE t (id bigint PRIMARY KEY);\n",
+	)))
+	c.Assert(pairs, qt.HasLen, 2)
+	c.Assert(pairs[1].Up, qt.Contains, `DROP DOMAIN "posint";`)
+	target := statementStyleTarget(c)
+	_, err := target.ExecContext(c.Context(), pairs[0].Up)
+	c.Assert(err, qt.IsNil)
+	_, err = target.ExecContext(c.Context(), `CREATE SCHEMA reporting;
+CREATE TABLE reporting.x (id integer PRIMARY KEY, v public.posint);
+INSERT INTO reporting.x (id, v) VALUES (1, 5);`)
+	c.Assert(err, qt.IsNil)
+
+	_, stopped := target.ExecContext(c.Context(), pairs[1].Up)
+
+	var dependent *pgconn.PgError
+	c.Assert(stopped, qt.ErrorAs, &dependent, qt.Commentf("%s", pairs[1].Up))
+	c.Assert(dependent.Code, qt.Equals, "2BP01")
+	var value int
+	c.Assert(target.QueryRowContext(c.Context(), `SELECT v FROM reporting.x WHERE id = 1`).Scan(&value), qt.IsNil)
+	c.Assert(value, qt.Equals, 5)
+}
+
 // handWrittenRoutines is a first migration someone wrote by hand: routines
 // with SQL-standard bodies, which PostgreSQL keeps parsed in prosqlbody, one
 // reading a column and one a view.

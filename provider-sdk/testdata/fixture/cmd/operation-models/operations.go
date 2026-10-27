@@ -18,6 +18,7 @@ type operation struct {
 	To          *string       `json:"to,omitempty"`
 	Column      *addedColumn  `json:"column,omitempty"`
 	DropColumn  string        `json:"dropColumn,omitempty"`
+	IfExists    *bool         `json:"ifExists,omitempty"`
 	Rebuild     *rebuiltTable `json:"rebuild,omitempty"`
 }
 
@@ -105,6 +106,9 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	}
 	if _, present := fields["dropColumn"]; present && op.Action != "drop-column" {
 		return nil, fmt.Errorf("only drop-column accepts a column name")
+	}
+	if _, present := fields["ifExists"]; present && op.Action != "drop" {
+		return nil, fmt.Errorf("only drop accepts an existence guard")
 	}
 	if _, present := fields["rebuild"]; present && op.Action != "rebuild" {
 		return nil, fmt.Errorf("only rebuild accepts a table")
@@ -291,6 +295,9 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 		}
 		if op.Action == "create" {
 			return "CREATE TABLE " + name + ` ("id" INTEGER NOT NULL PRIMARY KEY);`, nil
+		}
+		if op.IfExists != nil && *op.IfExists {
+			return "DROP TABLE IF EXISTS " + name + ";", nil
 		}
 		return "DROP TABLE " + name + ";", nil
 	default:

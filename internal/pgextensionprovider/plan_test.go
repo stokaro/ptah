@@ -123,6 +123,20 @@ func TestPlanExtensions_HappyPath(t *testing.T) {
 	}
 }
 
+func TestPlanExtensions_ExactDropOmitsExistenceGuard(t *testing.T) {
+	c := qt.New(t)
+	request := planning("postgres", change("pg_trgm", &pgextension.Change{Before: installedTrgm()}))
+	request.Policy.Statements = featureplan.StatementStyleExact
+
+	result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	planned := steps(c, result, "pg_trgm")
+	c.Assert(planned, qt.HasLen, 1)
+	c.Assert(planned[0].Payload, qt.DeepEquals, &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop})
+}
+
 // TestPlanExtensions_RefusesWhatTheServerRefuses pins each refusal and the
 // error identity a caller tells it apart by.
 func TestPlanExtensions_RefusesWhatTheServerRefuses(t *testing.T) {
