@@ -182,7 +182,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		return err
 	}
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
-		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature,
+		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
 	} {
 		if err := check(description, engine); err != nil {

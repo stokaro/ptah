@@ -60,6 +60,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0048](0048-common-column-observations-have-one-complete-wire-representation.md) | Common column observations have one complete wire representation | Accepted |
 | [0049](0049-native-object-context-is-assessed-without-inventing-schema-differences.md) | Native object context is assessed without inventing schema differences | Accepted |
 | [0050](0050-statement-style-reaches-feature-owners.md) | Statement style reaches feature owners | Proposed |
+| [0051](0051-inspected-primary-keys-retain-their-common-order.md) | Inspected primary keys retain their common order | Proposed |
 
 ## Writing one
 
