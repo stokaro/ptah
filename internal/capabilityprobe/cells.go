@@ -384,7 +384,8 @@ var Cells = []Cell{
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL26,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.7",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "mysql:26.7",
+		Unprobed: "upstream support ended on 2026-10-20 (endoflife.date/mysql)",
 		Note: "measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
 			"rows agree with MySQL84; role_management remains undecidable because the probe deliberately " +
 			"does not create a privileged account",
