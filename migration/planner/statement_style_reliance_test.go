@@ -551,29 +551,29 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			`CREATE DOMAIN "public"."positive_int" AS integer`,
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
 		}},
-		// The type owner writes its own drop, with its note, guard and
-		// CASCADE (stokaro/ptah#5000).
+		// The type owner writes its own drop without a guard or CASCADE in
+		// exact style (stokaro/ptah#5000).
 		{name: "a column dropped beside a domain the plan removes", change: droppedColumnBesideRemovedDomain(), want: []string{
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
-			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN IF EXISTS \"public\".\"positive_int\" CASCADE",
+			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN \"public\".\"positive_int\"",
 		}},
 		{name: "a column dropped beside a composite type that names its table's row type",
 			change: droppedColumnBesideComposite(),
 			want: []string{
 				`ALTER TABLE "owners" DROP COLUMN "email"`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE IF EXISTS \"public\".\"wrap\" CASCADE",
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a table removed beside a composite type that names another type",
 			change: removedTableBesideComposite("text"),
 			want: []string{
 				`DROP TABLE "public"."archive"`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE IF EXISTS \"public\".\"wrap\" CASCADE",
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a table removed beside a composite type that names its row type",
 			change: removedTableBesideComposite("archive"),
 			want: []string{
 				`DROP TABLE "public"."archive" CASCADE`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE IF EXISTS \"public\".\"wrap\" CASCADE",
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a column dropped under a trigger the declaration removes", change: droppedColumnUnderTrigger(), want: []string{
 			`DROP TRIGGER "owners_email_audit" ON "public"."owners"`,
@@ -584,19 +584,24 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
 		}},
 		{name: "a table removed with the table its policy reads", change: removedTablesWithPolicy(), want: []string{
+			`DROP POLICY "docs_allowed" ON "docs"`,
 			`DROP TABLE "public"."docs"`,
 			`DROP TABLE "public"."allowed"`,
 		}},
 		{name: "a column a policy of a removed table reads", change: droppedColumnUnderRemovedPolicy(), want: []string{
-			`ALTER TABLE "allowed" DROP COLUMN "who" CASCADE`,
-			`DROP TABLE IF EXISTS "public"."docs"`,
+			`DROP POLICY "docs_allowed" ON "docs"`,
+			`ALTER TABLE "allowed" DROP COLUMN "who"`,
+			`DROP TABLE "public"."docs"`,
 		}},
 		{name: "two tables removed whose policies read each other", change: removedTablesWithPolicyCycle(), want: []string{
+			`DROP POLICY "pa" ON "a"`,
+			`DROP POLICY "pb" ON "b"`,
 			`DROP TABLE "public"."b", "public"."a"`,
 		}},
 		{name: "a view removed with a table whose policy reads it", change: removedViewWithPolicy(), want: []string{
-			`DROP VIEW "public"."current_owners" CASCADE`,
-			`DROP TABLE IF EXISTS "public"."docs"`,
+			`DROP POLICY "docs_owned" ON "docs"`,
+			`DROP VIEW "public"."current_owners"`,
+			`DROP TABLE "public"."docs"`,
 		}},
 		{name: "a column that leaves an enum", change: enumColumnBecomesText(), want: []string{
 			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE text`,
@@ -616,7 +621,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a column that leaves a domain over an enum", change: domainColumnBecomesText(), want: []string{
 			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE text`,
 			`ALTER TABLE "tickets" ALTER COLUMN "s" SET DEFAULT 'a'`,
-			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN IF EXISTS \"public\".\"dstatus\" CASCADE",
+			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN \"public\".\"dstatus\"",
 			`DROP TYPE IF EXISTS "public"."status"`,
 		}},
 		{name: "a column retyped between built-in types", change: integerColumnBecomesBigint(), want: []string{

@@ -50,8 +50,8 @@ func TestOperationCodecs_HappyPath(t *testing.T) {
 		{name: "a range type creation", operation: &pgtype.CreateRange{Target: target(pgtype.RangeKind, "", "fr"), Subtype: "float8"},
 			wire: `{"target":{"kind":"ptah.run/pgtype/range","schema":"","name":"fr"},"subtype":"float8","subtype_opclass":"",` +
 				`"collation":"","canonical":"","subtype_diff":""}`},
-		{name: "a drop", operation: &pgtype.Drop{Target: target(pgtype.CompositeKind, "", "addr"), Cascade: true},
-			wire: `{"target":{"kind":"ptah.run/pgtype/composite","schema":"","name":"addr"},"cascade":true}`},
+		{name: "a drop", operation: &pgtype.Drop{Target: target(pgtype.CompositeKind, "", "addr"), IfExists: true, Cascade: true},
+			wire: `{"target":{"kind":"ptah.run/pgtype/composite","schema":"","name":"addr"},"if_exists":true,"cascade":true}`},
 		{name: "a comment", operation: &pgtype.Comment{Target: target(pgtype.DomainKind, "", "qty")},
 			wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"qty"},"comment":""}`},
 	}
@@ -122,9 +122,9 @@ func TestOperationCodecs_FailurePath(t *testing.T) {
 				`"set_default":"","drop_default":false,"not_null":null}`},
 		{name: "a missing key", kind: pgtype.DropKind, wire: `{"target":{"kind":"ptah.run/pgtype/domain","schema":"","name":"x"}}`},
 		{name: "a target without its schema", kind: pgtype.DropKind,
-			wire: `{"target":{"kind":"ptah.run/pgtype/domain","name":"x"},"cascade":false}`},
+			wire: `{"target":{"kind":"ptah.run/pgtype/domain","name":"x"},"if_exists":false,"cascade":false}`},
 		{name: "a target of another kind", kind: pgtype.DropKind,
-			wire: `{"target":{"kind":"ptah.run/pgtype/enum","schema":"","name":"x"},"cascade":false}`},
+			wire: `{"target":{"kind":"ptah.run/pgtype/enum","schema":"","name":"x"},"if_exists":false,"cascade":false}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

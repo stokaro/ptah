@@ -56,9 +56,9 @@ func applyBothWays(c *qt.C, target *sql.DB, pairs []migrationPair) {
 // and forward again on PostgreSQL. Without the order or the reason the plan
 // relies on, each of these stops the server at a statement: a removed routine
 // that returns, takes or reads a removed relation's row, a policy of a removed
-// table that reads a removed table or view, a column that changes type across
-// an enum, an array of one or a domain over one with its default, a trigger on
-// a dropped column, a generated column computed from one, an index on a
+// table that reads a removed table, view or column, a column that changes type
+// across an enum, an array of one or a domain over one with its default, a
+// trigger on a dropped column, a generated column computed from one, an index on a
 // materialized view a column type change rebuilds, and a materialized view put
 // back under a view dropped with CASCADE. Two removed tables whose policies
 // read each other go in one DROP TABLE, which the unit tests pin: the dev
@@ -97,6 +97,12 @@ CREATE TABLE docs (id bigint PRIMARY KEY, member_id bigint);
 ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_docs ON docs USING (member_id IN (SELECT id FROM current_members));
 `)},
+		{name: "a policy that reads a column the rollback removes", steps: exactSteps(
+			`CREATE TABLE allowed (id bigint PRIMARY KEY, who text);
+CREATE TABLE docs (id bigint PRIMARY KEY);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_docs ON docs USING (EXISTS (SELECT 1 FROM allowed WHERE allowed.who = current_user));
+`, "CREATE TABLE allowed (id bigint PRIMARY KEY);\n")},
 		{name: "a column that leaves an enum with its default", steps: exactSteps(
 			status+"CREATE TABLE t (id bigint PRIMARY KEY, s status DEFAULT 'a');\n",
 			"CREATE TABLE t (id bigint PRIMARY KEY, s text DEFAULT 'a');\n")},
@@ -180,6 +186,21 @@ func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredReaderStopsTheDrop(t *te
 			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE FUNCTION count_a() RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(a) FROM t; END;\n",
 			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
 			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
+		{name: "a view a removed tables policy reads", steps: exactSteps(
+			`CREATE TABLE members (id bigint PRIMARY KEY, who text);
+CREATE VIEW current_members AS SELECT id FROM members WHERE who = current_user;
+CREATE TABLE docs (id bigint PRIMARY KEY, member_id bigint);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_docs ON docs USING (member_id IN (SELECT id FROM current_members));
+`, "CREATE TABLE members (id bigint PRIMARY KEY, who text);\n"),
+			reader: "CREATE VIEW reporting.copy AS SELECT id FROM public.current_members"},
+		{name: "a column a removed tables policy reads", steps: exactSteps(
+			`CREATE TABLE allowed (id bigint PRIMARY KEY, who text);
+CREATE TABLE docs (id bigint PRIMARY KEY);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_docs ON docs USING (EXISTS (SELECT 1 FROM allowed WHERE allowed.who = current_user));
+`, "CREATE TABLE allowed (id bigint PRIMARY KEY);\n"),
+			reader: "CREATE VIEW reporting.copy AS SELECT id, who FROM public.allowed"},
 		{name: "a removed routine reads a column and takes a removed table row", steps: exactSteps(
 			"CREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE TABLE u (id bigint PRIMARY KEY);\nCREATE FUNCTION count_a(arg u) RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(a) FROM t; END;\n",
 			"CREATE TABLE t (id bigint PRIMARY KEY);\n"),
@@ -214,6 +235,33 @@ CREATE FUNCTION list_v() RETURNS SETOF v LANGUAGE sql STABLE AS $$ SELECT * FROM
 			c.Assert(copies, qt.Equals, 1)
 		})
 	}
+}
+
+func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredDomainColumnStopsDrop(t *testing.T) {
+	c := qt.New(t)
+	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+	pairs := readMigrationPairs(c, diffStatementStyleSteps(c, exactSteps(
+		"CREATE DOMAIN posint AS integer CHECK (VALUE > 0);\nCREATE TABLE t (id bigint PRIMARY KEY);\n",
+		"CREATE TABLE t (id bigint PRIMARY KEY);\n",
+	)))
+	c.Assert(pairs, qt.HasLen, 2)
+	c.Assert(pairs[1].Up, qt.Contains, `DROP DOMAIN "posint";`)
+	target := statementStyleTarget(c)
+	_, err := target.ExecContext(c.Context(), pairs[0].Up)
+	c.Assert(err, qt.IsNil)
+	_, err = target.ExecContext(c.Context(), `CREATE SCHEMA reporting;
+CREATE TABLE reporting.x (id integer PRIMARY KEY, v public.posint);
+INSERT INTO reporting.x (id, v) VALUES (1, 5);`)
+	c.Assert(err, qt.IsNil)
+
+	_, stopped := target.ExecContext(c.Context(), pairs[1].Up)
+
+	var dependent *pgconn.PgError
+	c.Assert(stopped, qt.ErrorAs, &dependent, qt.Commentf("%s", pairs[1].Up))
+	c.Assert(dependent.Code, qt.Equals, "2BP01")
+	var value int
+	c.Assert(target.QueryRowContext(c.Context(), `SELECT v FROM reporting.x WHERE id = 1`).Scan(&value), qt.IsNil)
+	c.Assert(value, qt.Equals, 5)
 }
 
 // handWrittenRoutines is a first migration someone wrote by hand: routines

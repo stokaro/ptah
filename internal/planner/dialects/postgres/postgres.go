@@ -1240,7 +1240,7 @@ func (p *Planner) dropsWithCascade() bool {
 // removeTableColumnsFromDiff drops the columns of tableDiff the declaration no
 // longer holds. A generated column goes first: it may be computed from another
 // removed column, which a drop could otherwise take only with CASCADE.
-func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool, ahead routinesAhead) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff, earlyColumns map[string]bool, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
 	columns := make([]schemamodel.Field, 0, len(tableDiff.ColumnsRemoved))
 	for _, generated := range []bool{true, false} {
 		for _, column := range tableDiff.ColumnsRemoved {
@@ -1254,7 +1254,7 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, diff *difftypes.
 			continue
 		}
 		result = p.appendRoutinesAheadColumn(result, diff, tableDiff.TableName, column.Name, ahead)
-		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name, ahead))
+		cascade := p.cascades(columnDropRelies(diff, tableDiff, column.Name, ahead, droppedPolicies))
 		dropOp := &ast.DropColumnOperation{
 			ColumnName: column.Name,
 			Cascade:    cascade,
@@ -1351,14 +1351,14 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool, ahead routinesAhead) []ast.Node {
+func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, earlyColumns map[string]bool, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsRemoved) > 0 {
 			astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
 			result = append(result, astCommentNode)
 
 			// Remove columns (dangerous!)
-			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns, ahead)
+			result = p.removeTableColumnsFromDiff(result, diff, tableDiff, earlyColumns, ahead, droppedPolicies)
 		}
 	}
 	return result
@@ -1535,8 +1535,8 @@ func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) [
 
 // removeTables drops the tables the declaration no longer holds. A table whose
 // row-level security policy reads another removed table goes before that
-// table, since the policy goes with its own table; see [tableDropRelies].
-func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead) []ast.Node {
+// table when its policy has not already been dropped; see [tableDropRelies].
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
 	dropped := make(map[string]bool, len(diff.TablesRemoved))
 	for _, group := range p.removedTableGroups(diff, ahead) {
 		for _, tableName := range group {
@@ -1552,7 +1552,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, ah
 		}
 		relied := false
 		for _, tableName := range group {
-			relied = relied || tableDropRelies(diff, tableName, dropped, ahead)
+			relied = relied || tableDropRelies(diff, tableName, dropped, ahead, droppedPolicies)
 		}
 		if p.cascades(relied) {
 			dropTableNode.SetCascade()
@@ -2013,10 +2013,12 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// names cannot be dropped while the policy still points at it. A plan that
 	// moved an expression off a column and dropped it once emitted `DROP
 	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
+	beforeTableFeatures := len(result)
 	result, err = p.planTableFeatures(ctx, runtime, result, diff)
 	if err != nil {
 		return nil, err
 	}
+	droppedPolicies := policiesDroppedBeforeRelations(result[beforeTableFeatures:], diff)
 	// A removed CHECK on a table we keep may call a routine this plan removes.
 	// Release it before moving that routine ahead of a removed relation. The
 	// constraint's body is absent from the diff, so waiting until step 12.5
@@ -2033,10 +2035,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// key; dropped first, neither leaves a column drop relying on CASCADE.
 	result = p.removeTriggers(result, diff)
 	result = p.removeEarlyGeneratedColumns(result, diff, earlyColumns)
-	result = p.removeViewLikes(result, diff, rebuild, ahead)
+	result = p.removeViewLikes(result, diff, rebuild, ahead, droppedPolicies)
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
-	result = p.removeTableColumns(result, diff, earlyColumns, ahead)
+	result = p.removeTableColumns(result, diff, earlyColumns, ahead, droppedPolicies)
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff, releasedConstraints, constraintsAfterColumns)
@@ -2047,7 +2049,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	windows.Removal = len(result)
 
 	// 13. Remove tables (dangerous!)
-	result = p.removeTables(result, diff, ahead)
+	result = p.removeTables(result, diff, ahead, droppedPolicies)
 
 	// 13.5. Remove standalone sequences after tables that may default from them.
 	result = p.removeSequences(result, diff)
@@ -2747,9 +2749,9 @@ func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) 
 // longer holds, each after every removed one that reads it, so no drop relies
 // on CASCADE to take another removed object. One the view rebuild dropped
 // already is left out. A drop relies on CASCADE when a removed routine uses
-// the object's row type or a policy of a removed table reads it, since both
-// are dropped later; see [removalOutlivesDrop].
-func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead) []ast.Node {
+// the object's row type or a policy of a removed table reads it and still
+// exists; see [removalOutlivesDrop].
+func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) []ast.Node {
 	owned := rebuild.owns()
 	removed := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
 	for _, object := range removedViewLikes(diff) {
@@ -2759,7 +2761,7 @@ func (p *Planner) removeViewLikes(result []ast.Node, diff *difftypes.SchemaDiff,
 	}
 	for _, object := range deporder.ViewLikesForDropIn(removed, p.targetDialect(), diff.EffectiveIdentifierSemantics(p.targetDialect())) {
 		result = p.appendRoutinesAhead(result, diff, object.Name, ahead)
-		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name, ahead))))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removalOutlivesDrop(diff, object.Name, ahead, droppedPolicies))))
 	}
 	return result
 }

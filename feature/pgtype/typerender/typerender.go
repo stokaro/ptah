@@ -164,10 +164,14 @@ func renderCreateRange(_ renderer.ExtensionContext, value *pgtype.CreateRange) (
 	return []string{"CREATE TYPE " + name(value.Target) + " AS RANGE (" + strings.Join(options, ", ") + ");"}, nil
 }
 
-// renderDrop writes DROP DOMAIN for a domain and DROP TYPE otherwise, IF
-// EXISTS, with CASCADE where the payload asks for it.
+// renderDrop writes DROP DOMAIN for a domain and DROP TYPE otherwise, with
+// the guard and CASCADE the payload asks for.
 func renderDrop(_ renderer.ExtensionContext, value *pgtype.Drop) ([]string, error) {
-	statement := "DROP " + objectKeyword(value.Target) + " IF EXISTS " + name(value.Target)
+	statement := "DROP " + objectKeyword(value.Target) + " "
+	if value.IfExists {
+		statement += "IF EXISTS "
+	}
+	statement += name(value.Target)
 	if value.Cascade {
 		statement += " CASCADE"
 	}

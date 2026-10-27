@@ -110,13 +110,13 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 			want: []planned{{Subject: "range type t", Payload: &pgtype.CreateRange{Target: rangeTarget, Subtype: "int8", Collation: "C"},
 				Phase: typePhase, Effect: plangraph.Create}}},
 		{name: "a domain dropped", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{Before: text}),
-			want: []planned{{Subject: "domain t", Payload: &pgtype.Drop{Target: domainTarget, Cascade: true},
+			want: []planned{{Subject: "domain t", Payload: &pgtype.Drop{Target: domainTarget, IfExists: true, Cascade: true},
 				Notes: []string{"WARNING: Make sure no columns use this domain!"}, Phase: typePhase, Effect: plangraph.Drop}}},
 		{name: "a composite type dropped", change: typeChange(pgtype.CompositeKind, "t", &pgtype.CompositeChange{Before: ab}),
-			want: []planned{{Subject: "composite type t", Payload: &pgtype.Drop{Target: compositeTarget, Cascade: true},
+			want: []planned{{Subject: "composite type t", Payload: &pgtype.Drop{Target: compositeTarget, IfExists: true, Cascade: true},
 				Notes: []string{"WARNING: Make sure no columns use this composite type!"}, Phase: typePhase, Effect: plangraph.Drop}}},
 		{name: "a range type dropped", change: typeChange(pgtype.RangeKind, "t", &pgtype.RangeChange{Before: numeric}),
-			want: []planned{{Subject: "range type t", Payload: &pgtype.Drop{Target: rangeTarget, Cascade: true},
+			want: []planned{{Subject: "range type t", Payload: &pgtype.Drop{Target: rangeTarget, IfExists: true, Cascade: true},
 				Notes: []string{"WARNING: Make sure no columns use this range type!"}, Phase: typePhase, Effect: plangraph.Drop}}},
 		{name: "a domain's CHECK, default and NOT NULL changed in place", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
 			Before: checked, After: everything, Differs: []string{pgtype.DiffCheck, pgtype.DiffDefault, pgtype.DiffNotNull}}),
@@ -139,7 +139,7 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 		{name: "a domain rebuilt over another base type, with its comment", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{
 			Before: text, After: integer, Differs: []string{pgtype.DiffBaseType, pgtype.DiffComment}}),
 			want: []planned{
-				{Subject: "domain t", Payload: &pgtype.Drop{Target: domainTarget},
+				{Subject: "domain t", Payload: &pgtype.Drop{Target: domainTarget, IfExists: true},
 					Notes: []string{"Recreate modified domain; drop is non-CASCADE and fails if the domain is in use"}, Phase: typePhase, Effect: plangraph.Drop},
 				{Subject: "domain t", Payload: &pgtype.CreateDomain{Target: domainTarget, BaseType: "integer"}, Phase: typePhase, Effect: plangraph.Create},
 				{Subject: "domain t", Payload: &pgtype.Comment{Target: domainTarget, Comment: "mail"}, Phase: typePhase, Effect: plangraph.Alter},
@@ -157,7 +157,7 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 		{name: "a composite type rebuilt in another order", change: typeChange(pgtype.CompositeKind, "t", &pgtype.CompositeChange{
 			Before: ab, After: moved, Differs: []string{pgtype.DiffAttributes}}),
 			want: []planned{
-				{Subject: "composite type t", Payload: &pgtype.Drop{Target: compositeTarget},
+				{Subject: "composite type t", Payload: &pgtype.Drop{Target: compositeTarget, IfExists: true},
 					Notes: []string{"Recreate modified composite type; drop is non-CASCADE and fails if the type is in use"}, Phase: typePhase,
 					Effect: plangraph.Drop},
 				{Subject: "composite type t", Payload: &pgtype.CreateComposite{Target: compositeTarget, Attributes: moved.Attributes}, Phase: typePhase,
@@ -166,7 +166,7 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 		{name: "a range type rebuilt over another subtype", change: typeChange(pgtype.RangeKind, "t", &pgtype.RangeChange{
 			Before: numeric, After: bigints, Differs: []string{pgtype.RangeCollation, pgtype.DiffSubtype}}),
 			want: []planned{
-				{Subject: "range type t", Payload: &pgtype.Drop{Target: rangeTarget},
+				{Subject: "range type t", Payload: &pgtype.Drop{Target: rangeTarget, IfExists: true},
 					Notes: []string{"Recreate modified range type; drop is non-CASCADE and fails if the type is in use"}, Phase: typePhase, Effect: plangraph.Drop},
 				{Subject: "range type t", Payload: &pgtype.CreateRange{Target: rangeTarget, Subtype: "int8", Collation: "C"}, Phase: typePhase,
 					Effect: plangraph.Create},
@@ -188,6 +188,34 @@ func TestPlanTypes_HappyPath(t *testing.T) {
 			c.Assert(stepsOf(c, result.Contributions), qt.DeepEquals, test.want)
 			c.Assert(result.Changes, qt.HasLen, 1)
 			c.Assert(result.Changes[0].Steps, qt.HasLen, len(test.want))
+		})
+	}
+}
+
+func TestPlanTypes_ExactDropsLeaveDependenciesToPostgres(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change schemaext.ChangeRecord
+		target pgtype.Target
+	}{
+		{name: "domain", change: typeChange(pgtype.DomainKind, "t", &pgtype.DomainChange{Before: &pgtype.ObservedDomain{BaseType: "integer"}}), target: domainTarget},
+		{name: "composite", change: typeChange(pgtype.CompositeKind, "t", &pgtype.CompositeChange{Before: &pgtype.ObservedComposite{
+			Attributes: []pgtype.Attribute{{Name: "a", Type: "integer"}},
+		}}), target: compositeTarget},
+		{name: "range", change: typeChange(pgtype.RangeKind, "t", &pgtype.RangeChange{Before: &pgtype.ObservedRange{Subtype: "integer"}}), target: rangeTarget},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := planning(test.change)
+			request.Policy.Statements = featureplan.StatementStyleExact
+
+			result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Err(request), qt.IsNil)
+			steps := stepsOf(c, result.Contributions)
+			c.Assert(steps, qt.HasLen, 1)
+			c.Assert(steps[0].Payload, qt.DeepEquals, &pgtype.Drop{Target: test.target})
 		})
 	}
 }

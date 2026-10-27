@@ -1368,19 +1368,20 @@ removes before the columns and tables they read, and a generated column before
 the columns it reads. A routine the plan removes that takes or returns the row
 type of a removed view or table, such as `RETURNS SETOF v`, or reads it in a
 SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is dropped right
-ahead of it. A removed table a policy of another removed table reads is
-dropped after the table that holds the policy, and two removed tables whose
-policies read each other are dropped in one `DROP TABLE`. The plan relies on
-`CASCADE` only where it removes a dependent after the drop:
+ahead of it. In the exact style, the plan also drops a removed table's
+policies before views and columns they read. A removed table a policy of
+another removed table reads is dropped after the table that holds the policy,
+and two removed tables whose policies read each other are dropped in one
+`DROP TABLE`. The plan relies on `CASCADE` only where it removes a dependent
+after the drop:
 
 - a view or table whose row type a removed routine names, when another object
   the plan removes calls the routine or the routine names more than one
   relation the plan drops; the routine is then removed after every table and
   view. A view the plan drops and creates again is not one of them: the plan
   drops every routine that uses its row type before it;
-- a view or a column a row-level security policy of a removed table reads,
-  since views and columns are dropped before tables;
-- a column a routine the plan removes reads in a SQL-standard body;
+- a column a routine the plan removes reads in a SQL-standard body when
+  another dependency prevents dropping the routine before that column;
 - a table whose row type a type the plan removes names, such as
   `CREATE TYPE wrap AS (r t, n int)`. A removed domain, composite type or
   range type that names no such table, a removed extension and a removed
@@ -1389,8 +1390,6 @@ policies read each other are dropped in one `DROP TABLE`. The plan relies on
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.
-[stokaro/ptah#5007](https://github.com/stokaro/ptah/issues/5007) tracks the
-policy and SQL-standard body cases.
 
 A guard stays where an earlier statement of the same file may already have
 removed the object: a view a `CASCADE` above it may have taken, a constraint
@@ -1399,13 +1398,12 @@ drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
 writes it for every schema an added object names, whether or not that schema
 exists.
 
-A statement a feature owner renders keeps its own spelling in the exact style
-too. The drop of a domain, a composite type or a range type keeps `IF EXISTS`
-and `CASCADE`, so it also drops a column of an undeclared table that uses the
-type, with its data, and the drop of an extension keeps `IF EXISTS`.
-[stokaro/ptah#5000](https://github.com/stokaro/ptah/issues/5000) tracks this.
-A drop after a statement an owner renders keeps its guard, since that
-statement may have removed objects the plan cannot name.
+In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
+from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
+composite type drop while an undeclared column still uses the type. A provider
+that cannot honor the exact statement style is refused before an executable
+plan is returned. A drop after another owner operation may keep its guard
+when that operation can remove objects the common planner cannot name.
 
 The MySQL-family planner leaves out its descriptive comments and keeps its
 guards. The SQLite, SQL Server and ClickHouse planners keep both. Native `ptah

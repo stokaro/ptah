@@ -87,8 +87,9 @@ func (p *contextOwner) NormalizeValues(ctx context.Context, request *protocol.No
 			return nil, fmt.Errorf("fixture source root is not absolute")
 		}
 		value.RequiredObjects = []*protocol.ComparisonIdentity{{
-			Kind: "table", Database: &protocol.ComparisonPart{Source: bound.Database, Normalized: bound.Database},
-			Name: &protocol.ComparisonPart{Source: "dependency", Normalized: "dependency"},
+			Kind:     "table",
+			Database: &protocol.ComparisonPart{Source: bound.Database, Normalized: bound.Database},
+			Name:     &protocol.ComparisonPart{Source: "dependency", Normalized: "dependency"},
 		}}
 	}
 	return result, nil

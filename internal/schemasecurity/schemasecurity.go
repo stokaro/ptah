@@ -102,7 +102,9 @@ type Report struct {
 	// Summary counts Findings by severity.
 	Summary Summary `json:"summary"`
 	// SkippedRules names rules that did not run because the target cannot
-	// express what they check, with the reason.
+	// express what they check, with the reason. OWN01 is also named here when
+	// it checked only some owners, and its reason names the owners it could not
+	// check.
 	//
 	// Printed rather than omitted: a rule that silently did not run is
 	// indistinguishable from one that found nothing, and the difference is the
@@ -151,7 +153,11 @@ type ObjectOwner struct {
 	// package infers from the described roles: the owner of everything on a
 	// default PostgreSQL database is a role Ptah deliberately does not
 	// describe.
-	OwnerCanLogin bool
+	//
+	// Nil means the read did not establish it. OWN01 then leaves the object
+	// unchecked and says so, rather than taking the owner for a role that
+	// cannot log in.
+	OwnerCanLogin *bool
 }
 
 // RoleObjectUsage is one observation that a role used an object.
@@ -185,7 +191,9 @@ type Options struct {
 	// ObjectOwners are the owners of the objects under analysis.
 	//
 	// Nil means the caller did not read them and OWN01 reports itself skipped;
-	// an empty non-nil slice means it read them and there are none.
+	// an empty non-nil slice means it read them and there are none. OWN01
+	// still checks the other owners when one owner's login state is unknown,
+	// and names that owner in SkippedRules.
 	ObjectOwners []ObjectOwner
 	// RoleMemberships are the role-in-role edges of the target.
 	//
@@ -251,6 +259,13 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 
 	if opts.ObjectOwners != nil {
 		report.Findings = append(report.Findings, findObjectsOwnedByALoginRole(opts.ObjectOwners)...)
+		if unknown := ownersWithUnknownLogin(opts.ObjectOwners); len(unknown) > 0 {
+			report.SkippedRules = append(report.SkippedRules, SkippedRule{
+				Code: "OWN01",
+				Reason: "the read did not establish whether " + strings.Join(unknown, ", ") +
+					" can log in, so the objects they own were not checked",
+			})
+		}
 	} else {
 		report.SkippedRules = append(report.SkippedRules,
 			SkippedRule{Code: "OWN01", Reason: "object ownership was not read for this source"})
@@ -438,7 +453,7 @@ func findObjectsOwnedByALoginRole(owners []ObjectOwner) []Finding {
 	owned := make(map[string]map[string]bool, len(owners))
 	for _, owner := range owners {
 		name := strings.TrimSpace(owner.Owner)
-		if name == "" || !owner.OwnerCanLogin {
+		if name == "" || owner.OwnerCanLogin == nil || !*owner.OwnerCanLogin {
 			continue
 		}
 		if owned[name] == nil {
@@ -470,6 +485,20 @@ func setOfOwners(owned map[string]map[string]bool) map[string]bool {
 		keys[key] = true
 	}
 	return keys
+}
+
+// ownersWithUnknownLogin names, sorted and once each, the owners whose login
+// state the read did not establish. OWN01 cannot answer for them, and an
+// owner taken for one that cannot log in would hide exactly the finding the
+// rule exists to report.
+func ownersWithUnknownLogin(owners []ObjectOwner) []string {
+	unknown := make(map[string]bool)
+	for _, owner := range owners {
+		if name := strings.TrimSpace(owner.Owner); name != "" && owner.OwnerCanLogin == nil {
+			unknown[name] = true
+		}
+	}
+	return sortedKeys(unknown)
 }
 
 // findGrantsOnUnusedObjects implements ROL01.

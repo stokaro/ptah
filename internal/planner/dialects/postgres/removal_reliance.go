@@ -4,9 +4,12 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/routineargs"
@@ -442,11 +445,17 @@ func sqlStandardBodyReads(routine difftypes.RoutineChange, relation string, sema
 // removedTableReads reports whether a captured object of a table the plan
 // removes, other than the tables skip names, reads relation.
 func removedTableReads(diff *difftypes.SchemaDiff, relation string, skip map[string]bool) bool {
+	return removedTableReadsExcept(diff, relation, skip, nil)
+}
+
+// removedTableReadsExcept ignores only captured policies whose standalone
+// drops the plan already placed before this relation or column drop.
+func removedTableReadsExcept(diff *difftypes.SchemaDiff, relation string, skip map[string]bool, droppedPolicies map[objectidentity.Key]bool) bool {
 	for _, removal := range diff.TablesRemoved {
 		if skip[removal.Name] || removal.Name == relation {
 			continue
 		}
-		if capturedReads(removal.Current.OwnedObjects, relation, relationSemantics(diff)) {
+		if capturedReadsExcept(removal.Current.OwnedObjects, relation, relationSemantics(diff), droppedPolicies) {
 			return true
 		}
 	}
@@ -456,6 +465,10 @@ func removedTableReads(diff *difftypes.SchemaDiff, relation string, skip map[str
 // capturedReads reports whether one of objects reads relation, with names
 // resolved as semantics says.
 func capturedReads(objects schemaext.Objects, relation string, semantics identifier.Semantics) bool {
+	return capturedReadsExcept(objects, relation, semantics, nil)
+}
+
+func capturedReadsExcept(objects schemaext.Objects, relation string, semantics identifier.Semantics, droppedPolicies map[objectidentity.Key]bool) bool {
 	all, err := objects.All()
 	if err != nil {
 		// An unreadable capture cannot say it reads nothing, so the drop keeps
@@ -463,6 +476,9 @@ func capturedReads(objects schemaext.Objects, relation string, semantics identif
 		return true
 	}
 	for _, object := range all {
+		if droppedPolicies[object.Ref.Key()] {
+			continue
+		}
 		if reader, ok := object.Value.(schemaext.RelationReader); ok && schemaext.ReadsRelationIn(reader, relation, semantics) {
 			return true
 		}
@@ -470,11 +486,29 @@ func capturedReads(objects schemaext.Objects, relation string, semantics identif
 	return false
 }
 
+// policiesDroppedBeforeRelations records actual owner operations in the
+// prefix emitted before view and column drops. A captured policy counts as
+// released only when its matching DROP POLICY is in that prefix.
+func policiesDroppedBeforeRelations(nodes []ast.Node, diff *difftypes.SchemaDiff) map[objectidentity.Key]bool {
+	dropped := make(map[objectidentity.Key]bool)
+	for _, node := range nodes {
+		for _, payload := range ast.OwnerOperations(node) {
+			operation, ok := payload.(*pgpolicy.PolicyOperation)
+			if !ok || operation == nil || operation.Change.Before == nil || operation.Change.After != nil {
+				continue
+			}
+			ref := pgpolicy.PolicyRefWith(relationSemantics(diff), operation.Schema, operation.Table, operation.Name)
+			dropped[ref.Key()] = true
+		}
+	}
+	return dropped
+}
+
 // removalOutlivesDrop reports whether an object the plan removes in a later
 // step depends on relation when the relation is dropped: a removed routine
 // that names it, or a captured object of a removed table that reads it.
-func removalOutlivesDrop(diff *difftypes.SchemaDiff, relation string, ahead routinesAhead) bool {
-	return removedRoutineNames(diff, relation, ahead) || removedTableReads(diff, relation, nil)
+func removalOutlivesDrop(diff *difftypes.SchemaDiff, relation string, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
+	return removedRoutineNames(diff, relation, ahead) || removedTableReadsExcept(diff, relation, nil, droppedPolicies)
 }
 
 // removedFeatureReads reports whether a database-scope feature change may drop

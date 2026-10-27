@@ -101,6 +101,7 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		if err != nil {
 			return nil, err
 		}
+		canonicalizePlanningObjectDatabases(remote)
 	}
 	for i, change := range request.Changes {
 		value, err := capture.value(schemaext.Change, change.Value, strconv.Itoa(i))
@@ -124,7 +125,10 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		remote.CommonSteps = append(remote.CommonSteps, captured)
 	}
 	remote.TargetFeatures = slices.Clone(capture.request.GetTargetFeatures())
-	remote.Policy = s.target.planningPolicy(request.Policy)
+	remote.Policy, err = s.target.planningPolicy(request.Policy)
+	if err != nil {
+		return nil, err
+	}
 	return remote, nil
 }
 
@@ -133,11 +137,22 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 // does not honor a policy plans as if none were set, which is how the host's
 // own planners treat a request they have no behavior for, so the host does
 // not refuse the operator's flags for it.
-func (t *target) planningPolicy(policy featureplan.Policy) *protocol.PlanningPolicy {
+func (t *target) planningPolicy(policy featureplan.Policy) (*protocol.PlanningPolicy, error) {
+	if !policy.Statements.Valid() {
+		return nil, fmt.Errorf("%w: unknown statement style %d", schemaext.ErrInvalidValue, policy.Statements)
+	}
+	if policy.Statements == featureplan.StatementStyleExact && !t.negotiated(provider.PlanningStatementStyleFeature) {
+		return nil, fmt.Errorf("%w: exact planning needs %s", schemaext.ErrInvalidValue, provider.PlanningStatementStyleFeature)
+	}
 	if !t.negotiated(provider.PlanningPolicyFeature) {
-		return nil
+		return nil, nil
+	}
+	style := protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_ANNOTATED
+	if policy.Statements == featureplan.StatementStyleExact {
+		style = protocol.PlanningStatementStyle_PLANNING_STATEMENT_STYLE_EXACT
 	}
 	return &protocol.PlanningPolicy{
+		StatementStyle:               style,
 		AllowTableRebuild:            policy.AllowTableRebuild,
 		TableRebuildRequest:          policy.TableRebuildRequest,
 		OnlineAlter:                  policy.OnlineAlter,
@@ -146,7 +161,7 @@ func (t *target) planningPolicy(policy featureplan.Policy) *protocol.PlanningPol
 		ConcurrentIndexDrops:         policy.ConcurrentIndexDrops,
 		ConcurrentIndexDropSubjects:  comparisonIdentities(policy.ConcurrentIndexDropSubjects),
 		OmitNullBackfill:             policy.OmitNullBackfill,
-	}
+	}, nil
 }
 
 func planningTypes(types []schemaext.DefinedType) []*protocol.PlanningType {
