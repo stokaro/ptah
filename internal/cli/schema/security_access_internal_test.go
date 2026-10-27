@@ -2,7 +2,7 @@ package schema
 
 // White-box testing required: these tests cover the catalog-to-analyzer boundary. Its input is the
 // completed live read; a command test would need a database with partial
-// ownership metadata to reach the same refusal.
+// ownership metadata to reach the same conversion or refusal.
 
 import (
 	"testing"
@@ -11,25 +11,21 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/internal/schemasecurity"
 )
 
-func TestSecurityOwnersRetainKnownLoginStates(t *testing.T) {
+func TestSecurityOwnersRetainLoginStates(t *testing.T) {
 	c := qt.New(t)
-	owners, err := objectOwners(&catalog.Database{ObjectOwners: []catalog.ObjectOwner{
+	owners := objectOwners(&catalog.Database{ObjectOwners: []catalog.ObjectOwner{
 		{Kind: "table", Name: "items", Owner: "app", OwnerCanLogin: new(true)},
 		{Kind: "table", Name: "history", Owner: "store", OwnerCanLogin: new(false)},
+		{Kind: "schema", Name: "shop", Owner: "root@builtin"},
 	}})
-	c.Assert(err, qt.IsNil)
-	c.Assert(owners, qt.HasLen, 2)
-	c.Assert(owners[0].OwnerCanLogin, qt.IsTrue)
-	c.Assert(owners[1].OwnerCanLogin, qt.IsFalse)
-}
-
-func TestSecurityRefusesUnknownOwnerLogin(t *testing.T) {
-	c := qt.New(t)
-	owners, err := objectOwners(&catalog.Database{ObjectOwners: []catalog.ObjectOwner{{Kind: "table", Name: "items", Owner: "app"}}})
-	c.Assert(err, qt.ErrorMatches, `.*did not establish whether owner "app".*`)
-	c.Assert(owners, qt.IsNil)
+	c.Assert(owners, qt.DeepEquals, []schemasecurity.ObjectOwner{
+		{Kind: "table", Name: "items", Owner: "app", OwnerCanLogin: new(true)},
+		{Kind: "table", Name: "history", Owner: "store", OwnerCanLogin: new(false)},
+		{Kind: "schema", Name: "shop", Owner: "root@builtin"},
+	})
 }
 
 func TestSecurityRefusesIndependentAccessGaps(t *testing.T) {

@@ -643,8 +643,11 @@ is in and a user that may not log in.
 
 `OWN01` reads ownership from the PostgreSQL family, SQL Server and YDB, where
 the scheme service reports the owner of the database, each directory and each
-table, and `.sys/auth_users` whether that owner may log in. MySQL has no
-object owner to read — a routine has a `DEFINER` and a table has nothing — so the
+table, and `.sys/auth_users` whether that owner may log in. An owner that
+`.sys/auth_users` does not list, such as `root@builtin`, or `metadata@system`
+on the resource pool `default`, has a login state the read cannot establish.
+`OWN01` names such an owner under `Not checked here:` and still checks the
+others. MySQL has no object owner to read — a routine has a `DEFINER` and a table has nothing — so the
 rule reports itself skipped there rather than answering from a concept the engine
 does not have.
 

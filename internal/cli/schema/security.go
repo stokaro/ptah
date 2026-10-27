@@ -156,10 +156,6 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err := refuseUnreadPrincipals(live); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	owners, err := objectOwners(live)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	// The connection's own set rather than the dialect default: it is what the
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
@@ -179,7 +175,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			// read them, and the rules that need them must run rather than
 			// report themselves skipped (stokaro/ptah#1950).
 			RoleMemberships: roleMemberships(live),
-			ObjectOwners:    owners,
+			ObjectOwners:    objectOwners(live),
 			RoleObjectUsage: usage,
 			DatabasePath:    live.DatabasePath,
 		},
@@ -235,21 +231,19 @@ func roleMemberships(live *catalog.Database) []schemasecurity.RoleMembership {
 }
 
 // objectOwners carries who owns what into the analysis, with the owner's login
-// flag as the catalog reported it.
-func objectOwners(live *catalog.Database) ([]schemasecurity.ObjectOwner, error) {
+// flag as the catalog reported it. An unknown flag stays unknown: OWN01 names
+// that owner as not checked, and the rest of the report still runs.
+func objectOwners(live *catalog.Database) []schemasecurity.ObjectOwner {
 	owners := make([]schemasecurity.ObjectOwner, 0, len(live.ObjectOwners))
 	for _, owner := range live.ObjectOwners {
-		if owner.OwnerCanLogin == nil {
-			return nil, fmt.Errorf("the read did not establish whether owner %q of %s %q can log in; an ownership security report needs that fact", owner.Owner, owner.Kind, owner.Name)
-		}
 		owners = append(owners, schemasecurity.ObjectOwner{
 			Kind:          owner.Kind,
 			Name:          owner.Name,
 			Owner:         owner.Owner,
-			OwnerCanLogin: *owner.OwnerCanLogin,
+			OwnerCanLogin: owner.OwnerCanLogin,
 		})
 	}
-	return owners, nil
+	return owners
 }
 
 // validateSecurityFailOn rejects a threshold nothing understands, rather than

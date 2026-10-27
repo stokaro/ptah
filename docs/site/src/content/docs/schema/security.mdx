@@ -30,8 +30,9 @@ empty role memberships, and privileges held on objects nothing was observed
 using.
 
 The command refuses a report when the read leaves roles, grants, memberships
-or object owners uninspected. It also refuses ownership findings when an
-owner's login status is unknown. Unknown access metadata cannot establish
+or object owners uninspected. When the read does not establish whether an
+owner can log in, `OWN01` leaves the objects of that owner unchecked and names
+the owner under `Not checked here:`. Unknown access metadata cannot establish
 that the database has no security findings.
 
 Each finding is an observation paired with a suggestion, not a verdict. Use the

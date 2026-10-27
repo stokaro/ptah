@@ -93,7 +93,6 @@ func TestNativeVerbsReachTheSelectedProvider(t *testing.T) {
 		{"schema export", []string{"schema", "export", "--to", "openapi-v3", "--schema-file", "{schema}"}, "second:"},
 		{"schema stats", []string{"schema", "stats", "--db-url", "{db}"}, `ptah_schema_tables{dialect="fixture"} 2`},
 		{"schema lineage", []string{"schema", "lineage", "--db-url", "{db}"}, "No view or routine columns to trace."},
-		{"schema security", []string{"schema", "security", "--db-url", "{db}"}, "No security findings."},
 		{"schema compare", []string{"schema", "compare", "--db-url", "{db}", "--schema-file", "{changed}"}, "tables_added (1): third"},
 		{"schema drift", []string{"schema", "drift", "--db-url", "{db}", "--schema-file", "{schema}"}, "No schema drift detected."},
 		{"schema diff", []string{"schema", "diff", "--from", "{db}", "--to", "{db}"}, "Schemas are synced"},
@@ -123,6 +122,27 @@ func TestNativeVerbsReachTheSelectedProvider(t *testing.T) {
 			f.assertStopped(c)
 		})
 	}
+}
+
+// TestNativeSchemaSecurityRefusesAProviderReadWithoutAccessCoverage runs
+// `schema security` against the provider the manifest selects. The fixture
+// reports no coverage for role memberships or object owners, and a missing
+// coverage row is never evidence that the database has none, so the verb
+// starts the provider, reads through it and refuses the report.
+func TestNativeSchemaSecurityRefusesAProviderReadWithoutAccessCoverage(t *testing.T) {
+	c := qt.New(t)
+	f := newDevCLI(c)
+	_, diagnostics, code := f.run(c, c.Context(), "apply", "--schema-file", f.schemaPath, "--auto-approve")
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(os.RemoveAll(f.pidPath), qt.IsNil)
+
+	out, diagnostics, code := executeProviderCLI(c.Context(),
+		[]string{"schema", "security", "--db-url", f.address, "--provider-config", f.manifestPath})
+
+	c.Assert(code, qt.Equals, 2, qt.Commentf("%s\n%s", out, diagnostics))
+	c.Assert(diagnostics, qt.Contains, "the read did not inspect role_membership; a security report needs complete access metadata")
+	c.Assert(out, qt.Equals, "")
+	f.assertStopped(c)
 }
 
 // TestNativeVerbsReportAMissingProviderForTheEngineTheyName names an official
