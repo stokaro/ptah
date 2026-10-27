@@ -56,7 +56,8 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	if mode != "" && mode != "native" && mode != "native-transactional" && mode != "native-cli" && mode != "native-text" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" && mode != "statement-style" {
+	modes := []string{"", "native", "native-transactional", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style"}
+	if !slices.Contains(modes, mode) {
 		panic("unknown fixture render mode")
 	}
 	if mode != "" {

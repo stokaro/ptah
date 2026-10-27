@@ -45,7 +45,7 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		step, err := planTableChange(change, strconv.Itoa(i), p.statementStyle, request.GetPolicy().GetStatementStyle())
+		step, err := p.planTableChange(change, strconv.Itoa(i), request.GetPolicy().GetStatementStyle())
 		if err != nil {
 			return nil, err
 		}
@@ -86,10 +86,10 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 	return result, nil
 }
 
-func planTableChange(change *protocol.PlanningChange, id string, styleAware bool, style protocol.PlanningStatementStyle) (*protocol.PlanningStep, error) {
+func (p *owner) planTableChange(change *protocol.PlanningChange, id string, style protocol.PlanningStatementStyle) (*protocol.PlanningStep, error) {
 	envelope := proto.CloneOf(change.GetValue().GetValue())
 	envelope.Kind = operationKind
-	if styleAware {
+	if p.statementStyle {
 		var op operation
 		if err := json.Unmarshal(envelope.Payload, &op); err != nil {
 			return nil, err
