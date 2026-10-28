@@ -65,7 +65,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
 
       # No npm install: this gate has no dependencies, and its --selftest is
       # what says the rules below can fail at all.

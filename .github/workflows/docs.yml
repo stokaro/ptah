@@ -259,7 +259,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
 
       # check-style.mjs has no npm dependencies, so this needs no install step.
       # check-limitations.mjs has none either, and it governs a page under
@@ -350,7 +350,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
 
@@ -829,7 +829,7 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
       # ptah viz --format svg shells out to Graphviz, and the visualize samples
@@ -1023,7 +1023,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
       - name: Install the public smoke-test browser
