@@ -486,7 +486,8 @@ var Cells = []Cell{
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.7",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.7",
+		Unprobed: "upstream support ended on 2026-10-24 (endoflife.date/clickhouse)",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.3",
