@@ -89,7 +89,6 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
 | `clickhouse` | 26.9 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | yes |
-| `clickhouse` | 26.7 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | yes |
@@ -107,18 +106,20 @@ the declared set cannot say one thing here and another in a workflow file.
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `ydb` | 26.2 | certified | `YDB262` | yes |
 | `ydb` | 25.1 | certified | `YDB251` | yes |
+| `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 | `ydb` | 26.1 | best-effort | `YDB261` | no |
 | `ydb` | 25.4 | best-effort | `YDB254` | no |
 | `ydb` | 25.3 | best-effort | `YDB253` | no |
 | `ydb` | 25.2 | best-effort | `YDB252` | no |
 
-Declared release lines: 38. Probed on every pull request: 33.
+Declared release lines: 38. Probed on every pull request: 32.
 
-Support levels across the 38 declared lines: 29 certified, 3 legacy-tested, 6 best-effort.
+Support levels across the 38 declared lines: 28 certified, 3 legacy-tested, 7 best-effort.
 
 Lines that are declared and not probed, and why:
 
+- `clickhouse` 26.7 — upstream support ended on 2026-10-24 (endoflife.date/clickhouse).
 - `clickhouse` 25.8 — upstream support ended on 2026-08-29 (endoflife.date/clickhouse).
 - `ydb` 26.1 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
 - `ydb` 25.4 — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date.
