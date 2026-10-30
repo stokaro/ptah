@@ -171,7 +171,7 @@ require (
 	github.com/skeema/knownhosts v1.3.3 // indirect
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xo/terminfo v1.2.0 // indirect
+	github.com/xo/terminfo v1.3.0 // indirect
 	github.com/yandex-cloud/go-genproto v0.133.0 // indirect
 	github.com/ydb-platform/ydb-go-yc v0.12.5 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
