@@ -66,7 +66,7 @@ const ciOnly = new Map([
 ]);
 
 const npmRun = /\bnpm (?:--prefix \S+ )?run ([a-z0-9:-]+)((?: --(?: [^\n|&;]*)?)?)/g;
-const nodeScript = /\bnode (?:--\S+ )*"?(?:\$GITHUB_WORKSPACE\/)?(?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9-]+\.mjs)"?([^\n|&;]*)/g;
+const nodeScript = /\bnode (?:--\S+ )*"?(?:\$GITHUB_WORKSPACE\/)?(?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9.-]+\.mjs)"?([^\n|&;]*)/g;
 const goTest = /\bgo test ([^\n|&;]*)/g;
 const shellScript = /^(?:(?:bash|sh|env|if|then|do)\s+)*(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(?:\.\/|\.\.\/\.\.\/)?(?:docs\/site\/)?scripts\/([a-z0-9-]+\.sh)\b(.*)$/;
 
@@ -232,7 +232,7 @@ function selftest() {
     '  go test -tags integration ./internal/tagged -count=1',
     '  go test ptah.run/internal/imported -count=1',
     '  npm --prefix docs/site run check:prefixed',
-    '  node --test docs/site/scripts/check-node-test.mjs',
+    '  node --test docs/site/scripts/check-node.test.mjs',
     '  # node docs/site/scripts/check-commented.mjs --write',
     '  go test ./docs ./internal/docsembed -count=1',
     '  go test \\',
@@ -264,7 +264,7 @@ function selftest() {
     'scripts/check-env-run.sh',
     'go test ./internal/tagged -tags integration -count=1',
     'go test ptah.run/internal/imported -count=1',
-    'node scripts/check-node-test.mjs',
+    'node scripts/check-node.test.mjs',
     'npm run check:prefixed',
     'npm run check:style:selftest',
     'node scripts/check-style.mjs',
@@ -305,7 +305,7 @@ function selftest() {
     ['a script run through env', skill(complete.replace('scripts/check-env-run.sh\n', '')), 'check-env-run.sh'],
     ['a go test without its tags', skill(complete.replace(' -tags integration', '')), 'go test ./internal/tagged -tags integration'],
     ['a go test of an import path', skill(complete.replace('go test ptah.run/internal/imported -count=1\n', '')), 'go test ptah.run/internal/imported'],
-    ['a node test run', skill(complete.replace('node scripts/check-node-test.mjs\n', '')), 'check-node-test.mjs'],
+    ['a node test run of a dotted file name', skill(complete.replace('node scripts/check-node.test.mjs\n', '')), 'check-node.test.mjs'],
     ['an npm script run with --prefix', skill(complete.replace('npm run check:prefixed\n', '')), 'check-prefixed.mjs'],
   ];
   for (const [name, text, needle] of cases) {
