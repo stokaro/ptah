@@ -292,8 +292,24 @@ practical, live commands:
   <!-- documentation-suite -->
 
   ```bash
-  # From the repository root: the Go steps of the Documentation style job.
+  # From the repository root: the Go and shell checks of the Docs workflow.
   go test ./internal/doccommands -count=1
+  go test ./docs ./internal/docsembed -count=1
+  go test ./internal/cli/atlas/internal/migratetests ./internal/cli/internal/terminologyguard ./internal/cli/oci ./internal/cli/root ./core/query ./internal/agentapi ./internal/agentdiag ./internal/assistloop ./internal/atlascompatpolicy ./internal/atlasfilter ./internal/lintcatalog ./internal/parser ./migration/migrator -count=1
+  go test ./internal/mcpserver -run '^(TestSearchDocs_|TestDescribeSession_ReportsWhatTheDocumentationToolCanReach$|TestToolDocs_)' -count=1
+  go test ./internal/cmdref -count=1
+  scripts/check-feature-inventory.sh
+  scripts/check-docsync.sh
+  scripts/check-examples.sh
+  # These need ptah built into bin/.
+  PTAH_BIN=bin/ptah scripts/check-source-equivalence.sh
+  PTAH_BIN=bin/ptah scripts/check-source-equivalence-selftest.sh
+  PTAH_BIN=bin/ptah scripts/check-source-workflows.sh
+  # The tutorials start their fixtures on a Docker context. On a remote one,
+  # also set PTAH_FIXTURE_HOST to the host that publishes the ports.
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-inference-quick-start.sh
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-postgresql-quick-start.sh
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-zero-downtime-changes.sh
   cd docs/site
   npm ci
   # Documentation style. None of these needs the install above.
@@ -407,16 +423,8 @@ practical, live commands:
   npm audit --audit-level=low
   ```
 
-  The Test documentation contracts step of the style job also runs a list of
-  Go packages that read pages as test inputs; it runs only when a page they read
-  changed, so read that step for the packages rather than a copy here.
-
-  From the repository root, also run `scripts/check-examples.sh`. When the
-  inference tutorial or its fixture changes, run
-  `docs/site/scripts/check-inference-quick-start.sh` with an explicit
-  `PTAH_DOCKER_CONTEXT`. For a remote context, also set `PTAH_FIXTURE_HOST` to
-  the remote host name so the locally built CLI reaches the published ports.
-  The script removes only its named Compose project and locally built images.
+  Each tutorial script removes only its named Compose project and the images it
+  built locally.
 
   `check:style` covers every layer the style guide governs — `docs/site`,
   `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,

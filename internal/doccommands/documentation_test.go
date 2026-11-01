@@ -134,6 +134,9 @@ func TestTheRealTreesRefuseAndAccept_FailurePath(t *testing.T) {
 		{doccommands.Line{Program: doccommands.Native, Args: []string{"migrations", "apply"}}, `"ptah migrations" has no subcommand "apply"`},
 		{doccommands.Line{Program: doccommands.Compat, Args: []string{"cloud"}}, `"ptah-compat" has no subcommand "cloud"`},
 		{doccommands.Line{Program: doccommands.Compat, Args: []string{"migrate", "down", "--bogus-flag", "x"}}, `"ptah-compat migrate down" has no flag --bogus-flag`},
+		// The target runs detached, so a flag the native tree would add is not
+		// one it parses.
+		{doccommands.Line{Program: doccommands.Compat, Args: []string{"migrate", "hash", "--migrations-dir", "x"}}, `"ptah-compat migrate hash" has no flag --migrations-dir`},
 	} {
 		t.Run(strings.Join(test.line.Args, " "), func(t *testing.T) {
 			c := qt.New(t)

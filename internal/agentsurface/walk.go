@@ -127,9 +127,10 @@ type Node struct {
 // the recognition: which commands a shipped tree holds is decided by two
 // initializer calls whose correctness differs per binary, and a walk that
 // restated them would be wrong about `ptah-compat` on the day `internal/cli/atlas`
-// changed which of them it makes for itself. So [Commands] is the only place
-// in this repository that visits a `*cobra.Command`'s children, and Nodes is a
-// view of it.
+// changed which of them it makes for itself. So [Commands] is the one walk of
+// a whole shipped tree, the one that adds cobra's default commands first, and
+// Nodes is a view of it. A reader that needs every command of a tree takes them
+// from there rather than walking it again.
 func Nodes(root *cobra.Command) []Node {
 	var nodes []Node
 	for _, cmd := range Commands(root) {

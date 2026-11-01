@@ -1043,7 +1043,8 @@ The table lists the rules this guide states. The documentation job also runs
 `build-feature-matrix --check`. They govern named pages rather than prose in
 general. The documentation-maintenance skill carries the command list a
 contributor runs, and `check-skill-suite.mjs` fails when that list stops naming
-a check the workflow runs over the working tree, or names one no script backs.
+a check the workflow runs over the working tree -- a Node or shell script, an
+npm script, or a `go test` -- or names one the workflow does not run.
 A green run of the table above is not a green documentation job.
 
 Two properties keep these checks honest:
@@ -1086,8 +1087,9 @@ YAML block, `go run ./cmd/ptah`, and inline code that begins with a program
 name. In help text it reads every indented line. It resolves each command line
 against the command tree the binary builds, the way cobra does, without
 running it: a word a command with subcommands does not know is refused, and a
-forwarding verb of `ptah-compat` is held to its own flags and those of the
-native command it forwards to. So a renamed verb or flag fails the change that
+forwarding verb of `ptah-compat` is held to the flags it and its ancestors
+register and the flags the native command it forwards to declares itself,
+less those it refuses before forwarding. So a renamed verb or flag fails the change that
 renames it until every page that spells it is updated. It does not check a
 flag's value, the number of arguments, or what the command prints. Those are
 runtime questions, and the quick-start contour and the example acceptance job

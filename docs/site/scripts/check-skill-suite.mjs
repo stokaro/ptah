@@ -14,7 +14,10 @@
 // file and the names of the flags it passes, because `--selftest`, `--check`,
 // `--write` and `--against` run different code of one script, and a flag's
 // value -- a base commit, an output directory -- is the caller's. An npm
-// script that runs no script file is compared by its name.
+// script that runs no script file is compared by its name, a shell script by
+// its file name, and a `go test` by the packages it tests and whether it
+// selects tests with -run. Comment lines are not invocations on either side,
+// and neither are the paths a workflow's change filter lists.
 //
 // Two directions fail. A check the workflow runs over the working tree and the
 // skill does not list is the drift this exists for. A check the skill lists
@@ -54,6 +57,7 @@ const ciOnly = new Map([
   ['check-documentation-gate.mjs', "reads the conclusions of the workflow's other jobs"],
   ['check-pages-root.mjs --site', 'reads the assembled Pages root, which only the deployment build writes'],
   ['check-public-docs.mjs', 'reads the published site after a deployment'],
+  ['deploy-pages-tag.sh', 'deploys one released tag'],
   ['check-release-page-actions.mjs --dist --version --source-commit', 'reads a released tag built by the deployment'],
   ['gen-versions.mjs', 'writes the version index into the assembled Pages root'],
   ['publish-root-assets.mjs', 'copies the install scripts into the assembled Pages root'],
@@ -62,7 +66,9 @@ const ciOnly = new Map([
 ]);
 
 const npmRun = /\bnpm run ([a-z0-9:-]+)((?: --(?: [^\n|&;]*)?)?)/g;
-const nodeScript = /\bnode (?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9-]+\.mjs)([^\n|&;]*)/g;
+const nodeScript = /\bnode "?(?:\$GITHUB_WORKSPACE\/)?(?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9-]+\.mjs)"?([^\n|&;]*)/g;
+const goTest = /\bgo test ([^\n|&;]*)/g;
+const shellScript = /^(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(?:\.\.\/\.\.\/)?(?:docs\/site\/)?scripts\/([a-z0-9-]+\.sh)\b(.*)$/;
 
 // flagNames returns the identity suffix of an argument string: the names of the
 // flags it passes, in order, without their values.
@@ -75,10 +81,25 @@ function flagNames(args) {
   return names.length === 0 ? '' : ` ${names.join(' ')}`;
 }
 
-// joinContinuations folds a shell line continued with a trailing backslash,
-// so a command written over several lines is read whole.
-function joinContinuations(text) {
-  return text.replace(/\\\n\s*/g, ' ');
+// commandText folds a shell line continued with a trailing backslash, so a
+// command written over several lines is read whole, and drops the lines that
+// run nothing: comments, and the quoted paths of a change filter.
+function commandText(text) {
+  return text
+    .replace(/\\\n\s*/g, ' ')
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line) && !/^\s*- ['"]/.test(line))
+    .join('\n');
+}
+
+// commandStarts returns each simple command a line runs, with a workflow's
+// `run:` and the separators between commands taken off.
+function commandStarts(line) {
+  return line
+    .replace(/^\s*(?:- )?(?:run:\s*)?/, '')
+    .split(/&&|\|\||;|\|/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
 }
 
 // invocations returns the identities of the checks text runs, in order and
@@ -89,7 +110,7 @@ export function invocations(text, scripts) {
   const add = (key) => {
     if (!found.includes(key)) found.push(key);
   };
-  const joined = joinContinuations(text);
+  const joined = commandText(text);
   for (const match of joined.matchAll(npmRun)) {
     const script = scripts[match[1]];
     if (script === undefined) {
@@ -100,6 +121,17 @@ export function invocations(text, scripts) {
     add(target ? target[1] + flagNames(`${target[2]} ${match[2].replace(/^ --/, '')}`) : `npm run ${match[1]}`);
   }
   for (const match of joined.matchAll(nodeScript)) add(match[1] + flagNames(match[2]));
+  for (const match of joined.matchAll(goTest)) {
+    const words = match[1].split(/\s+/);
+    const packages = words.filter((word) => word.startsWith('./')).sort();
+    if (packages.length > 0) add(`go test ${packages.join(' ')}${words.includes('-run') ? ' -run' : ''}`);
+  }
+  for (const line of joined.split('\n')) {
+    for (const part of commandStarts(line)) {
+      const script = shellScript.exec(part);
+      if (script) add(script[1] + flagNames(script[2]));
+    }
+  }
   return { found, unknown };
 }
 
@@ -168,13 +200,33 @@ function selftest() {
     '  npm run build',
     '  npm run check:snapshots -- --output "$RUNNER_TEMP/out"',
     '  node docs/site/scripts/check-route-retirement.mjs --against "$base"',
+    "  - 'scripts/check-filtered-path.sh'",
+    '  # node docs/site/scripts/check-commented.mjs --write',
+    '  go test ./docs ./internal/docsembed -count=1',
+    '  go test \\',
+    '    ./internal/b \\',
+    '    ./internal/a -count=1',
+    "  go test ./internal/mcpserver -run '^TestX' -count=1",
+    '  run: scripts/check-docsync.sh',
+    '  PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-workflows.sh',
+    '  docs/site/scripts/check-inference-quick-start.sh',
+    '  node "$GITHUB_WORKSPACE/docs/site/scripts/check-links.mjs"',
     '  node docs/site/scripts/write-build-info.mjs \\',
     '    --output dist/build-info.json --version edge --source-commit "$SHA"',
-    ...[...ciOnly.keys()].filter((key) => !key.startsWith('write-build-info')).map((key) => `  node docs/site/scripts/${key.replace(/ (--[a-z-]+)/g, ' $1 x')}`),
+    ...[...ciOnly.keys()]
+      .filter((key) => !key.startsWith('write-build-info'))
+      .map((key) => (key.endsWith('.sh') ? `  scripts/${key}` : `  node docs/site/scripts/${key.replace(/ (--[a-z-]+)/g, ' $1 x')}`)),
     filler,
   ].join('\n');
   const skill = (body, extra = '') => `Run:\n\n${marker}\n\n\`\`\`bash\ncd docs/site\nnpm ci\n${body}\n${fillerSuite}\n\`\`\`\n${extra}`;
   const complete = [
+    'go test ./docs ./internal/docsembed -count=1',
+    'go test ./internal/a ./internal/b -count=1',
+    "go test ./internal/mcpserver -run '^TestX' -count=1",
+    'scripts/check-docsync.sh',
+    'PTAH_BIN=bin/ptah scripts/check-source-workflows.sh',
+    'PTAH_DOCKER_CONTEXT=ctx docs/site/scripts/check-inference-quick-start.sh',
+    'node scripts/check-links.mjs',
     'npm run check:style:selftest',
     'node scripts/check-style.mjs',
     'npm run check:diagrams',
@@ -187,6 +239,10 @@ function selftest() {
 
   const clean = compare(workflow, skill(complete), scripts);
   if (clean.length > 0) failures.push(`a complete suite produced findings: ${clean.join('; ')}`);
+  // A filter path and a comment run nothing, so they demand nothing.
+  for (const needle of ['check-filtered-path.sh', 'check-commented.mjs']) {
+    if (invocations(workflow, scripts).found.some((key) => key.startsWith(needle))) failures.push(`${needle} was read as an invocation`);
+  }
 
   const cases = [
     ['a check the skill omits', skill(complete.replace('npm run check:diagrams\n', '')), 'generate-journey-diagrams.mjs --check'],
@@ -199,6 +255,12 @@ function selftest() {
     ['a check the workflow does not run', skill(`${complete}\nnode scripts/check-extra.mjs`), 'check-extra.mjs'],
     ['a check named only in a comment', skill(complete.replace('\nnode scripts/check-route-retirement.mjs', '\n# node scripts/check-route-retirement.mjs')), 'check-route-retirement.mjs --against'],
     ['a check moved to another block', skill(complete.replace('npm run check:diagrams\n', ''), '\n```bash\nnpm run check:diagrams\n```\n'), 'generate-journey-diagrams.mjs --check'],
+    ['a go test the skill omits', skill(complete.replace('go test ./internal/a ./internal/b -count=1\n', '')), 'go test ./internal/a ./internal/b'],
+    ['a go test that drops a package', skill(complete.replace('./internal/a ./internal/b', './internal/a')), 'go test ./internal/a ./internal/b'],
+    ['a go test without its -run', skill(complete.replace(" -run '^TestX'", '')), 'go test ./internal/mcpserver -run'],
+    ['a shell script the skill omits', skill(complete.replace('scripts/check-docsync.sh\n', '')), 'check-docsync.sh'],
+    ['a site shell script the skill omits', skill(complete.replace('PTAH_DOCKER_CONTEXT=ctx docs/site/scripts/check-inference-quick-start.sh\n', '')), 'check-inference-quick-start.sh'],
+    ['a check run from the workspace path', skill(complete.replace('node scripts/check-links.mjs\n', '')), 'check-links.mjs'],
   ];
   for (const [name, text, needle] of cases) {
     if (!compare(workflow, text, scripts).some((finding) => finding.includes(needle))) failures.push(`${name} was not reported`);

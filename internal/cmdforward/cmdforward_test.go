@@ -9,13 +9,29 @@ import (
 	"ptah.run/internal/cmdforward"
 )
 
-func TestTarget_HappyPath(t *testing.T) {
+func TestRegister_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	forwarder := &cobra.Command{Use: "down", Annotations: map[string]string{cmdforward.Annotation: "migrations down"}}
+	forwarder := &cobra.Command{Use: "down"}
+	cmdforward.Register(forwarder, "migrations down", func() *cobra.Command {
+		target := &cobra.Command{Use: "down"}
+		target.Flags().String("target", "", "")
+		return target
+	})
+	cmdforward.Refuse(forwarder, "confirm", "editor")
+
 	c.Assert(cmdforward.Target(forwarder), qt.Equals, "migrations down")
+	c.Assert(cmdforward.Refused(forwarder), qt.DeepEquals, []string{"confirm", "editor"})
+	built := cmdforward.Build(forwarder)
+	c.Assert(built.Flags().Lookup("target"), qt.IsNotNil)
+	// Each call builds a new command, as each run of the forwarder does.
+	c.Assert(cmdforward.Build(forwarder), qt.Not(qt.Equals), built)
 }
 
-func TestTarget_FailurePath(t *testing.T) {
+func TestRegister_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(cmdforward.Target(&cobra.Command{Use: "plain"}), qt.Equals, "")
+	plain := &cobra.Command{Use: "plain"}
+	cmdforward.Refuse(plain)
+	c.Assert(cmdforward.Target(plain), qt.Equals, "")
+	c.Assert(cmdforward.Refused(plain), qt.IsNil)
+	c.Assert(cmdforward.Build(plain), qt.IsNil)
 }

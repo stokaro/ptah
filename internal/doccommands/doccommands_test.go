@@ -14,14 +14,15 @@ import (
 
 // fixture is a pair of small trees with the shapes the real ones have. The
 // native tree has a root that runs, a group that runs (schema) and one that
-// does not (migrations), an alias, a persistent flag, shorthands, and booleans.
-// The compatibility tree has a forwarding verb that names its native target and
-// registers a flag of its own, and one that names nothing and registers
-// nothing.
+// does not (migrations), an alias, persistent flags, shorthands, and booleans.
+// The compatibility tree has a forwarding verb that registers a flag of its
+// own, builds a detached target, and refuses one of the target's flags, and a
+// forwarding verb that registers and builds nothing.
 func fixture() doccommands.Trees {
 	run := func(*cobra.Command, []string) error { return nil }
 	native := &cobra.Command{Use: "ptah", Version: "v0.0.0", RunE: run}
 	native.PersistentFlags().String("log-level", "info", "")
+	native.PersistentFlags().Bool("verbose", false, "")
 	migrations := &cobra.Command{Use: "migrations", Aliases: []string{"migration"}}
 	up := &cobra.Command{Use: "up", RunE: run}
 	up.Flags().String("migrations-dir", "", "")
@@ -37,9 +38,16 @@ func fixture() doccommands.Trees {
 
 	compat := &cobra.Command{Use: "ptah-compat", RunE: run}
 	migrate := &cobra.Command{Use: "migrate", RunE: run}
-	forward := &cobra.Command{Use: "down", DisableFlagParsing: true, RunE: run,
-		Annotations: map[string]string{cmdforward.Annotation: "migrations down"}}
+	forward := &cobra.Command{Use: "down", DisableFlagParsing: true, RunE: run}
 	forward.Flags().String("dir", "", "")
+	cmdforward.Register(forward, "migrations down", func() *cobra.Command {
+		target := &cobra.Command{Use: "down", RunE: run}
+		target.Flags().String("target", "", "")
+		target.Flags().String("log-level", "info", "")
+		target.Flags().Bool("verify-sum", false, "")
+		return target
+	})
+	cmdforward.Refuse(forward, "verify-sum")
 	raw := &cobra.Command{Use: "raw", DisableFlagParsing: true, RunE: run}
 	migrate.AddCommand(forward, raw)
 	compat.AddCommand(migrate)
@@ -60,6 +68,8 @@ func TestCheck_HappyPath(t *testing.T) {
 		native("migrations", "up", "--migrations-dir=./migrations"),
 		native("migration", "up"),
 		native("--log-level", "debug", "migrations", "up"),
+		// A boolean the root knows takes no value, so "migrations" is the verb.
+		native("--verbose", "migrations", "up"),
 		// cobra takes the word after a flag the root does not know as its value
 		// while it looks for the command, and up knows the flag.
 		native("--db-url", "sqlite://app.db", "migrations", "up"),
@@ -73,13 +83,17 @@ func TestCheck_HappyPath(t *testing.T) {
 		native("schema", "render"),
 		native("--version"),
 		native("-v"),
+		// cobra takes "migrations" as the value of a flag it has not added yet,
+		// then prints the version.
+		native("--version", "migrations"),
 		native("migrations", "<verb>", "--anything"),
 		native("help", "migrations", "up"),
+		native("help", "--", "x"),
 		native("completion", "zsh"),
 		native(cobra.ShellCompRequestCmd, "migrations", "u"),
 		native("migrations", "up", "--", "--not-a-flag"),
 		compat("migrate", "down", "--dir", "file://migrations"),
-		// A forwarded verb hands the native target the flags it registers.
+		// A forwarded verb hands its target the flags the target declares.
 		compat("migrate", "down", "--target", "5", "--log-level", "info"),
 		compat("migrate", "down", "--help"),
 		compat("migrate", "raw", "--whatever", "the", "target", "parses"),
@@ -112,7 +126,17 @@ func TestCheck_FailurePath(t *testing.T) {
 		{native("help", "bogus"), `"ptah" has no subcommand "bogus"`},
 		{native("help", "migrations", "up", "--bogus"), `"ptah help" has no flag --bogus`},
 		{native("--", "migrations", "up"), `"ptah" has no subcommand "migrations"`},
+		// cobra takes "migrations" as the value of --help before it adds the
+		// flag, and the root has no verb "up".
+		{native("--help", "migrations", "up"), `"ptah" has no subcommand "up"`},
+		{native("--zzflag", "v", "help"), `"ptah help" has no flag --zzflag`},
 		{compat("migrate", "down", "--bogus", "x"), `"ptah-compat migrate down" has no flag --bogus`},
+		// The forwarder refuses this flag before forwarding, though its target
+		// declares it.
+		{compat("migrate", "down", "--verify-sum"), `"ptah-compat migrate down" has no flag --verify-sum`},
+		// The target runs detached, so the native root's persistent flags do
+		// not reach it.
+		{compat("migrate", "down", "--verbose"), `"ptah-compat migrate down" has no flag --verbose`},
 		{compat("migrate", "bogus"), `"ptah-compat migrate" has no subcommand "bogus"`},
 	} {
 		t.Run(strings.Join(append([]string{test.line.Program}, test.line.Args...), " "), func(t *testing.T) {
@@ -120,6 +144,18 @@ func TestCheck_FailurePath(t *testing.T) {
 			c.Assert(fixture().Check(test.line), qt.ErrorMatches, test.want)
 		})
 	}
+}
+
+// A check leaves the trees as it found them, so a verdict does not depend on
+// which lines were checked before it. cobra adds --help to the command it
+// executes, after it has found it, so --help before a verb still takes the
+// verb as its value.
+func TestCheck_VerdictsDoNotDependOnOrder(t *testing.T) {
+	c := qt.New(t)
+	trees := fixture()
+	c.Assert(trees.Check(native("--help")), qt.IsNil)
+	c.Assert(trees.Check(native("migrations", "up", "--help")), qt.IsNil)
+	c.Assert(trees.Check(native("--help", "migrations", "up")), qt.ErrorMatches, `"ptah" has no subcommand "up"`)
 }
 
 // summary is what a row compares: where a line starts, which program it runs,
@@ -162,6 +198,17 @@ func TestExtract_HappyPath(t *testing.T) {
 			name:   "YAML command and script keys, quoted and folded",
 			source: "```yaml\ncommand: \"ptah migrations lint\"\n- script: ptah schema render\nrun: >\n  ptah migrations up\n  --verify-sum\n```\n",
 			want:   []string{`2 ptah ["migrations" "lint"] inline=false`, `3 ptah ["schema" "render"] inline=false`, `5 ptah ["migrations" "up" "--verify-sum"] inline=false`},
+		},
+		{
+			name:   "a literal block continues a command with a backslash",
+			source: "```yaml\n- script: |\n    ptah migrations lint --dir ./m \\\n      --format sarif > out.sarif\n  displayName: Lint\n```\n",
+			want:   []string{`3 ptah ["migrations" "lint" "--dir" "./m" "--format" "sarif"] inline=false`},
+		},
+		{
+			name: "script list items, folded and plain over several lines",
+			source: "```yaml\nscript:\n  - >\n    ptah migrations lint --dir ./m\n    --format json\n  - ptah migrations lint --dir ./m\n      --format gitlab > report.json\n" +
+				"  - echo done\n```\n",
+			want: []string{`4 ptah ["migrations" "lint" "--dir" "./m" "--format" "json"] inline=false`, `6 ptah ["migrations" "lint" "--dir" "./m" "--format" "gitlab"] inline=false`},
 		},
 		{
 			name:   "control operators, substitution and a pipe",
@@ -217,6 +264,16 @@ func TestExtract_HappyPath(t *testing.T) {
 			name:   "PowerShell continues with a backtick and skips a here-string",
 			source: "```powershell\n@'\nptah not a command\n'@ | Set-Content x\nptah migrations down `\n  --target 5\n& .\\ptah.exe version\n```\n",
 			want:   []string{`5 ptah ["migrations" "down" "--target" "5"] inline=false`, `7 ptah ["version"] inline=false`},
+		},
+		{
+			name:   "a placeholder is a word, and a redirection is not",
+			source: "```bash\nptah migrations up --db-url <url> --bogus\nptah schema render < in.sql\n```\n",
+			want:   []string{`2 ptah ["migrations" "up" "--db-url" "<url>" "--bogus"] inline=false`, `3 ptah ["schema" "render"] inline=false`},
+		},
+		{
+			name:   "a placeholder in an inline span",
+			source: "Run `ptah migrations up --db-url <url> --bogus` now.\n",
+			want:   []string{`1 ptah ["migrations" "up" "--db-url" "<url>" "--bogus"] inline=true`},
 		},
 		{
 			name:   "inline spans that begin with a program",
@@ -294,7 +351,7 @@ func TestExtractHelp_HappyPath(t *testing.T) {
 		Example: "  ptah resolve ref",
 		Long: "Resolve a reference.\n\nCapture it with `ptah resolve --json`:\n\n" +
 			"  DIGEST=$(ptah resolve ref)\n  ptah migrations up \\\n    --migrations-dir \"$DIGEST\"\n\n" +
-			"Verbs:\n\n  ptah resolve   resolve a reference\n\nThe ptah resolve prose is not a command.",
+			"Verbs:\n\n  ptah resolve   resolve a reference\n\nThe ptah resolve prose is not a command, and \"ptah resolve --plain\" is.",
 	}
 	forward := &cobra.Command{Use: "down", Long: "Forwards to `ptah migrations down`.",
 		Annotations: map[string]string{cmdforward.Annotation: "migrations down"}}
@@ -308,6 +365,7 @@ func TestExtractHelp_HappyPath(t *testing.T) {
 		`0 ptah ["resolve" "ref"] inline=false`,
 		`0 ptah ["migrations" "up" "--migrations-dir" "$DIGEST"] inline=false`,
 		`0 ptah ["resolve"] inline=false`,
+		`0 ptah ["resolve" "--plain"] inline=true`,
 	})
 	c.Assert(lines[0].File, qt.Equals, "ptah down")
 	c.Assert(lines[0].Generated, qt.IsTrue)

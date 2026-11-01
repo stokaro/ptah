@@ -380,10 +380,11 @@ warnings, diagnostics and safety checks.
   errors) in `README.md`, `docs/`, `docs/site/src/content/docs/`,
   `examples/**/README.md`, `integration/*.md`, package READMEs, and this file
   when rules change.
-- `go test ./internal/doccommands -count=1` fails while any tracked page or
-  `--help` text spells a verb or flag the command tree does not have, so a
-  rename lands with its documentation or not at all. Without `-count=1` a
-  local run may report a cached result from before the page changed.
+- `go test ./internal/doccommands -count=1` fails while a command line it
+  reads in a tracked page or in `--help` spells a verb or flag the command tree
+  does not have, so a rename lands with the documentation it reads. Section 16
+  of the style guide says which lines those are. It lists pages through git, so
+  without `-count=1` a cached run does not see a page added or removed.
 - Never document Atlas command paths in the native binary, and never claim
   full Atlas parity without conformance evidence.
 - **Run the gates `.github/workflows/docs.yml` runs**: `node

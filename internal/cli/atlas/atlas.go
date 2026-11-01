@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/migrateshow"
 	"ptah.run/internal/cli/migrationstest"
 	"ptah.run/internal/cli/schema"
+	"ptah.run/internal/cmdforward"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/rundiag"
 )
@@ -1249,6 +1250,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 			verb.prefixArgs...,
 		)
 		registerAtlasFlags(cmd, verb.flags)
+		cmdforward.Refuse(cmd, verb.nativeOnlyFlags...)
 		return cmd
 	}
 	cmd := &cobra.Command{

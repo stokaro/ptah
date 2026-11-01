@@ -159,11 +159,10 @@ func newForwardCommandWithArgsMapper(
 	help helpBehavior,
 	prefixArgs ...string,
 ) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                use,
 		Short:              short,
 		Long:               fmt.Sprintf("Forwards to `ptah %s`.", native),
-		Annotations:        map[string]string{cmdforward.Annotation: native},
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
@@ -239,6 +238,8 @@ func newForwardCommandWithArgsMapper(
 			return target.Execute()
 		},
 	}
+	cmdforward.Register(cmd, native, factory)
+	return cmd
 }
 
 func captureCommandContexts(root *cobra.Command) map[*cobra.Command]context.Context {
