@@ -1039,8 +1039,10 @@ The table lists the rules this guide states. The documentation job also runs
 `atlas/feature-matrix.md` to its source data — `check-matrix-verdict-prose`,
 `check-matrix-citations`, `check-matrix-flag-names`, and
 `build-feature-matrix --check`. They govern named pages rather than prose in
-general, and `AGENTS.md` carries the command list a contributor runs. A green
-run of the table above is not a green documentation job.
+general. The documentation-maintenance skill carries the command list a
+contributor runs, and `check-skill-suite.mjs` fails when that list stops naming
+a check the workflow runs over the working tree, or names one no script backs.
+A green run of the table above is not a green documentation job.
 
 Two properties keep these checks honest:
 

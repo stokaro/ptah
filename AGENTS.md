@@ -387,7 +387,9 @@ warnings, diagnostics and safety checks.
   full Atlas parity without conformance evidence.
 - **Run the gates `.github/workflows/docs.yml` runs**: `node
   docs/site/scripts/check-style.mjs` (no install, every Markdown file), `npm
-  run check:*` from `docs/site` after `npm ci`, and `npm run build`. The style
+  run check:*` from `docs/site` after `npm ci`, and `npm run build`. The
+  documentation-maintenance skill lists every one in order, and
+  `check-skill-suite.mjs` keeps that list equal to the workflow's. The style
   guide holds the page rules (section 7 terms, 8 code and quick starts, 11
   visuals, 15 checklist, 17 translations).
 - Terms live in `docs/site/scripts/data/terminology.json` (read by
