@@ -700,6 +700,10 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// preset, its image and its row, declares best-effort, and says in
 		// Unprobed why no job is spent on it.
 		"clickhouse-25-8",
+		// ClickHouse 26.7 took the same route: its vendor stopped patching it
+		// on 2026-10-24, and the integration suite starts other ClickHouse
+		// lines, so the probe was the only job measuring it.
+		"clickhouse-26-7",
 		// Neither Oracle line is here any more. The 23 line left when the
 		// tagged integration contour started its image, and 21 left when the
 		// matrix gained a launch recipe, which is what #1875 asks for: a

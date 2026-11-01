@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-10-03"
+lastVerified: "2026-11-01"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/37150149037"
+  - "https://github.com/stokaro/ptah/actions/runs/41337079136"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,11 +31,11 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-10-03T20:03:29Z
-- Commit: `7b6afe0a087e8d8575946fa6b7061139db8de488`
-- Run: [37150149037](https://github.com/stokaro/ptah/actions/runs/37150149037)
-- Declared release lines: 38. Runnable cells: 33. Results received: 33.
-- 33 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-01T18:31:42Z
+- Commit: `7796a2b8d7dc616d4bce4d0c4d71863e77b2ed04`
+- Run: [41337079136](https://github.com/stokaro/ptah/actions/runs/41337079136)
+- Declared release lines: 38. Runnable cells: 32. Results received: 32.
+- 32 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -54,7 +54,6 @@ over that run's cell results.
 | `mariadb-10-11` | mariadb | 10.11 | PASS |
 | `clickhouse-26-9` | clickhouse | 26.9 | PASS |
 | `clickhouse-26-8` | clickhouse | 26.8 | PASS |
-| `clickhouse-26-7` | clickhouse | 26.7 | PASS |
 | `clickhouse-26-3` | clickhouse | 26.3 | PASS |
 | `clickhouse-24-10` | clickhouse | 24.10 | PASS |
 | `sqlserver-17-0` | sqlserver | 17.0 | PASS |
@@ -75,6 +74,7 @@ over that run's cell results.
 
 ## Declared lines this tier cannot run
 
+- `clickhouse-26-7` (clickhouse 26.7) — upstream support ended on 2026-10-24 (endoflife.date/clickhouse)
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
 - `ydb-26-1` (ydb 26.1) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
 - `ydb-25-4` (ydb 25.4) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date

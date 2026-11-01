@@ -486,7 +486,14 @@ var Cells = []Cell{
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.7",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.7",
+		Unprobed: "upstream support ended on 2026-10-24 (endoflife.date/clickhouse)",
+		Note: "upstream support ended 2026-10-24, and the integration suite starts 26.9 and 24.10 " +
+			"rather than this line, so it declares best-effort and no probe job is spent on it. The " +
+			"preset stands on the last live measurement, taken on 26.7.38.18 by probe run 41297894105: " +
+			"147 rows, 97 agreements, 0 disagreements, and the cell's floor of 97 met against " +
+			"ClickHouse2411. A server on this line is operated exactly as any other, and what it loses " +
+			"is the guarantee -- nothing here measures it against the code as that moves",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.3",
