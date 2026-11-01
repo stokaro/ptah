@@ -534,6 +534,12 @@ once on its concept page and link; do not re-define them per page.
   alternative or the tracked product gap when one exists.
 - Runnable over pseudocode. Every example starts from a stated state and is
   copy-pasteable.
+- A `ptah` or `ptah-compat` command line names verbs the binary has and flags
+  those verbs take. This holds in a fenced shell block, on a prompted line of a
+  `console` block, in a YAML `run` step, and in inline code that begins with
+  the program's name, and `internal/doccommands` checks every one. A
+  keystroke demonstration, such as a partial command the reader completes with
+  Tab, is not a command line; put it in a `text` block.
 - Fenced blocks always carry a language label: `bash`, `powershell`, `console`,
   `sql`, `yaml`, `hcl`, `go`, or `text` for output. In a page marked
   `quickstart: true`, a `console` block outside shell tabs is a command the
@@ -964,6 +970,7 @@ in this guide is a review responsibility.
 | A file name Astro would re-spell | 12 | every route gate, through `docroutes` |
 | Site pages never link protected root docs | 12 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 12 | `check:exit-codes` |
+| Command lines name real verbs and the flags they take, on pages and in `--help` | 8 | `internal/doccommands` |
 | Table cells under 350 display columns | 10 | `check:style` |
 | Table rows match the header's column count | 10 | `check:style` |
 | Two rows never state different verdicts for one capability | 10 | `check:style` |
@@ -1066,6 +1073,19 @@ short cell squeezed into a column that an unbreakable code token has made
 narrow. A page whose dense cells are the reference content can be named in the
 allowlist in `check-responsive.mjs`, with the reason; the check then fails if
 that page stops having dense cells, so an exemption cannot outlive its reason.
+
+`internal/doccommands` reads every tracked Markdown and MDX file outside a
+`testdata` directory, and the `Example` and `Long` text of every command in
+both binaries. It resolves each command line against the command tree the
+binary builds, the way cobra does, without running it, so a renamed verb or
+flag fails the change that renames it until every page that spells it is
+updated. It does not check a flag's value, the number of arguments, or what
+the command prints. Those are runtime questions, and the quick-start contour
+and the example acceptance job answer them for the pages they run. A page
+sometimes names a command in order to say it does not exist, or quotes output
+that begins with the program's name. Each such text is listed in the check's
+test with the reason, and the test fails when the tree accepts a listed text or
+no page writes it any more.
 
 Anchor links are checked against the ids Starlight generates, so renaming a
 heading fails the build instead of silently dropping every reader who follows

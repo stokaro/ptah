@@ -380,6 +380,9 @@ warnings, diagnostics and safety checks.
   errors) in `README.md`, `docs/`, `docs/site/src/content/docs/`,
   `examples/**/README.md`, `integration/*.md`, package READMEs, and this file
   when rules change.
+- `go test ./internal/doccommands` fails while any tracked page or `--help`
+  text spells a verb or flag the command tree does not have, so a rename lands
+  with its documentation or not at all.
 - Never document Atlas command paths in the native binary, and never claim
   full Atlas parity without conformance evidence.
 - **Run the gates `.github/workflows/docs.yml` runs**: `node

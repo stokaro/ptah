@@ -254,7 +254,10 @@ practical, live commands:
 - Run the commands shown in new or changed examples, or explain in the PR why a
   command cannot be run locally.
 - For CLI docs, compare against current help and output from the built `ptah`
-  binary.
+  binary. `go test ./internal/doccommands` resolves every `ptah` and
+  `ptah-compat` command line in the tracked Markdown and in `--help` against
+  the command tree; run it after any change that adds a command line or
+  renames a verb or flag.
 - For a workflow that accepts several desired-schema sources, keep the prose
   source-neutral and make the first complete example a static source that does
   not require Go. Use the exact selector for the chosen transport:
