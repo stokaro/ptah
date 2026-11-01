@@ -48,19 +48,24 @@ been applied to.
 
 ## Publish the reviewed directory
 
-Hash and verify before uploading, then publish. The command prints the manifest
-digest, which is the only identifier worth carrying forward:
+Hash and verify before uploading, then publish. The manifest digest is the only
+identifier worth carrying forward, and `--format reference` prints it as a
+pinned reference and nothing else:
 
 ```bash
 ptah migrations hash --dir ./migrations
 
-ptah migrations push \
+MIGRATIONS=$(ptah migrations push \
   oci://ghcr.io/acme/app-migrations \
   --migrations-dir ./migrations \
   --dir-format ptah \
   --verify-sum \
-  --tag stable
+  --tag stable \
+  --format reference)
 ```
+
+The reference names the manifest this push wrote. A push that fails prints
+nothing, so `MIGRATIONS` is never set to an artifact that was not published.
 
 `--verify-sum` makes a missing integrity file an error rather than a warning. A
 mismatched integrity file fails before the upload either way.

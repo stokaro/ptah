@@ -10,6 +10,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrationsource"
+	"ptah.run/internal/cli/internal/pushreceipt"
 	"ptah.run/internal/migrationartifact"
 	"ptah.run/migration/migrationfile"
 )
@@ -21,6 +22,7 @@ type options struct {
 	dirFormat        string
 	verifySum        bool
 	plainHTTP        bool
+	format           string
 	latest           bool
 	generatedVersion bool
 }
@@ -40,6 +42,17 @@ a publication, so it is opt-in through --latest; a timestamped write-once
 version tag is opt-in through --generated-version. A publish that did both by
 default was performing two operations under one verb, and the second one is the
 one an operator has to be able to decline.
+
+The default output is a receipt for a person. --format reference prints only
+the pinned reference of the manifest this push wrote, and --format json prints
+it with the digest, artifact type, tags and version, so a script can carry the
+artifact forward without reading the receipt:
+
+    REF=$(ptah migrations push oci://ghcr.io/acme/app-migrations:v1 --format reference)
+    ptah migrations up --db-url "$DATABASE_URL" --migrations-dir "$REF"
+
+The reference comes from the manifest the push wrote, not from resolving a tag
+afterwards. A push that fails prints nothing on standard output.
 
 Authentication comes from "ptah oci login", the PTAH_OCI_USERNAME and
 PTAH_OCI_PASSWORD environment variables, or Docker's credential configuration,
@@ -64,11 +77,16 @@ explicitly trusted local registries.`,
 		"Require the local migration directory to match its ptah.sum or atlas.sum before "+
 			"pushing, and fail when it carries neither",
 	))
+	pushreceipt.RegisterFormatFlag(flags, &opts.format)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
+	format, err := pushreceipt.ParseFormat(opts.format, reference)
+	if err != nil {
+		return err
+	}
 	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
@@ -87,8 +105,7 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(
-		cmd.OutOrStdout(),
+	receipt := fmt.Sprintf(
 		"Pushed %s as %s\nDigest: %s\nVersion: %s\nTags: %v\n",
 		result.Directory,
 		result.Reference,
@@ -96,5 +113,5 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		result.Version,
 		result.Tags,
 	)
-	return nil
+	return pushreceipt.Write(cmd.OutOrStdout(), format, result.PushResult, result.Version, receipt)
 }

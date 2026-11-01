@@ -258,9 +258,10 @@ requirement is the same on each — carry a sum, and match it — but the subjec
 is not. On `up`, `down` and `status` it is the directory the run pulled, so
 those three also print the resolved digest and the `@sha256:` reference that
 pins it. On `push` it is the local directory about to be published, checked
-before the upload; that command reports the tag it pushed and the resulting
-digest as separate fields and constructs no pinned reference, because there is
-no tag-resolved provenance to qualify yet.
+before the upload. There is no tag-resolved provenance to qualify there: the
+receipt reports the tags it wrote and the resulting digest as separate fields,
+and `--format reference` prints the pinned reference of the manifest the push
+wrote rather than of anything a tag resolved to.
 
 `ptah migrations validate` asks the same question without executing anything,
 and it takes an `oci://` reference too:
