@@ -75,17 +75,23 @@ registries, and attaching lint and plan reports to the artifact.
 
 ## Resolve the tag once, then carry the digest
 
-A tag moves. Resolve it at the start of a deployment and use the digest for
-every later step, so a retag between two commands cannot change what is
-applied halfway through:
+A tag moves. Use the digest for every step after publication, so a retag
+between two commands cannot change what is applied halfway through. The
+reference the publish step captured is pinned already, and it is the one the
+rest of this page applies:
 
 ```bash
-MIGRATIONS=oci://ghcr.io/acme/app-migrations@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-
 ptah migrations status \
   --db-url "$DATABASE_URL" \
   --migrations-dir "$MIGRATIONS" \
   --json
+```
+
+A deployment that starts from a tag published elsewhere resolves it once, at
+the start, and carries the digest from there:
+
+```bash
+MIGRATIONS=$(ptah oci resolve oci://ghcr.io/acme/app-migrations:stable)
 ```
 
 `ptah oci tag` moves an alias without rebuilding the artifact, and `ptah oci
