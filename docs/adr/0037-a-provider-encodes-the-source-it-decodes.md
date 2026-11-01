@@ -31,7 +31,7 @@ What the code does today:
   declarations and Go field types; a value it cannot write refuses the export.
 - **The commands that write.** `ptah schema inspect --format hcl`
   (`internal/cli/schema/inspect.go`, through `internal/atlasreport/schema_inspect.go`),
-  `ptah schema export --format hcl` (`internal/cli/schema/schema.go`), the
+  `ptah schema export --to hcl` (`internal/cli/schema/schema.go`), the
   compatibility `schema inspect` (`internal/cli/atlas/schema_inspect.go`), and
   `ptah introspect` (`internal/cli/introspect`, through
   `internal/convert/goschematogo`).

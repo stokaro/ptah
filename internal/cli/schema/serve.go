@@ -62,7 +62,7 @@ drift, and when it was last measured.
 
 It is read-only. Every route answers GET and HEAD and nothing else, and no code
 path here writes to the database. Nothing about it becomes a dependency of a
-migration -- ` + "`ptah migrate`" + ` works identically with this never started.
+migration -- ` + "`ptah migrations`" + ` works identically with this never started.
 
 There is no account, no login and no upload. It binds to a local address and
 reads a database you already have credentials for.
