@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cmdforward"
 )
 
 const envPrefix = "PTAH"
@@ -162,6 +163,7 @@ func newForwardCommandWithArgsMapper(
 		Use:                use,
 		Short:              short,
 		Long:               fmt.Sprintf("Forwards to `ptah %s`.", native),
+		Annotations:        map[string]string{cmdforward.Annotation: native},
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,

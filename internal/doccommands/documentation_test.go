@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/spf13/cobra"
 
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/cli/root"
@@ -26,10 +25,10 @@ import (
 // so that ordinary editing never trips it.
 const (
 	minDocumentationFiles = 250
-	minDocumentedLines    = 2000
-	minFencedLines        = 500
-	minCompatLines        = 300
-	minHelpLines          = 30
+	minDocumentedLines    = 2500
+	minFencedLines        = 650
+	minCompatLines        = 500
+	minAuthoredHelpLines  = 30
 )
 
 // exemption is code that begins with a program name and is not a command line
@@ -43,10 +42,11 @@ const (
 	quoted = "quotes text the binary prints, which begins with the program's name"
 )
 
-// notCommands are the exemptions. Every entry has to be refused by the tree
-// it names: one the tree accepts is a command after all, and one no page
-// writes any more is dead, and the gate fails on both. So the list cannot grow
-// stale, and "there is no ptah generate" is a claim this test keeps true.
+// notCommands are the exemptions. An entry covers every place its page writes
+// its text. Every entry has to be refused by the tree it names: one the tree
+// accepts is a command after all, and one no page writes any more is dead, and
+// the gate fails on both. So the list cannot grow stale, and "there is no ptah
+// generate" is a claim this test keeps true.
 var notCommands = []exemption{
 	{"AGENTS.md", "ptah generate", absent},
 	{"AGENTS.md", "ptah compare", absent},
@@ -61,13 +61,9 @@ var notCommands = []exemption{
 	{"docs/site/src/content/docs/inference/troubleshooting.md", "ptah inference works against PostgreSQL with pgvector, against YDB, and against a provider engine", quoted},
 }
 
-// trees are the two binaries' command trees, with the commands cobra adds
-// when they execute.
-func trees() map[string]*cobra.Command {
-	return map[string]*cobra.Command{
-		doccommands.Native: doccommands.Prepare(root.NewRootCommand()),
-		doccommands.Compat: doccommands.Prepare(cmdrefviews.Compat(atlascompatpolicy.Full())),
-	}
+// trees are the two binaries' command trees.
+func trees() doccommands.Trees {
+	return doccommands.NewTrees(root.NewRootCommand(), cmdrefviews.Compat(atlascompatpolicy.Full()))
 }
 
 // Every ptah and ptah-compat command line a page publishes resolves against
@@ -93,58 +89,65 @@ func TestDocumentedCommandLinesResolve(t *testing.T) {
 }
 
 // The --help texts are documentation the reader meets without opening a page,
-// and a command line in one is copied as readily as one on the site.
+// and a command line in one is copied as readily as one on the site. The floor
+// counts the lines Ptah's authors write, since cobra's completion help and the
+// adapter's sentence would hold any other count up on their own.
 func TestHelpCommandLinesResolve(t *testing.T) {
 	c := qt.New(t)
-	prepared := trees()
-	lines := append(doccommands.ExtractHelp(prepared[doccommands.Native]), doccommands.ExtractHelp(prepared[doccommands.Compat])...)
+	native, compat := root.NewRootCommand(), cmdrefviews.Compat(atlascompatpolicy.Full())
+	checker := doccommands.NewTrees(native, compat)
+	lines := append(doccommands.ExtractHelp(native), doccommands.ExtractHelp(compat)...)
 
-	c.Assert(len(lines) >= minHelpLines, qt.IsTrue, qt.Commentf("found %d help command lines", len(lines)))
-	findings, unused := judge(prepared, lines, nil)
+	c.Assert(authoredLines(lines) >= minAuthoredHelpLines, qt.IsTrue, qt.Commentf("found %d authored help command lines", authoredLines(lines)))
+	findings, _ := judge(checker, lines, nil)
 	c.Assert(findings, qt.DeepEquals, []string(nil))
-	c.Assert(unused, qt.DeepEquals, []string(nil))
 }
 
 // The controls hold the real trees to what the fixture tests show on a small
 // one, so an empty tree or a Prepare that stopped preparing cannot pass the
 // gate by refusing nothing.
 func TestTheRealTreesRefuseAndAccept_HappyPath(t *testing.T) {
-	prepared := trees()
+	checker := trees()
 	for _, line := range []doccommands.Line{
 		{Program: doccommands.Native, Args: []string{"migrations", "up", "--db-url", "sqlite://app.db", "--migrations-dir", "./migrations"}},
 		{Program: doccommands.Native, Args: []string{"completion", "zsh"}},
 		{Program: doccommands.Compat, Args: []string{"migrate", "apply", "--dir", "file://migrations", "--url", "sqlite://app.db"}},
+		// A forwarding verb takes the flags its native target registers.
+		{Program: doccommands.Compat, Args: []string{"migrate", "down", "--log-level", "info"}},
 	} {
 		t.Run(strings.Join(line.Args, " "), func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(doccommands.Check(prepared[line.Program], line.Args), qt.IsNil)
+			c.Assert(checker.Check(line), qt.IsNil)
 		})
 	}
 }
 
 func TestTheRealTreesRefuseAndAccept_FailurePath(t *testing.T) {
-	prepared := trees()
+	checker := trees()
 	for _, test := range []struct {
 		line doccommands.Line
 		want string
 	}{
 		{doccommands.Line{Program: doccommands.Native, Args: []string{"migrations", "up", "--from", "x"}}, `"ptah migrations up" has no flag --from`},
 		{doccommands.Line{Program: doccommands.Native, Args: []string{"migrate", "apply"}}, `"ptah" has no subcommand "migrate"`},
+		// migrations runs, and refuses a word it has no verb for.
+		{doccommands.Line{Program: doccommands.Native, Args: []string{"migrations", "apply"}}, `"ptah migrations" has no subcommand "apply"`},
 		{doccommands.Line{Program: doccommands.Compat, Args: []string{"cloud"}}, `"ptah-compat" has no subcommand "cloud"`},
+		{doccommands.Line{Program: doccommands.Compat, Args: []string{"migrate", "down", "--bogus-flag", "x"}}, `"ptah-compat migrate down" has no flag --bogus-flag`},
 	} {
 		t.Run(strings.Join(test.line.Args, " "), func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(doccommands.Check(prepared[test.line.Program], test.line.Args), qt.ErrorMatches, test.want)
+			c.Assert(checker.Check(test.line), qt.ErrorMatches, test.want)
 		})
 	}
 }
 
 // judge checks every line and returns the findings no exemption covers, and
 // the exemptions that covered nothing.
-func judge(prepared map[string]*cobra.Command, lines []doccommands.Line, exemptions []exemption) (findings, unused []string) {
+func judge(checker doccommands.Trees, lines []doccommands.Line, exemptions []exemption) (findings, unused []string) {
 	used := make(map[exemption]bool)
 	for _, line := range lines {
-		err := doccommands.Check(prepared[line.Program], line.Args)
+		err := checker.Check(line)
 		if err == nil {
 			continue
 		}
@@ -169,6 +172,16 @@ func exempted(exemptions []exemption, line doccommands.Line) (exemption, bool) {
 		}
 	}
 	return exemption{}, false
+}
+
+func authoredLines(lines []doccommands.Line) int {
+	count := 0
+	for _, line := range lines {
+		if !line.Generated {
+			count++
+		}
+	}
+	return count
 }
 
 func fencedLines(lines []doccommands.Line) int {

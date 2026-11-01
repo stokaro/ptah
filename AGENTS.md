@@ -380,16 +380,17 @@ warnings, diagnostics and safety checks.
   errors) in `README.md`, `docs/`, `docs/site/src/content/docs/`,
   `examples/**/README.md`, `integration/*.md`, package READMEs, and this file
   when rules change.
-- `go test ./internal/doccommands` fails while any tracked page or `--help`
-  text spells a verb or flag the command tree does not have, so a rename lands
-  with its documentation or not at all.
+- `go test ./internal/doccommands -count=1` fails while any tracked page or
+  `--help` text spells a verb or flag the command tree does not have, so a
+  rename lands with its documentation or not at all. Without `-count=1` a
+  local run may report a cached result from before the page changed.
 - Never document Atlas command paths in the native binary, and never claim
   full Atlas parity without conformance evidence.
 - **Run the gates `.github/workflows/docs.yml` runs**: `node
   docs/site/scripts/check-style.mjs` (no install, every Markdown file), `npm
   run check:*` from `docs/site` after `npm ci`, and `npm run build`. The
-  documentation-maintenance skill lists every one in order, and
-  `check-skill-suite.mjs` keeps that list equal to the workflow's. The style
+  documentation-maintenance skill lists every one, and `check-skill-suite.mjs`
+  keeps that list equal to the workflow's. The style
   guide holds the page rules (section 7 terms, 8 code and quick starts, 11
   visuals, 15 checklist, 17 translations).
 - Terms live in `docs/site/scripts/data/terminology.json` (read by

@@ -1364,7 +1364,7 @@
     "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "`ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2.",
+    "note": "`ptah schema push` and `pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2.",
     "evidence": "push -> Digest sha256:2ebd84f93717f397e89cb5862913f6e7679064d624a9f1e22b7092504bd1de92; ptah schema pull --out pulled.hcl returned the same digest and a valid table block. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'Atlas Registry' is unchecked on the free tier and checked on Pro (500-object limit) — first Atlas-side source cited on this row, supporting atlas_oss no and atlas_pro yes"
   },
   {

@@ -254,7 +254,7 @@ practical, live commands:
 - Run the commands shown in new or changed examples, or explain in the PR why a
   command cannot be run locally.
 - For CLI docs, compare against current help and output from the built `ptah`
-  binary. `go test ./internal/doccommands` resolves every `ptah` and
+  binary. `go test ./internal/doccommands -count=1` resolves every `ptah` and
   `ptah-compat` command line in the tracked Markdown and in `--help` against
   the command tree; run it after any change that adds a command line or
   renames a verb or flag.
@@ -288,6 +288,8 @@ practical, live commands:
   local failure is a CI failure. The checks that need a built site follow
   `npm run build`; the deployment's own steps are not here, and the guard names
   each one with the reason.
+
+  <!-- documentation-suite -->
 
   ```bash
   # From the repository root: the Go steps of the Documentation style job.
@@ -341,6 +343,7 @@ practical, live commands:
   node scripts/build-feature-matrix.mjs --check
   node scripts/publish-root-assets.mjs --selftest
   node scripts/check-pages-root.mjs --selftest
+  node scripts/check-pages-root.mjs
   # Build versioned site.
   npm run versions:selftest
   node scripts/release-doc-tags.mjs --selftest
@@ -391,6 +394,9 @@ practical, live commands:
   npm run check:faq-groups
   npm run check:faq-page
   npm run check:graphic-preview -- --output /tmp/ptah-docs-graphic-preview
+  npm run check:build-info
+  # Generated documentation: needs ptah built into ../../bin.
+  node scripts/build-source-support.mjs --binary ../../bin/ptah
   # Generated assets: needs ptah and ptah-compat built into ../../bin, and a
   # Docker context for the Graphviz renderer. Off Linux it also rewrites the
   # Mermaid SVGs and screenshots under src/assets with this host's text
