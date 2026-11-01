@@ -363,7 +363,8 @@ func TestExtractHelp_HappyPath(t *testing.T) {
 		Example: "  ptah resolve ref",
 		Long: "Resolve a reference.\n\nCapture it with `ptah resolve --json`:\n\n" +
 			"  DIGEST=$(ptah resolve ref)\n  ptah migrations up \\\n    --migrations-dir \"$DIGEST\"\n\n" +
-			"Verbs:\n\n  ptah resolve   resolve a reference\n\nThe ptah resolve prose is not a command, and \"ptah resolve --plain\" is.",
+			"Verbs:\n\n  ptah resolve   resolve a reference\n\nThe ptah resolve prose is not a command, and \"ptah resolve --plain\" is.\n\n" +
+			"Aligned:\n\n  ptah resolve --to a     --out x.a\n  ptah resolve --to bb    --out x.b \\\n    --tag t",
 	}
 	forward := &cobra.Command{Use: "down", Long: "Forwards to `ptah migrations down`.",
 		Annotations: map[string]string{cmdforward.Annotation: "migrations down"}}
@@ -378,6 +379,9 @@ func TestExtractHelp_HappyPath(t *testing.T) {
 		`0 ptah ["migrations" "up" "--migrations-dir" "$DIGEST"] inline=false`,
 		`0 ptah ["resolve"] inline=false`,
 		`0 ptah ["resolve" "--plain"] inline=true`,
+		// A gap before a flag lines a recipe up; it is not a column break.
+		`0 ptah ["resolve" "--to" "a" "--out" "x.a"] inline=false`,
+		`0 ptah ["resolve" "--to" "bb" "--out" "x.b" "--tag" "t"] inline=false`,
 	})
 	c.Assert(lines[0].File, qt.Equals, "ptah down")
 	c.Assert(lines[0].Generated, qt.IsTrue)

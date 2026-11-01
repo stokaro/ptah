@@ -389,13 +389,21 @@ func helpPage(cmd *cobra.Command) string {
 var quotedCommand = regexp.MustCompile(`"((?:ptah|ptah-compat) [^"]+)"`)
 
 // firstColumn returns the first column of a help row whose columns are
-// separated by two or more spaces, and the trimmed line otherwise.
+// separated by two or more spaces, and the trimmed line otherwise. A gap
+// followed by a flag, a continuation or a comment pads a command so that the
+// rows of a recipe line up, and reading it as a column break would drop every
+// flag after it, so the line stays whole.
 func firstColumn(line string) string {
 	trimmed := strings.TrimSpace(line)
-	if i := strings.Index(trimmed, "  "); i > 0 {
-		return trimmed[:i]
+	i := strings.Index(trimmed, "  ")
+	if i <= 0 {
+		return trimmed
 	}
-	return trimmed
+	rest := strings.TrimLeft(trimmed[i:], " ")
+	if strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, `\`) || strings.HasPrefix(rest, "#") {
+		return trimmed[:i] + " " + firstColumn(rest)
+	}
+	return trimmed[:i]
 }
 
 // openFence recognizes a fence opener and returns its marker and language.
