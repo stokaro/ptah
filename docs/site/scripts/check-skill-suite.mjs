@@ -65,10 +65,34 @@ const ciOnly = new Map([
   ['write-build-info.mjs --output --version --source-commit', 'records the build a deployment produced'],
 ]);
 
-const npmRun = /\bnpm run ([a-z0-9:-]+)((?: --(?: [^\n|&;]*)?)?)/g;
-const nodeScript = /\bnode "?(?:\$GITHUB_WORKSPACE\/)?(?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9-]+\.mjs)"?([^\n|&;]*)/g;
+const npmRun = /\bnpm (?:--prefix \S+ )?run ([a-z0-9:-]+)((?: --(?: [^\n|&;]*)?)?)/g;
+const nodeScript = /\bnode (?:--\S+ )*"?(?:\$GITHUB_WORKSPACE\/)?(?:docs\/site\/)?scripts\/((?:lib\/)?[a-z0-9-]+\.mjs)"?([^\n|&;]*)/g;
 const goTest = /\bgo test ([^\n|&;]*)/g;
-const shellScript = /^(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(?:\.\.\/\.\.\/)?(?:docs\/site\/)?scripts\/([a-z0-9-]+\.sh)\b(.*)$/;
+const shellScript = /^(?:(?:bash|sh|env|if|then|do)\s+)*(?:[A-Z_][A-Z0-9_]*=\S+\s+)*(?:\.\/|\.\.\/\.\.\/)?(?:docs\/site\/)?scripts\/([a-z0-9-]+\.sh)\b(.*)$/;
+
+// goTestValueFlags are the go test flags whose value is the next word.
+const goTestValueFlags = new Set(['-run', '-tags', '-timeout', '-count', '-p', '-parallel', '-bench', '-cpu', '-coverprofile', '-covermode', '-skip']);
+
+// goTestIdentity names a go test by the packages it tests, whether it selects
+// tests with -run, and the build tags it sets, which choose the files compiled.
+function goTestIdentity(args) {
+  const words = args.trim().split(/\s+/);
+  const packages = [];
+  let run = false;
+  let tags = '';
+  for (let i = 0; i < words.length; i += 1) {
+    const [name, inline] = words[i].split(/=(.*)/s);
+    if (name.startsWith('-')) {
+      const value = inline ?? (goTestValueFlags.has(name) ? words[(i += 1)] : undefined);
+      if (name === '-run') run = true;
+      if (name === '-tags') tags = (value ?? '').replace(/^['"]|['"]$/g, '');
+      continue;
+    }
+    if (/^\.\/|^[a-z0-9.-]+\.[a-z]+\//.test(name)) packages.push(name);
+  }
+  if (packages.length === 0) return null;
+  return `go test ${packages.sort().join(' ')}${run ? ' -run' : ''}${tags ? ` -tags ${tags}` : ''}`;
+}
 
 // flagNames returns the identity suffix of an argument string: the names of the
 // flags it passes, in order, without their values.
@@ -88,7 +112,7 @@ function commandText(text) {
   return text
     .replace(/\\\n\s*/g, ' ')
     .split('\n')
-    .filter((line) => !/^\s*#/.test(line) && !/^\s*- ['"]/.test(line))
+    .filter((line) => !/^\s*#/.test(line) && !/^\s*- ['"]?[^\s'"]+['"]?\s*$/.test(line))
     .join('\n');
 }
 
@@ -122,9 +146,8 @@ export function invocations(text, scripts) {
   }
   for (const match of joined.matchAll(nodeScript)) add(match[1] + flagNames(match[2]));
   for (const match of joined.matchAll(goTest)) {
-    const words = match[1].split(/\s+/);
-    const packages = words.filter((word) => word.startsWith('./')).sort();
-    if (packages.length > 0) add(`go test ${packages.join(' ')}${words.includes('-run') ? ' -run' : ''}`);
+    const identity = goTestIdentity(match[1]);
+    if (identity) add(identity);
   }
   for (const line of joined.split('\n')) {
     for (const part of commandStarts(line)) {
@@ -186,6 +209,7 @@ function selftest() {
     'check:examples': 'node scripts/check-examples.mjs',
     'examples:write': 'node scripts/check-examples.mjs --write',
     'check:snapshots': 'node scripts/check-visual-snapshots.mjs',
+    'check:prefixed': 'node scripts/check-prefixed.mjs',
     build: 'astro build',
   };
   const filler = Array.from({ length: minimumWorkflowChecks }, (_, i) => `node docs/site/scripts/check-f${i}.mjs`).join('\n');
@@ -201,6 +225,14 @@ function selftest() {
     '  npm run check:snapshots -- --output "$RUNNER_TEMP/out"',
     '  node docs/site/scripts/check-route-retirement.mjs --against "$base"',
     "  - 'scripts/check-filtered-path.sh'",
+    '  - scripts/check-unquoted-filter.sh',
+    '  bash scripts/check-bash-run.sh',
+    '  if ./scripts/check-in-if.sh; then echo ok; fi',
+    '  env X=1 scripts/check-env-run.sh',
+    '  go test -tags integration ./internal/tagged -count=1',
+    '  go test ptah.run/internal/imported -count=1',
+    '  npm --prefix docs/site run check:prefixed',
+    '  node --test docs/site/scripts/check-node-test.mjs',
     '  # node docs/site/scripts/check-commented.mjs --write',
     '  go test ./docs ./internal/docsembed -count=1',
     '  go test \\',
@@ -227,6 +259,13 @@ function selftest() {
     'PTAH_BIN=bin/ptah scripts/check-source-workflows.sh',
     'PTAH_DOCKER_CONTEXT=ctx docs/site/scripts/check-inference-quick-start.sh',
     'node scripts/check-links.mjs',
+    'scripts/check-bash-run.sh',
+    'scripts/check-in-if.sh',
+    'scripts/check-env-run.sh',
+    'go test ./internal/tagged -tags integration -count=1',
+    'go test ptah.run/internal/imported -count=1',
+    'node scripts/check-node-test.mjs',
+    'npm run check:prefixed',
     'npm run check:style:selftest',
     'node scripts/check-style.mjs',
     'npm run check:diagrams',
@@ -240,7 +279,7 @@ function selftest() {
   const clean = compare(workflow, skill(complete), scripts);
   if (clean.length > 0) failures.push(`a complete suite produced findings: ${clean.join('; ')}`);
   // A filter path and a comment run nothing, so they demand nothing.
-  for (const needle of ['check-filtered-path.sh', 'check-commented.mjs']) {
+  for (const needle of ['check-filtered-path.sh', 'check-unquoted-filter.sh', 'check-commented.mjs']) {
     if (invocations(workflow, scripts).found.some((key) => key.startsWith(needle))) failures.push(`${needle} was read as an invocation`);
   }
 
@@ -261,6 +300,13 @@ function selftest() {
     ['a shell script the skill omits', skill(complete.replace('scripts/check-docsync.sh\n', '')), 'check-docsync.sh'],
     ['a site shell script the skill omits', skill(complete.replace('PTAH_DOCKER_CONTEXT=ctx docs/site/scripts/check-inference-quick-start.sh\n', '')), 'check-inference-quick-start.sh'],
     ['a check run from the workspace path', skill(complete.replace('node scripts/check-links.mjs\n', '')), 'check-links.mjs'],
+    ['a script run through bash', skill(complete.replace('scripts/check-bash-run.sh\n', '')), 'check-bash-run.sh'],
+    ['a script run as a condition', skill(complete.replace('scripts/check-in-if.sh\n', '')), 'check-in-if.sh'],
+    ['a script run through env', skill(complete.replace('scripts/check-env-run.sh\n', '')), 'check-env-run.sh'],
+    ['a go test without its tags', skill(complete.replace(' -tags integration', '')), 'go test ./internal/tagged -tags integration'],
+    ['a go test of an import path', skill(complete.replace('go test ptah.run/internal/imported -count=1\n', '')), 'go test ptah.run/internal/imported'],
+    ['a node test run', skill(complete.replace('node scripts/check-node-test.mjs\n', '')), 'check-node-test.mjs'],
+    ['an npm script run with --prefix', skill(complete.replace('npm run check:prefixed\n', '')), 'check-prefixed.mjs'],
   ];
   for (const [name, text, needle] of cases) {
     if (!compare(workflow, text, scripts).some((finding) => finding.includes(needle))) failures.push(`${name} was not reported`);

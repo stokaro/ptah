@@ -901,11 +901,14 @@ func (t Trees) resolve(tree, cmd *cobra.Command, word string, flags, rest []stri
 
 // forwarded checks the words a forwarding verb receives. cobra parses none of
 // them. The verb accepts the flags it and its ancestors register, which it
-// maps, and passes the rest to the native command its factory builds, which runs detached: it parses
-// the flags it declares itself and none an ancestor or the native root would
-// add. A flag the verb refuses before forwarding is refused although the target
-// declares it. A verb that registers no flags and builds no target has nothing
-// to check against.
+// maps, and passes the rest to the native command its factory builds, which
+// runs detached: it parses the flags it declares itself and none an ancestor or
+// the native root would add. A flag the verb refuses before forwarding is
+// refused although the target declares it. A verb that reads positional
+// arguments itself takes the next word as a flag's value only for a flag it
+// registers, so a value for a flag only its target declares has to be written
+// with "=". A verb that registers no flags and builds no target has nothing to
+// check against.
 func (t Trees) forwarded(forwarder *cobra.Command, args []string) error {
 	target := cmdforward.Build(forwarder)
 	if target == nil && !forwarder.LocalFlags().HasFlags() {
@@ -929,6 +932,9 @@ func (t Trees) forwarded(forwarder *cobra.Command, args []string) error {
 			if known(sets, word) != nil {
 				return fmt.Errorf("%q has no flag %s", forwarder.CommandPath(), flagName(word))
 			}
+			if cmdforward.Positionals(forwarder) && consumesNext(sets, word) {
+				return fmt.Errorf("%q reads the word after %s as an argument; write %s=VALUE", forwarder.CommandPath(), word, word)
+			}
 		}
 		if consumesNext(sets, word) && i+1 < len(args) {
 			i++
@@ -947,8 +953,10 @@ func helpFlag(word string) bool {
 // command's own.
 func (t Trees) helpTarget(tree, help *cobra.Command, args []string) error {
 	var target, flags []string
-	for _, word := range args {
+	for i, word := range args {
 		if word == "--" {
+			// What follows names the topic as much as words before it do.
+			target = append(target, args[i+1:]...)
 			break
 		}
 		if strings.HasPrefix(word, "-") {

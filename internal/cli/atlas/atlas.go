@@ -1251,6 +1251,9 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 		)
 		registerAtlasFlags(cmd, verb.flags)
 		cmdforward.Refuse(cmd, verb.nativeOnlyFlags...)
+		if len(verb.positionals) > 0 {
+			cmdforward.ReadsPositionals(cmd)
+		}
 		return cmd
 	}
 	cmd := &cobra.Command{

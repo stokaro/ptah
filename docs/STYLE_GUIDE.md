@@ -1080,23 +1080,27 @@ allowlist in `check-responsive.mjs`, with the reason; the check then fails if
 that page stops having dense cells, so an exemption cannot outlive its reason.
 
 `internal/doccommands` reads every tracked Markdown and MDX file outside a
-`testdata` directory, and the `Example` and `Long` text of every command in
-both binaries. On a page it reads bash, sh, zsh and PowerShell blocks, the
-commands of a `console` block, the `run`, `command` and `script` steps of a
-YAML block, `go run ./cmd/ptah`, and inline code that begins with a program
-name. In help text it reads every indented line. It resolves each command line
-against the command tree the binary builds, the way cobra does, without
-running it: a word a command with subcommands does not know is refused, and a
-forwarding verb of `ptah-compat` is held to the flags it and its ancestors
-register and the flags the native command it forwards to declares itself,
-less those it refuses before forwarding. So a renamed verb or flag fails the change that
-renames it until every page that spells it is updated. It does not check a
-flag's value, the number of arguments, or what the command prints. Those are
-runtime questions, and the quick-start contour and the example acceptance job
-answer them for the pages they run. A page sometimes names a command in order
-to say it does not exist, or quotes output that begins with the program's
-name. Each such text is listed in the check's test with the reason, and the
-test fails when the tree accepts a listed text or no page writes it any more.
+`testdata` directory, and the `Example` and `Long` text of every command in both
+binaries. On a page it reads bash, sh, zsh and PowerShell blocks, the commands
+of a `console` block, the `run`, `command` and `script` steps of a YAML block,
+`go run ./cmd/ptah`, and inline code that begins with a program name. In help
+text it reads the `Example`, every indented line of the description, and the
+commands its prose quotes in backticks or double quotes.
+
+It resolves each command line against the command tree the binary builds, the
+way cobra does, without running it: a word a command with subcommands does not
+know is refused, and a forwarding verb of `ptah-compat` is held to the flags it
+and its ancestors register and the flags the native command it forwards to
+declares itself, less those it refuses before forwarding. So a renamed verb or
+flag fails the change that renames it until every page that spells it is
+updated. It does not check a flag's value, the number of arguments, or what the
+command prints. Those are runtime questions, and the quick-start contour and the
+example acceptance job answer them for the pages they run.
+
+A page sometimes names a command in order to say it does not exist, or quotes
+output that begins with the program's name. Each such text is listed in the
+check's test with the reason, and the test fails when the tree accepts a listed
+text or no page writes it any more.
 
 Anchor links are checked against the ids Starlight generates, so renaming a
 heading fails the build instead of silently dropping every reader who follows

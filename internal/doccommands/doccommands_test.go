@@ -49,7 +49,14 @@ func fixture() doccommands.Trees {
 	})
 	cmdforward.Refuse(forward, "verify-sum")
 	raw := &cobra.Command{Use: "raw", DisableFlagParsing: true, RunE: run}
-	migrate.AddCommand(forward, raw)
+	edit := &cobra.Command{Use: "edit", DisableFlagParsing: true, RunE: run}
+	cmdforward.Register(edit, "migrations edit", func() *cobra.Command {
+		target := &cobra.Command{Use: "edit", RunE: run}
+		target.Flags().String("engine", "", "")
+		return target
+	})
+	cmdforward.ReadsPositionals(edit)
+	migrate.AddCommand(forward, raw, edit)
 	compat.AddCommand(migrate)
 	return doccommands.NewTrees(native, compat)
 }
@@ -88,7 +95,7 @@ func TestCheck_HappyPath(t *testing.T) {
 		native("--version", "migrations"),
 		native("migrations", "<verb>", "--anything"),
 		native("help", "migrations", "up"),
-		native("help", "--", "x"),
+		native("help", "--", "migrations"),
 		native("completion", "zsh"),
 		native(cobra.ShellCompRequestCmd, "migrations", "u"),
 		native("migrations", "up", "--", "--not-a-flag"),
@@ -97,6 +104,8 @@ func TestCheck_HappyPath(t *testing.T) {
 		compat("migrate", "down", "--target", "5", "--log-level", "info"),
 		compat("migrate", "down", "--help"),
 		compat("migrate", "raw", "--whatever", "the", "target", "parses"),
+		// A verb that reads positionals takes a target flag's value with "=".
+		compat("migrate", "edit", "1", "--engine=x"),
 	} {
 		t.Run(strings.Join(append([]string{line.Program}, line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)
@@ -124,6 +133,7 @@ func TestCheck_FailurePath(t *testing.T) {
 		{native("migrations", "--dry-run", "up"), `"ptah migrations" has no flag --dry-run`},
 		{native("migrations", "up", "--version"), `"ptah migrations up" has no flag --version`},
 		{native("help", "bogus"), `"ptah" has no subcommand "bogus"`},
+		{native("help", "--", "bogus"), `"ptah" has no subcommand "bogus"`},
 		{native("help", "migrations", "up", "--bogus"), `"ptah help" has no flag --bogus`},
 		{native("--", "migrations", "up"), `"ptah" has no subcommand "migrations"`},
 		// cobra takes "migrations" as the value of --help before it adds the
@@ -138,6 +148,8 @@ func TestCheck_FailurePath(t *testing.T) {
 		// not reach it.
 		{compat("migrate", "down", "--verbose"), `"ptah-compat migrate down" has no flag --verbose`},
 		{compat("migrate", "bogus"), `"ptah-compat migrate" has no subcommand "bogus"`},
+		// The verb would read x as a second positional argument.
+		{compat("migrate", "edit", "1", "--engine", "x"), `"ptah-compat migrate edit" reads the word after --engine as an argument; write --engine=VALUE`},
 	} {
 		t.Run(strings.Join(append([]string{test.line.Program}, test.line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)

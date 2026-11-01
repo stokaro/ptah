@@ -18,9 +18,11 @@ func TestRegister_HappyPath(t *testing.T) {
 		return target
 	})
 	cmdforward.Refuse(forwarder, "confirm", "editor")
+	cmdforward.ReadsPositionals(forwarder)
 
 	c.Assert(cmdforward.Target(forwarder), qt.Equals, "migrations down")
 	c.Assert(cmdforward.Refused(forwarder), qt.DeepEquals, []string{"confirm", "editor"})
+	c.Assert(cmdforward.Positionals(forwarder), qt.IsTrue)
 	built := cmdforward.Build(forwarder)
 	c.Assert(built.Flags().Lookup("target"), qt.IsNotNil)
 	// Each call builds a new command, as each run of the forwarder does.
@@ -33,5 +35,6 @@ func TestRegister_FailurePath(t *testing.T) {
 	cmdforward.Refuse(plain)
 	c.Assert(cmdforward.Target(plain), qt.Equals, "")
 	c.Assert(cmdforward.Refused(plain), qt.IsNil)
+	c.Assert(cmdforward.Positionals(plain), qt.IsFalse)
 	c.Assert(cmdforward.Build(plain), qt.IsNil)
 }
