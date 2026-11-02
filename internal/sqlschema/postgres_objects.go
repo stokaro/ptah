@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/triggerdef"
 )
 
 // This file converts the schema objects beyond tables, indexes and enums that
@@ -121,7 +122,7 @@ func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.T
 		Name:    normalizeSQLIdentifier(sourcePlatform, node.Name),
 		Table:   normalizeSQLTableReference(sourcePlatform, node.Table),
 		Timing:  node.Timing,
-		Event:   node.Event,
+		Event:   triggerdef.Canonical(node.Event, func(column string) string { return storedTriggerColumn(sourcePlatform, column) }),
 		ForEach: node.ForEach,
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,
@@ -136,6 +137,24 @@ func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.T
 		trigger.ExecuteFunction = normalizeSQLTableReference(sourcePlatform, node.FunctionName)
 	}
 	return trigger
+}
+
+// storedTriggerColumn is a column of a trigger's UPDATE OF list as the server
+// stores the column it names: a name longer than the server keeps is cut the
+// way the reader cuts the column's own declaration, and keeps its quotes, so
+// the event names the column the table holds. Without it the event keeps the
+// whole name, the catalog reports the cut one, and every comparison plans the
+// trigger again. A name the server keeps whole stays as written.
+func storedTriggerColumn(sourcePlatform, column string) string {
+	if !isQuotedSQLIdentifierPart(column) {
+		return storedIdentifier(sourcePlatform, column)
+	}
+	name := unquoteSQLIdentifierPart(column)
+	stored := storedIdentifier(sourcePlatform, name)
+	if stored == name {
+		return column
+	}
+	return `"` + strings.ReplaceAll(stored, `"`, `""`) + `"`
 }
 
 // appendCreateType routes a CREATE TYPE node to the bucket its type definition
