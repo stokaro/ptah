@@ -75,36 +75,6 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 	return true, nil
 }
 
-// refuseRepeatedCreate refuses object when the file declared it before, held
-// being what the file declared, and its statement carries no guard
-// ([schemaext.Guarded]), where the source dialect's server refuses such a
-// statement ([descriptor.Statements.OwnerCreateOnce]). Measured on PostgreSQL
-// 18.6, `CREATE EXTENSION pgcrypto; CREATE EXTENSION pgcrypto;` stops at the
-// second statement with `extension "pgcrypto" already exists`. Without this,
-// an equal second declaration combines with the first
-// ([schemaext.Redeclarable]) and the file reads as one the server runs. A
-// read with no dialect keeps no dialect's rule, as a table created twice is
-// refused only where the stored names are followed. A second declaration
-// that differs from the first is refused by [schemaext.Objects.Declare]
-// before this is asked, and one in a later file of a schema directory by the
-// directory's check.
-func refuseRepeatedCreate(held schemaext.Objects, object schemaext.Object, sourcePlatform string) error {
-	guarded, ok := object.Value.(schemaext.Guarded)
-	if !ok || guarded.Guarded() {
-		return nil
-	}
-	if !factsOf(sourcePlatform).statements.OwnerCreateOnce {
-		return nil
-	}
-	_, found, err := held.Get(object.Ref)
-	if err != nil || !found {
-		return err
-	}
-	declared := sqldecl.Owned(object.Ref)
-	return fmt.Errorf("%w: %s %q is created again without IF NOT EXISTS, and the server refuses the second declaration",
-		ErrNameInUse, declared.Kind, declared.Name)
-}
-
 // changesUndeclared reports an owner's statement that changes a named object
 // without declared objects, replacements or table facets, such as DROP
 // EXTENSION. A schema document has no representation for that change.
@@ -258,4 +228,34 @@ func statementExcerpt(written string) string {
 		return string(runes[:limit]) + "..."
 	}
 	return excerpt
+}
+
+// refuseRepeatedCreate refuses object when the file declared it before, held
+// being what the file declared, and its statement carries no guard
+// ([schemaext.Guarded]), where the source dialect's server refuses such a
+// statement ([descriptor.Statements.OwnerCreateOnce]). Measured on PostgreSQL
+// 18.6, `CREATE EXTENSION pgcrypto; CREATE EXTENSION pgcrypto;` stops at the
+// second statement with `extension "pgcrypto" already exists`. Without this,
+// an equal second declaration combines with the first
+// ([schemaext.Redeclarable]) and the file reads as one the server runs. A
+// read with no dialect keeps no dialect's rule, as a table created twice is
+// refused only where the stored names are followed. A second declaration
+// that differs from the first is refused by [schemaext.Objects.Declare]
+// before this is asked, and one in a later file of a schema directory by the
+// directory's check.
+func refuseRepeatedCreate(held schemaext.Objects, object schemaext.Object, sourcePlatform string) error {
+	guarded, ok := object.Value.(schemaext.Guarded)
+	if !ok || guarded.Guarded() {
+		return nil
+	}
+	if !factsOf(sourcePlatform).statements.OwnerCreateOnce {
+		return nil
+	}
+	_, found, err := held.Get(object.Ref)
+	if err != nil || !found {
+		return err
+	}
+	declared := sqldecl.Owned(object.Ref)
+	return fmt.Errorf("%w: %s %q is created again without IF NOT EXISTS, and the server refuses the second declaration",
+		ErrNameInUse, declared.Kind, declared.Name)
 }
