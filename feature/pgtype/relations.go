@@ -5,10 +5,12 @@ import (
 	"ptah.run/internal/deporder"
 )
 
-// A type the plan removes is dropped in the type phase's removal window, after
-// the tables. A table whose row type the type names cannot be dropped before
-// it without CASCADE: the server answers 2BP01. A column drop is not held
-// back by a type that names the table's row type.
+// A type the plan removes is dropped before the tables whose row types it
+// names, and otherwise in the type phase's removal window, after the tables.
+// It stays after them when a table or a routine dropped after the tables
+// still uses it, and a table whose row type it names then cannot be dropped
+// without CASCADE: the server answers 2BP01. A column drop is not held back
+// by a type that names the table's row type.
 
 // ReadsRelation is [ObservedDomain.ReadsRelationIn] with no known session.
 func (v *ObservedDomain) ReadsRelation(relation string) bool {

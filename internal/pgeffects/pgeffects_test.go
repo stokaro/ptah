@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/pgeffects"
 )
 
@@ -124,4 +125,40 @@ func TestSequence_NamedConstraintReplacement(t *testing.T) {
 		{effect(builder.Table("app.children"), plangraph.Alter), effect(builder.Constraint("app.children", "Parent.Key"), plangraph.Drop)},
 		{effect(builder.Table("app.children"), plangraph.Alter), effect(builder.Constraint("app.children", "Parent.Key"), plangraph.Create)},
 	})
+}
+
+// TestTypeReads_ReadsTheTypesAStatementDeclares pins the types a statement
+// uses as it creates or changes something: the columns of a CREATE TABLE, a
+// column an ALTER TABLE adds or retypes, and a routine's arguments and result.
+// A type outside the definitions, and a statement that declares no type, read
+// nothing.
+func TestTypeReads_ReadsTheTypesAStatementDeclares(t *testing.T) {
+	wrap := builder.SchemaScopedParts(objectidentity.KindComposite, "", "wrap")
+	posint := builder.Domain("posint")
+	types := []schemaext.DefinedType{{ID: wrap}, {ID: posint}}
+	tests := []struct {
+		name string
+		node ast.Node
+		want []plangraph.Effect
+	}{
+		{name: "a table", node: &ast.CreateTableNode{Name: "t2", Columns: []*ast.ColumnNode{{Name: "id", Type: "bigint"}, {Name: "w", Type: "wrap"}, {Name: "n", Type: "posint[]"}}},
+			want: []plangraph.Effect{effect(wrap, plangraph.Read), effect(posint, plangraph.Read)}},
+		{name: "an added column", node: &ast.AlterTableNode{Name: "t2", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: &ast.ColumnNode{Name: "w", Type: "public.wrap"}}}},
+			want: []plangraph.Effect{effect(wrap, plangraph.Read)}},
+		{name: "a retyped column", node: &ast.AlterTableNode{Name: "t2", Operations: []ast.AlterOperation{&ast.AlterColumnOperation{ColumnName: "n", Action: ast.AlterColumnSetType, Type: "posint"}}},
+			want: []plangraph.Effect{effect(posint, plangraph.Read)}},
+		{name: "a routine", node: &ast.CreateFunctionNode{Name: "f", Parameters: "w wrap", Returns: "SETOF posint"},
+			want: []plangraph.Effect{effect(wrap, plangraph.Read), effect(posint, plangraph.Read)}},
+		{name: "a column of another type", node: &ast.CreateTableNode{Name: "t3", Columns: []*ast.ColumnNode{{Name: "id", Type: "integer"}}}},
+		{name: "a dropped table", node: &ast.DropTableNode{Name: "t2"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reads := pgeffects.TypeReads(test.node, types)
+
+			c.Assert(reads, qt.DeepEquals, test.want)
+		})
+	}
 }

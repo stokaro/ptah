@@ -1,7 +1,8 @@
 // Package pgeffects describes what a common statement does to the relations,
-// columns, constraints, routines and roles it names: which ones it creates, changes or
-// drops. Feature owners order their operations against these effects, both
-// in a migration plan and in a whole-schema render. The PostgreSQL-family
+// columns, constraints, routines and roles it names: which ones it creates,
+// changes or drops, and which declared types it uses. Feature owners order
+// their operations against these effects, both in a migration plan and in a
+// whole-schema render. The PostgreSQL-family
 // hosts and the SQL Server host read it, since the nodes it reads are the
 // common ones both plan. A statement it does not know keeps an unknown
 // footprint; nothing here is invented.
@@ -13,7 +14,9 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/typeorder"
 )
 
 // Sequence returns the effects of each statement in order. A statement can
@@ -98,6 +101,45 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 	default:
 		return nil
 	}
+}
+
+// TypeReads returns a read of each of types that a statement uses as it
+// creates or changes an object: the type of each column a CREATE TABLE
+// declares, of a column an ALTER TABLE adds or gives another type, and of a
+// routine's arguments and result. A feature owner that creates one of those
+// types orders it before the statement through these reads. Any other
+// statement reads none, and a type outside types is not read: a common enum,
+// a built-in type and a type the plan does not know order nothing.
+func TypeReads(node ast.Node, types []schemaext.DefinedType) []plangraph.Effect {
+	var spellings []string
+	switch typed := node.(type) {
+	case *ast.CreateTableNode:
+		for _, column := range typed.Columns {
+			if column != nil {
+				spellings = append(spellings, column.Type)
+			}
+		}
+	case *ast.AlterTableNode:
+		for _, operation := range typed.Operations {
+			switch column := operation.(type) {
+			case *ast.AddColumnOperation:
+				if column.Column != nil {
+					spellings = append(spellings, column.Column.Type)
+				}
+			case *ast.ModifyColumnOperation:
+				if column.Column != nil {
+					spellings = append(spellings, column.Column.Type)
+				}
+			case *ast.AlterColumnOperation:
+				if column.Action == ast.AlterColumnSetType {
+					spellings = append(spellings, column.Type)
+				}
+			}
+		}
+	case *ast.CreateFunctionNode:
+		spellings = append(routineargs.ArgumentTypes(typed.Parameters), routineargs.ResultTypes(typed.Returns)...)
+	}
+	return typeorder.Reads(spellings, types)
 }
 
 // CreatesView reports a statement that creates a view or a materialized view,
