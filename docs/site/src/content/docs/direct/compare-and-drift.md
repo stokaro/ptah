@@ -296,11 +296,30 @@ privilege the database does not hold yet.
 
 `rls_policies` and `rls_enabled_tables` count the policies and the enablements
 the shared comparison pairs. Against PostgreSQL, policies and row-level security
-belong to their feature owner, so a PostgreSQL report has neither kind.
+belong to their feature owner, so a PostgreSQL report has neither kind and
+counts its policies under the owner's kind below.
 
 An object a feature owner compares, such as a PostgreSQL extension, policy or
-domain, has no inventory entry: the owner reports the objects that differ and
-not how many match.
+domain, is counted by its owner, which decides which objects on the two sides
+are the same object. Its entry is named for the change kind its findings carry
+after the colon, so `ptah.run/pgextension/extension-change` joins
+`feature_changes:ptah.run/pgextension/extension-change`:
+
+```json
+{ "kind": "ptah.run/pgextension/extension-change", "desired": 2, "observed": 3 }
+```
+
+The owner counts as the comparison does. An object both sides hold counts on
+both, also when the plan drops it and creates it again. An object the owner
+leaves alone or cannot decide counts on neither, such as an extension
+`--ignore-extension` names, one a declared column's type needs, or one the
+server installs in every database. An object on a table only one side holds counts with the
+table, under `tables`. A default privilege counts one entry per grantor, schema,
+object type and grantee, and a declaration the built-in privileges already
+satisfy counts on both sides.
+
+An owner that does not count its objects has no entry, though its changes are
+still findings. A provider installed separately counts nothing yet.
 
 ### An extension the schema does not describe
 

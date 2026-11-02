@@ -21,8 +21,11 @@ type exclusionPair struct {
 // CompareObjects compares constraints on surviving tables by structured
 // identity. Creation and removal travel with their parent table. Unknown
 // observations produce diagnostics; undeclared observations are preserved when
-// the desired source cannot describe them. Errors and cancellation return no
-// partial result, and the input snapshots remain unchanged.
+// the desired source cannot describe them. It counts the constraints it
+// compared on the tables both sides hold: the ones both sides hold, the
+// additions and the drops; a constraint it adopts or cannot decide is counted
+// on neither side. Errors and cancellation return no partial result, and the
+// input snapshots remain unchanged.
 func (ExclusionService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if err := exclusionContext(ctx, request.Target); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -41,7 +44,8 @@ func (ExclusionService) CompareObjects(ctx context.Context, request schemaext.Ob
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects},
+		Counts: []schemaext.ObjectCount{{Kind: ExclusionChangeKind}}}
 	var adopted []schemaext.SubjectCoverage
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
@@ -90,7 +94,10 @@ func compareExclusion(request schemaext.ObjectComparisonRequest, pair exclusionP
 		return dropOrAdoptExclusion(request, pair, result)
 	}
 	change := &ExclusionChange{After: pair.desired}
-	if pair.current != nil {
+	if pair.current == nil {
+		result.Counts[0].Added++
+	} else {
+		result.Counts[0].Matched++
 		found := exclusionDifference(pair.desired, pair.current)
 		if !found.definition && !found.comment {
 			return nil, nil
@@ -129,6 +136,7 @@ func dropOrAdoptExclusion(request schemaext.ObjectComparisonRequest, pair exclus
 	}
 	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.currentRef,
 		Value: &ExclusionChange{Before: pair.current}})
+	result.Counts[0].Removed++
 	return nil, nil
 }
 

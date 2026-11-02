@@ -66,8 +66,10 @@ type kept struct {
 
 // CompareObjects never treats an unread namespace as empty: a declared policy
 // whose presence was not established is undecided, and an observed policy a
-// description could not express is kept rather than dropped. Inputs remain
-// unchanged.
+// description could not express is kept rather than dropped. It counts the
+// policies it compares: the ones both sides hold, the creations and the
+// drops. A policy it keeps or leaves undecided is counted on neither side.
+// Inputs remain unchanged.
 func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -85,7 +87,8 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects},
+		Counts: []schemaext.ObjectCount{{Kind: mssqldiff.SecurityPolicyKind}}}
 	var adopted []schemaext.SubjectCoverage
 	remaining := make([]kept, 0, len(pairs))
 	for _, candidate := range pairs {
@@ -152,9 +155,11 @@ func comparePair(request schemaext.ObjectComparisonRequest, candidate pair, resu
 		return outcome{remains: declared, adopted: true}, nil
 	case candidate.desired == nil:
 		change(request.Identifiers, result, subject, candidate.current, nil)
+		result.Counts[0].Removed++
 		return outcome{}, nil
 	case candidate.current == nil:
 		change(request.Identifiers, result, subject, nil, candidate.desired)
+		result.Counts[0].Added++
 		return outcome{remains: candidate.desired}, nil
 	}
 	switch agreement, reason := mssqlschema.ComparePolicy(request.Identifiers, candidate.desired, candidate.current); agreement {
@@ -164,6 +169,7 @@ func comparePair(request schemaext.ObjectComparisonRequest, candidate pair, resu
 		undecided(result, subject, reason)
 		return outcome{remains: observedAsDeclared(candidate.current)}, nil
 	}
+	result.Counts[0].Matched++
 	return outcome{remains: candidate.desired}, nil
 }
 

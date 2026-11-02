@@ -71,6 +71,10 @@ func TestProviderComparesNativeModelsAndCapturesChangeFacts(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Complete, qt.IsTrue)
 	c.Assert(result.Changes, qt.HasLen, 1)
+	// The protocol carries no count of the objects a provider compared, so a
+	// provider's kinds are left out of a drift inventory rather than counted
+	// as zero.
+	c.Assert(result.Counts, qt.IsNil)
 	change := result.Changes[0]
 	c.Assert(change.Subject, qt.DeepEquals, subject)
 	c.Assert(schemaext.RemovesState(change.Value), qt.IsTrue)

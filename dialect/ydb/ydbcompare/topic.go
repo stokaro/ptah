@@ -26,7 +26,9 @@ type topic struct {
 // source claims to describe the topic. An incomplete observation never
 // establishes absence or a destructive change, and it is reported only where
 // the desired source makes a claim it would decide. A target without the
-// topics capability is refused only when the comparison plans a statement.
+// topics capability is refused only when the comparison plans a statement. It
+// counts the topics it compares: the ones both sides hold, the creations and
+// the drops. A topic it keeps or cannot decide is counted on neither side.
 func (TopicService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	topics, err := captureStandaloneInputs(ctx, request, ydbtopic.Kind, "topic", collectTopics)
 	if err != nil {
@@ -40,7 +42,7 @@ func (TopicService) CompareObjects(ctx context.Context, request schemaext.Object
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result, err := completeStandaloneComparison(ctx, request, topics, coverage, ydbtopic.Kind, "topic",
+	result, err := completeStandaloneComparison(ctx, request, topics, coverage, ydbtopic.Kind, ydbdiff.TopicKind, "topic",
 		func(value topic) objectidentity.ID { return value.ref }, compareTopic)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -97,16 +99,16 @@ func compareTopic(request schemaext.ObjectComparisonRequest, value topic, result
 		}
 		return nil
 	}
-	switch {
-	case value.desired == nil && value.current == nil:
-		return nil
-	case value.desired != nil && value.current != nil && ydbtopic.Equal(value.desired.Spec, value.current.Spec):
-		return nil
-	default:
-		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: value.ref,
-			Value: &ydbdiff.Topic{Before: value.current, After: value.desired}})
+	if value.desired == nil && value.current == nil {
 		return nil
 	}
+	countCompared(result, value.desired != nil, value.current != nil)
+	if value.desired != nil && value.current != nil && ydbtopic.Equal(value.desired.Spec, value.current.Spec) {
+		return nil
+	}
+	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: value.ref,
+		Value: &ydbdiff.Topic{Before: value.current, After: value.desired}})
+	return nil
 }
 
 func collectTopics(ctx context.Context, state schemaext.ObjectState, direction schemaext.Representation, topics map[objectidentity.Key]topic) error {

@@ -23,6 +23,8 @@ type streamingQuery struct {
 
 // CompareObjects preserves known observations omitted by an incomplete source.
 // An incomplete observation never establishes absence or a destructive change.
+// It counts the queries it compares: the ones both sides hold, the creations
+// and the drops. A query it keeps or cannot decide is counted on neither side.
 func (StreamingService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	queries, err := streamingInputs(ctx, request)
 	if err != nil {
@@ -32,7 +34,7 @@ func (StreamingService) CompareObjects(ctx context.Context, request schemaext.Ob
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	return completeStandaloneComparison(ctx, request, queries, coverage, ydbstreaming.Kind, "streaming-query",
+	return completeStandaloneComparison(ctx, request, queries, coverage, ydbstreaming.Kind, ydbdiff.StreamingQueryKind, "streaming-query",
 		func(value streamingQuery) objectidentity.ID { return value.ref }, compareStreamingQuery)
 }
 
@@ -60,6 +62,7 @@ func compareStreamingQuery(request schemaext.ObjectComparisonRequest, query stre
 	if query.desired == nil && query.current == nil {
 		return nil
 	}
+	countCompared(result, query.desired != nil, query.current != nil)
 	if query.desired != nil && query.current != nil && ydbstreaming.Equal(query.desired.Spec, query.current.Spec) {
 		return nil
 	}

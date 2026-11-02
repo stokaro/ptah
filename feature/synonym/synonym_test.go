@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/engine"
 	"ptah.run/feature/synonym"
 )
 
@@ -204,14 +205,18 @@ func observed(s synonym.Synonym) schemaext.Object {
 	return synonym.ObservedObject(synonym.ObservedSynonym{Synonym: s})
 }
 
-func compare(c *qt.C, desired, current schemaext.ObjectState) schemaext.ObjectComparisonResult {
-	c.Helper()
-	// A connected server's collation answers how names compare; the default
-	// collation folds case.
+// folding are SQL Server's identifier rules under its default collation,
+// which folds case. A connected server's collation answers how names compare.
+func folding() identifier.Semantics {
 	semantics := identifier.ForDialect(platform.SQLServer)
 	semantics.TableNames = identifier.ComparisonASCIIInsensitive
+	return semantics
+}
+
+func compare(c *qt.C, desired, current schemaext.ObjectState) schemaext.ObjectComparisonResult {
+	c.Helper()
 	result, err := synonym.CompareService{}.CompareObjects(c.Context(), schemaext.ObjectComparisonRequest{
-		Target: platform.SQLServer, Identifiers: semantics, Kinds: []schemaext.Kind{synonym.Kind},
+		Target: platform.SQLServer, Identifiers: folding(), Kinds: []schemaext.Kind{synonym.Kind},
 		Desired: desired, Current: current,
 	})
 	c.Assert(err, qt.IsNil)
@@ -281,6 +286,67 @@ func TestCompareService_Changes(t *testing.T) {
 			result := compare(c, test.desired, test.current)
 			c.Assert(changeTargets(result), qt.DeepEquals, test.changes)
 			c.Assert(result.Desired.Objects.Len(), qt.Equals, test.declared)
+		})
+	}
+}
+
+// synonymRuntime selects the synonym owner on SQL Server and nothing else, so
+// the engine checks each count the owner states against its changes.
+func synonymRuntime(c *qt.C) *engine.Runtime {
+	c.Helper()
+	return must.Must(engine.New(engine.Provider{ID: synonym.Owner, Targets: []engine.Target{{Name: platform.SQLServer}},
+		Codecs: synonym.Codecs(),
+		Comparisons: []engine.ObjectComparison{{Target: platform.SQLServer, Kinds: []schemaext.Kind{synonym.Kind},
+			ChangeKinds: []schemaext.Kind{synonym.ChangeKind}, Service: synonym.CompareService{}}},
+	}))
+}
+
+// TestCompareService_CountsWhatItCompares pins the counts the inventory
+// reports for synonyms: a synonym both sides hold is matched whether or not
+// its target differs, a retarget included, a creation is added and a drop
+// removed, and a synonym the comparison adopts or leaves alone because the
+// read could not describe it is counted on neither side, so a database that
+// agrees counts what the declaration does.
+func TestCompareService_CountsWhatItCompares(t *testing.T) {
+	stored := synonym.Synonym{Schema: "app", Name: "orders", Target: "[sales].[orders]"}
+	remote := synonym.Synonym{Schema: "dbo", Name: "remote", Target: "sales.orders"}
+	tests := []struct {
+		name             string
+		desired, current schemaext.ObjectState
+		want             schemaext.ObjectCount
+		changes          int
+	}{
+		{name: "the same target in the server's quoting and another case", want: schemaext.ObjectCount{Kind: synonym.ChangeKind, Matched: 1},
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(synonym.Synonym{Schema: "APP", Name: "Orders", Target: "Sales.Orders"})),
+				Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(stored)), Coverage: complete(schemaext.Observed)}},
+		{name: "a retarget", want: schemaext.ObjectCount{Kind: synonym.ChangeKind, Matched: 1}, changes: 1,
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(synonym.Synonym{Schema: "app", Name: "orders", Target: "sales.orders_v2"})),
+				Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(stored)), Coverage: complete(schemaext.Observed)}},
+		{name: "a creation, a drop and a match", want: schemaext.ObjectCount{Kind: synonym.ChangeKind, Matched: 1, Added: 1, Removed: 1}, changes: 2,
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(stored),
+				declared(synonym.Synonym{Schema: "app", Name: "invoices", Target: "sales.invoices"})), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(stored),
+				observed(synonym.Synonym{Schema: "app", Name: "legacy", Target: "[sales].[legacy]"})), Coverage: complete(schemaext.Observed)}},
+		{name: "a synonym adopted where the source cannot declare one", want: schemaext.ObjectCount{Kind: synonym.ChangeKind},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(stored)), Coverage: complete(schemaext.Observed)}},
+		{name: "a declaration of a synonym the read could not describe", want: schemaext.ObjectCount{Kind: synonym.ChangeKind},
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(remote)), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Coverage: must.Must(synonym.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete},
+				[]schemaext.SubjectCoverage{{Kind: synonym.Kind, Subject: remote.Ref(),
+					Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "a database link"}}}))}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := synonymRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+				Target: platform.SQLServer, Identifiers: folding(), Desired: test.desired, Current: test.current})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, test.changes)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
 		})
 	}
 }

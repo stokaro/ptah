@@ -64,6 +64,7 @@ func (r *Runtime) CompareFeatures(ctx context.Context, request schemaext.Compari
 		Changes: objectResult.Changes, FacetChanges: facetResult.Changes,
 		Undecided: append(slices.Clone(objectResult.Undecided), facetResult.Undecided...),
 		Skipped:   skipped,
+		Counts:    objectResult.Counts,
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.ComparisonResult{}, err

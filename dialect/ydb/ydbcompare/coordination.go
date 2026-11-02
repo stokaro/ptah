@@ -23,6 +23,8 @@ type coordinationNode struct {
 
 // CompareObjects preserves known observations omitted by an incomplete source.
 // An incomplete observation never establishes absence or a destructive change.
+// It counts the nodes it compares: the ones both sides hold, the creations and
+// the drops. A node it keeps or cannot decide is counted on neither side.
 func (CoordinationService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	nodes, err := coordinationInputs(ctx, request)
 	if err != nil {
@@ -32,7 +34,7 @@ func (CoordinationService) CompareObjects(ctx context.Context, request schemaext
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	return completeStandaloneComparison(ctx, request, nodes, coverage, ydbcoordination.Kind, "coordination-node",
+	return completeStandaloneComparison(ctx, request, nodes, coverage, ydbcoordination.Kind, ydbdiff.CoordinationNodeKind, "coordination-node",
 		func(value coordinationNode) objectidentity.ID { return value.ref }, compareCoordinationNode)
 }
 
@@ -60,6 +62,7 @@ func compareCoordinationNode(request schemaext.ObjectComparisonRequest, node coo
 	if node.desired == nil && node.current == nil {
 		return nil
 	}
+	countCompared(result, node.desired != nil, node.current != nil)
 	if node.desired != nil && node.current != nil && ydbcoordination.Changes(node.desired.Spec, node.current.Spec).IsZero() {
 		return nil
 	}

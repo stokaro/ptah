@@ -176,6 +176,7 @@ func compareReportingUndecidedAdditions(
 		return nil, Diagnostics{}, err
 	}
 	diff.SkippedFeatures = featureResult.Skipped
+	diff.FeatureCounts = featureResult.Counts
 
 	// Compare enum type definitions and values. The semantics carry the
 	// connection's default schema, without which an `enum` block's mandatory

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -238,6 +239,97 @@ func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			})
+		})
+	}
+}
+
+// postgresFeatureTable is a table with row-level security on, which the
+// policies below are on.
+var postgresFeatureTable = []string{
+	`CREATE TABLE docs (id integer PRIMARY KEY, tenant_id integer)`,
+	`ALTER TABLE docs ENABLE ROW LEVEL SECURITY`,
+}
+
+// TestSchemaDriftInventoryCountsFeatureOwnersE2E counts the objects
+// PostgreSQL's feature owners compare, an extension and a policy, under each
+// owner's change kind, against a live server that decides what the catalog
+// holds: the plpgsql every database has, the spelling a policy's clause is
+// stored in.
+//
+// A database that matches counts each the same on both sides. One that lacks
+// the declared extension and holds a policy the declaration does not counts
+// one fewer extension and one more policy. An extension the run excludes is
+// counted on neither side, which the run without the exclusion controls.
+func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
+	extension := "ptah.run/pgextension/extension-change"
+	policy := "ptah.run/pgpolicy/policy-change"
+	tenant := `CREATE POLICY tenant ON docs USING (tenant_id = 1)`
+	declared := slices.Concat([]string{`CREATE EXTENSION hstore`}, postgresFeatureTable, []string{tenant})
+	tests := []struct {
+		name      string
+		desired   []string
+		database  []string
+		args      []string
+		wantDrift bool
+		want      []safety.InventoryEntry
+	}{
+		{
+			name:     "a database that matches",
+			desired:  declared,
+			database: declared,
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: extension, Desired: 1, Observed: 1},
+				{Kind: policy, Desired: 1, Observed: 1},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+		{
+			name:      "a database without the extension and with another policy",
+			desired:   declared,
+			database:  slices.Concat(postgresFeatureTable, []string{tenant, `CREATE POLICY legacy ON docs USING (true)`}),
+			wantDrift: true,
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: extension, Desired: 1, Observed: 0},
+				{Kind: policy, Desired: 1, Observed: 2},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+		{
+			name:      "control: an extension nothing declares",
+			desired:   postgresFeatureTable,
+			database:  slices.Concat([]string{`CREATE EXTENSION hstore`}, postgresFeatureTable),
+			wantDrift: true,
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: extension, Desired: 0, Observed: 1},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+		{
+			name:     "an extension the run excludes",
+			desired:  postgresFeatureTable,
+			database: slices.Concat([]string{`CREATE EXTENSION hstore`}, postgresFeatureTable),
+			args:     []string{"--ignore-extension", "hstore"},
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			url := scratchDatabase(c, dbtarget.PostgreSQL, test.database)
+			schema := writeSchema(c, test.desired)
+
+			report := runDrift(c, slices.Concat([]string{"--db-url", url, "--schema-file", schema, "--format", "json"}, test.args)...)
+
+			c.Assert(report.Error, qt.Equals, "")
+			c.Assert(report.Drift, qt.Equals, test.wantDrift)
+			c.Assert(report.Inventory, qt.DeepEquals, test.want)
 		})
 	}
 }

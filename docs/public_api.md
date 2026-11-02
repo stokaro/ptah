@@ -1222,6 +1222,16 @@ refuses, naming the spelling, a written request no owner reads
 its subject or of an object the owner's batch does not hold as desired.
 `Resolved` indexes the caller's request list.
 
+An owner counts the objects it compared in `ObjectComparisonResult.Counts`, one
+`schemaext.ObjectCount` per change kind: the objects both sides hold, and how
+many of its changes add or remove an object, since a change carries no
+direction a caller could read. The runtime refuses a count its changes
+contradict, a kind the service does not own and a kind counted twice. It sums
+the owners of a kind and leaves the kind out when one owner that ran did not
+count it. `ComparisonResult.Counts` carries the result, a schema diff carries
+it in `SchemaDiff.FeatureCounts`, and `safety.Inventory` reports each counted
+kind under its change kind.
+
 Before table preparation, comparison binds table and index coverage claims to the
 same identifier semantics and default database as their common owners. Explicit schemas
 remain explicit. Binding preserves source knowledge, refuses identity collisions,

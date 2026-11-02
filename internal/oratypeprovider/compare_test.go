@@ -382,6 +382,89 @@ func undescribedTypes(c *qt.C, name string) schemaext.Coverage {
 	return must.Must(domains.Combine(objectTypes))
 }
 
+// typeCounts is the counts of a comparison: domains under the domain change
+// kind and object types under the object type change kind.
+func typeCounts(domains, objectTypes schemaext.ObjectCount) []schemaext.ObjectCount {
+	domains.Kind, objectTypes.Kind = oratype.DomainChangeKind, oratype.ObjectTypeChangeKind
+	return []schemaext.ObjectCount{domains, objectTypes}
+}
+
+// TestCompareTypes_CountsWhatItCompares pins the counts the inventory reports
+// for user types, each model under its own change kind: a type both sides hold
+// is matched whether or not it differs, a creation is added and a drop
+// removed, and a type the comparison leaves alone or cannot decide is counted
+// on neither side, so a database that agrees counts what the declaration
+// does. A creation on a target without domains is counted, since it reaches
+// the plan, which refuses it by name.
+func TestCompareTypes_CountsWhatItCompares(t *testing.T) {
+	number := &oratype.DesiredDomain{BaseType: "NUMBER"}
+	point := []oratype.Attribute{{Name: "X", Type: "NUMBER"}, {Name: "Y", Type: "NUMBER"}}
+	undescribed := undescribedTypes(qt.New(t), "KEPT")
+	tests := []struct {
+		name                 string
+		request              func() schemaext.ObjectComparisonRequest
+		domains, objectTypes schemaext.ObjectCount
+		changes, undecided   int
+	}{
+		{name: "a domain that agrees", domains: schemaext.ObjectCount{Matched: 1},
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison(objects(declared("d", number)), objects(held("D", &oratype.ObservedDomain{BaseType: "NUMBER"})))
+			}},
+		{name: "a domain that differs", domains: schemaext.ObjectCount{Matched: 1}, changes: 1,
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison(objects(declared("d", number)), objects(held("D", &oratype.ObservedDomain{BaseType: "VARCHAR2(5)"})))
+			}},
+		{name: "an object type that differs", objectTypes: schemaext.ObjectCount{Matched: 1}, changes: 1,
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison(objects(declared("p", &oratype.DesiredObjectType{Attributes: point})),
+					objects(held("P", &oratype.ObservedObjectType{Attributes: []oratype.Attribute{point[1], point[0]}})))
+			}},
+		{name: "a creation, a drop and a match", domains: schemaext.ObjectCount{Matched: 1, Added: 1},
+			objectTypes: schemaext.ObjectCount{Removed: 1}, changes: 2,
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison(objects(declared("d", number), declared("e", number)),
+					objects(held("D", &oratype.ObservedDomain{BaseType: "NUMBER"}), held("P", &oratype.ObservedObjectType{Attributes: point})))
+			}},
+		{name: "a creation on a target without domains", domains: schemaext.ObjectCount{Added: 1}, changes: 1,
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(objects(declared("d", number)), nil)
+				request.Current.Coverage = schemaext.Coverage{}
+				request.Capabilities = capability.Oracle21()
+				return request
+			}},
+		{name: "a creation the read did not establish", undecided: 1,
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(objects(declared("d", number)), nil)
+				request.Current.Coverage = schemaext.Coverage{}
+				return request
+			}},
+		{name: "a declaration of a type the read cannot describe", undecided: 1,
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(objects(declared("kept", number)), nil)
+				request.Current.Coverage = undescribed
+				return request
+			}},
+		{name: "a type the desired source does not describe",
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(nil, objects(held("D", &oratype.ObservedDomain{BaseType: "NUMBER"})))
+				request.Desired.Coverage = schemaext.Coverage{}
+				return request
+			}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := newRuntime(c).CompareObjects(t.Context(), test.request())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, test.changes)
+			c.Assert(result.Undecided, qt.HasLen, test.undecided)
+			c.Assert(result.Counts, qt.DeepEquals, typeCounts(test.domains, test.objectTypes))
+		})
+	}
+}
+
 // TestCompareTypes_FailurePath pins the requests the service refuses: another
 // target, and a declaration among the observations.
 func TestCompareTypes_FailurePath(t *testing.T) {

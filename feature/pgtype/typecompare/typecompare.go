@@ -65,8 +65,10 @@ func (p pair) held() bool {
 	return p.observedDomain != nil || p.observedComposite != nil || p.observedRange != nil
 }
 
-// CompareObjects returns one change per type that differs, in identity order.
-// Inputs remain unchanged.
+// CompareObjects returns one change per type that differs, in identity order,
+// and counts the types it compared under each kind's change: the ones both
+// sides hold, the creations and the drops. A type it leaves alone or cannot
+// decide is counted on neither side. Inputs remain unchanged.
 func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -88,6 +90,9 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	for _, kind := range pgtype.ChangeKinds() {
+		result.Counts = append(result.Counts, schemaext.ObjectCount{Kind: kind})
+	}
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
@@ -99,6 +104,8 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 
 func compare(request schemaext.ObjectComparisonRequest, pair pair, result *schemaext.ObjectComparisonResult) {
 	kind := schemaext.Kind(pair.ref.Kind)
+	changes := changeKind(kind)
+	count := &result.Counts[slices.IndexFunc(result.Counts, func(count schemaext.ObjectCount) bool { return count.Kind == changes })]
 	switch {
 	case !pair.held():
 		current := request.Current.Coverage.Lookup(kind, pair.ref)
@@ -108,16 +115,31 @@ func compare(request schemaext.ObjectComparisonRequest, pair pair, result *schem
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: creation(pair)})
+		count.Added++
 	case !pair.declared():
 		desired := request.Desired.Coverage.Lookup(kind, pair.ref)
 		if unknown(desired) || desired.State == schemaext.Defaulted {
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: removal(pair)})
+		count.Removed++
 	default:
+		count.Matched++
 		if change := difference(request.Capabilities, pair); change != nil {
 			result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: change})
 		}
+	}
+}
+
+// changeKind is the kind of the changes a type of kind is compared under.
+func changeKind(kind schemaext.Kind) schemaext.Kind {
+	switch kind {
+	case pgtype.DomainKind:
+		return pgtype.DomainChangeKind
+	case pgtype.CompositeKind:
+		return pgtype.CompositeChangeKind
+	default:
+		return pgtype.RangeChangeKind
 	}
 }
 

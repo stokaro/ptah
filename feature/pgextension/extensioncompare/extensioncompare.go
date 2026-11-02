@@ -49,8 +49,10 @@ type pair struct {
 	observed *pgextension.ObservedExtension
 }
 
-// CompareObjects returns one change per extension that differs. Inputs remain
-// unchanged.
+// CompareObjects returns one change per extension that differs, and counts the
+// extensions it compared: the ones both sides hold, the installations and the
+// drops. An extension it leaves alone is counted on neither side. Inputs
+// remain unchanged.
 func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -73,7 +75,8 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 	}
 	scope := comparisonScope{request: request, semantics: defaultSchemaSemantics(request.Identifiers),
 		excluded: excludedNames(request.Exclusions), needed: neededExtensions(request.DeclaredColumns, request.Required)}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired,
+		Counts: []schemaext.ObjectCount{{Kind: pgextension.ChangeKind}}}
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
@@ -103,13 +106,16 @@ func (s comparisonScope) compare(pair pair, result *schemaext.ObjectComparisonRe
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: &pgextension.Change{After: pair.desired}})
+		result.Counts[0].Added++
 	case pair.desired == nil:
 		desired := s.request.Desired.Coverage.Lookup(pgextension.ExtensionKind, pair.ref)
 		if unknown(desired) || desired.State == schemaext.Defaulted || s.needed[name] || serverobjects.IsExtension(s.request.Target, name) {
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: &pgextension.Change{Before: pair.observed}})
+		result.Counts[0].Removed++
 	default:
+		result.Counts[0].Matched++
 		if change, differs := s.difference(pair); differs {
 			result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.ref, Value: change})
 		}

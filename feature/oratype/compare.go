@@ -52,8 +52,10 @@ func checkTarget(ctx context.Context, target, stage string) error {
 // drop a type the desired source did not describe or asked to default.
 type CompareService struct{}
 
-// CompareObjects returns one change per type that differs. Inputs remain
-// unchanged.
+// CompareObjects returns one change per type that differs, and counts the
+// types it compares under the change kind of each model: the ones both sides
+// hold, the creations and the drops. A type it leaves alone or cannot decide
+// is counted on neither side. Inputs remain unchanged.
 func (CompareService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if err := checkTarget(ctx, request.Target, "comparison"); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -70,6 +72,9 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 	}
 	claims := subjectClaims(request.Identifiers, request.Current.Coverage)
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	for _, kind := range ChangeKinds() {
+		result.Counts = append(result.Counts, schemaext.ObjectCount{Kind: kind})
+	}
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
@@ -123,17 +128,29 @@ func compare(request schemaext.ObjectComparisonRequest, claims map[objectidentit
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: ref, Value: pair.creation()})
+		countOf(result, kind).Added++
 	case !pair.declared():
 		desired := request.Desired.Coverage.Lookup(kind, ref)
 		if unknown(desired) || desired.State == schemaext.Defaulted {
 			return
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: ref, Value: pair.removal()})
+		countOf(result, kind).Removed++
 	default:
+		countOf(result, kind).Matched++
 		if change := pair.difference(); change != nil {
 			result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: ref, Value: change})
 		}
 	}
+}
+
+// countOf is the count of the change kind a type of kind takes.
+func countOf(result *schemaext.ObjectComparisonResult, kind schemaext.Kind) *schemaext.ObjectCount {
+	change := ObjectTypeChangeKind
+	if kind == DomainKind {
+		change = DomainChangeKind
+	}
+	return &result.Counts[slices.IndexFunc(result.Counts, func(count schemaext.ObjectCount) bool { return count.Kind == change })]
 }
 
 // capabilityOf is the capability a target needs to hold a type of kind.

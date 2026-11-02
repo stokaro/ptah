@@ -13,6 +13,7 @@ import (
 	"ptah.run/dialect/clickhouse/chcompare"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
+	"ptah.run/engine"
 )
 
 // rowPolicySemantics are the rules of a comparison against the connection's
@@ -187,6 +188,91 @@ func TestRowPolicyComparison_FailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, test.want)
 			c.Assert(result.Complete, qt.IsFalse)
+		})
+	}
+}
+
+// rowPolicyRuntime selects the row policy owner on ClickHouse and nothing
+// else, so the engine checks each count the owner states against its changes.
+func rowPolicyRuntime(c *qt.C) *engine.Runtime {
+	c.Helper()
+	return must.Must(engine.New(engine.Provider{ID: chschema.Owner, Targets: []engine.Target{{Name: "clickhouse"}},
+		Codecs: append(chschema.RowPolicyCodecs(), chdiff.RowPolicyCodecs()...),
+		Comparisons: []engine.ObjectComparison{{Target: "clickhouse", Kinds: []schemaext.Kind{chschema.RowPolicyKind},
+			ChangeKinds: []schemaext.Kind{chdiff.RowPolicyKind}, Service: chcompare.RowPolicyService{}}},
+	}))
+}
+
+// declaredNamed and observedNamed are the policy name on app.orders, declared
+// and held as tenantPolicy.
+func declaredNamed(name string) schemaext.Object {
+	return must.Must(chschema.DesiredRowPolicyObject(chschema.RowPolicyRef("app", "orders", name), *tenantPolicy.Desired()))
+}
+
+func observedNamed(name string) schemaext.Object {
+	return must.Must(chschema.ObservedRowPolicyObject(chschema.RowPolicyRef("app", "orders", name), tenantPolicy))
+}
+
+// TestRowPolicyComparison_CountsWhatItCompares pins the counts the inventory
+// reports for row policies: a policy both sides hold is matched whether or not
+// it differs, a creation is added and a drop removed, and a policy the
+// comparison keeps, cannot decide or leaves to its table's transition is
+// counted on neither side, so a server that agrees counts what the
+// declaration does.
+func TestRowPolicyComparison_CountsWhatItCompares(t *testing.T) {
+	limited := []schemaext.SubjectCoverage{{Kind: chschema.RowPolicyKind, Subject: chschema.RowPolicyRef("app", "orders", "tenant"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "defined in users.xml"}}}
+	restrictive := chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Composition: chschema.Restrictive,
+		Roles: chschema.RoleSelection{Names: []string{"alice"}}}
+	orders := objectidentity.NewBuilder(rowPolicySemantics()).TablePartsVerbatim("app", "orders")
+	held := []schemaext.ParentState{{Subject: orders, Desired: true, Current: true}}
+	tests := []struct {
+		name             string
+		desired, current schemaext.ObjectState
+		parents          []schemaext.ParentState
+		want             schemaext.ObjectCount
+		changes          int
+		undecided        int
+	}{
+		{name: "a policy that agrees", want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Matched: 1}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, complete(), declaredNamed("tenant")),
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))},
+		{name: "a policy that differs", changes: 1, want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Matched: 1}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, complete(), declared("app", restrictive)),
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))},
+		{name: "a creation, a drop and a match", changes: 2, want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind, Matched: 1, Added: 1, Removed: 1}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, complete(), declaredNamed("tenant"), declaredNamed("created")),
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"), observedNamed("dropped"))},
+		{name: "a policy the desired source cannot describe", want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "the source states no row policies"}),
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))},
+		{name: "a declaration the source could not describe completely", undecided: 1, want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind}, parents: held,
+			desired: schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(declaredNamed("tenant"))),
+				Coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, complete(), limited))},
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant"))},
+		{name: "a declaration on an unread namespace", undecided: 1, want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, complete(), declaredNamed("tenant")),
+			current: rowPolicyState(schemaext.Observed, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "access denied"})},
+		{name: "a held policy the read could not describe", want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind}, parents: held,
+			desired: rowPolicyState(schemaext.Desired, complete()),
+			current: schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(observedNamed("tenant"))),
+				Coverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, complete(), limited))}},
+		{name: "a policy of a table the plan drops", want: schemaext.ObjectCount{Kind: chdiff.RowPolicyKind},
+			desired: rowPolicyState(schemaext.Desired, complete()),
+			current: rowPolicyState(schemaext.Observed, complete(), observedNamed("tenant")),
+			parents: []schemaext.ParentState{{Subject: orders, Current: true}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := rowPolicyRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+				Target: "clickhouse", Identifiers: rowPolicySemantics(), Desired: test.desired, Current: test.current, Parents: test.parents})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, test.changes)
+			c.Assert(result.Undecided, qt.HasLen, test.undecided)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
 		})
 	}
 }

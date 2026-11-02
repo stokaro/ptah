@@ -27,6 +27,15 @@ type pair struct {
 // CompareObjects returns ordered changes without mutating either snapshot.
 // Unknown catalog knowledge withholds changes instead of treating silence as
 // absence. Errors and cancellation return no partial result.
+//
+// It counts the identities it compared. An identity the database holds a
+// catalog entry for and the desired state declares is matched, and so is a
+// declaration the database already satisfies with its built-in privileges. A
+// declaration the plan has to write an entry for is added, and an entry the
+// plan takes back that nothing declares is removed. An entry it keeps for want
+// of authority, or cannot decide, is counted on neither side. A comparison
+// that changes an identity whose catalog entry it could not read counts
+// nothing, since it cannot say which side holds that identity.
 func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: default privilege comparison requires a context", schemaext.ErrInvalidValue)
@@ -49,35 +58,42 @@ func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectCompa
 		roles = append(roles, role.Name.Source)
 	}
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	count := schemaext.ObjectCount{Kind: pgdefaultprivilege.ChangeKind}
+	counted := true
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
 			return schemaext.ObjectComparisonResult{}, err
 		}
-		comparePair(pair, roles, request, &result)
+		counted = comparePair(pair, roles, request, &result, &count) && counted
+	}
+	if counted {
+		result.Counts = []schemaext.ObjectCount{count}
 	}
 	return result, ctx.Err()
 }
 
-func comparePair(p pair, roles []string, request schemaext.ObjectComparisonRequest, result *schemaext.ObjectComparisonResult) {
+// comparePair compares one identity and counts it. It reports false when it
+// changed the identity without knowing whether the database holds it.
+func comparePair(p pair, roles []string, request schemaext.ObjectComparisonRequest, result *schemaext.ObjectComparisonResult, count *schemaext.ObjectCount) bool {
 	desiredKnowledge := pairKnowledge(request.Desired.Coverage, p, request)
 	if unknown(desiredKnowledge) {
 		if p.desired != nil {
 			result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: p.ref,
 				Reason: "desired default privileges are not established: " + desiredKnowledge.Reason})
 		}
-		return
+		return true
 	}
 	currentKnowledge := pairKnowledge(request.Current.Coverage, p, request)
 	if unknown(currentKnowledge) {
 		if change, ok := convergeOwner(p, roles, request); ok {
 			result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: p.ref, Value: change})
-			return
+			return false
 		}
 		if p.desired != nil {
 			result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: pgdefaultprivilege.DefaultPrivilegeKind, Subject: p.ref,
 				Reason: "default privileges are not established: " + currentKnowledge.Reason})
 		}
-		return
+		return true
 	}
 	var desired []declaration
 	if p.desired != nil {
@@ -99,9 +115,19 @@ func comparePair(p pair, roles []string, request schemaext.ObjectComparisonReque
 	}
 	change := &pgdefaultprivilege.Change{Before: before, Granted: grantsOf(difference.grants), Revoked: grantsOf(difference.revokes),
 		GrantOptionsAdded: namesOf(difference.optionsAdded), GrantOptionsRevoked: namesOf(difference.optionsRevoked)}
-	if len(change.Granted)+len(change.Revoked)+len(change.GrantOptionsAdded)+len(change.GrantOptionsRevoked) != 0 {
+	changed := len(change.Granted)+len(change.Revoked)+len(change.GrantOptionsAdded)+len(change.GrantOptionsRevoked) != 0
+	if changed {
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: p.ref, Value: change})
 	}
+	switch {
+	case changed && p.observed == nil:
+		count.Added++
+	case changed && p.desired == nil:
+		count.Removed++
+	case p.desired != nil:
+		count.Matched++
+	}
+	return true
 }
 
 func privilegeEntry(identity pgdefaultprivilege.Identity, grant pgdefaultprivilege.Grant) entry {

@@ -42,7 +42,10 @@ type aggregatePair struct {
 // CompareObjects preserves observed aggregates a source cannot describe and
 // never treats an unread namespace as empty: a declared aggregate whose
 // presence was not established is undecided, and an unread namespace plans no
-// removal because nothing in it was observed. Inputs remain unchanged.
+// removal because nothing in it was observed. It counts the aggregates it
+// compares: the ones both sides hold, a replacement included, the creations
+// and the drops. An aggregate it keeps or leaves undecided is counted on
+// neither side. Inputs remain unchanged.
 func (AggregateService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -63,7 +66,8 @@ func (AggregateService) CompareObjects(ctx context.Context, request schemaext.Ob
 	if err := refuseRelationNames(request, pairs); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects},
+		Counts: []schemaext.ObjectCount{{Kind: tsdiff.ContinuousAggregateKind}}}
 	var adopted []schemaext.SubjectCoverage
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
@@ -123,13 +127,16 @@ func compareAggregate(request schemaext.ObjectComparisonRequest, pair aggregateP
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.currentRef,
 			Value: &tsdiff.ContinuousAggregate{Before: pair.current}})
+		result.Counts[0].Removed++
 		return nil, nil
 	}
 	if pair.current == nil {
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.desiredRef,
 			Value: &tsdiff.ContinuousAggregate{After: pair.desired}})
+		result.Counts[0].Added++
 		return nil, nil
 	}
+	result.Counts[0].Matched++
 	if SameAggregate(pair.desired, pair.current) {
 		return nil, nil
 	}

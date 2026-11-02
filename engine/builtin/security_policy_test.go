@@ -120,6 +120,75 @@ func TestSecurityPolicyComparison(t *testing.T) {
 	}
 }
 
+// TestSecurityPolicyComparison_CountsWhatItCompares pins the counts the
+// inventory reports for security policies: a policy both sides hold is
+// matched whether or not it differs, including a change of its schema binding
+// that drops and creates it, a creation is added and a drop removed, and a
+// policy the comparison keeps or cannot decide is counted on neither side, so
+// a server that agrees counts what the declaration does.
+func TestSecurityPolicyComparison_CountsWhatItCompares(t *testing.T) {
+	declaredTenancy := desiredPolicy("tenancy", mssqlschema.DesiredSecurityPolicy{Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "tenant_id")}})
+	heldTenancy := observedPolicy("tenancy", mssqlschema.ObservedSecurityPolicy{
+		Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "[tenant_id]")}, Enabled: true, SchemaBinding: true})
+	limitedTenancy := []schemaext.SubjectCoverage{{Kind: mssqlschema.SecurityPolicyKind, Subject: mssqlschema.SecurityPolicyRef("rls", "tenancy"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "the test says so"}}}
+	tests := []struct {
+		name             string
+		desired, current schemaext.ObjectState
+		want             schemaext.ObjectCount
+		changes          int
+		undecided        int
+	}{
+		{name: "a policy that agrees", want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind, Matched: 1},
+			desired: policyState(schemaext.Desired, schemaext.Complete, declaredTenancy),
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy)},
+		{name: "a policy disabled in place", changes: 1, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind, Matched: 1},
+			desired: policyState(schemaext.Desired, schemaext.Complete, desiredPolicy("tenancy", mssqlschema.DesiredSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "tenant_id")}, Enabled: new(false)})),
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy)},
+		{name: "a schema binding dropped and created again", changes: 1, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind, Matched: 1},
+			desired: policyState(schemaext.Desired, schemaext.Complete, desiredPolicy("tenancy", mssqlschema.DesiredSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "tenant_id")}, SchemaBinding: new(false)})),
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy)},
+		{name: "a creation, a drop and a match", changes: 2, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind, Matched: 1, Added: 1, Removed: 1},
+			desired: policyState(schemaext.Desired, schemaext.Complete, declaredTenancy, desiredPolicy("billing", mssqlschema.DesiredSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyInvoices, "tenant_id")}})),
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy, observedPolicy("retired", mssqlschema.ObservedSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyInvoices, "[tenant_id]")}, Enabled: true, SchemaBinding: true}))},
+		{name: "a policy the description could not express", want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind},
+			desired: policyState(schemaext.Desired, schemaext.Uninspected),
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy)},
+		{name: "a declaration the source could not describe completely", undecided: 1, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind},
+			desired: schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(declaredTenancy)),
+				Coverage: must.Must(mssqlschema.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, limitedTenancy))},
+			current: policyState(schemaext.Observed, schemaext.Complete, heldTenancy)},
+		{name: "a declaration on a server whose policies were not read", undecided: 1, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind},
+			desired: policyState(schemaext.Desired, schemaext.Complete, declaredTenancy),
+			current: policyState(schemaext.Observed, schemaext.Uninspected)},
+		{name: "a held policy the read could not describe", want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind},
+			desired: policyState(schemaext.Desired, schemaext.Complete),
+			current: schemaext.ObjectState{Objects: must.Must(schemaext.NewObjects(heldTenancy)),
+				Coverage: must.Must(mssqlschema.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, limitedTenancy))}},
+		{name: "an argument the server rewrote", undecided: 1, want: schemaext.ObjectCount{Kind: mssqldiff.SecurityPolicyKind},
+			desired: policyState(schemaext.Desired, schemaext.Complete, desiredPolicy("tenancy", mssqlschema.DesiredSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "CAST(tenant AS int) + 0")}})),
+			current: policyState(schemaext.Observed, schemaext.Complete, observedPolicy("tenancy", mssqlschema.ObservedSecurityPolicy{
+				Predicates: []mssqlschema.Predicate{policyFilter(policyOrders, "CONVERT([int],[tenant])+(0)")}, Enabled: true, SchemaBinding: true}))},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := comparePolicies(c, test.desired, test.current)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, test.changes)
+			c.Assert(result.Undecided, qt.HasLen, test.undecided)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
+		})
+	}
+}
+
 // TestSecurityPolicyComparison_FailurePath_OneEnabledPolicyPerTable pins the
 // refusal of a desired state SQL Server refuses with Msg 33264: two enabled
 // policies binding one table, whether both are declared or one is an
