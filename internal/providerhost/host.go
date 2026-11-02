@@ -82,6 +82,10 @@ var hostFeatures = []string{
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
 	provider.PlanningObjectContextFeature,
+	// A filtered read carries the provider's planning context outside its
+	// scope, which the planner receives as context and nothing compares; see
+	// reader.planningContext.
+	provider.PlanningContextInventoryFeature,
 	// A migration file, a printed diff and a rendered schema ask for SQL
 	// text units, and a provider refuses a change it can make only natively;
 	// see target.Render and rowWriter.RenderWrites.

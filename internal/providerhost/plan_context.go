@@ -22,6 +22,7 @@ func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.
 		Objects: featureplan.ObjectContext{
 			Desired: schemaext.ObjectState{Objects: diff.Features.DesiredObjects, Coverage: diff.Features.DesiredCoverage},
 			Current: schemaext.ObjectState{Objects: diff.Features.CurrentObjects, Coverage: diff.Features.CurrentCoverage},
+			Context: schemaext.ObjectState{Objects: diff.Features.ContextObjects, Coverage: diff.Features.ContextCoverage},
 		},
 		Types: featureplan.TypeContext{Desired: schemaext.DefinedTypes(diff.Features.DesiredObjects), Current: schemaext.DefinedTypes(diff.Features.CurrentObjects)}}
 	builder := objectidentity.NewBuilder(request.Identifiers)

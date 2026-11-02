@@ -58,6 +58,13 @@ type Database struct {
 	FeatureObjects schemaext.Objects `json:"feature_objects,omitzero"`
 	// FeatureCoverage records the model definitions and scopes this source actually describes.
 	FeatureCoverage schemaext.Coverage `json:"feature_coverage,omitzero"`
+	// PlanningContextObjects holds the objects of a provider's planning
+	// context kinds that a filtered read left out of its scope, and
+	// PlanningContextCoverage what the read established about them across the
+	// database. They are context for planning only: a comparison never reads
+	// them, so they neither appear nor disappear in a diff.
+	PlanningContextObjects  schemaext.Objects  `json:"planning_context_objects,omitzero"`
+	PlanningContextCoverage schemaext.Coverage `json:"planning_context_coverage,omitzero"`
 	// Facets carries typed settings owned by feature providers.
 	Facets      schemaext.Facets   `json:"facets,omitzero"`
 	Schemas     []Schema           `json:"schemas"`
