@@ -56,7 +56,8 @@ func declarationIdentityMatches(request *protocol.PlanDeclarationsRequest, objec
 // comparison; any other owner database, or none in the context, refuses.
 func declaredObjectIdentityMatches(request *protocol.PlanDeclarationsRequest, record *protocol.ComparisonRecord) bool {
 	owner := record.GetValue().GetValue().GetOwner()
-	if record.GetSubject().GetDatabase() != nil || owner.GetDatabase() == "" {
+	subject := record.GetSubject().GetDatabase()
+	if subject.GetSource() != "" || subject.GetNormalized() != "" || owner.GetDatabase() == "" {
 		return declarationIdentityMatches(request, record)
 	}
 	database := record.GetValue().GetValue().GetContext().GetDatabase()

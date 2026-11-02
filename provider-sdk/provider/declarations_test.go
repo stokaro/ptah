@@ -186,7 +186,8 @@ func readValueDeclaration(context *protocol.DatabaseContext) (*protocol.Descript
 	}
 	object := request.Objects[0]
 	object.Value.Value.Owner.Database, object.Value.NormalizedOwner.Database = "database", "database"
-	object.Subject.Database = nil
+	// The host spells a database it leaves out as an empty part.
+	object.Subject.Database = &protocol.ComparisonPart{}
 	object.Value.Value.Context = context
 	return d, request
 }
