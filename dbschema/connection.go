@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sessiontx"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -564,13 +565,13 @@ func (dc *DatabaseConnection) WithIsolatedQuerySession(
 	}
 
 	txOpts, readOnlyStatement := isolatedSessionReadOnly(service, opts)
-	tx, err := session.BeginTx(ctx, txOpts)
+	tx, err := sessiontx.Begin(ctx, session, txOpts)
 	if err != nil {
 		return fmt.Errorf("begin isolated query transaction: %w", err)
 	}
 	defer func() {
 		rollbackErr := tx.Rollback()
-		if rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone) || service.TransactionEnded(rollbackErr) {
+		if rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone) || service.TransactionEnded(rollbackErr) || rollbackAfterCancel(ctx) {
 			return
 		}
 		resultErr = errors.Join(resultErr, fmt.Errorf("roll back transaction: %w", rollbackErr))
@@ -690,6 +691,16 @@ func connectionCapabilities(connection, baseline capability.Capabilities) capabi
 		return baseline
 	}
 	return connection
+}
+
+// rollbackAfterCancel reports whether a failed rollback follows a run whose
+// context ended. The transaction is begun under sessiontx, so the rollback is
+// this package's to run, and a driver may already have closed the session to
+// cancel the statement in flight: pgx does, and the rollback then fails with
+// "conn closed". A closed session holds no transaction, and the caller's error
+// already says the run was canceled, so the failure is not reported beside it.
+func rollbackAfterCancel(ctx context.Context) bool {
+	return ctx.Err() != nil
 }
 
 func discardSQLConnection(session *sql.Conn, label string) error {

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"ptah.run/internal/sessiontx"
 )
 
 // WithRolledBackTransaction runs body inside one transaction, and rolls that
@@ -73,14 +75,14 @@ func (dc *DatabaseConnection) rollBackOn(
 	label string,
 	body func(ctx context.Context, tx *sql.Tx) error,
 ) (ran bool, resultErr error) {
-	tx, err := session.BeginTx(ctx, &sql.TxOptions{})
+	tx, err := sessiontx.Begin(ctx, session, &sql.TxOptions{})
 	if err != nil {
 		return false, fmt.Errorf("%s: begin transaction: %w", label, err)
 	}
 	defer func() {
 		// The rollback is the point of the transaction, not its error path:
 		// everything the body created exists only until this line runs.
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) && !rollbackAfterCancel(ctx) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("%s: roll back: %w", label, rollbackErr))
 		}
 	}()

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sessiontx"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
 )
@@ -299,7 +300,7 @@ func (w *Writer) dropAllTables(ctx context.Context, includeRevisionTable bool) (
 		return fmt.Errorf("sqlite: disable foreign keys: %w", err)
 	}
 
-	tx, err = conn.BeginTx(ctx, nil)
+	tx, err = sessiontx.Begin(ctx, conn, nil)
 	if err != nil {
 		return fmt.Errorf("sqlite: begin drop transaction: %w", err)
 	}

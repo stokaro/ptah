@@ -120,5 +120,8 @@ func TestVerifyChecksReportsACancelledRunAsCancelledLive(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
+	// pgx closes the session to cancel the statement, so the rollback that
+	// follows has no session to run on; that is not a second failure.
+	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*roll back.*`)
 	c.Assert(report.Results, qt.HasLen, 0)
 }
