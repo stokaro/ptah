@@ -1549,8 +1549,12 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose
-	// pre-MODIFY drop was already emitted at step 4.
-	result, err = p.addNewConstraints(result, diff, fkPlan.dropped)
+	// pre-MODIFY drop was already emitted at step 4, and the keys
+	// DroppedWithColumns finds the drop of a key step 4.7 took with its column.
+	alreadyDropped := make(map[constraintHostKey]struct{}, len(fkPlan.dropped))
+	maps.Copy(alreadyDropped, fkPlan.dropped)
+	maps.Copy(alreadyDropped, keyrelease.DroppedWithColumns(diff, p.targetDialect()))
+	result, err = p.addNewConstraints(result, diff, alreadyDropped)
 	if err != nil {
 		return nil, err
 	}
@@ -1565,9 +1569,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
 	// rollback plans may need to drop both. The FK must go first. fkPlan.dropped
-	// suppresses any removed-only FK already dropped at step 4.
-	alreadyDropped := released.ConstraintSet()
-	maps.Copy(alreadyDropped, fkPlan.dropped)
+	// suppresses any removed-only FK already dropped at step 4, and the keys
+	// DroppedWithColumns finds a key that went with its column at step 4.7.
+	maps.Copy(alreadyDropped, released.ConstraintSet())
 	result = p.removeConstraints(result, diff, alreadyDropped)
 
 	// 6.6. Remove view-like objects before dependent tables. Triggers were

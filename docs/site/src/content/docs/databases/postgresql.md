@@ -474,6 +474,13 @@ plans `ALTER TABLE c ADD CONSTRAINT c_x_key1 UNIQUE (x)`; under `c_x_key`,
 PostgreSQL 18.6 refuses the statement with `relation "c_x_key" already
 exists`.
 
+The rollback of a plan that gives a column its `UNIQUE` drops the key the
+column took, under the same name. The rollback of a plan that drops a key adds
+the key back with the body the database held, and a column the rollback makes
+`UNIQUE` again or adds back takes no second key through its `UNIQUE`. Where a
+key the rollback adds back takes the name of the key a column holds, the
+rollback drops that column's key first.
+
 MySQL and MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
 [MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
 an unnamed foreign key, `fk_<table>_<column>`. MySQL and MariaDB name an
