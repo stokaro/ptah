@@ -615,6 +615,12 @@ ptah schema apply --provider-config providers.json \
 A provider can support `--tx-mode file` and `--tx-mode all` by advertising
 transaction sessions for the selected engine and establishing transactional DDL
 on the opened session. Otherwise these modes are refused before execution.
+
+A provider whose session establishes `ddl_inside_transaction` as false states
+that its server refuses a schema statement inside an explicit transaction. The
+host then runs the statements of `--tx-mode file`, the default, without one, as
+it does for a built-in engine with that capability.
+
 `--tx-mode none` permits committed prefixes; a later failure does not undo
 earlier operations. A lost commit reply reports an unknown outcome and is never
 automatically retried. Prepared apply and saved JSON
