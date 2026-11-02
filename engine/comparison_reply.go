@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -55,7 +56,80 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	result.Counts, err = comparisonCounts(r.comparisonServices[service].ChangeKinds, result.Changes, result.Counts)
+	if err != nil {
+		return schemaext.ObjectComparisonResult{}, err
+	}
 	return result, nil
+}
+
+// comparisonCounts checks the counts a comparer reports against its changes:
+// each names a change kind of its service once, and no count is negative.
+// Every addition and every removal it counts is one of its changes of the
+// kind, and every such change adds an object, removes one, or changes one both
+// sides hold, so the changes of a kind are never more than its three counts
+// together.
+func comparisonCounts(kinds []schemaext.Kind, changes []schemaext.ChangeRecord, counts []schemaext.ObjectCount) ([]schemaext.ObjectCount, error) {
+	counted := make(map[schemaext.Kind]bool, len(counts))
+	for _, count := range counts {
+		if !slices.Contains(kinds, count.Kind) || counted[count.Kind] {
+			return nil, fmt.Errorf("%w: comparison counted an unrelated or duplicate change kind %q", schemaext.ErrInvalidValue, count.Kind)
+		}
+		counted[count.Kind] = true
+		changed := 0
+		for _, change := range changes {
+			if change.Value.Kind() == count.Kind {
+				changed++
+			}
+		}
+		if count.Matched < 0 || count.Added < 0 || count.Removed < 0 || count.Added > changed || count.Removed > changed ||
+			changed > count.Matched+count.Added+count.Removed {
+			return nil, fmt.Errorf("%w: comparison counted %d matched, %d added and %d removed objects of change kind %q, which its %d changes of the kind contradict",
+				schemaext.ErrInvalidValue, count.Matched, count.Added, count.Removed, count.Kind, changed)
+		}
+	}
+	return slices.Clone(counts), nil
+}
+
+// objectCounts sums the counts of the services one comparison ran, by change
+// kind. A kind is reported only when every service that ran and owns changes
+// of the kind counted it: the count of part of a kind's objects would read as
+// all of them.
+type objectCounts struct {
+	sums      map[schemaext.Kind]schemaext.ObjectCount
+	uncounted map[schemaext.Kind]bool
+}
+
+// add takes the counts of a service that owns changes of kinds.
+func (o *objectCounts) add(kinds []schemaext.Kind, counts []schemaext.ObjectCount) {
+	if o.sums == nil {
+		o.sums, o.uncounted = make(map[schemaext.Kind]schemaext.ObjectCount), make(map[schemaext.Kind]bool)
+	}
+	for _, kind := range kinds {
+		index := slices.IndexFunc(counts, func(count schemaext.ObjectCount) bool { return count.Kind == kind })
+		if index < 0 {
+			o.uncounted[kind] = true
+			continue
+		}
+		sum := o.sums[kind]
+		sum.Kind = kind
+		sum.Matched += counts[index].Matched
+		sum.Added += counts[index].Added
+		sum.Removed += counts[index].Removed
+		o.sums[kind] = sum
+	}
+}
+
+// result returns the kinds every service counted, sorted by kind, and nil
+// when there is none.
+func (o *objectCounts) result() []schemaext.ObjectCount {
+	var counts []schemaext.ObjectCount
+	for _, kind := range slices.Sorted(maps.Keys(o.sums)) {
+		if !o.uncounted[kind] {
+			counts = append(counts, o.sums[kind])
+		}
+	}
+	return counts
 }
 
 // comparisonResolved checks the written requests a comparer says it

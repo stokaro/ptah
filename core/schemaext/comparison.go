@@ -115,13 +115,42 @@ type UndecidedChange struct {
 // A successful reply sets Complete, including a completed no-op or diagnostics.
 // Resolved lists the written requests the comparer recognized, each once, with
 // the desired object each names; a comparer leaves out a spelling it does not
-// recognize rather than refusing it.
+// recognize rather than refusing it. Counts says how many objects the
+// comparer compared under each change kind it counts; see [ObjectCount].
 type ObjectComparisonResult struct {
 	Complete  bool
 	Desired   ObjectState
 	Changes   []ChangeRecord
 	Undecided []UndecidedChange
 	Resolved  []ResolvedRequest
+	Counts    []ObjectCount
+}
+
+// ObjectCount counts the objects a comparison compared whose changes have one
+// kind, so a report can say how many of them each side holds and not only how
+// many differ. Kind is the change kind, the one the changes of those objects
+// carry. Matched counts the objects both sides hold that the comparer takes to
+// be the same object, whether they differ or not. Added counts the changes of
+// the kind that create an object the database lacks, and Removed the ones that
+// drop an object the desired state does not declare. A change that drops an
+// object and creates it again counts once in each and is not a match.
+//
+// The desired state holds Matched plus Added objects of the kind, and the
+// database Matched plus Removed. An object the comparer leaves out is counted
+// nowhere: one the run excludes, one it keeps without comparing, one it
+// reports as undecided, and one below a parent that only one side holds, whose
+// state the parent's own change owns. So two sides with no difference count
+// the same.
+//
+// An entry claims every object of its kind in the batch. A comparer that does
+// not count a kind leaves it out, and a reader then knows nothing about the
+// kind rather than that it holds none. A kind the batch holds nothing of may
+// be left out or counted with zeros.
+type ObjectCount struct {
+	Kind    Kind
+	Matched int
+	Added   int
+	Removed int
 }
 
 // ObjectComparisonService compares named feature objects as a contextual batch.

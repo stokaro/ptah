@@ -57,6 +57,7 @@ var nonCategoryFields = map[string]string{
 	"CurrentViewOptions":         "the options the read reported on views and materialized views, carried so a plan that replaces a view or creates one again keeps them. Ptah declares none of them, so none is a difference",
 	"SkippedFeatures":            "the objects the comparison left out because the target does not serve their model and their owner skips them there. They are not differences: the report writes one line for each beside its result, and the diff does not count them as changes",
 	"Matched":                    "how many objects of each kind the comparison paired, whether or not they differ. It is a count of what both sides hold rather than a difference, and the drift report prints it as its inventory; reporting it here would print every paired object as though it had changed",
+	"FeatureCounts":              "how many objects of each change kind the feature owners compared, whether or not they differ. Like Matched it is a count of what both sides hold rather than a difference, and the drift report prints it in its inventory; the changes among those objects are the feature changes this report already prints",
 	"RLSPolicyIdentityConflicts": "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
 }
 

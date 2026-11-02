@@ -1281,6 +1281,14 @@ type SchemaDiff struct {
 	// It is not a change, and no planner reads it, so [SchemaDiff.HasChanges]
 	// ignores it and the wire does not carry it.
 	Matched MatchedCounts `json:"-"`
+
+	// FeatureCounts is how many objects of each change kind the feature
+	// owners compared, one entry per kind they counted, sorted by kind; see
+	// [schemaext.ObjectCount]. An owner's change carries no direction a
+	// reader could count, so the owner states its additions and removals
+	// beside the objects it matched. A kind no entry names was not counted.
+	// Like Matched, it is not a change and the wire does not carry it.
+	FeatureCounts []schemaext.ObjectCount `json:"-"`
 }
 
 // ConstraintValidation names one constraint to validate.

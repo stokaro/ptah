@@ -103,6 +103,7 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	result := schemaext.ObjectComparisonResult{Complete: true, Desired: selectObjectState(request.Desired, inactive)}
+	var counts objectCounts
 	for service, kinds := range batches {
 		if len(kinds) == 0 {
 			continue
@@ -135,6 +136,7 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 		}
 		result.Changes = append(result.Changes, reply.Changes...)
 		result.Undecided = append(result.Undecided, reply.Undecided...)
+		counts.add(r.comparisonServices[service].ChangeKinds, reply.Counts)
 		for _, answer := range reply.Resolved {
 			answered := batch.Requests[answer.Request]
 			index := slices.IndexFunc(asked, func(change schemaext.ChangeRequest) bool {
@@ -149,6 +151,7 @@ func (r *Runtime) CompareObjects(ctx context.Context, request schemaext.ObjectCo
 	if err := requireResolved(request.Target, asked, result.Resolved); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
+	result.Counts = counts.result()
 	slices.SortFunc(result.Resolved, func(a, b schemaext.ResolvedRequest) int { return cmp.Compare(a.Request, b.Request) })
 	slices.SortFunc(result.Changes, func(a, b schemaext.ChangeRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	slices.SortFunc(result.Undecided, func(a, b schemaext.UndecidedChange) int {

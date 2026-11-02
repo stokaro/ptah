@@ -34,6 +34,7 @@ var notChanges = map[string]string{
 	"DeclaredTriggers":             "a planner input off the wire: every trigger the declaration holds, which a view rebuild puts back",
 	"RoutinesKept":                 "a planner input off the wire: the declared routines the database holds unchanged",
 	"ForeignKeysRemovedWithTables": "a supplement of constraints_removed, which counts the removal itself",
+	"FeatureCounts":                "how many objects the feature owners compared, which the inventory reports; the changes among them are feature_changes",
 }
 
 // notTableChanges and notEnumChanges are the same judgment for the fields of a

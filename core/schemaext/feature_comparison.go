@@ -67,7 +67,8 @@ type ComparisonRequest struct {
 // changes are usable without Complete. An operational error exposes no result.
 // Skipped lists the objects the runtime left out because the target does not
 // serve their model and their owner answers [OffTargetSkip]; they are not
-// changes.
+// changes. Counts holds one entry per change kind that every object owner
+// which compares it counted, sorted by kind; see [ObjectCount].
 type ComparisonResult struct {
 	Complete     bool
 	Desired      FeatureState
@@ -75,6 +76,7 @@ type ComparisonResult struct {
 	FacetChanges []FacetChange
 	Undecided    []UndecidedChange
 	Skipped      []SkippedObject
+	Counts       []ObjectCount
 }
 
 // ComparisonService compares both feature surfaces as one contextual operation.

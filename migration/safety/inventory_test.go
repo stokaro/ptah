@@ -10,6 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/safety"
 )
@@ -103,6 +106,36 @@ func TestInventory_HappyPath(t *testing.T) {
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
+		{
+			name: "a feature owner's count is reported under its change kind",
+			diff: &difftypes.SchemaDiff{
+				FeatureCounts: []schemaext.ObjectCount{{Kind: "example.org/extension-change", Matched: 3, Added: 1, Removed: 2}},
+			},
+			want: []safety.InventoryEntry{{Kind: "example.org/extension-change", Desired: 4, Observed: 5}},
+		},
+		{
+			name: "a feature kind counted with zeros on both sides has no entry",
+			diff: &difftypes.SchemaDiff{
+				FeatureCounts: []schemaext.ObjectCount{{Kind: "example.org/extension-change"}},
+			},
+			want: make([]safety.InventoryEntry, 0),
+		},
+		{
+			name: "feature kinds are sorted among the shared kinds",
+			diff: &difftypes.SchemaDiff{
+				Matched: difftypes.MatchedCounts{Tables: 1, Columns: 2},
+				FeatureCounts: []schemaext.ObjectCount{
+					{Kind: "example.org/type-change", Matched: 1},
+					{Kind: "example.org/extension-change", Added: 1},
+				},
+			},
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: "example.org/extension-change", Desired: 1, Observed: 0},
+				{Kind: "example.org/type-change", Desired: 1, Observed: 1},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -138,7 +171,7 @@ var notInventoryKinds = map[string]string{
 	"grant_options":      "counts a grant's WITH GRANT OPTION turning on or off, a setting of a grant both sides hold",
 	"comments":           "counts comments a plan writes in place, each on an object counted under its own kind",
 	"table_constraints":  "counts a table's own constraint lists, which the comparison never fills; it reports every constraint it compares under constraints",
-	"feature_changes":    "counts the changes a feature owner reported; the owner pairs its objects and reports only the ones that differ",
+	"feature_changes":    "counts the changes a feature owner reported under the owner's change kind, which a counted feature kind is reported under; TestInventory_AFeatureKindIsTheKindItsFindingsCarry holds that join",
 }
 
 // TestInventory_KindsAreTheFindingStems holds the inventory and the findings to
@@ -172,6 +205,33 @@ func TestInventory_KindsAreTheFindingStems(t *testing.T) {
 		reported = append(reported, entry.Kind)
 	}
 	c.Assert(reported, qt.DeepEquals, inventoryKinds)
+}
+
+// TestInventory_AFeatureKindIsTheKindItsFindingsCarry joins a feature owner's
+// entry to its findings: the entry is named for the change kind, and the
+// changes of that kind are counted under feature_changes followed by a colon
+// and the same kind. A kind the owner did not count has no entry, though its
+// changes are findings: a reader is not told that a side holds none of it.
+func TestInventory_AFeatureKindIsTheKindItsFindingsCarry(t *testing.T) {
+	c := qt.New(t)
+	ref := objectidentity.NewBuilder(identifier.ForDialect("postgres")).SchemaScopedParts("example.org/subject", "app", "name")
+	diff := &difftypes.SchemaDiff{
+		FeatureChanges: []schemaext.ChangeRecord{
+			{Subject: ref, Value: &classifiedChange{}},
+			{Subject: ref, Value: &unknownChange{}},
+		},
+		FeatureCounts: []schemaext.ObjectCount{{Kind: (&classifiedChange{}).Kind(), Matched: 2, Added: 1}},
+	}
+
+	inventory := safety.Inventory(diff)
+
+	c.Assert(inventory, qt.DeepEquals, []safety.InventoryEntry{{Kind: "example.org/classified-change", Desired: 3, Observed: 2}})
+	categories := make(map[string]bool)
+	for _, finding := range safety.ClassifySchemaDiff(diff) {
+		categories[finding.Category] = true
+	}
+	c.Assert(categories["feature_changes:"+inventory[0].Kind], qt.IsTrue)
+	c.Assert(categories["feature_changes:example.org/unknown-change"], qt.IsTrue)
 }
 
 // TestInventory_CountsWhatTheFindingsCount holds each kind's sides to its

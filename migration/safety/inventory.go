@@ -38,25 +38,37 @@ type InventoryEntry struct {
 // carries counts and never a name, so a report holding it says nothing about
 // what the schema calls its objects.
 //
-// A feature owner's objects are not counted: the owner, not this comparison,
-// decides which of them are the same object, and its reply reports only the
-// ones that differ.
+// The objects a feature owner compares are counted by the owner, which decides
+// which of them are the same object: an entry for one of its kinds is named
+// for the change kind, the text its feature_changes category carries after the
+// colon, and holds the counts the owner stated
+// ([difftypes.SchemaDiff.FeatureCounts]). A kind the owner did not count has
+// no entry, whatever its changes, so a reader is never told that a side holds
+// none of a kind nobody counted.
 func Inventory(diff *difftypes.SchemaDiff) []InventoryEntry {
 	if diff == nil {
 		return nil
 	}
-	entries := make([]InventoryEntry, 0, len(objectKinds))
+	entries := make([]InventoryEntry, 0, len(objectKinds)+len(diff.FeatureCounts))
+	appendEntry := func(entry InventoryEntry) {
+		if entry.Desired != 0 || entry.Observed != 0 {
+			entries = append(entries, entry)
+		}
+	}
 	for _, kind := range objectKinds {
 		matched := kind.matched(diff)
-		entry := InventoryEntry{
+		appendEntry(InventoryEntry{
 			Kind:     kind.stem,
 			Desired:  matched + kind.added(diff),
 			Observed: matched + kind.removed(diff),
-		}
-		if entry.Desired == 0 && entry.Observed == 0 {
-			continue
-		}
-		entries = append(entries, entry)
+		})
+	}
+	for _, count := range diff.FeatureCounts {
+		appendEntry(InventoryEntry{
+			Kind:     string(count.Kind),
+			Desired:  count.Matched + count.Added,
+			Observed: count.Matched + count.Removed,
+		})
 	}
 	slices.SortFunc(entries, func(a, b InventoryEntry) int { return cmp.Compare(a.Kind, b.Kind) })
 	return entries
@@ -103,8 +115,8 @@ type objectKind struct {
 //     Only a diff assembled by hand reaches them.
 //   - feature_changes and the feature_access categories count the changes a
 //     feature owner reported, under the owner's change kind. The owner pairs
-//     its objects itself and reports only the ones that differ, so nothing
-//     here knows how many of them match.
+//     its objects itself, so it counts them too, and [Inventory] reports the
+//     kinds it counted under the change kind the categories carry.
 var objectKinds = []objectKind{
 	// A dropped database takes every object in it.
 	{
