@@ -254,7 +254,10 @@ practical, live commands:
 - Run the commands shown in new or changed examples, or explain in the PR why a
   command cannot be run locally.
 - For CLI docs, compare against current help and output from the built `ptah`
-  binary.
+  binary. `go test ./internal/doccommands -count=1` resolves every `ptah` and
+  `ptah-compat` command line in the tracked Markdown and in `--help` against
+  the command tree; run it after any change that adds a command line or
+  renames a verb or flag.
 - For a workflow that accepts several desired-schema sources, keep the prose
   source-neutral and make the first complete example a static source that does
   not require Go. Use the exact selector for the chosen transport:
@@ -279,51 +282,149 @@ practical, live commands:
   scripts/check-public-api-released.sh
   ```
 
-- For any documentation change, run the complete suite. These are the same
-  commands CI runs, so a local failure is a CI failure:
+- For any documentation change, run the complete suite. It is every check
+  `.github/workflows/docs.yml` runs over the working tree, grouped by the job
+  that runs it, and `check-skill-suite.mjs` fails when the two disagree, so a
+  local failure is a CI failure. The checks that need a built site follow
+  `npm run build`; the deployment's own steps are not here, and the guard names
+  each one with the reason.
+
+  <!-- documentation-suite -->
 
   ```bash
+  # From the repository root: the Go and shell checks of the Docs workflow.
+  go test ./internal/doccommands -count=1
+  go test ./docs ./internal/docsembed -count=1
+  go test ./internal/cli/atlas/internal/migratetests ./internal/cli/internal/terminologyguard ./internal/cli/oci ./internal/cli/root ./core/query ./internal/agentapi ./internal/agentdiag ./internal/assistloop ./internal/atlascompatpolicy ./internal/atlasfilter ./internal/lintcatalog ./internal/parser ./migration/migrator -count=1
+  go test ./internal/mcpserver -run '^(TestSearchDocs_|TestDescribeSession_ReportsWhatTheDocumentationToolCanReach$|TestToolDocs_)' -count=1
+  go test ./internal/cmdref -count=1
+  scripts/check-feature-inventory.sh
+  scripts/check-docsync.sh
+  scripts/check-examples.sh
+  # These need ptah built into bin/.
+  PTAH_BIN=bin/ptah scripts/check-source-equivalence.sh
+  PTAH_BIN=bin/ptah scripts/check-source-equivalence-selftest.sh
+  PTAH_BIN=bin/ptah scripts/check-source-workflows.sh
+  # The tutorials start their fixtures on a Docker context. On a remote one,
+  # also set PTAH_FIXTURE_HOST to the host that publishes the ports.
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-inference-quick-start.sh
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-postgresql-quick-start.sh
+  PTAH_DOCKER_CONTEXT=<context> docs/site/scripts/check-zero-downtime-changes.sh
   cd docs/site
   npm ci
+  # Documentation style. None of these needs the install above.
+  node scripts/check-style.mjs --selftest
+  node scripts/check-style.mjs
+  node scripts/check-terminology.mjs --selftest
+  node scripts/check-terminology.mjs
+  node scripts/check-translations.mjs --selftest
+  node scripts/check-translations.mjs
+  node scripts/check-limitations.mjs --selftest
+  node scripts/check-limitations.mjs
+  node scripts/check-implementation-chronology.mjs --selftest
+  node scripts/check-implementation-chronology.mjs
+  node scripts/check-skill-suite.mjs --selftest
+  node scripts/check-skill-suite.mjs
+  node scripts/build-content-inventory.mjs --selftest
+  node scripts/check-editorial-shape.mjs --selftest
+  node scripts/check-editorial-shape.mjs
+  node scripts/check-examples.mjs --selftest
+  node scripts/check-examples.mjs
+  node scripts/check-visual-assets.mjs --selftest
+  node scripts/check-visual-assets.mjs
+  node scripts/check-support-matrix.mjs --selftest
+  node scripts/check-support-matrix.mjs
+  node scripts/build-source-support.mjs --selftest
+  node scripts/build-source-support.mjs
+  node scripts/check-documentation-gate.mjs --selftest
+  node scripts/check-deployment-candidate.mjs --selftest
+  node scripts/check-build-info.mjs --selftest
+  node scripts/write-build-info.mjs --selftest
+  node scripts/check-public-docs.mjs --selftest
+  node scripts/apply-release-ui-overlay.mjs --selftest
+  node scripts/apply-docs-address.mjs --selftest
+  node scripts/check-release-page-actions.mjs --selftest
+  node scripts/check-mutable-source-links.mjs --selftest
+  node scripts/check-mutable-source-links.mjs
+  node scripts/check-source-page-contracts.mjs --selftest
+  node scripts/check-source-page-contracts.mjs
+  node scripts/build-inference-quick-start.mjs --selftest
+  node scripts/build-inference-quick-start.mjs
+  node scripts/check-matrix-verdict-prose.mjs --selftest
+  node scripts/check-matrix-verdict-prose.mjs
+  node scripts/check-matrix-citations.mjs --selftest
+  node scripts/check-matrix-citations.mjs
+  node scripts/check-matrix-flag-names.mjs --selftest
+  node scripts/check-matrix-flag-names.mjs
+  node scripts/build-feature-matrix.mjs --check
+  node scripts/publish-root-assets.mjs --selftest
+  node scripts/check-pages-root.mjs --selftest
+  node scripts/check-pages-root.mjs
+  # Build versioned site.
+  npm run versions:selftest
+  node scripts/release-doc-tags.mjs --selftest
+  node scripts/check-route-retirement.mjs --against origin/master
   npm run check:links:selftest
   npm run check:links
+  npm run check:docroutes:selftest
   npm run check:redirects:selftest
   npm run check:redirects
+  npm run check:route-retirement:selftest
+  npm run check:route-retirement
+  npm run check:core-doc-links:selftest
   npm run check:core-doc-links
+  npm run check:page-health:selftest
   npm run check:page-health
   npm run check:content-inventory:selftest
-  npm run check:editorial-shape:selftest
-  npm run check:editorial-shape
-  npm run check:support-matrix:selftest
-  npm run check:support-matrix
+  npm run check:exit-codes:selftest
   npm run check:exit-codes
-  npm run check:style:selftest
-  npm run check:style
-  npm run check:examples:selftest
-  npm run check:examples
-  npm run check:visual-assets:selftest
-  npm run check:visual-assets
-  npm run versions:selftest
-  npm run build
-  # Renders every built page at 390px and 1280px and fails on horizontal
-  # overflow. Needs the built site, so it runs after the build. Requires
-  # Playwright's chromium (npx playwright install chromium); without it the
-  # check skips locally and fails in CI.
+  # Journey SVGs use Linux text metrics, so off Linux this refuses to run;
+  # run the same check in a container instead:
+  # PTAH_DOCKER_CONTEXT=<context> npm run diagrams:docker -- --check
+  npm run check:journey-diagrams
+  npm run check:journey-themes:selftest
   npm run check:responsive:selftest
-  npm run check:responsive
+  npm run check:glossary-coverage:selftest
   npm run check:accessibility:selftest
-  npm run check:accessibility
   npm run check:visual-snapshots:selftest
+  npm run check:graphic-preview:selftest
+  npm run check:version-picker:selftest
+  npm run check:navigation:selftest
+  npm run check:search-ranking:selftest
+  npm run check:heading-anchors:selftest
+  npm run check:faq-groups:selftest
+  npm run check:faq-page:selftest
+  npm run build
+  npm run check:journey-themes
+  # Renders every built page at 390px and 1280px and fails on horizontal
+  # overflow. Requires Playwright's chromium (npx playwright install
+  # chromium); without it the check skips locally and fails in CI.
+  npm run check:responsive
+  npm run check:glossary-coverage
+  npm run check:accessibility
   npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots
+  npm run check:version-picker
+  npm run check:navigation
+  npm run check:search-ranking
+  npm run check:heading-anchors
+  npm run check:faq-groups
+  npm run check:faq-page
+  npm run check:graphic-preview -- --output /tmp/ptah-docs-graphic-preview
+  npm run check:build-info
+  # Generated documentation: needs ptah built into ../../bin.
+  node scripts/build-source-support.mjs --binary ../../bin/ptah
+  # Generated assets: needs ptah and ptah-compat built into ../../bin, and a
+  # Docker context for the Graphviz renderer. Off Linux it also rewrites the
+  # Mermaid SVGs and screenshots under src/assets with this host's text
+  # metrics; nothing compares those, so restore them unless you meant to
+  # change them.
+  npm run check:generated-assets:selftest
+  PTAH_DOCKER_CONTEXT=<context> PTAH_BIN=../../bin/ptah PTAH_COMPAT_BIN=../../bin/ptah-compat npm run check:generated-assets
   npm audit --audit-level=low
   ```
 
-  From the repository root, also run `scripts/check-examples.sh`. When the
-  inference tutorial or its fixture changes, run
-  `docs/site/scripts/check-inference-quick-start.sh` with an explicit
-  `PTAH_DOCKER_CONTEXT`. For a remote context, also set `PTAH_FIXTURE_HOST` to
-  the remote host name so the locally built CLI reaches the published ports.
-  The script removes only its named Compose project and locally built images.
+  Each tutorial script removes only its named Compose project and the images it
+  built locally.
 
   `check:style` covers every layer the style guide governs — `docs/site`,
   `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,

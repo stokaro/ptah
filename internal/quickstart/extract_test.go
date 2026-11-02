@@ -186,6 +186,11 @@ func TestExtract_FailurePath(t *testing.T) {
 			wantErr: `.*:9: an sql block names no file: put the path in a code span in the sentence above it, or label a block that is not written to disk with a language other than "sql"`,
 		},
 		{
+			name:    "a console transcript",
+			file:    "console-transcript.mdx",
+			wantErr: `.*:9: a console block on a quick start runs as written, so its "\$ " prompts would run too; drop the prompts and put the output in its own block`,
+		},
+		{
 			name:    "a Bash block in the Windows tab",
 			file:    "bash-in-windows-tab.mdx",
 			wantErr: `.*:12: a bash block sits in the tab labeled "Windows PowerShell", which selects the other shell; move it to the tab for its own shell`,

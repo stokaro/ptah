@@ -127,32 +127,43 @@ type Node struct {
 // the recognition: which commands a shipped tree holds is decided by two
 // initializer calls whose correctness differs per binary, and a walk that
 // restated them would be wrong about `ptah-compat` on the day `internal/cli/atlas`
-// changed which of them it makes for itself. So Nodes is the only place in
-// this repository that visits a `*cobra.Command`'s children.
+// changed which of them it makes for itself. So [Commands] is the one walk of
+// a whole shipped tree, the one that adds cobra's default commands first, and
+// Nodes is a view of it. A reader that needs every command of a tree takes them
+// from there rather than walking it again.
 func Nodes(root *cobra.Command) []Node {
-	root.InitDefaultHelpCmd()
-	root.InitDefaultCompletionCmd()
-
 	var nodes []Node
-	var visit func(cmd *cobra.Command, path string)
-	visit = func(cmd *cobra.Command, path string) {
+	for _, cmd := range Commands(root) {
 		// The program name is not part of a verb's identity: `ptah` is what the
 		// binary happens to be called, and the classification keys are the
 		// words after it.
-		name := strings.TrimSpace(path + " " + cmd.Name())
 		if cmd == root {
-			name = ""
+			continue
 		}
-		if name != "" {
-			nodes = append(nodes, newNode(cmd, name))
-		}
-		for _, sub := range cmd.Commands() {
-			visit(sub, name)
-		}
+		nodes = append(nodes, newNode(cmd, strings.TrimPrefix(cmd.CommandPath(), root.CommandPath()+" ")))
 	}
-	visit(root, "")
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
 	return nodes
+}
+
+// Commands returns every command a shipped tree holds, the root first and each
+// command before its children, after adding the commands cobra adds when the
+// tree executes. It is the traversal [Nodes] describes, for a caller that needs
+// the commands themselves rather than their records.
+func Commands(root *cobra.Command) []*cobra.Command {
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd()
+
+	var commands []*cobra.Command
+	var visit func(cmd *cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		commands = append(commands, cmd)
+		for _, sub := range cmd.Commands() {
+			visit(sub)
+		}
+	}
+	visit(root)
+	return commands
 }
 
 // newNode records one command and the flags it registers.

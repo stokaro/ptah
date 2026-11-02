@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"ptah.run/internal/doccommands"
 )
 
 // optInKey is the frontmatter key that puts a page under this runner.
@@ -290,6 +292,15 @@ func (s *scanner) neutralStep(line int, body string) error {
 	}
 	if strings.TrimSpace(body) == "" {
 		return &ExtractError{Path: s.path, Line: line + 1, Problem: "an empty console block runs nothing"}
+	}
+	// The runner executes the block as written, so a transcript would run its
+	// prompts and its output. doccommands reads a console block by the same
+	// predicate, which keeps the two agreeing on which lines are commands.
+	if doccommands.Transcript(strings.Split(body, "\n")) {
+		return &ExtractError{
+			Path: s.path, Line: line + 1,
+			Problem: `a console block on a quick start runs as written, so its "$ " prompts would run too; drop the prompts and put the output in its own block`,
+		}
 	}
 	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: Shells(), body: body, exitCode: s.exitCode})
 	return nil

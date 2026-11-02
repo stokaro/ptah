@@ -884,6 +884,6 @@ is refused as `missing value for required variable "name"`.
 a value, and the file that needs it may be the `atlas.hcl` an `--env` selects or
 the schema file `--schema-file` names, so both evaluators read the same
 resolution rather than each carrying its own. Every native command that
-registers `--var` and reads a schema file honors it: `ptah schema render`,
-`plan`, `apply`, `compare`, `validate`, `lineage` and `drift`, plus `ptah viz`,
-`ptah migrate` and `ptah schema test`.
+registers `--var` and reads a schema file honors it, among them `ptah schema
+render`, `ptah schema inspect`, `ptah schema plan`, `ptah viz` and `ptah
+migrations generate`; a command's `--help` says whether it registers `--var`.

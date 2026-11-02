@@ -218,10 +218,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Go for embedded documentation tests
-        if: >-
-          ( github.event_name == 'pull_request' && needs.changes.outputs.embedded == 'true' ) ||
-          ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+      # Go is needed on every run of this job, not only the embedded one: the
+      # command-line check below reads every Markdown file, and any of them is
+      # this job's trigger.
+      - name: Set up Go for documentation tests
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -257,6 +257,15 @@ jobs:
             -run '^(TestSearchDocs_|TestDescribeSession_ReportsWhatTheDocumentationToolCanReach$|TestToolDocs_)' \
             -count=1
 
+      # Every ptah and ptah-compat command line a tracked page or a --help text
+      # publishes must name verbs the binary has and flags they take. The
+      # corpus is every Markdown file, which is what triggers this job, so the
+      # check runs whenever the job does. A change to the command tree runs it
+      # too, through `go test ./...`, because a renamed flag breaks the pages
+      # that still spell it without touching any of them.
+      - name: Check documented command lines
+        run: go test ./internal/doccommands -count=1
+
       - uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -288,6 +297,8 @@ jobs:
           node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/check-implementation-chronology.mjs --selftest
           node docs/site/scripts/check-implementation-chronology.mjs
+          node docs/site/scripts/check-skill-suite.mjs --selftest
+          node docs/site/scripts/check-skill-suite.mjs
           node docs/site/scripts/build-content-inventory.mjs --selftest
           node docs/site/scripts/check-editorial-shape.mjs --selftest
           node docs/site/scripts/check-editorial-shape.mjs

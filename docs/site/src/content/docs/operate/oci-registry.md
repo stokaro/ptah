@@ -411,7 +411,7 @@ the pinned reference alone, so a step can capture it:
 
 ```bash
 DIGEST=$(ptah oci resolve oci://ghcr.io/acme/db:latest)
-ptah migrations up --from "$DIGEST"
+ptah migrations up --db-url "$DATABASE_URL" --migrations-dir "$DIGEST"
 ```
 
 Pinning is what makes the two commands describe the same artifact. A tag moved

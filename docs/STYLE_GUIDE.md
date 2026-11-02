@@ -534,6 +534,14 @@ once on its concept page and link; do not re-define them per page.
   alternative or the tracked product gap when one exists.
 - Runnable over pseudocode. Every example starts from a stated state and is
   copy-pasteable.
+- A `ptah` or `ptah-compat` command line names verbs the binary has and flags
+  those verbs take, wherever a page writes it. `internal/doccommands` checks
+  every one it can recognize: section 16 says which. A keystroke
+  demonstration, such as a partial command the reader completes with Tab, is
+  not a command line; put it in a `text` block. A `console` block is either a
+  transcript, where every command carries a `$ ` prompt and the rest is
+  output, or a list of commands with no prompts; a quick start uses only the
+  second kind.
 - Fenced blocks always carry a language label: `bash`, `powershell`, `console`,
   `sql`, `yaml`, `hcl`, `go`, or `text` for output. In a page marked
   `quickstart: true`, a `console` block outside shell tabs is a command the
@@ -964,6 +972,7 @@ in this guide is a review responsibility.
 | A file name Astro would re-spell | 12 | every route gate, through `docroutes` |
 | Site pages never link protected root docs | 12 | `check:core-doc-links` |
 | Exit-code tables stay in lockstep | 12 | `check:exit-codes` |
+| Command lines name real verbs and the flags they take, on pages and in `--help` | 8 | `internal/doccommands` |
 | Table cells under 350 display columns | 10 | `check:style` |
 | Table rows match the header's column count | 10 | `check:style` |
 | Two rows never state different verdicts for one capability | 10 | `check:style` |
@@ -1032,8 +1041,11 @@ The table lists the rules this guide states. The documentation job also runs
 `atlas/feature-matrix.md` to its source data — `check-matrix-verdict-prose`,
 `check-matrix-citations`, `check-matrix-flag-names`, and
 `build-feature-matrix --check`. They govern named pages rather than prose in
-general, and `AGENTS.md` carries the command list a contributor runs. A green
-run of the table above is not a green documentation job.
+general. The documentation-maintenance skill carries the command list a
+contributor runs, and `check-skill-suite.mjs` fails when that list stops naming
+a check the workflow runs over the working tree -- a Node or shell script, an
+npm script, or a `go test` -- or names one the workflow does not run.
+A green run of the table above is not a green documentation job.
 
 Two properties keep these checks honest:
 
@@ -1066,6 +1078,31 @@ short cell squeezed into a column that an unbreakable code token has made
 narrow. A page whose dense cells are the reference content can be named in the
 allowlist in `check-responsive.mjs`, with the reason; the check then fails if
 that page stops having dense cells, so an exemption cannot outlive its reason.
+
+`internal/doccommands` reads every tracked Markdown and MDX file outside a
+`testdata` directory, and the `Example` and `Long` text of every command in both
+binaries. On a page it reads bash, sh, zsh and PowerShell blocks, the commands
+of a `console` block, the `run`, `command` and `script` steps of a YAML block,
+`go run ./cmd/ptah`, and inline code that begins with a program name. In help
+text it reads the `Example`, every indented line of the description, and the
+commands its prose quotes in backticks or double quotes.
+
+It resolves each command line against the command tree the binary builds, the
+way cobra does, without running it: a word a command with subcommands does not
+know is refused, and a forwarding verb of `ptah-compat` is held to the flags it
+and its ancestors register and the flags the native command it forwards to
+declares itself, less those it refuses before forwarding. A forwarding verb that
+reads positional arguments takes a value for a flag only its target declares as
+`--flag=value`, as the verb itself does. So a renamed verb or flag fails the
+change that renames it until every page that spells it is updated. It does not
+check a flag's value, the number of arguments, or what the command prints. Those
+are runtime questions, and the quick-start contour and the example acceptance
+job answer them for the pages they run.
+
+A page sometimes names a command in order to say it does not exist, or quotes
+output that begins with the program's name. Each such text is listed in the
+check's test with the reason, and the test fails when the tree accepts a listed
+text or no page writes it any more.
 
 Anchor links are checked against the ids Starlight generates, so renaming a
 heading fails the build instead of silently dropping every reader who follows

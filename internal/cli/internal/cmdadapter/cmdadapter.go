@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cmdforward"
 )
 
 const envPrefix = "PTAH"
@@ -158,7 +159,7 @@ func newForwardCommandWithArgsMapper(
 	help helpBehavior,
 	prefixArgs ...string,
 ) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                use,
 		Short:              short,
 		Long:               fmt.Sprintf("Forwards to `ptah %s`.", native),
@@ -237,6 +238,8 @@ func newForwardCommandWithArgsMapper(
 			return target.Execute()
 		},
 	}
+	cmdforward.Register(cmd, native, factory)
+	return cmd
 }
 
 func captureCommandContexts(root *cobra.Command) map[*cobra.Command]context.Context {

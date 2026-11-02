@@ -10,16 +10,21 @@ sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
 generated: false
+sourceMode: live-database-only
 overlaps: []
 disposition: keep
 ---
 
-Oracle renders, plans, connects and reads a live catalog, against two measured
-release lines, 23 and 21. A schema Ptah applies reads back as itself on both:
+Oracle renders, plans, connects to a live database and reads its catalog,
+against two measured release lines, 23 and 21. A schema Ptah applies reads back
+as itself on both:
 
-```text
+```bash
 ptah schema inspect --db-url oracle://user:pass@host:1521/FREEPDB1 > live.hcl
 ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
+```
+
+```text
 Schemas are synced, no changes to be made.
 ```
 
