@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/timescaledb/tsschema"
 	"ptah.run/internal/atlasfilter"
 )
 
@@ -37,13 +40,20 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			context := planningContextCoverage(c)
+			// The context sits in a schema the filter leaves out, which is where a
+			// filtered read puts it.
+			contextObjects := must.Must(schemaext.NewObjects(tsschema.ObservedContinuousAggregateObject("outside", "hourly",
+				tsschema.ObservedContinuousAggregate{Definition: "SELECT 1", HypertableSchema: "outside", HypertableName: "readings"})))
 			schema := &catalog.Database{
 				Tables: []catalog.Table{
 					{Name: "kept", Schema: "public"},
 					{Name: "dropped", Schema: "public"},
 				},
-				NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Extension)),
-				DatabasePath: "/local",
+				NotDescribed:            coverage.Set{}.With(coverage.Refused(coverage.Extension)),
+				DatabasePath:            "/local",
+				PlanningContextObjects:  contextObjects,
+				PlanningContextCoverage: context,
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)
@@ -52,8 +62,22 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 			c.Assert(got.NotDescribed, qt.DeepEquals,
 				coverage.Set{}.With(coverage.Refused(coverage.Extension)))
 			c.Assert(got.DatabasePath, qt.Equals, "/local")
+			c.Assert(got.PlanningContextObjects.Equal(contextObjects), qt.IsTrue)
+			c.Assert(got.PlanningContextCoverage.Equal(context), qt.IsTrue)
 		})
 	}
+}
+
+// planningContextCoverage is what a filtered read established about the
+// coordination nodes of the whole database, as its planning context.
+func planningContextCoverage(c *qt.C) schemaext.Coverage {
+	c.Helper()
+	model := schemaext.CodecIdentity{Owner: "example.com/test", Kind: "example.com/test/node", Representation: schemaext.Observed, Version: 1, Definition: "node"}
+	domain, err := schemaext.NewScopedKnowledge(schemaext.Knowledge{State: schemaext.Complete})
+	c.Assert(err, qt.IsNil)
+	known, err := schemaext.NewCoverage(schemaext.Observed, []schemaext.KindCoverage{{Model: model, Knowledge: domain}}, nil)
+	c.Assert(err, qt.IsNil)
+	return known
 }
 
 func TestScopeGeneratedKeepsCoverage(t *testing.T) {
