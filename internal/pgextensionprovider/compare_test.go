@@ -252,3 +252,67 @@ func TestCompareExtensions_WaitsForARead(t *testing.T) {
 	c.Assert(result.Undecided, qt.DeepEquals, []schemaext.UndecidedChange{{Kind: pgextension.ExtensionKind, Subject: pgextension.Ref("pg_trgm"),
 		Reason: "whether the extension is installed was not established: this target cannot report extensions"}})
 }
+
+// TestCompareExtensions_CountsWhatItCompares pins the counts the inventory
+// reports for extensions: an extension both sides hold is matched whether or
+// not it differs, an installation is added and a drop removed, and an
+// extension the comparison leaves alone or cannot decide is counted on
+// neither side, so a database that agrees counts what the declaration does.
+func TestCompareExtensions_CountsWhatItCompares(t *testing.T) {
+	tests := []struct {
+		name    string
+		request func() schemaext.ObjectComparisonRequest
+		want    schemaext.ObjectCount
+	}{
+		{name: "an extension that agrees", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind, Matched: 1},
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison([]schemaext.Object{declared("pg_trgm", pgextension.DesiredExtension{})}, []schemaext.Object{installed("pg_trgm", trgm())})
+			}},
+		{name: "an extension that differs", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind, Matched: 1},
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison([]schemaext.Object{declared("pg_trgm", pgextension.DesiredExtension{Schema: "ext"})}, []schemaext.Object{installed("pg_trgm", trgm())})
+			}},
+		{name: "an installation, a drop and a match", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind, Matched: 1, Added: 1, Removed: 1},
+			request: func() schemaext.ObjectComparisonRequest {
+				return comparison(
+					[]schemaext.Object{declared("pg_trgm", pgextension.DesiredExtension{}), declared("citext", pgextension.DesiredExtension{})},
+					[]schemaext.Object{installed("pg_trgm", trgm()), installed("hstore", pgextension.ObservedExtension{Schema: "public", Version: "1.8"})})
+			}},
+		{name: "an excluded extension on both sides", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison([]schemaext.Object{declared("adminpack", pgextension.DesiredExtension{})},
+					[]schemaext.Object{installed("plpgsql", pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.0"})})
+				request.Exclusions = excluding("adminpack", "plpgsql")
+				return request
+			}},
+		{name: "an extension a declared column's type needs", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(nil, []schemaext.Object{installed("vector", pgextension.ObservedExtension{Schema: "public", Version: "0.8.0"})})
+				request.DeclaredColumns = []schemaext.DeclaredColumn{column("embedding", "VECTOR(384)")}
+				return request
+			}},
+		{name: "an extension YugabyteDB installs everywhere", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison(nil, []schemaext.Object{installed("pg_stat_statements", pgextension.ObservedExtension{Schema: "pg_catalog", Version: "1.10"})})
+				request.Target = "yugabytedb"
+				return request
+			}},
+		{name: "a declaration the read could not decide", want: schemaext.ObjectCount{Kind: pgextension.ChangeKind},
+			request: func() schemaext.ObjectComparisonRequest {
+				request := comparison([]schemaext.Object{declared("pg_trgm", pgextension.DesiredExtension{})}, nil)
+				request.Current.Coverage = must.Must(pgextension.Coverage(schemaext.Observed,
+					schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "this target cannot report extensions"}, nil))
+				return request
+			}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := newRuntime(c).CompareObjects(t.Context(), test.request())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
+		})
+	}
+}
