@@ -111,7 +111,10 @@ func yugabyteDB() descriptor.Dialect {
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		// A second CREATE EXTENSION of one extension is refused, measured on
 		// 2026.1.2.0: `extension "pgcrypto" already exists`.
-		Statements: descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true},
+		//
+		// Measured on 2026.1.2 as on PostgreSQL: a guarded CREATE TABLE or
+		// CREATE SEQUENCE after a relation of its name of any kind is skipped.
+		Statements: descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{

@@ -60,7 +60,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			indexNaming:      pgFamily,
 			constraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 			columns:          descriptor.Columns{IdentityNotNull: true},
-			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql"},
+			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql", RelationsShareNames: true},
 		},
 		{
 			dialect: platform.MySQL,
@@ -97,13 +97,13 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 				Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true,
 			},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
 		},
 		{
 			dialect:     platform.YugabyteDB,
 			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
 		{
 			dialect:     platform.Spanner,

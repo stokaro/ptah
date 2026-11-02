@@ -123,8 +123,11 @@ func postgres() descriptor.Dialect {
 		Columns:          descriptor.Columns{IdentityNotNull: true},
 		// A second CREATE EXTENSION of one extension is refused, measured on
 		// 18.6: `extension "pgcrypto" already exists`.
+		//
+		// Measured on 18: a guarded CREATE TABLE or CREATE SEQUENCE after a
+		// table, view, materialized view or sequence of its name is skipped.
 		Statements: descriptor.Statements{
-			ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: descriptor.DoBlocksPLpgSQL,
+			ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: descriptor.DoBlocksPLpgSQL, RelationsShareNames: true,
 		},
 
 		// Dev databases.
