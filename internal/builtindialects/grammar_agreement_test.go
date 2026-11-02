@@ -64,6 +64,8 @@ import (
 //   - No switch answered SQL Server's trigger grammar, the T-SQL header with
 //     the table before the timing, or its IDENTITY column property; the
 //     descriptor is the one statement of each.
+//   - a key USING INDEX in ALTER TABLE ... ADD reads PostgreSQL alone, the one
+//     engine measured to take it.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
@@ -76,6 +78,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			Match:       descriptor.Match{Clause: true},
 		},
 		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
+		AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 		Routines: descriptor.RoutineGrammar{
 			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",

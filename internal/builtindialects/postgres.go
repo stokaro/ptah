@@ -210,7 +210,8 @@ func postgres() descriptor.Dialect {
 		// words are keywords: CURRENT_TIMESTAMP() is refused. The server stores
 		// one spelling of a string default, ALTER INDEX renames an index, and
 		// a routine's body is a string constant in a LANGUAGE. A DO block that
-		// writes no LANGUAGE is PL/pgSQL.
+		// writes no LANGUAGE is PL/pgSQL. ALTER TABLE ... ADD CONSTRAINT k
+		// UNIQUE USING INDEX i makes the unique index i the key k, renaming it.
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
 			Constraints: descriptor.ConstraintGrammar{
@@ -219,6 +220,7 @@ func postgres() descriptor.Dialect {
 				Match:       descriptor.Match{Clause: true},
 			},
 			Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
+			AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true},
 			Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 			Routines: descriptor.RoutineGrammar{
 				Body:                   descriptor.RoutineQuotedBody,

@@ -3778,7 +3778,9 @@ func (p *Parser) currentIsUniqueName() bool {
 // reaches a stale read, so nothing could measure it, and an unmeasurable guard
 // is a second answer to a question that already has one.
 func (p *Parser) readIndexAccessMethod() string {
-	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") {
+	// `USING INDEX` names no method: it opens PostgreSQL's key made of an
+	// existing index, which [Parser.parseKeyUsingIndex] reads.
+	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") || p.nextIsWord("INDEX") {
 		return ""
 	}
 	p.advance()
@@ -4441,6 +4443,9 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	}
 
 	p.skipWhitespace()
+	if !isIndex && p.opensKeyUsingIndex(constraint) {
+		return p.parseKeyUsingIndex(constraint)
+	}
 	if constraint.Type == ast.UniqueConstraint {
 		constraint.NullsDistinct, err = p.parseNullsDistinctClause()
 		if err != nil {
@@ -4520,6 +4525,60 @@ func (p *Parser) tableIndex(constraint *ast.ConstraintNode, indexMethod string, 
 	}
 	p.keyOptions.hold(&index.Facets, "index "+index.Name)
 	return index
+}
+
+// opensKeyUsingIndex reports whether a PRIMARY KEY or UNIQUE element names an
+// existing index where its column list would open: `UNIQUE USING INDEX i`.
+func (p *Parser) opensKeyUsingIndex(constraint *ast.ConstraintNode) bool {
+	if constraint.Type != ast.PrimaryKeyConstraint && constraint.Type != ast.UniqueConstraint {
+		return false
+	}
+	return p.current.MatchIdentifierValue("USING") && p.nextIsWord("INDEX")
+}
+
+// parseKeyUsingIndex reads the rest of PostgreSQL's `ADD [CONSTRAINT name]
+// {UNIQUE | PRIMARY KEY} USING INDEX index`: the index, unqualified, and the
+// deferral clauses. The key's columns are the index's, so none are read; the
+// reader of the schema takes them from the index; see
+// [ast.ConstraintNode.UsingIndex].
+//
+// PostgreSQL 18.6 takes the clause in ALTER TABLE ... ADD alone and answers
+// `cannot use an existing index in CREATE TABLE` in a table body. It takes no
+// INCLUDE, NULLS or WITH clause beside it, since those are the index's, and
+// answers a qualified index name with a syntax error: the index is in the
+// table's schema. A dialect whose grammar lacks the clause refuses it.
+func (p *Parser) parseKeyUsingIndex(constraint *ast.ConstraintNode) (*ast.ConstraintNode, *ast.IndexNode, error) {
+	kind := tableElementKind(constraint)
+	start := p.current.Start
+	if !p.addingConstraint {
+		return nil, nil, fmt.Errorf(
+			"%s USING INDEX at position %d: an existing index becomes a key only in ALTER TABLE ... ADD, "+
+				"and PostgreSQL 18.6 answers `cannot use an existing index in CREATE TABLE`", kind, start)
+	}
+	if p.target.known && !p.target.grammar.AlterTable.KeyUsingIndex {
+		return nil, nil, fmt.Errorf(
+			"%s USING INDEX at position %d: a key made of an existing index is PostgreSQL's clause, "+
+				"which the %s dialect does not take; list the key's columns", kind, start, p.dialect)
+	}
+	p.advance()
+	p.skipWhitespace()
+	p.advance()
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, nil, fmt.Errorf("expected an index name after %s USING INDEX: %w", kind, err)
+	}
+	p.skipWhitespace()
+	if p.current.MatchOperatorValue(".") {
+		return nil, nil, fmt.Errorf(
+			"%s USING INDEX at position %d: the index is named without its schema, since it is in the table's, "+
+				"and PostgreSQL 18.6 answers a qualified name with a syntax error", kind, p.current.Start)
+	}
+	constraint.UsingIndex = name
+	if err := p.readConstraintTail(constraint, kind); err != nil {
+		return nil, nil, err
+	}
+	return constraint, nil, nil
 }
 
 func (p *Parser) handleTableEngine(table *ast.CreateTableNode) error {
