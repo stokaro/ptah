@@ -603,6 +603,10 @@ message Table {
   // Complete common primary key in inspection, including its column order.
   // Contract 25.9, negotiated under schema.observed-primary-keys.
   ObservedConstraint primary_key = 5;
+  // Complete common secondary indexes in inspection. An index this list does
+  // not name is absent. Contract 25.10, negotiated under
+  // schema.observed-indexes.
+  repeated ObservedIndex indexes = 6;
 }
 message Column {
   string name = 1;

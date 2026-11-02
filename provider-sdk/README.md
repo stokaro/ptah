@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.9. `provider-sdk/v0.10.0` speaks 25.8.
+speaks contract 25.10. `provider-sdk/v0.11.0` speaks 25.9.
+`provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
 `provider-sdk/v0.7.0` speaks 25.5.
@@ -91,6 +92,7 @@ returns to 0.
   [native object assessment](#native-object-assessment). Contract 25.8 adds
   [statement style for feature owners](#planning-policy). Contract 25.9 adds
   [ordered primary-key observations](#ordered-primary-key-observations).
+  Contract 25.10 adds [common index observations](#common-index-observations).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -1754,6 +1756,27 @@ its members or inventing a name. The common source declaration owns the
 writable key; native observations can retain independent evidence.
 [ADR 0051](../docs/adr/0051-inspected-primary-keys-retain-their-common-order.md)
 defines the ownership and export controls.
+
+## Common index observations
+
+`schema.observed-indexes` carries each inspected table's complete common
+secondary indexes in `Table.indexes`, using `ObservedIndex`. The provider and
+engine both declare this two-way feature, which requires
+`schema.observed-columns`. A peer refuses the list without negotiation.
+
+The list is the whole set: with the feature negotiated, an index the list does
+not name is absent, so a host compares declared indexes with the held ones
+instead of finding every declared index missing. Each index has a name unique
+within its table and binds the table's exact name and schema. It names a key,
+as columns or parts, and every key and covered column is a known column named
+once. A part with neither a column nor an expression refuses. A primary key is
+not an index here: `Table.primary_key` records it. An index the common model
+cannot describe stays in the provider's native facets and is left out of the
+list rather than approximated. The list is inspection evidence, never a table
+creation operand.
+[ADR 0052](../docs/adr/0052-inspected-indexes-reach-the-host-and-index-changes-reach-the-table-owner.md)
+defines how the host compares the list and how an index change reaches the
+provider that owns the table.
 
 ## Native object assessment
 
