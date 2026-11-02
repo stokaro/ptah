@@ -248,9 +248,10 @@ proven to stay inside the disposable realm:
   topics, external data sources and tables, async replication, transfers, and
   streaming queries.
 
-Replay runs every migration of a directory on one session, so a PostgreSQL
-`SET` or `RESET` that changes the session would carry into the migrations after
-it, and is refused. A setting that ends with its transaction is accepted:
+Replay runs every migration of a directory on one session, as `migrate apply`
+runs the migrations of one run, so a PostgreSQL `SET` or `RESET` that changes
+the session would carry into the migrations after it, and is refused. A
+setting that ends with its transaction is accepted:
 
 - `SET LOCAL` and `SET CONSTRAINTS`;
 - `set_config(name, value, true)`, with the name written as a string and `true`

@@ -20,6 +20,10 @@ func Services() migratorext.Services {
 		// In-memory SQLite has one physical connection, so using the pool for
 		// checkpoints while that connection is pinned would deadlock.
 		PinnedMetadata: true,
+		// For the same reason a run pins no session of its own, and a file
+		// database's pool keeps what a caller attached to it, which
+		// `migrate test` steps and the run's bookkeeping read.
+		PoolSessions: true,
 	}
 }
 
