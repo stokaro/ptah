@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/schema"
+	"ptah.run/internal/errorkind"
 	"ptah.run/migration/safety"
 )
 
@@ -206,6 +207,7 @@ func TestSchemaPlanJSONReportsNoChanges(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(decodeOneDocument[atlasschema.PlanReport](c, stdout), qt.DeepEquals, atlasschema.PlanReport{
 		ContractVersion: atlasschema.PlanReportContractVersion,
+		Command:         atlasschema.PlanReportCommand,
 		Outcome:         atlasschema.PlanOutcomeNoChanges,
 	})
 	c.Assert(stderr, qt.Contains, "Schema is synced, no changes to be made.")
@@ -232,7 +234,7 @@ func TestSchemaPlanJSONReportsAProtectedTableRefusal(t *testing.T) {
 		Code:   atlasschema.RefusalProtectedTable,
 		Tables: []string{"regions"},
 	})
-	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(report.Plan, qt.IsNil)
 	c.Assert(stderr, qt.Contains, "error: refusing to change protected table(s) regions")
 
@@ -253,8 +255,9 @@ func TestSchemaPlanJSONReportsAFailure(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(decodeOneDocument[atlasschema.PlanReport](c, stdout), qt.DeepEquals, atlasschema.PlanReport{
 		ContractVersion: atlasschema.PlanReportContractVersion,
+		Command:         atlasschema.PlanReportCommand,
 		Outcome:         atlasschema.PlanOutcomeFailed,
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
 }
@@ -296,6 +299,7 @@ func TestSchemaApplyJSONReportsAnAppliedPlan(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeApplied,
 		PlanName:        plan.Name,
 		PlanDigest:      fileDigest(c, planPath),
@@ -321,6 +325,7 @@ func TestSchemaApplyJSONDryRunVerifiesThePlanAndChangesNothing(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeDryRun,
 		PlanName:        plan.Name,
 		PlanDigest:      fileDigest(c, planPath),
@@ -352,7 +357,7 @@ func TestSchemaApplyJSONReportsAStalePlan(t *testing.T) {
 	c.Assert(report.Refusal.DatabaseFingerprint, qt.Not(qt.Equals), plan.FromFingerprint)
 	c.Assert(report.PlanDigest, qt.Equals, fileDigest(c, planPath))
 	c.Assert(report.Units, qt.IsNil)
-	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(stderr, qt.Contains, "error: pre-planned migration is stale")
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"drifted", "users"})
 }
@@ -393,9 +398,10 @@ func TestSchemaApplyJSONReportsAProtectedTableRefusal(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `refusing to change protected table\(s\) regions: .*`)
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeRefused,
 		Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalProtectedTable, Tables: []string{"regions"}},
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 }
 
@@ -410,6 +416,7 @@ func TestSchemaApplyJSONReportsNoChanges(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeNoChanges,
 	})
 	c.Assert(stderr, qt.Contains, "Schema is synced, no changes to be made.")
@@ -453,11 +460,12 @@ func TestSchemaApplyJSONReportsAnExecutionFailureAsUnknown(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "(?s)apply schema changes: .*", qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeUnknown,
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(document).String(),
 		Units:           atlasschema.SQLApplyUnitReports(plan.StatementSQL()),
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
 }
@@ -473,8 +481,9 @@ func TestSchemaApplyJSONReportsAFailureBeforeDispatch(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
 }
@@ -516,7 +525,7 @@ func TestSchemaApplyJSONReportsAComputedPlanFailureAsUnknown(t *testing.T) {
 	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
-	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(report.Units, qt.Any(qt.DeepEquals), atlasschema.ApplyUnitReport{SQL: `INSERT INTO "__ptah_rebuild_users" ("id", "age") SELECT "id", "age" FROM "users"`})
 	c.Assert(stderr, qt.Not(qt.Contains), "Schema apply completed successfully.")
 }
@@ -538,8 +547,9 @@ func TestSchemaApplyJSONRefusesEdit(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
@@ -571,8 +581,9 @@ func TestSchemaPlanJSONReportsAPanicAsFailed(t *testing.T) {
 	c.Assert(func() { _ = cmd.Execute() }, qt.PanicMatches, "standard error refused the write")
 	c.Assert(decodeOneDocument[atlasschema.PlanReport](c, stdout.String()), qt.DeepEquals, atlasschema.PlanReport{
 		ContractVersion: atlasschema.PlanReportContractVersion,
+		Command:         atlasschema.PlanReportCommand,
 		Outcome:         atlasschema.PlanOutcomeFailed,
-		Error:           "internal error: standard error refused the write",
+		Error:           &errorkind.Report{Message: "internal error: standard error refused the write"},
 	})
 	_, statErr := os.Stat(planPath)
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
@@ -628,7 +639,7 @@ func TestSchemaApplyJSONReportsASimulationFailure(t *testing.T) {
 	report := decodeOneDocument[atlasschema.ApplyReport](c, stdout)
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
 	c.Assert(report.Refusal, qt.DeepEquals, &atlasschema.Refusal{Code: atlasschema.RefusalSimulationFailed})
-	c.Assert(report.Error, qt.Equals, err.Error())
+	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: err.Error()})
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr, qt.Not(qt.Contains), "Auto-approval enabled")
 

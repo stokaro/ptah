@@ -75,6 +75,10 @@ type MigrationStatus struct {
 	// document it does not understand instead of reading the fields it
 	// recognizes out of a shape that means something else.
 	ContractVersion int `json:"contract_version"`
+	// Command names the command that printed the status as its document, such
+	// as "migrations status". It is empty in a status a caller computed, and
+	// in the status a run document carries.
+	Command string `json:"command,omitempty"`
 	// Migrations is every migration the directory holds, in directory order,
 	// with what the file is, what the database recorded for it, and whether the
 	// two still agree. The version lists above answer "which versions"; this

@@ -9,8 +9,10 @@ import (
 
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/cli/migrations"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
+	"ptah.run/migration/migrator"
 )
 
 func TestProviderSelectionBelongsToNativeMigrations(t *testing.T) {
@@ -72,4 +74,42 @@ func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestProviderSetupFailureIsTheVerbsFailureDocument holds a setup failure to
+// the failure document of the verb it stopped: a run that never started for
+// up, and the status contract's failure document for status. Neither names a
+// kind, because no target connection was opened.
+func TestProviderSetupFailureIsTheVerbsFailureDocument(t *testing.T) {
+	c := qt.New(t)
+	run := func(verb string) string {
+		command := migrations.NewMigrationsCommand()
+		var out bytes.Buffer
+		command.SetOut(&out)
+		command.SetErr(&bytes.Buffer{})
+		command.SetArgs([]string{verb, "--provider-engine=", "--json"})
+		c.Assert(command.ExecuteContext(c.Context()), qt.IsNotNil)
+		return out.String()
+	}
+
+	var up struct {
+		migrator.RunResult
+		ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic"`
+	}
+	c.Assert(json.Unmarshal([]byte(run("up")), &up), qt.IsNil)
+	c.Assert(up.ContractVersion, qt.Equals, migrator.RunContractVersion)
+	c.Assert(up.Command, qt.Equals, "migrations up")
+	c.Assert(up.Outcome, qt.Equals, migrator.RunOutcomeFailed)
+	c.Assert(up.Error, qt.IsNotNil)
+	c.Assert(up.Error.Kind, qt.Equals, "")
+
+	var status struct {
+		errorkind.Failure
+		ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic"`
+	}
+	c.Assert(json.Unmarshal([]byte(run("status")), &status), qt.IsNil)
+	c.Assert(status.ContractVersion, qt.Equals, migrator.StatusContractVersion)
+	c.Assert(status.Command, qt.Equals, "migrations status")
+	c.Assert(status.Error, qt.IsNotNil)
+	c.Assert(status.Error.Kind, qt.Equals, errorkind.Kind(""))
 }

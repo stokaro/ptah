@@ -5,6 +5,7 @@ package drift
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/datamigrate"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
@@ -39,6 +41,16 @@ const (
 )
 
 var errDriftDetected = errors.New("schema drift detected")
+
+const (
+	// ContractVersion is the version of the document `schema drift --format
+	// json` prints. It rises when a field changes meaning or leaves; a new
+	// field a reader may ignore is not a new version, and neither is a new
+	// error kind or finding category.
+	ContractVersion = 1
+	// Command is the command the document names.
+	Command = "schema drift"
+)
 
 // NewDriftCommand returns the drift-check command.
 func NewDriftCommand() *cobra.Command {
@@ -126,6 +138,8 @@ type runOptions struct {
 }
 
 type driftReport struct {
+	ContractVersion  int              `json:"contract_version"`
+	Command          string           `json:"command"`
 	Drift            bool             `json:"drift"`
 	Failed           bool             `json:"failed"`
 	FailureThreshold string           `json:"failure_threshold"`
@@ -155,24 +169,27 @@ type driftReport struct {
 	// this drift without reading any.
 	ManagedData *datamigrate.Summary  `json:"managed_data,omitempty"`
 	Diff        *difftypes.SchemaDiff `json:"diff,omitempty"`
-	Error       string                `json:"error,omitempty"`
+	// Error is what the text and workflow formats print for a run that
+	// failed. The JSON format prints [errorkind.Failure] for that run instead
+	// of a report.
+	Error string `json:"-"`
 }
 
 func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err := validateFormat(opts.format); err != nil {
-		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
+		return fail(cmd, formatText, err)
 	}
 	if err := validateSeverity(opts.severity); err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	commands, err := dbcli.ResolveExternalSchemaCommands(
 		cmd,
@@ -181,7 +198,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		projectCfg,
 	)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	dbURL := dbcli.EffectiveString(
 		cmd,
@@ -197,27 +214,27 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	)
 
 	if dbURL == "" {
-		return writeError(cmd.ErrOrStderr(), opts.format, "database URL is required")
+		return fail(cmd, opts.format, errors.New("database URL is required"))
 	}
 
 	ignoredTables, err := parseIgnoredTables(opts.ignored)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeoutRaw)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	schemas := dbcli.ParseSchemas(schemasValue)
 
 	declaredVars, err := dbcli.DeclaredVars(cmd)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 
 	runtime, err := engineruntime.Resolve(cmd.Context(), engineruntime.DatabaseURL(dbURL))
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		Runtime:         runtime,
@@ -238,7 +255,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		).IgnoredExtensions,
 	})
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+		return fail(cmd, opts.format, err)
 	}
 
 	undecidednote.Report(cmd.ErrOrStderr(), result.Undecided, "the database", "the desired schema")
@@ -255,7 +272,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	// exit 1 is an expected negative result, per docs/exit_codes.md -- so both
 	// put the document in the same place (stokaro/ptah#852).
 	if err := writeReport(cmd.Context(), cmd.OutOrStdout(), opts.format, report, runtime.Codecs()); err != nil {
-		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
+		return fail(cmd, formatText, err)
 	}
 	if report.Failed {
 		return exitcode.New(1, errDriftDetected)
@@ -289,6 +306,8 @@ func assessDrift(
 	hasDrift := result.Diff.HasChanges() || result.DataDrift.HasChanges()
 	unproven := hasDrift || !result.Undecided.Empty()
 	return driftReport{
+		ContractVersion:  ContractVersion,
+		Command:          Command,
 		Drift:            hasDrift,
 		Failed:           useExitCode && unproven && shouldFailDrift(highest, severity),
 		FailureThreshold: severity,
@@ -326,16 +345,44 @@ func driftedManagedData(summary *datamigrate.Summary) *datamigrate.Summary {
 	return nil
 }
 
-func writeError(w io.Writer, format, msg string) error {
+// fail reports err in format and returns the error the command exits with.
+//
+// Under --format json the failure is a document on standard output, where the
+// report would have been, and the command's error line goes to standard error
+// the way every other verb prints it. A reader tells the two documents apart
+// by the error object, which a report never carries. The text and workflow
+// formats print the failure on standard error and nothing else.
+func fail(cmd *cobra.Command, format string, err error) error {
+	if format == formatJSON {
+		if writeErr := writeFailure(cmd.OutOrStdout(), err); writeErr != nil {
+			return errors.Join(err, writeErr)
+		}
+		return err
+	}
 	report := driftReport{
 		Failed:           true,
 		FailureThreshold: severityAll,
 		HighestSeverity:  safety.Safe,
-		Error:            msg,
+		Error:            err.Error(),
 	}
 	// An error report carries no diff, so it needs no feature codecs.
-	_ = writeReport(context.Background(), w, format, report, schemaext.Registry{})
-	return exitcode.New(2, errors.New(msg))
+	_ = writeReport(context.Background(), cmd.ErrOrStderr(), format, report, schemaext.Registry{})
+	return exitcode.New(2, err)
+}
+
+// NewFailureDocument is what `schema drift --format json` prints when it
+// fails with err.
+func NewFailureDocument(err error) errorkind.Failure {
+	return errorkind.NewFailure(ContractVersion, Command, err)
+}
+
+func writeFailure(w io.Writer, err error) error {
+	document, marshalErr := json.MarshalIndent(NewFailureDocument(err), "", "  ")
+	if marshalErr != nil {
+		return marshalErr
+	}
+	_, writeErr := w.Write(append(document, '\n'))
+	return writeErr
 }
 
 func validateFormat(format string) error {

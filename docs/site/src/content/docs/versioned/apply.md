@@ -350,7 +350,8 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
   "total_migrations": 1,
   "has_pending_changes": false,
   "current_version_key": "1785255952",
-  "contract_version": 1,
+  "contract_version": 2,
+  "command": "migrations status",
   "migrations": [
     {
       "version": 1785255952,
@@ -370,6 +371,26 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
 does not know the version it reads should refuse the document rather than read
 the fields it recognizes out of a shape that means something else. A new field
 an existing reader can ignore does not raise it.
+
+A status that could not be read prints a document of its own, in the same
+contract version: the version, the command and an `error` object, and none of
+the fields above. A document that carries `error` is never a status, so a
+reader checks for it before reading anything else. `error.message` is the
+sentence printed on standard error, and `error.kind` says why the target
+database could not be opened; it is absent for every other failure.
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+lists the kinds. Against a server that refuses the connection:
+
+```json
+{
+  "contract_version": 2,
+  "command": "migrations status",
+  "error": {
+    "kind": "database_unreachable",
+    "message": "error connecting to database: failed to ping database: failed to connect to `user=app database=app`: 10.0.0.5:5432 (db.internal): dial error: dial tcp 10.0.0.5:5432: connect: connection refused"
+  }
+}
+```
 
 The `migrations` array is what a caller plans from. Each entry carries the
 migration's version and exact revision identity, its description, the checksum
@@ -449,12 +470,13 @@ parses one stream and reads the other.
 
 ```json
 {
-  "contract_version": 1,
+  "contract_version": 2,
+  "command": "migrations up",
   "direction": "up",
   "outcome": "failed",
   "planned": [1785255952, 1785255999],
   "applied": [1785255952],
-  "error": "failed to apply migration 1785255999: ...",
+  "error": { "message": "failed to apply migration 1785255999: ..." },
   "failure": {
     "version": 1785255999,
     "version_key": "1785255999",
@@ -475,7 +497,7 @@ way as one that never started:
 | `up-to-date` | Nothing was pending, so nothing was selected |
 | `applied` | Every selected migration is recorded applied, and no row is dirty |
 | `dry-run` | The run was asked to change nothing, and did not |
-| `failed` | The run stopped, and the migration that failed committed nothing: its dirty row counts no applied statements |
+| `failed` | The run stopped, and the migration that failed committed nothing: its dirty row counts no applied statements. A run that stopped before it selected anything, such as one that could not open the target, is `failed` with nothing planned and no `status` |
 | `partial` | The migration that failed committed some of its statements and not the rest |
 | `unknown` | The evidence could not be read, or a dirty row does not say how far it got |
 
@@ -489,10 +511,14 @@ a `--limit`, a target version or a checkpoint narrows; `applied` names the
 selected migrations the history records afterwards, so a migration that was
 already applied before the run is not counted as this run's work.
 
-`error` is the message written for a person, and it quotes what the database
-said. That can include a row of data, such as the key in a duplicate-key error,
-and the statement itself. A caller that must not publish data reads `failure`
-instead, which carries no text:
+`error.message` is the message written for a person, and it quotes what the
+database said. That can include a row of data, such as the key in a
+duplicate-key error, and the statement itself. A caller that must not publish
+data reads `error.kind` and `failure` instead, which carry no text. `error.kind`
+says why the run could not open the target database, as
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+lists, and is absent for every other failure. `failure` names the statement the
+run stopped at:
 
 | Field | Meaning |
 | --- | --- |

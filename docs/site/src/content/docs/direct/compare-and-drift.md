@@ -195,7 +195,8 @@ Three more flags shape the check:
   describe](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings, the
   [inventory](#how-much-each-side-holds) and the full structured diff, for
-  tooling), or `github-actions` (workflow annotations).
+  tooling, under `contract_version` and `command`), or `github-actions`
+  (workflow annotations).
 
 A declared object the read could not check is graded as well. It is not a
 difference, so the report opens with `No schema drift found, but 1 declared
@@ -712,7 +713,13 @@ is new; an extension that is not relocatable exits 2 before SQL output.
 
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —
   an unreachable database, a bad URL, or an unparsable schema source — so
-  pipelines can tell "drift found" from "check broken".
+  pipelines can tell "drift found" from "check broken". With `--format json`
+  standard output then carries a failure document in place of the report:
+  `contract_version`, `command` and an `error` object, and none of the report's
+  fields, so no reader takes it for a database without drift. `error.message`
+  is the line standard error prints after `error:`, and `error.kind` says why
+  the target database could not be opened; see
+  [Why a command failed](../../reference/exit-codes/#why-a-command-failed).
 - `ptah schema compare` without `--exit-code` never signals differences through
   its status code; scripts that forget the flag silently pass.
 

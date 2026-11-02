@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/cli/internal/schemaroot"
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
 )
@@ -246,7 +247,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	if err != nil {
-		return atlasschema.PlanEvidence{}, fmt.Errorf("connect to --%s: %w", planDBURLFlag, err)
+		return atlasschema.PlanEvidence{}, fmt.Errorf("connect to --%s: %w", planDBURLFlag, errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 

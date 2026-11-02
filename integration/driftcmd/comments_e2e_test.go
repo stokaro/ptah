@@ -61,7 +61,7 @@ func TestSchemaDriftFindsSQLiteInSyncDespiteDeclaredCommentsE2E(t *testing.T) {
 
 	report := runDrift(c, "--db-url", url, "--schema-file", writeHCL(c, commentedSchema("main")), "--format", "json")
 
-	c.Assert(report.Error, qt.Equals, "")
+	c.Assert(report.Error, qt.IsNil)
 	c.Assert(report.Drift, qt.IsFalse)
 	c.Assert(report.Findings, qt.IsNil)
 }
@@ -75,7 +75,7 @@ func TestSchemaDriftReportsACommentPostgreSQLLacksE2E(t *testing.T) {
 
 	report := runDrift(c, "--db-url", url, "--schema-file", writeHCL(c, commentedSchema("public")), "--format", "json")
 
-	c.Assert(report.Error, qt.Equals, "")
+	c.Assert(report.Error, qt.IsNil)
 	c.Assert(report.Drift, qt.IsTrue)
 	c.Assert(report.Findings, qt.DeepEquals, []safety.Finding{
 		{Category: "columns_modified", Count: 1, Severity: safety.Warning},

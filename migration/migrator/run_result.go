@@ -6,16 +6,22 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"ptah.run/internal/errorkind"
 )
 
 // RunContractVersion is the version of the machine-readable migration run
 // document.
 //
 // It rises when a field changes meaning or leaves; a new field a reader may
-// ignore is not a new version. A consumer that does not know the version it
-// reads refuses the document rather than reading the fields it recognizes out
-// of a shape that means something else.
-const RunContractVersion = 1
+// ignore is not a new version, and neither is a new error kind. A consumer
+// that does not know the version it reads refuses the document rather than
+// reading the fields it recognizes out of a shape that means something else.
+//
+// Version 2 carries error as an object with a kind and a message, where
+// version 1 carried the message alone, and reports a run that stopped before
+// it selected any migration as failed with no status.
+const RunContractVersion = 2
 
 // RunOutcome is what a run's own evidence says happened.
 //
@@ -35,7 +41,9 @@ const (
 	RunOutcomeDryRun RunOutcome = "dry-run"
 	// RunOutcomeFailed means the run stopped and the database reflects only the
 	// migrations it records as applied. The migration that failed committed
-	// nothing: its dirty row counts no applied statements.
+	// nothing: its dirty row counts no applied statements. A run that stopped
+	// before it selected any migration, such as one that could not connect,
+	// is failed too, with nothing planned and no status.
 	RunOutcomeFailed RunOutcome = "failed"
 	// RunOutcomePartial means the migration that failed committed some of its
 	// statements and not the rest. Recovery is Ptah's own resume path, which
@@ -55,6 +63,9 @@ type RunResult struct {
 	Inputs []MigrationInput `json:"inputs,omitempty"`
 	// ContractVersion is [RunContractVersion].
 	ContractVersion int `json:"contract_version"`
+	// Command names the command that printed the document, such as
+	// "migrations up", and is empty when [RunEvidence.Command] is.
+	Command string `json:"command,omitempty"`
 	// Direction is the direction the run was asked for.
 	Direction MigrationDirection `json:"direction"`
 	// Outcome is what the evidence says happened.
@@ -68,10 +79,9 @@ type RunResult struct {
 	// as applied after the run, in selection order.
 	Applied     []int64  `json:"applied,omitempty"`
 	AppliedKeys []string `json:"applied_keys,omitempty"`
-	// Error is the run's error message, present whenever the run failed. It is
-	// the message the operator already prints; it is not evidence about the
-	// database.
-	Error string `json:"error,omitempty"`
+	// Error is the run's error, present whenever the run failed. It is not
+	// evidence about the database.
+	Error *ErrorReport `json:"error,omitempty"`
 	// Failure names the statement the run stopped at and the code the database
 	// answered with. It is present only when a statement of a migration was
 	// sent and failed; a run that stopped before any statement ran has none.
@@ -82,12 +92,26 @@ type RunResult struct {
 	Status *MigrationStatus `json:"status,omitempty"`
 }
 
+// ErrorReport is the error a run document reports.
+type ErrorReport struct {
+	// Kind names why the run could not open its connection to the target
+	// database, from a closed vocabulary: database_unreachable,
+	// authentication_failed, database_not_found, permission_denied or
+	// tls_failed. It is absent for every other failure, and only the command
+	// line, which knows which connection is the target, sets it. A kind added
+	// later is read as no kind by a caller that does not know it.
+	Kind string `json:"kind,omitempty"`
+	// Message is the message written for a person. It can quote what the
+	// database said, including a row of data or the statement itself.
+	Message string `json:"message"`
+}
+
 // RunFailure identifies the statement a failed run stopped at, and the code
 // the database answered with.
 //
-// It carries no text. [RunResult.Error] quotes what the database said, and that
-// can include a row of data or the statement itself; a caller that must not
-// publish data reads this instead.
+// It carries no text. The message of [RunResult.Error] quotes what the
+// database said, and that can include a row of data or the statement itself; a
+// caller that must not publish data reads this instead.
 type RunFailure struct {
 	// Version is the version of the migration that failed.
 	Version int64 `json:"version"`
@@ -111,6 +135,8 @@ type RunFailure struct {
 
 // RunEvidence is what a caller saw of one run.
 type RunEvidence struct {
+	// Command names the command whose document the result is.
+	Command string
 	// Direction is the direction the run was asked for.
 	Direction MigrationDirection
 	// Plan is the plan the migrator selected, and nil when the run never
@@ -123,6 +149,12 @@ type RunEvidence struct {
 	Err error
 	// DryRun reports that the run was asked to change nothing.
 	DryRun bool
+	// NotStarted reports that the run failed before the migrator selected
+	// anything, so it sent no migration statement: the target could not be
+	// opened, or the history could not be read before the run. Its outcome is
+	// failed whether or not a status follows. The zero value claims nothing,
+	// and a failure with no status is then unknown.
+	NotStarted bool
 }
 
 // NewRunResult classifies one run from its own evidence.
@@ -134,6 +166,7 @@ type RunEvidence struct {
 func NewRunResult(evidence RunEvidence) RunResult {
 	result := RunResult{
 		ContractVersion: RunContractVersion,
+		Command:         evidence.Command,
 		Direction:       evidence.Direction,
 		Status:          evidence.After,
 	}
@@ -141,7 +174,10 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		result.Direction = MigrationDirectionUp
 	}
 	if evidence.Err != nil {
-		result.Error = evidence.Err.Error()
+		result.Error = &ErrorReport{
+			Kind:    string(errorkind.Classify(evidence.Err)),
+			Message: evidence.Err.Error(),
+		}
 		result.Failure = runFailure(evidence.Err)
 	}
 	if evidence.Plan != nil {
@@ -155,6 +191,9 @@ func NewRunResult(evidence RunEvidence) RunResult {
 }
 
 func runOutcome(evidence RunEvidence, result RunResult) RunOutcome {
+	if evidence.NotStarted && evidence.Err != nil {
+		return RunOutcomeFailed
+	}
 	if evidence.After == nil {
 		return RunOutcomeUnknown
 	}

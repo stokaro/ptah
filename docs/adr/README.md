@@ -62,6 +62,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0050](0050-statement-style-reaches-feature-owners.md) | Statement style reaches feature owners | Proposed |
 | [0051](0051-inspected-primary-keys-retain-their-common-order.md) | Inspected primary keys retain their common order | Proposed |
 | [0052](0052-inspected-indexes-reach-the-host-and-index-changes-reach-the-table-owner.md) | Inspected indexes reach the host, and index changes reach the table owner | Proposed |
+| [0053](0053-a-machine-readable-failure-names-why-the-target-could-not-be-opened.md) | A machine-readable failure names why the target could not be opened | Proposed |
 
 ## Writing one
 

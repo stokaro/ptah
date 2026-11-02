@@ -11,6 +11,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/errorkind"
 )
 
 // runApplyThroughRoot runs `ptah schema apply` from the root command. The
@@ -94,8 +95,9 @@ func TestSchemaApplyPlanRefusesAProtectedTable(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `.*ptah schema plan --protected-table.*`)
 			c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeFailed,
-				Error:           err.Error(),
+				Error:           &errorkind.Report{Message: err.Error()},
 			})
 			c.Assert(regionName(c, f.dbPath, "NO"), qt.Equals, "Norway")
 		})

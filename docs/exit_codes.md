@@ -19,6 +19,41 @@ command exits `1` rather than reporting a signal status: a surface that
 promises two codes does not grow a third one because the operator pressed
 Ctrl-C.
 
+## Why a Command Failed
+
+Exit code `2` does not say why a command failed. When the reason is that the
+target database could not be opened, the machine-readable document of these
+commands says it:
+
+- `ptah schema drift --format json`
+- `ptah schema plan --json`
+- `ptah schema apply --json`
+- `ptah migrations status --json`
+- `ptah migrations up --json`
+
+The document carries an `error` object with a `message`, the sentence the
+command prints on standard error, and a `kind` from this list:
+
+| Kind | Meaning | Where to look |
+| --- | --- | --- |
+| `database_unreachable` | The server never answered: the host name did not resolve, the address refused or could not route the connection, or the connection timed out before the server completed it. | The host and port in the URL, name resolution, network policy, and whether the server is running. |
+| `authentication_failed` | The server did not accept the credentials: a wrong password, an unknown or locked role, an expired password, or no host rule that admits the connection. | The user name and password in the URL, and the server's host rules, such as `pg_hba.conf`. |
+| `database_not_found` | The server answered that the database the URL names does not exist. | The database name in the URL. |
+| `permission_denied` | The server accepted the credentials and refused the role access to the database. | The role's privileges: `CONNECT` on the database on PostgreSQL, a grant on the database on MySQL. |
+| `tls_failed` | The TLS handshake failed: the certificate did not verify, the server offers no TLS the URL requires, or the server requires TLS the URL did not use. | The URL's TLS parameters, such as `sslmode`, `sslrootcert` or `tls`, and the server's certificate. |
+
+`kind` is absent for every other failure, including a failure to reach
+something other than the target: a dev database, a registry, a Git remote or a
+webhook. A kind is read from the driver's error type and never from the text of
+a message, so a failure the driver reports only as text has none. The
+PostgreSQL driver reports a server that refuses the TLS a URL requires that way.
+MySQL answers an account that holds no privilege on a database name with access
+denied whether or not the database exists, so that account sees
+`permission_denied` rather than `database_not_found`.
+
+The list may grow. A reader treats a kind it does not know as no kind. The exit
+code is `2` for every kind.
+
 ## Interrupts
 
 SIGINT and SIGTERM cancel the running command instead of killing the process
