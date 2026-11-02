@@ -759,6 +759,17 @@ resolved to; a digest-pinned reference prints nothing extra. `migrations hash`
 refuses `oci://` by design, because it writes the integrity file back into the
 directory it hashed and a registry artifact is immutable.
 
+`ptah schema push` and `ptah migrations push` print a receipt for a person by
+default. `--format reference` prints only the pinned reference of the manifest
+the push wrote, and `--format json` prints one document whose first five fields
+are those of `ptah oci resolve --format json`, followed by the artifact type,
+the tags the push applied and its version tag. The reference is built from the
+manifest the push wrote, never from a tag read back afterwards. A push that
+fails prints nothing on standard output, and both machine formats refuse an
+`oci-layout://` destination, which has no pinned reference. See [Read the result
+of a push from a
+script](../../operate/oci-registry/#read-the-result-of-a-push-from-a-script).
+
 `ptah oci referrers <oci-reference>` lists direct attachment descriptors.
 `--type` accepts `all`, `lint`, `plan`, or `deployment`; `--format` accepts
 `text` or `json`. Unqualified subjects resolve to `:latest`, tags resolve to

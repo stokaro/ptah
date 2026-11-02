@@ -370,7 +370,8 @@ Positional, `--tag`, and `latest` aliases remain movable.
 The write-once check is a client-side preflight, so two concurrent writers can
 still race when an explicit `--version` is reused. Configure immutable-tag
 policy in the registry for version-tag prefixes when concurrent publishers are
-possible. Use the returned `Digest:` value for a hard pin. Pushing to any
+possible. For a hard pin, take the pinned reference from `--format reference`
+or `--format json` rather than reading `Digest:` out of the receipt. Pushing to any
 reference carrying an `@sha256:` digest is rejected, including the
 `:tag@sha256:` form. If a later tag update fails after earlier tags moved, Ptah reports
 the manifest digest, completed tags, and failed tag instead of presenting the
@@ -532,9 +533,17 @@ it. On `up` the same flag verifies a pulled artifact against the sum shipped
 inside it; see the tag-versus-digest note above for what that does and does not
 establish.
 
-The command prints the canonical reference, manifest digest, version tag, and
-all applied tags. Pin the digest when promoting the exact bytes to another
-environment:
+By default the command prints a receipt with the canonical reference, manifest
+digest, version tag, and all applied tags. `--format reference` prints only the
+pinned reference of the manifest the push wrote, and `--format json` prints one
+document with that reference, the digest, media type, size, artifact type, tags
+and version; `schema push` takes the same flag. Both build the reference from
+the manifest the push wrote, never from a tag read back afterwards, and a push
+that fails prints nothing on standard output. The document's fields are listed
+in [Read the result of a push from a
+script](site/src/content/docs/operate/oci-registry.md#read-the-result-of-a-push-from-a-script).
+
+Pin the digest when promoting the exact bytes to another environment:
 
 ```bash
 MIGRATIONS=oci://ghcr.io/acme/app-migrations@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
