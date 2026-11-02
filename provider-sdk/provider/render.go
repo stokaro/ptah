@@ -97,11 +97,8 @@ func validateRenderOperation(description *protocol.Description, engine *protocol
 			return err
 		}
 	case *protocol.Change_CreateTable:
-		if operation == nil || operation.CreateTable == nil {
-			return fmt.Errorf("%w: missing table creation", ErrProtocol)
-		}
-		if operation.CreateTable.GetPrimaryKey() != nil {
-			return fmt.Errorf("%w: an inspected primary key is not a table creation operand", ErrProtocol)
+		if err := validateCreateTableOperand(operation); err != nil {
+			return err
 		}
 	case *protocol.Change_DropTable:
 		if operation == nil || operation.DropTable == nil {
@@ -154,4 +151,20 @@ func ValidateRenderedBatch(description *protocol.Description, request *protocol.
 		return err
 	}
 	return ValidateRender(request, result)
+}
+
+// validateCreateTableOperand refuses a missing table, and the inspection
+// evidence a creation operand never carries: the observed primary key and
+// indexes.
+func validateCreateTableOperand(operation *protocol.Change_CreateTable) error {
+	if operation == nil || operation.CreateTable == nil {
+		return fmt.Errorf("%w: missing table creation", ErrProtocol)
+	}
+	if operation.CreateTable.GetPrimaryKey() != nil {
+		return fmt.Errorf("%w: an inspected primary key is not a table creation operand", ErrProtocol)
+	}
+	if len(operation.CreateTable.GetIndexes()) != 0 {
+		return fmt.Errorf("%w: inspected indexes are not a table creation operand", ErrProtocol)
+	}
+	return nil
 }
