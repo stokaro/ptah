@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.12. `provider-sdk/v0.11.0` speaks 25.9.
+speaks contract 25.13. `provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
@@ -95,6 +95,7 @@ returns to 0.
   Contract 25.10 adds [common index observations](#common-index-observations).
   Contract 25.11 adds [the planning context of a filtered read](#planning-context-of-a-filtered-read).
   Contract 25.12 adds [migration splits](#migration-splits).
+  Contract 25.13 adds [comparison counts](#comparison-counts).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -122,10 +123,10 @@ does not oblige a peer to use it.
   `units.sensitive-inputs`, `schema.columns`, `database.context`,
   `values.context`, `schema.common-view-facets`, `schema.observed-columns`,
   `schema.observed-primary-keys`, `schema.observed-indexes`,
-  `planning.object-context`, `planning.context-inventory`, and
-  `units.migration-split`. The embedding store's calls and
-  `PrepareCommonObjects` are new, and each comes with an addition to `Engine`,
-  so a host lists the feature to receive either. `SplitMigration` is new too,
+  `planning.object-context`, `planning.context-inventory`,
+  `units.migration-split`, and `models.compare-counts`. The embedding store's
+  calls and `PrepareCommonObjects` are new, and each comes with an addition to
+  `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
   host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -698,7 +699,8 @@ model, subject, and target binding, and permits no change or diagnostic.
 
 The owner validates complete payload semantics again. Captured canonical
 projections do not prove desired/observed equivalence. Results include effective
-desired schema, normalized `CHANGE` values, and explicit undecided diagnostics.
+desired schema, normalized `CHANGE` values, explicit undecided diagnostics and,
+when negotiated, [counts of the compared objects](#comparison-counts).
 Both transport boundaries refuse incomplete replies and unowned models. The
 host's comparison runtime enforces common migration policy before planning.
 
@@ -1790,6 +1792,44 @@ creation operand.
 [ADR 0052](../docs/adr/0052-inspected-indexes-reach-the-host-and-index-changes-reach-the-table-owner.md)
 defines how the host compares the list and how an index change reaches the
 provider that owns the table.
+
+## Comparison counts
+
+`models.compare-counts` lets a comparison service say how many objects it
+compared, in `ComparedModels.counts`: one `ComparisonCount` per change kind it
+counts. A change record carries no direction a reader could count, so the
+owner states its additions and removals itself. The provider lists this
+two-way feature beside `models.compare`, and so does each engine whose
+services count. A service counts only for a request whose `target_features`
+list the feature. The SDK refuses counts in any other reply.
+
+`matched` counts the objects both sides hold that the service takes to be one
+object, whether or not they differ. An object the plan drops and creates again
+is matched, because the service reports one change for it. `added` counts the
+changes of the kind that create an object the observed schema lacks, and
+`removed` the changes that drop an object the desired schema does not declare.
+The desired schema holds `matched + added` objects of the kind, and the observed
+schema `matched + removed`. An object the service leaves out counts nowhere:
+one the run excludes, one it keeps without comparing, one it reports as
+undecided, and one below a parent only one side holds, whose state the
+parent's own change owns. A facet service counts the objects its settings
+stand for, such as the tables with row-level security enabled, by the same
+rules.
+
+An entry claims every object of its kind in the batch. A kind the service
+does not count has no entry, and a reader then knows nothing about the kind
+rather than that it holds none. A kind the batch holds nothing of may have no
+entry or an entry of zeros.
+
+Both transport boundaries refuse counts without negotiation, a kind that is not
+one of the service's change kinds, and a kind counted twice. They refuse
+`added + removed` above the number of the reply's changes of the kind, since
+one change cannot both add and drop an object, and more changes of the kind
+than `matched + added + removed`. The changes of a kind are those whose value
+has the kind, `ComparedChange.value.value.kind`; `ComparedChange.kind` names
+the compared model.
+[ADR 0056](../docs/adr/0056-a-comparison-service-counts-the-objects-it-compares.md)
+records why the owner counts and what an older peer does.
 
 ## Native object assessment
 
