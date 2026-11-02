@@ -369,8 +369,8 @@ var Cells = []Cell{
 
 	// MySQL: the two LTS lines (endoflife.date/api/mysql.json, read
 	// 2026-08-09 — 9.7 latest 9.7.2 EOL 2034-04-21, 8.4 latest 8.4.11 EOL
-	// 2032-04-30; both flagged LTS), plus 26.7, which is the line this
-	// repository actually starts.
+	// 2032-04-30; both flagged LTS), plus the innovation line this repository
+	// starts.
 	//
 	// Re-read 2026-08-16 against the vendor rather than the aggregator:
 	// Oracle's Lifetime Support chart carries MySQL Database rows for 8.4
@@ -383,19 +383,45 @@ var Cells = []Cell{
 	// and 26.7 is the one whose window closes without a published date.
 	//
 	// Re-read 2026-10-27: endoflife.date reports 26.7 past end of life on
-	// 2026-10-20, the day 26.10 was released. 26.7 is legacy-tested rather
-	// than best-effort because the integration suite and docker-compose.yaml
-	// still start it, and a line something exercises may not declare that
-	// nothing does.
+	// 2026-10-20, the day 26.10 was released.
+	//
+	// Re-read 2026-11-02: 26.10 is supported (latest 26.10.0, not LTS), and the
+	// integration suite and docker-compose.yaml start it in place of 26.7. An
+	// innovation line is supported only until the next one, so the suite
+	// follows the innovation track rather than settling on 9.7: it is the
+	// suite's only MySQL server, and the newest one is where a server change
+	// first shows. 9.7 and 8.4 stay certified through the probe. 26.7 keeps its
+	// cell at best-effort: nothing here starts it.
+	//
+	// The suite follows the innovation track until the next LTS line, 28.4,
+	// and then settles on it. Until then each innovation release is a bump by
+	// hand, because eol-check only lowers the old line's level: a cell and a
+	// capabilityline constant for the new line, the images in the integration
+	// workflow, docker-compose.yaml and the integration tests that start MySQL
+	// themselves, the saturation rows, a /capability-matrix run that measures
+	// the line, and capability-status.md rewritten with capmatrix status from
+	// a run over every runnable cell.
 	{
-		Dialect: platform.MySQL, Line: capabilityline.MySQL26,
+		Dialect: platform.MySQL, Line: capabilityline.MySQL2610,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "mysql:26.7",
-		Note: "past upstream support since 2026-10-20 (endoflife.date/mysql), and kept because the " +
-			"integration suite and docker-compose.yaml start this line; " +
-			"measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
-			"rows agree with MySQL84; role_management remains undecidable because the probe deliberately " +
-			"does not create a privileged account",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.10",
+		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
+			"is what the level asserts. Measured on 26.10.0 by probe run 41387220652: 147 rows, 97 " +
+			"agreements, 0 disagreements, and this cell's floor of 97 met, which is what says MySQL84 " +
+			"is right for 26.10 rather than assumed. capabilityline names 26.10 as the newest measured " +
+			"line on the strength of that measurement",
+	},
+	{
+		Dialect: platform.MySQL, Line: capabilityline.MySQL267,
+		Preset: capability.MySQL84, PresetName: "MySQL84",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "mysql:26.7",
+		Unprobed: "upstream support ended on 2026-10-20 (endoflife.date/mysql)",
+		Note: "upstream support ended 2026-10-20, and the integration suite starts 26.10 rather than " +
+			"this line, so it declares best-effort and no probe job is spent on it. The preset stands " +
+			"on the last live measurement, taken on MySQL 26.7.0 in capability-matrix run 31615442780: " +
+			"all 24 observable rows agree with MySQL84. A server on this line is operated exactly as " +
+			"any other, and what it loses is the guarantee -- nothing here measures it against the code " +
+			"as that moves",
 	},
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL9,

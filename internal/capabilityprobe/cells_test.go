@@ -704,6 +704,9 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		// on 2026-10-24, and the integration suite starts other ClickHouse
 		// lines, so the probe was the only job measuring it.
 		"clickhouse-26-7",
+		// MySQL 26.7 too: upstream support ended on 2026-10-20, when 26.10
+		// was released, and the integration suite starts 26.10 in its place.
+		"mysql-26-7",
 		// Neither Oracle line is here any more. The 23 line left when the
 		// tagged integration contour started its image, and 21 left when the
 		// matrix gained a launch recipe, which is what #1875 asks for: a

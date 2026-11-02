@@ -217,7 +217,7 @@ func TestCICell_TagPinsLine(t *testing.T) {
 	}{
 		{cell: "postgres-17", want: true},
 		{cell: "mariadb-10-11", want: true},
-		{cell: "mysql-26-7", want: true},
+		{cell: "mysql-26-10", want: true},
 		{cell: "cockroachdb-26-2", want: true},
 		{cell: "yugabytedb-2026-1", want: true},
 	} {

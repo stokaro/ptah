@@ -5,8 +5,13 @@ const (
 	MySQL8 = "8.4"
 	// MySQL9 is the measured MySQL 9 LTS release line.
 	MySQL9 = "9.7"
-	// MySQL26 is the newest measured MySQL release line.
-	MySQL26 = "26.7"
+	// MySQL267 is the measured MySQL 26.7 innovation release line.
+	MySQL267 = "26.7"
+	// MySQL2610 is the newest measured MySQL release line.
+	//
+	// Measured on 26.10.0 against the preset the cell declares: 147 rows, 97
+	// agreements, 0 disagreements, and the cell's floor of 97 met.
+	MySQL2610 = "26.10"
 	// MariaDB10 is the measured MariaDB 10 LTS release line.
 	MariaDB10 = "10.11"
 	// MariaDB114 is the measured MariaDB 11.4 release line.
@@ -103,7 +108,7 @@ func ClickHouseMeasured() []string {
 
 // MySQLMeasured returns every MySQL release line with direct matrix evidence.
 func MySQLMeasured() []string {
-	return []string{MySQL8, MySQL9, MySQL26}
+	return []string{MySQL8, MySQL9, MySQL267, MySQL2610}
 }
 
 // MariaDBMeasured returns every MariaDB release line with direct matrix evidence.

@@ -120,7 +120,7 @@ $env:MARIADB_TEST_DSN = "ptah_user:ptah_password@tcp(localhost:3307)/ptah_test"
 
 ### **Database Versions Tested:**
 - ✅ PostgreSQL 18
-- ✅ MySQL 26.7
+- ✅ MySQL 26.10
 - ✅ MariaDB 12.3
 
 ## 🎉 **Success Indicators**

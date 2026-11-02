@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-11-01"
+lastVerified: "2026-11-02"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/41337079136"
+  - "https://github.com/stokaro/ptah/actions/runs/41388005834"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,10 +31,10 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-01T18:31:42Z
-- Commit: `7796a2b8d7dc616d4bce4d0c4d71863e77b2ed04`
-- Run: [41337079136](https://github.com/stokaro/ptah/actions/runs/41337079136)
-- Declared release lines: 38. Runnable cells: 32. Results received: 32.
+- Measured: 2026-11-02T04:21:29Z
+- Commit: `7b0d5c1ac4866628c7d130f5c7cf34166c082796`
+- Run: [41388005834](https://github.com/stokaro/ptah/actions/runs/41388005834)
+- Declared release lines: 39. Runnable cells: 32. Results received: 32.
 - 32 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
@@ -45,7 +45,7 @@ over that run's cell results.
 | `postgres-15` | postgres | 15 | PASS |
 | `postgres-14` | postgres | 14 | PASS |
 | `postgres-13` | postgres | 13 | PASS |
-| `mysql-26-7` | mysql | 26.7 | PASS |
+| `mysql-26-10` | mysql | 26.10 | PASS |
 | `mysql-9-7` | mysql | 9.7 | PASS |
 | `mysql-8-4` | mysql | 8.4 | PASS |
 | `mariadb-12-3` | mariadb | 12.3 | PASS |
@@ -74,6 +74,7 @@ over that run's cell results.
 
 ## Declared lines this tier cannot run
 
+- `mysql-26-7` (mysql 26.7) — upstream support ended on 2026-10-20 (endoflife.date/mysql)
 - `clickhouse-26-7` (clickhouse 26.7) — upstream support ended on 2026-10-24 (endoflife.date/clickhouse)
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
 - `ydb-26-1` (ydb 26.1) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date

@@ -52,7 +52,7 @@ var devDockerImages = map[string]devDockerImage{
 		cmd:    "postgres",
 	},
 	"mysql": {
-		from:   "mysql:26.7",
+		from:   "mysql:26.10",
 		unset:  "MYSQL_DATABASE",
 		marker: "CREATE USER 'ptah_image_marker'@'%';\n",
 		cmd:    "mysqld",

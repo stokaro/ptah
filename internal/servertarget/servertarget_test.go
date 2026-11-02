@@ -103,7 +103,7 @@ func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
 			// arm the global SHOW_ROUTINE privilege is on (stokaro/ptah#916).
 			want: capability.MySQL8020(),
 			wantNote: "mysql 8.0.42-log is not a measured release line; " +
-				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.7)",
+				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.10)",
 		},
 		{
 			// Spanner is the dialect with no ladder: it ships by date, and the
