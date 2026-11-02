@@ -32,12 +32,18 @@ func (v stream) independentObservation() bool {
 // CompareObjects resolves target defaults only for semantic comparison. Its
 // returned desired objects retain declaration spelling and complete adopted
 // observation state. Changes below new or removed tables belong to table captures.
+//
+// It counts the changefeeds it compares on the tables both sides hold: the
+// ones both sides hold, the creations and the drops. A changefeed below a
+// table only one side holds, one it keeps, one a replication controls and one
+// it cannot decide are counted on neither side.
 func (Service) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	streams, parents, err := comparisonInputs(ctx, request)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired,
+		Counts: []schemaext.ObjectCount{{Kind: ydbdiff.ChangefeedKind}}}
 	result.Desired.Coverage, err = effectiveCoverage(request, streams)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -105,6 +111,7 @@ func compareStream(request schemaext.ObjectComparisonRequest, value stream, resu
 	if value.desired == nil && value.current == nil {
 		return nil
 	}
+	countCompared(result, value.desired != nil, value.current != nil)
 	if value.desired != nil && value.current != nil && ydbchangefeed.Equal(value.desired.Spec, value.current.Spec) {
 		return nil
 	}

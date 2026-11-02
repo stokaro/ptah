@@ -30,7 +30,9 @@ type secret struct {
 // establishes absence or a destructive change, and it is reported only where
 // the desired source makes a claim it would decide. A rotation request must
 // name a declared secret. A target without the secrets capability is refused
-// only when the comparison plans a statement.
+// only when the comparison plans a statement. It counts the secrets it
+// compares: the ones both sides hold, rotated or not, the creations and the
+// drops. A secret it keeps or cannot decide is counted on neither side.
 func (SecretService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	secrets, err := captureStandaloneInputs(ctx, request, ydbsecret.Kind, "secret", collectSecrets)
 	if err != nil {
@@ -48,7 +50,7 @@ func (SecretService) CompareObjects(ctx context.Context, request schemaext.Objec
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result, err := completeStandaloneComparison(ctx, request, secrets, coverage, ydbsecret.Kind, "secret",
+	result, err := completeStandaloneComparison(ctx, request, secrets, coverage, ydbsecret.Kind, ydbdiff.SecretKind, "secret",
 		func(value secret) objectidentity.ID { return value.ref }, compareSecret)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
@@ -141,9 +143,11 @@ func compareSecret(request schemaext.ObjectComparisonRequest, value secret, resu
 		}
 		return nil
 	}
-	switch {
-	case value.desired == nil && value.current == nil:
+	if value.desired == nil && value.current == nil {
 		return nil
+	}
+	countCompared(result, value.desired != nil, value.current != nil)
+	switch {
 	case value.desired != nil && value.current != nil && !value.rotate:
 		return nil
 	case value.current == nil:

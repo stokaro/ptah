@@ -18,10 +18,10 @@ import (
 // Complete standalone comparisons share deterministic ordering and coverage
 // receipts. Each owner still decides equality and constructs its typed changes.
 func completeStandaloneComparison[T any](ctx context.Context, request schemaext.ObjectComparisonRequest,
-	nodes map[objectidentity.Key]T, coverage schemaext.Coverage, kind schemaext.Kind, namespace string,
+	nodes map[objectidentity.Key]T, coverage schemaext.Coverage, kind, change schemaext.Kind, namespace string,
 	ref func(T) objectidentity.ID, compare func(schemaext.ObjectComparisonRequest, T, *schemaext.ObjectComparisonResult) error,
 ) (schemaext.ObjectComparisonResult, error) {
-	result, err := compareStandaloneNodes(ctx, request, nodes, coverage, ref, compare)
+	result, err := compareStandaloneNodes(ctx, request, nodes, coverage, change, ref, compare)
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
@@ -37,12 +37,14 @@ func completeStandaloneComparison[T any](ctx context.Context, request schemaext.
 
 // Owners whose omission policy preserves every unnamed object need only the
 // named operands. Namespace-wide deletion policies also require the receipt
-// checked by completeStandaloneComparison.
+// checked by completeStandaloneComparison. The result counts the objects of
+// change, its only change kind, that compare passes to [countCompared].
 func compareStandaloneNodes[T any](ctx context.Context, request schemaext.ObjectComparisonRequest,
-	nodes map[objectidentity.Key]T, coverage schemaext.Coverage,
+	nodes map[objectidentity.Key]T, coverage schemaext.Coverage, change schemaext.Kind,
 	ref func(T) objectidentity.ID, compare func(schemaext.ObjectComparisonRequest, T, *schemaext.ObjectComparisonResult) error,
 ) (schemaext.ObjectComparisonResult, error) {
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: coverage}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects, Coverage: coverage},
+		Counts: []schemaext.ObjectCount{{Kind: change}}}
 	ordered := slices.Collect(maps.Values(nodes))
 	slices.SortFunc(ordered, func(a, b T) int { return schemaext.CompareRefs(ref(a), ref(b)) })
 	for _, node := range ordered {
@@ -57,6 +59,24 @@ func compareStandaloneNodes[T any](ctx context.Context, request schemaext.Object
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	return result, nil
+}
+
+// countCompared counts one compared object under the only change kind result
+// counts: a match where both sides hold it, whether or not they differ and
+// however the plan makes its change, an addition where only the desired state
+// holds it, and a removal where only the database does. An owner calls it once
+// for each object it decides with a change or as equal, and never for one it
+// keeps, reports undecided or leaves to a parent's change.
+func countCompared(result *schemaext.ObjectComparisonResult, desired, current bool) {
+	count := &result.Counts[0]
+	switch {
+	case desired && current:
+		count.Matched++
+	case desired:
+		count.Added++
+	case current:
+		count.Removed++
+	}
 }
 
 type standalonePresence struct {

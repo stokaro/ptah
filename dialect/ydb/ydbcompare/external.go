@@ -34,14 +34,14 @@ type externalObject[D, O schemaext.Value] struct {
 
 // externalKind is what one kind's comparison needs to know of it.
 type externalKind[D, O schemaext.Value] struct {
-	kind      schemaext.Kind
-	family    string
-	namespace string
-	codecs    []schemaext.Codec
-	enroll    func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error)
-	same      func(desired D, current O, root string) bool
-	keep      func(current O) schemaext.Value
-	change    func(current O, desired D) schemaext.ChangeValue
+	kind, changeKind schemaext.Kind
+	family           string
+	namespace        string
+	codecs           []schemaext.Codec
+	enroll           func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error)
+	same             func(desired D, current O, root string) bool
+	keep             func(current O) schemaext.Value
+	change           func(current O, desired D) schemaext.ChangeValue
 }
 
 // CompareObjects plans a creation only where the read established absence,
@@ -56,6 +56,11 @@ type externalKind[D, O schemaext.Value] struct {
 // reads is refused. A target without the external_data_sources capability is
 // refused by the planner: the comparison reports what differs either way,
 // and a read of such a target records each object it lists as unread.
+//
+// It counts the data sources and the tables it compares: the ones both sides
+// hold, whether the plan changes them in place or drops and creates them
+// again, the creations and the drops. An object it keeps or cannot decide is
+// counted on neither side.
 func (ExternalService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -72,7 +77,7 @@ func (ExternalService) CompareObjects(ctx context.Context, request schemaext.Obj
 	}
 	root := request.DatabasePath
 	_, sourceResult, err := compareExternalKind(ctx, request, externalKind[*ydbexternal.DesiredSource, *ydbexternal.ObservedSource]{
-		kind: ydbexternal.SourceKind, family: "external data source", namespace: "external data sources",
+		kind: ydbexternal.SourceKind, changeKind: ydbdiff.ExternalDataSourceKind, family: "external data source", namespace: "external data sources",
 		codecs: ydbexternal.Codecs()[:2], enroll: ydbexternal.SourceCoverage,
 		same: func(desired *ydbexternal.DesiredSource, current *ydbexternal.ObservedSource, root string) bool {
 			return ydbexternal.SameDataSource(desired.Spec, current.Spec, root)
@@ -86,7 +91,7 @@ func (ExternalService) CompareObjects(ctx context.Context, request schemaext.Obj
 		return schemaext.ObjectComparisonResult{}, err
 	}
 	tables, tableResult, err := compareExternalKind(ctx, request, externalKind[*ydbexternal.DesiredTable, *ydbexternal.ObservedTable]{
-		kind: ydbexternal.TableKind, family: "external table", namespace: "external tables",
+		kind: ydbexternal.TableKind, changeKind: ydbdiff.ExternalTableKind, family: "external table", namespace: "external tables",
 		codecs: ydbexternal.Codecs()[2:], enroll: ydbexternal.TableCoverage,
 		same: func(desired *ydbexternal.DesiredTable, current *ydbexternal.ObservedTable, root string) bool {
 			return ydbexternal.SameTable(desired.Spec, current.Spec, root)
@@ -126,7 +131,8 @@ func (ExternalService) CompareObjects(ctx context.Context, request schemaext.Obj
 	}
 	return schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: objects, Coverage: coverage},
 		Changes:   append(sourceResult.Changes, tableResult.Changes...),
-		Undecided: append(sourceResult.Undecided, tableResult.Undecided...)}, nil
+		Undecided: append(sourceResult.Undecided, tableResult.Undecided...),
+		Counts:    append(sourceResult.Counts, tableResult.Counts...)}, nil
 }
 
 // compareExternalKind compares the objects of one kind the way a standalone
@@ -169,7 +175,7 @@ func compareExternalKind[D, O schemaext.Value](ctx context.Context, request sche
 	if err != nil {
 		return nil, schemaext.ObjectComparisonResult{}, err
 	}
-	result, err := completeStandaloneComparison(ctx, sub, objects, coverage, spec.kind, spec.family,
+	result, err := completeStandaloneComparison(ctx, sub, objects, coverage, spec.kind, spec.changeKind, spec.family,
 		func(value externalObject[D, O]) objectidentity.ID { return value.ref },
 		func(request schemaext.ObjectComparisonRequest, value externalObject[D, O], result *schemaext.ObjectComparisonResult) error {
 			return compareExternalObject(request, spec, value, result, root)
@@ -216,23 +222,23 @@ func compareExternalObject[D, O schemaext.Value](request schemaext.ObjectCompari
 		}
 		return nil
 	}
-	switch {
-	case !declared && !held:
-		return nil
-	case declared && held && spec.same(value.desired, value.current, root):
-		return nil
-	default:
-		var current O
-		var desired D
-		if held {
-			current = value.current
-		}
-		if declared {
-			desired = value.desired
-		}
-		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: value.ref, Value: spec.change(current, desired)})
+	if !declared && !held {
 		return nil
 	}
+	countCompared(result, declared, held)
+	if declared && held && spec.same(value.desired, value.current, root) {
+		return nil
+	}
+	var current O
+	var desired D
+	if held {
+		current = value.current
+	}
+	if declared {
+		desired = value.desired
+	}
+	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: value.ref, Value: spec.change(current, desired)})
+	return nil
 }
 
 // selectKind is the part of state about kind.

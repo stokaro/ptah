@@ -22,7 +22,9 @@ import (
 // desired source claims to describe the replication. An incomplete observation
 // never establishes absence or a destructive change. Whether YDB can make a
 // change in place, which depends on the replication's state, is the planner's
-// to decide.
+// to decide, so a replication both sides hold counts as matched whatever the
+// plan makes of its change. A replication the comparison keeps or cannot
+// decide is counted on neither side.
 type AsyncReplicationService struct{}
 
 // TransferService compares YDB transfers, as [AsyncReplicationService]
@@ -30,12 +32,13 @@ type AsyncReplicationService struct{}
 type TransferService struct{}
 
 // replicationKind is what the comparison of one kind needs from its owner:
-// its models, how YDB keeps it, and the key a statement on it needs.
+// its models and the kind of their changes, how YDB keeps it, and the key a
+// statement on it needs.
 type replicationKind[D, O interface {
 	schemaext.Value
 	comparable
 }, C schemaext.ChangeValue] struct {
-	kind              schemaext.Kind
+	kind, changeKind  schemaext.Kind
 	family, namespace string
 	codecs            []schemaext.Codec
 	coverage          func(schemaext.Representation, schemaext.Knowledge, []schemaext.SubjectCoverage) (schemaext.Coverage, error)
@@ -53,14 +56,14 @@ type replicationPair[D, O any] struct {
 }
 
 var replicationRules = replicationKind[*ydbreplication.DesiredReplication, *ydbreplication.ObservedReplication, *ydbdiff.AsyncReplication]{
-	kind: ydbreplication.ReplicationKind, family: "async replication", namespace: "async replications",
+	kind: ydbreplication.ReplicationKind, changeKind: ydbdiff.AsyncReplicationKind, family: "async replication", namespace: "async replications",
 	codecs: ydbreplication.ReplicationCodecs(), coverage: ydbreplication.ReplicationCoverage,
 	equal: (*ydbreplication.DesiredReplication).Matches, kept: (*ydbreplication.ObservedReplication).Desired,
 	change: ydbdiff.NewAsyncReplication, key: capability.AsyncReplication,
 }
 
 var transferRules = replicationKind[*ydbreplication.DesiredTransfer, *ydbreplication.ObservedTransfer, *ydbdiff.Transfer]{
-	kind: ydbreplication.TransferKind, family: "transfer", namespace: "transfers",
+	kind: ydbreplication.TransferKind, changeKind: ydbdiff.TransferKind, family: "transfer", namespace: "transfers",
 	codecs: ydbreplication.TransferCodecs(), coverage: ydbreplication.TransferCoverage,
 	equal: (*ydbreplication.DesiredTransfer).Matches, kept: (*ydbreplication.ObservedTransfer).Desired,
 	change: ydbdiff.NewTransfer, key: capability.Transfers,
@@ -96,7 +99,7 @@ func (r replicationKind[D, O, C]) compare(ctx context.Context, request schemaext
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result, err := completeStandaloneComparison(ctx, request, pairs, coverage, r.kind, r.family,
+	result, err := completeStandaloneComparison(ctx, request, pairs, coverage, r.kind, r.changeKind, r.family,
 		func(pair replicationPair[D, O]) objectidentity.ID { return pair.ref },
 		func(request schemaext.ObjectComparisonRequest, pair replicationPair[D, O], result *schemaext.ObjectComparisonResult) error {
 			return decideStandalone(request, result, standaloneDecision{kind: r.kind, family: r.family, ref: pair.ref,
@@ -161,6 +164,7 @@ type standaloneDecision struct {
 // undecided change where either side could not establish the object or its
 // absence and the desired source makes a claim, the observation kept where
 // the desired source makes none, and a change where the claimed sides differ.
+// It counts each object it decides with a change or as equal, and no other.
 func decideStandalone(request schemaext.ObjectComparisonRequest, result *schemaext.ObjectComparisonResult, decision standaloneDecision) error {
 	if decision.desired && standaloneLimited(request.Desired.Coverage, decision.kind, decision.ref) {
 		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: decision.kind, Subject: decision.ref,
@@ -186,10 +190,11 @@ func decideStandalone(request schemaext.ObjectComparisonRequest, result *schemae
 		return err
 	case !claimed, !decision.desired && !decision.current:
 		return nil
-	case decision.desired && decision.current && decision.equal():
-		return nil
-	default:
-		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: decision.ref, Value: decision.change()})
+	}
+	countCompared(result, decision.desired, decision.current)
+	if decision.desired && decision.current && decision.equal() {
 		return nil
 	}
+	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: decision.ref, Value: decision.change()})
+	return nil
 }

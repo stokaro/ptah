@@ -20,9 +20,12 @@ type PoolService struct{}
 type ClassifierService struct{}
 
 // CompareObjects keeps unset and zero limits distinct and retains both operands.
+// It counts the declared pools it compares: the ones the database holds and
+// the creations. Omission never drops a pool, so it counts no removal, and a
+// pool it keeps or cannot decide is counted on neither side.
 func (PoolService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	return compareWorkload(ctx, request, workloadFamily{
-		kind: ydbworkload.PoolKind, label: "resource pools", codecs: ydbworkload.PoolCodecs(),
+		kind: ydbworkload.PoolKind, changeKind: ydbdiff.ResourcePoolKind, label: "resource pools", codecs: ydbworkload.PoolCodecs(),
 		validate: validatePoolSnapshot,
 		equal: func(desired, current schemaext.Value) bool {
 			return ydbworkload.PoolsEqual(desired.(*ydbworkload.DesiredPool).Spec, current.(*ydbworkload.ObservedPool).Spec)
@@ -40,9 +43,11 @@ func (PoolService) CompareObjects(ctx context.Context, request schemaext.ObjectC
 
 // CompareObjects requires inspected settings before changing routing or rank.
 // Namespace completeness never authorizes removal of an omitted classifier.
+// It counts the declared classifiers it compares, as [PoolService] counts
+// pools.
 func (ClassifierService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	return compareWorkload(ctx, request, workloadFamily{
-		kind: ydbworkload.ClassifierKind, label: "resource pool classifiers", codecs: ydbworkload.ClassifierCodecs(),
+		kind: ydbworkload.ClassifierKind, changeKind: ydbdiff.ResourcePoolClassifierKind, label: "resource pool classifiers", codecs: ydbworkload.ClassifierCodecs(),
 		validate: func(ref objectidentity.ID, _ schemaext.Value) error {
 			return ydbworkload.ValidateIdentity(ref, ydbworkload.ClassifierKind)
 		},
@@ -68,13 +73,13 @@ type workloadNode struct {
 }
 
 type workloadFamily struct {
-	kind     schemaext.Kind
-	label    string
-	codecs   []schemaext.Codec
-	validate func(objectidentity.ID, schemaext.Value) error
-	equal    func(schemaext.Value, schemaext.Value) bool
-	declare  func(schemaext.Value) schemaext.Value
-	change   func(workloadNode) schemaext.ChangeValue
+	kind, changeKind schemaext.Kind
+	label            string
+	codecs           []schemaext.Codec
+	validate         func(objectidentity.ID, schemaext.Value) error
+	equal            func(schemaext.Value, schemaext.Value) bool
+	declare          func(schemaext.Value) schemaext.Value
+	change           func(workloadNode) schemaext.ChangeValue
 }
 
 func validatePoolSnapshot(ref objectidentity.ID, value schemaext.Value) error {
@@ -100,7 +105,7 @@ func compareWorkload(ctx context.Context, request schemaext.ObjectComparisonRequ
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	return compareStandaloneNodes(ctx, request, nodes, coverage,
+	return compareStandaloneNodes(ctx, request, nodes, coverage, family.changeKind,
 		func(node workloadNode) objectidentity.ID { return node.ref },
 		func(request schemaext.ObjectComparisonRequest, node workloadNode, result *schemaext.ObjectComparisonResult) error {
 			return compareWorkloadNode(request, node, result, family)
@@ -130,6 +135,7 @@ func compareWorkloadNode(request schemaext.ObjectComparisonRequest, node workloa
 		result.Undecided = append(result.Undecided, schemaext.UndecidedChange{Kind: family.kind, Subject: node.ref, Reason: reason})
 		return nil
 	}
+	countCompared(result, true, node.current != nil)
 	if node.current == nil || !family.equal(node.desired, node.current) {
 		if !request.Capabilities.Has(capability.ResourcePools) {
 			return fmt.Errorf("%w: changing %s requires %s", ptaherr.ErrUnsupportedFeature, family.label, capability.ResourcePools)
