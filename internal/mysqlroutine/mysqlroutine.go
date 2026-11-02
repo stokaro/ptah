@@ -93,7 +93,7 @@ func RunsLanguage(language string) bool {
 // distinct (IS_DETERMINISTIC, SQL_DATA_ACCESS) cells that the server accepts.
 //
 // Not every cell is available. With binary logging on and
-// log_bin_trust_function_creators off -- the pinned mysql:26.7 image's own
+// log_bin_trust_function_creators off -- the mysql:26.7 image's own
 // defaults -- the server refuses any declaration carrying none of
 // DETERMINISTIC, NO SQL or READS SQL DATA with Error 1418. Measured on MySQL
 // 26.7.0 by creating all fifteen combinations of {unset, DETERMINISTIC, NOT

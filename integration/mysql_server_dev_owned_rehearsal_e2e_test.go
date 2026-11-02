@@ -29,7 +29,7 @@ var ownedRehearsalEngines = []struct {
 	admin, dev    dbtarget.Engine
 	dockerDevURL  string
 }{
-	{name: "MySQL", dialect: "mysql", admin: dbtarget.MySQLAdmin, dev: dbtarget.MySQLDevServer, dockerDevURL: "docker+mysql://_/mysql:26.7"},
+	{name: "MySQL", dialect: "mysql", admin: dbtarget.MySQLAdmin, dev: dbtarget.MySQLDevServer, dockerDevURL: "docker+mysql://_/mysql:26.10"},
 	{name: "MariaDB", dialect: "mariadb", admin: dbtarget.MariaDBAdmin, dev: dbtarget.MariaDBDevServer, dockerDevURL: "docker+mariadb://_/mariadb:12.3"},
 }
 

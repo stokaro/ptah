@@ -1447,7 +1447,7 @@ func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
 
 	// The inert guard is derived from the connected server, never written as a
 	// literal. Hard-coding /*!99999 ...*/ as "a version no server will reach"
-	// rots: the matrix runs mysql:26.7, whose version id is 260700, so the
+	// rots: the matrix runs mysql:26.10, whose version id is 261000, so the
 	// guard opens and the DELETE in the comment becomes live SQL that Ptah then
 	// correctly refuses (#791). A derived guard
 	// cannot rot that way, and measureExecutableCommentGuard proves it is inert

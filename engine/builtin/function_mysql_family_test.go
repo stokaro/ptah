@@ -21,7 +21,7 @@ func functionSchema(fn schemamodel.Function) *schemamodel.Database {
 // that decides whether the statement is accepted at all.
 //
 // With binary logging on and log_bin_trust_function_creators off -- the
-// defaults of the mysql:26.7 image docker-compose.yaml pins -- MySQL 26.7.0
+// defaults of the mysql:26.7 image -- MySQL 26.7.0
 // refuses a function carrying none of DETERMINISTIC, NO SQL or READS SQL DATA:
 //
 //	CREATE FUNCTION f() RETURNS integer RETURN 1

@@ -328,7 +328,7 @@ func TestReportCapabilityResolution(t *testing.T) {
 		},
 		{
 			name:           "mysql current measured line says nothing at all",
-			info:           catalog.ServerInfo{Dialect: "mysql", Version: "26.7.0"},
+			info:           catalog.ServerInfo{Dialect: "mysql", Version: "26.10.0"},
 			wantDebugQuiet: true,
 		},
 		{
@@ -344,8 +344,8 @@ func TestReportCapabilityResolution(t *testing.T) {
 		{
 			name:      "mysql past the newest measured line reaches a person",
 			info:      catalog.ServerInfo{Dialect: "mysql", Version: "99.0"},
-			wantDebug: []string{"level=WARN", "newer than the newest measured release line", "dialect=mysql", "version=99.0", "newest_measured=26.7"},
-			wantWarn:  []string{"level=WARN", "newer than the newest measured release line", "newest_measured=26.7"},
+			wantDebug: []string{"level=WARN", "newer than the newest measured release line", "dialect=mysql", "version=99.0", "newest_measured=26.10"},
+			wantWarn:  []string{"level=WARN", "newer than the newest measured release line", "newest_measured=26.10"},
 		},
 		{
 			name:      "mariadb past the newest measured line reaches a person",
