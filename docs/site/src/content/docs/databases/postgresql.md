@@ -134,7 +134,9 @@ asked with its body too, a procedure without arguments included. PostgreSQL
 keeps such a body parsed, and `pg_get_function_sqlbody` prints it in its own
 spelling, so the temporary copy carries the declared body and its stored form
 is compared with the one the database holds. The copy takes the routine's own
-name, because the server qualifies a parameter with it, as `f.x`.
+name, because the server qualifies a parameter with it, as `f.x`. A schema file
+may leave the language out of such a routine: the server records it in
+`LANGUAGE sql`, and the SQL schema reader does too.
 
 - The body reads the tables and views the database holds. A body that reads
   one the plan has not created yet makes the server refuse the copy. A second
@@ -142,9 +144,6 @@ name, because the server qualifies a parameter with it, as `f.x`.
   and the body is compared as written.
 - A body that selects `*` is answered only while no table the database holds
   gains or loses a column, as on CockroachDB.
-- A `RETURN` written in a schema file is not asked: the SQL schema reader drops
-  the keyword and keeps the expression as a quoted body, which reads back as
-  written ([stokaro/ptah#4981](https://github.com/stokaro/ptah/issues/4981)).
 - YugabyteDB keeps a routine created in `pg_temp` past the rollback, so there
   the copy carries no body.
 

@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/routinebody"
 	"ptah.run/internal/routineext"
 )
 
@@ -32,6 +33,13 @@ func (converter) Convert(request routineext.Request) (schemamodel.Function, erro
 		Security:   node.Security,
 		Settings:   slices.Clone(node.Settings),
 		Body:       strings.TrimSpace(node.Body.SQL),
+	}
+	// PostgreSQL takes a BEGIN ATOMIC body as LANGUAGE sql where the routine
+	// names no language, and a catalog read reports it so. Kept empty, the
+	// language is PL/pgSQL to the planner, which does not order the procedure
+	// after a table its body writes.
+	if function.Language == "" && routinebody.Of("", function.Body) == routinebody.Atomic {
+		function.Language = "sql"
 	}
 	function.Canonicalize()
 	return function, nil
