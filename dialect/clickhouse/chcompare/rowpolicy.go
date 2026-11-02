@@ -37,7 +37,10 @@ type rowPolicyPair struct {
 // never treats an unread namespace as empty: a declared policy whose presence
 // was not established is undecided, and a policy the desired source could not
 // describe is kept rather than dropped, because dropping one changes what its
-// users read. Inputs remain unchanged.
+// users read. It counts the policies it compares: the ones both sides hold,
+// the creations and the drops. A policy it keeps, leaves undecided or leaves
+// to its table's transition is counted on neither side. Inputs remain
+// unchanged.
 func (RowPolicyService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: row policy comparison requires a context", schemaext.ErrInvalidValue)
@@ -59,7 +62,8 @@ func (RowPolicyService) CompareObjects(ctx context.Context, request schemaext.Ob
 	for _, parent := range request.Parents {
 		parents[rekeyTable(request.Identifiers, parent.Subject).Key()] = parent
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects},
+		Counts: []schemaext.ObjectCount{{Kind: chdiff.RowPolicyKind}}}
 	var adopted []schemaext.SubjectCoverage
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
@@ -114,12 +118,15 @@ func compareRowPolicy(request schemaext.ObjectComparisonRequest, pair rowPolicyP
 				Knowledge: schemaext.Knowledge{State: schemaext.Complete}}, nil
 		}
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.currentRef, Value: chdiff.NewRowPolicy(pair.current, nil)})
+		result.Counts[0].Removed++
 		return nil, nil
 	}
 	if pair.current == nil {
 		result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.desiredRef, Value: chdiff.NewRowPolicy(nil, pair.desired)})
+		result.Counts[0].Added++
 		return nil, nil
 	}
+	result.Counts[0].Matched++
 	if chsql.SameRowPolicy(pair.desired, pair.current) {
 		return nil, nil
 	}

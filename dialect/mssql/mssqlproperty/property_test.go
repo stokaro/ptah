@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mssql/mssqlproperty"
+	"ptah.run/engine"
 )
 
 func property(schema, table, column, name, value string) mssqlproperty.Property {
@@ -193,6 +194,69 @@ func TestCompareService_LeavesAnUnwritableValueAlone(t *testing.T) {
 	} {
 		c := qt.New(t)
 		c.Assert(compare(c, desired, current).Changes, qt.HasLen, 0)
+	}
+}
+
+// propertyRuntime selects the extended property owner on SQL Server and
+// nothing else, so the engine checks each count the owner states against its
+// changes.
+func propertyRuntime(c *qt.C) *engine.Runtime {
+	c.Helper()
+	return must.Must(engine.New(engine.Provider{ID: mssqlproperty.Owner, Targets: []engine.Target{{Name: platform.SQLServer}},
+		Codecs: mssqlproperty.Codecs(),
+		Comparisons: []engine.ObjectComparison{{Target: platform.SQLServer, Kinds: []schemaext.Kind{mssqlproperty.Kind},
+			ChangeKinds: []schemaext.Kind{mssqlproperty.ChangeKind}, Service: mssqlproperty.CompareService{}}},
+	}))
+}
+
+// TestCompareService_CountsWhatItCompares pins the counts the inventory
+// reports for extended properties: a property both sides hold is matched
+// whether or not its value differs, an addition is added and a drop removed,
+// and a property the comparison adopts or leaves alone because its value
+// cannot be written back is counted on neither side, so a database that
+// agrees counts what the declaration does.
+func TestCompareService_CountsWhatItCompares(t *testing.T) {
+	flag := property("app", "docs", "title", "ptah_flag", "on")
+	shouted := property("APP", "Docs", "TITLE", "PTAH_FLAG", "on")
+	changed := property("app", "docs", "title", "ptah_flag", "off")
+	added := property("app", "docs", "", "ptah_owner", "billing")
+	dropped := property("app", "docs", "body", "ptah_flag", "on")
+	unwritable := schemaext.SubjectCoverage{Kind: mssqlproperty.Kind, Subject: flag.Ref(), Knowledge: mssqlproperty.UnrepresentableValue("int")}
+	tests := []struct {
+		name             string
+		desired, current schemaext.ObjectState
+		want             schemaext.ObjectCount
+		changes          int
+	}{
+		{name: "a property spelled in another case", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind, Matched: 1},
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(shouted)), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(flag)), Coverage: complete(schemaext.Observed)}},
+		{name: "a changed value", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind, Matched: 1}, changes: 1,
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(changed)), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(flag)), Coverage: complete(schemaext.Observed)}},
+		{name: "an addition, a drop and a match", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind, Matched: 1, Added: 1, Removed: 1}, changes: 2,
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(flag), declared(added)), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(flag), observed(dropped)), Coverage: complete(schemaext.Observed)}},
+		{name: "a property adopted where the source cannot declare one", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind},
+			current: schemaext.ObjectState{Objects: objects(qt.New(t), observed(flag)), Coverage: complete(schemaext.Observed)}},
+		{name: "a declaration of a value that cannot be written back", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind},
+			desired: schemaext.ObjectState{Objects: objects(qt.New(t), declared(flag)), Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Coverage: complete(schemaext.Observed, unwritable)}},
+		{name: "a value that cannot be written back and no declaration", want: schemaext.ObjectCount{Kind: mssqlproperty.ChangeKind},
+			desired: schemaext.ObjectState{Coverage: complete(schemaext.Desired)},
+			current: schemaext.ObjectState{Coverage: complete(schemaext.Observed, unwritable)}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result, err := propertyRuntime(c).CompareObjects(t.Context(), schemaext.ObjectComparisonRequest{
+				Target: platform.SQLServer, Identifiers: identifier.ForDialect(platform.SQLServer), Desired: test.desired, Current: test.current})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, test.changes)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
+		})
 	}
 }
 

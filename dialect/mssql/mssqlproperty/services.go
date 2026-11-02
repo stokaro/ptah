@@ -42,7 +42,9 @@ func checkTarget(ctx context.Context, target, stage string) error {
 // dropped.
 type CompareService struct{}
 
-// CompareObjects returns a complete comparison. Invalid input and
+// CompareObjects returns a complete comparison, and counts the properties it
+// compares: the ones both sides hold, the additions and the drops. A property
+// it leaves alone or adopts is counted on neither side. Invalid input and
 // cancellation return a zero result.
 func (CompareService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if err := checkTarget(ctx, request.Target, "comparison"); err != nil {
@@ -59,7 +61,7 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: request.Desired, Counts: []schemaext.ObjectCount{{Kind: ChangeKind}}}
 	keys := make([]objectidentity.Key, 0, len(desired)+len(current))
 	for key := range desired {
 		keys = append(keys, key)
@@ -84,6 +86,7 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 			// has, and an add would fail on the property the database holds.
 		case observed == nil:
 			result.Changes = append(result.Changes, record(wanted.ref, nil, declared))
+			result.Counts[0].Added++
 		case declared == nil && !removable(request.Desired.Coverage, held.ref):
 			var err error
 			if result.Desired.Objects, err = result.Desired.Objects.With(schemaext.Object{Ref: held.ref, Value: observed.Desired()}); err != nil {
@@ -91,8 +94,12 @@ func (CompareService) CompareObjects(ctx context.Context, request schemaext.Obje
 			}
 		case declared == nil:
 			result.Changes = append(result.Changes, record(held.ref, observed, nil))
-		case declared.Value != observed.Value:
-			result.Changes = append(result.Changes, record(wanted.ref, observed, declared))
+			result.Counts[0].Removed++
+		default:
+			result.Counts[0].Matched++
+			if declared.Value != observed.Value {
+				result.Changes = append(result.Changes, record(wanted.ref, observed, declared))
+			}
 		}
 	}
 	return result, ctx.Err()
