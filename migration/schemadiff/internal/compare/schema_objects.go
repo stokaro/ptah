@@ -940,6 +940,8 @@ func materializedViewDefinitions(
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 		Desired:  genView,
+		// What the view reads until the plan drops it, which orders that drop.
+		PreviousBody: strings.TrimSpace(dbView.Body),
 	}
 
 	declared, stored := MaterializedViewQuery(genView.Body), MaterializedViewQuery(dbView.Body)

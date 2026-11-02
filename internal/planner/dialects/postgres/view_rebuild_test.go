@@ -210,18 +210,23 @@ var (
 	orderReportMoved   = rebuildObject{name: "order_report", body: "SELECT 1 AS one, total FROM order_totals"}
 	orderTop           = rebuildObject{name: "order_top", body: "SELECT max(total) AS top FROM order_totals", materialized: true}
 	orderTopReport     = rebuildObject{name: "order_top_report", body: "SELECT top FROM order_top"}
-	orderList          = rebuildObject{name: "order_list", body: "SELECT id, amount FROM orders"}
-	orderListMoved     = rebuildObject{name: "order_list", body: "SELECT amount, id FROM orders"}
-	orderMix           = rebuildObject{name: "order_mix", body: "SELECT l.id, t.total FROM order_list l, order_totals t"}
-	newReport          = rebuildObject{name: "new_report", body: "SELECT total, n FROM order_totals"}
-	itemSkus           = rebuildObject{name: "item_skus", body: "SELECT id, sku FROM items"}
-	skuCounts          = rebuildObject{name: "sku_counts", body: "SELECT sku, count(*) AS n FROM item_skus GROUP BY sku", materialized: true}
-	skuCountsChanged   = rebuildObject{name: "sku_counts", body: "SELECT sku, count(*) AS n, max(id) AS top FROM item_skus GROUP BY sku", materialized: true}
-	skuList            = rebuildObject{name: "item_sku_list", body: "SELECT sku FROM item_skus"}
-	bigOrdersReading   = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE amount > (SELECT total / 10 FROM order_totals)"}
-	bigOrdersPlain     = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE amount > 100"}
-	bigOrdersOfNewList = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE id IN (SELECT id FROM new_list)"}
-	newList            = rebuildObject{name: "new_list", body: "SELECT id FROM orders"}
+	// orderTotalsTop reads order_totals, and orderTotalsTopOfOrders, its new
+	// declaration, reads orders instead. Its name sorts after order_totals, so
+	// an order that sees only the new body drops order_totals first.
+	orderTotalsTop         = rebuildObject{name: "order_totals_top", body: "SELECT max(total) AS top FROM order_totals", materialized: true}
+	orderTotalsTopOfOrders = rebuildObject{name: "order_totals_top", body: "SELECT max(amount) AS top FROM orders", materialized: true}
+	orderList              = rebuildObject{name: "order_list", body: "SELECT id, amount FROM orders"}
+	orderListMoved         = rebuildObject{name: "order_list", body: "SELECT amount, id FROM orders"}
+	orderMix               = rebuildObject{name: "order_mix", body: "SELECT l.id, t.total FROM order_list l, order_totals t"}
+	newReport              = rebuildObject{name: "new_report", body: "SELECT total, n FROM order_totals"}
+	itemSkus               = rebuildObject{name: "item_skus", body: "SELECT id, sku FROM items"}
+	skuCounts              = rebuildObject{name: "sku_counts", body: "SELECT sku, count(*) AS n FROM item_skus GROUP BY sku", materialized: true}
+	skuCountsChanged       = rebuildObject{name: "sku_counts", body: "SELECT sku, count(*) AS n, max(id) AS top FROM item_skus GROUP BY sku", materialized: true}
+	skuList                = rebuildObject{name: "item_sku_list", body: "SELECT sku FROM item_skus"}
+	bigOrdersReading       = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE amount > (SELECT total / 10 FROM order_totals)"}
+	bigOrdersPlain         = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE amount > 100"}
+	bigOrdersOfNewList     = rebuildObject{name: "big_orders", body: "SELECT id, amount FROM orders WHERE id IN (SELECT id FROM new_list)"}
+	newList                = rebuildObject{name: "new_list", body: "SELECT id FROM orders"}
 	// reportingSkus is item_skus's namesake in the schema reporting, and
 	// reportingSkuList reads it by its qualified name.
 	reportingSkus    = rebuildObject{schema: "reporting", name: "item_skus", body: "SELECT id FROM orders"}
@@ -306,6 +311,23 @@ func TestViewRebuild_HappyPath(t *testing.T) {
 				createTotalsChanged,
 				createTop,
 				createTopReport,
+			},
+		},
+		{
+			name:     "a changed materialized view whose held body reads another changed one and whose new body does not",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderTotalsTop}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderTotalsChanged, orderTotalsTopOfOrders}},
+			annotated: []string{
+				`DROP MATERIALIZED VIEW IF EXISTS "order_totals_top" CASCADE`,
+				`DROP MATERIALIZED VIEW IF EXISTS "order_totals" CASCADE`,
+				createTotalsChanged,
+				createTotalsTopOfOrders,
+			},
+			exact: []string{
+				`DROP MATERIALIZED VIEW "order_totals_top"`,
+				`DROP MATERIALIZED VIEW "order_totals"`,
+				createTotalsChanged,
+				createTotalsTopOfOrders,
 			},
 		},
 		{
@@ -516,6 +538,7 @@ const (
 	createReportMoved       = "CREATE VIEW \"order_report\" AS\nSELECT 1 AS one, total FROM order_totals"
 	createTop               = "CREATE MATERIALIZED VIEW \"order_top\" AS\nSELECT max(total) AS top FROM order_totals"
 	createTopReport         = "CREATE VIEW \"order_top_report\" AS\nSELECT top FROM order_top"
+	createTotalsTopOfOrders = "CREATE MATERIALIZED VIEW \"order_totals_top\" AS\nSELECT max(amount) AS top FROM orders"
 	createNewReport         = "CREATE VIEW \"new_report\" AS\nSELECT total, n FROM order_totals"
 	createListMoved         = "CREATE VIEW \"order_list\" AS\nSELECT amount, id FROM orders"
 	createMix               = "CREATE VIEW \"order_mix\" AS\nSELECT l.id, t.total FROM order_list l, order_totals t"
