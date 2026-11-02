@@ -47,7 +47,7 @@ func mysql() descriptor.Dialect {
 				},
 				Attribution: "measured-lines",
 				Measured:    capabilityline.MySQLMeasured(),
-				Newest:      capabilityline.MySQL26,
+				Newest:      capabilityline.MySQL2610,
 			},
 		},
 		IdentifierLimit:      descriptor.IdentifierLimit{Max: 64, Unit: "characters"},

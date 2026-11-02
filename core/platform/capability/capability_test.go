@@ -571,25 +571,27 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		wantSaturated       bool
 		wantNewestMeasured  string
 	}{
-		// MySQL: the separately numbered 26.x generation is measured on exact line 26.7.
-		{"mysql undeclared legacy line", "mysql", "5.7.44", capability.MySQLLegacy(), false, false, "26.7"},
+		// MySQL: the separately numbered 26.x generation is measured on exact lines 26.7 and 26.10.
+		{"mysql undeclared legacy line", "mysql", "5.7.44", capability.MySQLLegacy(), false, false, "26.10"},
 		// The 8.0 patch ladder, one row per step. Each threshold is the one the
 		// hand-rolled gate it replaced carried: VIEW_TABLE_USAGE at 8.0.13 and
 		// SHOW_ROUTINE at 8.0.20 (stokaro/ptah#916 item 3).
-		{"mysql 8.0 below the catalog step", "mysql", "8.0.12", capability.MySQLLegacy(), false, false, "26.7"},
-		{"mysql 8.0 at the catalog step", "mysql", "8.0.13", capability.MySQL8013(), false, false, "26.7"},
-		{"mysql 8.0 at the check step", "mysql", "8.0.16", capability.MySQL8016(), false, false, "26.7"},
-		{"mysql 8.0 at the drop-constraint step", "mysql", "8.0.19", capability.MySQL8019(), false, false, "26.7"},
-		{"mysql 8.0 at the privilege step", "mysql", "8.0.20", capability.MySQL8020(), false, false, "26.7"},
-		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8020(), false, false, "26.7"},
-		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.7"},
-		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.7"},
-		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.7"},
-		{"mysql undeclared generation gap", "mysql", "25.1.0", capability.MySQL84(), false, false, "26.7"},
-		{"mysql sibling below measured minor", "mysql", "26.6.0", capability.MySQL84(), false, false, "26.7"},
-		{"mysql at the newest measured line", "mysql", "26.7.0", capability.MySQL84(), true, false, "26.7"},
-		{"mysql sibling above measured minor", "mysql", "26.8.0", capability.MySQL84(), false, true, "26.7"},
-		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "26.7"},
+		{"mysql 8.0 below the catalog step", "mysql", "8.0.12", capability.MySQLLegacy(), false, false, "26.10"},
+		{"mysql 8.0 at the catalog step", "mysql", "8.0.13", capability.MySQL8013(), false, false, "26.10"},
+		{"mysql 8.0 at the check step", "mysql", "8.0.16", capability.MySQL8016(), false, false, "26.10"},
+		{"mysql 8.0 at the drop-constraint step", "mysql", "8.0.19", capability.MySQL8019(), false, false, "26.10"},
+		{"mysql 8.0 at the privilege step", "mysql", "8.0.20", capability.MySQL8020(), false, false, "26.10"},
+		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8020(), false, false, "26.10"},
+		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.10"},
+		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.10"},
+		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.10"},
+		{"mysql undeclared generation gap", "mysql", "25.1.0", capability.MySQL84(), false, false, "26.10"},
+		{"mysql sibling below measured minor", "mysql", "26.6.0", capability.MySQL84(), false, false, "26.10"},
+		{"mysql on a measured line below the newest", "mysql", "26.7.0", capability.MySQL84(), true, false, "26.10"},
+		{"mysql between measured minors", "mysql", "26.8.0", capability.MySQL84(), false, false, "26.10"},
+		{"mysql at the newest measured line", "mysql", "26.10.0", capability.MySQL84(), true, false, "26.10"},
+		{"mysql sibling above measured minor", "mysql", "26.11.0", capability.MySQL84(), false, true, "26.10"},
+		{"mysql far above", "mysql", "99.0", capability.MySQL84(), false, true, "26.10"},
 
 		// MariaDB: MariaDB1011 is measured through the 12.x line.
 		{"mariadb undeclared legacy line", "mariadb", "10.1.48-MariaDB", capability.MariaDBLegacy(), false, false, "12.3"},
@@ -678,7 +680,7 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		// arm, is not attributable to a declared line (25.3 is not one), and is
 		// not saturated either.
 		// These three name the constant rather than its value, unlike the rows
-		// above. `MySQL26` and `ClickHouse267` are both "26.7" today, so a
+		// above. `MySQL267` and `ClickHouse267` are both "26.7" today, so a
 		// literal here reads as though it were the MySQL rows' answer and a
 		// blind replace when one of them moves corrupts the other
 		// (stokaro/ptah#2802).
