@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
@@ -226,6 +227,55 @@ func tableCreationsFromRemovals(names []string, prior *schemamodel.Database, sem
 		creations = append(creations, priorTableCreation(prior, name, semantics))
 	}
 	return creations
+}
+
+// tableGrantsFromRemovals is the privileges the rollback gives back to the
+// tables it creates again, as the pre-change database held them, column
+// privileges included.
+//
+// The forward direction revokes only the privileges a comparison manages,
+// which are those of a role the schema declares or grants to. Dropping the
+// table takes the others with it, and the table the rollback creates holds
+// none of them. The privileges the forward direction revokes are left out here:
+// the rollback grants those back already. So is a privilege its grantor holds
+// on the table, which is the owner's, and which the owner of the new table
+// holds without a grant. A read that reported no grants restores none.
+func tableGrantsFromRemovals(
+	names []string,
+	current *catalog.Database,
+	revoked []difftypes.GrantRef,
+	semantics identifier.Semantics,
+) []difftypes.GrantRef {
+	if len(names) == 0 || current == nil {
+		return nil
+	}
+	var granted []difftypes.GrantRef
+	for _, grant := range current.Grants {
+		if !strings.EqualFold(strings.TrimSpace(grant.ObjectType), "TABLE") || grant.Implicit || grant.IsPartialRevoke ||
+			strings.EqualFold(strings.TrimSpace(grant.Role), strings.TrimSpace(grant.GrantedBy)) ||
+			!objectlookup.Contains(names, grant.QualifiedTarget(), semantics) {
+			continue
+		}
+		ref := difftypes.GrantRef{
+			Role:       strings.TrimSpace(grant.Role),
+			Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+			ObjectType: "TABLE",
+			ObjectName: grant.QualifiedTarget(),
+			Column:     strings.TrimSpace(grant.Column),
+			WithOption: grant.WithOption,
+		}
+		if !slices.ContainsFunc(revoked, func(planned difftypes.GrantRef) bool { return sameTableGrant(planned, ref, semantics) }) {
+			granted = append(granted, ref)
+		}
+	}
+	return granted
+}
+
+// sameTableGrant reports whether two table privileges are one: the same role,
+// privilege and column on the same table.
+func sameTableGrant(a, b difftypes.GrantRef, semantics identifier.Semantics) bool {
+	return strings.EqualFold(a.ObjectType, b.ObjectType) && a.Role == b.Role && a.Privilege == b.Privilege &&
+		a.Column == b.Column && objectlookup.Same(a.ObjectName, b.ObjectName, semantics)
 }
 
 // reverseTableRemovals orders the reverse removal intents. Their observations

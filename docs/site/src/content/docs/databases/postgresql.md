@@ -1025,6 +1025,12 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+A plan that removes a table revokes the privileges of the roles the schema
+manages and leaves the others to `DROP TABLE`. The rollback of that plan
+creates the table again and grants every privilege the database held on it,
+column privileges included, whichever role held it. The owner's privileges are
+left out: the owner of the new table holds them without a grant.
+
 Such a grant belongs to the column, not to the sequence's name. Renaming a
 table or a column leaves its sequence's name as it was, so a table created as
 `items` and renamed to `products` keeps `items_id_seq`, while its `BIGSERIAL`
