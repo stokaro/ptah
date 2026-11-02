@@ -36,3 +36,5 @@ func removeLockFileAfterClose(string) {}
 // lockFileInUse is false: opening a file another process holds never fails
 // here.
 func lockFileInUse(error) bool { return false }
+
+func lockFileClosing(error) bool { return false }

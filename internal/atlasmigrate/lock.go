@@ -12,6 +12,28 @@ import (
 
 var errDirLocked = errors.New("migration directory is locked")
 
+// errDirLockClosing reports an open of the lock file that the platform refused
+// while another process removes it; see [lockFileClosing].
+var errDirLockClosing = errors.New("migration directory lock file is being removed")
+
+// closingLockError is an open of the lock file that [lockFileClosing] refused.
+// It reads as the open's own failure, which is what a refusal that outlasts
+// [lockFileClosingGrace] reports, and matches [errDirLockClosing].
+type closingLockError struct{ err error }
+
+func (e closingLockError) Error() string { return "open migration directory lock: " + e.err.Error() }
+
+func (e closingLockError) Unwrap() error { return e.err }
+
+func (closingLockError) Is(target error) bool { return target == errDirLockClosing }
+
+// lockFileClosingGrace is how long an open the platform refuses as
+// [lockFileClosing] is waited out before its error is reported. A removal ends
+// within it; a refusal that outlasts it is a fault of its own, such as a
+// directory the process may not write, and is reported rather than waited on
+// for as long as the lock timeout allows, which may be forever.
+const lockFileClosingGrace = 2 * time.Second
+
 type dirLock struct {
 	file *os.File
 	path string
@@ -86,8 +108,23 @@ func acquireDirLock(ctx context.Context, migrationsDir string, timeout time.Dura
 	}
 	lockPath := migrationDirLockPath(canonicalDir)
 	startedAt := time.Now()
+	var closingSince time.Time
 	for {
 		lock, err := tryAcquireDirLock(lockPath)
+		if errors.Is(err, errDirLockClosing) {
+			if closingSince.IsZero() {
+				closingSince = time.Now()
+			}
+			if timeout < 0 || time.Since(closingSince) >= lockFileClosingGrace ||
+				timeout > 0 && time.Since(startedAt) >= timeout {
+				return nil, err
+			}
+			if err := waitForDirLockRetry(ctx, startedAt, timeout); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		closingSince = time.Time{}
 		if err == nil {
 			if contextErr := ctx.Err(); contextErr != nil {
 				return nil, errors.Join(
@@ -143,6 +180,9 @@ func tryAcquireDirLock(lockPath string) (*dirLock, error) {
 	file, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
 	if lockFileInUse(err) {
 		return nil, errDirLocked
+	}
+	if lockFileClosing(err) {
+		return nil, closingLockError{err: err}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open migration directory lock: %w", err)

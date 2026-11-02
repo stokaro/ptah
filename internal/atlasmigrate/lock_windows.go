@@ -52,6 +52,18 @@ func lockFileInUse(err error) bool {
 	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
+// lockFileClosing reports an open of the lock file that a removal in progress
+// refused. A file removed while another handle still has it open stays until
+// that handle closes, and Windows refuses every open of it in the meantime with
+// ERROR_ACCESS_DENIED: a release that closes and removes the file while
+// another process is opening it leaves that process this answer. Without it
+// the waiting run failed with `Access is denied` instead of taking the lock a
+// moment later. The same answer also means a directory the process may not
+// write, so [acquireDirLock] waits it out only briefly.
+func lockFileClosing(err error) bool {
+	return errors.Is(err, windows.ERROR_ACCESS_DENIED)
+}
+
 // The lock file is removed on release; see (*dirLock).release for the order.
 func removeLockFileBeforeUnlock(string) {}
 
