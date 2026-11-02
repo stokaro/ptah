@@ -924,9 +924,13 @@ that depends on a dropped one goes with it:
   a routine.
 
 The plan drops each of them by name before the column step, after everything
-that depends on it, so no drop needs `CASCADE` for a dependent the schema
-declares. It creates them again after the view step, in dependency order, from
-the declaration. Right after each object it creates again, it writes:
+that depends on it in the database, so no drop needs `CASCADE` for a dependent
+the schema declares. It creates them again after the view step, in dependency
+order, from the declaration. The drop order reads the definitions the database
+holds, and the creation order reads the declaration. So when two changed views
+swap which one reads the other, the plan first drops the one that reads the
+other in the database, and first creates the one the other reads in the
+declaration. Right after each object it creates again, it writes:
 
 - the declared indexes of a materialized view, so `REFRESH MATERIALIZED VIEW
   CONCURRENTLY` finds its unique index once the migration commits;

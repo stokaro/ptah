@@ -45,10 +45,12 @@ func materializedViewDrops(sql string) []string {
 // t on the other. Both directions drop and create both views, and each drop
 // runs while the database still holds the body m2 has before that plan: the
 // one the database held for the up plan, and the one the up plan created for
-// the down plan. Wherever either body reads m1, m2 is dropped first. Ordered
-// by the body a plan creates alone, m1 is dropped first, and PostgreSQL
-// refuses that drop with 2BP01 while m2 reads it (stokaro/ptah#5013). The
-// down drops name the schema the database reported the views in.
+// the down plan. Where that body reads m1, m2 is dropped first. Ordered by the
+// body a plan creates alone, m1 is dropped first, and PostgreSQL refuses that
+// drop with 2BP01 while m2 reads it (stokaro/ptah#5013). Where that body does
+// not read m1, nothing orders the two drops, and they keep the order the
+// comparison reports the views in. The down drops name the schema the database
+// reported the views in.
 func TestPlanBidirectionalSchemaDiff_DropsAMaterializedViewBeforeTheOneItsHeldBodyReads(t *testing.T) {
 	const (
 		m1Held     = "SELECT id, a FROM t"
@@ -65,12 +67,12 @@ func TestPlanBidirectionalSchemaDiff_DropsAMaterializedViewBeforeTheOneItsHeldBo
 			name:   "the held body reads m1 and the declared one does not",
 			m2Held: m2OfM1, m2Declared: m2OfT,
 			up:   []string{`DROP MATERIALIZED VIEW IF EXISTS "m2" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "m1" CASCADE`},
-			down: []string{`DROP MATERIALIZED VIEW IF EXISTS "public"."m2" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "public"."m1" CASCADE`},
+			down: []string{`DROP MATERIALIZED VIEW IF EXISTS "public"."m1" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "public"."m2" CASCADE`},
 		},
 		{
 			name:   "the declared body reads m1 and the held one does not",
 			m2Held: m2OfT, m2Declared: m2OfM1,
-			up:   []string{`DROP MATERIALIZED VIEW IF EXISTS "m2" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "m1" CASCADE`},
+			up:   []string{`DROP MATERIALIZED VIEW IF EXISTS "m1" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "m2" CASCADE`},
 			down: []string{`DROP MATERIALIZED VIEW IF EXISTS "public"."m2" CASCADE`, `DROP MATERIALIZED VIEW IF EXISTS "public"."m1" CASCADE`},
 		},
 	}
