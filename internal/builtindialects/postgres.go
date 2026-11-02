@@ -152,10 +152,14 @@ func postgres() descriptor.Dialect {
 		// constraints of a table. A
 		// bare type name its catalog or grammar defines is the built-in type:
 		// measured on 17.10, a user domain named money beside a pg_catalog
-		// money column (stokaro/ptah#1138).
+		// money column (stokaro/ptah#1138). Of the built-in access methods
+		// only btree builds a unique index: measured on 18.6, each of the
+		// others answers `access method "hash" does not support unique
+		// indexes` in its own name.
 		Preparation: descriptor.Preparation{
 			FoldsIndexConstraints: true,
 			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"brin", "gin", "gist", "hash", "spgist"},
 		},
 
 		// A serial column owns its sequence, every routine carries EXECUTE

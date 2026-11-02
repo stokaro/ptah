@@ -129,8 +129,12 @@ func yugabyteDB() descriptor.Dialect {
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.
+		// YugabyteDB builds a unique hash index as lsm, which takes UNIQUE,
+		// and refuses one built as ybgin, measured on 2026.1.2.0: `access
+		// method "ybgin" does not support unique indexes`, for gin as well.
 		Preparation: descriptor.Preparation{
-			PostgresBuiltInTypes: true,
+			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"gin", "ybgin"},
 		},
 
 		// A serial column owns its sequence, every routine carries EXECUTE
