@@ -883,12 +883,16 @@ func renderMigrationDiffSQL(dialect string, statements []Statement, format FileF
 }
 
 // endCommentLine is statement with a line break after it when it is only
-// comments, such as a planner's note. A template that writes the statements on
-// one line, such as `{{ range .Changes }}{{ .Cmd }}; {{ end }}`, would
-// otherwise put the next statement inside the note's line comment, where the
-// server never runs it.
+// comments, such as a planner's note, or ends in a line comment, such as a view
+// body written with a comment before its semicolon. A template that writes the
+// statements on one line, such as `{{ range .Changes }}{{ .Cmd }}; {{ end }}`,
+// would otherwise put the semicolon and the next statement inside the comment,
+// where the server never runs them.
 func endCommentLine(statement string) string {
-	if sqlscript.CommentOnly(statement) && !strings.HasSuffix(statement, "\n") {
+	if strings.HasSuffix(statement, "\n") {
+		return statement
+	}
+	if sqlscript.CommentOnly(statement) || sqlscript.EndsInLineComment(statement) {
 		return statement + "\n"
 	}
 	return statement
