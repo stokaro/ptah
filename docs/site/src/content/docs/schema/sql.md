@@ -497,6 +497,11 @@ refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
 definition alike, are read as one, as the server keeps one. A schema directory
 refuses an object that a later file declares again in its own words.
 
+An extension one file creates twice without `IF NOT EXISTS` is refused on
+PostgreSQL and YugabyteDB, which refuse the second `CREATE EXTENSION` with
+`extension "pgcrypto" already exists`. CockroachDB runs the second statement,
+so a file read for it declares the extension once.
+
 On PostgreSQL and YugabyteDB, a guard on a name written twice is read the way
 the server runs it, in one file or across the files of a schema directory, so
 a database built from the file and the file itself compare equal:

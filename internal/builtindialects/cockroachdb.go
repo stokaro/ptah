@@ -112,7 +112,9 @@ func cockroachDB() descriptor.Dialect {
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names:       descriptor.Names{Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
-		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+		// OwnerCreateOnce stays off: a second CREATE EXTENSION of one
+		// extension succeeds, measured on 26.3.2.
+		Statements: descriptor.Statements{ViewsBlockDropTable: true},
 
 		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
 		// one dev database are serialized with a lock file, which only serializes
