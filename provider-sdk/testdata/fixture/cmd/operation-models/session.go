@@ -14,5 +14,8 @@ func (p *owner) Open(ctx context.Context, request *protocol.OpenRequest) (*proto
 		return nil, err
 	}
 	session.Capabilities = map[string]bool{"transactional_ddl": p.transactionalDDL}
+	if p.refusesDDLTransactions {
+		session.Capabilities["ddl_inside_transaction"] = false
+	}
 	return session, nil
 }
