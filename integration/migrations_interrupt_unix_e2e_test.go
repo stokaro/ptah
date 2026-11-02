@@ -71,6 +71,7 @@ ORDER BY tablename COLLATE "C"`
 // gadgets table" is also what a migration 2 that never applies would produce.
 func TestMigrationsUpInterruptedDuringAMigrationE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	buildBeforeTheDeadline(t, clirun.Ptah)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -120,6 +121,7 @@ func TestMigrationsUpInterruptedDuringAMigrationE2E(t *testing.T) {
 // body does drop the table when nobody stops it.
 func TestMigrationsDownInterruptedDuringARollbackE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	buildBeforeTheDeadline(t, clirun.Ptah)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -281,6 +283,16 @@ type interruptedRun struct {
 func runInterruptedDuringSleep(c *qt.C, ctx context.Context, f interruptFixture, args ...string) interruptedRun {
 	c.Helper()
 	return runTargetInterruptedDuringSleep(c, ctx, f, clirun.Ptah, args...)
+}
+
+// buildBeforeTheDeadline builds the binary target names before a test starts
+// the deadline its runs share. A first build is most of that deadline on a CI
+// runner: the build left inside it, the interrupted run's subtest took 147 s of
+// three minutes on a green run and the last subtest ran out of time two
+// seconds short on the next, though every run it bounds finished.
+func buildBeforeTheDeadline(t *testing.T, target clirun.Target) {
+	t.Helper()
+	clirun.Build(qt.New(t), target)
 }
 
 // runTargetInterruptedDuringSleep is the same interrupt for either shipped
