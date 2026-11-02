@@ -2326,6 +2326,11 @@ func (r *Reader) basicConstraintsQuery() string {
 		-- condition that nothing declares, and the comparison plans to drop it,
 		-- which drops the NOT NULL (stokaro/ptah#3927).
 		AND pc.contype <> 'n'
+		-- CockroachDB stores a sequence as a one-row table and catalogs that
+		-- table's key, named primary, against the sequence. Nothing declares
+		-- a key on a sequence, so read as a table's, the comparison plans
+		-- ALTER TABLE s DROP CONSTRAINT primary for every sequence.
+		AND constraint_table.relkind <> 'S'
 		GROUP BY
 			tc.table_schema,
 			tc.table_name,
