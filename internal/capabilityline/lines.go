@@ -8,6 +8,9 @@ const (
 	// MySQL267 is the measured MySQL 26.7 innovation release line.
 	MySQL267 = "26.7"
 	// MySQL2610 is the newest measured MySQL release line.
+	//
+	// Measured on 26.10.0 against the preset the cell declares: 147 rows, 97
+	// agreements, 0 disagreements, and the cell's floor of 97 met.
 	MySQL2610 = "26.10"
 	// MariaDB10 is the measured MariaDB 10 LTS release line.
 	MariaDB10 = "10.11"

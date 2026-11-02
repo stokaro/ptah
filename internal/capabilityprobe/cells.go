@@ -396,6 +396,11 @@ var Cells = []Cell{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL2610,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.10",
+		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
+			"is what the level asserts. Measured on 26.10.0 by probe run 41387220652: 147 rows, 97 " +
+			"agreements, 0 disagreements, and this cell's floor of 97 met, which is what says MySQL84 " +
+			"is right for 26.10 rather than assumed. capabilityline names 26.10 as the newest measured " +
+			"line on the strength of that measurement",
 	},
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL267,
