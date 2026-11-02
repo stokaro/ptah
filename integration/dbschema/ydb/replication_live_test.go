@@ -703,6 +703,15 @@ func waitForDirectory(c *qt.C, line ydbLine, want []string, segments ...string) 
 // met that state on 25.1.4.7. Every read succeeds, and records the replica
 // only once YDB describes it. CASCADE also returns before the replica disappears
 // from the catalog, so absence is checked after that asynchronous removal.
+//
+// Each cycle waits for the replica to appear before it drops the replication.
+// YDB's replication controller creates the replica after CREATE ASYNC
+// REPLICATION returns, and a CASCADE that lands while that CREATE TABLE is in
+// flight drops the replication and leaves the table behind: measured on 25.1,
+// the drop arrived 3 ms after the controller proposed the replica, and the
+// table stayed until the test's cleanup removed it. Both reads still meet a
+// replica in transition; the wait only keeps the drop from racing the server's
+// own creation, which is not what this test measures.
 func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 	for _, line := range ydbLines {
 		t.Run(line.name, func(t *testing.T) {
@@ -718,6 +727,7 @@ func TestYDBReplication_ReadsWhileReplicasComeAndGo(t *testing.T) {
 					"`/local/ptah_ydb_repl/src` AS `ptah_ydb_repl/cycle_rep` WITH (CONNECTION_STRING = '" +
 					connection + "')"})
 				created := readScoped(c, conn, replicationSchemas)
+				waitForEntry(c, line, "cycle_rep", replicationSchema)
 				apply(c, conn, []string{"DROP ASYNC REPLICATION `ptah_ydb_repl/cycle` CASCADE"})
 				dropped := readScoped(c, conn, replicationSchemas)
 
