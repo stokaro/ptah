@@ -676,7 +676,7 @@ func applyCurrentState(
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
-	readScope, err := applyReadScope(conn.Info(), requested, urlScope, desired)
+	readScope, err := schemascope.ComparisonScope(conn.Info(), requested, urlScope, desired)
 	if err != nil {
 		return applyRead{}, fmt.Errorf("read database schema: %w", err)
 	}
@@ -689,47 +689,6 @@ func applyCurrentState(
 		readScope:        readScope,
 		schemasBeyondURL: schemascope.BeyondURL(conn.Info(), urlScope, readScope),
 	}, nil
-}
-
-// applyReadScope resolves the schemas the DATABASE side of an apply is read at.
-//
-// The two sides of a comparison have to be read at the same scope or silence on
-// one of them is mistaken for absence. `schema inspect` on a URL that pins no
-// schema describes every schema of the realm (stokaro/ptah#1264); applying that
-// description back to the database it came from, while reading only the
-// connection's own schema, finds no `extra` there and plans `CREATE SCHEMA
-// extra` and `CREATE TABLE "extra"."b"` for a schema and a table the database
-// already has. Measured on PostgreSQL 17.10: the plan never converges, and
-// executing it fails at SQLSTATE 42P07.
-//
-// base is what the URL says this run covers, resolved once by
-// [schemascope.ReadNames] so that this verb, `schema diff`, `schema inspect`
-// and `migrate diff` cannot disagree about it. Deriving the scope here from the
-// DESIRED state instead, to keep a document describing one schema of a
-// multi-schema database from reaching the others, is the wrong protection at
-// the wrong layer: it makes a whole schema silently unmanaged
-// rather than authoritatively absent, and it makes this verb disagree with
-// `schema diff` over the same two inputs. The pinned Atlas community binary
-// v1.3.0 plans `DROP SCHEMA "extra" CASCADE` for that document on both verbs,
-// measured on PostgreSQL 17.10, and a desired state that means to keep a schema
-// it does not describe says so with a `ptah:not-described schema` record --
-// which the comparator honors and no scope trick can express.
-//
-// The desired state's own schemas are still added on top, because a URL pinned
-// to one schema by `search_path` covers less than a document may name, and a
-// creation planned for an object that exists fails the run. On YDB the base is
-// already every directory, and [schemascope.Widen] keeps it that way.
-//
-// An explicit `--schema` outranks both: it is the operator naming the scope.
-func applyReadScope(info catalog.ServerInfo, requested, base []string, desired *schemamodel.Database) ([]string, error) {
-	if names := SplitSchemaNames(requested); len(names) > 0 {
-		return names, nil
-	}
-	declared, err := schemascope.DeclaredSchemaNames(desired)
-	if err != nil {
-		return nil, err
-	}
-	return schemascope.Widen(info, base, declared), nil
 }
 
 // loadDesiredApplySchema materializes the desired schema for apply planning.

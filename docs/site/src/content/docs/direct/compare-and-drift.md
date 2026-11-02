@@ -576,6 +576,15 @@ and `--schema-cmd` runs an explicit external loader. A configured
 sources merge into one composite desired schema. See
 [Composite desired schema](../../schema/composite/) for the merge rules.
 
+## Which schemas are read
+
+On an engine with schemas, these commands read what `ptah schema apply` reads.
+`--schemas`, or `schemas` in `ptah.yaml`, names the schemas. Without either, a
+PostgreSQL URL that pins `search_path` is read at that schema and one that pins
+none across every schema, together with every schema the desired schema names.
+A URL that pins no schema therefore reports the tables of a schema the desired
+schema does not describe as removals, as `schema apply` would drop them.
+
 ## Diff two arbitrary schema states
 
 `schema compare` and `schema drift` always pair desired sources with the live

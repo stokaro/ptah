@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/schemascope"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/schemadiff"
 )
@@ -62,7 +63,13 @@ type GenerateMigrationOptions struct {
 	// CompareOptions are the options to use when comparing schemas
 	CompareOptions *config.CompareOptions
 	// Schemas restricts database introspection to the listed schemas when the
-	// connected dialect supports schema scoping.
+	// connected dialect supports schema scoping. Empty reads the schemas the
+	// connection's URL covers, every schema of the database when it pins none,
+	// together with every schema the desired state names: the scope `schema
+	// apply` reads, so a declared object in another schema is compared with
+	// what the database holds rather than planned as an addition. The shadow
+	// verification resolves its read the same way on its own connection. A
+	// SchemaQualifier requires at most one schema here.
 	Schemas []string
 	// RevisionTables names the migrator's bookkeeping tables in the database
 	// the plan reads: the revision table and, for Ptah's native format, the
@@ -290,12 +297,10 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		defer dbschema.CloseAndWarn(conn)
 	}
 
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
+	dbSchema, err := readPlanTarget(ctx, conn, desired, opts)
 	if err != nil {
-		return nil, fmt.Errorf("error reading database schema: %w", err)
+		return nil, err
 	}
-	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, devclean.DeclaredExtensions(desired))
-	dbSchema = revisiontable.Without(dbSchema, opts.RevisionTables)
 	if err := recoverMigrationPublication(ctx, opts.AllowedOutputRoot, opts.OutputDir); err != nil {
 		return nil, err
 	}
@@ -373,6 +378,27 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		reportFormat:                 opts.ReportFormat,
 		specs:                        specs,
 	}, nil
+}
+
+// readPlanTarget reads the database a migration is planned against, at the
+// schemas a comparison with desired reads, and leaves out the extensions the
+// environment keeps and the migrator's bookkeeping tables.
+func readPlanTarget(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	opts GenerateMigrationOptions,
+) (*catalog.Database, error) {
+	readScope, err := schemascope.ComparisonReadNames(ctx, conn.Info(), opts.Schemas, conn, desired)
+	if err != nil {
+		return nil, fmt.Errorf("error reading database schema: %w", err)
+	}
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, readScope)
+	if err != nil {
+		return nil, fmt.Errorf("error reading database schema: %w", err)
+	}
+	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, devclean.DeclaredExtensions(desired))
+	return revisiontable.Without(dbSchema, opts.RevisionTables), nil
 }
 
 // compareForPlan compares desired with the database a migration is planned

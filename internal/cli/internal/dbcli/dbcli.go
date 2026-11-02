@@ -65,10 +65,12 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 //
 // The two spellings exist because the two groups of verbs really do differ, and
 // one help string covering both would be false for one of them. `schema
-// inspect`, `schema diff` and `schema apply` compare against a description that
-// may name any schema of the database, so a read narrower than the URL turns
-// silence into intent (stokaro/ptah#1264, stokaro/ptah#1276); `introspect`,
-// `compare`, `migrate` and the rest keep the narrower default they document.
+// inspect`, `schema diff`, `schema apply`, `schema compare`, `schema drift`,
+// `migrations plan` and `migrations generate` compare against a description
+// that may name any schema of the database, so a read narrower than the URL
+// turns silence into intent (stokaro/ptah#1264, stokaro/ptah#1276,
+// stokaro/ptah#5030); `introspect`, `db read` and the rest describe a database
+// without comparing it, and keep the narrower default they document.
 func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
 		"the databases of a MySQL or MariaDB URL that names none, or YDB directories relative to the database root. "+

@@ -102,7 +102,7 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
 	cmd.Flags().StringArrayVar(&ignored, "ignore", nil, "Ignore drift for a scope, for example tables=audit_log,auth.users")
-	dbcli.RegisterSchemasFlag(cmd.Flags(), &schemasRaw)
+	dbcli.RegisterURLScopedSchemasFlag(cmd.Flags(), &schemasRaw)
 	cmd.Flags().BoolVar(&useExitCode, "exit-code", true, "Return 1 when drift exceeds --severity; errors still return 2")
 	cmd.Flags().StringVar(
 		&connectTimeoutRaw,

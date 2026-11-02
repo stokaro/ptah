@@ -184,6 +184,9 @@ serves a page that does not reload.
 - `--schema-file` is repeatable too, and combines with `--root-dir`: a schema
   split across files, or across files and annotations, is served from one page.
 - `--schemas` limits the database read to the named schemas, comma-separated.
+  Without it, the page reads what `schema apply` reads: the schemas the URL
+  covers, every schema when it pins no `search_path`, and every schema the
+  desired schema names.
 
 :::caution
 `--addr 0.0.0.0:7070` publishes the page to the network, and the server has no
