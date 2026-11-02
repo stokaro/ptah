@@ -525,6 +525,15 @@ func Raw(p routineext.Cursor, start int) (string, error) {
 	return collect(p, start, sqlServerRoutineStopAtTopLevelSemicolon)
 }
 
+// ModuleBody collects a module body that starts at start, as a procedure's is
+// collected: a semicolon outside a block is a line of the body, and the body
+// ends at the END that closes its last open block, at a GO batch separator,
+// or at the end of the input. A trigger's body is read this way, so a trigger
+// and a procedure in one document end alike.
+func ModuleBody(p routineext.Cursor, start int) (string, error) {
+	return collect(p, start, sqlServerRoutineKeepTopLevelSemicolon)
+}
+
 type syntax struct{}
 
 func (syntax) Create(p routineext.Cursor, target string, statementStart int) (ast.Node, error) {

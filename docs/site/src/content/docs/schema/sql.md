@@ -97,6 +97,26 @@ With `--dialect clickhouse`, `CREATE ROW POLICY` declares a policy and
 See [ClickHouse row policies](../../databases/clickhouse/#row-policies) for
 examples and supported clauses.
 
+## Declare a SQL Server trigger
+
+Read as SQL Server, a trigger names its table before its timing, in the T-SQL
+order that `ptah db read` also prints:
+
+```sql
+CREATE TABLE t (id int PRIMARY KEY, a int);
+GO
+CREATE TRIGGER trg ON t FOR INSERT, UPDATE AS
+SET NOCOUNT ON;
+UPDATE t SET a = a WHERE 1 = 0;
+GO
+```
+
+The body runs to the end of its batch: to `GO`, to the `END` that closes a
+`BEGIN ... END` body, or to the end of the file. `FOR` is read as `AFTER`, and
+`CREATE OR ALTER TRIGGER` replaces a trigger. A header clause that Ptah does
+not model is refused by name. See
+[SQL Server triggers](../../databases/sqlserver/#triggers).
+
 ## Add a column after the table
 
 A column can be added with `ALTER TABLE ... ADD COLUMN` in the same file,

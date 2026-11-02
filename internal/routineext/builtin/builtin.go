@@ -46,6 +46,14 @@ func Raw(cursor routineext.Cursor, start int, target string) (ast.Node, error) {
 	return ast.NewRawSQL(sql), nil
 }
 
+// TransactSQLModuleBody reads the body of a T-SQL module, such as a trigger,
+// from start: through the END that closes its last open block, to a GO batch
+// separator, or to the end of the input. A trigger grammar shares it with the
+// SQL Server routine owner, so the two end a body in one place.
+func TransactSQLModuleBody(cursor routineext.Cursor, start int) (string, error) {
+	return sqlserver.ModuleBody(cursor, start)
+}
+
 // EndsSetting is the quoted-header SET boundary the permissive function
 // reader shares with the quoted routine owner.
 func EndsSetting(value string) bool { return postgres.EndsSetting(value) }
