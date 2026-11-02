@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/embedgen"
 	"ptah.run/internal/embedrun"
 	"ptah.run/internal/embedstore"
+	"ptah.run/internal/sessiontx"
 )
 
 // EnsureRunIndex builds a generation's index and records the run phase behind
@@ -71,7 +72,7 @@ func (s *Store) EnsureRunIndex(
 func recordIndexedRun(
 	ctx context.Context, conn *sql.Conn, runID, identity string,
 ) error {
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := sessiontx.Begin(ctx, conn, nil)
 	if err != nil {
 		return fmt.Errorf("begin index phase transaction: %w", err)
 	}
