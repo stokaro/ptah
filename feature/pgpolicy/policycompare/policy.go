@@ -53,7 +53,10 @@ type policyPair struct {
 // a policy the desired source could not describe. A declared policy whose
 // presence was not established is undecided. An observed policy the desired
 // source could not describe is adopted into the effective declaration, and
-// its coverage records that it is known. Inputs remain unchanged.
+// its coverage records that it is known. It counts the policies it compared on
+// the tables both sides hold: the ones both sides hold, the creations and the
+// drops. A policy it adopts or cannot decide is counted on neither side.
+// Inputs remain unchanged.
 func (PolicyService) CompareObjects(ctx context.Context, request schemaext.ObjectComparisonRequest) (schemaext.ObjectComparisonResult, error) {
 	if ctx == nil {
 		return schemaext.ObjectComparisonResult{}, fmt.Errorf("%w: comparison requires a context", schemaext.ErrInvalidValue)
@@ -78,7 +81,8 @@ func (PolicyService) CompareObjects(ctx context.Context, request schemaext.Objec
 	if err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects}}
+	result := schemaext.ObjectComparisonResult{Complete: true, Desired: schemaext.ObjectState{Objects: request.Desired.Objects},
+		Counts: []schemaext.ObjectCount{{Kind: pgpolicy.PolicyChangeKind}}}
 	var adopted []schemaext.SubjectCoverage
 	for _, pair := range pairs {
 		if err := ctx.Err(); err != nil {
@@ -127,7 +131,10 @@ func comparePolicy(request schemaext.ObjectComparisonRequest, pair policyPair, r
 		return dropOrAdopt(request, pair, result)
 	}
 	change := &pgpolicy.PolicyChange{After: pair.desired, Access: pgpolicy.PolicyAccess(nil, pair.desired, pgpolicy.ExpressionsDiffer)}
-	if pair.current != nil {
+	if pair.current == nil {
+		result.Counts[0].Added++
+	} else {
+		result.Counts[0].Matched++
 		found := difference(pair.desired, pair.current)
 		if !found.definition && !found.comment {
 			return nil, nil
@@ -162,6 +169,7 @@ func dropOrAdopt(request schemaext.ObjectComparisonRequest, pair policyPair, res
 	}
 	result.Changes = append(result.Changes, schemaext.ChangeRecord{Subject: pair.currentRef,
 		Value: &pgpolicy.PolicyChange{Before: pair.current, Access: pgpolicy.PolicyAccess(pair.current, nil, pgpolicy.ExpressionsDiffer)}})
+	result.Counts[0].Removed++
 	return nil, nil
 }
 

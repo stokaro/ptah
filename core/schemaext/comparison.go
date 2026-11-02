@@ -130,10 +130,11 @@ type ObjectComparisonResult struct {
 // kind, so a report can say how many of them each side holds and not only how
 // many differ. Kind is the change kind, the one the changes of those objects
 // carry. Matched counts the objects both sides hold that the comparer takes to
-// be the same object, whether they differ or not. Added counts the changes of
-// the kind that create an object the database lacks, and Removed the ones that
-// drop an object the desired state does not declare. A change that drops an
-// object and creates it again counts once in each and is not a match.
+// be the same object, whether they differ or not, and however a plan applies
+// the difference: the comparer reports one change for the object, even where
+// the plan drops it and creates it again. Added counts the changes of the kind
+// that create an object the database lacks, and Removed the ones that drop an
+// object the desired state does not declare.
 //
 // The desired state holds Matched plus Added objects of the kind, and the
 // database Matched plus Removed. An object the comparer leaves out is counted

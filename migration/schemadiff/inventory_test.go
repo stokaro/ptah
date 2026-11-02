@@ -7,8 +7,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
 )
@@ -143,5 +146,40 @@ func TestCompareSchemas_CountsTheKindsBesideTables(t *testing.T) {
 		{Kind: "tables", Desired: 1, Observed: 1},
 		{Kind: "triggers", Desired: 1, Observed: 1},
 		{Kind: "views", Desired: 1, Observed: 1},
+	})
+}
+
+// TestCompareSchemas_CountsTheObjectsAFeatureOwnerCompares is the invariant for
+// the objects a feature owner compares: a PostgreSQL extension and a policy,
+// each counted under its owner's change kind, the same on both sides.
+func TestCompareSchemas_CountsTheObjectsAFeatureOwnerCompares(t *testing.T) {
+	c := qt.New(t)
+	document := func() *schemamodel.Database {
+		db := &schemamodel.Database{
+			Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs"}},
+			Fields: []schemamodel.Field{
+				{StructName: "Doc", Name: "id", Type: "INTEGER", Primary: true},
+				{StructName: "Doc", Name: "tenant_id", Type: "INTEGER"},
+			},
+			FeatureObjects: must.Must(schemaext.NewObjects(
+				must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"), pgextension.DesiredExtension{})),
+				must.Must(pgpolicy.DesiredPolicyObject(pgpolicy.PolicyRef("", "docs", "tenant"), pgpolicy.DesiredPolicy{Using: new("tenant_id = 1")})),
+			)),
+			FeatureCoverage: must.Must(must.Must(pgextension.CompleteCoverage(schemaext.Desired)).Combine(must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)))),
+		}
+		schemamodel.Finalize(db)
+		return db
+	}
+	runtime := must.Must(builtin.New())
+
+	diff, err := schemadiff.CompareSchemas(t.Context(), document(), document(), platform.Postgres, runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(safety.Inventory(diff), qt.DeepEquals, []safety.InventoryEntry{
+		{Kind: "columns", Desired: 2, Observed: 2},
+		{Kind: string(pgextension.ChangeKind), Desired: 1, Observed: 1},
+		{Kind: string(pgpolicy.PolicyChangeKind), Desired: 1, Observed: 1},
+		{Kind: "tables", Desired: 1, Observed: 1},
 	})
 }

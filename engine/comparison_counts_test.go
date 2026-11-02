@@ -32,8 +32,8 @@ func changingComparison(counts ...schemaext.ObjectCount) schemaext.ObjectCompari
 }
 
 // TestObjectComparison_ReturnsTheCountsAnOwnerStates passes a count through
-// when the changes of its kind are what it says: an addition is one change, and
-// an object dropped and created again is one change counted on both sides.
+// when the changes of its kind are what it says. The runtime cannot tell an
+// addition from a removal, so one change may stand for either, or for both.
 func TestObjectComparison_ReturnsTheCountsAnOwnerStates(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -41,7 +41,7 @@ func TestObjectComparison_ReturnsTheCountsAnOwnerStates(t *testing.T) {
 	}{
 		{name: "an addition beside matched objects", count: schemaext.ObjectCount{Kind: comparedKind, Matched: 4, Added: 1}},
 		{name: "a change to an object both sides hold", count: schemaext.ObjectCount{Kind: comparedKind, Matched: 1}},
-		{name: "an object dropped and created again", count: schemaext.ObjectCount{Kind: comparedKind, Added: 1, Removed: 1}},
+		{name: "a change counted as an addition and a removal", count: schemaext.ObjectCount{Kind: comparedKind, Added: 1, Removed: 1}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
