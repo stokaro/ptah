@@ -71,11 +71,18 @@ type FacetChange struct {
 // FacetComparisonResult is a completed comparison of one owner's models. It
 // retains explicit declarations and knowledge limits. Parent creation/removal
 // owns its attached settings; Changes describes only surviving common objects.
+//
+// Counts says how many objects the owner's settings stand for under each
+// change kind it counts, as [ObjectComparisonResult.Counts] does for named
+// objects: a table with row-level security switched on is one such object, and
+// a change that switches it on adds it. An owner whose settings stand for no
+// object, such as a table's storage options, counts nothing.
 type FacetComparisonResult struct {
 	Complete  bool
 	Desired   FacetState
 	Changes   []FacetChange
 	Undecided []UndecidedChange
+	Counts    []ObjectCount
 }
 
 // FacetComparisonService compares an entire batch of attached settings. Errors

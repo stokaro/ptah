@@ -47,7 +47,8 @@ func (TableStateService) CompareFacets(ctx context.Context, request schemaext.Fa
 	if !slices.Equal(request.Kinds, []schemaext.Kind{pgpolicy.TableStateKind}) {
 		return schemaext.FacetComparisonResult{}, fmt.Errorf("%w: unsupported row-security facet comparison kinds", schemaext.ErrInvalidValue)
 	}
-	result := schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired}
+	result := schemaext.FacetComparisonResult{Complete: true, Desired: request.Desired,
+		Counts: []schemaext.ObjectCount{{Kind: pgpolicy.TableStateChangeKind}}}
 	result.Desired.Records = slices.Clone(result.Desired.Records)
 	seen := make(map[objectidentity.Key]bool)
 	for _, owner := range request.Owners {
@@ -116,6 +117,7 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 	if desired == nil {
 		desired = &pgpolicy.DesiredTableState{}
 	}
+	countTableState(&result.Counts[0], desired.Enabled || desired.Forced, current.Enabled || current.Forced)
 	if desired.Enabled == current.Enabled && desired.Forced == current.Forced {
 		return nil
 	}
@@ -123,6 +125,21 @@ func compareTableState(request schemaext.FacetComparisonRequest, owner schemaext
 		Change: schemaext.ChangeRecord{Subject: owner.Subject, Value: &pgpolicy.TableStateChange{
 			Before: current, After: desired, Access: pgpolicy.TableStateAccess(current, desired)}}})
 	return nil
+}
+
+// countTableState counts a compared table whose row-level security is on, by
+// ENABLE or by FORCE, on either side: on both, it is one the two sides hold;
+// switching it on adds one, switching it off removes one. A table with both
+// switches off on both sides changes nothing and is not counted.
+func countTableState(count *schemaext.ObjectCount, desired, current bool) {
+	switch {
+	case desired && current:
+		count.Matched++
+	case desired:
+		count.Added++
+	case current:
+		count.Removed++
+	}
 }
 
 // keepDefaultedState answers a declaration that requests the owner's default

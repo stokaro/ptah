@@ -150,13 +150,15 @@ func TestCompareSchemas_CountsTheKindsBesideTables(t *testing.T) {
 }
 
 // TestCompareSchemas_CountsTheObjectsAFeatureOwnerCompares is the invariant for
-// the objects a feature owner compares: a PostgreSQL extension and a policy,
-// each counted under its owner's change kind, the same on both sides.
+// the objects a feature owner compares: a PostgreSQL extension, a policy and
+// the table whose row-level security the policy relies on, each counted under
+// its owner's change kind, the same on both sides.
 func TestCompareSchemas_CountsTheObjectsAFeatureOwnerCompares(t *testing.T) {
 	c := qt.New(t)
 	document := func() *schemamodel.Database {
 		db := &schemamodel.Database{
-			Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs"}},
+			Tables: []schemamodel.Table{{StructName: "Doc", Name: "docs",
+				Facets: must.Must(schemaext.NewFacets(&pgpolicy.DesiredTableState{Enabled: true}))}},
 			Fields: []schemamodel.Field{
 				{StructName: "Doc", Name: "id", Type: "INTEGER", Primary: true},
 				{StructName: "Doc", Name: "tenant_id", Type: "INTEGER"},
@@ -180,6 +182,7 @@ func TestCompareSchemas_CountsTheObjectsAFeatureOwnerCompares(t *testing.T) {
 		{Kind: "columns", Desired: 2, Observed: 2},
 		{Kind: string(pgextension.ChangeKind), Desired: 1, Observed: 1},
 		{Kind: string(pgpolicy.PolicyChangeKind), Desired: 1, Observed: 1},
+		{Kind: string(pgpolicy.TableStateChangeKind), Desired: 1, Observed: 1},
 		{Kind: "tables", Desired: 1, Observed: 1},
 	})
 }
