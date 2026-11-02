@@ -530,9 +530,12 @@ guarded table whose name a view or a sequence holds is still read as a new
 table
 ([`stokaro/ptah#5042`](https://github.com/stokaro/ptah/issues/5042)).
 
-A `CREATE EXTENSION IF NOT EXISTS` of an extension declared differently is
-still refused
-([`stokaro/ptah#5026`](https://github.com/stokaro/ptah/issues/5026)).
+A `CREATE EXTENSION IF NOT EXISTS` of an extension a statement before it
+declared is skipped whole, as PostgreSQL skips it with a notice, in one file
+or in a later file of a schema directory. The extension stays in the schema
+and at the version the first statement gave it, and a `COMMENT ON EXTENSION`
+after the repeat comments on it. Without the guard, a second declaration that
+differs from the first is refused.
 
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,

@@ -207,6 +207,14 @@ var guardedDeclarations = []struct {
 		sql:  "CREATE TABLE \"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\" (a int);\nCREATE TABLE IF NOT EXISTS \"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk_alpha\" (a int, b int);",
 	},
 	{
+		name: "an extension declared again under a guard",
+		sql:  "CREATE EXTENSION pgcrypto;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;",
+	},
+	{
+		name: "an extension guarded again in another schema",
+		sql:  "CREATE SCHEMA ext;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA ext;",
+	},
+	{
 		name: "a trigger on a table dropped and created again",
 		sql:  "CREATE TABLE t (a int);\nCREATE FUNCTION trg() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;\nCREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();\nDROP TABLE t;\nCREATE TABLE t (a int);\nCREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION trg();",
 	},
@@ -250,6 +258,15 @@ var guardedAcrossFiles = []struct {
 			"CREATE SEQUENCE IF NOT EXISTS t_id_seq START 100;"},
 	},
 	{name: "a primary key's index guarded in a later file", files: []string{"CREATE TABLE t (id int PRIMARY KEY, b int);", "CREATE INDEX IF NOT EXISTS t_pkey ON t (b);"}},
+	{
+		name:  "an extension guarded in another schema in a later file",
+		files: []string{"CREATE SCHEMA ext;\nCREATE EXTENSION pgcrypto;", "CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA ext;"},
+	},
+	{
+		name: "an extension guarded in another schema in a later file, then commented",
+		files: []string{"CREATE SCHEMA ext;\nCREATE EXTENSION pgcrypto;",
+			"CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA ext;\nCOMMENT ON EXTENSION pgcrypto IS 'kept';"},
+	},
 }
 
 // writeGuardedFiles writes files as 01.sql, 02.sql … in a new directory and
