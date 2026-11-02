@@ -60,37 +60,69 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err != nil {
 		return nil, err
 	}
-	remaining := values[len(objects):]
-	seen := make(map[objectidentity.Key]bool)
-	for _, table := range snapshot.GetTables() {
-		captured, err := r.table(table)
-		if err != nil {
-			return nil, err
-		}
-		key := objectidentity.NewBuilder(r.session.info.IdentifierSemantics).TablePartsVerbatim(captured.Schema, captured.Name).Key()
-		if seen[key] {
-			return nil, fmt.Errorf("%w: duplicate normalized table identity", provider.ErrProtocol)
-		}
-		seen[key] = true
-		captured.Facets, err = observedFacets(remaining[:len(table.GetFacets())], snapshot.GetEngine())
-		if err != nil {
-			return nil, err
-		}
-		remaining = remaining[len(table.GetFacets()):]
-		for i, column := range table.GetColumns() {
-			captured.Columns[i].Facets, err = observedFacets(remaining[:len(column.GetFacets())], snapshot.GetEngine())
-			if err != nil {
-				return nil, err
-			}
-			remaining = remaining[len(column.GetFacets()):]
-		}
-		result.Tables = append(result.Tables, captured)
+	if err := r.tables(result, snapshot, values[len(objects):]); err != nil {
+		return nil, err
 	}
 	if err := r.commonObjects(result, snapshot.GetCommonObjects()); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+// tables reads the snapshot's tables into result, each with its facets, its
+// columns' facets and its indexes. remaining holds the facet values in the
+// order the tables and their columns list them.
+func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, remaining []observedValue) error {
+	seen := make(map[objectidentity.Key]bool)
+	for _, table := range snapshot.GetTables() {
+		captured, err := r.table(table)
+		if err != nil {
+			return err
+		}
+		key := objectidentity.NewBuilder(r.session.info.IdentifierSemantics).TablePartsVerbatim(captured.Schema, captured.Name).Key()
+		if seen[key] {
+			return fmt.Errorf("%w: duplicate normalized table identity", provider.ErrProtocol)
+		}
+		seen[key] = true
+		captured.Facets, err = observedFacets(remaining[:len(table.GetFacets())], snapshot.GetEngine())
+		if err != nil {
+			return err
+		}
+		remaining = remaining[len(table.GetFacets()):]
+		for i, column := range table.GetColumns() {
+			captured.Columns[i].Facets, err = observedFacets(remaining[:len(column.GetFacets())], snapshot.GetEngine())
+			if err != nil {
+				return err
+			}
+			remaining = remaining[len(column.GetFacets()):]
+		}
+		result.Tables = append(result.Tables, captured)
+		indexes, err := r.indexes(table)
+		if err != nil {
+			return err
+		}
+		result.Indexes = append(result.Indexes, indexes...)
+	}
+	return nil
+}
+
+// indexes reads the common indexes a table holds when the session negotiated
+// them. Without the feature a table reports none, and the planner refuses an
+// index change of a provider-owned table rather than compare against nothing.
+func (r reader) indexes(value *protocol.Table) ([]catalog.Index, error) {
+	if !slices.Contains(r.session.remote.GetFeatures(), provider.ObservedIndexesFeature) {
+		return nil, nil
+	}
+	result := make([]catalog.Index, 0, len(value.GetIndexes()))
+	for _, index := range value.GetIndexes() {
+		observed, err := catalogIndex(index)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, observed)
 	}
 	return result, nil
 }

@@ -12,7 +12,7 @@ func (c *columns) Open(ctx context.Context, request *protocol.OpenRequest) (*pro
 	if err != nil {
 		return nil, err
 	}
-	session.Features = []string{provider.ObservedColumnsFeature}
+	session.Features = []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature}
 	return session, nil
 }
 
@@ -21,8 +21,15 @@ func (c *columns) Inspect(ctx context.Context, request *protocol.InspectRequest)
 	if err != nil {
 		return nil, err
 	}
-	snapshot.TargetFeatures = []string{provider.ObservedColumnsFeature}
+	snapshot.TargetFeatures = []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature}
 	for _, table := range snapshot.Tables {
+		switch table.Identity.Name {
+		case "column_indexed":
+			table.Indexes = []*protocol.ObservedIndex{{Name: "column_indexed_id", TableName: table.Identity.Name, Schema: table.Identity.Schema,
+				Columns: []string{"Id"}, Unique: true, Method: "global", Comment: "captured index"}}
+		case "index_column":
+			table.Indexes = []*protocol.ObservedIndex{{Name: "index_column_missing", TableName: table.Identity.Name, Schema: table.Identity.Schema, Columns: []string{"missing"}}}
+		}
 		for i, column := range table.Columns {
 			nullable := "NO"
 			if column.Nullable {

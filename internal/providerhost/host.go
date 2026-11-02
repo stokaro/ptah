@@ -106,6 +106,10 @@ var hostFeatures = []string{
 	provider.SourceLimitsFeature,
 	provider.ColumnsFeature,
 	provider.ObservedColumnsFeature,
+	// Inspection reports a provider table's common indexes, and the planner
+	// hands their changes to the table's owner; see reader.ReadSchemaContext
+	// and commonPlanner.indexChanges.
+	provider.ObservedIndexesFeature,
 	provider.DatabaseContextFeature,
 	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its

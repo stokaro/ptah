@@ -64,6 +64,7 @@ func (t *target) registration() engine.Target {
 		Planner: func(options planext.Options) planext.Planner {
 			return commonPlanner{selections: t.host.selections, options: options, transactions: t.supportsTransactions(), target: t.engine.GetId(),
 				commonTables: t.supportsCommonTables(), commonObjects: len(t.commonKinds()) > 0, comments: t.commonKinds()[protocol.CommonObjectSupport_COMMENT],
+				indexes:       t.offers(provider.ObservedIndexesFeature),
 				assessParents: slices.ContainsFunc(t.engine.GetPlanning(), func(assignment *protocol.ModelPlanning) bool { return len(assignment.GetParentKinds()) > 0 })}
 		},
 	}
@@ -88,6 +89,9 @@ func (t *target) registration() engine.Target {
 	}
 	if slices.Contains(t.engine.GetFeatures(), provider.ColumnsFeature) {
 		result.Comparison.ColumnService = columnService{target: t}
+	}
+	if t.offers(provider.ObservedIndexesFeature) {
+		result.Comparison.Indexes = observedIndexRules{}
 	}
 	if t.supportsLint() {
 		result.Annotator = t
