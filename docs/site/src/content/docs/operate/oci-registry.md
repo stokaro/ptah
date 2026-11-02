@@ -138,12 +138,13 @@ Hash and verify the directory before publishing:
 ```bash
 ptah migrations hash --dir ./migrations
 
-ptah migrations push \
+MIGRATIONS=$(ptah migrations push \
   oci://ghcr.io/acme/app-migrations \
   --migrations-dir ./migrations \
   --dir-format ptah \
   --verify-sum \
-  --tag stable
+  --tag stable \
+  --format reference)
 ```
 
 The migration artifact contains only the inputs Ptah captures for a migration
@@ -157,11 +158,15 @@ Unrelated files are excluded. `--dir-format` accepts `auto`, `ptah`, or `atlas`.
 A mismatched integrity file always fails before the registry upload;
 `--verify-sum` additionally makes a missing integrity file an error.
 
-The command prints the manifest digest. Promote that exact artifact by digest:
+Without `--format` the command prints a receipt for a person: the manifest
+digest, the version and the tags it wrote. `--format reference` prints only the
+pinned reference of the manifest the push wrote, such as
+`oci://ghcr.io/acme/app-migrations@sha256:0123...`, and a push that fails prints
+nothing on standard output. See
+[Read the result of a push from a script](#read-the-result-of-a-push-from-a-script)
+for the JSON form. Use that exact artifact in every later step:
 
 ```bash
-MIGRATIONS=oci://ghcr.io/acme/app-migrations@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-
 ptah migrations status \
   --db-url "$DATABASE_URL" \
   --migrations-dir "$MIGRATIONS" \
@@ -538,6 +543,72 @@ error: push oci://ghcr.io/acme/app-schema:latest: OCI write-once tag already exi
 `Version:` is blank on a push that assigned no version tag, which is every push
 without `--version` or `--generated-version`.
 
+### Read the result of a push from a script
+
+The receipt is for a person. A script selects a machine format with `--format`
+on `ptah schema push` and `ptah migrations push`, the flag `ptah oci resolve`
+uses:
+
+| `--format` | Standard output |
+| --- | --- |
+| `text` | The receipt above. This is the default. |
+| `reference` | The pinned reference alone, followed by a newline. |
+| `json` | One JSON document describing the manifest the push wrote. |
+
+```bash
+SCHEMA=$(ptah schema push \
+  oci://ghcr.io/acme/app-schema:release \
+  --schema-file ./schema.sql \
+  --dialect postgres \
+  --version v1.0.0 \
+  --format reference)
+```
+
+The same push with `--format json` prints a document like this one:
+
+```json
+{
+  "reference": "oci://ghcr.io/acme/app-schema:release",
+  "pinned_reference": "oci://ghcr.io/acme/app-schema@sha256:20ec84e49b907163744a887dc2126491053bba1f2c82ddf6c73c006babc81512",
+  "digest": "sha256:20ec84e49b907163744a887dc2126491053bba1f2c82ddf6c73c006babc81512",
+  "media_type": "application/vnd.oci.image.manifest.v1+json",
+  "size": 1093,
+  "artifact_type": "application/vnd.stokaro.ptah.schema.v1",
+  "tags": [
+    "v1.0.0",
+    "release"
+  ],
+  "version": "v1.0.0"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `reference` | The reference the push wrote to, with the tag it named. |
+| `pinned_reference` | The same repository, pinned to the manifest by digest. |
+| `digest` | The digest of the manifest the push wrote. |
+| `media_type` | The media type of that manifest. |
+| `size` | The size of that manifest in bytes. |
+| `artifact_type` | `application/vnd.stokaro.ptah.schema.v1` or `application/vnd.stokaro.ptah.migrations.v1`. |
+| `tags` | Every tag the push applied, in the order it applied them. |
+| `version` | The write-once version tag, or an empty string when the push wrote none. |
+
+The first five fields have the names and meanings of
+`ptah oci resolve --format json`. Every field is present on every push.
+
+The pinned reference comes from the manifest the push wrote, never from reading
+a tag back afterwards. A tag can move between the push and that read, and the
+reference would then name an artifact this push did not publish. Resolving a tag
+with `ptah oci resolve` answers a different question: what the tag names now.
+
+In both machine formats standard output carries the result and nothing else,
+and errors go to standard error. A push that fails prints nothing on standard
+output and exits nonzero, including a push that stored the manifest and then
+failed to move a tag, so a reference on standard output always names an
+artifact the command published. An `oci-layout://` destination selects by tag
+alone and has no pinned reference, so both machine formats refuse it before
+anything is written.
+
 ### Pull an artifact back to a file
 
 Pulling validates the artifact and creates a new canonical HCL file:
@@ -687,14 +758,21 @@ jobs:
         run: go install ptah.run/cmd/ptah@latest
 
       - name: Publish migration artifact
+        id: publish
         shell: bash
         run: |
           ref="oci://ghcr.io/${GITHUB_REPOSITORY,,}-migrations"
-          ptah migrations push "$ref" \
+          pinned=$(ptah migrations push "$ref" \
             --migrations-dir ./migrations \
             --verify-sum \
-            --tag "$GITHUB_SHA"
+            --tag "$GITHUB_SHA" \
+            --format reference)
+          echo "reference=$pinned" >> "$GITHUB_OUTPUT"
 ```
+
+Later steps in the job read the pinned reference as
+`${{ steps.publish.outputs.reference }}`. A failed push fails the step before
+anything is written to the output.
 
 Pin the Ptah install to a release or commit in production CI. Existing
 organization packages may also need the repository's Actions workflow granted

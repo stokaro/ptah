@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
+	"ptah.run/internal/cli/internal/pushreceipt"
 	"ptah.run/internal/schemaartifact"
 	"ptah.run/internal/schemaload"
 )
@@ -23,6 +24,7 @@ type options struct {
 	version     string
 	checks      string
 	plainHTTP   bool
+	format      string
 
 	latest           bool
 	generatedVersion bool
@@ -43,7 +45,20 @@ The artifact is tagged with the tag the reference named and every explicit
 a publication, so it is opt-in through --latest, and a timestamped write-once
 version tag is opt-in through --generated-version.
 
-Authentication comes from the Docker credential store.`,
+The default output is a receipt for a person. --format reference prints only
+the pinned reference of the manifest this push wrote, and --format json prints
+it with the digest, artifact type, tags and version, so a script can carry the
+artifact forward without reading the receipt:
+
+    REF=$(ptah schema push oci://ghcr.io/acme/app-schema:v1 --schema-file schema.sql --format reference)
+
+The reference comes from the manifest the push wrote, not from resolving a tag
+afterwards. A push that fails prints nothing on standard output.
+
+Authentication comes from "ptah oci login", the PTAH_OCI_USERNAME and
+PTAH_OCI_PASSWORD environment variables, or Docker's credential configuration,
+whichever holds a credential for the registry; --plain-http is intended only for
+explicitly trusted local registries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args[0], opts)
 		},
@@ -62,11 +77,16 @@ Authentication comes from the Docker credential store.`,
 		"Also move the latest alias onto this push")
 	flags.BoolVar(&opts.generatedVersion, "generated-version", false,
 		"Also write a timestamped write-once version tag when --version names none")
+	pushreceipt.RegisterFormatFlag(flags, &opts.format)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
 
 func run(cmd *cobra.Command, reference string, opts *options) error {
+	format, err := pushreceipt.ParseFormat(opts.format, reference)
+	if err != nil {
+		return err
+	}
 	declaredVars, err := dbcli.DeclaredVars(cmd)
 	if err != nil {
 		return err
@@ -111,15 +131,14 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(
-		cmd.OutOrStdout(),
+	receipt := fmt.Sprintf(
 		"Pushed schema as %s\nDigest: %s\nVersion: %s\nTags: %v\n",
 		result.Reference,
 		result.Descriptor.Digest,
 		result.Version,
 		result.Tags,
 	)
-	return nil
+	return pushreceipt.Write(cmd.OutOrStdout(), format, result.PushResult, result.Version, receipt)
 }
 
 // checksFlag names the release assertions published beside the schema.

@@ -1011,6 +1011,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
 | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
@@ -1749,6 +1750,7 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--checks` | `string` | — | `PTAH_CHECKS` | — |
 | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
 | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
