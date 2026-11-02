@@ -41,6 +41,9 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err := validateInspectedIndexes(description, engine, snapshot); err != nil {
 		return nil, err
 	}
+	if err := validateInspectedPlanningContext(description, engine, request, snapshot); err != nil {
+		return nil, err
+	}
 	if err := validateObservedCommonObjects(engine, snapshot.GetCommonObjects()); err != nil {
 		return nil, err
 	}

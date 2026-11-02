@@ -504,6 +504,17 @@ message Schema {
   // The common objects beyond tables, with coverage for each kind the engine
   // declares. Contract 25.3, under schema.common-objects.
   ObservedCommonObjects common_objects = 10;
+  // The planning context a filtered read leaves out of its scope. Contract
+  // 25.11, under planning.context-inventory.
+  PlanningContextInventory planning_context = 11;
+}
+// PlanningContextInventory is the observed values of the engine's planning
+// context kinds outside a filtered read's scope, and their coverage, which may
+// span the session's database. The host never compares it; it reaches the
+// planning service that assesses those kinds as context only.
+message PlanningContextInventory {
+  repeated Envelope objects = 1;
+  ModelCoverage coverage = 2;
 }
 // ObservedCommonObjects is what a read established about the common objects
 // of the kinds its engine declares. A kind is complete or uninspected; an
@@ -1742,6 +1753,11 @@ message PlanFeaturesRequest {
   // Sorted accepted native-change subjects from the complete host batch.
   // Read-only context; this list grants no operation ownership.
   repeated ComparisonIdentity changed_subjects = 19;
+  // The observed values of the assigned context kinds that a filtered read
+  // left out of its scope, with their coverage across the database. Never
+  // compared, and outside the assessment inventory: the service returns no
+  // receipt for them. Contract 25.11, under planning.context-inventory.
+  ComparisonState context_inventory = 20;
 }
 // PlanningPolicy is a request, not a prediction: an engine without the
 // behavior plans as it would without it.
