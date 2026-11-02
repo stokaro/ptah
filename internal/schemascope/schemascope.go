@@ -83,9 +83,6 @@ func FilterGeneratedWithDefaultSchema(
 		return true
 	})
 	filtered.Fields = stripOutOfScopeFieldFKs(filtered.Fields, keptTables)
-	filtered.Indexes = keep(db.Indexes, func(index schemamodel.Index) bool {
-		return generatedStructOrTableAllowed(keptStructs, keptTables, index.StructName, index.TableName)
-	})
 	filtered.Constraints = keep(db.Constraints, func(constraint schemamodel.Constraint) bool {
 		if !generatedStructOrTableAllowed(keptStructs, keptTables, constraint.StructName, constraint.Table) {
 			return false
@@ -112,6 +109,15 @@ func FilterGeneratedWithDefaultSchema(
 		}
 		keptRelations.addSpelled(view.Name)
 		return true
+	})
+	// An index rides its relation, which is a materialized view for an index
+	// on one. The read side keeps every index of a selected schema, so scoped
+	// by the kept tables alone, a declared index on a materialized view leaves
+	// the desired side only, and `migrate diff --schema` writes the view
+	// without the index the author declared on it.
+	filtered.Indexes = keep(db.Indexes, func(index schemamodel.Index) bool {
+		return generatedStructOrTableAllowed(keptStructs, keptTables, index.StructName, index.TableName) ||
+			keptRelations.holds(index.TableName)
 	})
 	filtered.Triggers = keep(db.Triggers, func(trigger schemamodel.Trigger) bool {
 		return keptRelations.holds(trigger.Table)
