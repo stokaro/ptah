@@ -1,6 +1,12 @@
 package txrequire
 
-import "strings"
+import (
+	"slices"
+	"strings"
+
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
+)
 
 // concurrentIndex reports CREATE INDEX CONCURRENTLY or DROP INDEX
 // CONCURRENTLY, which PostgreSQL refuses inside a transaction block
@@ -14,6 +20,28 @@ func concurrentIndex(words []string) bool {
 	}
 	return false
 }
+
+// refusedStatement reports the statement the dialect's descriptor states it
+// refuses inside a transaction block, if words are one: they begin with its
+// StartsWith and, where it names keywords, hold one of them after.
+func refusedStatement(dialect string, words []string) (descriptor.TransactionRefusal, bool) {
+	for _, refusal := range refusedInTransaction.Get(dialect) {
+		if !hasPrefixWords(words, refusal.StartsWith...) {
+			continue
+		}
+		rest := words[len(refusal.StartsWith):]
+		if len(refusal.Keywords) == 0 || slices.ContainsFunc(refusal.Keywords, func(keyword string) bool { return containsWord(rest, keyword) }) {
+			return refusal, true
+		}
+	}
+	return descriptor.TransactionRefusal{}, false
+}
+
+// refusedInTransaction holds the statements each dialect's descriptor states
+// it refuses inside a transaction block.
+var refusedInTransaction = descriptortable.New(func(described descriptor.Dialect) []descriptor.TransactionRefusal {
+	return described.Migration.RefusedInTransaction
+})
 
 // createdType names the type a CREATE TYPE statement creates, or "".
 //
