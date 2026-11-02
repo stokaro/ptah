@@ -392,6 +392,15 @@ var Cells = []Cell{
 	// suite's only MySQL server, and the newest one is where a server change
 	// first shows. 9.7 and 8.4 stay certified through the probe. 26.7 keeps its
 	// cell at best-effort: nothing here starts it.
+	//
+	// The suite follows the innovation track until the next LTS line, 28.4,
+	// and then settles on it. Until then each innovation release is a bump by
+	// hand, because eol-check only lowers the old line's level: a cell and a
+	// capabilityline constant for the new line, the images in the integration
+	// workflow, docker-compose.yaml and the integration tests that start MySQL
+	// themselves, the saturation rows, a /capability-matrix run that measures
+	// the line, and capability-status.md rewritten with capmatrix status from
+	// a run over every runnable cell.
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL2610,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
