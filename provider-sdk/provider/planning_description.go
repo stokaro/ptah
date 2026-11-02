@@ -36,7 +36,10 @@ func validateModelPlanning(description *protocol.Description, engine *protocol.E
 			parents[kind] = true
 		}
 	}
-	return validatePlanningObjectAssignments(description, engine)
+	if err := validatePlanningObjectAssignments(description, engine); err != nil {
+		return err
+	}
+	return validatePlanningContextInventoryFeature(description, engine)
 }
 
 func findModelPlanning(description *protocol.Description, engine, id string) *protocol.ModelPlanning {
