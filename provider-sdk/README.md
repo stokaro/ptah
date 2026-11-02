@@ -1547,6 +1547,12 @@ and types, common creation steps, target features, identifier rules and
 capability facts. It carries no current schema, coverage or session. An authored
 object is not evidence of observed absence.
 
+Each object's subject names its value's owner. A value converted from a read,
+as when a read schema is rendered, keeps the owner the read gave it, bound to
+the database the read was of, while the host names the subject relative to
+that database. The SDK accepts the pair when the value's database context names
+the owner's database, and refuses any other owner database.
+
 A successful complete result contains contributions and one declaration receipt
 per object in input order. Each receipt preserves the subject, names a strategy
 and accounts for creation steps. Every contributed step has a receipt.

@@ -173,3 +173,44 @@ func TestDeclarationDiagnosticsNameInputObjects(t *testing.T) {
 	refused.Diagnostics[0].Problem.Kind = "other"
 	c.Assert(provider.ValidatePlannedDeclarations(d, request, refused), qt.ErrorIs, provider.ErrProtocol)
 }
+
+// readValueDeclaration is a declaration of a value converted from a read: its
+// owner is bound to the database the read was of, its subject is named
+// relative to that database, and its context names database.
+func readValueDeclaration(context *protocol.DatabaseContext) (*protocol.Description, *protocol.PlanDeclarationsRequest) {
+	d, request, _ := declarationsExchange()
+	for _, feature := range []string{provider.DatabaseContextFeature, provider.ValueContextFeature} {
+		d.Features = append(d.Features, feature)
+		d.Engines[0].Features = append(d.Engines[0].Features, feature)
+		request.TargetFeatures = append(request.TargetFeatures, feature)
+	}
+	object := request.Objects[0]
+	object.Value.Value.Owner.Database, object.Value.NormalizedOwner.Database = "database", "database"
+	object.Subject.Database = nil
+	object.Value.Value.Context = context
+	return d, request
+}
+
+// The value's database context is what lets an owner bound to a database
+// agree with a subject named relative to it.
+func TestDeclarationOfAReadValue_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	d, request := readValueDeclaration(&protocol.DatabaseContext{Database: "database", SourceDatabase: "database"})
+	c.Assert(provider.ValidateDeclarationsRequest(d, request), qt.IsNil)
+}
+
+func TestDeclarationOfAReadValue_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		context *protocol.DatabaseContext
+	}{
+		{"bound to another database", &protocol.DatabaseContext{Database: "other", SourceDatabase: "other"}},
+		{"without a database context", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			d, request := readValueDeclaration(test.context)
+			c.Assert(provider.ValidateDeclarationsRequest(d, request), qt.ErrorIs, provider.ErrProtocol)
+		})
+	}
+}
