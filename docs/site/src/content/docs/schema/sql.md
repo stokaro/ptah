@@ -545,15 +545,15 @@ a database built from the file and the file itself compare equal:
   definition of the object the server finds, `public.v` and `v` alike. The
   last definition counts, and a comment on the first one stays.
 
-On other engines the reader skips a guarded statement for the object it names
-alone: a `CREATE TABLE` or `CREATE SEQUENCE ... IF NOT EXISTS` of a table or a
-sequence the file already declares. MySQL, MariaDB and SQL Server hold one routine per name, so a
-`CREATE OR REPLACE` or `CREATE OR ALTER` replaces the routine of its name,
-whatever arguments either takes. MariaDB drops a routine's comment on `OR
-REPLACE`, so only the replacement's comment stays there. On CockroachDB a
-guarded table whose name a view or a sequence holds is still read as a new
-table
-([`stokaro/ptah#5042`](https://github.com/stokaro/ptah/issues/5042)).
+On other engines the reader skips a `CREATE TABLE` or `CREATE SEQUENCE ... IF
+NOT EXISTS` whose name the file already declares. On CockroachDB a table, a
+view, a materialized view or a sequence of the schema holds the name, because
+they share one namespace there. An index does not, because CockroachDB names an
+index per table. On the other engines only a table or a sequence of the
+statement's own kind holds it. MySQL, MariaDB and SQL Server hold one routine
+per name, so a `CREATE OR REPLACE` or `CREATE OR ALTER` replaces the routine of
+its name, whatever arguments either takes. MariaDB drops a routine's comment on
+`OR REPLACE`, so only the replacement's comment stays there.
 
 A `CREATE EXTENSION IF NOT EXISTS` of an extension a statement before it
 declared is skipped whole, as PostgreSQL skips it with a notice, in one file

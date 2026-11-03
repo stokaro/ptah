@@ -134,6 +134,65 @@ func TestReadGuarded_RunsWhatTheServerRuns(t *testing.T) {
 	}
 }
 
+// TestReadGuarded_CockroachDBSkipsWhatAnyRelationHolds holds a guarded CREATE
+// TABLE or CREATE SEQUENCE whose name a relation of another kind holds, which
+// CockroachDB v26.3.2 skips: tables, views, materialized views and sequences
+// share one namespace per schema there. The stored-name pass does not follow
+// CockroachDB, so the reader looks for the name among what the file declared,
+// and a lookup among one kind plans a table or a sequence the server never
+// created (stokaro/ptah#5042).
+func TestReadGuarded_CockroachDBSkipsWhatAnyRelationHolds(t *testing.T) {
+	tests := []struct {
+		name   string
+		sql    string
+		kind   string
+		object string
+	}{
+		{name: "a table after a view", sql: "CREATE VIEW t AS SELECT 1 AS a;\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a table after a materialized view", sql: "CREATE MATERIALIZED VIEW t AS SELECT 1 AS a;\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a table after a sequence", sql: "CREATE SEQUENCE t;\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a table after a view written with its schema", sql: "CREATE VIEW public.t AS SELECT 1 AS a;\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a sequence after a table", sql: "CREATE TABLE s (a int);\nCREATE SEQUENCE IF NOT EXISTS s;", kind: "sequence", object: "s"},
+		{name: "a sequence after a view", sql: "CREATE VIEW s AS SELECT 1 AS a;\nCREATE SEQUENCE IF NOT EXISTS s;", kind: "sequence", object: "s"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database := readGuardedAs(c, platform.CockroachDB, test.sql)
+
+			c.Assert(countOf(objectsNamed(database, test.kind), test.object), qt.Equals, 0)
+		})
+	}
+}
+
+// TestReadGuarded_CockroachDBRunsWhatNoRelationHolds holds a guarded CREATE
+// TABLE or CREATE SEQUENCE whose name no relation of its schema holds, which
+// CockroachDB v26.3.2 runs: a view or a table of the name in another schema,
+// and an index of the name, which CockroachDB names per table rather than per
+// schema.
+func TestReadGuarded_CockroachDBRunsWhatNoRelationHolds(t *testing.T) {
+	tests := []struct {
+		name   string
+		sql    string
+		kind   string
+		object string
+	}{
+		{name: "a table beside a view in another schema", sql: "CREATE SCHEMA s;\nCREATE VIEW s.t AS SELECT 1 AS a;\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a table beside an index of its name", sql: "CREATE TABLE u (a int);\nCREATE INDEX t ON u (a);\nCREATE TABLE IF NOT EXISTS t (a int);", kind: "table", object: "t"},
+		{name: "a sequence beside a table in another schema", sql: "CREATE SCHEMA o;\nCREATE TABLE o.s (a int);\nCREATE SEQUENCE IF NOT EXISTS s;", kind: "sequence", object: "s"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database := readGuardedAs(c, platform.CockroachDB, test.sql)
+
+			c.Assert(countOf(objectsNamed(database, test.kind), test.object), qt.Equals, 1)
+		})
+	}
+}
+
 // readAfter reads earlier as one file and then later as the next one, as a
 // load reads a schema directory's files or two --to sources, and returns what
 // later declares and the model it read onto.
@@ -165,6 +224,8 @@ func TestReadOnto_SkipsWhatAnEarlierFileHolds(t *testing.T) {
 		{name: "a named primary key's index", dialect: platform.Postgres, earlier: "CREATE TABLE t (a int, b int, CONSTRAINT p PRIMARY KEY (a));", later: "CREATE INDEX IF NOT EXISTS p ON t (b);", kind: "index"},
 		{name: "a CockroachDB sequence", dialect: platform.CockroachDB, earlier: "CREATE SEQUENCE s START 5;", later: "CREATE SEQUENCE IF NOT EXISTS s START 10;", kind: "sequence"},
 		{name: "a CockroachDB sequence written with its schema", dialect: platform.CockroachDB, earlier: "CREATE SEQUENCE public.s START 5;", later: "CREATE SEQUENCE IF NOT EXISTS s START 10;", kind: "sequence"},
+		{name: "a CockroachDB view, for a table", dialect: platform.CockroachDB, earlier: "CREATE VIEW t AS SELECT 1 AS a;", later: "CREATE TABLE IF NOT EXISTS t (a int);", kind: "table"},
+		{name: "a CockroachDB table, for a sequence", dialect: platform.CockroachDB, earlier: "CREATE TABLE s (a int);", later: "CREATE SEQUENCE IF NOT EXISTS s;", kind: "sequence"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

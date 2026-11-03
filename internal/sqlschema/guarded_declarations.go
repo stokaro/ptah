@@ -22,7 +22,10 @@ import (
 // statements it found skipped are the ones the conversion skips
 // ([Document.skips]): a view or a sequence takes a table's name, a serial
 // column takes its sequence's, and an unnamed key takes its index's. Elsewhere
-// the conversion looks for a table or a sequence it already declared.
+// the conversion looks for an object it already declared: any table, view,
+// materialized view or sequence of the name where the dialect's descriptor
+// says those share one namespace, as on CockroachDB, and a table or a sequence
+// of the statement's own kind on the other dialects.
 //
 // The earlier declaration is looked for in the statements of this read and in
 // the earlier files of the document, the files of a schema directory or the
@@ -95,25 +98,30 @@ func (d *Document) followsNames(sourcePlatform string) bool {
 }
 
 // skipsCreateTable reports whether the server skips node: a CREATE TABLE IF NOT
-// EXISTS whose name reaches a table already declared, on a dialect the
-// stored-name pass does not follow.
+// EXISTS whose name reaches a table already declared, or any relation
+// [holdsRelation] finds, on a dialect the stored-name pass does not follow.
 func skipsCreateTable(database *schemamodel.Database, document *Document, node *ast.CreateTableNode, sourcePlatform string) bool {
 	if !node.IfNotExists || document.followsNames(sourcePlatform) {
 		return false
 	}
-	declared := []*schemamodel.Database{database}
-	if document.base != nil {
-		declared = append(declared, document.base)
+	declared := declaredIn(database, document)
+	qualified := ToTable(node, sourcePlatform).QualifiedName()
+	if factsOf(sourcePlatform).statements.RelationsShareNames {
+		return holdsRelation(declared, qualified, sourcePlatform)
 	}
-	return resolveTable(declared, ToTable(node, sourcePlatform).QualifiedName(), sourcePlatform) != nil
+	return resolveTable(declared, qualified, sourcePlatform) != nil
 }
 
 // skipsCreateSequence reports whether the server skips a CREATE SEQUENCE IF NOT
-// EXISTS of sequence: one declared under the same name in the same schema, on
-// a dialect the stored-name pass does not follow.
+// EXISTS of sequence: one declared under the same name in the same schema, or
+// any relation [holdsRelation] finds, on a dialect the stored-name pass does
+// not follow.
 func skipsCreateSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sequence schemamodel.Sequence, sourcePlatform string) bool {
 	if !node.IfNotExists || document.followsNames(sourcePlatform) {
 		return false
+	}
+	if factsOf(sourcePlatform).statements.RelationsShareNames {
+		return holdsRelation(declaredIn(database, document), schemamodel.QualifyTableName(sequence.Schema, sequence.Name), sourcePlatform)
 	}
 	key := sequenceKey(sequence, sourcePlatform)
 	for _, source := range []*schemamodel.Database{database, document.base} {
@@ -127,6 +135,34 @@ func skipsCreateSequence(database *schemamodel.Database, document *Document, nod
 		}
 	}
 	return false
+}
+
+// holdsRelation reports whether a table, a view, a materialized view or a
+// sequence declared in declared holds qualified, on a dialect whose descriptor
+// says those kinds share one namespace per schema (RelationsShareNames). A
+// guarded CREATE TABLE or CREATE SEQUENCE is skipped there whichever kind
+// holds the name: measured on CockroachDB v26.3.2, `CREATE VIEW t AS SELECT 1;
+// CREATE TABLE IF NOT EXISTS t (a int)` leaves the view and no table, and a
+// lookup among the tables alone plans the table the server never created
+// (stokaro/ptah#5042). The default schema is dropped from both sides, so
+// `public.t` and `t` are one name.
+func holdsRelation(declared []*schemamodel.Database, qualified, sourcePlatform string) bool {
+	var names []string
+	for _, database := range declared {
+		for _, table := range database.Tables {
+			names = append(names, unqualified(table.QualifiedName(), sourcePlatform))
+		}
+		for _, view := range database.Views {
+			names = append(names, unqualified(view.Name, sourcePlatform))
+		}
+		for _, view := range database.MaterializedViews {
+			names = append(names, unqualified(view.Name, sourcePlatform))
+		}
+		for _, sequence := range database.Sequences {
+			names = append(names, unqualified(schemamodel.QualifyTableName(sequence.Schema, sequence.Name), sourcePlatform))
+		}
+	}
+	return resolveDeclaredName(sourcePlatform, unqualified(qualified, sourcePlatform), names) >= 0
 }
 
 // sequenceKey is the schema and the name a sequence is found by, with the

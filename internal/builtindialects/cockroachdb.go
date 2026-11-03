@@ -114,7 +114,13 @@ func cockroachDB() descriptor.Dialect {
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		// OwnerCreateOnce stays off: a second CREATE EXTENSION of one
 		// extension succeeds, measured on 26.3.2.
-		Statements: descriptor.Statements{ViewsBlockDropTable: true},
+		//
+		// Measured on v26.3.2: `CREATE VIEW t AS SELECT 1; CREATE TABLE IF NOT
+		// EXISTS t (a int)` is skipped with `relation "t" already exists`, and
+		// so is a guarded CREATE TABLE or CREATE SEQUENCE after a table,
+		// materialized view or sequence of its name; the guarded sequence
+		// without a notice. Indexes are not in that namespace; see Identifiers.
+		Statements: descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
 
 		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
 		// one dev database are serialized with a lock file, which only serializes
