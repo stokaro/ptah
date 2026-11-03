@@ -803,6 +803,10 @@ replacement needs the dependent, type or lifecycle phase. A
 whole-schema render runs such a step after its enums and before the routines
 that name a type and the tables. Every other host refuses it.
 
+A type that names the row type of a relation the plan creates or drops fits
+neither window of `PhaseType`. Its owner asks for `PhaseDefault` and orders
+the step against the relation's common step.
+
 `PhaseLifecycle` places operations across a host-defined span of its common
 sequence. The external provider host offers the complete sequence when both
 sides negotiate `planning.lifecycle`. Resource effects and explicit dependencies
@@ -3373,6 +3377,14 @@ so is a changed type that names a rebuilt one. A type nothing declares is
 dropped with CASCADE in that phase's removal window, and the comment of a type
 that survives joins `featureplan.PhaseDependent`. A type the target cannot
 create is refused with the scope advice the common refusal gives.
+
+A type over the row type of a table the plan creates, directly or through the
+types it names, joins `featureplan.PhaseDefault` instead, after the table's
+common step. A removed type over a table the plan drops joins it before the
+table's drop, unless a later drop still uses the type; the common steps' type
+reads say which. A table, column or routine the plan creates that uses such a
+type, a type over a view the plan creates, and such a type that would be
+rebuilt are refused.
 
 `feature/pgtype/typereverse` drops what the forward plan created, creates
 again what it dropped, and returns a surviving type to its observation. A

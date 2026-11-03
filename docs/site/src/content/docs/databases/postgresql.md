@@ -1635,8 +1635,9 @@ never reported as drift.
 
 Domains, composite types, and range types are declared with
 `//ptah:schema:domain`, `:composite`, and `:range`. They are created after
-extensions and enums but before tables, and their drops are classified as
-destructive by the safety gate. Reconciliation is deliberately conservative:
+extensions and enums but before tables, except for a type over a table's row
+type (see below), and their drops are classified as destructive by the safety
+gate. Reconciliation is deliberately conservative:
 
 - A domain's `check` and `default` are compared through the server.
   PostgreSQL rewrites both on read-back, so against a live database Ptah asks
@@ -1663,6 +1664,18 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   not by kind: `CREATE TYPE addr AS (...)` precedes `CREATE DOMAIN d AS addr`,
   and `CREATE DOMAIN qty AS integer` precedes a composite with a `qty` field.
   Both directions occur, and PostgreSQL has no forward declaration for a type.
+- A type may name a table's row type: `CREATE TYPE wrap AS (r t, n int)`, a
+  domain over a table's row type, or a type that names such a type. When the
+  same plan creates the table, Ptah creates the type after the tables and
+  columns. When the same plan drops the table, Ptah drops the type before the
+  tables, so the table's drop does not rely on `CASCADE`. The type stays after
+  the tables when a table or a routine the plan drops after them still uses
+  it. A render and a rollback are planned the same way.
+- Ptah refuses a plan or a render that no order serves, and names the type,
+  the relation and the object that uses the type: a table, a column or a
+  routine the plan creates that uses a type over a created table's row type,
+  a type over the row type of a view the plan creates, and such a type that
+  has to be dropped and created again.
 - The drops a recreation emits are ordered by the shape the **database holds**,
   which is a different graph from the one above and does not have to agree with
   it. A `DROP` runs against the current schema, so only a reference that schema

@@ -420,6 +420,27 @@ func ArgumentTypes(arguments string) []string {
 	return types
 }
 
+// ResultTypes returns the types a routine's result names, spelled as the
+// result writes them: the type, the element type of SETOF, or each column type
+// of RETURNS TABLE. A routine depends on each of them as it does on its
+// arguments' types.
+func ResultTypes(returns string) []string {
+	result := strings.TrimSpace(returns)
+	if fields := strings.Fields(result); len(fields) > 1 && strings.EqualFold(fields[0], "SETOF") {
+		result = strings.TrimSpace(result[len(fields[0]):])
+	}
+	if len(result) > len("TABLE") && strings.EqualFold(result[:len("TABLE")], "TABLE") {
+		columns := strings.TrimSpace(result[len("TABLE"):])
+		if strings.HasPrefix(columns, "(") && strings.HasSuffix(columns, ")") {
+			return ArgumentTypes(columns[1 : len(columns)-1])
+		}
+	}
+	if result == "" {
+		return nil
+	}
+	return []string{result}
+}
+
 // Split returns the arguments of an argument list one entry each, split on
 // the commas outside parentheses and string literals, so `numeric(10,2)`
 // stays one argument. Each entry is trimmed and empty entries are dropped;

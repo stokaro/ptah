@@ -89,7 +89,7 @@ func UserTypeDependencies(userTypes []UserType) map[string][]string {
 	dependencies := make(map[string][]string, len(userTypes))
 	for _, userType := range userTypes {
 		for _, reference := range userType.References {
-			name, ok := resolveUserTypeReference(userTypes, reference)
+			name, ok := ResolveUserTypeReference(userTypes, reference)
 			if !ok || name == userType.Name || slices.Contains(dependencies[userType.Name], name) {
 				continue
 			}
@@ -107,12 +107,13 @@ func userTypeNames(userTypes []UserType) []string {
 	return names
 }
 
-// resolveUserTypeReference maps one type spelling onto a name in the set. A
-// qualified spelling must match a qualified name; an unqualified one falls back
-// to the single type carrying that bare name, and stays unresolved when two
-// schemas offer it, because guessing there would order the plan around a type
-// the column does not use.
-func resolveUserTypeReference(userTypes []UserType, reference string) (string, bool) {
+// ResolveUserTypeReference maps one type spelling onto a name in the set,
+// without its array dimensions and type modifiers. A qualified spelling must
+// match a qualified name; an unqualified one falls back to the single type
+// carrying that bare name, and stays unresolved when two schemas offer it,
+// because guessing there would order the plan around a type the column does
+// not use.
+func ResolveUserTypeReference(userTypes []UserType, reference string) (string, bool) {
 	key := NormalizeTypeReference(reference)
 	if key == "" {
 		return "", false

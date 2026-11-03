@@ -1372,7 +1372,11 @@ ahead of it. In the exact style, the plan also drops a removed table's
 policies before views and columns they read. A removed table a policy of
 another removed table reads is dropped after the table that holds the policy,
 and two removed tables whose policies read each other are dropped in one
-`DROP TABLE`. The plan relies on `CASCADE` only where it removes a dependent
+`DROP TABLE`.
+
+A removed domain, composite type or range type that names the row type of a
+removed table, such as `CREATE TYPE wrap AS (r t, n int)`, is dropped before
+the tables. The plan relies on `CASCADE` only where it removes a dependent
 after the drop:
 
 - a view or table whose row type a removed routine names, when another object
@@ -1382,11 +1386,12 @@ after the drop:
   drops every routine that uses its row type before it;
 - a column a routine the plan removes reads in a SQL-standard body when
   another dependency prevents dropping the routine before that column;
-- a table whose row type a type the plan removes names, such as
-  `CREATE TYPE wrap AS (r t, n int)`. A removed domain, composite type or
-  range type that names no such table, a removed extension and a removed
-  default privilege hold no drop back. An object a feature owner removes and
-  cannot describe holds back every column and table drop.
+- a table whose row type a type the plan removes names, when a table or a
+  routine the plan drops after the tables still uses the type, so the type is
+  dropped after them. Any other removed domain, composite type or range type,
+  a removed extension and a removed default privilege hold no drop back. An
+  object a feature owner removes and cannot describe holds back every column
+  and table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.

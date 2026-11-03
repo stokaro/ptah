@@ -23,12 +23,13 @@ import (
 // is a local batch adapter for the host's common AST vocabulary. It returns one
 // metadata record per node; the host assigns identities and retains common
 // ordering. Nil leaves those footprints unknown. It never grants a missing
-// declaration owner permission to drop an object.
+// declaration owner permission to drop an object. types are the data types
+// the declaration defines, which a node's columns or signature may use.
 type Lowering struct {
 	Context        context.Context
 	Runtime        featureplan.DeclarationRuntime
 	Capabilities   capability.Capabilities
-	CommonMetadata func(context.Context, []ast.Node) ([]featureplan.CommonStep, error)
+	CommonMetadata func(ctx context.Context, nodes []ast.Node, types []schemaext.DefinedType) ([]featureplan.CommonStep, error)
 	// DatabasePath is the absolute path of the database a lowered description
 	// was read from, such as /local, and empty for a declaration.
 	DatabasePath string
@@ -78,7 +79,8 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	if err := schemaext.RequireRuntime(lowering.Context, lowering.Runtime); err != nil {
 		return fmt.Errorf("%w: standalone feature lowering: %w", ptaherr.ErrUnsupportedFeature, err)
 	}
-	sequence, err := captureCommonSequence(tables, target, lowering, objects)
+	types := schemaext.DefinedTypes(database.FeatureObjects)
+	sequence, err := captureCommonSequence(tables, target, lowering, objects, types)
 	if err != nil {
 		return err
 	}
@@ -86,7 +88,7 @@ func walkDeclarations(database schemamodel.Database, target string, lowering Low
 	common, metadata := declarationCommonGraph(nodes, sequence.metadata)
 	semantics := identifier.ForDialect(target)
 	request := featureplan.DeclarationRequest{Target: target, Identifiers: semantics, Capabilities: lowering.Capabilities,
-		Objects: objects, CommonSteps: metadata, Types: schemaext.DefinedTypes(database.FeatureObjects)}
+		Objects: objects, CommonSteps: metadata, Types: types}
 	names := make(map[objectidentity.Key]string, len(database.Tables))
 	builder := objectidentity.NewBuilder(semantics)
 	for _, table := range database.Tables {
@@ -159,8 +161,9 @@ type commonSequence struct {
 // captureCommonSequence walks the common statements of tables once, as graph
 // units: an owner may require a position before, between or after them, and
 // streaming SQL before scheduling would make a late conflict leave a
-// successful prefix. objects are the declared objects the owners create.
-func captureCommonSequence(tables schemamodel.Database, target string, lowering Lowering, objects []schemaext.Object) (commonSequence, error) {
+// successful prefix. objects are the declared objects the owners create, and
+// types the data types the declaration defines.
+func captureCommonSequence(tables schemamodel.Database, target string, lowering Lowering, objects []schemaext.Object, types []schemaext.DefinedType) (commonSequence, error) {
 	var sequence commonSequence
 	if err := walkCommonDatabase(tables, target, lowering.grantName(), lowering.ResolvesBodyAtCreate, func(node ast.Node) error {
 		sequence.nodes = append(sequence.nodes, node)
@@ -174,7 +177,7 @@ func captureCommonSequence(tables schemamodel.Database, target string, lowering 
 	}); err != nil {
 		return commonSequence{}, err
 	}
-	metadata, err := commonMetadata(lowering, sequence.nodes)
+	metadata, err := commonMetadata(lowering, sequence.nodes, types)
 	if err != nil {
 		return commonSequence{}, err
 	}
@@ -304,11 +307,11 @@ func declaredObjects(database schemamodel.Database, target string, lowering Lowe
 
 // commonMetadata is the metadata lowering gives each common node, one record
 // per node, and empty records where it gives none.
-func commonMetadata(lowering Lowering, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+func commonMetadata(lowering Lowering, nodes []ast.Node, types []schemaext.DefinedType) ([]featureplan.CommonStep, error) {
 	if lowering.CommonMetadata == nil {
 		return make([]featureplan.CommonStep, len(nodes)), nil
 	}
-	metadata, err := lowering.CommonMetadata(lowering.Context, nodes)
+	metadata, err := lowering.CommonMetadata(lowering.Context, nodes, types)
 	if err != nil {
 		return nil, err
 	}

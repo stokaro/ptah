@@ -51,6 +51,9 @@ const commonOwner = "ptah.run/postgres"
 // routines that name no created type, before tables and dependent routines.
 // The type removal window encloses common type drops after tables, routines
 // and roles, before enum drops. Captured references order steps within each span.
+// A type over the row type of a table the plan creates or drops joins the
+// default windows instead; each common statement tells the owner which types
+// it uses (see typeReads), so the owner can tell which of them it can move.
 func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, nodes []ast.Node, windows featurehost.Windows) ([]ast.Node, error) {
 	target := p.targetDialect()
 	if diff == nil || !hasFeatureChanges(target, diff) {
@@ -95,6 +98,11 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	}
 	metadata := make([]featureplan.CommonStep, len(nodes))
 	for i, effects := range pgeffects.Sequence(builder, nodes) {
+		// A statement whose own footprint is unknown stays unknown: a read
+		// beside it would claim to describe it.
+		if effects != nil {
+			effects = append(effects, typeReads(diff, nodes[i], request.Types)...)
+		}
 		metadata[i].Effects = effects
 	}
 	graph, err := featurehost.NewGraph(commonOwner, nodes, metadata, windows)
@@ -106,7 +114,16 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	if err != nil {
 		return nil, err
 	}
-	return graph.Schedule(ctx, features)
+	steps, err := graph.ScheduleSteps(ctx, features)
+	if err != nil {
+		return nil, err
+	}
+	p.cascadeForLaterTypeDrops(diff, steps)
+	var scheduled []ast.Node
+	for _, step := range steps {
+		scheduled = append(scheduled, step.Payload...)
+	}
+	return scheduled, nil
 }
 
 func hasFeatureChanges(target string, diff *difftypes.SchemaDiff) bool {

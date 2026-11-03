@@ -163,3 +163,28 @@ func TestArgumentTypes_NamesEveryArgumentsType(t *testing.T) {
 		})
 	}
 }
+
+// TestResultTypes_NamesEveryResultType pins the types a routine's result
+// names, which the routine depends on as it does on its arguments' types.
+func TestResultTypes_NamesEveryResultType(t *testing.T) {
+	tests := []struct {
+		name    string
+		returns string
+		want    []string
+	}{
+		{name: "no result", returns: "", want: nil},
+		{name: "a type", returns: "wrap", want: []string{"wrap"}},
+		{name: "a set", returns: "SETOF app.v", want: []string{"app.v"}},
+		{name: "a table", returns: "TABLE (id bigint, w wrap[])", want: []string{"bigint", "wrap[]"}},
+		{name: "a type named like the keyword", returns: "tablet", want: []string{"tablet"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := routineargs.ResultTypes(test.returns)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
