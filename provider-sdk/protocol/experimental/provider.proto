@@ -1591,11 +1591,34 @@ message ComparedModels {
   // The desired object each written request named, for the requests this
   // service recognized. Contract 25.3, under planning.policy.
   repeated ResolvedRequest resolved_requests = 5;
+  // How many objects the comparison compared, one entry per change kind it
+  // counted. Contract 25.13, negotiated under models.compare-counts.
+  repeated ComparisonCount counts = 6;
 }
 message ResolvedRequest {
   // Index into CompareModelsRequest.requests.
   uint32 request = 1;
   ComparisonIdentity subject = 2;
+}
+// The objects of one change kind a comparison compared. A facet comparison
+// counts the objects its settings stand for, such as the tables with
+// row-level security enabled. The desired state holds matched plus added of
+// them and the observed state matched plus removed. An object the comparison
+// leaves out is counted nowhere. An entry claims every object of its kind; a
+// kind the service does not count has no entry. Contract 25.13, under
+// models.compare-counts.
+message ComparisonCount {
+  // A change kind of the comparison, counted once.
+  string kind = 1;
+  // Objects both sides hold that the comparison takes to be one object,
+  // whether or not they differ, and even when the plan drops and creates it
+  // again.
+  uint32 matched = 2;
+  // Changes of the kind that create an object the observed state lacks.
+  uint32 added = 3;
+  // Changes of the kind that drop an object the desired state does not
+  // declare.
+  uint32 removed = 4;
 }
 
 // OperationSemantics carries local safety facts without rendering or I/O.
