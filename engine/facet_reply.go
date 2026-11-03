@@ -66,6 +66,14 @@ func (r *Runtime) validateFacetReply(ctx context.Context, service int, request s
 	if err := validateFacetDiagnostics(request, result.Undecided, seen); err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}
+	changes := make([]schemaext.ChangeRecord, len(result.Changes))
+	for i, change := range result.Changes {
+		changes[i] = change.Change
+	}
+	result.Counts, err = comparisonCounts(r.facetServices[service].ChangeKinds, changes, result.Counts)
+	if err != nil {
+		return schemaext.FacetComparisonResult{}, err
+	}
 	return result, nil
 }
 

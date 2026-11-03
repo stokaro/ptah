@@ -85,6 +85,7 @@ func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComp
 		return schemaext.FacetComparisonResult{}, err
 	}
 	result := schemaext.FacetComparisonResult{Complete: true, Desired: selectFacetState(request.Desired, inactive)}
+	var counts objectCounts
 	for service, kinds := range batches {
 		if len(kinds) == 0 {
 			continue
@@ -116,10 +117,12 @@ func (r *Runtime) CompareFacets(ctx context.Context, request schemaext.FacetComp
 		}
 		result.Changes = append(result.Changes, reply.Changes...)
 		result.Undecided = append(result.Undecided, reply.Undecided...)
+		counts.add(r.facetServices[service].ChangeKinds, reply.Counts)
 	}
 	if err := ctx.Err(); err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}
+	result.Counts = counts.result()
 	if err := distinctFacetChanges(result.Changes); err != nil {
 		return schemaext.FacetComparisonResult{}, err
 	}

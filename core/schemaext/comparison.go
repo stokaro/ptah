@@ -134,7 +134,8 @@ type ObjectComparisonResult struct {
 // the difference: the comparer reports one change for the object, even where
 // the plan drops it and creates it again. Added counts the changes of the kind
 // that create an object the database lacks, and Removed the ones that drop an
-// object the desired state does not declare.
+// object the desired state does not declare. A change is one of the three and
+// never two.
 //
 // The desired state holds Matched plus Added objects of the kind, and the
 // database Matched plus Removed. An object the comparer leaves out is counted

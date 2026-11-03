@@ -252,18 +252,20 @@ var postgresFeatureTable = []string{
 }
 
 // TestSchemaDriftInventoryCountsFeatureOwnersE2E counts the objects
-// PostgreSQL's feature owners compare, an extension and a policy, under each
-// owner's change kind, against a live server that decides what the catalog
-// holds: the plpgsql every database has, the spelling a policy's clause is
-// stored in.
+// PostgreSQL's feature owners compare, an extension, a policy and a table with
+// row-level security on, under each owner's change kind, against a live server
+// that decides what the catalog holds: the plpgsql every database has, the
+// spelling a policy's clause is stored in.
 //
 // A database that matches counts each the same on both sides. One that lacks
 // the declared extension and holds a policy the declaration does not counts
-// one fewer extension and one more policy. An extension the run excludes is
+// one fewer extension and one more policy, and one whose table has row-level
+// security off counts one fewer secured table. An extension the run excludes is
 // counted on neither side, which the run without the exclusion controls.
 func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 	extension := "ptah.run/pgextension/extension-change"
 	policy := "ptah.run/pgpolicy/policy-change"
+	secured := "ptah.run/pgpolicy/table-state-change"
 	tenant := `CREATE POLICY tenant ON docs USING (tenant_id = 1)`
 	declared := slices.Concat([]string{`CREATE EXTENSION hstore`}, postgresFeatureTable, []string{tenant})
 	tests := []struct {
@@ -282,6 +284,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 1, Observed: 1},
 				{Kind: policy, Desired: 1, Observed: 1},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -294,6 +297,18 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 1, Observed: 0},
 				{Kind: policy, Desired: 1, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 1},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+		{
+			name:      "a table whose row-level security the database has off",
+			desired:   postgresFeatureTable,
+			database:  postgresFeatureTable[:1],
+			wantDrift: true,
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 0},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -305,6 +320,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 			want: []safety.InventoryEntry{
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 0, Observed: 1},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -315,6 +331,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 			args:     []string{"--ignore-extension", "hstore"},
 			want: []safety.InventoryEntry{
 				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},

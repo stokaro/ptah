@@ -1232,9 +1232,12 @@ many of its changes add or remove an object, since a change carries no
 direction a caller could read. The runtime refuses a count its changes
 contradict, a kind the service does not own and a kind counted twice. It sums
 the owners of a kind and leaves the kind out when one owner that ran did not
-count it. `ComparisonResult.Counts` carries the result, a schema diff carries
-it in `SchemaDiff.FeatureCounts`, and `safety.Inventory` reports each counted
-kind under its change kind.
+count it. A facet owner counts the objects its settings stand for in
+`FacetComparisonResult.Counts`, under the same rules: the row-level security
+owner counts a table with `ENABLE` or `FORCE` on. `ComparisonResult.Counts`
+carries the object and facet counts together, a schema diff carries them in
+`SchemaDiff.FeatureCounts`, and `safety.Inventory` reports each counted kind
+under its change kind.
 
 Before table preparation, comparison binds table and index coverage claims to the
 same identifier semantics and default database as their common owners. Explicit schemas
