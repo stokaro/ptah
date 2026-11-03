@@ -81,6 +81,7 @@ type Server struct {
 	SourceEncoder    provider.SourceEncoder
 	Statements       provider.StatementRunner
 	ExecutionInputs  provider.ExecutionInputDescriber
+	MigrationSplits  provider.MigrationSplitter
 }
 
 // Validate refuses a malformed description or a false service advertisement.
@@ -128,6 +129,7 @@ func (s Server) Validate() error {
 		{provider.EncodeSourceFeature, !nilService(s.SourceEncoder)},
 		{provider.StatementsFeature, !nilService(s.Statements)},
 		{provider.SensitiveInputsFeature, !nilService(s.ExecutionInputs)},
+		{provider.MigrationSplitFeature, !nilService(s.MigrationSplits)},
 	} {
 		if slices.Contains(s.Description.GetFeatures(), service.feature) != service.present {
 			return fmt.Errorf("%w: %s advertisement differs from implementation", provider.ErrProtocol, service.feature)
@@ -349,11 +351,17 @@ func (s *serverAdapter) Execute(ctx context.Context, request *protocol.ExecuteRe
 		return nil, err
 	}
 	result, err := s.server.Executor.Execute(s.owner(ctx), request)
-	if err == nil && result.GetStatementTimedOut() && request.GetStatementTimeoutNanoseconds() <= 0 {
+	if err != nil {
+		return result, err
+	}
+	if result.GetStatementTimedOut() && request.GetStatementTimeoutNanoseconds() <= 0 {
 		// The flag answers a timeout only a host that negotiated it sends.
 		return nil, status.Error(codes.Internal, "provider reported a statement timeout the request did not set")
 	}
-	return result, err
+	if err := provider.ValidateExecutionAbort(s.negotiated(), request, result); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return result, nil
 }
 
 // nilService refuses typed-nil implementations before the server starts.
