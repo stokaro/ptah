@@ -388,3 +388,26 @@ func TestTextUnitsFeatureNeedsRendering(t *testing.T) {
 	d.Features = append(d.Features, provider.TextUnitsFeature)
 	c.Assert(provider.ValidateDescription(d, nil), qt.ErrorMatches, `.*text units require rendering`)
 }
+
+// A grant on the database names the database by the one the change applies
+// to, so neither its target nor the changed object carries a name, and the
+// render request accepts it.
+func TestRenderGrantOnTheDatabase_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	d := commonDescription()
+	database := &protocol.Reference{Engine: "fixture", Kind: "database"}
+	grant := &protocol.SQLGrant{Role: "app", Privileges: []string{"CONNECT"}, Target: proto.CloneOf(database)}
+	request := &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{commonChange("grant", proto.CloneOf(database), &protocol.CommonObjectChange{
+		Operation: &protocol.CommonObjectChange_Grant{Grant: grant}})}}
+	c.Assert(provider.ValidateRenderRequest(d, request), qt.IsNil)
+}
+
+// Any other object a change names needs its name.
+func TestRenderUnnamedObject_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	d := commonDescription()
+	table := &protocol.Reference{Engine: "fixture", Kind: "table", Schema: "app"}
+	request := &protocol.RenderRequest{Engine: "fixture", Changes: []*protocol.Change{commonChange("grant", table, &protocol.CommonObjectChange{
+		Operation: &protocol.CommonObjectChange_Grant{Grant: &protocol.SQLGrant{Role: "app", Privileges: []string{"SELECT"}, Target: commonRef("table", "app", "users")}}})}}
+	c.Assert(provider.ValidateRenderRequest(d, request), qt.ErrorIs, provider.ErrProtocol)
+}
