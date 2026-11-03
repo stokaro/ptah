@@ -2165,6 +2165,21 @@ type MaterializedViewDiff struct {
 	//
 	// It stays off the wire. The change map is the change; this is the operand.
 	Desired schemamodel.MaterializedView `json:"-"`
+
+	// PreviousBody is the query the database holds the view with before this
+	// change runs: the database side of a forward comparison, and the body the
+	// forward change creates in a reversed one.
+	//
+	// A replacement drops the view while the database still holds this body,
+	// and the server refuses to drop a relation another one still reads. So a
+	// planner orders the drop by what this body reads as well as by what
+	// Desired's body reads: a materialized view whose new body stops reading
+	// another changed one still reads it in the database, and has to be
+	// dropped before it.
+	//
+	// An empty value means not known, and a planner orders the drop by
+	// Desired's body alone. It stays off the wire, as Desired does.
+	PreviousBody string `json:"-"`
 }
 
 // Replaces reports whether planning this change drops and recreates the view.

@@ -86,8 +86,10 @@ func generatedViewBody(schema *schemamodel.Database, viewName string) string {
 
 // reverseMaterializedViewDiffs carries modified materialized views into the
 // down direction, on the same terms as reverseViewDiffs. A materialized view
-// has no in-place replace at all, so there is no prior body to record: both
-// directions drop and recreate it.
+// has no in-place replace, so both directions drop and recreate it, and
+// PreviousBody orders the drop: when the rollback runs, the database holds the
+// body the forward change created, so that is the one the reversed entry
+// carries.
 func reverseMaterializedViewDiffs(
 	viewDiffs []difftypes.MaterializedViewDiff,
 	prior *schemamodel.Database,
@@ -96,8 +98,9 @@ func reverseMaterializedViewDiffs(
 	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
 		reversed[i] = difftypes.MaterializedViewDiff{
-			ViewName: viewDiff.ViewName,
-			Changes:  reverseChangeMap(viewDiff.Changes),
+			ViewName:     viewDiff.ViewName,
+			Changes:      reverseChangeMap(viewDiff.Changes),
+			PreviousBody: strings.TrimSpace(viewDiff.Desired.Body),
 			// The recreate half renders from the operand, so reversing the
 			// change map without reversing the operand would rebuild the very
 			// definition the rollback is undoing (stokaro/ptah#2315). The prior
