@@ -14,7 +14,6 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/execoutcome"
-	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
@@ -29,22 +28,23 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 // ClickHouse) and a semicolon inside a backslash-escaped literal cannot leak
 // out into a separately-executed statement. A nil connection falls back to the
 // dialect-blind split.
+//
+// The units are the connection's (see [grammarFor]): the units a provider
+// that splits migration bodies divides the body into, the queries of a
+// built-in engine with query units, or statements.
 func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
 	if conn == nil {
 		return sqlutil.SplitStatements(sql)
 	}
-	return splitSQLStatementsForDialect(sql, conn.Info().Dialect)
+	return grammarFor(conn).statements(sql)
 }
 
 // splitSQLStatementsForDialect splits a migration body into the units the
-// migrator runs, counts and records progress over: statements, or the
-// queries the engine runs the body as where it has query units (see
-// unitTexts).
+// migrator runs, counts and records progress over on a database/sql
+// connection to dialect: statements, or the queries the engine runs the body
+// as where it has query units.
 func splitSQLStatementsForDialect(sql, dialect string) []string {
-	if units := builtin.Lookup(dialect).Units; units != nil {
-		return unitTexts(units, sql, dialect)
-	}
-	return sqlutil.SplitStatementsForDialect(dialect, sql)
+	return grammarForDialect(dialect).statements(sql)
 }
 
 func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []string {
@@ -75,10 +75,10 @@ func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []strin
 // statement itself; on handled=false the migrator executes the statement
 // normally. A non-nil error aborts the migration.
 //
-// On YDB the unit offered is a query rather than a statement, and only a
-// schema query is offered: a run of data statements commits in one
-// transaction together with the record of its progress, which no other
-// executor could join.
+// On an engine with query units the unit offered is a unit rather than a
+// statement, and only a unit that runs outside a transaction is offered: a
+// unit that changes data only commits in one transaction together with the
+// record of its progress, which no other executor could join.
 type StatementInterceptor interface {
 	ValidateDirectives(directives map[string]string) error
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
@@ -191,7 +191,7 @@ type statementProgressHooks struct {
 // statementCommitter runs a statement together with the record of its
 // progress. claims reports whether it takes the statement at all.
 type statementCommitter struct {
-	claims func(statement string) bool
+	claims func(event StatementEvent) bool
 	run    func(ctx context.Context, event StatementEvent) error
 }
 
@@ -208,7 +208,7 @@ func withStatementCommitter(ctx context.Context, committer statementCommitter) c
 // claims is not run or recorded by anything else.
 func commitStatement(ctx context.Context, event StatementEvent) (bool, error) {
 	hooks, _ := ctx.Value(statementProgressRecorderContextKey{}).(statementProgressHooks)
-	if hooks.commit.run == nil || !hooks.commit.claims(event.Statement) {
+	if hooks.commit.run == nil || !hooks.commit.claims(event) {
 		return false, nil
 	}
 	return true, hooks.commit.run(ctx, event)
@@ -993,7 +993,7 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 
 // executeSQLStatements splits SQL into individual statements and executes them
 func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string) error {
-	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+	if err := grammarFor(conn).refuse(sql); err != nil {
 		return err
 	}
 	statements := splitSQLStatementsForConnection(conn, sql)
@@ -1082,7 +1082,7 @@ func executeMigrationFileSQL(
 		}
 	}
 
-	if err := refuseUnsplittableSQL(databaseConnectionDialect(conn), sql); err != nil {
+	if err := grammarFor(conn).refuse(sql); err != nil {
 		return fmt.Errorf("%s: %w", filename, err)
 	}
 	statements := splitSQLStatementsForConnection(conn, sql)
@@ -1127,8 +1127,9 @@ func runMigrationFileStatement(
 	if err := migrationLockLost(ctx); err != nil {
 		return err
 	}
-	// The committer is installed only on YDB, and it claims every data query
-	// there. An interceptor is offered the schema queries alone: a data query
+	// The committer is installed only on a target with query units, and it
+	// claims every unit that changes data only there. An interceptor is
+	// offered the units that run outside a transaction alone: a data unit
 	// commits in one transaction with its checkpoint, which an executor that
 	// runs the statement itself could not join (see StatementInterceptor).
 	committed, err := commitStatement(ctx, event)

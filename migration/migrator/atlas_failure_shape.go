@@ -61,8 +61,8 @@ func atlasFailureError(failure error) string {
 // Falling back to the executor's text keeps a shape this cannot resolve — a
 // source that splits differently, or a failure with no statement — reporting
 // the statement it always did rather than nothing at all.
-func atlasFailureStatement(sqlText, dialect string, failedIndex int, stmt string) string {
-	statements := sourceStatementsForDialect(sqlText, dialect)
+func atlasFailureStatement(sqlText string, grammar bodyGrammar, failedIndex int, stmt string) string {
+	statements := grammar.sourceStatements(sqlText)
 	if failedIndex < 1 || failedIndex > len(statements) {
 		return revisiontext.ValidUTF8(stmt)
 	}

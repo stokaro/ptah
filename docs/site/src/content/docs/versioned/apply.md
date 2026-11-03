@@ -875,6 +875,10 @@ the run writes anything:
 | `COMMIT`, `ROLLBACK` or `BEGIN` | YDB refuses `COMMIT` inside a query, and Ptah decides where each transaction begins and ends |
 | A `DO` block, an action call or an `EVALUATE` loop that runs a schema statement and a statement that reads or writes a table | YDB refuses such a query whole (`Queries with mixed data and scheme operations are not supported`), and the schema statements before it would already be applied |
 
+A YDB provider that lists `units.migration-split` splits the body itself, and
+the same rules apply through it; see
+[migration bodies the provider splits](../../extend/executable-providers/#migration-bodies-the-provider-splits).
+
 The revision table, the migration log and the tag table sit in the directory
 `--migrations-schema` names, or at the database root. YDB has no
 `information_schema`, so Ptah asks the scheme service whether they exist.

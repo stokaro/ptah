@@ -93,7 +93,7 @@ func TestRevisionProvesNothingRan(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(revisionProvesNothingRan(test.revision, test.dialect), qt.Equals, test.want)
+			c.Assert(revisionProvesNothingRan(test.revision, grammarForDialect(test.dialect)), qt.Equals, test.want)
 		})
 	}
 }

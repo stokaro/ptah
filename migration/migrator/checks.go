@@ -263,25 +263,28 @@ func (e *CheckGroupFailedError) Error() string {
 // groups require every assertion to pass; Atlas files marked `atlas:assert
 // oneof` require at least one. Query errors and invalid result shapes always
 // fail closed, including inside oneof groups.
+//
+// rule proves each assertion read-only before it runs; see
+// [Migrator.checkAssertionRule].
 func runCheckGroups(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	dialect,
-	serverVersion string,
+	rule assertionRule,
 	version int64,
 	groups []checkGroup,
 ) error {
 	if len(groups) == 0 {
 		return nil
 	}
-	reads, err := checkReadProof(ctx, conn, dialect)
+	reads, err := checkReadProof(ctx, conn)
 	if err != nil {
 		return err
 	}
 
+	dialect := conn.Info().Dialect
 	return conn.WithIsolatedQuerySession(ctx, checkTransactionOptions(dialect), func(queryer dbschema.IsolatedQueryer) error {
 		for _, group := range groups {
-			if err := runCheckGroup(ctx, queryer, reads, dialect, serverVersion, version, group); err != nil {
+			if err := runCheckGroup(ctx, queryer, reads, rule, version, group); err != nil {
 				return err
 			}
 		}
@@ -298,9 +301,10 @@ type readProof func(ctx context.Context, assertion string) error
 // the engine has a service that proves it (see
 // internal/migratorext.ReadProver). Every other engine reaches another server
 // only through constructs the text names, which [sqlreach.Scan] refuses, and
-// gets nil.
-func checkReadProof(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) (readProof, error) {
-	prover := builtin.Lookup(dialect).ReadProof
+// gets nil. A provider's session gets nil too: its provider proves what a
+// check reads when RunStatement runs it read-only.
+func checkReadProof(ctx context.Context, conn *dbschema.DatabaseConnection) (readProof, error) {
+	prover := servicesFor(conn).ReadProof
 	if prover == nil {
 		return nil, nil
 	}
@@ -322,14 +326,13 @@ func runCheckGroup(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
 	reads readProof,
-	dialect,
-	serverVersion string,
+	rule assertionRule,
 	version int64,
 	group checkGroup,
 ) error {
 	onePassed := false
 	for _, check := range group.checks {
-		result, err := runCheckAssertion(ctx, queryer, reads, dialect, serverVersion, check.Assert)
+		result, err := runCheckAssertion(ctx, queryer, reads, rule, check.Assert)
 		if err != nil {
 			return &CheckFailedError{
 				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
@@ -388,17 +391,17 @@ func checkTransactionOptions(dialect string) *sql.TxOptions {
 	return new(sql.TxOptions)
 }
 
-// runCheckAssertion runs one assertion once its text is proved read-only and,
-// where reads is not nil, once what it reads is proved to stay in the database.
+// runCheckAssertion runs one assertion once rule proves its text read-only
+// and, where reads is not nil, once what it reads is proved to stay in the
+// database.
 func runCheckAssertion(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
 	reads readProof,
-	dialect,
-	serverVersion,
+	rule assertionRule,
 	assertion string,
 ) (any, error) {
-	if err := validateCheckAssertionStatically(assertion, dialect, serverVersion); err != nil {
+	if err := rule(assertion); err != nil {
 		return nil, err
 	}
 	if reads != nil {
@@ -520,10 +523,10 @@ func validateEffectiveCheckAssertion(effective, dialect string) error {
 // evaluation path would report it. A dry run that defers a check still runs
 // this, so an assertion that is malformed or write-shaped is reported whatever
 // state the database is in — that verdict never depended on state.
-func validateCheckGroups(groups []checkGroup, dialect, serverVersion string, version int64) error {
+func validateCheckGroups(groups []checkGroup, rule assertionRule, version int64) error {
 	for _, group := range groups {
 		for _, check := range group.checks {
-			if err := validateCheckAssertionStatically(check.Assert, dialect, serverVersion); err != nil {
+			if err := rule(check.Assert); err != nil {
 				return &CheckFailedError{
 					Version: version,
 					Name:    check.Name,

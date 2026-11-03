@@ -293,7 +293,7 @@ const migrationTagMaxLength = 255
 // than let a concurrent write change what the count saw.
 func (m *Migrator) deleteCountedMigrationTag(ctx context.Context, tag string) error {
 	table := m.qualifiedMigrationTagsTable()
-	for attempt := range ydbTransactionAttempts {
+	for attempt := range conflictAttempts {
 		found, err := m.tryDeleteCountedMigrationTag(ctx, table, tag)
 		if err == nil && !found {
 			return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, tag)
@@ -301,10 +301,10 @@ func (m *Migrator) deleteCountedMigrationTag(ctx context.Context, tag string) er
 		if err == nil {
 			return nil
 		}
-		if !atlasretry.IsRetryable(err) || attempt == ydbTransactionAttempts-1 {
+		if !atlasretry.IsRetryable(err) || attempt == conflictAttempts-1 {
 			return fmt.Errorf("delete migration tag %q: %w", tag, err)
 		}
-		if err := waitForYDBTransactionRetry(ctx, attempt); err != nil {
+		if err := waitForConflictRetry(ctx, attempt); err != nil {
 			return err
 		}
 	}

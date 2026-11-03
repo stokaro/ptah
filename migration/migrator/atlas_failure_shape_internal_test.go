@@ -139,7 +139,7 @@ func TestAtlasFailureStatement(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(
-				atlasFailureStatement(test.sql, "sqlite", test.failedIndex, test.stmt),
+				atlasFailureStatement(test.sql, grammarForDialect("sqlite"), test.failedIndex, test.stmt),
 				qt.Equals,
 				test.want,
 			)

@@ -21,7 +21,6 @@ import (
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
-	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -362,7 +361,7 @@ func (m *Migrator) migrationStatementCount(sqlText string) int {
 	if m.conn == nil {
 		return migrationStatementCount(sqlText)
 	}
-	return migrationStatementCountForDialect(sqlText, m.conn.Info().Dialect)
+	return m.grammar().count(sqlText)
 }
 
 // migrationProgress is what a failed execution reports about how far it got.
@@ -1728,7 +1727,7 @@ func (m *Migrator) verifyCommittedPrefix(
 		return nil
 	}
 	sqlText := migrationSQLForDirection(migration, direction)
-	hashes, ok := cumulativePartialHashValues(sqlText, m.connectionDialect(), revision.Applied)
+	hashes, ok := cumulativePartialHashValues(sqlText, m.grammar(), revision.Applied)
 	if !ok {
 		return committedPrefixVerificationError(revision, operation, "the current file cannot be split into the recorded committed prefix")
 	}
@@ -2259,7 +2258,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if handled, err := m.failProviderRevision(recordCtx, failed, applied, txMode); handled {
 		return err
 	}
-	if m.runsQueriesOnTheirOwn() {
+	if m.grammar().hasUnits() {
 		return m.ydbFailureRecord(failed, applied).run(recordCtx)
 	}
 	query, args := m.failedRevisionStatement(failed, applied)
@@ -2289,7 +2288,7 @@ func (m *Migrator) failedRevisionStatement(failed failedRevision, applied int) (
 			failed.total,
 			time.Since(failed.startedAt).Nanoseconds(),
 			atlasFailureError(failed.failure),
-			atlasFailureStatement(failed.sqlText, m.connectionDialect(), failed.failedIndex, failed.statement),
+			atlasFailureStatement(failed.sqlText, m.grammar(), failed.failedIndex, failed.statement),
 			m.atlasDirtyPartialHashes(failed.sqlText, failed.direction, applied, failed.total),
 			atlasOperatorVersionForMigration(failed.migration, failed.direction),
 			failed.migration.RevisionVersion(),
@@ -3315,19 +3314,20 @@ func (m *Migrator) validateRepairMigrationSQL(
 // statement by statement and is not exempt here: zero there means the
 // transaction took the body back with it.
 //
-// An engine with query units is of the durable class and still carries a
-// witness: every body runs the way `none` runs it there, a scheme query marked
-// in flight before it runs and a data query committed together with its
-// checkpoint, so zero with no marker is the witness speaking. See
+// An engine with query units still carries a witness: outside a transaction a
+// unit that runs there is marked in flight before it runs and a unit that
+// changes data only commits together with its checkpoint, and a file's
+// transaction on an engine with transactional DDL takes back everything it
+// held, so zero with no marker is the witness speaking. See
 // runsQueriesOnTheirOwn.
-func revisionProvesNothingRan(revision *MigrationRevision, dialect string) bool {
+func revisionProvesNothingRan(revision *MigrationRevision, grammar bodyGrammar) bool {
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return false
 	}
-	if builtin.Lookup(dialect).Units != nil {
+	if grammar.hasUnits() {
 		return true
 	}
-	return !ddltx.AllStatementsDurable(ddltx.ClassOf(dialect))
+	return !ddltx.AllStatementsDurable(ddltx.ClassOf(grammar.dialect))
 }
 
 func (m *Migrator) repairUpMigration(
@@ -3353,7 +3353,7 @@ func (m *Migrator) repairUpMigration(
 	// What is left here would be recorded applied without running. That is the
 	// point of the verb where the operator has already applied the migration by
 	// hand, and a mistake where nothing ran at all (stokaro/ptah#3452).
-	if revisionProvesNothingRan(revision, m.connectionDialect()) && !opts.Force {
+	if revisionProvesNothingRan(revision, m.grammar()) && !opts.Force {
 		return &RepairNothingAppliedError{Version: migration.Version}
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
@@ -3456,7 +3456,10 @@ func (m *Migrator) resumeMigrationDirectionOnSession(
 	// A body a run would refuse before its first statement is refused here
 	// too, before the resumed statements run: the split below counts the
 	// statements of a body it cannot split, but never runs them correctly.
-	if err := m.refuseUnsplittableMigrations([]*Migration{migration}, direction); err != nil {
+	if err := m.refuseUnsplittableMigrations(ctx, []*Migration{migration}, direction); err != nil {
+		return err
+	}
+	if err := m.refuseUnsplitBody(migration, direction, MigrationTxModeNone); err != nil {
 		return err
 	}
 	sqlText := migrationSQLForDirection(migration, direction)
@@ -3507,7 +3510,7 @@ func (m *Migrator) resumeStatementsOnSession(
 		if err := migrationLockLost(ctx); err != nil {
 			return err
 		}
-		if units := m.services().Units; units != nil && !m.conn.Writer().IsDryRun() && units.IsData(stmt) {
+		if !m.conn.Writer().IsDryRun() && m.grammar().commitsWithCheckpoint(migrationSQLForDirection(migration, direction), event.Index) {
 			if err := m.commitDataQuery(ctx, migration, startedAt, event, direction); err != nil {
 				return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 			}
@@ -3578,7 +3581,7 @@ func (m *Migrator) dirtyRevisionChecksum(
 	if direction == MigrationDirectionDown {
 		fallback = migrationChecksum(sqlText)
 	}
-	return nativeDirtyChecksum(sqlText, m.connectionDialect(), applied, fallback)
+	return nativeDirtyChecksum(sqlText, m.grammar(), applied, fallback)
 }
 
 func atlasOperatorVersionForMigration(migration *Migration, direction MigrationDirection) string {
