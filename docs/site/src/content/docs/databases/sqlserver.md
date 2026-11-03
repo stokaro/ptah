@@ -399,6 +399,15 @@ T-SQL has no volatility clause. SQL Server judges a function deterministic
 from its body and `SCHEMABINDING`, and no declaration states that verdict, so
 the reader reports every routine `VOLATILE`.
 
+## Scripts and batches
+
+A SQL Server script runs in batches, and `GO` on a line of its own ends one.
+Ptah reads `GO` wherever it reads a SQL Server script: the migrator, the
+schema-file parser and `ptah migrations lint` each end a statement at a `GO`
+line. An optional repeat count and a comment may follow it on the line. The
+`GO` line belongs to no statement, so a `-- ptah:nolint` directive goes after
+it, directly above the statement it suppresses.
+
 ## Triggers
 
 A SQL schema file declares a DML trigger with its table before its timing:
