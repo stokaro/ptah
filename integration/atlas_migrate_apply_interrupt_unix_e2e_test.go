@@ -41,6 +41,10 @@ FROM atlas_schema_revisions.atlas_schema_revisions ORDER BY version`
 // also what a run that never reached migration 2 would leave.
 func TestAtlasMigrateApplyInterruptedDuringAMigrationE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	// The binary is compiled on its first use in this test process, which
+	// takes minutes on a CI runner. Compiling it before the deadline starts
+	// leaves the whole deadline to the runs it bounds.
+	clirun.Build(qt.New(t), clirun.Compat)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
