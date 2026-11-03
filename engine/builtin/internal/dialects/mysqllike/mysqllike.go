@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/renderdiag"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -787,14 +788,22 @@ func unsupportedTriggerClause(node *ast.CreateTriggerNode) string {
 }
 
 // terminateStatement returns body with exactly one trailing semicolon. A body
-// annotation is naturally spelled as a complete SQL statement ending in ";",
-// and appending another one unconditionally produced ";;".
+// annotation is naturally spelled as a complete SQL statement ending in ";", so
+// a body that ends in one gets no second one. A body that ends in a line
+// comment, as the catalog keeps one written before its semicolon, takes the
+// semicolon on a line of its own: on the comment's line the semicolon is part
+// of the comment, and the statement after it in a migration file runs into
+// this one.
 func terminateStatement(body string) string {
 	trimmed := strings.TrimSpace(body)
-	if strings.HasSuffix(trimmed, ";") {
+	switch {
+	case sqlscript.EndsInLineComment(trimmed):
+		return trimmed + "\n;"
+	case strings.HasSuffix(trimmed, ";"):
 		return trimmed
+	default:
+		return trimmed + ";"
 	}
-	return trimmed + ";"
 }
 
 // renderDropTrigger renders a DROP TRIGGER statement for MySQL/MariaDB.
