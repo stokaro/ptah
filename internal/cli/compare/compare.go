@@ -202,7 +202,8 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), dbcli.ParseSchemas(schemasValue), conn, result)
+	requested := dbcli.ParseSchemas(schemasValue)
+	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, result)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
@@ -227,6 +228,11 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
+	undescribed, err := schemascope.UndescribedRemovals(info, requested, result, diff)
+	if err != nil {
+		return fmt.Errorf("error comparing schemas: %w", err)
+	}
+	schemascope.WarnUndescribed(cmd.ErrOrStderr(), undescribed)
 
 	// 4. Display differences: every category the comparator recorded, then the
 	// SQL that reconciles them.

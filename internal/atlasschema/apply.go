@@ -116,6 +116,14 @@ type ApplyOptions struct {
 	// Diagnostics receives out-of-band notices, such as an --exclude selector
 	// that named no object. Nil discards them.
 	Diagnostics io.Writer
+	// WarnUndescribedSchemas writes a warning to Diagnostics for each schema
+	// whose tables the plan removes only because the read reached a schema
+	// nobody named; see [schemascope.UndescribedRemovals]. The native surface
+	// sets it. The compatibility surface leaves it off: the pinned Atlas
+	// community binary plans the same removal without a warning, and the
+	// warning names native remedies, such as --schemas, that its flags spell
+	// differently.
+	WarnUndescribedSchemas bool
 	// RefuseUnmatchedExclude makes an --exclude selector that named nothing in
 	// either state an error rather than a notice. Only the verb that executes
 	// the plan sets it: `schema apply` refuses because a selector that
@@ -185,6 +193,8 @@ type ApplyRuntimeOptions struct {
 	Desired *schemamodel.Database
 	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
 	Diagnostics io.Writer
+	// WarnUndescribedSchemas is [ApplyOptions.WarnUndescribedSchemas].
+	WarnUndescribedSchemas bool
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
@@ -471,6 +481,15 @@ func computeApplyPlan(
 	undecidednote.Report(opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
 	diff = applyDiffPolicy(diff, opts.Policy)
+	// After the policy, which deletes the table drops a configuration skips:
+	// a drop the plan will not run is not one to warn about.
+	if opts.WarnUndescribedSchemas {
+		undescribed, err := schemascope.UndescribedRemovals(info, opts.Schemas, desired, diff)
+		if err != nil {
+			return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
+		}
+		schemascope.WarnUndescribed(opts.Diagnostics, undescribed)
+	}
 	// A skipped object is not a change, so a plan with nothing else to run
 	// has no statement to carry its comment; the line goes beside the
 	// result instead, so "synced" never stands alone over it.
@@ -938,6 +957,7 @@ func PrepareApply(
 		OmitNullBackfill:          opts.OmitNullBackfill,
 
 		Diagnostics:            opts.Diagnostics,
+		WarnUndescribedSchemas: opts.WarnUndescribedSchemas,
 		RefuseUnmatchedExclude: true,
 		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
 		Vars:                   opts.Vars,

@@ -91,6 +91,11 @@ type CompareResult struct {
 	// empty Diff beside a non-empty Undecided has not shown that the database
 	// matches.
 	Undecided schemadiff.Diagnostics
+	// Undescribed are the schemas Diff removes tables from only because the
+	// read reached a schema nobody named; see
+	// [schemascope.UndescribedRemovals]. A caller warns about each one with
+	// [schemascope.WarnUndescribed].
+	Undescribed []schemascope.Undescribed
 	// DataDrift is the reference-row comparison, in counts, and is nil when
 	// [CompareOptions.ManagedData] did not ask for one. A non-nil DataDrift
 	// with no tables is a comparison that ran and found the declared rows in
@@ -187,6 +192,10 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error comparing schemas: %w", err)
 	}
+	undescribed, err := schemascope.UndescribedRemovals(info, opts.Schemas, desired, diff)
+	if err != nil {
+		return nil, fmt.Errorf("error comparing schemas: %w", err)
+	}
 
 	// The row comparison runs here rather than in the calling command so it
 	// reuses the connection the structural read opened, which the deferred
@@ -205,6 +214,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		Database:    dbSchema,
 		Diff:        diff,
 		Undecided:   undecided,
+		Undescribed: undescribed,
 		DataDrift:   dataDrift,
 	}, nil
 }

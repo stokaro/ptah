@@ -135,6 +135,15 @@ schema does not describe into the plan, and the migration drops them, as
 schema. With `--qualifier`, a plan that touches more than one schema is
 refused.
 
+Such a drop is not silent. When neither the URL nor `--schemas` named the
+scope, `plan` and `generate` print one warning on standard error for each
+schema the desired schema declares nothing in and whose tables the plan drops:
+`warning: the desired schema declares nothing in schema "crm", so its 2 tables
+are planned for removal; to keep them, pin search_path in the URL or pass
+--schemas`. `schema compare`, `schema drift` and `schema apply` print the same
+line. The connection's own schema, usually `public`, is not reported, because
+every scope reads it.
+
 ### Send the plan verdict to CI
 
 Use `--report json` when automation needs the safety verdict:
