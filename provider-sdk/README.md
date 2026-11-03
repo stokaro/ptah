@@ -1808,8 +1808,9 @@ index a table declares, in `PreparedTable.indexes`: one `PreparedIndex` per
 exactly as `ObservedIndex.method` spells the kind of a held index, so the host
 compares the two spellings exactly and plans a change of kind alone as a drop
 and a create. An empty method is a kind like any other. The provider reads the
-kind from the declaration alone, never from the held index, and refuses a kind
-it cannot read with its reason.
+kind from the declaration alone, never from the held index. It refuses the
+preparation of a kind it cannot read, and its schema validation gives the
+reason.
 
 The provider and the engine both declare this two-way feature, which requires
 `schema.observed-indexes` and `schema.prepare-tables` on the engine. A reply

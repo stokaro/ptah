@@ -48,8 +48,9 @@ method is a kind like any other: a held index of that kind reports no method.
 
 The provider reads the kind from the declaration alone, never from the held
 index, so the prepared kind cannot echo what the database holds. A provider
-that cannot read a declared kind refuses the preparation with its reason, as
-it refuses to create such an index.
+that cannot read a declared kind refuses the preparation. The host does not
+repeat a provider's error text, so schema validation is where the provider
+gives its reason, as it does for any declaration it cannot create.
 
 ### The SDK refuses an incomplete list
 
