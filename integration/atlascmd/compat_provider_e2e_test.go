@@ -321,10 +321,11 @@ func TestCompatProviderLifetime_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	f := newCompatProviderFixture(c, buildCompatProviderBinaries(c))
 
-	// The fixture connects, then refuses to clean a database.
+	// The fixture connects and offers no database cleanup, so the plan names
+	// the feature it would need instead of listing anything.
 	out, err := f.runInProcess(c, "schema", "clean", "--url", f.address, "--auto-approve")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(out, qt.Contains, "does not support database cleanup")
+	c.Assert(out, qt.Contains, "offers no database cleanup (database.dev-cleanup)")
 	f.assertStopped(c)
 }
