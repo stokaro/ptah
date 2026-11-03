@@ -1,6 +1,8 @@
 package provider_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -19,6 +21,13 @@ func TestModelDefinitionsAreNegotiatedExactly(t *testing.T) {
 		{"empty definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{}`) }},
 		{"non-object definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`[]`) }},
 		{"noncanonical definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(` {"type":"object"} `) }},
+		// The digest matches, so only the canonical form refuses it, after the
+		// canonical definition was accepted in the same process.
+		{"noncanonical definition with its own digest", func(m *protocol.ValueModel) {
+			m.DefinitionJson = []byte(` {"type":"object"} `)
+			sum := sha256.Sum256(m.DefinitionJson)
+			m.DefinitionSha256 = hex.EncodeToString(sum[:])
+		}},
 		{"duplicate definition key", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"object","type":"object"}`) }},
 		{"different definition", func(m *protocol.ValueModel) { m.DefinitionJson = []byte(`{"type":"string"}`) }},
 		{"multiline label", func(m *protocol.ValueModel) { m.DisplayName = "retention\nvalues" }},
