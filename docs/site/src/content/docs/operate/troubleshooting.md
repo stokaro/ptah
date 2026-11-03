@@ -207,10 +207,16 @@ too. Run it against a database you are willing to lose.
 ptah db drop-all --db-url "$DATABASE_URL" --dry-run
 ```
 
-`--dry-run` connects, reports how many objects would be dropped, and changes
+`--dry-run` connects, lists the objects that would be dropped, and changes
 nothing. Without it the command asks for two confirmations; `--auto-approve`
 skips both and is the one flag here with no `PTAH_*` variable, so no
 environment can turn the prompts off by accident.
+
+On a database an executable provider serves, the provider lists what its
+cleanup removes and removes all of it or nothing, so the dry run prints the
+provider's list, each object under the provider's name for its kind. A provider
+that offers no database cleanup is refused, and so is a database that holds an
+object the provider cannot remove; the refusal names the object.
 
 **What it leaves behind**
 

@@ -53,7 +53,13 @@ database is dropped with everything in it, and the server's own databases,
 such as mysql and sys, are kept. That scope is refused, dry run included,
 unless PTAH_ALLOW_SERVER_CLEAN=1 is set; the refusal lists the databases.
 
-Run --dry-run first. It connects, reports how many objects would be dropped,
+A database an executable provider serves is cleaned by the provider, which
+lists what its cleanup removes and removes all of it or nothing. The plan is
+that list, each object under the provider's name for its kind. A provider that
+offers no database cleanup is refused, and so is a database that holds an
+object the provider cannot remove.
+
+Run --dry-run first. It connects, lists the objects that would be dropped,
 and changes nothing.
 
 Without --dry-run the command asks for two confirmations before it proceeds.
@@ -134,6 +140,11 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	if err := serverClean.Refuse(conn.Info(), plan); err != nil {
 		return err
 	}
+	fmt.Fprintf(out, "Planned cleanup changes: %d\n", len(plan.Changes))
+	for _, change := range plan.Changes {
+		fmt.Fprintf(out, "- %s\n", change.Summary())
+	}
+	fmt.Fprintln(out)
 
 	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run or auto-approve mode)
 	switch {

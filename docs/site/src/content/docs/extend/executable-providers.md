@@ -21,6 +21,7 @@ sourceOfTruth:
   - "integration/providercli/provider_migration_units_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
+  - "integration/providercli/provider_drop_all_e2e_test.go"
   - "integration/providercli/provider_sql_lint_e2e_test.go"
   - "integration/providercli/provider_data_e2e_test.go"
   - "internal/embedrpc"
@@ -229,6 +230,17 @@ replays a migration directory on it, and `ptah-compat schema plan lint` and
   host runs nothing there.
 - The host tells the dev database from the target by the database each session
   reports, since it reads no provider address.
+
+`ptah db drop-all` and `ptah-compat schema clean` empty a database the provider
+serves through the same `database.dev-cleanup`. The plan is the provider's
+list, each object under the provider's name for its kind, such as
+`table "users"` or `topic "events" in schema "app"`, and it carries no SQL,
+because the provider runs its own statements. The provider then removes the
+whole list or nothing. A provider that does not declare the feature for the
+engine is refused, and so is a database that holds an object the provider
+cannot remove, dry run included; the refusal names the object and the
+provider's reason. A plan that `--include` or `--exclude` narrowed is refused
+before anything is dropped, since the provider cannot remove part of the list.
 
 `embeddings.store` lets a provider keep the generations of `ptah inference`.
 The host lists the feature, and each engine that lists it declares the
@@ -1070,8 +1082,8 @@ and a table that carries facets or owned objects, which a reading cannot place
 yet. A command that selects a provider for the engine fails with
 `provider_missing` before it reads the file when none is installed.
 
-The execution adapter does not support managed data, database cleanup, or
-isolated execution of untrusted SQL. It does not add
+The execution adapter does not support managed data or isolated execution of
+untrusted SQL. It does not add
 provider selection to `ptah-compat` or native commands outside the list above. Project-file
 URLs and saved plans do not select a provider: pass `--provider-engine` with
 `--provider-config` for those workflows. The selected connection scope refuses
