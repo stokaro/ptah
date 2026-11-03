@@ -5429,6 +5429,10 @@ CONSTRAINT symbol is written. A refusal the engine answers in its own words is
 a sentence of the descriptor, which the parser writes after the position of
 the construct it refuses.
 
+`Grammar.Columns.IdentityProperty` says that IDENTITY, with or without a
+(seed, increment) pair, makes a column an identity column, as T-SQL writes it.
+SQL Server states it.
+
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:
 

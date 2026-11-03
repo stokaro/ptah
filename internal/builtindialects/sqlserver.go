@@ -167,8 +167,10 @@ END`,
 		// A table body declares an index with INDEX, and reserves KEY. DROP
 		// INDEX t.idx is the backward-compatible spelling of DROP INDEX idx ON
 		// t, and ALTER COLUMN states a whole definition. A trigger names its
-		// table before its timing.
+		// table before its timing. A column is an identity column through the
+		// IDENTITY property, which is how `db read` describes one.
 		Grammar: descriptor.Grammar{
+			Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 			Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},

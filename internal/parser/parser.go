@@ -78,6 +78,13 @@ type Parser struct {
 	// see [grammarOf].
 	target targetGrammar
 
+	// identityColumn and nullColumn are the last column read with an IDENTITY
+	// property and the last read with an explicit NULL. SQL Server refuses the
+	// two together in either order, and whichever comes second asks about the
+	// first; see [Parser.handleIdentityProperty].
+	identityColumn *ast.ColumnNode
+	nullColumn     *ast.ColumnNode
+
 	// modifyColumn is set while the column definition of an ALTER TABLE ...
 	// MODIFY is read. The MySQL family takes a narrower column grammar there
 	// than in CREATE TABLE and ADD COLUMN, and the two rules that know it,
@@ -2096,10 +2103,21 @@ func (p *Parser) handleNotNull(column *ast.ColumnNode) error {
 	return nil
 }
 
-func (p *Parser) handleNull(column *ast.ColumnNode) {
+func (p *Parser) handleNull(column *ast.ColumnNode) error {
 	// Explicit NULL (default behavior)
+	if p.identityColumn == column {
+		return identityNullError(p.current.Start)
+	}
 	p.advance()
 	column.Nullable = true
+	p.nullColumn = column
+	return nil
+}
+
+// identityNullError refuses NULL on a column with an IDENTITY property, which
+// is NOT NULL whatever the definition says.
+func identityNullError(position int) error {
+	return fmt.Errorf("an IDENTITY column is NOT NULL, and SQL Server 2025 answers Msg 8147 to NULL on one, at position %d", position)
 }
 
 func (p *Parser) handlePrimaryKey(column *ast.ColumnNode) error {
@@ -2117,6 +2135,75 @@ func (p *Parser) handleAutoIncrement(column *ast.ColumnNode) {
 	// Handle AUTO_INCREMENT / AUTOINCREMENT
 	p.advance()
 	column.SetAutoIncrement()
+}
+
+// handleIdentityProperty reads T-SQL's IDENTITY property, `IDENTITY [(seed,
+// increment)]`, which is how `ptah db read` describes a SQL Server identity
+// column. The pair is written whole or not at all, and each value is an
+// integer with an optional sign: measured on SQL Server 2025, IDENTITY(1) and
+// IDENTITY(0x10, 1) are Msg 102 and IDENTITY(1.0, 1) is Msg 2752. A bare
+// IDENTITY leaves the start and the increment unset, which the renderer writes
+// as IDENTITY(1,1), the pair the server records for it.
+//
+// The column is NOT NULL, as the server records an identity column whether or
+// not the definition says so. Read as nullable, a column the definition left
+// without NOT NULL would be planned as `ALTER COLUMN ... NULL`, which the
+// server refuses with Msg 8147; and so is an explicit NULL, which is refused
+// here.
+//
+// A dialect whose grammar has no IDENTITY property refuses the word as any
+// column attribute the parser does not read.
+func (p *Parser) handleIdentityProperty(column *ast.ColumnNode) error {
+	if p.target.known && !p.target.grammar.Columns.IdentityProperty {
+		return fmt.Errorf("unsupported column attribute: IDENTITY at position %d", p.current.Start)
+	}
+	if p.nullColumn == column {
+		return identityNullError(p.current.Start)
+	}
+	p.identityColumn = column
+	column.SetNotNull()
+	p.advance()
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("(") {
+		column.SetIdentity("", "", "")
+		return nil
+	}
+	p.advance()
+	seed, err := p.identityPropertyValue("seed")
+	if err != nil {
+		return err
+	}
+	if err := p.expect(lexer.TokenOperator, ","); err != nil {
+		return fmt.Errorf("IDENTITY takes a seed and an increment: %w", err)
+	}
+	increment, err := p.identityPropertyValue("increment")
+	if err != nil {
+		return err
+	}
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return fmt.Errorf("expected ')' after the IDENTITY increment: %w", err)
+	}
+	column.SetIdentity("", seed, increment)
+	return nil
+}
+
+// identityPropertyValue reads one value of an IDENTITY pair, an integer with
+// an optional sign, in the spelling the server records: a plus sign is
+// dropped, as IDENTITY(+3, +4) is recorded as 3 and 4.
+func (p *Parser) identityPropertyValue(name string) (string, error) {
+	p.skipWhitespace()
+	sign := ""
+	if p.current.MatchOperatorValue("-") || p.current.MatchOperatorValue("+") {
+		sign = strings.TrimPrefix(p.current.Value, "+")
+		p.advance()
+		p.skipWhitespace()
+	}
+	value := p.current.Value
+	if p.current.Type != lexer.TokenIdentifier || value == "" || strings.Trim(value, "0123456789") != "" {
+		return "", fmt.Errorf("expected the IDENTITY %s as an integer: got %q at position %d", name, value, p.current.Start)
+	}
+	p.advance()
+	return sign + value, nil
 }
 
 func (p *Parser) handleDefault(column *ast.ColumnNode) error {
@@ -2565,10 +2652,7 @@ func columnClauseReader(keyword string) (func(p *Parser, table *ast.CreateTableN
 	case "NOT":
 		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleNotNull(column) }, true
 	case "NULL":
-		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
-			p.handleNull(column)
-			return nil
-		}, true
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleNull(column) }, true
 	case "PRIMARY":
 		return func(p *Parser, table *ast.CreateTableNode, column *ast.ColumnNode) error {
 			return p.handlePrimaryKeyAttribute(table, column)
@@ -2581,6 +2665,10 @@ func columnClauseReader(keyword string) (func(p *Parser, table *ast.CreateTableN
 		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
 			p.handleAutoIncrement(column)
 			return nil
+		}, true
+	case "IDENTITY":
+		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error {
+			return p.handleIdentityProperty(column)
 		}, true
 	case "DEFAULT":
 		return func(p *Parser, _ *ast.CreateTableNode, column *ast.ColumnNode) error { return p.handleDefault(column) }, true

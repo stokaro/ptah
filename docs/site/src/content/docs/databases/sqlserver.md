@@ -57,7 +57,10 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `IDENTITY(1,1)`, unless the field gives its own SQL Server
   type. A table takes one identity column (`Msg 2744`), so a serial column
-  beside another auto-increment column is refused by name.
+  beside another auto-increment column is refused by name. A SQL schema file
+  reads `IDENTITY` and `IDENTITY(seed, increment)` as `ptah db read` prints
+  them. An identity column is `NOT NULL` whether or not the file says so, and
+  `NULL` on one is refused, as the server refuses it (`Msg 8147`).
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).
