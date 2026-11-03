@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 )
@@ -104,16 +105,45 @@ func toFunction(node *ast.CreateFunctionNode, sourcePlatform string) schemamodel
 		Name:       normalizeSQLTableReference(sourcePlatform, node.Name),
 		Parameters: node.Parameters,
 		Returns:    node.Returns,
-		Language:   node.Language,
+		Language:   routineLanguage(node, sourcePlatform),
 		Security:   node.Security,
 		Volatility: node.Volatility,
 		Settings:   node.Settings,
 		Facets:     node.Facets,
-		Body:       strings.TrimSpace(node.Body),
+		Body:       routineBody(node),
 		Comment:    node.Comment,
 	}
 	function.Canonicalize()
 	return function
+}
+
+// routineBody is the body the model keeps for node. The parse reads a
+// SQL-standard `RETURN expression` body apart from its keyword, and the model
+// keeps the keyword: it holds such a body as a catalog read prints it,
+// `RETURN (a + b)`, and [routinebody.Of] tells it from a string by that word.
+// Without it the expression is written inside dollar quotes, and PostgreSQL
+// refuses `a + b` as a function body.
+func routineBody(node *ast.CreateFunctionNode) string {
+	body := strings.TrimSpace(node.Body)
+	if node.BodyKind == ast.FunctionBodyReturn {
+		return "RETURN " + body
+	}
+	return body
+}
+
+// routineLanguage is the language the model keeps for node. PostgreSQL takes
+// a routine with a SQL-standard body that names no language as LANGUAGE sql,
+// and a catalog read reports it so: measured on 18.6, `CREATE FUNCTION f(a
+// int) RETURNS int RETURN a + 3` is recorded with lanname sql. Kept empty,
+// the language is PL/pgSQL to the renderer, which writes a RETURN body in
+// dollar quotes the server refuses, and a BEGIN ATOMIC body that reads a
+// table is not ordered after the table.
+func routineLanguage(node *ast.CreateFunctionNode, sourcePlatform string) string {
+	sqlStandard := node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic
+	if node.Language == "" && sqlStandard && factsOf(sourcePlatform).routines == descriptor.RoutineQuotedBody {
+		return "sql"
+	}
+	return node.Language
 }
 
 func toTrigger(node *ast.CreateTriggerNode, sourcePlatform string) schemamodel.Trigger {

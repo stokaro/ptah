@@ -21,6 +21,12 @@ CREATE VIEW v AS SELECT id, a FROM t;
 CREATE FUNCTION count_v() RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(*) FROM v; END;
 `
 
+// returnBodySchema declares a function with a SQL-standard RETURN body,
+// which PostgreSQL refuses inside dollar quotes and prints back as
+// `RETURN (a + b)`.
+const returnBodySchema = `CREATE FUNCTION add2(a int, b int) RETURNS int LANGUAGE sql IMMUTABLE RETURN a + b;
+`
+
 // sqlBodySchemaFile writes text to a schema file in a test's own directory
 // and answers its path.
 func sqlBodySchemaFile(c *qt.C, text string) string {
@@ -58,6 +64,19 @@ CREATE FUNCTION other.cnt(x int) RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC
 `},
 		{name: "a procedure without arguments", schema: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
 CREATE PROCEDURE p() LANGUAGE sql BEGIN ATOMIC INSERT INTO t VALUES (1, 1); END;
+`},
+		{name: "a function with a RETURN body", schema: returnBodySchema},
+		{name: "a function with a RETURN body that reads a table", schema: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
+CREATE FUNCTION cnt() RETURNS bigint LANGUAGE sql STABLE RETURN (SELECT count(*) FROM t);
+`},
+		{name: "a function with a RETURN body that names no language", schema: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
+CREATE FUNCTION cnt() RETURNS bigint STABLE RETURN (SELECT count(*) FROM t);
+`},
+		{name: "a function with a BEGIN ATOMIC body that names no language", schema: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
+CREATE FUNCTION cnt() RETURNS bigint STABLE BEGIN ATOMIC SELECT count(*) FROM t; END;
+`},
+		{name: "a procedure with a BEGIN ATOMIC body that names no language", schema: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
+CREATE PROCEDURE p() BEGIN ATOMIC INSERT INTO t VALUES (1, 1); END;
 `},
 	}
 	for _, test := range tests {
@@ -127,31 +146,43 @@ CREATE FUNCTION rows_t() RETURNS json LANGUAGE sql STABLE BEGIN ATOMIC SELECT js
 	}
 }
 
-// TestCompatMigrateDiffWritesNoSecondFileForABeginAtomicBodyE2E diffs a
-// declaration with a BEGIN ATOMIC routine twice into one golang-migrate
+// TestCompatMigrateDiffWritesNoSecondFileForASQLStandardBodyE2E diffs a
+// declaration with a SQL-standard routine body twice into one golang-migrate
 // directory: the second run replays the first file and finds the dev database
-// in sync with the declaration, so it writes no file (stokaro/ptah#5021).
-func TestCompatMigrateDiffWritesNoSecondFileForABeginAtomicBodyE2E(t *testing.T) {
-	c := qt.New(t)
-	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
-	dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_sqlbody_dev"), "public")
-	work := c.TempDir()
-	dir := filepath.Join(work, "migrations")
-	schema := sqlBodySchemaFile(c, sqlStandardBodySchema)
-	diff := func(name string) (string, error) {
-		return runCompatVerb("migrate", "diff", name,
-			"--dir", "file://"+filepath.ToSlash(dir)+"?format=golang-migrate",
-			"--to", "file://"+filepath.ToSlash(schema),
-			"--dev-url", dev)
+// in sync with the declaration, so it writes no file (stokaro/ptah#5021,
+// stokaro/ptah#4981).
+func TestCompatMigrateDiffWritesNoSecondFileForASQLStandardBodyE2E(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+	}{
+		{name: "a BEGIN ATOMIC body", schema: sqlStandardBodySchema},
+		{name: "a RETURN body", schema: returnBodySchema},
 	}
-	first, err := diff("s1")
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", first))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+			dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_sqlbody_dev"), "public")
+			work := c.TempDir()
+			dir := filepath.Join(work, "migrations")
+			schema := sqlBodySchemaFile(c, test.schema)
+			diff := func(name string) (string, error) {
+				return runCompatVerb("migrate", "diff", name,
+					"--dir", "file://"+filepath.ToSlash(dir)+"?format=golang-migrate",
+					"--to", "file://"+filepath.ToSlash(schema),
+					"--dev-url", dev)
+			}
+			first, err := diff("s1")
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", first))
 
-	second, err := diff("s2")
+			second, err := diff("s2")
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
-	c.Assert(second, qt.Contains, "The migration directory is synced with the desired state")
-	ups, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(ups, qt.HasLen, 1)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", second))
+			c.Assert(second, qt.Contains, "The migration directory is synced with the desired state")
+			ups, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
+			c.Assert(err, qt.IsNil)
+			c.Assert(ups, qt.HasLen, 1)
+		})
+	}
 }
