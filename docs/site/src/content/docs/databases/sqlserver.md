@@ -402,6 +402,29 @@ the reader reports every routine `VOLATILE`.
 ## Scripts and batches
 
 A SQL Server script runs in batches, and `GO` on a line of its own ends one.
+The body of a trigger, a procedure or a function runs to the end of its batch,
+and `CREATE TRIGGER`, `PROCEDURE`, `FUNCTION` and `VIEW` must each open a
+batch. Ptah runs every statement as a batch of its own, and every SQL Server
+script it writes says so with a `GO` after each statement: `ptah db read`,
+`ptah schema render`, `ptah migrations generate`, and the `sql` helper of
+`ptah-compat migrate diff`. Such a script runs the same way in `sqlcmd` and in
+`ptah migrations up`.
+
+```sql
+CREATE TABLE [t] (
+  [id] INT PRIMARY KEY
+);
+GO
+
+CREATE TRIGGER [trg] ON [t] AFTER INSERT AS SET NOCOUNT ON;
+GO
+```
+
+Without the `GO` after it, the trigger above would take every statement after
+it into its body. A migration file of a layout another tool reads, such as
+goose or golang-migrate, takes no `GO`, because such a tool may send the line
+to the server as written.
+
 Ptah reads `GO` wherever it reads a SQL Server script: the migrator, the
 schema-file parser and `ptah migrations lint` each end a statement at a `GO`
 line. An optional repeat count and a comment may follow it on the line. The

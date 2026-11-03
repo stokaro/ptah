@@ -42,7 +42,7 @@ func TestMigrateDiffIndentPreservesQuotedSQL(t *testing.T) {
 		{"quoted identifier", platform.Postgres, "CREATE TABLE \"first\n  second\" (\n  id int\n);", "CREATE TABLE \"first\n  second\" (\n\tid int\n);\n"},
 		{"escaped quote", platform.Postgres, "SELECT E'first\\'\n  second';", "SELECT E'first\\'\n  second';\n"},
 		{"backslash escape", platform.MySQL, "SELECT 'first\\'\n  second';", "SELECT 'first\\'\n  second';\n"},
-		{"bracket identifier", platform.SQLServer, "SELECT [first\n  second];", "SELECT [first\n  second];\n"},
+		{"bracket identifier", platform.SQLServer, "SELECT [first\n  second];", "SELECT [first\n  second];\nGO\n"},
 		{"backtick identifier", platform.MySQL, "SELECT `first\n  second`;", "SELECT `first\n  second`;\n"},
 		{"multiline string", platform.YDB, "SELECT @@first\n  second@@;", "SELECT @@first\n  second@@;\n"},
 		{"doubled quote", platform.Postgres, "SELECT 'first''\n  second';", "SELECT 'first''\n  second';\n"},
@@ -67,10 +67,10 @@ func TestMigrateDiffIndentPreservesQuotedSQL(t *testing.T) {
 // several at once, gets one of the two wrong.
 func TestMigrateDiffIndentReadsTheStatementsDialect(t *testing.T) {
 	tests := []struct{ name, dialect, sql, want string }{
-		{"T-SQL global variables", platform.SQLServer, "SELECT @@ROWCOUNT,\n  @@ERROR;", "SELECT @@ROWCOUNT,\n\t@@ERROR;\n"},
+		{"T-SQL global variables", platform.SQLServer, "SELECT @@ROWCOUNT,\n  @@ERROR;", "SELECT @@ROWCOUNT,\n\t@@ERROR;\nGO\n"},
 		{"YQL multiline string", platform.YDB, "SELECT @@ROWCOUNT,\n  @@ERROR;", "SELECT @@ROWCOUNT,\n  @@ERROR;\n"},
 		{"PostgreSQL array", platform.Postgres, "SELECT ARRAY[1,\n  2];", "SELECT ARRAY[1,\n\t2];\n"},
-		{"T-SQL bracket identifier", platform.SQLServer, "SELECT ARRAY[1,\n  2];", "SELECT ARRAY[1,\n  2];\n"},
+		{"T-SQL bracket identifier", platform.SQLServer, "SELECT ARRAY[1,\n  2];", "SELECT ARRAY[1,\n  2];\nGO\n"},
 		{"standard string ending in a backslash", platform.Postgres, "SELECT 'a\\',\n  'b\n  c';", "SELECT 'a\\',\n\t'b\n  c';\n"},
 		{"MySQL escaped quote", platform.MySQL, "SELECT 'a\\',\n  'b\n  c';", "SELECT 'a\\',\n  'b\n\tc';\n"},
 		{"no dialect", "", "SELECT [first\n  second], `third\n  fourth`;", "SELECT [first\n\tsecond], `third\n  fourth`;\n"},

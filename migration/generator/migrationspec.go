@@ -15,10 +15,10 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
-	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/shadow"
 )
@@ -310,7 +310,7 @@ func renderGeneratedDownMigrationSQL(
 	)
 	directives := generatedDirectiveOptions{skipTimeouts: plan.Reverse.RequiresNoTransaction}
 	return withGeneratedTimeoutDirectivesForOptions(
-		header+joinScriptStatements(statements),
+		header+joinScriptStatements(statements, plan.Dialect),
 		plan.Dialect,
 		directives,
 	), nil
@@ -338,7 +338,7 @@ func renderGeneratedMigrationSQL(
 	}
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: %s\n\n",
 		time.Now().Format(time.RFC3339), direction)
-	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements), dialect, directiveOpts), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements, dialect), dialect, directiveOpts), nil
 }
 
 func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadow.Candidate {
@@ -368,14 +368,17 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 // unit, as an executable provider renders it, is one statement the owner's
 // executor reads back: the host keeps its bytes and its boundary rather than
 // split it with a host grammar, and drops only the terminator every such unit
-// ends with. Other output is split by the dialect's grammar.
+// ends with. Other output is split by the dialect's grammar one fragment at a
+// time, as [planner.RenderedPlan] splits a plan it runs. Split as one script,
+// a SQL Server trigger or routine whose body is not a BEGIN ... END block
+// takes every later fragment into its body, as the server would.
 func generatedStatements(output renderer.Result, dialect string) ([]string, error) {
+	if !output.ExecutableUnits {
+		return planner.RenderedPlan{Result: output, Dialect: dialect}.Statements()
+	}
 	fragments, err := output.SQLFragments()
 	if err != nil {
 		return nil, err
-	}
-	if !output.ExecutableUnits {
-		return sqlutil.SplitSQLStatementsForDialect(strings.Join(fragments, ""), dialect), nil
 	}
 	statements := make([]string, 0, len(fragments))
 	for _, fragment := range fragments {

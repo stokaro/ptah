@@ -49,18 +49,19 @@ func hasActualSQLStatements(statements []string) bool {
 	})
 }
 
-// joinScriptStatements writes statements as the body of a migration file, one
-// after another, each executable statement ended with a semicolon. A statement
-// that is only comments -- a planner's note with nothing to run after it --
-// gets none; see [sqlscript].
-func joinScriptStatements(statements []string) string {
+// joinScriptStatements writes statements as the body of a migration file of
+// dialect, one after another, each executable statement ended with a
+// semicolon and, on SQL Server, with GO. A statement that is only comments --
+// a planner's note with nothing to run after it -- gets neither; see
+// [sqlscript.StatementEnd].
+func joinScriptStatements(statements []string, dialect string) string {
 	var script strings.Builder
 	for i, statement := range statements {
 		if i > 0 {
 			script.WriteString("\n")
 		}
 		script.WriteString(statement)
-		script.WriteString(sqlscript.Terminator(statement))
+		script.WriteString(sqlscript.StatementEnd(dialect, statement))
 	}
 	return script.String()
 }
