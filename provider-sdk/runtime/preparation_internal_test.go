@@ -110,3 +110,70 @@ func (p *mutatingPreparer) PrepareTables(_ context.Context, request *protocol.Pr
 	}
 	return &protocol.PreparedTables{Complete: true, Tables: []*protocol.PreparedTable{{Subject: request.Tables[0].Subject, ColumnPrimaryKeysPrepared: true, ColumnPrimaryKeys: []string{"foreign"}}}}, nil
 }
+
+// indexMethodPreparation is a preparation negotiated with index methods: its
+// table declares one index, and the reply states the index's kind.
+func indexMethodPreparation() (*protocol.Description, *protocol.PrepareTablesRequest, *protocol.PreparedTables) {
+	description, request, result := runtimePreparationExchange()
+	description.Features = append(description.Features, provider.IndexMethodsFeature)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.IndexMethodsFeature)
+	request.TargetFeatures = []string{provider.IndexMethodsFeature}
+	request.Tables[0].Desired.Indexes = []*protocol.DeclaredIndex{{Name: "items_id", Fields: []string{"id"}, Type: "ASYNC"}}
+	result.Tables[0].Indexes = []*protocol.PreparedIndex{{Name: "items_id", Method: "async"}}
+	return description, request, result
+}
+
+// The host's end refuses index methods it did not negotiate and an
+// incomplete list, and passes a complete negotiated one.
+func TestIndexMethodsClientChecksTheReply(t *testing.T) {
+	c := qt.New(t)
+	description, request, valid := indexMethodPreparation()
+	peer := &preparationPeer{result: proto.CloneOf(valid)}
+	client := &Client{description: description, rpc: peer}
+	result, err := client.PrepareTables(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, valid), qt.IsTrue)
+
+	peer.result.Tables[0].Indexes = nil
+	result, err = client.PrepareTables(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+
+	// A host that did not list the feature receives no methods.
+	peer.result = proto.CloneOf(valid)
+	client.description = provider.NegotiatedDescription(description, nil)
+	request.TargetFeatures = nil
+	result, err = client.PrepareTables(c.Context(), request)
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(result, qt.IsNil)
+	c.Assert(peer.calls, qt.Equals, 3)
+}
+
+// The provider's end refuses an owner's index methods for a host that did not
+// list the feature, and passes them for one that did.
+func TestIndexMethodsServerChecksTheReply(t *testing.T) {
+	c := qt.New(t)
+	description, request, valid := indexMethodPreparation()
+	owner := &fixedPreparer{result: valid}
+	server := negotiatedServer(Server{Description: description, TablePreparer: owner}, provider.IndexMethodsFeature)
+	result, err := server.PrepareTables(c.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(proto.Equal(result, valid), qt.IsTrue)
+
+	server = negotiatedServer(Server{Description: description, TablePreparer: owner})
+	request.TargetFeatures = nil
+	result, err = server.PrepareTables(c.Context(), request)
+	c.Assert(status.Code(err), qt.Equals, codes.Internal)
+	c.Assert(result, qt.IsNil)
+	c.Assert(owner.calls, qt.Equals, 2)
+}
+
+type fixedPreparer struct {
+	result *protocol.PreparedTables
+	calls  int
+}
+
+func (p *fixedPreparer) PrepareTables(context.Context, *protocol.PrepareTablesRequest) (*protocol.PreparedTables, error) {
+	p.calls++
+	return proto.CloneOf(p.result), nil
+}
