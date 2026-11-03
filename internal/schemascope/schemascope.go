@@ -114,7 +114,7 @@ func FilterGeneratedWithDefaultSchema(
 		return true
 	})
 	filtered.Triggers = keep(db.Triggers, func(trigger schemamodel.Trigger) bool {
-		return tableReferenceAllowed(keptTables, trigger.Table)
+		return keptRelations.holds(trigger.Table)
 	})
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
 		return tableReferenceAllowed(keptTables, policy.Table)
@@ -211,9 +211,10 @@ func FilterDatabaseWithDefaultSchema(
 		keptRelations.add(view.QualifiedName(), view.Name)
 		return true
 	})
+	// A trigger rides its relation, which is a view for an INSTEAD OF trigger.
 	filtered.Triggers = keep(db.Triggers, func(trigger catalog.Trigger) bool {
 		return schemaAllowed(allowed, effectiveSchema(trigger.Schema, defaultSchema)) &&
-			tableKeyAllowed(keptTables, trigger.QualifiedTable())
+			tableKeyAllowed(keptRelations.qualified, trigger.QualifiedTable())
 	})
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
 		return dbTableReferenceAllowed(keptTables, policy.Table)
@@ -425,13 +426,15 @@ func dbGrantAllowed(
 }
 
 // relations is the set of relations a selection keeps -- its tables, views
-// and materialized views -- by the names a grant reaches one with. A privilege
-// names a view as it names a table: PostgreSQL reports a grant on either as a
-// TABLE grant, and a schema file writes GRANT ... ON v for both. Scoped by the
-// kept tables alone, a grant on a view leaves the read side of a comparison
-// that applies a selection while the desired side keeps it, and `migrate diff`,
-// which selects the schemas it read, plans the grant again on every run
-// (stokaro/ptah#5047, stokaro/ptah#5016).
+// and materialized views -- by the names a grant or a trigger reaches one
+// with. A privilege names a view as it names a table: PostgreSQL reports a
+// grant on either as a TABLE grant, and a schema file writes GRANT ... ON v
+// for both. An INSTEAD OF trigger is a view's, and the reader reports its view
+// where it reports any trigger's table. Scoped by the kept tables alone, a
+// grant or a trigger on a view leaves the read side of a comparison that
+// applies a selection while the desired side keeps it, and `migrate diff`,
+// which selects the schemas it read, plans it again on every run
+// (stokaro/ptah#5047, stokaro/ptah#5016, stokaro/ptah#5015).
 type relations struct {
 	qualified map[string]struct{}
 	names     map[string]struct{}
