@@ -55,7 +55,10 @@ func (c *Client) BeginTransaction(ctx context.Context, request *protocol.BeginTr
 // FinishTransaction sends a commit or rollback once. A lost reply leaves the
 // outcome unknown; this method never retries it. A confirmed result is returned
 // with an error when it contradicts the requested action. Malformed replies
-// expose no result. The returned result is an independent copy.
+// expose no result. The returned result is an independent copy. Under
+// provider.MigrationSplitFeature, a ROLLED_BACK answer to COMMIT may set
+// aborted: the engine aborted the transaction for a conflict and applied
+// nothing. The flag on any other answer is a malformed reply.
 func (c *Client) FinishTransaction(ctx context.Context, request *protocol.FinishTransactionRequest) (*protocol.TransactionResult, error) {
 	request = proto.CloneOf(request)
 	if err := ctx.Err(); err != nil {
@@ -74,6 +77,9 @@ func (c *Client) FinishTransaction(ctx context.Context, request *protocol.Finish
 		return nil, errors.Join(&provider.TransactionError{}, remoteError(call, "finish transaction", err))
 	}
 	if err := provider.ValidateTransactionResult(result); err != nil {
+		return nil, errors.Join(err, &provider.TransactionError{})
+	}
+	if err := provider.ValidateTransactionAbort(c.description, request, result); err != nil {
 		return nil, errors.Join(err, &provider.TransactionError{})
 	}
 	result = proto.CloneOf(result)
@@ -130,6 +136,9 @@ func (s *serverAdapter) FinishTransaction(ctx context.Context, request *protocol
 	}
 	if err := provider.ValidateTransactionResult(result); err != nil {
 		return nil, status.Error(codes.Internal, "provider returned an invalid transaction outcome")
+	}
+	if err := provider.ValidateTransactionAbort(s.negotiated(), request, result); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return proto.CloneOf(result), nil
 }

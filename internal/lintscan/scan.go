@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlbatch"
 )
 
 // Mode selects dialect-specific lexing behavior for the lint scanner.
@@ -51,6 +52,11 @@ type Mode struct {
 	// already reads them, so the linter reads what the migrator runs rather
 	// than keeping a second YQL scanner.
 	yql bool
+	// batchSeparator is the word that ends a batch on a line of its own, such
+	// as SQL Server's GO (descriptor.Scripts.BatchSeparator), or "" for a
+	// dialect whose scripts have none. It ends the statement before it as a
+	// semicolon does, and the line it stands on belongs to no statement.
+	batchSeparator string
 }
 
 // ForDialect maps a lint target dialect to its lexing behavior. An empty
@@ -78,16 +84,28 @@ type Mode struct {
 // The mode is the one the dialect's descriptor states as its lint scanner.
 func ForDialect(dialect string) Mode {
 	described, _ := platform.Lookup(dialect)
+	mode := Mode{dialect: dialect, batchSeparator: described.Scripts.BatchSeparator}
 	switch described.Lint.Scanner {
 	case "hash":
-		return Mode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
+		mode.hashComments, mode.backslashEscapes, mode.execComments = true, true, true
 	case "dollar":
-		return Mode{dialect: dialect, dollarQuotes: true, nestedComments: true}
+		mode.dollarQuotes, mode.nestedComments = true, true
 	case "yql":
-		return Mode{dialect: dialect, yql: true}
+		mode.yql = true
 	default:
-		return Mode{dialect: dialect, execComments: true, dollarQuotes: true}
+		mode.execComments, mode.dollarQuotes = true, true
 	}
+	return mode
+}
+
+// separates reports whether tok is the mode's batch separator standing alone
+// on its line of sql, as [sqlbatch.SeparatorAt] reads it for the migrator.
+func (m Mode) separates(sql string, tok lintToken) bool {
+	if m.batchSeparator == "" || tok.kind != tokWord || !strings.EqualFold(tok.text, m.batchSeparator) {
+		return false
+	}
+	_, ok := sqlbatch.SeparatorAt(sql, tok.start, tok.end)
+	return ok
 }
 
 // lintTokenKind classifies scanner tokens.
@@ -104,6 +122,9 @@ const (
 	tokWord
 	tokSemicolon
 	tokOp
+	// tokBatchEnd is a batch separator on a line of its own, with the rest of
+	// its line: the end of a batch, and of the statement in it.
+	tokBatchEnd
 )
 
 // lintToken is one lexical token of a migration file.

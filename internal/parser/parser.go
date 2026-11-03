@@ -464,7 +464,9 @@ func (p *Parser) parseCreateDefinerRoutineBestEffort(statementStart int) (ast.No
 func (p *Parser) parseCreateTemporary(target string, statementStart int) (ast.Node, error) {
 	p.advance()
 	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("TRIGGER") {
+	// A T-SQL trigger is never temporary; SQL Server answers Msg 343, Unknown
+	// object type 'TEMP', so the target is refused as any other is.
+	if p.current.MatchIdentifierValue("TRIGGER") && !p.readsTransactSQLTriggers() {
 		return p.parseCreateTrigger(statementStart)
 	}
 	return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
@@ -576,6 +578,8 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 			return replacingRoutine(p.parseCreateRoutine("PROC", statementStart))
 		case p.current.MatchIdentifierValue("PROCEDURE"):
 			return replacingRoutine(p.parseCreateRoutine("PROCEDURE", statementStart))
+		case p.current.MatchIdentifierValue("TRIGGER") && p.readsTransactSQLTriggers():
+			return replacingTrigger(p.parseCreateTrigger(statementStart))
 		default:
 			return nil, fmt.Errorf("unsupported CREATE OR ALTER target: %s at position %d", p.current.Value, p.current.Start)
 		}
@@ -592,18 +596,25 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	if p.current.MatchIdentifierValue("DEFINER") {
 		return replacingRoutine(p.parseCreateDefinerRoutine(statementStart))
 	}
-	if p.current.MatchIdentifierValue("TRIGGER") {
-		node, err := p.parseCreateTrigger(statementStart)
-		if err != nil {
-			return nil, err
-		}
-		trigger, ok := node.(*ast.CreateTriggerNode)
-		if !ok {
-			return node, nil
-		}
-		return trigger.SetReplace(), nil
+	// SQL Server replaces a trigger with OR ALTER and answers Msg 102 to OR
+	// REPLACE, so a T-SQL trigger is refused here as any other target is.
+	if p.current.MatchIdentifierValue("TRIGGER") && !p.readsTransactSQLTriggers() {
+		return replacingTrigger(p.parseCreateTrigger(statementStart))
 	}
 	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
+}
+
+// replacingTrigger keeps OR REPLACE, or SQL Server's OR ALTER, on a trigger
+// parsed into a CreateTriggerNode. A trigger kept as raw SQL carries its own
+// text and is returned unchanged.
+func replacingTrigger(node ast.Node, err error) (ast.Node, error) {
+	if err != nil {
+		return nil, err
+	}
+	if trigger, ok := node.(*ast.CreateTriggerNode); ok {
+		return trigger.SetReplace(), nil
+	}
+	return node, nil
 }
 
 // replacingRoutine keeps OR REPLACE, or SQL Server's OR ALTER, on a routine
@@ -745,24 +756,32 @@ func (p *Parser) parseTableName(label string) (string, error) {
 }
 
 func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
+	parts, err := p.parseIdentifierParts(label)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(parts, "."), nil
+}
+
+// parseIdentifierParts reads a name and the parts a dot qualifies it with,
+// each as written, quotes and brackets included.
+func (p *Parser) parseIdentifierParts(label string) ([]string, error) {
 	first, err := p.expectIdentifier()
 	if err != nil {
-		return "", fmt.Errorf("expected %s: %w", label, err)
+		return nil, fmt.Errorf("expected %s: %w", label, err)
 	}
 
-	var name strings.Builder
-	name.WriteString(first)
+	parts := []string{first}
 	for p.current.Type == lexer.TokenOperator && p.current.Value == "." {
-		name.WriteString(".")
 		p.advance()
 		p.skipWhitespace()
 		part, err := p.expectIdentifier()
 		if err != nil {
-			return "", fmt.Errorf("expected identifier after '.' in %s: %w", label, err)
+			return nil, fmt.Errorf("expected identifier after '.' in %s: %w", label, err)
 		}
-		name.WriteString(part)
+		parts = append(parts, part)
 	}
-	return name.String(), nil
+	return parts, nil
 }
 
 // skipWhitespace skips whitespace and comment tokens.
@@ -1371,6 +1390,10 @@ func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 		return nil, err
 	}
 	p.skipWhitespace()
+
+	if p.readsTransactSQLTriggers() {
+		return p.parseTransactSQLTrigger()
+	}
 
 	if p.current.MatchIdentifierValue("IF") {
 		if err := p.parseTriggerIfNotExists(); err != nil {

@@ -130,11 +130,12 @@ func TestRunDrift_AComparisonOfNothingCarriesAnEmptyInventory(t *testing.T) {
 func TestRunDrift_AnErrorReportCarriesNoInventory(t *testing.T) {
 	c := qt.New(t)
 
-	code, _, stderr := runDriftCommand(c, "--root-dir", ".", "--format", "json")
+	code, stdout, stderr := runDriftCommand(c, "--root-dir", ".", "--format", "json")
 
 	c.Assert(code, qt.Equals, 2)
-	c.Assert(stderr, qt.Contains, `"error": "database URL is required"`)
-	c.Assert(stderr, qt.Not(qt.Contains), `"inventory"`)
+	c.Assert(stderr, qt.Equals, "error: database URL is required\n")
+	c.Assert(stdout, qt.Contains, `"message": "database URL is required"`)
+	c.Assert(stdout, qt.Not(qt.Contains), `"inventory"`)
 }
 
 // writeSchemaFile writes the desired schema as a SQL file and returns its path.

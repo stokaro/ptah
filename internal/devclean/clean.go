@@ -83,6 +83,17 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // auth.users included -- and putting back each privilege the run changed. A
 // URL that names no block keeps the rule the community binary applies.
 //
+// On a server the run owns, the baseline holds the server's roles as well. A
+// replay there runs CREATE ROLE, and a role is the server's rather than the
+// dev database's, so a reset of the database does not reach it. Every reset
+// drops the roles the server did not hold at the claim, which on a server the
+// run owns are the run's. Without that, a server the operator declared
+// disposable, which outlives the run, holds the role for the next replay of
+// the same directory, and the server refuses its CREATE ROLE: `role
+// "app_reader" already exists` (SQLSTATE 42710). A role the server held at the
+// claim is never dropped, whoever created it. On any other server the replay
+// refuses CREATE ROLE, and the baseline holds no roles.
+//
 // The zero Baseline keeps nothing, which is [DatabaseRealm].
 type Baseline struct {
 	extensions []string
@@ -104,6 +115,10 @@ type Baseline struct {
 	realm bool
 	// server records whose server the dev database is on; see [Claim].
 	server dbreset.Server
+	// roles are the server's roles at the claim, read on a server the run
+	// owns through a writer that can drop the ones added since; see above.
+	// Nil everywhere else, and a reset then drops no role.
+	roles []string
 }
 
 // Extensions returns the extension names the baseline keeps, sorted.
@@ -153,6 +168,13 @@ type schemaKeeper interface {
 	DropAllTablesKeeping(context.Context, dbreset.Kept) error
 }
 
+// roleKeeper is a writer that lists the server's roles and drops the ones a
+// later read finds that an earlier one did not; see [Baseline].
+type roleKeeper interface {
+	ServerRoles(context.Context) ([]string, error)
+	DropRolesAddedSince(context.Context, []string) error
+}
+
 // Claim takes a dev database for one run. It refuses one that is not clean,
 // see [EnsureClean], and records what [DatabaseRealmKeeping] leaves in place.
 // It reads the database as it is, so it belongs before the run's first
@@ -164,7 +186,8 @@ type schemaKeeper interface {
 // [devdocker.RunOwned] reads, which a migration replay reads to choose its
 // realm too. On a server the run owns, a realm cleanup empties the server's
 // default user database, such as PostgreSQL's postgres, which it refuses on
-// any other server.
+// any other server, and every reset drops the roles the claim did not find
+// there; see [Baseline].
 func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, error) {
 	if conn == nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: nil database connection")
@@ -177,10 +200,11 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 			return Baseline{}, err
 		}
 	}
-	baseline := Baseline{realm: migrateclean.RealmScoped(conn), server: dbreset.NamedServer}
-	if devdocker.RunOwned(conn.Info().URL) {
-		baseline.server = dbreset.OwnedServer
+	server, roles, err := claimedServer(ctx, conn, writer)
+	if err != nil {
+		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 	}
+	baseline := Baseline{realm: migrateclean.RealmScoped(conn), server: server, roles: roles}
 	if fromBlock {
 		start, err := recorder.CaptureStartingPoint(ctx)
 		if err != nil {
@@ -263,7 +287,8 @@ func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // this way before and after it runs, so it removes what it created -- a schema
 // or an extension schema included -- and leaves a schema outside the pinned
 // one alone, since the claim did not look there. The baseline's extensions
-// and default privileges stay in either scope.
+// and default privileges stay in either scope, and on a server the run owns
+// either scope drops the roles the run created; see [Baseline].
 //
 // A migration replay resets the engine's realm instead, whatever the URL
 // pinned; see [DatabaseRealmKeeping].
@@ -276,12 +301,18 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 	}
 	writer := conn.SchemaWriter()
 	if keeper, ok := writer.(schemaKeeper); ok {
-		return keeper.DropAllTablesKeeping(ctx, baseline.kept())
+		if err := keeper.DropAllTablesKeeping(ctx, baseline.kept()); err != nil {
+			return err
+		}
+		return baseline.dropAddedRoles(ctx, conn)
 	}
 	if len(baseline.extensions) > 0 || len(baseline.defaultPrivileges.Rows) > 0 {
 		return fmt.Errorf("reset dev database: this writer cannot keep the extensions or default privileges the database held before the run")
 	}
-	return writer.DropAllTables(ctx)
+	if err := writer.DropAllTables(ctx); err != nil {
+		return err
+	}
+	return baseline.dropAddedRoles(ctx, conn)
 }
 
 // DatabaseRealmKeeping is [DatabaseRealm] that leaves the baseline in place.
@@ -301,13 +332,51 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 		if errors.Is(err, dbreset.ErrServerDefaultDatabase) {
 			return fmt.Errorf("%w; %s", err, devdocker.OwnedServerRemedy)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return baseline.dropAddedRoles(ctx, conn)
 	}
 	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 || len(baseline.defaultPrivileges.Rows) > 0 ||
 		len(baseline.artifacts) > 0 {
 		return fmt.Errorf("clean dev database realm: this writer cannot keep the extensions, schemas, default privileges or database-scoped objects the database held before the run")
 	}
-	return DatabaseRealm(ctx, conn)
+	if err := DatabaseRealm(ctx, conn); err != nil {
+		return err
+	}
+	return baseline.dropAddedRoles(ctx, conn)
+}
+
+// claimedServer is whose server conn is on, from the record
+// [devdocker.RunOwned] reads, and on a server the run owns the roles it
+// holds, read through writer; see [Baseline]. A writer that cannot drop the
+// roles added since reads none, and its resets drop none.
+func claimedServer(
+	ctx context.Context, conn *dbschema.DatabaseConnection, writer catalog.SchemaWriter,
+) (dbreset.Server, []string, error) {
+	if !devdocker.RunOwned(conn.Info().URL) {
+		return dbreset.NamedServer, nil, nil
+	}
+	keeper, ok := writer.(roleKeeper)
+	if !ok {
+		return dbreset.OwnedServer, nil, nil
+	}
+	roles, err := keeper.ServerRoles(ctx)
+	return dbreset.OwnedServer, roles, err
+}
+
+// dropAddedRoles drops the roles the server holds that it did not hold at the
+// claim, once the reset has dropped the objects whose privileges name them;
+// see [Baseline]. A baseline that holds no roles drops none.
+func (b Baseline) dropAddedRoles(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if b.roles == nil {
+		return nil
+	}
+	keeper, ok := conn.SchemaWriter().(roleKeeper)
+	if !ok {
+		return fmt.Errorf("clean dev database: this writer cannot drop the roles the run created")
+	}
+	return keeper.DropRolesAddedSince(ctx, b.roles)
 }
 
 // kept is the baseline as a writer's reset reads it.

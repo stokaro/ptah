@@ -16,3 +16,5 @@ func removeLockFileBeforeUnlock(path string) { _ = os.Remove(path) }
 func removeLockFileAfterClose(string) {}
 
 func lockFileInUse(error) bool { return false }
+
+func lockFileClosing(error) bool { return false }

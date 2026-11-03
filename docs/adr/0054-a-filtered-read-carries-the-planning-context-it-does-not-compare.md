@@ -1,4 +1,4 @@
-# ADR 0053: A filtered read carries the planning context it does not compare
+# ADR 0054: A filtered read carries the planning context it does not compare
 
 Status: Proposed
 

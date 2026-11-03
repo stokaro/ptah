@@ -67,7 +67,7 @@ func ValidateRenderRequest(description *protocol.Description, request *protocol.
 	}
 	seen := make(map[string]bool)
 	for _, change := range request.GetChanges() {
-		if !comparisonReason(change.GetId()) || seen[change.GetId()] || change.GetObject() == nil || change.GetObject().GetName() == "" {
+		if !comparisonReason(change.GetId()) || seen[change.GetId()] || !renderedObjectNamed(change.GetObject()) {
 			return fmt.Errorf("%w: missing or duplicate rendering identity", ErrProtocol)
 		}
 		seen[change.GetId()] = true
@@ -167,4 +167,11 @@ func validateCreateTableOperand(operation *protocol.Change_CreateTable) error {
 		return fmt.Errorf("%w: inspected indexes are not a table creation operand", ErrProtocol)
 	}
 	return nil
+}
+
+// renderedObjectNamed requires a change to name the object it changes. The
+// database names itself by the database the change applies to, as a grant on
+// it does (validGrantTarget), so it carries no name of its own.
+func renderedObjectNamed(object *protocol.Reference) bool {
+	return object != nil && (object.GetName() != "" || object.GetKind() == "database")
 }

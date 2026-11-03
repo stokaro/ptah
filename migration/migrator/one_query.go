@@ -59,8 +59,8 @@ func (s *ownTransactionSession) withSessionHooks(ctx context.Context) context.Co
 // place of the migrator; see [ownTransactionSession.begin].
 func (s *ownTransactionSession) withBeginCommitter(ctx context.Context) context.Context {
 	return withStatementCommitter(ctx, statementCommitter{
-		claims: func(statement string) bool {
-			_, begin := filetx.Begin(statement)
+		claims: func(event StatementEvent) bool {
+			_, begin := filetx.Begin(event.Statement)
 			return begin
 		},
 		run: s.begin,

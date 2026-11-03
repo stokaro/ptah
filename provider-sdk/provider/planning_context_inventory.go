@@ -10,7 +10,7 @@ import (
 // PlanningContextInventoryFeature lets a filtered read carry the observed
 // values of the engine's planning context kinds that it leaves out of its
 // scope, with their coverage across the database, and lets the host pass them
-// to the planning service as context it never compares (ADR 0053). It
+// to the planning service as context it never compares (ADR 0054). It
 // requires PlanningObjectContextFeature.
 const PlanningContextInventoryFeature = "planning.context-inventory"
 

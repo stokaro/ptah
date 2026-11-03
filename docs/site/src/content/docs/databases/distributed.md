@@ -43,7 +43,9 @@ matching preset automatically.
   direction), its `STORING` columns and its access method, and a change
   rebuilds it. Its NULLS ordering, operator class and storage parameters are
   not compared: CockroachDB has no NULLS clause in an index key, reports no
-  operator class, and stores no index storage parameter.
+  operator class, and stores no index storage parameter. A unique `gin` or
+  `gist` index is refused before anything is rendered, as CockroachDB refuses
+  it with `inverted indexes can't be unique`.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
@@ -54,6 +56,9 @@ matching preset automatically.
   direction, NULLS ordering and operator class), its `INCLUDE` columns and its
   access method, and a change rebuilds it. YugabyteDB builds `btree` and
   `hash` as `lsm`, and `gin` as `ybgin`, so the comparison reads them as one.
+  A unique `hash` index is built as a unique `lsm` index. A unique `gin` or
+  `ybgin` index is refused before anything is rendered, as YugabyteDB refuses
+  it.
   Its storage parameters are not compared, because YugabyteDB refuses every
   one Ptah writes for an index.
   An ascending key with a NULLS ordering is written with `ASC`: without a

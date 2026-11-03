@@ -18,6 +18,7 @@ sourceOfTruth:
   - "integration/providercli/provider_cli_integration_test.go"
   - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
+  - "integration/providercli/provider_migration_units_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
   - "integration/providercli/provider_sql_lint_e2e_test.go"
@@ -249,6 +250,9 @@ the server's, never a tool argument.
 provider with each unit, and the provider stops a unit that runs longer. A
 migration's lock timeout is refused: the protocol has nothing that bounds a lock
 wait.
+
+`units.migration-split` lets the provider divide a migration body into the
+units its engine runs; see [Run versioned migrations](#run-versioned-migrations).
 
 `planning.policy` hands the provider's planner the operator's planning policy:
 whether to rebuild a table, with the words a refusal names to say how to ask
@@ -615,6 +619,12 @@ ptah schema apply --provider-config providers.json \
 A provider can support `--tx-mode file` and `--tx-mode all` by advertising
 transaction sessions for the selected engine and establishing transactional DDL
 on the opened session. Otherwise these modes are refused before execution.
+
+A provider whose session establishes `ddl_inside_transaction` as false states
+that its server refuses a schema statement inside an explicit transaction. The
+host then runs the statements of `--tx-mode file`, the default, without one, as
+it does for a built-in engine with that capability.
+
 `--tx-mode none` permits committed prefixes; a later failure does not undo
 earlier operations. A lost commit reply reports an unknown outcome and is never
 automatically retried. Prepared apply and saved JSON
@@ -689,6 +699,63 @@ The data-safety gate analyzes SQL through the selected provider. Destructive
 statements still require review and `--allow-destructive`. An explicit migration
 lock timeout is checked against the opened provider session's lock service.
 
+### Migration bodies the provider splits
+
+Some engines cannot run a migration body statement by statement: a definition
+exists only in the query that holds it, or a schema statement runs only outside
+a transaction. A provider that lists `units.migration-split` divides each body
+into the units its engine runs, and Ptah asks it once per body, before the run
+writes anything. A dry run asks too and runs nothing. A body the provider
+refuses is refused before the run starts, with the text the provider names:
+
+```text illustration
+migration 3 cannot run up on ydb: the provider refuses "COMMIT;": <the provider's reason>
+```
+
+The units are what the revision counts, what partial hashes digest and what a
+resume skips, in the native and the Atlas revision formats. Each unit carries
+the definitions it needs from the statements before it, so a resumed run
+replays nothing. Each unit has a placement:
+
+- A unit that changes data only runs in a transaction of its own together with
+  the checkpoint that records it, so the two commit together or not at all. When
+  the engine aborts that transaction for a conflict and applies nothing, Ptah
+  runs the unit again, up to five attempts. When the reply to the commit is
+  lost, Ptah reads the revision back: a recorded checkpoint proves the commit.
+- Any other unit runs outside a transaction. Ptah marks it in flight, runs it
+  and records it. When the provider answers that the engine applied nothing,
+  the mark is cleared; an outcome nobody knows keeps the mark, and a resume
+  refuses to guess.
+
+A failure never records fewer units than the revision row holds. A statement
+interceptor is offered only the units that run outside a transaction, and the
+statement timeout reaches the provider with each unit.
+
+The transaction mode depends on the session's transactional DDL. Without it,
+the default `file` mode runs as `none` and `--tx-mode all` is refused. With it,
+a `file` or `all` transaction holds every unit, and a body with a unit that runs
+outside a transaction is refused under either mode, because one transaction
+cannot hold it.
+
+The provider also judges each `-- +ptah check` assertion of the migration. An
+assertion it refuses fails as `check assertion must be one read-only SELECT
+statement: <reason>`, in a dry run too. The assertion still runs through the
+provider's read-only statement service.
+
+A provider without the feature runs a body by the dialect's statement rules,
+whatever its engine is named. Outside a `file` or `all` transaction on a
+session with transactional DDL, a body of more than one statement is refused
+before anything runs:
+
+```text illustration
+migration 3 cannot run up on ydb: the provider does not split a migration
+body into the units its engine runs (units.migration-split), so a body of
+4 statements cannot run outside a transaction; upgrade the provider
+```
+
+`ptah-compat migrate apply` reaches the same rules through a provider selected
+with `PTAH_PROVIDER_CONFIG`.
+
 Record a tag after a successful apply:
 
 ```bash
@@ -708,7 +775,7 @@ The confirmation output shows the operation's kind, subject, and captured
 impact and access assessments. A conflicting transaction requirement refuses
 the whole plan before any operation runs.
 
-Apply JSON reports use contract version `3` and an ordered `units` list.
+Apply JSON reports use contract version `4` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
 provider payloads and are reports, not execution plans.
 

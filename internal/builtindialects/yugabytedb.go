@@ -109,7 +109,9 @@ func yugabyteDB() descriptor.Dialect {
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
-		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+		// A second CREATE EXTENSION of one extension is refused, measured on
+		// 2026.1.2.0: `extension "pgcrypto" already exists`.
+		Statements: descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{
@@ -129,8 +131,12 @@ func yugabyteDB() descriptor.Dialect {
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.
+		// YugabyteDB builds a unique hash index as lsm, which takes UNIQUE,
+		// and refuses one built as ybgin, measured on 2026.1.2.0: `access
+		// method "ybgin" does not support unique indexes`, for gin as well.
 		Preparation: descriptor.Preparation{
-			PostgresBuiltInTypes: true,
+			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"gin", "ybgin"},
 		},
 
 		// A serial column owns its sequence, every routine carries EXECUTE

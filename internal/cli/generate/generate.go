@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqlscript"
 )
 
 const (
@@ -199,7 +200,8 @@ func generateCommand(cmd *cobra.Command, opts *options) error {
 			fmt.Fprintf(&rendered, "-- %s schema\n\n", d)
 		}
 		for i, statement := range schemaSQL.Statements {
-			fmt.Fprintf(&rendered, "-- Statement %d/%d\n%s\n\n", i+1, len(schemaSQL.Statements), statement)
+			fmt.Fprintf(&rendered, "-- Statement %d/%d\n%s\n\n", i+1, len(schemaSQL.Statements),
+				sqlscript.WithBatchEnd(renderDialect, statement))
 		}
 	}
 

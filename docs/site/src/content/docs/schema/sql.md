@@ -97,6 +97,26 @@ With `--dialect clickhouse`, `CREATE ROW POLICY` declares a policy and
 See [ClickHouse row policies](../../databases/clickhouse/#row-policies) for
 examples and supported clauses.
 
+## Declare a SQL Server trigger
+
+Read as SQL Server, a trigger names its table before its timing, in the T-SQL
+order that `ptah db read` also prints:
+
+```sql
+CREATE TABLE t (id int PRIMARY KEY, a int);
+GO
+CREATE TRIGGER trg ON t FOR INSERT, UPDATE AS
+SET NOCOUNT ON;
+UPDATE t SET a = a WHERE 1 = 0;
+GO
+```
+
+The body runs to the end of its batch: to `GO`, to the `END` that closes a
+`BEGIN ... END` body, or to the end of the file. `FOR` is read as `AFTER`, and
+`CREATE OR ALTER TRIGGER` replaces a trigger. A header clause that Ptah does
+not model is refused by name. See
+[SQL Server triggers](../../databases/sqlserver/#triggers).
+
 ## Add a column after the table
 
 A column can be added with `ALTER TABLE ... ADD COLUMN` in the same file,
@@ -497,6 +517,11 @@ refused, as PostgreSQL refuses it with `already exists`. Two `PRIMARY KEY` or
 definition alike, are read as one, as the server keeps one. A schema directory
 refuses an object that a later file declares again in its own words.
 
+An extension one file creates twice without `IF NOT EXISTS` is refused on
+PostgreSQL and YugabyteDB, which refuse the second `CREATE EXTENSION` with
+`extension "pgcrypto" already exists`. CockroachDB runs the second statement,
+so a file read for it declares the extension once.
+
 On PostgreSQL and YugabyteDB, a guard on a name written twice is read the way
 the server runs it, in one file or across the files of a schema directory, so
 a database built from the file and the file itself compare equal:
@@ -530,9 +555,12 @@ guarded table whose name a view or a sequence holds is still read as a new
 table
 ([`stokaro/ptah#5042`](https://github.com/stokaro/ptah/issues/5042)).
 
-A `CREATE EXTENSION IF NOT EXISTS` of an extension declared differently is
-still refused
-([`stokaro/ptah#5026`](https://github.com/stokaro/ptah/issues/5026)).
+A `CREATE EXTENSION IF NOT EXISTS` of an extension a statement before it
+declared is skipped whole, as PostgreSQL skips it with a notice, in one file
+or in a later file of a schema directory. The extension stays in the schema
+and at the version the first statement gave it, and a `COMMENT ON EXTENSION`
+after the repeat comments on it. Without the guard, a second declaration that
+differs from the first is refused.
 
 Role names differ on CockroachDB, which lowers every role name, quoted or not:
 read with `--dialect cockroachdb`, `"App_Reader"` names the role `app_reader`,

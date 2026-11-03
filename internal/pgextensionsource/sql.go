@@ -3,7 +3,6 @@ package pgextensionsource
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"ptah.run/core/platform"
@@ -94,12 +93,32 @@ func (sqlParser) ParseSQL(ctx context.Context, request sqlext.Request) (sqlext.R
 		if err != nil {
 			return sqlext.Result{}, err
 		}
-		for _, object := range slices.Concat(value.Objects, value.Replaces) {
+		for _, object := range value.Objects {
+			if skippedRepeat(known, object) {
+				continue
+			}
+			known[object.Ref.Name.Normalized] = object
+		}
+		for _, object := range value.Replaces {
 			known[object.Ref.Name.Normalized] = object
 		}
 		values = append(values, value)
 	}
 	return sqlext.Result{Values: values}, nil
+}
+
+// skippedRepeat reports whether object is a guarded declaration of an
+// extension known already holds, which the server skips whole and the schema
+// reader does not declare; see [schemaext.Guarded]. A COMMENT after it amends
+// the first declaration, as the server's comment lands on the extension the
+// first statement created.
+func skippedRepeat(known map[string]schemaext.Object, object schemaext.Object) bool {
+	guarded, ok := object.Value.(schemaext.Guarded)
+	if !ok || !guarded.Guarded() {
+		return false
+	}
+	_, held := known[object.Ref.Name.Normalized]
+	return held
 }
 
 // statementTokens is a claimed statement as the frontend's lexer reads it for

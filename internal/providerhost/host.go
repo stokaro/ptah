@@ -43,6 +43,9 @@ type Host struct {
 	modelCodecs []schemaext.Codec
 	goSource    *goSource
 	selections  *scopeSelections
+	// splits keeps the provider's split of each migration body it was asked
+	// for; see session.SplitMigration.
+	splits migrationSplits
 }
 
 type target struct {
@@ -119,6 +122,10 @@ var hostFeatures = []string{
 	// Offline schema rendering plans authored objects without an observed
 	// catalog; see target.renderDeclarations.
 	provider.SchemaDeclarationsFeature,
+	// The migrator runs a migration body as the units its provider splits
+	// it into, and runs a unit again that the engine aborted for a
+	// conflict; see session.SplitMigration and session.BeginUnitTransaction.
+	provider.MigrationSplitFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

@@ -134,7 +134,9 @@ asked with its body too, a procedure without arguments included. PostgreSQL
 keeps such a body parsed, and `pg_get_function_sqlbody` prints it in its own
 spelling, so the temporary copy carries the declared body and its stored form
 is compared with the one the database holds. The copy takes the routine's own
-name, because the server qualifies a parameter with it, as `f.x`.
+name, because the server qualifies a parameter with it, as `f.x`. A schema file
+may leave the language out of such a routine: the server records it in
+`LANGUAGE sql`, and the SQL schema reader does too.
 
 - The body reads the tables and views the database holds. A body that reads
   one the plan has not created yet makes the server refuse the copy. A second
@@ -142,9 +144,6 @@ name, because the server qualifies a parameter with it, as `f.x`.
   and the body is compared as written.
 - A body that selects `*` is answered only while no table the database holds
   gains or loses a column, as on CockroachDB.
-- A `RETURN` written in a schema file is not asked: the SQL schema reader drops
-  the keyword and keeps the expression as a quoted body, which reads back as
-  written ([stokaro/ptah#4981](https://github.com/stokaro/ptah/issues/4981)).
 - YugabyteDB keeps a routine created in `pg_temp` past the rollback, so there
   the copy carries no body.
 
@@ -1025,6 +1024,12 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+A plan that removes a table revokes the privileges of the roles the schema
+manages and leaves the others to `DROP TABLE`. The rollback of that plan
+creates the table again and grants every privilege the database held on it,
+column privileges included, whichever role held it. The owner's privileges are
+left out: the owner of the new table holds them without a grant.
+
 Such a grant belongs to the column, not to the sequence's name. Renaming a
 table or a column leaves its sequence's name as it was, so a table created as
 `items` and renamed to `products` keeps `items_id_seq`, while its `BIGSERIAL`
@@ -1662,6 +1667,15 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   duplicate-object error. Ptah reads ownership from `pg_depend`; a similar name
   does not make a user type part of an extension. Extension-owned functions
   follow the same rule.
+
+## Unique indexes and access methods
+
+Of PostgreSQL's built-in access methods, only `btree` builds a unique index.
+A unique index declared with `hash`, `gin`, `gist`, `brin` or `spgist` in any
+schema source, such as `CREATE UNIQUE INDEX ... USING hash` in a SQL file, is
+refused when Ptah renders or plans the schema, and the refusal names the index.
+Applied, PostgreSQL would refuse the statement with `access method "hash" does
+not support unique indexes`.
 
 ## Concurrent index creation
 

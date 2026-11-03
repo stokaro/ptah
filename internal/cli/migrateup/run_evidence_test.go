@@ -42,7 +42,7 @@ func TestMigrateUpJSONReportsWhatTheRunApplied(t *testing.T) {
 	c.Assert(result.Direction, qt.Equals, migrator.MigrationDirectionUp)
 	c.Assert(result.Planned, qt.DeepEquals, []int64{1, 2})
 	c.Assert(result.Applied, qt.DeepEquals, []int64{1, 2})
-	c.Assert(result.Error, qt.Equals, "")
+	c.Assert(result.Error, qt.IsNil)
 	c.Assert(result.Status, qt.IsNotNil)
 	c.Assert(result.Status.CurrentVersion, qt.Equals, int64(2))
 	c.Assert(out, qt.Not(qt.Contains), "=== MIGRATE UP ===",
@@ -70,7 +70,7 @@ func TestMigrateUpJSONReportsAFailedRun(t *testing.T) {
 	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeFailed)
 	c.Assert(result.Planned, qt.DeepEquals, []int64{1, 2, 3})
 	c.Assert(result.Applied, qt.DeepEquals, []int64{1, 2})
-	c.Assert(result.Error, qt.Not(qt.Equals), "")
+	c.Assert(result.Error, qt.IsNotNil)
 	c.Assert(result.Status, qt.IsNotNil)
 	c.Assert(result.Status.DirtyRevision, qt.IsNotNil)
 	c.Assert(result.Status.DirtyRevision.Version, qt.Equals, int64(3))

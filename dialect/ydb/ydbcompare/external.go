@@ -107,7 +107,7 @@ func (ExternalService) CompareObjects(ctx context.Context, request schemaext.Obj
 	if err := refuseOrphanedTables(sourceResult.Changes, tables, root); err != nil {
 		return schemaext.ObjectComparisonResult{}, err
 	}
-	tableResult.Changes = append(tableResult.Changes, tablesOverRecreatedSources(sourceResult.Changes, tableResult.Changes, tables, request.Capabilities, root)...)
+	tableResult.Changes = append(tableResult.Changes, tablesOverRecreatedSources(sourceResult.Changes, tableResult, tables, request.Capabilities, root)...)
 	slices.SortFunc(tableResult.Changes, func(a, b schemaext.ChangeRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	coverage, err := sourceResult.Desired.Coverage.Combine(tableResult.Desired.Coverage)
 	if err != nil {
@@ -291,18 +291,26 @@ func recreatedSources(changes []schemaext.ChangeRecord, caps capability.Capabili
 }
 
 // tablesOverRecreatedSources asks for each declared table the database holds
-// over a data source the plan recreates, and that no change names already:
-// the source cannot be dropped while a table reads it.
-func tablesOverRecreatedSources(sourceChanges, tableChanges []schemaext.ChangeRecord,
+// over a data source the plan recreates, and that the table comparison names
+// in no change and no diagnostic yet: the source cannot be dropped while a
+// table reads it.
+//
+// A table the comparison could not decide is left to its diagnostic. A change
+// for it as well would name one subject twice, which the engine refuses as an
+// invalid reply, and the diagnostic already stops a plan from being made.
+func tablesOverRecreatedSources(sourceChanges []schemaext.ChangeRecord, tableResult schemaext.ObjectComparisonResult,
 	tables map[objectidentity.Key]externalObject[*ydbexternal.DesiredTable, *ydbexternal.ObservedTable], caps capability.Capabilities, root string,
 ) []schemaext.ChangeRecord {
 	recreated := recreatedSources(sourceChanges, caps)
 	if len(recreated) == 0 {
 		return nil
 	}
-	named := make(map[objectidentity.Key]bool, len(tableChanges))
-	for _, change := range tableChanges {
+	named := make(map[objectidentity.Key]bool, len(tableResult.Changes)+len(tableResult.Undecided))
+	for _, change := range tableResult.Changes {
 		named[change.Subject.Key()] = true
+	}
+	for _, undecided := range tableResult.Undecided {
+		named[undecided.Subject.Key()] = true
 	}
 	var extra []schemaext.ChangeRecord
 	for key, table := range tables {

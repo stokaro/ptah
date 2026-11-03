@@ -7,7 +7,6 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/builtindialects"
 	"ptah.run/internal/migratorext"
-	"ptah.run/internal/migratorext/builtin"
 )
 
 // revisionTableFor returns how dialect keeps the migrator's tables: the
@@ -49,9 +48,9 @@ func expandTableStatement(statement, table, object, engine string) string {
 }
 
 // services returns what the connected engine gives the migrator beyond its
-// descriptor; see internal/migratorext.
+// descriptor; see [servicesFor].
 func (m *Migrator) services() migratorext.Services {
-	return builtin.Lookup(m.connectionDialect())
+	return servicesFor(m.conn)
 }
 
 // metadataTable names one of the migrator's tables for a service.

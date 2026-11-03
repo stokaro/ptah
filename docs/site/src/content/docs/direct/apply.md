@@ -390,7 +390,8 @@ Expected output on standard output:
 
 ```text
 {
-  "contract_version": 2,
+  "contract_version": 3,
+  "command": "schema plan",
   "outcome": "no-changes"
 }
 ```
@@ -415,7 +416,34 @@ Expected output includes, on standard output:
 does not know the version it reads should refuse the document. The version rises
 when a field changes meaning or leaves, and when an outcome gains a value. A new
 field does not raise it, and neither does a new refusal code, because every
-refusal means that nothing reached the database.
+refusal means that nothing reached the database. A new error kind does not
+raise it either: a consumer reads a kind it does not know as no kind.
+
+`command` names the command that wrote the document, `schema plan` or `schema
+apply`, so a consumer can refuse a document it did not ask for.
+
+A run that fails carries `error`, an object with two fields. `message` is the
+sentence printed on standard error. It can quote the database, so a consumer
+that must not publish what the database said reads `kind` instead. `kind` says
+why the target database could not be opened, from a closed list:
+`database_unreachable`, `authentication_failed`, `database_not_found`,
+`permission_denied` or `tls_failed`. It is absent for every other failure.
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+says what each kind means and where to look.
+
+Against a database whose password the URL gets wrong, the plan reports:
+
+```json
+{
+  "contract_version": 3,
+  "command": "schema plan",
+  "outcome": "failed",
+  "error": {
+    "kind": "authentication_failed",
+    "message": "connect to --db-url: failed to ping database: failed to connect to `user=app database=app`: 10.0.0.5:5432 (db.internal): failed SASL auth: FATAL: password authentication failed for user \"app\" (SQLSTATE 28P01)"
+  }
+}
+```
 
 ### The plan document
 
@@ -426,8 +454,9 @@ refusal means that nothing reached the database.
 | `plan_path` | Where `--save` or `--output` wrote the file |
 | `plan` | The plan file itself, with each statement's `sql`, `severity` and `reason`, the plan-level `destructive` flag, and the `name` and fingerprints that identify it |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects) |
+| `command` | `schema plan` |
 | `refusal` | Why planning refused; see below |
-| `error` | The message printed on standard error, for `refused` and `failed` |
+| `error` | The failure, for `refused` and `failed`: `message`, printed on standard error, and `kind` when the target database could not be opened |
 | `schema_diagnostics` | Every diagnostic a provider reported when it refused the SQL schema documents it read: `code`, `severity`, `path`, `start` and `end` (byte `offset`, `line`, `column`) and `message` |
 
 `plan` also appears with `no-changes` when it contains notes. A saved or
@@ -448,10 +477,11 @@ pass them to `ptah schema apply --plan`, runs `ptah schema plan --output <path>
 
 ### The apply document
 
-Apply reports use contract version `3`. Native summaries describe captured
-operations without exposing provider payloads; they cannot be passed back as an
-executable plan. SQL and native entries share one ordered `units` list.
-Schema plan reports retain contract version `2` and their saved SQL plan format.
+Apply reports use contract version `4`, and plan reports contract version `3`.
+Native summaries describe captured operations without exposing provider
+payloads; they cannot be passed back as an executable plan. SQL and native
+entries share one ordered `units` list. Plan reports keep the saved SQL plan
+format.
 
 | Field | Meaning |
 | --- | --- |
@@ -460,8 +490,9 @@ Schema plan reports retain contract version `2` and their saved SQL plan format.
 | `units` | The planned operations in order. Each entry has `sql` or a `native` summary with its kind, subject, severity, reason, and access assessment |
 | `annotations` | Non-executable notes with `text` and a zero-based `before` position in `units`. A position equal to the unit count is a trailing note |
 | `undecided` | The declared objects the comparison could not check; see [Undecided objects](#undecided-objects). Absent with `--plan` |
+| `command` | `schema apply` |
 | `refusal` | Why the apply refused; see below |
-| `error` | The message printed on standard error, for `refused`, `failed` and `unknown` |
+| `error` | The failure, for `refused`, `failed` and `unknown`: `message`, printed on standard error, and `kind` when the target database could not be opened |
 | `schema_diagnostics` | As in the plan document |
 
 | Outcome | Meaning |
@@ -490,7 +521,7 @@ account without access to the role tables is the usual case: a role the schema
 declares is withheld. No statement is planned for it, because creating it could
 fail or diverge against a role that is already there.
 
-Contract version 2 records common-object limits in `undecided.common`, with
+Both documents record common-object limits in `undecided.common`, with
 `kind`, `name`, `reason`, and `provenance`. Feature limits appear in
 `undecided.features`, with the model `kind`, a structured `subject`, and a
 `reason`. A feature limit may describe a whole table-owned namespace. Subject
@@ -516,7 +547,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
 
 A consumer that does not know a code still knows what `refused` means, and
-reads `error` for the rest.
+reads the error message for the rest.
 
 `apply --plan` never raises `protected-table`. A fence passed to it is a usage
 error, reported as `failed` with no refusal code, because the plan was never

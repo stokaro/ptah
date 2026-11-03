@@ -15,7 +15,9 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/dbtarget"
@@ -64,17 +66,26 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	c.Assert(string(upSQL), qt.Contains, "([status] DESC)")
 	c.Assert(string(downSQL), qt.Contains, "([status])")
 
-	_, err = target.ExecContext(ctx, string(upSQL))
-	c.Assert(err, qt.IsNil)
+	execSQLServerGeneratorMigration(c, target, string(upSQL))
 	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
 
-	_, err = target.ExecContext(ctx, string(downSQL))
-	c.Assert(err, qt.IsNil)
+	execSQLServerGeneratorMigration(c, target, string(downSQL))
 	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsFalse)
 
-	_, err = target.ExecContext(ctx, string(upSQL))
-	c.Assert(err, qt.IsNil)
+	execSQLServerGeneratorMigration(c, target, string(upSQL))
 	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
+}
+
+// execSQLServerGeneratorMigration runs a generated migration file one batch
+// at a time, as the migrator runs it. The file ends every batch with GO,
+// which is a command of the client, not T-SQL, so the file cannot be sent to
+// the server as one batch.
+func execSQLServerGeneratorMigration(c *qt.C, target *dbschema.DatabaseConnection, script string) {
+	c.Helper()
+	for _, statement := range sqlutil.SplitSQLStatementsForDialect(script, platform.SQLServer) {
+		_, err := target.ExecContext(c.Context(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
 }
 
 func sqlServerGeneratorTargetSchema() *schemamodel.Database {

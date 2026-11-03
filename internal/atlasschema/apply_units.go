@@ -31,6 +31,13 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 	case migrator.MigrationTxModeNone:
 		return executeApplyUnits(ctx, conn.Writer(), prepared, statements)
 	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
+		if !sqliterebuild.OpensTransaction(conn) {
+			// A server that refuses a schema statement inside a transaction
+			// runs the batch without one in every mode, native units as well
+			// as SQL; the SQL path reaches the same answer through
+			// sqliterebuild.BeginTransaction.
+			return executeApplyUnits(ctx, conn.Writer(), prepared, statements)
+		}
 		tx, err := beginUnitTransaction(ctx, conn, statements)
 		if err != nil {
 			return fmt.Errorf("begin schema apply transaction: %w", err)

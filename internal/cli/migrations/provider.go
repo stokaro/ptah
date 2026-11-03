@@ -8,6 +8,9 @@ import (
 
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/providercommand"
+	"ptah.run/internal/cli/migratestatus"
+	"ptah.run/internal/cli/migrateup"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/migration/migrator"
 )
@@ -25,13 +28,26 @@ func reportProviderFailure(cmd *cobra.Command, err error) error {
 	if jsonOutput {
 		var report any
 		diagnostic, _ := errors.AsType[*providerdiagnostic.Diagnostic](err)
-		if cmd.Name() == "up" {
+		switch cmd.Name() {
+		case "up":
+			// Provider setup precedes the run, so nothing was selected or sent.
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			report = struct {
 				migrator.RunResult
 				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
-			}{migrator.NewRunResult(migrator.RunEvidence{Direction: migrator.MigrationDirectionUp, Err: err, DryRun: dryRun}), diagnostic}
-		} else {
+			}{migrator.NewRunResult(migrator.RunEvidence{
+				Command:    migrateup.Command,
+				Direction:  migrator.MigrationDirectionUp,
+				Err:        err,
+				DryRun:     dryRun,
+				NotStarted: true,
+			}), diagnostic}
+		case "status":
+			report = struct {
+				errorkind.Failure
+				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+			}{migratestatus.NewFailureDocument(err), diagnostic}
+		default:
 			report = struct {
 				Error              string                         `json:"error"`
 				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`

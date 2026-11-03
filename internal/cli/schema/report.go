@@ -10,8 +10,10 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/drift"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerdiagnostic"
 )
 
@@ -106,6 +108,12 @@ func reportProviderFailure(cmd *cobra.Command, err error) error {
 			report = atlasschema.NewPlanReport(atlasschema.PlanEvidence{Err: err})
 		case "apply":
 			report = atlasschema.NewApplyReport(atlasschema.ApplyEvidence{Err: err})
+		case "drift":
+			diagnostic, _ := errors.AsType[*providerdiagnostic.Diagnostic](err)
+			report = struct {
+				errorkind.Failure
+				ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
+			}{drift.NewFailureDocument(err), diagnostic}
 		default:
 			diagnostic, _ := errors.AsType[*providerdiagnostic.Diagnostic](err)
 			report = struct {
