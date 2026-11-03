@@ -48,19 +48,10 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err != nil {
 		return nil, err
 	}
-	result.FeatureCoverage, err = r.observedCoverage(snapshot.GetCoverage())
-	if err != nil {
+	if err := r.features(ctx, result, request, snapshot, values); err != nil {
 		return nil, err
 	}
-	var objects []schemaext.Object
-	for _, value := range values[:len(snapshot.GetNativeObjects())] {
-		objects = append(objects, schemaext.Object{Ref: value.subject, Value: value.value})
-	}
-	result.FeatureObjects, err = schemaext.NewObjects(objects...)
-	if err != nil {
-		return nil, err
-	}
-	remaining := values[len(objects):]
+	remaining := values[result.FeatureObjects.Len():]
 	seen := make(map[objectidentity.Key]bool)
 	for _, table := range snapshot.GetTables() {
 		captured, err := r.table(table)
@@ -93,6 +84,26 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 		return nil, err
 	}
 	return result, nil
+}
+
+// features reads the snapshot's feature objects, which lead values, their
+// coverage, and the planning context a filtered read leaves out of its scope.
+func (r reader) features(ctx context.Context, result *catalog.Database, request *protocol.InspectRequest, snapshot *protocol.Schema, values []observedValue) error {
+	var err error
+	result.FeatureCoverage, err = r.observedCoverage(snapshot.GetCoverage())
+	if err != nil {
+		return err
+	}
+	var objects []schemaext.Object
+	for _, value := range values[:len(snapshot.GetNativeObjects())] {
+		objects = append(objects, schemaext.Object{Ref: value.subject, Value: value.value})
+	}
+	result.FeatureObjects, err = schemaext.NewObjects(objects...)
+	if err != nil {
+		return err
+	}
+	result.PlanningContextObjects, result.PlanningContextCoverage, err = r.planningContext(ctx, request, snapshot)
+	return err
 }
 
 func (r reader) table(value *protocol.Table) (catalog.Table, error) {
