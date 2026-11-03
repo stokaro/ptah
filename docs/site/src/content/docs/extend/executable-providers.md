@@ -488,6 +488,15 @@ its engine measured one, so a script's `expect_rows` is refused on an engine
 that does not. An engine that does not list the feature refuses each of these,
 and a `catch` step fails there rather than passing on the refusal.
 
+A Go caller can bind arguments to such a statement through
+`dbschema.DatabaseConnection.OperatorStatements`. Each one arrives as the
+`DataValue` case its Go type names: a signed integer as `int64_value`, an
+unsigned one as `uint64_value`, a `float64` as `double_value`, a duration as
+`interval_value`, and `nil` as `null`, which carries no type. The host refuses
+an argument that no case holds exactly, such as an `int32`, a pointer or a
+slice, before it sends the statement, so a provider never receives a value
+widened from the type its caller chose.
+
 The `--include`, `--exclude` and `--schema` selectors name a provider's objects
 by the selector types its engines declare under `scope.selections`, such as
 `*[type=topic]`. A grant whose object type a selection declares leaves a scope
