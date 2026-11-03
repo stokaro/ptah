@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.14. `provider-sdk/v0.12.0` speaks 25.12.
+speaks contract 25.15. `provider-sdk/v0.13.0` speaks 25.14.
+`provider-sdk/v0.12.0` speaks 25.12.
 `provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
@@ -98,6 +99,7 @@ returns to 0.
   Contract 25.12 adds [migration splits](#migration-splits).
   Contract 25.13 adds [comparison counts](#comparison-counts).
   Contract 25.14 adds [prepared index kinds](#prepared-index-kinds).
+  Contract 25.15 adds [typed statement arguments](#typed-arguments).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -126,8 +128,8 @@ does not oblige a peer to use it.
   `values.context`, `schema.common-view-facets`, `schema.observed-columns`,
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
-  `units.migration-split`, `models.compare-counts`, and
-  `schema.index-methods`. The embedding store's
+  `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
+  and `sessions.typed-arguments`. The embedding store's
   calls and `PrepareCommonObjects` are new, and each comes with an addition to
   `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -1622,7 +1624,8 @@ each engine that supports it lists it too. It adds RPCs and no field to an
 existing message, so it is not two-way.
 
 - `RunStatement` takes one statement, its arguments as `DataValue` in the
-  order the statement's placeholders take them, an access, an optional
+  order the statement's placeholders take them or with their types under
+  [typed arguments](#typed-arguments), an access, an optional
   transaction and a page bound from 1 to 10,000. `READ_WRITE` runs the
   statement as written. `READ_ONLY` runs it only when the owner proves, before
   running it, that it is one query that changes nothing and reads only objects
@@ -1648,6 +1651,46 @@ than `SUCCEEDED`, a message on one other than `FAILED`, a refusal on one other
 than `REFUSED`, or a row that does not fit its columns or its bound. A reply to
 a statement that may write, when it does not arrive or cannot be read, is an
 unknown outcome; to a read-only one, it is an error.
+
+### Typed arguments
+
+[ADR 0058](../docs/adr/0058-a-statement-argument-carries-the-type-its-caller-bound-it-at.md)
+decides this addition. A `DataValue` has one signed and one unsigned integer
+of 64 bits, one double and a null of no type, so an engine that binds a
+parameter at a type, such as YDB, cannot tell an `Int32` from an `Int64` or a
+null `Optional<Uint64>` from a null of anything else. `sessions.typed-arguments`
+adds `RunStatementRequest.typed_arguments`: each argument with the type its
+caller bound it at. It is two-way. The provider lists it beside
+`sessions.statements`, and a request carries typed arguments only when the
+negotiated description lists it, then instead of `arguments` and never beside
+them. A request names no engine, so a provider that lists the feature reads
+typed arguments on every session.
+
+A `StatementArgument` carries an `ArgumentType` and its value. The type is a
+scalar at its width (`INT8` to `INT64`, `UINT8` to `UINT64`, `FLOAT32`,
+`FLOAT64`, `BOOL`, `STRING`, `BYTES`, `TIMESTAMP` and `INTERVAL`), `optional`
+when the type admits null, such as a Go pointer or a `sql.Null` value, and
+`list` when the argument is a list of the scalar, such as a Go slice. `UNTYPED`
+is a null of no type, such as Go's `nil`. A value keeps the `DataValue` case
+it has under `arguments`: the signed scalars are `int64_value`, the unsigned
+ones `uint64_value`, both floats `double_value`, and `INTERVAL` is
+`interval_value`. A provider binds the value at the type: an engine without
+parameter types can bind the value and ignore the type. A list carries its
+elements, in order, and no value; an empty list still has its type.
+
+Both transport boundaries refuse typed arguments the negotiated description
+does not list the feature for, both forms in one request, an unknown or
+unspecified scalar, an `UNTYPED` argument that is optional, a list or not
+null, a value on a list or elements on anything else, an unset value, a null
+the type does not admit, a value in another case than its scalar's, an integer
+outside its scalar's range, and a `FLOAT32` value that a 32-bit float does not
+hold exactly. `provider.ValidateRunStatementRequest` checks the arguments and
+`provider.ValidateTypedArguments` the negotiation.
+
+A host that does not list the feature sends `arguments`, so a provider that
+lists it keeps reading them. A provider that does not list it receives
+`arguments` alone, and the host refuses before sending an argument whose type
+`DataValue` cannot carry exactly.
 
 ## Scope selections
 

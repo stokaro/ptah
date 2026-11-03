@@ -18,13 +18,20 @@ var (
 	}
 )
 
-// statementRun is the call of one statement. A READ_ONLY statement changes
-// nothing, so a reply that does not arrive leaves nothing uncertain; any
-// other leaves the statement's effect unknown.
-func statementRun(request *protocol.RunStatementRequest) sessionCall[*protocol.RunStatementRequest, *protocol.StatementResult] {
+// statementRun is the call of one statement under the negotiated
+// description, which decides whether the request may carry typed arguments. A
+// READ_ONLY statement changes nothing, so a reply that does not arrive leaves
+// nothing uncertain; any other leaves the statement's effect unknown.
+func statementRun(description *protocol.Description, request *protocol.RunStatementRequest) sessionCall[*protocol.RunStatementRequest, *protocol.StatementResult] {
 	call := sessionCall[*protocol.RunStatementRequest, *protocol.StatementResult]{
 		feature: provider.StatementsFeature, operation: "run statement", timeout: CallTimeout, transaction: request.GetTransactionId(),
-		validateInput: provider.ValidateRunStatementRequest, validateOutput: provider.ValidateStatementResult,
+		validateInput: func(request *protocol.RunStatementRequest) error {
+			if err := provider.ValidateRunStatementRequest(request); err != nil {
+				return err
+			}
+			return provider.ValidateTypedArguments(description, request)
+		},
+		validateOutput: provider.ValidateStatementResult,
 	}
 	if request.GetAccess() != protocol.RunStatementRequest_READ_ONLY {
 		call.uncertain = unknownStatement
@@ -41,7 +48,7 @@ func unknownStatement() error {
 // read leaves a statement that may write unknown, and the caller must not send
 // it again.
 func (c *Client) RunStatement(ctx context.Context, request *protocol.RunStatementRequest) (*protocol.StatementResult, error) {
-	return statementRun(request).call(ctx, c, request, c.rpc.RunStatement)
+	return statementRun(c.description, request).call(ctx, c, request, c.rpc.RunStatement)
 }
 
 // ReadStatementRows reads the next page of an open result. The caller resumes
@@ -60,7 +67,7 @@ func (s *serverAdapter) RunStatement(ctx context.Context, request *protocol.RunS
 	if nilService(s.server.Statements) {
 		return nil, unavailable("statements")
 	}
-	return statementRun(request).serve(ctx, s, request, s.server.Statements.RunStatement)
+	return statementRun(s.negotiated(), request).serve(ctx, s, request, s.server.Statements.RunStatement)
 }
 
 func (s *serverAdapter) ReadStatementRows(ctx context.Context, request *protocol.ReadStatementRowsRequest) (*protocol.StatementRows, error) {

@@ -43,8 +43,18 @@ type StatementRunner interface {
 
 // ValidateRunStatementRequest refuses a statement without a session, a
 // request ID or text, text that is not UTF-8 or holds a NUL, an argument that
-// is unset or invalid, an unspecified access, a READ_ONLY statement in a
-// transaction, and a page bound outside 1 to MaxRowsPerPage.
+// is unset or invalid, arguments and typed arguments in one request, a typed
+// argument its type does not hold, an unspecified access, a READ_ONLY
+// statement in a transaction, and a page bound outside 1 to MaxRowsPerPage.
+//
+// A typed argument names a known scalar other than SCALAR_UNSPECIFIED. An
+// UNTYPED one is a null that is neither optional nor a list. A list carries
+// its elements and no value, and any other argument a value and no elements.
+// Each value is set, null only when the type is optional or UNTYPED, and
+// otherwise in the case its scalar names and within the scalar's range: INT8
+// to INT64 are int64_value, UINT8 to UINT64 uint64_value, FLOAT32 a
+// double_value a 32-bit float holds exactly, and FLOAT64 any double_value.
+// ValidateTypedArguments checks that the peers negotiated typed arguments.
 func ValidateRunStatementRequest(request *protocol.RunStatementRequest) error {
 	if request.GetSessionId() == "" || request.GetRequestId() == "" {
 		return statementError("a statement requires a session and a request ID")
@@ -52,13 +62,8 @@ func ValidateRunStatementRequest(request *protocol.RunStatementRequest) error {
 	if strings.TrimSpace(request.GetSql()) == "" || !utf8.ValidString(request.GetSql()) || strings.ContainsRune(request.GetSql(), 0) {
 		return statementError("a statement requires UTF-8 text without a NUL")
 	}
-	for _, argument := range request.GetArguments() {
-		if argument.GetValue() == nil {
-			return statementError("a statement argument is unset")
-		}
-		if err := ValidateDataValue(argument); err != nil {
-			return err
-		}
+	if err := validateStatementArguments(request); err != nil {
+		return err
 	}
 	switch request.GetAccess() {
 	case protocol.RunStatementRequest_READ_WRITE:
@@ -70,6 +75,28 @@ func ValidateRunStatementRequest(request *protocol.RunStatementRequest) error {
 		return statementError("a statement requires a known access")
 	}
 	return validateStatementPageBound(request.GetMaxRows())
+}
+
+// validateStatementArguments checks the arguments of either form, and refuses
+// both forms in one request.
+func validateStatementArguments(request *protocol.RunStatementRequest) error {
+	if len(request.GetArguments()) != 0 && len(request.GetTypedArguments()) != 0 {
+		return statementError("a statement carries arguments or typed arguments, never both")
+	}
+	for _, argument := range request.GetArguments() {
+		if argument.GetValue() == nil {
+			return statementError("a statement argument is unset")
+		}
+		if err := ValidateDataValue(argument); err != nil {
+			return err
+		}
+	}
+	for _, argument := range request.GetTypedArguments() {
+		if err := validateTypedArgument(argument); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ValidateStatementResult binds a reply to its request and checks the

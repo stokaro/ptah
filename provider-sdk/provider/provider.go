@@ -264,6 +264,9 @@ func validateContractAdditions(value *protocol.Description) error {
 	if slices.Contains(features, ComparisonCountsFeature) && !slices.Contains(features, CompareModelsFeature) {
 		return fmt.Errorf("%w: %s requires %s", ErrProtocol, ComparisonCountsFeature, CompareModelsFeature)
 	}
+	if slices.Contains(features, TypedArgumentsFeature) && !slices.Contains(features, StatementsFeature) {
+		return fmt.Errorf("%w: %s requires %s", ErrProtocol, TypedArgumentsFeature, StatementsFeature)
+	}
 	for _, feature := range []string{EntryKeysFeature, HCLSourceFeature, EncodeSourceFeature} {
 		if slices.Contains(features, feature) && !slices.Contains(features, DecodeSourceFeature) {
 			return fmt.Errorf("%w: %s requires source decoding", ErrProtocol, feature)
