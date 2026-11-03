@@ -104,7 +104,11 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	flags.StringVar(&opts.schemas, dbcli.SchemasFlagName, "",
+		"Comma-separated database schemas to verify: PostgreSQL-family and SQL Server schemas, "+
+			"or YDB directories relative to the database root. Empty reads each connection's default schema "+
+			"with --shadow-db, and without it what ptah schema compare reads.",
+	)
 }
 
 func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error {

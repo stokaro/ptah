@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
@@ -98,7 +99,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
@@ -221,7 +222,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 	result := loadResult.Database
 
-	schemas := dbcli.ParseSchemas(schemasValue)
+	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), dbcli.ParseSchemas(schemasValue), conn, result)
+	if err != nil {
+		return fmt.Errorf("error reading database schema: %w", err)
+	}
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)

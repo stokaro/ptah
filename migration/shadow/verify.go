@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/schemascope"
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/schemadiff"
@@ -234,8 +235,10 @@ type MigrationVerifyOptions struct {
 	// request such as a secret rotation belongs to the plan that wrote the
 	// candidates, and the replayed database already carries its result.
 	CompareOpts *config.CompareOptions
-	// Schemas scopes the shadow read-back to the named schemas; empty reads
-	// the connection's default scope.
+	// Schemas scopes the shadow read-back to the named schemas. Empty reads
+	// the schemas the shadow URL covers, every schema of the database when it
+	// pins none, together with every schema Generated names, so a declared
+	// object in another schema is compared with what the replay created.
 	Schemas []string
 }
 
@@ -432,12 +435,20 @@ func convergenceOptions(opts *config.CompareOptions) *config.CompareOptions {
 	return &converged
 }
 
+// assertSchemaMatches reads the shadow database at the scope a comparison
+// with the declaration reads, resolved on the shadow's own connection: on
+// MySQL a schema is a database, and the target's database name means nothing
+// on the shadow server.
 func assertSchemaMatches(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	opts MigrationVerifyOptions,
 ) error {
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
+	scope, err := schemascope.ComparisonReadNames(ctx, conn.Info(), opts.Schemas, conn, opts.Generated)
+	if err != nil {
+		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
+	}
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, scope)
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}

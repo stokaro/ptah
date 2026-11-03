@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/schemadiff"
 )
@@ -44,8 +45,11 @@ type CompareOptions struct {
 	DatabaseURL    string
 	ConnectTimeout time.Duration
 	IgnoredTables  []string
-	Schemas        []string
-	PlainHTTP      bool
+	// Schemas names the schemas the database is read at. Empty reads what
+	// `schema apply` reads: the schemas the URL covers, every schema of the
+	// database when it pins none, and every schema the desired schema names.
+	Schemas   []string
+	PlainHTTP bool
 	// ProjectEnv is the atlas.hcl environment an `env://` schema file is
 	// expanded through; the zero value keeps the refusal (stokaro/ptah#1760).
 	ProjectEnv atlassource.ProjectEnv
@@ -156,7 +160,11 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, err
 	}
 
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
+	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), opts.Schemas, conn, desired)
+	if err != nil {
+		return nil, fmt.Errorf("error reading database schema: %w", err)
+	}
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
