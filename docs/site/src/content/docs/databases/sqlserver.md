@@ -61,7 +61,8 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).
-- Views and triggers rendered from raw SQL definitions.
+- Views and triggers rendered from raw SQL definitions. A SQL schema file
+  declares a trigger in T-SQL's own order (see [Triggers](#triggers)).
 - Synonyms: declared, rendered, introspected from `sys.synonyms`, and diffed,
   including targets in another database or behind a linked server (see below).
 - Extended properties at database, schema, table and column scope: declared,
@@ -397,6 +398,46 @@ cannot be inlined. `CALLED ON NULL INPUT` is the default and is accepted.
 T-SQL has no volatility clause. SQL Server judges a function deterministic
 from its body and `SCHEMABINDING`, and no declaration states that verdict, so
 the reader reports every routine `VOLATILE`.
+
+## Triggers
+
+A SQL schema file declares a DML trigger with its table before its timing:
+
+```text
+CREATE [OR ALTER] TRIGGER [schema.]name ON table [WITH EXECUTE AS CALLER]
+  {FOR | AFTER | INSTEAD OF} {INSERT | UPDATE | DELETE} [, ...]
+  AS body
+```
+
+`FOR` and `AFTER` are one timing, which `sys.triggers` records as `AFTER`, so
+either compares equal to the database. Each event is written once, and the
+events are separated by commas. A trigger fires once per statement, as every
+SQL Server DML trigger does. A schema in the trigger's name must be the schema
+of its table, and an unqualified table is in `dbo`; SQL Server refuses any
+other schema with `Msg 2103`.
+
+The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
+line, at the `END` that closes a `BEGIN ... END` body, or at the end of the
+file. A body of several statements that is not a `BEGIN ... END` block
+therefore needs a `GO` line after it when anything follows it in the file.
+
+A header clause that Ptah does not model is refused by name rather than
+dropped, because a trigger read without the clause would compare equal to one
+that has it. Measured on SQL Server 2025:
+
+| Clause | What SQL Server records | Ptah |
+| --- | --- | --- |
+| `WITH EXECUTE AS CALLER` | `execute_as_principal_id` `NULL`, as for no clause | read |
+| another `WITH EXECUTE AS` | `execute_as_principal_id` -2 or a user's id | refused |
+| `WITH ENCRYPTION` | no definition: `OBJECT_DEFINITION` is `NULL` | refused |
+| `WITH NATIVE_COMPILATION` or `SCHEMABINDING` | a trigger on a memory-optimized table | refused |
+| `NOT FOR REPLICATION` | `is_not_for_replication` 1 | refused |
+| `ON DATABASE` or `ON ALL SERVER` | a DDL or logon trigger | refused |
+
+What SQL Server itself refuses is refused as well: `IF NOT EXISTS`,
+`OR REPLACE`, `BEFORE`, `UPDATE OF`, `TRUNCATE`, events joined by `OR`, an
+event written twice, and `WITH APPEND`, which SQL Server 2025 answers with
+`Msg 195`.
 
 ## Limitations
 

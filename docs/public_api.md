@@ -5630,6 +5630,12 @@ An explicit `LANGUAGE` clause takes precedence. An empty default means that
 the parser assigns no language. PostgreSQL, CockroachDB, YugabyteDB, and
 Spanner state `plpgsql`.
 
+`Grammar.Routines.Trigger` states how CREATE TRIGGER is written.
+`descriptor.TriggerTransactSQL` is the T-SQL order, with the table before the
+timing; empty is the order the other engines share. `TriggerConditions` and
+`TriggerStatementBody` refine the shared order, so a registry refuses either
+beside a trigger grammar. SQL Server states `transact-sql`.
+
 
 ### Enum column flag
 
