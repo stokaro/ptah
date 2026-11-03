@@ -10,6 +10,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
@@ -120,9 +121,12 @@ func compareReportingUndecidedAdditions(
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
 	desired = normalizeGeneratedColumnsForCompare(desired, opts)
 	// The feature comparison runs before the index comparison, and reads a
-	// renamed index under the name the plan gives it.
+	// renamed index under the name the plan gives it. The renames read the
+	// index kinds the tables' preparation states, as the index comparison does.
 	prepared, err := prepareComparisonTables(ctx, desired, database,
-		compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules),
+		func(tables map[objectidentity.Key]schemapreparation.Table) []difftypes.IndexRename {
+			return compare.IndexRenames(desired, database, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules, tables)
+		},
 		opts.Dialect, identifierSemantics, caps, runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -186,7 +190,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules,
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions, caps, rules, prepared.bySubject,
 	)
 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)

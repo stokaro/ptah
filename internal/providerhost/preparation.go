@@ -57,6 +57,7 @@ func (t *target) prepareOwnedTables(ctx context.Context, request schemapreparati
 		if err != nil {
 			return schemapreparation.Result{}, err
 		}
+		table.IndexMethods = preparedIndexMethods(output.GetIndexes())
 	}
 	if err := ctx.Err(); err != nil {
 		return schemapreparation.Result{}, err
@@ -88,4 +89,19 @@ func (s modelComparer) resolvedFacetRecords(profile *protocol.CompareModelsReque
 	}
 	slices.SortFunc(result, func(a, b schemaext.FacetRecord) int { return schemaext.CompareRefs(a.Subject, b.Subject) })
 	return result, nil
+}
+
+// preparedIndexMethods keys the index kinds a provider prepared by the
+// declared index's name. The SDK client has checked that a negotiated reply
+// states one for each declared index, and that one without the feature
+// states none, so a table without kinds keeps none.
+func preparedIndexMethods(indexes []*protocol.PreparedIndex) map[string]string {
+	if len(indexes) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(indexes))
+	for _, index := range indexes {
+		result[index.GetName()] = index.GetMethod()
+	}
+	return result
 }

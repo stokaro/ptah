@@ -79,6 +79,7 @@ func TestPreparation_RejectsMalformedReplies(t *testing.T) {
 		{name: "changed observation", change: func(r *schemapreparation.Result) { r.Tables[0].Current.Table.Columns[0].IsPrimaryKey = true }},
 		{name: "changed knowledge", change: func(r *schemapreparation.Result) { r.Tables[0].CurrentKnowledge.State = schemaext.Absent }},
 		{name: "missing column receipt", change: func(r *schemapreparation.Result) { r.Tables[0].Desired.Fields[0].Primary = true }},
+		{name: "kind of an undeclared index", change: func(r *schemapreparation.Result) { r.Tables[0].IndexMethods = map[string]string{"by_id": "async"} }},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -136,4 +137,30 @@ func TestPreparation_RejectsTypedNilRegistration(t *testing.T) {
 	runtime, err := engine.New(preparationProvider(service))
 	c.Assert(err, qt.ErrorIs, engine.ErrInvalidRegistration)
 	c.Assert(runtime, qt.IsNil)
+}
+
+// A table's prepared index kinds pass through, and an input that already
+// states kinds never reaches the service.
+func TestPreparation_IndexMethods(t *testing.T) {
+	c := qt.New(t)
+	calls := 0
+	service := preparationFunc(func(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
+		calls++
+		request.Tables[0].IndexMethods = map[string]string{"by_id": "async"}
+		return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
+	})
+	runtime := mustRuntime(c, preparationProvider(service))
+	request := preparationRequest()
+	request.Tables[0].Desired.Indexes = []schemamodel.Index{{Name: "by_id", Fields: []string{"id"}, Type: "ASYNC"}}
+	result, err := runtime.PrepareTables(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables[0].IndexMethods, qt.DeepEquals, map[string]string{"by_id": "async"})
+	c.Assert(result.Tables[0].Desired.Indexes[0].Type, qt.Equals, "ASYNC")
+
+	request.Tables[0].IndexMethods = map[string]string{"by_id": "async"}
+	result, err = runtime.PrepareTables(t.Context(), request)
+	c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+	c.Assert(err, qt.ErrorMatches, `.*preparation input already states index kinds`)
+	c.Assert(result, qt.DeepEquals, schemapreparation.Result{})
+	c.Assert(calls, qt.Equals, 1)
 }

@@ -16,7 +16,8 @@ import (
 // PrepareTables normalizes captured common representations through the selected
 // target. Inputs must already carry target scope and its table identities. The
 // runtime validates model registrations, clones both directions, and refuses
-// missing services, incomplete replies, identity changes, and stronger knowledge.
+// missing services, incomplete replies, identity changes, stronger knowledge,
+// and the kind of an index a table does not declare.
 // Provider errors and cancellation expose no partial prepared result.
 func (r *Runtime) PrepareTables(ctx context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
 	if err := schemaext.RequireRuntime(ctx, r); err != nil {
@@ -34,6 +35,9 @@ func (r *Runtime) PrepareTables(ctx context.Context, request schemapreparation.R
 	for _, table := range request.Tables {
 		if len(table.ResolvedFacets) != 0 {
 			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already carries resolved facets", schemapreparation.ErrInvalid)
+		}
+		if len(table.IndexMethods) != 0 {
+			return schemapreparation.Result{}, fmt.Errorf("%w: preparation input already states index kinds", schemapreparation.ErrInvalid)
 		}
 	}
 	if err := r.validatePreparation(ctx, request); err != nil {

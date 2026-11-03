@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
@@ -110,6 +111,23 @@ func Indexes(desired *schemamodel.Database, current *catalog.Database, diff *dif
 type generatedIndexEntry struct {
 	ref   difftypes.IndexRef
 	index schemamodel.Index
+	// kind is the kind the target's table preparation stated for the index,
+	// where kindStated reports that it stated one; see [withPreparedKinds].
+	kind       string
+	kindStated bool
+}
+
+// compared is the declared index as the target's index rules compare it:
+// with the kind its table's preparation stated in Type, where it stated one.
+// The entry's own index stays as declared, so the diff carries the type the
+// source wrote.
+func (e generatedIndexEntry) compared() schemamodel.Index {
+	if !e.kindStated {
+		return e.index
+	}
+	index := e.index
+	index.Type = e.kind
+	return index
 }
 
 type databaseIndexEntry struct {
@@ -129,13 +147,16 @@ type databaseIndexEntry struct {
 // semantics, its default capability preset and rules, the target's comparison
 // rules.
 func IndexesWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string, rules schemacomparison.Rules) {
-	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect), rules)
+	IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil, capability.ForDialect(dialect), rules, nil)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics,
 // on a target with caps and the target's comparison rules, whose index members
 // are nil where it registers none. A target with [capability.IndexRename] gets
 // an index the declaration renamed as a rename; see [pairIndexRenames].
+// prepared holds the target's prepared tables under the identities used for
+// pairing, and the rules compare the kind each states for an index; nil
+// prepares nothing.
 func IndexesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -145,11 +166,13 @@ func IndexesWithSemantics(
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
 	rules schemacomparison.Rules,
+	prepared map[objectidentity.Key]schemapreparation.Table,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(desired, semantics)
 	if comparisonOf(dialect).PrimaryKeyStoresColumns {
 		withoutImplicitPrimaryKeyPayload(genIndexes, desired, semantics)
 	}
+	withPreparedKinds(genIndexes, desired, prepared, dialect, semantics)
 	owned := constraintBackedIndexIdentities(database, dialect, semantics, rules.ForeignKeyIndexes)
 	dbIndexes := collectDatabaseIndexes(
 		database,
@@ -203,6 +226,33 @@ func collectGeneratedIndexes(
 		indexes[identity] = entry
 	}
 	return indexes, ambiguous
+}
+
+// withPreparedKinds gives each declared index the kind its table's
+// preparation stated for it ([schemapreparation.Table.IndexMethods]), where it
+// stated one. A target spells the kind as its reader reports a held index's
+// method, so its rules compare the two spellings rather than the type the
+// source wrote; see [generatedIndexEntry.compared].
+func withPreparedKinds(
+	entries map[difftypes.IndexRef]generatedIndexEntry,
+	desired *schemamodel.Database,
+	prepared map[objectidentity.Key]schemapreparation.Table,
+	dialect string,
+	semantics identifier.Semantics,
+) {
+	// An index's owner resolves to its table's qualified name.
+	kinds := make(map[string]map[string]string)
+	for _, table := range desired.Tables {
+		if methods := prepared[tableMapIdentity(table.Schema, table.Name, dialect, semantics)].IndexMethods; len(methods) != 0 {
+			kinds[table.QualifiedName()] = methods
+		}
+	}
+	for identity, entry := range entries {
+		if kind, stated := kinds[entry.ref.TableName][entry.index.Name]; stated {
+			entry.kind, entry.kindStated = kind, true
+			entries[identity] = entry
+		}
+	}
 }
 
 // withoutImplicitPrimaryKeyPayload removes the owning table's primary-key
@@ -784,7 +834,7 @@ func indexReplacementRequired(
 	if comparisonOf(dialect).RespelledIndexReplaced && desired.ref.Name != database.ref.Name {
 		return true
 	}
-	return indexDefinitionsChanged(desired.index, database.index, dialect, semantics, resolved, rules)
+	return indexDefinitionsChanged(desired.compared(), database.index, dialect, semantics, resolved, rules)
 }
 
 func indexDefinitionsChanged(
@@ -1058,7 +1108,8 @@ func normalizePredicate(value string, predicates schemacomparison.IndexPredicate
 // IndexRenames returns the renames [IndexesWithSemantics] plans for desired
 // against database, so a comparison that runs before it can bind what the
 // database holds for a renamed index to the name the declaration gives it.
-// It is the same pairing, run once more, so the two cannot disagree.
+// It is the same pairing, run once more over the same prepared tables, so the
+// two cannot disagree.
 func IndexRenames(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -1067,8 +1118,9 @@ func IndexRenames(
 	indexes map[string]config.IndexExpression,
 	caps capability.Capabilities,
 	rules schemacomparison.Rules,
+	prepared map[objectidentity.Key]schemapreparation.Table,
 ) []difftypes.IndexRename {
 	scratch := &difftypes.SchemaDiff{}
-	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps, rules)
+	IndexesWithSemantics(desired, database, scratch, dialect, semantics, indexes, caps, rules, prepared)
 	return scratch.IndexesRenamed
 }

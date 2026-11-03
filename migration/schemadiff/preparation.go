@@ -28,18 +28,19 @@ type comparisonTables struct {
 	owners *catalog.Database
 }
 
+// prepareComparisonTables prepares the declared tables through the target and
+// then pairs renamed indexes with renames, which reads the prepared tables, so
+// the feature comparison reads a renamed index under its declared name.
 func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database, current *catalog.Database,
-	renames []difftypes.IndexRename, target string, semantics identifier.Semantics, caps capability.Capabilities,
-	runtime schemapreparation.Runtime,
+	renames func(map[objectidentity.Key]schemapreparation.Table) []difftypes.IndexRename, target string, semantics identifier.Semantics,
+	caps capability.Capabilities, runtime schemapreparation.Runtime,
 ) (comparisonTables, error) {
 	if target == "" {
 		return comparisonTables{desired: desired, owners: current}, nil
 	}
-	owners, err := renamedIndexOwners(current, renames, semantics)
-	if err != nil {
-		return comparisonTables{}, err
-	}
-	parents, err := featureParents(desired, owners, target, semantics)
+	// A declaration is refused for an invalid identity before the target
+	// prepares it.
+	declared, err := declaredParents(desired, target, semantics)
 	if err != nil {
 		return comparisonTables{}, err
 	}
@@ -76,6 +77,14 @@ func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database,
 	prepared := make(map[objectidentity.Key]schemapreparation.Table, len(capture.Prepared))
 	for _, table := range capture.Prepared {
 		prepared[table.Subject.Key()] = table.Clone()
+	}
+	owners, err := renamedIndexOwners(current, renames(prepared), semantics)
+	if err != nil {
+		return comparisonTables{}, err
+	}
+	parents, err := withObservedParents(declared, owners, target, semantics)
+	if err != nil {
+		return comparisonTables{}, err
 	}
 	resolved, err := applyResolvedFacets(desired, prepared, target, semantics)
 	if err != nil {

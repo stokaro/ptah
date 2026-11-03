@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"github.com/stokaro/ptah/provider-sdk/runtime"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,6 +21,11 @@ func main() {
 	description := backend.Description()
 	description.SemanticIdentity += "-column-semantics"
 	features := []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature, provider.ColumnsFeature, provider.ProjectTableCreationsFeature, provider.PrepareTablesFeature, provider.ValidateSchemaFeature}
+	// FIXTURE_INDEX_METHODS=off leaves out the prepared index kinds, so a
+	// test can show what a provider without them gets.
+	if os.Getenv("FIXTURE_INDEX_METHODS") != "off" {
+		features = append(features, provider.IndexMethodsFeature)
+	}
 	description.Features = append(description.Features, features...)
 	engine := description.Engines[0]
 	engine.Aliases = append(engine.Aliases, "fixture-columns")
@@ -41,14 +49,50 @@ func (*columns) ValidateSchema(ctx context.Context, _ *protocol.ValidateSchemaRe
 }
 
 func (*columns) PrepareTables(ctx context.Context, request *protocol.PrepareTablesRequest) (*protocol.PreparedTables, error) {
+	methods := slices.Contains(request.TargetFeatures, provider.IndexMethodsFeature)
 	result := &protocol.PreparedTables{Complete: true}
 	for _, table := range request.Tables {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		result.Tables = append(result.Tables, &protocol.PreparedTable{Subject: proto.CloneOf(table.Subject), ColumnPrimaryKeysPrepared: true, ColumnPrimaryKeys: keys(table.Desired)})
+		prepared := &protocol.PreparedTable{Subject: proto.CloneOf(table.Subject), ColumnPrimaryKeysPrepared: true, ColumnPrimaryKeys: keys(table.Desired)}
+		if methods {
+			indexes, err := preparedIndexes(table.Desired)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+			prepared.Indexes = indexes
+		}
+		result.Tables = append(result.Tables, prepared)
 	}
 	return result, nil
+}
+
+// preparedIndexes states the kind of each index table declares, in order.
+func preparedIndexes(table *protocol.DeclaredTable) ([]*protocol.PreparedIndex, error) {
+	result := make([]*protocol.PreparedIndex, 0, len(table.Indexes))
+	for _, index := range table.Indexes {
+		method, err := indexMethod(index.Type)
+		if err != nil {
+			return nil, fmt.Errorf("index %q: %w", index.Name, err)
+		}
+		result = append(result, &protocol.PreparedIndex{Name: index.Name, Method: method})
+	}
+	return result, nil
+}
+
+// indexMethod reads a declared index's type as the kind inspection reports a
+// held index's method with: global for a synchronous index, async for an
+// asynchronous one, in any case.
+func indexMethod(declared string) (string, error) {
+	switch strings.ToUpper(declared) {
+	case "", "GLOBAL", "SYNC", "GLOBAL SYNC":
+		return "global", nil
+	case "ASYNC", "GLOBAL ASYNC":
+		return "async", nil
+	default:
+		return "", fmt.Errorf("the fixture has no index kind %q", declared)
+	}
 }
 
 func keys(table *protocol.DeclaredTable) []string {

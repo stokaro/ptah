@@ -17,13 +17,22 @@ import (
 // whose key differs from its declaration under the same name is dropped and
 // built again. Without rules the comparison pairs indexes by name alone.
 //
-// The kind and the build settings are spelled by the provider on both sides,
-// and the host has no rule to read either spelling, so they are not compared
-// here. An index that carries a facet is not renamed in place, because the
-// host cannot say the rename keeps it.
-type observedIndexRules struct{}
+// The provider spells an index's kind on both sides, and the host has no rule
+// to read either spelling. With methods, the provider's table preparation
+// states the kind of each declared index as it reports a held index's method
+// (schema.index-methods), the comparison hands that kind to OptionsEqual in
+// the declared index's Type, and the two spellings are compared exactly, so
+// a change of kind alone drops the index and builds it again. Without
+// methods no kind is compared, and such a change plans nothing. The build
+// settings are not compared. An index that carries a facet is not renamed in
+// place, because the host cannot say the rename keeps it.
+type observedIndexRules struct {
+	methods bool
+}
 
-func (observedIndexRules) OptionsEqual(schemamodel.Index, catalog.Index) bool { return true }
+func (r observedIndexRules) OptionsEqual(desired schemamodel.Index, current catalog.Index) bool {
+	return !r.methods || desired.Type == current.Method
+}
 
 func (observedIndexRules) RenameCarries(schemaext.Kind) bool { return false }
 

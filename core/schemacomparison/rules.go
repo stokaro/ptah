@@ -77,7 +77,11 @@ type Indexes interface {
 	// included, and an index whose definition differs is dropped and built
 	// again. A key the catalog could not read whole
 	// ([catalog.Index.KeyPartsIncomplete]) is compared by the names it was
-	// read with, in order. It must not modify either index.
+	// read with, in order. Where the target's table preparation states the
+	// kind of the declared index
+	// ([ptah.run/core/schemapreparation.Table.IndexMethods]), desired carries
+	// that kind in Type in place of the type the source wrote. It must not
+	// modify either index.
 	OptionsEqual(desired schemamodel.Index, current catalog.Index) bool
 	// RenameCarries reports whether an index renamed in place keeps a facet
 	// of kind, so that the comparison may pair a dropped and an added index
@@ -97,8 +101,10 @@ type IndexDefinitions interface {
 	// columns finds no difference, and compares nothing else of the
 	// definition: not the uniqueness, not the keys and not
 	// [Indexes.OptionsEqual]. desired carries the key expression a server
-	// reported for its declaration, where one was asked. semantics are the
-	// identifier rules of the comparison. It must not modify either index.
+	// reported for its declaration, where one was asked, and in Type the kind
+	// the target's table preparation states, as for [Indexes.OptionsEqual].
+	// semantics are the identifier rules of the comparison. It must not modify
+	// either index.
 	DefinitionChanged(desired schemamodel.Index, current catalog.Index, semantics identifier.Semantics) bool
 }
 

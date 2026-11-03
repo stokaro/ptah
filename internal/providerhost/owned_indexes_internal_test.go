@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
@@ -270,4 +271,87 @@ func TestObservedIndexRulesCompareTheKey(t *testing.T) {
 			c.Assert(diff.IndexesAdded.Refs(), qt.DeepEquals, row.added)
 		})
 	}
+}
+
+// statedKinds prepares each declared table as it is and states the kind of
+// each of its indexes from the kinds the preparation reads type spellings as.
+type statedKinds map[string]string
+
+func (k statedKinds) PrepareTables(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
+	result := schemapreparation.Result{Complete: true, Tables: request.Clone().Tables}
+	for i := range result.Tables {
+		table := &result.Tables[i]
+		for _, index := range table.Desired.Indexes {
+			if table.IndexMethods == nil {
+				table.IndexMethods = make(map[string]string)
+			}
+			table.IndexMethods[index.Name] = k[index.Type]
+		}
+	}
+	return result, nil
+}
+
+// With prepared kinds, the rules compare the kind the provider states for a
+// declared index with the held index's method exactly: a change of kind alone
+// drops the index and builds it again, and a held index of the stated kind is
+// kept whatever the source's spelling. Without them no kind is compared. The
+// diff keeps the type the source wrote.
+func TestObservedIndexRulesCompareThePreparedKind(t *testing.T) {
+	kinds := statedKinds{"": "", "SYNC": "", "ASYNC": "async", "GLOBAL ASYNC": "async"}
+	for _, row := range []struct {
+		name     string
+		methods  bool
+		declared string
+		held     string
+		replaced []difftypes.IndexRef
+		// added are the types the diff's added indexes carry.
+		added []string
+	}{
+		{"a synchronous index declared asynchronous", true, "ASYNC", "", []difftypes.IndexRef{{Name: "orders_by", TableName: "orders"}}, []string{"ASYNC"}},
+		{"an asynchronous index declared synchronous", true, "SYNC", "async", []difftypes.IndexRef{{Name: "orders_by", TableName: "orders"}}, []string{"SYNC"}},
+		{"the held kind in another spelling", true, "GLOBAL ASYNC", "async", nil, nil},
+		{"the held kind in the held spelling", true, "", "", nil, nil},
+		{"a changed kind without prepared kinds", false, "ASYNC", "", nil, nil},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			base, err := engine.New(engine.Provider{ID: "example.org/indexes", Targets: []engine.Target{{
+				Name: "custom", Preparation: kinds, Comparison: schemacomparison.Rules{Indexes: observedIndexRules{methods: row.methods}},
+			}}})
+			c.Assert(err, qt.IsNil)
+			desired := &schemamodel.Database{
+				Tables:  []schemamodel.Table{{StructName: "Orders", Name: "orders"}},
+				Fields:  []schemamodel.Field{{StructName: "Orders", Name: "status", Type: "TEXT", Nullable: true}},
+				Indexes: []schemamodel.Index{{Name: "orders_by", StructName: "Orders", Fields: []string{"status"}, Type: row.declared}},
+			}
+			current := &catalog.Database{
+				Tables: []catalog.Table{{Name: "orders", Type: "TABLE", Columns: []catalog.Column{
+					{Name: "status", DataType: "TEXT", ColumnType: "TEXT", IsNullable: "YES", OrdinalPosition: 1},
+				}}},
+				Indexes: []catalog.Index{{Name: "orders_by", TableName: "orders", Columns: []string{"status"}, Method: row.held}},
+			}
+			diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, current, catalog.ServerInfo{Dialect: "custom"}, nil, acceptingRuntime{Runtime: base})
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.IndexesRemoved, qt.DeepEquals, row.replaced)
+			c.Assert(diff.IndexesAdded.Refs(), qt.DeepEquals, row.replaced)
+			c.Assert(addedIndexTypes(diff), qt.DeepEquals, row.added)
+		})
+	}
+}
+
+func addedIndexTypes(diff *difftypes.SchemaDiff) []string {
+	var types []string
+	for _, added := range diff.IndexesAdded {
+		types = append(types, added.Index.Type)
+	}
+	return types
+}
+
+// A reply's prepared kinds are keyed by the declared index's name, and a
+// reply without them states none.
+func TestPreparedIndexMethods(t *testing.T) {
+	c := qt.New(t)
+	c.Assert(preparedIndexMethods(nil), qt.IsNil)
+	c.Assert(preparedIndexMethods([]*protocol.PreparedIndex{{Name: "by_state", Method: "async"}, {Name: "by_id"}}), qt.DeepEquals,
+		map[string]string{"by_state": "async", "by_id": ""})
 }

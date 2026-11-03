@@ -92,9 +92,18 @@ Providers can negotiate `schema.observed-indexes` with
 inspected table. The list is complete: an index it does not name is absent, so
 the host compares declared indexes with it. The comparison reads each index's
 uniqueness, key columns and covered columns, and an index whose definition
-differs under the same name is dropped and built again. The kind and the build
-settings stay the provider's to compare. An index the common model cannot
-describe stays in the provider's native facets and out of the list.
+differs under the same name is dropped and built again. The build settings stay
+the provider's to compare. An index the common model cannot describe stays in
+the provider's native facets and out of the list.
+
+The host cannot read a provider's spelling of an index's kind, so it compares
+the kind only when the provider negotiates `schema.index-methods` beside
+`schema.observed-indexes` and `schema.prepare-tables`. Table preparation then
+states the kind of each declared index, spelled exactly as inspection reports a
+held index's method. The host compares the two spellings, and a change of kind
+alone drops the index and builds it again. The plan keeps the type the source
+wrote. Without the feature, the host compares no kind, and a change of kind
+alone plans nothing.
 
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
