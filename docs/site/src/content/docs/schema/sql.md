@@ -232,6 +232,15 @@ a deferrable key, because neither format can write one. The clauses
 PostgreSQL takes for the index behind a key, `WITH (...)` and `USING INDEX
 TABLESPACE`, are refused by name.
 
+On PostgreSQL, `ALTER TABLE ... ADD [CONSTRAINT name] UNIQUE | PRIMARY KEY
+USING INDEX index` makes a key of a unique index the schema declares on the
+table, as the server does: the key takes the index's columns, `INCLUDE`
+columns and `NULLS NOT DISTINCT`, and the index is renamed to the constraint's
+name, or keeps its own where the statement names none. An index the server
+does not make a key of is refused with the server's reason, and so is one with
+an operator class, storage parameters or a comment, which a key does not keep.
+`CREATE TABLE` and the other engines refuse the clause.
+
 ## Clauses after a constraint or a key
 
 These clauses after a table element change nothing the server builds, and the

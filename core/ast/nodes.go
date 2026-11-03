@@ -666,6 +666,14 @@ type ConstraintNode struct {
 	NotEnforced bool
 	// UsingMethod specifies the primary key index access method.
 	UsingMethod string
+	// UsingIndex names the existing unique index a PRIMARY KEY or UNIQUE
+	// constraint is made of, as PostgreSQL's `ALTER TABLE ... ADD [CONSTRAINT
+	// name] UNIQUE USING INDEX index` writes it. The key's columns, INCLUDE
+	// columns and NULLS treatment are then the index's, which the statement
+	// does not write, so Columns is empty, and the server renames the index to
+	// the constraint's name. Empty for a key that lists its columns. No
+	// renderer writes a constraint that sets it.
+	UsingIndex string
 	// Comment is the constraint's description.
 	//
 	// PostgreSQL stores it through COMMENT ON CONSTRAINT, which is its own

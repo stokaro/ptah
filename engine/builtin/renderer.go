@@ -1405,6 +1405,9 @@ func prepareConstraintNode(
 	if node == nil {
 		return nil, nilNodeError(dialect, "constraint node")
 	}
+	if node.UsingIndex != "" {
+		return nil, keyUsingIndexError(dialect, node)
+	}
 	// The hint is checked before the facets are prepared, so a target
 	// without it refuses it by name rather than as an unregistered facet.
 	if err := validateConstraintBlockSize(dialect, node.Type.String(), node.Name, indexBlockSize(node.Facets)); err != nil {
@@ -1571,6 +1574,20 @@ func nilNodeError(dialect, subject string) error {
 		Dialect: dialect,
 		Err:     ptaherr.ErrInvalidSchemaDiff,
 		Message: subject + " is nil",
+	}
+}
+
+// keyUsingIndexError refuses a key made of an existing index, as a parse of
+// PostgreSQL's `ADD CONSTRAINT ... USING INDEX` reads it. Its columns are the
+// index's, which only the schema the statement runs against knows, so a
+// renderer would write the key with no columns. A schema read from the
+// statement holds the key with its columns, and renders.
+func keyUsingIndexError(dialect string, node *ast.ConstraintNode) error {
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: fmt.Sprintf("a %s constraint made of the existing index %s lists no columns; "+
+			"render the key from a schema that holds it", node.Type.String(), node.UsingIndex),
 	}
 }
 

@@ -269,6 +269,10 @@ type AlterTableGrammar struct {
 	// ColumnGuards reports that DROP COLUMN takes IF EXISTS and ADD COLUMN
 	// takes IF NOT EXISTS. The parser asks it only where ChecksCapabilities is set.
 	ColumnGuards bool `json:"column_guards,omitempty"`
+	// KeyUsingIndex reports that ADD [CONSTRAINT name] UNIQUE | PRIMARY KEY
+	// USING INDEX index makes an existing unique index the key, its columns
+	// the index's, as PostgreSQL writes it. Without it the clause is refused.
+	KeyUsingIndex bool `json:"key_using_index,omitempty"`
 }
 
 const (

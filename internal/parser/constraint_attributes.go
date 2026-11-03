@@ -233,6 +233,13 @@ func (p *Parser) readConstraintClauses(constraint *ast.ConstraintNode, kind stri
 	if err := p.handleTableCheck(constraint); err != nil {
 		return err
 	}
+	return p.readConstraintTail(constraint, kind)
+}
+
+// readConstraintTail reads what closes a table constraint of every kind: the
+// deferral clauses, with `[NOT] ENFORCED` and `NOT VALID` on either side of
+// them.
+func (p *Parser) readConstraintTail(constraint *ast.ConstraintNode, kind string) error {
 	var enforced enforcement
 	if err := p.readConstraintAttributes(kind, &enforced); err != nil {
 		return err
