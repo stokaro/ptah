@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/providerhost/statementargs"
 )
@@ -187,4 +189,148 @@ func TestWire_ValuerFailure(t *testing.T) {
 	got, err := statementargs.Wire(failingValuer{})
 	c.Assert(err, qt.ErrorIs, errValue)
 	c.Assert(got, qt.IsNil)
+}
+
+// named is an argument database/sql passes for sql.Named(name, ...) at
+// ordinal, holding the wire form of v.
+func named(ordinal int, name string, v int64) driver.NamedValue {
+	return driver.NamedValue{Ordinal: ordinal, Name: name, Value: signed(v)}
+}
+
+// positional is an argument without a name at ordinal, holding the wire form
+// of v.
+func positional(ordinal int, v int64) driver.NamedValue {
+	return driver.NamedValue{Ordinal: ordinal, Value: signed(v)}
+}
+
+// Arguments without names keep the order of the call under every style, and
+// a named argument under the dollar-named style takes the position its name
+// gives, wherever the call put it.
+func TestArguments_HappyPath(t *testing.T) {
+	ten := make([]driver.NamedValue, 0, 10)
+	tenWant := make([]*protocol.DataValue, 10)
+	for i := range 10 {
+		position := 10 - i
+		ten = append(ten, named(i+1, "p"+strconv.Itoa(position), int64(position)))
+		tenWant[position-1] = signed(int64(position))
+	}
+	tests := []struct {
+		name      string
+		style     descriptor.Placeholder
+		arguments []driver.NamedValue
+		want      []*protocol.DataValue
+	}{
+		{name: "no arguments", style: descriptor.PlaceholderDollarNamed, arguments: nil, want: make([]*protocol.DataValue, 0)},
+		{name: "positional under no style", style: "", arguments: []driver.NamedValue{positional(1, 1), positional(2, 2)},
+			want: []*protocol.DataValue{signed(1), signed(2)}},
+		{name: "positional under question", style: descriptor.PlaceholderQuestion, arguments: []driver.NamedValue{positional(1, 1), positional(2, 2)},
+			want: []*protocol.DataValue{signed(1), signed(2)}},
+		{name: "positional under dollar-named", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{positional(1, 1), positional(2, 2)}, want: []*protocol.DataValue{signed(1), signed(2)}},
+		{name: "named in order", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{named(1, "p1", 1), named(2, "p2", 2)}, want: []*protocol.DataValue{signed(1), signed(2)}},
+		{name: "named out of order", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{named(1, "p2", 2), named(2, "p3", 3), named(3, "p1", 1)},
+			want:      []*protocol.DataValue{signed(1), signed(2), signed(3)}},
+		{name: "a number of two digits", style: descriptor.PlaceholderDollarNamed, arguments: ten, want: tenWant},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := statementargs.Arguments(test.style, test.arguments)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.CmpEquals(protocmp.Transform()), test.want)
+		})
+	}
+}
+
+// A named argument the positions cannot say exactly is refused rather than
+// sent at a position that binds another parameter or none.
+func TestArguments_FailurePath(t *testing.T) {
+	const prefix = `unsupported feature: the experimental provider contract does not support `
+	tests := []struct {
+		name      string
+		style     descriptor.Placeholder
+		arguments []driver.NamedValue
+		wantErr   string
+	}{
+		{name: "a name under no style", style: "", arguments: []driver.NamedValue{named(1, "p1", 1)},
+			wantErr: `the named argument "p1", since the engine declares no placeholder style that names a parameter`},
+		{name: "a name under question", style: descriptor.PlaceholderQuestion, arguments: []driver.NamedValue{named(1, "p1", 1)},
+			wantErr: `the named argument "p1", since the engine's placeholder style "question" binds arguments by position`},
+		{name: "a name under dollar", style: descriptor.PlaceholderDollar, arguments: []driver.NamedValue{named(1, "p1", 1)},
+			wantErr: `the named argument "p1", since the engine's placeholder style "dollar" binds arguments by position`},
+		{name: "a name under at-p", style: descriptor.PlaceholderAtP, arguments: []driver.NamedValue{named(1, "p1", 1)},
+			wantErr: `the named argument "p1", since the engine's placeholder style "at-p" binds arguments by position`},
+		{name: "a name under colon", style: descriptor.PlaceholderColon, arguments: []driver.NamedValue{named(1, "p1", 1)},
+			wantErr: `the named argument "p1", since the engine's placeholder style "colon" binds arguments by position`},
+		{name: "a name of another kind", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "code", 1)},
+			wantErr: `the named argument "code", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "a prefix without a number", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p", 1)},
+			wantErr: `the named argument "p", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "position zero", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p0", 1)},
+			wantErr: `the named argument "p0", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "a leading zero", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p01", 1)},
+			wantErr: `the named argument "p01", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "an upper-case prefix", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "P1", 1)},
+			wantErr: `the named argument "P1", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "a suffix after the number", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p1a", 1)},
+			wantErr: `the named argument "p1a", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "a signed number", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p+1", 1)},
+			wantErr: `the named argument "p\+1", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "a digit outside ASCII", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p١", 1)},
+			wantErr: `the named argument "p١", since the engine's placeholder style "dollar-named" gives a position only to the names p1, p2 and so on`},
+		{name: "one name twice", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p1", 1), named(2, "p1", 2)},
+			wantErr: `the named argument "p1" twice`},
+		{name: "a gap", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p1", 1), named(2, "p3", 3)},
+			wantErr: `the named argument "p3" without one named "p2", since it carries arguments by position`},
+		{name: "no first position", style: descriptor.PlaceholderDollarNamed, arguments: []driver.NamedValue{named(1, "p2", 2)},
+			wantErr: `the named argument "p2" without one named "p1", since it carries arguments by position`},
+		{name: "the lowest of two past the count", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{named(1, "p5", 5), named(2, "p1", 1), named(3, "p4", 4)},
+			wantErr:   `the named argument "p4" without one named "p2", since it carries arguments by position`},
+		{name: "a number past the int range", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{named(1, "p99999999999999999999", 1)},
+			wantErr:   `the named argument "p99999999999999999999" without one named "p1", since it carries arguments by position`},
+		{name: "a positional argument after a named one", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{named(1, "p1", 1), positional(2, 2)}, wantErr: `named and positional arguments in one statement`},
+		{name: "a named argument after a positional one", style: descriptor.PlaceholderDollarNamed,
+			arguments: []driver.NamedValue{positional(1, 1), named(2, "p2", 2)}, wantErr: `named and positional arguments in one statement`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := statementargs.Arguments(test.style, test.arguments)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, prefix+test.wantErr)
+			c.Assert(got, qt.IsNil)
+		})
+	}
+}
+
+// An argument that does not hold a wire form never reached Wire, which is a
+// defect of the caller rather than a limit of the contract.
+func TestArguments_Unchecked(t *testing.T) {
+	tests := []struct {
+		name     string
+		argument driver.NamedValue
+		wantErr  string
+	}{
+		{name: "a Go value", argument: driver.NamedValue{Ordinal: 1, Name: "p1", Value: int64(1)},
+			wantErr: `statement argument 1 of type int64 reached the provider handle unchecked`},
+		{name: "no wire form", argument: driver.NamedValue{Ordinal: 1, Value: (*protocol.DataValue)(nil)},
+			wantErr: `statement argument 1 of type \*protocol.DataValue reached the provider handle unchecked`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := statementargs.Arguments(descriptor.PlaceholderDollarNamed, []driver.NamedValue{test.argument})
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.Not(qt.ErrorIs), ptaherr.ErrUnsupportedFeature)
+			c.Assert(got, qt.IsNil)
+		})
+	}
 }

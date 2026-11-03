@@ -1,23 +1,30 @@
 // Package statementargs gives an argument of a statement the operator wrote
 // the wire form an executable provider binds, read from the Go type the caller
-// passed. The provider host's database/sql statement handle calls it before
-// database/sql converts the argument to a driver value. That conversion widens
-// every integer to int64 and a float32 to float64, replaces a pointer with its
-// target and an unsigned integer with a signed one, and leaves a provider no
-// way to bind the type the caller chose. An argument whose type the contract
-// cannot carry exactly is refused instead of converted.
+// passed, and puts the arguments of a statement at the positions the provider
+// binds them in. The provider host's database/sql statement handle calls Wire
+// before database/sql converts the argument to a driver value. That conversion
+// widens every integer to int64 and a float32 to float64, replaces a pointer
+// with its target and an unsigned integer with a signed one, and leaves a
+// provider no way to bind the type the caller chose. An argument whose type
+// the contract cannot carry exactly is refused instead of converted. The
+// contract carries arguments by position alone, so Arguments reads the
+// position of a named argument from the placeholder style the provider's
+// engine declares, and refuses a name that gives none.
 package statementargs
 
 import (
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 )
 
@@ -125,4 +132,96 @@ func null() *protocol.DataValue {
 func refuse(argument any, reason string) error {
 	return fmt.Errorf("%w: the experimental provider contract does not support a statement argument of type %T, since %s",
 		ptaherr.ErrUnsupportedFeature, argument, reason)
+}
+
+// Arguments returns the wire forms of a statement's arguments at the positions
+// a provider binds them in, for an engine whose query dialect declares the
+// placeholder style style; an empty style is an engine that declares none.
+// Each argument holds the wire form Wire gave it.
+//
+// Positional arguments keep the order of the call. A named argument is read
+// under the dollar-named style alone, the style whose Nth parameter is $pN and
+// the one the query builder binds by name: the argument named pN takes
+// position N, wherever the call put it, so the provider binds it to the
+// parameter its name says. The names of N arguments have to be p1 to pN, each
+// once, with the number in decimal and without a leading zero.
+//
+// What the positions cannot say exactly is refused with an error wrapping
+// ptaherr.ErrUnsupportedFeature: a named argument under any other style or
+// none, a name that is not a parameter of the style, two arguments with one
+// name, a name whose position leaves a lower position without an argument,
+// and named and positional arguments in one statement.
+func Arguments(style descriptor.Placeholder, arguments []driver.NamedValue) ([]*protocol.DataValue, error) {
+	values := make([]*protocol.DataValue, 0, len(arguments))
+	for _, argument := range arguments {
+		value, checked := argument.Value.(*protocol.DataValue)
+		if !checked || value == nil {
+			return nil, fmt.Errorf("statement argument %d of type %T reached the provider handle unchecked", argument.Ordinal, argument.Value)
+		}
+		values = append(values, value)
+	}
+	if !slices.ContainsFunc(arguments, func(argument driver.NamedValue) bool { return argument.Name != "" }) {
+		return values, nil
+	}
+	return byName(style, arguments, values)
+}
+
+// byName puts the wire form of each named argument at the position its name
+// gives. An argument whose position is past the count of the arguments
+// leaves a lower position without one, and the lowest such is the one the
+// refusal names.
+func byName(style descriptor.Placeholder, arguments []driver.NamedValue, values []*protocol.DataValue) ([]*protocol.DataValue, error) {
+	placed := make([]*protocol.DataValue, len(values))
+	past, pastPosition := "", math.MaxInt
+	for i, argument := range arguments {
+		if argument.Name == "" {
+			return nil, fmt.Errorf("%w: the experimental provider contract does not support named and positional arguments in one statement",
+				ptaherr.ErrUnsupportedFeature)
+		}
+		position, err := namedPosition(style, argument.Name)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case position > len(placed):
+			if position <= pastPosition {
+				past, pastPosition = argument.Name, position
+			}
+		case placed[position-1] != nil:
+			return nil, refuseName(argument.Name, " twice")
+		default:
+			placed[position-1] = values[i]
+		}
+	}
+	if missing := slices.Index(placed, nil); missing >= 0 {
+		return nil, refuseName(past, fmt.Sprintf(" without one named %q, since it carries arguments by position", "p"+strconv.Itoa(missing+1)))
+	}
+	return placed, nil
+}
+
+// namedPosition is the position, counted from one, that a named argument takes
+// under style. The number of a name too long for an int is past every
+// statement's arguments.
+func namedPosition(style descriptor.Placeholder, name string) (int, error) {
+	switch {
+	case style == "":
+		return 0, refuseName(name, ", since the engine declares no placeholder style that names a parameter")
+	case style != descriptor.PlaceholderDollarNamed:
+		return 0, refuseName(name, fmt.Sprintf(", since the engine's placeholder style %q binds arguments by position", style))
+	}
+	digits, ok := strings.CutPrefix(name, "p")
+	if !ok || digits == "" || digits[0] == '0' || strings.ContainsFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) {
+		return 0, refuseName(name, fmt.Sprintf(", since the engine's placeholder style %q gives a position only to the names p1, p2 and so on", style))
+	}
+	position, err := strconv.Atoi(digits)
+	if err != nil {
+		position = math.MaxInt
+	}
+	return position, nil
+}
+
+// refuseName says which named argument the contract cannot place, and why.
+func refuseName(name, reason string) error {
+	return fmt.Errorf("%w: the experimental provider contract does not support the named argument %q%s",
+		ptaherr.ErrUnsupportedFeature, name, reason)
 }

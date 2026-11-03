@@ -48,8 +48,15 @@ type OperatorStatementProvider interface {
 // argument the provider contract cannot carry exactly is refused with
 // ptaherr.ErrUnsupportedFeature before the statement is sent, rather than
 // converted: an integer narrower than 64 bits, a float32, a pointer, a
-// database/sql Null value, an array, a slice other than a byte slice, and a
-// named argument.
+// database/sql Null value, an array, and a slice other than a byte slice.
+//
+// The contract carries arguments by position. A named argument binds where the
+// engine's query dialect declares the dollar-named placeholder style, whose Nth
+// parameter is $pN: the argument named pN is sent at position N, wherever the
+// call put it, so a statement the query builder renders for that engine runs
+// on this handle. Every other named argument is refused the same way: one under
+// another style or none, names that do not give the positions 1 to N exactly
+// once, and named and positional arguments in one statement.
 func (dc *DatabaseConnection) OperatorStatements() (OperatorStatements, func() error, error) {
 	if dc == nil {
 		return nil, nil, fmt.Errorf("operator statements require an open database connection")

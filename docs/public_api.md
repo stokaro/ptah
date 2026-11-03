@@ -4729,8 +4729,15 @@ underlying kind, and a `driver.Valuer` as the value its `Value` method returns.
 An argument the provider contract cannot carry exactly is refused with
 `ptaherr.ErrUnsupportedFeature` before the statement is sent, rather than
 converted: an integer narrower than 64 bits, a `float32`, a pointer, a
-`database/sql` `Null` value, an array, a slice other than a byte slice, and a
-named argument.
+`database/sql` `Null` value, an array, and a slice other than a byte slice.
+
+The contract carries arguments by position. A named argument binds where the
+engine's query dialect declares the `dollar-named` placeholder style, whose Nth
+parameter is `$pN`: the argument named `pN` is sent at position N, wherever the
+call put it, so a statement `core/query` renders for that engine runs on the
+handle. Every other named argument is refused the same way: one under another
+style or none, names that do not give the positions 1 to N exactly once, and
+named and positional arguments in one statement.
 
 `migration/migrator.CheckFailedError` identifies one failed or invalid
 assertion, in either phase: its `Phase` field carries `CheckPhaseBefore` or
