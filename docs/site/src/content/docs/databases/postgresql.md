@@ -44,7 +44,12 @@ such as `db read`. A command that compares the database with a desired
 schema, such as `schema compare`, `schema drift`, `schema apply`,
 `migrations plan` or `migrations generate`, lets the URL decide instead: a URL
 that pins `search_path` is read at that schema, one that pins none across every
-schema, and the schemas the desired schema names are read too.
+schema, and the schemas the desired schema names are read too. A schema such a
+command reads only because the URL pins no `search_path`, and that the desired
+schema declares nothing in, has its tables planned for removal; the command
+warns on standard error once for each one, as
+[Generate migrations](../../versioned/generate/#which-schemas-plan-and-generate-read)
+shows.
 
 On connection, Ptah reads the server version and selects the matching
 capability preset, so planning adapts to the concrete server — see

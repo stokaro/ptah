@@ -4316,6 +4316,12 @@ rollback keeps that selection through replay and comparison. A generator caller 
 comparison evidence supplies `OnUndecided` and reports its structured limits;
 without that callback, incomplete evidence returns `ErrIncompleteComparison`.
 
+`GenerateMigrationOptions.Diagnostics` receives warnings that do not stop a
+plan, one line each. With `Schemas` empty and a URL that pins no `search_path`
+on an engine that selects schemas with one, such as PostgreSQL, one line names
+each schema the desired schema declares nothing in and whose tables the plan
+drops. A nil writer discards them.
+
 Checkpoint generation compares the captured schema with an explicitly empty
 baseline. That baseline records known absence for the selected runtime's observed
 feature models. This does not change the source's coverage: unreadable source

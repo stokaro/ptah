@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featurejson"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -259,6 +260,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	}
 
 	undecidednote.Report(cmd.ErrOrStderr(), result.Undecided, "the database", "the desired schema")
+	schemascope.WarnUndescribed(cmd.ErrOrStderr(), result.Undescribed)
 	report := assessDrift(result, opts.severity, opts.useExitCode, ignoredTables)
 
 	// The report is the answer, not a diagnostic, so it goes to stdout whether

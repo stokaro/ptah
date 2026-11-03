@@ -654,6 +654,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		PriorMigrationsFS: priorMigrations,
 		SchemaQualifier:   qualifierValue,
 		DiffPolicy:        diffPolicy,
+		Diagnostics:       cmd.ErrOrStderr(),
 	}
 	outcome := &generateOutcome{current: "the database"}
 	generateOpts.OnUndecided = outcome.collect

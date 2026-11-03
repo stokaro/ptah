@@ -3,8 +3,10 @@ package generator
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -126,6 +128,16 @@ type GenerateMigrationOptions struct {
 	// evidence refuses generation with schemadiff.ErrIncompleteComparison.
 	// No generated files after a callback does not establish schema agreement.
 	OnUndecided func(schemadiff.Diagnostics)
+	// Diagnostics receives warnings that do not stop the plan, one line each.
+	// With Schemas empty, a URL that pins no search_path on an engine that
+	// selects schemas with one, such as PostgreSQL, has the read cover every
+	// schema of the database, and the plan removes the tables of a schema the
+	// desired schema declares nothing in.
+	// One line names each such schema and how many of its tables the plan
+	// removes, unless DiffPolicy skips table drops. The line names the `ptah`
+	// command's remedies: a URL that pins search_path, and --schemas, which
+	// is this Schemas. Nil discards the warnings.
+	Diagnostics io.Writer
 }
 
 // reportUndecided hands undecided to [GenerateMigrationOptions.OnUndecided],
@@ -403,7 +415,9 @@ func readPlanTarget(
 
 // compareForPlan compares desired with the database a migration is planned
 // against, under the options' diff policy, with the secret rotations the
-// caller asked for, which no comparison finds by itself.
+// caller asked for, which no comparison finds by itself. It reports what the
+// comparison withheld and the schemas whose tables the plan removes only
+// because the read reached them.
 func compareForPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -422,7 +436,31 @@ func compareForPlan(
 	if err := opts.reportUndecided(undecided); err != nil {
 		return nil, schemadiff.Diagnostics{}, err
 	}
+	if err := warnUndescribedSchemas(opts, conn.Info(), desired, diff); err != nil {
+		return nil, schemadiff.Diagnostics{}, err
+	}
 	return diff, undecided, nil
+}
+
+// warnUndescribedSchemas writes a warning to the options' diagnostics for
+// each schema whose tables the plan removes only because the read reached a
+// schema nobody named; see [schemascope.UndescribedRemovals]. A policy that
+// skips table drops leaves them out of the migration, so it warns about none.
+func warnUndescribedSchemas(
+	opts GenerateMigrationOptions,
+	info catalog.ServerInfo,
+	desired *schemamodel.Database,
+	diff *difftypes.SchemaDiff,
+) error {
+	if opts.Diagnostics == nil || slices.Contains(opts.DiffPolicy.SkipChangeKinds, planext.DropTable) {
+		return nil
+	}
+	found, err := schemascope.UndescribedRemovals(info, opts.Schemas, desired, diff)
+	if err != nil {
+		return fmt.Errorf("error comparing generated and database schemas: %w", err)
+	}
+	schemascope.WarnUndescribed(opts.Diagnostics, found)
+	return nil
 }
 
 func migrationQualifier(opts GenerateMigrationOptions, info catalog.ServerInfo) (atlasmigrate.Qualifier, error) {

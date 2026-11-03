@@ -222,7 +222,8 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 	result := loadResult.Database
 
-	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), dbcli.ParseSchemas(schemasValue), conn, result)
+	requested := dbcli.ParseSchemas(schemasValue)
+	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), requested, conn, result)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
@@ -245,6 +246,11 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
 	undecidednote.Report(cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
+	undescribed, err := schemascope.UndescribedRemovals(info, requested, result, diff)
+	if err != nil {
+		return fmt.Errorf("error comparing schemas: %w", err)
+	}
+	schemascope.WarnUndescribed(cmd.ErrOrStderr(), undescribed)
 
 	// 4. Display differences summary
 	rebuild, err := tablerebuild.Requested(cmd)

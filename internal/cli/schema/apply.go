@@ -550,6 +550,10 @@ func runSchemaApplyOnLockedSession(
 		TxMode:              txMode,
 		DryRun:              opts.dryRun,
 		Diagnostics:         cmd.ErrOrStderr(),
+		// The native surface warns before its confirmation prompt about the
+		// tables of a schema it reads only because the URL pins no
+		// search_path; see [schemascope.UndescribedRemovals].
+		WarnUndescribedSchemas: true,
 	})
 	if err != nil {
 		return "", err
