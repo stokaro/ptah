@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.10. `provider-sdk/v0.11.0` speaks 25.9.
+speaks contract 25.11. `provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
@@ -93,6 +93,7 @@ returns to 0.
   [statement style for feature owners](#planning-policy). Contract 25.9 adds
   [ordered primary-key observations](#ordered-primary-key-observations).
   Contract 25.10 adds [common index observations](#common-index-observations).
+  Contract 25.11 adds [the planning context of a filtered read](#planning-context-of-a-filtered-read).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -118,8 +119,9 @@ does not oblige a peer to use it.
   `scope.selections`, `source.encode-groups`, `source.limits`,
   `schema.declarations`, `schema.common-access`, `planning.lifecycle`,
   `units.sensitive-inputs`, `schema.columns`, `database.context`,
-  `values.context`, `schema.common-view-facets`, `schema.observed-columns`, and
-  `planning.object-context`. The embedding store's calls and `PrepareCommonObjects` are
+  `values.context`, `schema.common-view-facets`, `schema.observed-columns`,
+  `schema.observed-primary-keys`, `schema.observed-indexes`,
+  `planning.object-context`, and `planning.context-inventory`. The embedding store's calls and `PrepareCommonObjects` are
   new, and each comes with an addition to `Engine`, so a host lists the
   feature to receive either.
 - Both transport boundaries validate with the description negotiated this way,
@@ -1817,3 +1819,24 @@ An observed model can retain its database while its selected subject is local.
 That localization requires both captured owner database spellings to equal the
 request's nonempty `database_path`. Other identity components remain exact.
 Foreign roots and invented replacement observations are refused.
+
+## Planning context of a filtered read
+
+[ADR 0054](../docs/adr/0054-a-filtered-read-carries-the-planning-context-it-does-not-compare.md)
+defines `planning.context-inventory`, which requires `planning.object-context`.
+A filtered read covers only its selected namespaces, and its snapshot may claim
+nothing outside them. A planning service that must prove what lies outside,
+such as one that asks whether any streaming query in the database reads a
+changed input, gets that proof from `Schema.planning_context`.
+
+The inventory holds the observed values of the engine's context kinds that the
+read leaves out of its scope, and their coverage, which may span the session's
+database. Each object lies outside the scope and has complete subject
+coverage. An unfiltered read carries none. `provider.PlanningContextValues`
+returns the values for the host to normalize.
+
+The host never compares the inventory. It passes it to the planning service
+that assesses those kinds as `PlanFeaturesRequest.context_inventory`, an
+observed `ComparisonState` disjoint from `desired_objects` and
+`current_objects`. Its subjects are outside the assessment inventory, so the
+service returns no receipt for them.
