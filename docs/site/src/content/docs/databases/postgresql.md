@@ -1677,6 +1677,22 @@ refused when Ptah renders or plans the schema, and the refusal names the index.
 Applied, PostgreSQL would refuse the statement with `access method "hash" does
 not support unique indexes`.
 
+## Statements that run outside a transaction
+
+PostgreSQL refuses some statements inside a transaction block whatever else
+the block holds: `VACUUM`, `REINDEX ... CONCURRENTLY`, `REINDEX` of a schema, a
+database or the system catalogs, `CREATE DATABASE` and `DROP DATABASE`,
+`ALTER DATABASE ... SET TABLESPACE`, `ALTER SYSTEM`, `CREATE TABLESPACE` and
+`DROP TABLESPACE`, and `DISCARD ALL`. A migration that holds one runs in a file
+marked `-- +ptah no_transaction` (`-- atlas:txmode none` in an Atlas
+directory). In a file the migrator wraps in a transaction, the migrator refuses
+the file before any of its statements runs and names the statement, rather
+than leaving PostgreSQL to refuse it part way through. A golang-migrate file
+whose one statement is among them runs without a transaction, as
+golang-migrate sends it. `CLUSTER` without a table is refused too, and is not
+recognized here: only the statement as a whole tells it from `CLUSTER` of a
+table.
+
 ## Concurrent index creation
 
 `CREATE INDEX CONCURRENTLY` avoids blocking writes but cannot run inside a

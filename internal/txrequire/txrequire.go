@@ -41,6 +41,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 )
 
 // Reason names why a statement cannot run inside a transaction.
@@ -57,6 +58,11 @@ const (
 	// commits one transaction per chunk and so is refused inside a
 	// transaction block; see [PerChunkIndexBuild].
 	ReasonPerChunkIndex Reason = "per_chunk_index"
+	// ReasonRefusedStatement is a statement the engine refuses inside a
+	// transaction block whatever else the block holds, such as PostgreSQL's
+	// VACUUM, as the engine's descriptor states it
+	// (descriptor.Migration.RefusedInTransaction).
+	ReasonRefusedStatement Reason = "refused_statement"
 )
 
 // Statement is one statement of an authored migration file.
@@ -128,6 +134,10 @@ func Analyze(dialect string, caps capability.Capabilities, statements []Statemen
 			findings = append(findings, perChunkIndexFinding(statement))
 			continue
 		}
+		if refusal, refused := refusedStatement(dialect, words); refused {
+			findings = append(findings, refusedStatementFinding(statement, refusal))
+			continue
+		}
 		if usesPendingValue(words, pending) {
 			findings = append(findings, enumValueFinding(dialect, statement, pending))
 			continue
@@ -167,6 +177,15 @@ func perChunkIndexFinding(statement Statement) Finding {
 		Message: "CREATE INDEX ... WITH (timescaledb.transaction_per_chunk) commits one transaction per chunk " +
 			"and is refused inside a transaction block",
 		Remedy: "mark the file `-- +ptah no_transaction`, or move the per-chunk build into a migration of its own",
+	}
+}
+
+func refusedStatementFinding(statement Statement, refusal descriptor.TransactionRefusal) Finding {
+	return Finding{
+		Statement: statement,
+		Reason:    ReasonRefusedStatement,
+		Message:   refusal.Statement + " is refused inside a transaction block",
+		Remedy:    "mark the file `-- +ptah no_transaction`, or move the statement into a migration of its own",
 	}
 }
 

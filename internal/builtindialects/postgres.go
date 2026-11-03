@@ -244,10 +244,29 @@ func postgres() descriptor.Dialect {
 		// and internal/txrequire read. The engine's reading decides a migration
 		// file's directives when its dialect is unknown. A value added to an
 		// existing enum type is refused in a statement of the same transaction,
-		// measured on PostgreSQL 18.4: `unsafe use of new value` (55P04).
+		// measured on PostgreSQL 18.4: `unsafe use of new value` (55P04). The
+		// statements refused inside a transaction block were measured on
+		// PostgreSQL 18.6, each answering `... cannot run inside a transaction
+		// block` (25001). ANALYZE, REINDEX INDEX and REINDEX TABLE without
+		// CONCURRENTLY, CLUSTER of a named table and DISCARD PLANS are
+		// accepted there. CLUSTER with no table is refused too, but nothing
+		// that follows a statement's first words tells it from CLUSTER of a
+		// table, so it is not stated.
 		Migration: descriptor.Migration{
 			DirectivesWithoutDialect: true,
 			EnumValuesCommitFirst:    true,
+			RefusedInTransaction: []descriptor.TransactionRefusal{
+				{Statement: "VACUUM", StartsWith: []string{"VACUUM"}},
+				{Statement: "REINDEX ... CONCURRENTLY", StartsWith: []string{"REINDEX"}, Keywords: []string{"CONCURRENTLY"}},
+				{Statement: "REINDEX SCHEMA, DATABASE or SYSTEM", StartsWith: []string{"REINDEX"}, Keywords: []string{"SCHEMA", "DATABASE", "SYSTEM"}},
+				{Statement: "CREATE DATABASE", StartsWith: []string{"CREATE", "DATABASE"}},
+				{Statement: "DROP DATABASE", StartsWith: []string{"DROP", "DATABASE"}},
+				{Statement: "ALTER DATABASE ... SET TABLESPACE", StartsWith: []string{"ALTER", "DATABASE"}, Keywords: []string{"TABLESPACE"}},
+				{Statement: "ALTER SYSTEM", StartsWith: []string{"ALTER", "SYSTEM"}},
+				{Statement: "CREATE TABLESPACE", StartsWith: []string{"CREATE", "TABLESPACE"}},
+				{Statement: "DROP TABLESPACE", StartsWith: []string{"DROP", "TABLESPACE"}},
+				{Statement: "DISCARD ALL", StartsWith: []string{"DISCARD", "ALL"}},
+			},
 		},
 
 		// Transactions: what migration/seeder and internal/schemaclean read.
