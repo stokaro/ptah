@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -42,6 +43,7 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 		RootDirs:    rootDirs,
 		Owners:      owners,
 		SchemaFiles: opts.schemaFiles,
+		Dialect:     platform.NormalizeDialect(opts.dialect),
 		PlainHTTP:   opts.plainHTTP,
 		Vars:        declaredVars,
 	})
