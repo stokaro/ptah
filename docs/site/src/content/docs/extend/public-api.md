@@ -703,12 +703,18 @@ are invalid because a completed rollback deletes its revision row.
 `RepairMigration` holds the session advisory lock across revision inspection,
 resumed SQL, safety checks, and the final metadata write.
 
-SQL-backed `MigrationTxModeNone` attempts pin their migration SQL to one
-physical database session. Server-database revision metadata remains on the
-original connection; SQLite uses the pinned session with a `main`-qualified
-table to support its single-connection in-memory mode. Resume replays recognized
-session controls from the verified committed prefix on a fresh session and
-refuses prefixes whose session-local state cannot be reconstructed safely.
+An up run executes every migration body on one pinned physical database
+session and discards it when the run returns, so session state one migration
+leaves holds for the later migrations of the run. SQL-backed
+`MigrationTxModeNone` attempts run on that session.
+
+Server-database revision metadata remains on the original connection or is
+qualified with the connection's schema. SQLite pins a session for each
+`MigrationTxModeNone` attempt instead and keeps its metadata there, in a
+`main`-qualified table, to support its single-connection in-memory mode.
+Resume replays recognized session controls from the verified committed prefix
+on a fresh session and refuses prefixes whose session-local state cannot be
+reconstructed safely.
 Top-level transaction-control statements are rejected before session pinning or
 revision mutation because their commit boundary would conflict with Ptah's
 durable per-statement checkpoints.
