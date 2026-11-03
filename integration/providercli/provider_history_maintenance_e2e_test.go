@@ -51,7 +51,7 @@ func providerRepairRecord(sql, direction string, applied int) dbschema.HistoryRe
 
 func TestProviderHistoryRepairResumesOnlyUncommittedStatements(t *testing.T) {
 	c := qt.New(t)
-	host, _ := yamlProviderCommand(c, "history-transactions")
+	host, _ := yamlProviderCommand(c, "migration-units")
 	conn, _ := transactionConnection(c, host, "")
 	runner, migration := providerRepairRunner(conn)
 	store := seedProviderRepair(c, conn, providerRepairRecord(migration.UpSQL, "up", 1))
@@ -68,7 +68,7 @@ func TestProviderHistoryRepairResumesOnlyUncommittedStatements(t *testing.T) {
 
 func TestProviderHistoryRepairFinishesRecordedRollback(t *testing.T) {
 	c := qt.New(t)
-	host, _ := yamlProviderCommand(c, "history-transactions")
+	host, _ := yamlProviderCommand(c, "migration-units")
 	conn, _ := transactionConnection(c, host, "")
 	runner, migration := providerRepairRunner(conn)
 	store := seedProviderRepair(c, conn, providerRepairRecord(migration.DownSQL, "down", 1))

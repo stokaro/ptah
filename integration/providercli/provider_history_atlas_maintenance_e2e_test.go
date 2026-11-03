@@ -36,7 +36,7 @@ func readAtlasHistory(c *qt.C, conn *dbschema.DatabaseConnection) dbschema.Histo
 
 func TestProviderAtlasHistoryRepairResumesSQLCommittedPrefix(t *testing.T) {
 	c := qt.New(t)
-	host, _ := yamlProviderCommand(c, "history-transactions")
+	host, _ := yamlProviderCommand(c, "migration-units")
 	conn, sql, _ := atlasHistoryConnections(c, host)
 	c.Assert(sql.Writer().ExecuteSQL(c.Context(), repairSecondSQL), qt.IsNil)
 	c.Assert(atlasRepairRunner(sql).MigrateUp(c.Context()), qt.IsNotNil)
@@ -69,7 +69,7 @@ func TestProviderAtlasHistoryRepairResumesSQLCommittedPrefix(t *testing.T) {
 
 func TestProviderAtlasHistoryRepairFinishesSQLRollback(t *testing.T) {
 	c := qt.New(t)
-	host, _ := yamlProviderCommand(c, "history-transactions")
+	host, _ := yamlProviderCommand(c, "migration-units")
 	conn, sql, _ := atlasHistoryConnections(c, host)
 	sqlRunner := atlasRepairRunner(sql)
 	c.Assert(sqlRunner.MigrateUp(c.Context()), qt.IsNil)
@@ -176,7 +176,7 @@ func TestProviderAtlasHistoryRepairAfterProcessDeath(t *testing.T) {
 	address := &url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/")}
 	crashAddress := *address
 	crashAddress.RawQuery = url.Values{"fault": {"crash-after"}}.Encode()
-	host, _ := yamlProviderCommand(c, "history-transactions")
+	host, _ := yamlProviderCommand(c, "migration-units")
 	ctx, err := dbschema.WithNativeConnections(c.Context(), host.Connections())
 	c.Assert(err, qt.IsNil)
 	crashed, err := dbschema.ConnectToDatabase(ctx, crashAddress.String())
@@ -193,7 +193,7 @@ func TestProviderAtlasHistoryRepairAfterProcessDeath(t *testing.T) {
 	c.Assert(rows[0].Applied, qt.Equals, 0)
 	c.Assert(rows[0].Error, qt.Contains, "outcome is unknown")
 
-	freshHost, _ := yamlProviderCommand(c, "history-transactions")
+	freshHost, _ := yamlProviderCommand(c, "migration-units")
 	fresh := connectTransactionAddress(c, freshHost, address.String())
 	runner := atlasRepairRunner(fresh)
 	before := readAtlasHistory(c, fresh)

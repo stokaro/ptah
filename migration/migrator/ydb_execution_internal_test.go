@@ -68,7 +68,7 @@ func TestSplitSQLStatementsForDialect_YDBRunsQueries(t *testing.T) {
 func TestSourceStatementsForDialect_FollowTheUnits(t *testing.T) {
 	c := qt.New(t)
 
-	sources := sourceStatementsForDialect(ydbBody, platform.YDB)
+	sources := grammarForDialect(platform.YDB).sourceStatements(ydbBody)
 
 	texts := make([]string, 0, len(sources))
 	for _, source := range sources {
@@ -108,7 +108,7 @@ func TestRefuseUnsplittableSQL_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(refuseUnsplittableSQL(platform.YDB, test.body), qt.ErrorMatches, test.wantErr)
+			c.Assert(grammarForDialect(platform.YDB).refuse(test.body), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
@@ -131,7 +131,7 @@ func TestRefuseUnsplittableSQL_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(refuseUnsplittableSQL(test.dialect, test.body), qt.IsNil)
+			c.Assert(grammarForDialect(test.dialect).refuse(test.body), qt.IsNil)
 		})
 	}
 }
@@ -149,7 +149,7 @@ func TestNoTransactionResumeAction_YDBQueriesAreDurable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(noTransactionResumeAction(test.statement, platform.YDB), qt.Equals, noTransactionPrefixDurable)
+			c.Assert(noTransactionResumeAction(test.statement, grammarForDialect(platform.YDB)), qt.Equals, noTransactionPrefixDurable)
 		})
 	}
 }
@@ -176,7 +176,7 @@ func TestIsYDBDataQuery(t *testing.T) {
 // statement it was handed and answers it with err.
 func committerThatAnswers(ran *[]string, err error) statementCommitter {
 	return statementCommitter{
-		claims: builtin.Lookup(platform.YDB).Units.IsData,
+		claims: func(event StatementEvent) bool { return builtin.Lookup(platform.YDB).Units.IsData(event.Statement) },
 		run: func(_ context.Context, event StatementEvent) error {
 			*ran = append(*ran, event.Statement)
 			return err
@@ -318,16 +318,12 @@ func newDataQueryCommit(c *qt.C, fake *fakeTxDriver, recorded bool, readErr erro
 	c.Helper()
 	db := sql.OpenDB(fake)
 	c.Cleanup(func() { _ = db.Close() })
-	return dataQueryCommit{
-		begin: db.BeginTx,
-		query: "UPSERT data",
-		checkpoint: func() (string, []any) {
-			fake.log = append(fake.log, "build checkpoint")
-			return "UPDATE checkpoint", []any{int64(2), int64(1)}
-		},
-		recorded: func(context.Context) (bool, error) { return recorded, readErr },
-		wait:     func(context.Context, int) error { return nil },
-	}
+	commit := sqlDataQueryCommit(db.BeginTx, "UPSERT data", func() (string, []any) {
+		fake.log = append(fake.log, "build checkpoint")
+		return "UPDATE checkpoint", []any{int64(2), int64(1)}
+	}, func(context.Context) (bool, error) { return recorded, readErr })
+	commit.wait = func(context.Context, int) error { return nil }
+	return commit
 }
 
 // The data query and its checkpoint run in one serializable transaction, and a
@@ -435,7 +431,7 @@ func TestDataQueryCommit_FailurePath(t *testing.T) {
 			wantLog: []string{
 				"begin isolation=6", "exec UPSERT data (0 args)", "build checkpoint", "exec UPDATE checkpoint (2 args)", "commit",
 			},
-			wantCommits: ydbTransactionAttempts,
+			wantCommits: conflictAttempts,
 		},
 	}
 	for _, test := range tests {
@@ -626,7 +622,7 @@ func TestRevisionFailureRecord_FailurePath(t *testing.T) {
 				abortedError{}},
 			wantErr:     "Transaction locks invalidated",
 			wantLog:     []string{"begin isolation=6", "read", "exec UPDATE failed (1 args)", "commit"},
-			wantCommits: ydbTransactionAttempts,
+			wantCommits: conflictAttempts,
 		},
 	}
 	for _, test := range tests {

@@ -1039,7 +1039,11 @@ file, exactly as any other command reaching the same URL would.
   `units.statement-timeout` carries `migration_statement_timeout` on its
   sessions unless it states the key itself: the host sends the timeout with
   each unit, and the provider stops the unit. It carries no
-  `migration_lock_timeout`, so a migration's lock timeout is refused. The
+  `migration_lock_timeout`, so a migration's lock timeout is refused. When the
+  provider splits migration bodies (`units.migration-split`),
+  `transactional_ddl` decides the transaction mode: without it `file` runs as
+  `none` and `all` is refused, and with it a body holding a unit that runs
+  outside a transaction is refused under `file` and `all`. The
   provider's row typing and row write rendering (`data.type-rows`,
   `data.render-writes`) receive the target's capabilities with each request,
   because they decide the type a declared column lands on and the statement a

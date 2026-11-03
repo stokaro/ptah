@@ -127,7 +127,7 @@ func (m *Migrator) restoreSessionPrefix(
 				err,
 			)
 		}
-		switch ownTransactionResumeAction(i, statement, m.connectionDialect(), run) {
+		switch ownTransactionResumeAction(i, statement, m.grammar(), run) {
 		case noTransactionPrefixDurable:
 			continue
 		case noTransactionPrefixReplay:
@@ -180,14 +180,14 @@ func searchPathChange(guard migratorext.IndexGuard, statement string) (changed, 
 // names something that sets session state that outlives a transaction; see
 // [setsSessionState]. A function or procedure such a statement calls is not
 // read, so one that sets such state itself is not restored.
-func ownTransactionResumeAction(index int, statement, dialect string, run ownTransactionRun) noTransactionPrefixAction {
+func ownTransactionResumeAction(index int, statement string, grammar bodyGrammar, run ownTransactionRun) noTransactionPrefixAction {
 	if run.blocks.Control(index) {
 		return noTransactionPrefixDurable
 	}
 	if _, inside := run.transactions.Opening(index); !inside {
-		return noTransactionResumeAction(statement, dialect)
+		return noTransactionResumeAction(statement, grammar)
 	}
-	tokens := significantSQLTokens(statement, dialect)
+	tokens := significantSQLTokens(statement, grammar.dialect)
 	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("LOCK") {
 		return noTransactionPrefixDurable
 	}
@@ -198,7 +198,7 @@ func ownTransactionResumeAction(index int, statement, dialect string, run ownTra
 	if len(tokens) > 0 && matchesAnyKeyword(tokens[0], "DO", "SELECT", "WITH", "CALL") && !setsSessionState(statement) {
 		return noTransactionPrefixDurable
 	}
-	return noTransactionResumeAction(statement, dialect)
+	return noTransactionResumeAction(statement, grammar)
 }
 
 // sessionStateWord matches, anywhere in a statement's text, a word that can
@@ -216,14 +216,15 @@ func setsSessionState(statement string) bool {
 	return sessionStateWord.MatchString(statement)
 }
 
-func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAction {
-	services := builtin.Lookup(dialect)
-	if services.Units != nil {
+func noTransactionResumeAction(statement string, grammar bodyGrammar) noTransactionPrefixAction {
+	if grammar.hasUnits() {
 		// A query unit carries every definition and setting it needs, and
-		// the engine keeps no session state between queries, so a committed
+		// the engine keeps no session state between units, so a committed
 		// one leaves nothing a resumed session has to replay.
 		return noTransactionPrefixDurable
 	}
+	dialect := grammar.dialect
+	services := builtin.Lookup(dialect)
 	tokens := significantSQLTokens(statement, dialect)
 	if len(tokens) == 0 {
 		return noTransactionPrefixDurable
@@ -248,6 +249,12 @@ func noTransactionResumeAction(statement, dialect string) noTransactionPrefixAct
 }
 
 func (m *Migrator) validateNoTransactionSQL(migration *Migration, direction MigrationDirection) error {
+	if m.grammar().hasUnits() {
+		// A unit carries the definitions of the statements before it, and the
+		// split refuses transaction control itself, before a run or a resume
+		// touches anything (see [bodyGrammar.refuse]).
+		return nil
+	}
 	sqlText := migrationSQLForDirection(migration, direction)
 	statements := splitSQLStatementsForConnection(m.conn, sqlText)
 	for i, statement := range statements {

@@ -33,7 +33,7 @@ func TestNoTransactionResumeAction(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := noTransactionResumeAction(test.statement, "postgres")
+			got := noTransactionResumeAction(test.statement, grammarForDialect("postgres"))
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
@@ -101,7 +101,7 @@ func TestOwnTransactionResumeAction(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ownTransactionResumeAction(test.index, test.statement, test.dialect, test.run), qt.Equals, test.want)
+			c.Assert(ownTransactionResumeAction(test.index, test.statement, grammarForDialect(test.dialect), test.run), qt.Equals, test.want)
 		})
 	}
 }
@@ -120,7 +120,7 @@ func TestNoTransactionResumeAction_RejectsSQLServerTemporaryTable(t *testing.T) 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := noTransactionResumeAction(test.statement, "sqlserver")
+			got := noTransactionResumeAction(test.statement, grammarForDialect("sqlserver"))
 			c.Assert(got, qt.Equals, noTransactionPrefixReject)
 		})
 	}

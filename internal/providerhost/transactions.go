@@ -173,5 +173,8 @@ func (t *transaction) finish(action protocol.FinishTransactionRequest_Action) er
 		SessionId: t.session.remote.GetId(), TransactionId: t.id, Action: action,
 	})
 	t.finishErr = nativeOutcomeError(t.finishErr)
+	if t.result.GetAborted() {
+		t.finishErr = abortedError(t.finishErr)
+	}
 	return t.finishErr
 }

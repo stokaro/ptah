@@ -35,6 +35,11 @@ func cloneMigrationInputs(inputs []MigrationInput) []MigrationInput {
 // and first migration write. A Go migration without declared SQL receives no
 // input approvals and cannot acquire them by asking during execution.
 func (m *Migrator) prepareMigrationInputs(ctx context.Context, migrations []*Migration, direction MigrationDirection) (context.Context, []MigrationInput, error) {
+	// The units are the statements here, so a provider that splits bodies is
+	// asked for them first, with the run's context.
+	if err := m.askForSplits(ctx, migrations, direction); err != nil {
+		return nil, nil, err
+	}
 	preparer, ok := m.conn.Writer().(dbschema.UnitInputPreparer)
 	if !ok {
 		return ctx, nil, ctx.Err()
