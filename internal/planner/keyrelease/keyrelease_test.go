@@ -192,3 +192,78 @@ func TestFind_TheNameTheDiffCarries(t *testing.T) {
 		})
 	}
 }
+
+// drops is a diff that drops column from table c and removes the constraint
+// name of kind there.
+func drops(column schemamodel.Field, name, kind string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		TablesModified:     []difftypes.TableDiff{{TableName: "c", ColumnsRemoved: difftypes.ColumnChanges{column}}},
+		ConstraintsRemoved: removed("c", name, kind),
+	}
+}
+
+// droppedNames lists the names of the identities dropped holds.
+func droppedNames(dropped map[difftypes.ConstraintIdentity]struct{}) []string {
+	var names []string
+	for identity := range dropped {
+		names = append(names, identity.Name)
+	}
+	return names
+}
+
+// TestDroppedWithColumns_HappyPath finds the removed key of a dropped UNIQUE
+// column under the name the server gives it. want is the name of the identity
+// found, folded as the engine compares index names.
+func TestDroppedWithColumns_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		key     string
+		want    string
+	}{
+		{name: "MySQL names the key after the column", dialect: platform.MySQL, key: "x", want: "x"},
+		{name: "MySQL compares the name without case", dialect: platform.MySQL, key: "X", want: "x"},
+		{name: "MariaDB names the key after the column", dialect: platform.MariaDB, key: "x", want: "x"},
+		{name: "PostgreSQL names the key after the table and the column", dialect: platform.Postgres, key: "c_x_key", want: "c_x_key"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := keyrelease.DroppedWithColumns(drops(unique, test.key, "UNIQUE"), test.dialect)
+
+			c.Assert(droppedNames(got), qt.DeepEquals, []string{test.want})
+		})
+	}
+}
+
+// TestDroppedWithColumns_FindsNothing leaves every removal the column's drop
+// does not take: a key under another name, a key of another kind, a column
+// that is not UNIQUE, and an engine whose naming is not measured.
+func TestDroppedWithColumns_FindsNothing(t *testing.T) {
+	plain := schemamodel.Field{Name: "x", Type: "INTEGER", StructName: "C", Nullable: true}
+	expression := unique
+	expression.UniqueExpr = "lower(x)"
+	tests := []struct {
+		name    string
+		dialect string
+		column  schemamodel.Field
+		key     string
+		kind    string
+	}{
+		{name: "another name", dialect: platform.MySQL, column: unique, key: "c_x_uq", kind: "UNIQUE"},
+		{name: "another kind", dialect: platform.Postgres, column: unique, key: "c_x_key", kind: "CHECK"},
+		{name: "a column without UNIQUE", dialect: platform.MySQL, column: plain, key: "x", kind: "UNIQUE"},
+		{name: "a column with a unique expression", dialect: platform.MySQL, column: expression, key: "x", kind: "UNIQUE"},
+		{name: "an engine whose naming is not measured", dialect: platform.SQLite, column: unique, key: "x", kind: "UNIQUE"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := keyrelease.DroppedWithColumns(drops(test.column, test.key, test.kind), test.dialect)
+
+			c.Assert(got, qt.HasLen, 0)
+		})
+	}
+}
