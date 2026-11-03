@@ -446,7 +446,9 @@ either compares equal to the database. Each event is written once, and the
 events are separated by commas. A trigger fires once per statement, as every
 SQL Server DML trigger does. A schema in the trigger's name must be the schema
 of its table, and an unqualified table is in `dbo`; SQL Server refuses any
-other schema with `Msg 2103`.
+other schema with `Msg 2103`. The table may be a view: an `INSTEAD OF` trigger
+is how a view takes writes, and `ptah db read` describes one on a view as it
+describes one on a table.
 
 The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
 line, at the `END` that closes a `BEGIN ... END` body, or at the end of the

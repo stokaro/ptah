@@ -1014,6 +1014,11 @@ func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
 	// from failing on one; what it leaves is an empty body, which the
 	// comparator reports rather than a statement that would recreate the
 	// trigger empty.
+	//
+	// A DML trigger's parent is a table or a view, and an INSTEAD OF trigger is
+	// how a view takes writes. Joined to sys.tables alone, a view's trigger was
+	// never read: `db read` left it out and a plan never saw it. A database
+	// trigger has no parent object, so the join leaves it out.
 	query := `
 		SELECT s.name, tr.name, t.name,
 			   ISNULL(OBJECT_DEFINITION(tr.object_id), ''),
@@ -1021,7 +1026,7 @@ func (r *Reader) readTriggers(ctx context.Context) ([]catalog.Trigger, error) {
 			   ISNULL((SELECT STRING_AGG(te.type_desc, ' OR ') WITHIN GROUP (ORDER BY te.type)
 					   FROM sys.trigger_events te WHERE te.object_id = tr.object_id), '')
 		FROM sys.triggers AS tr
-		JOIN sys.tables AS t ON t.object_id = tr.parent_id
+		JOIN sys.objects AS t ON t.object_id = tr.parent_id AND t.type IN ('U', 'V')
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 		WHERE tr.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
