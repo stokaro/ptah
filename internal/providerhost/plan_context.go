@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 )
 
@@ -40,10 +41,21 @@ func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.
 			}
 		}
 	}
+	ownedIndexes := p.ownsIndexes()
+	added, err := indexesByTable(builder, diff.IndexesAdded)
+	if err != nil {
+		return featureplan.Request{}, nil, err
+	}
 	for _, creation := range diff.TablesAdded {
 		declared := schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields, Enums: creation.Enums, Constraints: creation.Constraints,
 			OwnedObjects: creation.OwnedObjects, FeatureCoverage: creation.FeatureCoverage}
-		table := featureplan.Table{Subject: builder.TableParts(creation.Table.Schema, creation.Table.Name), Action: featureplan.CreateTable, Desired: declared}
+		subject := builder.TableParts(creation.Table.Schema, creation.Table.Name)
+		if ownedIndexes {
+			// The diff carries a new table's indexes beside it, not in it. The
+			// owner creates them with the table, so the declaration holds them.
+			declared.Indexes = added[subject.Key()]
+		}
+		table := featureplan.Table{Subject: subject, Action: featureplan.CreateTable, Desired: declared}
 		if err := parents.add(table, creation.Name); err != nil {
 			return featureplan.Request{}, nil, err
 		}
@@ -63,8 +75,34 @@ func (p commonPlanner) planningContext(diff *difftypes.SchemaDiff) (featureplan.
 			return featureplan.Request{}, nil, err
 		}
 	}
+	if ownedIndexes {
+		if err := parents.alterForIndexes(builder, diff); err != nil {
+			return featureplan.Request{}, nil, err
+		}
+	}
 	request.Tables = parents.tables
 	return request, parents.names, nil
+}
+
+// indexesByTable groups added indexes by the key of the table they belong to.
+func indexesByTable(builder objectidentity.Builder, changes difftypes.IndexChanges) (map[objectidentity.Key][]schemamodel.Index, error) {
+	result := make(map[objectidentity.Key][]schemamodel.Index)
+	for _, change := range changes {
+		key, err := tableKey(builder, change.TableName)
+		if err != nil {
+			return nil, err
+		}
+		result[key] = append(result[key], change.Index)
+	}
+	return result, nil
+}
+
+func tableKey(builder objectidentity.Builder, name string) (objectidentity.Key, error) {
+	ref, valid := tableref.Parse(name)
+	if !valid {
+		return objectidentity.Key{}, fmt.Errorf("%w: provider planning index names table %q", schemaext.ErrInvalidValue, name)
+	}
+	return builder.TableParts(ref.Schema, ref.Name).Key(), nil
 }
 
 // policy is the operator's planning policy as the provider's planner receives

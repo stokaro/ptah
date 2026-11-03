@@ -87,6 +87,15 @@ position. Legacy scalar fields cannot accompany that record, and missing or
 contradictory facts refuse the whole snapshot. Native facets remain attached to
 the same column and carry only their separately owned settings.
 
+Providers can negotiate `schema.observed-indexes` with
+`schema.observed-columns` to report the common secondary indexes of each
+inspected table. The list is complete: an index it does not name is absent, so
+the host compares declared indexes with it. The comparison reads each index's
+uniqueness, key columns and covered columns, and an index whose definition
+differs under the same name is dropped and built again. The kind and the build
+settings stay the provider's to compare. An index the common model cannot
+describe stays in the provider's native facets and out of the list.
+
 A provider that owns the table lifecycle without
 `schema.common-table-identity.v1` also receives altered tables. The planning
 request carries the captured desired and current state of each altered table,
@@ -98,11 +107,20 @@ unclaimed, and the error names the table and the column. A removed table
 reaches the provider with its captured state, and the drop is a step the
 provider must claim in the same way.
 
+With `schema.observed-indexes`, a created table's declaration carries its
+indexes. An index added to or dropped from a table the plan keeps makes that
+table an altered parent, and the change is a step the provider must claim. The
+step reads the table and creates or drops one index of it. It carries no
+operand: the provider reads the declared index from the desired table and the
+held one from the current table. A removal comes before the additions, so a
+changed index is dropped before it is created again under the same name.
+Without the feature, index changes are refused.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
-Missing receipts and refusals discard the plan. Index changes remain refused;
-common-object support carries table and column comments. These services do not
+Missing receipts and refusals discard the plan. Common-object support carries
+table and column comments. These services do not
 grant common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps

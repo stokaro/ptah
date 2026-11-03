@@ -2,7 +2,9 @@ package providerhost
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
@@ -49,4 +51,32 @@ func projectedColumnInteger(value int64) (int, error) {
 		return 0, fmt.Errorf("%w: column metadata exceeds the host integer range", provider.ErrProtocol)
 	}
 	return int(value), nil // #nosec G115 -- checked against the host integer range above
+}
+
+// catalogIndex is the host's reading of a common index a provider reports in
+// inspection. The SDK has checked it against its table: its name, its key and
+// its columns.
+func catalogIndex(source *protocol.ObservedIndex) (catalog.Index, error) {
+	shards := source.GetHashShardBuckets()
+	if shards > math.MaxInt {
+		return catalog.Index{}, fmt.Errorf("%w: index shard count exceeds the host integer range", provider.ErrProtocol)
+	}
+	result := catalog.Index{
+		Name: source.GetName(), TableName: source.GetTableName(), Schema: source.GetSchema(), Columns: slices.Clone(source.GetColumns()),
+		IsUnique: source.GetUnique(), IsPrimary: source.GetPrimary(), Definition: source.GetDefinition(), KeyPartsIncomplete: source.GetKeyPartsIncomplete(),
+		Condition: source.GetCondition(), Comment: source.GetComment(), Invisible: source.GetInvisible(), NullsDistinct: copyPlanningPointer(source.NullsDistinct),
+		Method: source.GetMethod(), IncludeColumns: slices.Clone(source.GetIncludeColumns()), StorageParams: maps.Clone(source.GetStorageParameters()),
+		PartitionAttached: source.GetPartitionAttached(), HashShardBuckets: int(shards),
+	}
+	if source.GetManagedBy() != nil {
+		result.ManagedBy = boundIdentity(source.GetManagedBy())
+	}
+	for _, part := range source.GetParts() {
+		result.Parts = append(result.Parts, catalog.IndexPart{Name: part.GetColumn(), Expr: part.GetExpression(), Operator: part.GetOperatorClass(),
+			Prefix: part.GetPrefix(), Desc: part.GetDescending(), NullsOrder: part.GetNulls()})
+	}
+	for _, required := range source.GetRequires() {
+		result.Requires = append(result.Requires, boundIdentity(required))
+	}
+	return result, nil
 }

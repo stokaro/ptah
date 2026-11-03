@@ -28,7 +28,11 @@ type commonPlanner struct {
 	// comments sets the comments of a table the plan creates, and of a column
 	// it adds, with steps of their own: the engine carries comments on the
 	// common-object wire, and the common table message has no place for one.
-	comments   bool
+	comments bool
+	// indexes plans the common indexes of the tables a provider owns: the
+	// provider reports the indexes a table holds, so the comparison has a
+	// current side, and claims the steps that add and drop them.
+	indexes    bool
 	selections *scopeSelections
 }
 
@@ -70,7 +74,14 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if err != nil {
 		return nil, err
 	}
-	nodes := slices.Concat(common.before, common.prepared)
+	indexRemovals, indexAdditions, err := p.indexChanges(diff)
+	if err != nil {
+		return nil, err
+	}
+	// An index is dropped before the tables and columns change, so a
+	// replacement drops the held index before it creates the declared one
+	// under the same name, and is added once its columns exist.
+	nodes := slices.Concat(common.before, indexRemovals, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
@@ -91,6 +102,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, additions...)
 		columnRemovals = append(columnRemovals, removals...)
 	}
+	nodes = append(nodes, indexAdditions...)
 	creationStart := len(nodes)
 	nodes = append(nodes, common.after...)
 	removalStart := len(nodes)
@@ -123,6 +135,12 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
+	}
+	if p.ownsIndexes() {
+		// An owner of the table lifecycle receives a table's indexes in the
+		// table it creates or alters; planningContext refuses an index of any
+		// other table.
+		fields = append(fields, "IndexesAdded", "IndexesRemoved", "DeclaredIndexes")
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err

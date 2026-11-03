@@ -74,7 +74,8 @@ func (n *pendingColumnChange) Accept(ast.Visitor) error {
 }
 
 // rejectUnclaimedChanges refuses a plan in which a provider left a creation,
-// a removal or a column change as the host's placeholder, naming the first one.
+// a removal, a column change or an index change as the host's placeholder,
+// naming the first one.
 func rejectUnclaimedChanges(nodes []ast.Node) error {
 	for _, node := range nodes {
 		switch pending := node.(type) {
@@ -83,6 +84,8 @@ func rejectUnclaimedChanges(nodes []ast.Node) error {
 		case *pendingTableDrop:
 			return pending.Accept(nil)
 		case *pendingColumnChange:
+			return pending.Accept(nil)
+		case *pendingIndexChange:
 			return pending.Accept(nil)
 		}
 	}

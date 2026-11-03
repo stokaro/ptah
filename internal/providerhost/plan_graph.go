@@ -106,6 +106,8 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node, selec
 			name, action = typed.Name, plangraph.Alter
 		case *pendingColumnChange:
 			name, action = typed.table, plangraph.Alter
+		case *pendingIndexChange:
+			name, action = typed.table, plangraph.Alter
 		default:
 			return nil, fmt.Errorf("%w: unsupported common planning node %T", schemaext.ErrInvalidValue, node)
 		}
@@ -129,6 +131,16 @@ func commonPlanningMetadata(request featureplan.Request, nodes []ast.Node, selec
 				step.AddedColumn, action = edit.added, plangraph.Create
 			}
 			subject := planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, edit.name))
+			step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
+		}
+		if index, isIndex := node.(*pendingIndexChange); isIndex {
+			// An index step has the footprint of a column step: it reads its
+			// table and creates or drops one index of it.
+			action = plangraph.Drop
+			if index.added {
+				action = plangraph.Create
+			}
+			subject := planningChild(parent, builder.IndexParts(parent.Schema.Source, parent.Name.Source, index.index))
 			step.Effects = []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: subject, Action: action}}
 		}
 		metadata[i] = step

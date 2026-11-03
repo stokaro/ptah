@@ -41,7 +41,7 @@ func TestProviderInspectionPreservesCompleteColumnFacts(t *testing.T) {
 func TestProviderInspectionRefusesContradictoryColumnFacts(t *testing.T) {
 	c := qt.New(t)
 	host, _ := yamlProviderCommand(c, "column-semantics")
-	for _, name := range []string{"column_missing", "column_legacy", "column_name", "column_ordinal", "column_nullable"} {
+	for _, name := range []string{"column_missing", "column_legacy", "column_name", "column_ordinal", "column_nullable", "index_column"} {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
 			connection := observedConnection(c, host, name)
@@ -50,4 +50,23 @@ func TestProviderInspectionRefusesContradictoryColumnFacts(t *testing.T) {
 			c.Assert(snapshot, qt.IsNil)
 		})
 	}
+}
+
+// A provider that negotiates observed indexes reports a table's common
+// indexes, and the host reads them into the catalog it compares with.
+func TestProviderInspectionReadsCommonIndexes(t *testing.T) {
+	c := qt.New(t)
+	host, _ := yamlProviderCommand(c, "column-semantics")
+	connection := observedConnection(c, host, "column_indexed")
+	snapshot, err := connection.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(snapshot.Tables, qt.HasLen, 1)
+	c.Assert(snapshot.Indexes, qt.DeepEquals, []catalog.Index{{Name: "column_indexed_id", TableName: "column_indexed", Schema: snapshot.Tables[0].Schema,
+		Columns: []string{"Id"}, IsUnique: true, Method: "global", Comment: "captured index"}})
+
+	// A table that lists no index holds none.
+	plain := observedConnection(c, host, "column_plain")
+	snapshot, err = plain.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(snapshot.Indexes, qt.HasLen, 0)
 }
