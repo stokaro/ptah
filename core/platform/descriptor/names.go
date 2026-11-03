@@ -120,6 +120,10 @@ type Columns struct {
 	// IdentityNotNull reports that an identity column is NOT NULL whether or
 	// not the definition says so.
 	IdentityNotNull bool `json:"identity_not_null,omitempty"`
+	// SerialNotNull reports that a column of a serial type, SERIAL, BIGSERIAL
+	// or SMALLSERIAL, is NOT NULL whether or not the definition says so, as
+	// PostgreSQL makes it.
+	SerialNotNull bool `json:"serial_not_null,omitempty"`
 	// CheckOwnColumnOnly reports that a CHECK written on a column may name
 	// that column alone, and one naming another column is refused.
 	CheckOwnColumnOnly bool `json:"check_own_column_only,omitempty"`
