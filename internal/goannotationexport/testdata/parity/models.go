@@ -59,7 +59,7 @@ type User struct {
 	//ptah:schema:field name="status" type="ENUM" enum="active,disabled" default="active"
 	Status string
 
-	//ptah:schema:index name="users_email_search" fields="email" unique="true" comment="Email lookup" type="GIN" condition="email <> ''" ops="gin_trgm_ops" table="app.users" nulls_distinct="false"
+	//ptah:schema:index name="users_email_search" fields="email" comment="Email lookup" type="GIN" condition="email <> ''" ops="gin_trgm_ops" table="app.users"
 	_ int
 
 	//ptah:schema:index name="users_score_bloom" fields="score" type="bloom_filter" table="app.users" platform.clickhouse.granularity="64"

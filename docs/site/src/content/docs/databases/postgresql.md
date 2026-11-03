@@ -1663,6 +1663,15 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   does not make a user type part of an extension. Extension-owned functions
   follow the same rule.
 
+## Unique indexes and access methods
+
+Of PostgreSQL's built-in access methods, only `btree` builds a unique index.
+A unique index declared with `hash`, `gin`, `gist`, `brin` or `spgist` in any
+schema source, such as `CREATE UNIQUE INDEX ... USING hash` in a SQL file, is
+refused when Ptah renders or plans the schema, and the refusal names the index.
+Applied, PostgreSQL would refuse the statement with `access method "hash" does
+not support unique indexes`.
+
 ## Concurrent index creation
 
 `CREATE INDEX CONCURRENTLY` avoids blocking writes but cannot run inside a

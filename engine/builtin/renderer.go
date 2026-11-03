@@ -591,6 +591,11 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := validateIndexKeyParts(dialect, node); err != nil {
 		return nil, err
 	}
+	if node.Unique {
+		if err := refuseUniqueIndexMethod(dialect, node.Name, node.Type); err != nil {
+			return nil, err
+		}
+	}
 	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
@@ -1167,16 +1172,41 @@ func refuseInvisibleIndex(dialect string, caps capability.Capabilities, name str
 	}
 }
 
-// validateDeclaredIndexOptions checks index visibility and partitioning over a
-// whole declaration, before the first statement is rendered, for the reason
-// validateDeclaredNullsDistinct gives. A block-size hint is checked with the
-// features; see validateDeclaredFeatures.
+// refuseUniqueIndexMethod refuses the unique index name built with the access
+// method method on a target whose server builds no unique index with it
+// ([schemaprep.UniqueIndexMethodRefused]). Rendered, the CREATE UNIQUE INDEX
+// would fail only at apply, measured on PostgreSQL 18.6 as `access method
+// "hash" does not support unique indexes`.
+func refuseUniqueIndexMethod(dialect, name, method string) error {
+	if !schemaprep.UniqueIndexMethodRefused(dialect, method) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.RenderError{
+		Dialect: normalized,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("unique index %q uses access method %q, which builds no unique index on %s; "+
+			"declare it without UNIQUE or with another access method",
+			name, strings.ToLower(strings.TrimSpace(method)), normalized),
+	}
+}
+
+// validateDeclaredIndexOptions checks index uniqueness against the access
+// method, visibility and partitioning over a whole declaration, before the
+// first statement is rendered, for the reason validateDeclaredNullsDistinct
+// gives. A block-size hint is checked with the features; see
+// validateDeclaredFeatures.
 func validateDeclaredIndexOptions(
 	dialect string,
 	caps capability.Capabilities,
 	database *schemamodel.Database,
 ) error {
 	for _, index := range database.Indexes {
+		if index.Unique {
+			if err := refuseUniqueIndexMethod(dialect, index.Name, index.Type); err != nil {
+				return err
+			}
+		}
 		if slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
 			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
 				return err
@@ -1650,8 +1680,9 @@ func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]stri
 // errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]), and so is a table-owned
 // declaration that names no host. A declaration the target
 // cannot carry — a foreign key, a referential action, an extension
-// installation schema, an index INCLUDE list, a table without a primary key
-// on a target that requires one — is refused with an error satisfying
+// installation schema, an index INCLUDE list, a unique index over an access
+// method that builds no unique index, a table without a primary key on a
+// target that requires one — is refused with an error satisfying
 // errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
 // declaration refusals carry no sentinel of their own, so treat any non-nil
 // error as a refusal and branch with errors.Is on the sentinels rather than

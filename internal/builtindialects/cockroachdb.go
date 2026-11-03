@@ -144,8 +144,12 @@ func cockroachDB() descriptor.Dialect {
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.
+		// An inverted index, which gin and gist build, cannot be unique,
+		// measured on 26.3.2: `inverted indexes can't be unique`. Hash is no
+		// access method there, unique or not.
 		Preparation: descriptor.Preparation{
-			PostgresBuiltInTypes: true,
+			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"gin", "gist"},
 		},
 
 		// A serial column owns its sequence, every routine carries EXECUTE
