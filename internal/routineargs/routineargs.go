@@ -10,7 +10,10 @@
 // same way.
 package routineargs
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Signature reduces a routine's argument list to the form both sides of a
 // comparison can be matched on.
@@ -78,6 +81,72 @@ var routineTypeAliases = map[string]string{
 	"float4":      "real",
 }
 
+// quotedTypeNames maps the typname of a built-in type, the name a declaration
+// quotes it by, to the spelling pg_get_function_identity_arguments gives it,
+// where the two differ. A quoted name is no grammar alias: `"int"` and
+// `"integer"` name no type, so [routineTypeAliases] does not apply to it, and
+// `"char"` is the one-byte type the catalog reports quoted. Measured on
+// PostgreSQL 18.6 from pg_type and from the identity of a function declared
+// with each name.
+var quotedTypeNames = map[string]string{
+	"bool":        "boolean",
+	"bpchar":      "character",
+	"char":        `"char"`,
+	"float4":      "real",
+	"float8":      "double precision",
+	"int2":        "smallint",
+	"int4":        "integer",
+	"int8":        "bigint",
+	"time":        "time without time zone",
+	"timestamp":   "timestamp without time zone",
+	"timestamptz": "timestamp with time zone",
+	"timetz":      "time with time zone",
+	"varbit":      "bit varying",
+	"varchar":     "character varying",
+}
+
+// unquotedTypeNames are the built-in types the catalog spells by their
+// typname, so a declaration that quotes one names what the catalog reports
+// bare. Measured on PostgreSQL 18.6: every base type of pg_catalog whose
+// format_type is its typname.
+var unquotedTypeNames = strings.Fields(`aclitem bit box bytea cid cidr circle date gtsvector inet int2vector
+	interval json jsonb jsonpath line lseg macaddr macaddr8 money name numeric oid oidvector path
+	pg_brin_bloom_summary pg_brin_minmax_multi_summary pg_dependencies pg_lsn pg_mcv_list pg_ndistinct
+	pg_node_tree pg_snapshot point polygon refcursor regclass regcollation regconfig regdictionary
+	regnamespace regoper regoperator regproc regprocedure regrole regtype text tid tsquery tsvector
+	txid_snapshot uuid xid xid8 xml`)
+
+// quotedTypeSpelling returns the spelling the catalog gives a built-in type a
+// declaration names by its quoted typname, such as `"int4"`, and false for any
+// other word: an unquoted one, and a quoted name of no built-in type, which
+// stays as written. An array type's typname is its element's with a leading
+// underscore, `"_int4"`, and is spelled as the element is, followed by [].
+func quotedTypeSpelling(word string) (string, bool) {
+	name, quoted := strings.CutPrefix(word, `"`)
+	name, closed := strings.CutSuffix(name, `"`)
+	if !quoted || !closed || name == "" || strings.Contains(name, `"`) {
+		return "", false
+	}
+	if spelled, ok := builtInTypeSpelling(name); ok {
+		return spelled, true
+	}
+	if element, array := strings.CutPrefix(name, "_"); array {
+		if spelled, ok := builtInTypeSpelling(element); ok {
+			return spelled + "[]", true
+		}
+	}
+	return "", false
+}
+
+// builtInTypeSpelling is the catalog's spelling of the built-in type called
+// typname, and false for a name no built-in type has.
+func builtInTypeSpelling(typname string) (string, bool) {
+	if spelled, ok := quotedTypeNames[typname]; ok {
+		return spelled, true
+	}
+	return typname, slices.Contains(unquotedTypeNames, typname)
+}
+
 // normalizeRoutineArgument reduces one argument to `[mode ][name ]type`.
 func normalizeRoutineArgument(argument string) string {
 	text := strings.TrimSpace(argument)
@@ -122,7 +191,9 @@ func normalizeRoutineType(text string) string {
 	// precision` are already canonical and are left whole.
 	head := strings.Join(fields[:len(fields)-1], " ")
 	tail := strings.ToLower(fields[len(fields)-1])
-	if mapped, ok := routineTypeAliases[tail]; ok {
+	if spelled, ok := quotedTypeSpelling(fields[len(fields)-1]); ok {
+		tail = spelled
+	} else if mapped, ok := routineTypeAliases[tail]; ok {
 		tail = mapped
 	}
 	joined := strings.TrimSpace(head + " " + tail)
