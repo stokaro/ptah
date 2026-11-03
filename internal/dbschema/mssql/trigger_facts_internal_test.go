@@ -119,3 +119,56 @@ func answeringTriggerFacts(query string, _ []driver.NamedValue) (dbtest.QueryRes
 		},
 	}, nil
 }
+
+// TestReadTriggers_ReadsATriggerOnAView pins that a trigger whose parent is a
+// view is read, as an INSTEAD OF trigger is how a view takes writes. Joined
+// to sys.tables alone, the read never saw it: `db read` left it out of the
+// description and a plan never compared it.
+func TestReadTriggers_ReadsATriggerOnAView(t *testing.T) {
+	c := qt.New(t)
+
+	byName := triggersByName(c, answeringTriggerParents)
+
+	c.Assert(byName["trg_view"], qt.DeepEquals, catalog.Trigger{
+		Name: "trg_view", Table: "v_t", Timing: "INSTEAD OF", Event: "INSERT", ForEach: "STATEMENT",
+		Body: "BEGIN INSERT INTO dbo.t(a) SELECT a FROM inserted; END",
+	})
+	c.Assert(byName["trg_table"].Table, qt.Equals, "t")
+	c.Assert(byName, qt.HasLen, 2)
+}
+
+// answeringTriggerParents is a trigger on a table and one on a view, each
+// returned only when the query's join admits its parent's kind, as the
+// catalog answers: sys.tables holds tables, sys.views views, and sys.objects
+// both, narrowed by a type list where the query writes one.
+func answeringTriggerParents(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	result := dbtest.QueryResult{Columns: []string{"schema_name", "trigger_name", "table_name", "definition", "timing", "event"}}
+	if admitsTriggerParent(query, "sys.tables", "'U'") {
+		result.Rows = append(result.Rows, []driver.Value{
+			"dbo", "trg_table", "t", "CREATE TRIGGER trg_table ON t AFTER UPDATE AS SET NOCOUNT ON;", "AFTER", "UPDATE",
+		})
+	}
+	if admitsTriggerParent(query, "sys.views", "'V'") {
+		result.Rows = append(result.Rows, []driver.Value{
+			"dbo", "trg_view", "v_t",
+			"CREATE TRIGGER trg_view ON v_t INSTEAD OF INSERT AS BEGIN INSERT INTO dbo.t(a) SELECT a FROM inserted; END",
+			"INSTEAD OF", "INSERT",
+		})
+	}
+	return result, nil
+}
+
+// admitsTriggerParent reports whether query joins a trigger to a parent of
+// the kind the catalog view kindView holds, or of the type code typeCode in
+// sys.objects.
+func admitsTriggerParent(query, kindView, typeCode string) bool {
+	if strings.Contains(query, "JOIN "+kindView+" ") {
+		return true
+	}
+	at := strings.Index(query, "JOIN sys.objects ")
+	if at < 0 {
+		return false
+	}
+	join, _, _ := strings.Cut(query[at:], "JOIN sys.schemas")
+	return !strings.Contains(join, ".type IN") || strings.Contains(join, typeCode)
+}
