@@ -535,6 +535,12 @@ a lost connection or a canceled statement.
 
 ## Execution controls
 
+Each statement reaches the server with the comments inside it, and without
+the comments before its first token. MySQL, MariaDB and SQL Server store a
+trigger's or a routine's body as it arrives, so a comment written in the body
+is still there when the database is read back. A statement that holds only
+comments is not sent.
+
 The defaults are safe for most runs. These controls matter once several people
 and pipelines share a directory:
 
@@ -614,14 +620,19 @@ and pipelines share a directory:
   Atlas-format rows carry cumulative `partial_hashes`. Editing only the
   unapplied suffix is allowed. A failed retry cannot reduce `applied` below the
   previously committed prefix, even when the transaction mode changed.
-  Every `none` attempt runs its migration SQL on one pinned physical database
+  A run executes every migration body on one pinned physical database
   session, so a statement such as `SET search_path` remains effective for the
-  statements that follow. On server databases, revision checkpoints remain on
-  the original connection and cannot be redirected by that session state.
-  SQLite uses the pinned session but qualifies its revision table in `main`, so
-  in-memory databases do not deadlock and temporary objects cannot shadow the
-  metadata. A resumed attempt uses a fresh session: Ptah replays recognized
-  session-control statements from the verified prefix, skips recognized durable
+  statements that follow and for the later migrations of the run, as
+  golang-migrate and Atlas apply a directory. On server databases, revision
+  checkpoints stay on the original connection or are qualified with the
+  connection's schema, and cannot be redirected by that session state. SQLite
+  pins a session for each `none` attempt instead and qualifies its revision
+  table in `main`, so in-memory databases do not deadlock and temporary objects
+  cannot shadow the metadata. A provider's connection runs the bodies on its
+  own session, where the provider holds the migration lock and guards each
+  commit, so what they leave there outlives the run. A resumed attempt starts a
+  run on a fresh session: Ptah replays recognized session-control statements
+  from the verified prefix of the resumed migration, skips recognized durable
   DDL and DML, and refuses prefixes that created temporary objects or whose
   session-local effect cannot be classified safely.
   A `none` body cannot contain top-level transaction-control statements such as
@@ -1051,13 +1062,14 @@ skips is only ever the prefix that really survived:
   A server-side implicit commit therefore makes the matching witness durable;
   an ordinary rollback removes both user DML and its witness. Plain DML that
   rolls back retries from the first statement, while a durable DDL/DML prefix
-  resumes at the first statement not witnessed as complete. Ptah pins and then
-  discards the physical session; a retry replays safe session settings from the
-  verified prefix before it continues. Temporary tables remain available:
-  their DDL does not make permanent InnoDB work durable by itself, and
-  discarding the session prevents temporary state from leaking into a retry. If
-  a later implicit commit makes a prefix containing a temporary object durable,
-  automatic resume refuses because that object cannot be reconstructed safely.
+  resumes at the first statement not witnessed as complete. Ptah pins the
+  run's physical session and discards it when the run ends; a retry replays
+  safe session settings from the verified prefix before it continues. Temporary
+  tables remain available to the later migrations of the run: their DDL does
+  not make permanent InnoDB work durable by itself, and discarding the session
+  prevents temporary state from leaking into a retry. If a later implicit
+  commit makes a prefix containing a temporary object durable, automatic resume
+  refuses because that object cannot be reconstructed safely.
   The configured migration metadata table name is reserved. Before reading or
   writing revision metadata, Ptah refuses and discards a pinned session that
   already contains a same-named temporary table. It also rejects statements
@@ -1070,9 +1082,8 @@ skips is only ever the prefix that really survived:
 Recorded progress therefore excludes transactional work that a rollback undid,
 while non-transactional mode retains work that no rollback could undo.
 On MySQL and MariaDB, non-transactional mode keeps revision bookkeeping on a
-separate checked metadata session while the migration body runs on its own
-discarded session, so body-local temporary objects cannot shadow the metadata
-table.
+separate checked metadata session while the migration body runs on the run's
+session, so body-local temporary objects cannot shadow the metadata table.
 
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, its deadline expires, or the connection breaks while an

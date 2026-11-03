@@ -507,7 +507,7 @@ database. Nothing about it becomes a dependency of a migration.
 | `--title` | `Schema dashboard` | Heading, browser title and sidebar name. |
 | `--root-dir` | working directory | Go annotation tree to read the declared schema from. Repeatable. |
 | `--schema-file` | none | SQL, YAML, HCL or DBML file to read the declared schema from. Repeatable, and combines with `--root-dir`. An `oci://` reference is refused before the server listens. |
-| `--schemas` | connection default | Comma-separated schemas the database read is limited to. |
+| `--schemas` | URL scope | Comma-separated schemas the database read is limited to. Empty reads what `schema apply` reads: the schemas the URL covers and every schema the desired schema names. |
 | `--db-url` | none | Database to compare against. Required. |
 
 [Serve a live schema view](../../schema/serve/) is the guide.

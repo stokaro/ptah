@@ -16,7 +16,9 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/dbschema"
+	"ptah.run/internal/providerhost/statementargs"
 )
 
 // A provider runs the statements the operator wrote, such as a check, a test
@@ -169,9 +171,15 @@ func (c *statementConn) ExecContext(ctx context.Context, query string, args []dr
 
 // run sends one statement and turns any outcome but SUCCEEDED into an error:
 // the server's message for FAILED, the provider's refusal for REFUSED, and an
-// unknown outcome otherwise, which a transaction then cannot commit over.
+// unknown outcome otherwise, which a transaction then cannot commit over. The
+// arguments are placed before anything reaches the provider, so an argument
+// the wire cannot place is refused before the statement's text is sent too.
 func (c *statementConn) run(ctx context.Context, query string, args []driver.NamedValue, form statementForm) (*protocol.StatementResult, *protocol.RunStatementRequest, error) {
 	if err := c.session.lockError(); err != nil {
+		return nil, nil, err
+	}
+	values, err := statementargs.Arguments(c.session.target.placeholder(), args)
+	if err != nil {
 		return nil, nil, err
 	}
 	inputs, err := c.session.target.executionInputs(ctx, []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: query}}})
@@ -183,10 +191,6 @@ func (c *statementConn) run(ctx context.Context, query string, args []driver.Nam
 			return nil, nil, unsupported("sensitive inputs for result-bearing, read-only, or parameterized statements")
 		}
 		return c.executeInputStatement(ctx, query)
-	}
-	values, err := statementArguments(args)
-	if err != nil {
-		return nil, nil, err
 	}
 	request := &protocol.RunStatementRequest{SessionId: c.session.remote.GetId(), RequestId: rand.Text(), Sql: query, Arguments: values,
 		Access: protocol.RunStatementRequest_READ_WRITE, MaxRows: statementPageRows}
@@ -246,47 +250,27 @@ func (c *statementConn) closeResult(ctx context.Context, token string) error {
 	return err
 }
 
-// statementArguments binds positional arguments. A named one has no place on
-// the wire: the provider binds arguments in the order the statement's
-// placeholders take them.
-func statementArguments(args []driver.NamedValue) ([]*protocol.DataValue, error) {
-	values := make([]*protocol.DataValue, 0, len(args))
-	for _, arg := range args {
-		if arg.Name != "" {
-			return nil, unsupported(fmt.Sprintf("the named argument %q", arg.Name))
-		}
-		value, err := dataValueOf(arg.Value)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
+// CheckNamedValue gives an argument its wire form while database/sql still
+// holds the Go value the caller passed. Without it database/sql converts the
+// argument to a driver value first, which has no width, no sign and no null of
+// its own: an int32 and a uint reach the provider as int64, and a pointer as its
+// target. The argument keeps its name, which run reads to place it: the wire
+// carries arguments by position alone.
+func (c *statementConn) CheckNamedValue(argument *driver.NamedValue) error {
+	value, err := statementargs.Wire(argument.Value)
+	if err != nil {
+		return err
 	}
-	return values, nil
+	argument.Value = value
+	return nil
 }
 
-// dataValueOf is the wire form of a driver value, after database/sql has
-// converted it to one of the driver.Value types.
-func dataValueOf(value driver.Value) (*protocol.DataValue, error) {
-	switch v := value.(type) {
-	case nil:
-		return &protocol.DataValue{Value: &protocol.DataValue_Null{Null: &protocol.Empty{}}}, nil
-	case int64:
-		return &protocol.DataValue{Value: &protocol.DataValue_Int64Value{Int64Value: v}}, nil
-	case float64:
-		return &protocol.DataValue{Value: &protocol.DataValue_DoubleValue{DoubleValue: v}}, nil
-	case bool:
-		return &protocol.DataValue{Value: &protocol.DataValue_BoolValue{BoolValue: v}}, nil
-	case string:
-		return &protocol.DataValue{Value: &protocol.DataValue_StringValue{StringValue: v}}, nil
-	case []byte:
-		return &protocol.DataValue{Value: &protocol.DataValue_BytesValue{BytesValue: append([]byte(nil), v...)}}, nil
-	case time.Time:
-		utc := v.UTC()
-		return &protocol.DataValue{Value: &protocol.DataValue_TimestampValue{TimestampValue: &protocol.TimestampValue{
-			Seconds: utc.Unix(), Nanos: int32(utc.Nanosecond())}}}, nil // #nosec G115 -- Nanosecond is in [0, 1e9)
-	default:
-		return nil, unsupported(fmt.Sprintf("a %T statement argument", value))
-	}
+// placeholder is the placeholder style the engine declares for its query
+// dialect, empty when it declares none. It says how the provider binds the
+// arguments of a statement, so it decides where a named argument goes: under
+// the dollar-named style the argument named pN binds $pN at position N.
+func (t *target) placeholder() descriptor.Placeholder {
+	return descriptor.Placeholder(t.engine.GetQueryDialect().GetPlaceholder())
 }
 
 // statementResult answers the row count only when the engine measured it, so

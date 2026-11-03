@@ -159,6 +159,54 @@ func releasedIndexes(diff *difftypes.SchemaDiff, dialect string, takes func(tabl
 	return released
 }
 
+// DroppedWithColumns answers the removed UNIQUE keys of diff that are the own
+// key of a column the same plan drops. The server drops that key with the
+// column. The key is matched by the name [columnkey.Name] gives it with no
+// other key taken, the name the server tries first, and an engine [columnkey.Named]
+// does not name gives none.
+//
+// A planner that removes constraints after it drops columns skips each key this
+// finds, where its server takes no guard on the drop. Measured on MySQL 26.10,
+// `ALTER TABLE c DROP COLUMN x` and then `ALTER TABLE c DROP INDEX x` answers
+// `Can't DROP 'x'; check that column/key exists`.
+func DroppedWithColumns(diff *difftypes.SchemaDiff, dialect string) map[difftypes.ConstraintIdentity]struct{} {
+	if diff == nil || !columnkey.Named(dialect) {
+		return nil
+	}
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	held := make(map[string][]string)
+	for _, table := range diff.TablesModified {
+		key := semantics.QualifiedTableIdentityKey(table.TableName)
+		for _, field := range table.ColumnsRemoved {
+			if !field.Unique || strings.TrimSpace(field.UniqueExpr) != "" {
+				continue
+			}
+			if name, named := columnkey.Name(dialect, bareTableName(table.TableName), field.Name, nil); named {
+				held[key] = append(held[key], name)
+			}
+		}
+	}
+	var dropped map[difftypes.ConstraintIdentity]struct{}
+	for _, info := range diff.ConstraintsRemoved {
+		if info.TableName == "" || !strings.EqualFold(info.Type, "UNIQUE") {
+			continue
+		}
+		names := held[semantics.QualifiedTableIdentityKey(info.TableName)]
+		if !slices.ContainsFunc(names, func(name string) bool { return columnkey.Same(dialect, name, info.Name) }) {
+			continue
+		}
+		identity := info.Identity
+		if identity == (difftypes.ConstraintIdentity{}) {
+			identity = constraintscope.Identity(semantics, info.TableName, info.Name)
+		}
+		if dropped == nil {
+			dropped = make(map[difftypes.ConstraintIdentity]struct{})
+		}
+		dropped[identity] = struct{}{}
+	}
+	return dropped
+}
+
 // gainingColumns answers the columns of table that gain their own UNIQUE.
 func gainingColumns(table difftypes.TableDiff) []string {
 	var columns []string

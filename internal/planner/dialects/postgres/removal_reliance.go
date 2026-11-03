@@ -47,7 +47,7 @@ func removedRoutineNames(diff *difftypes.SchemaDiff, relation string, ahead rout
 // parameter or a result column of that name, or a type of the same name in
 // another schema, is not the row type.
 func routineNames(routine difftypes.RoutineChange, relation string, semantics identifier.Semantics) bool {
-	types := append(routineargs.ArgumentTypes(routine.Parameters), resultTypes(routine.Returns)...)
+	types := append(routineargs.ArgumentTypes(routine.Parameters), routineargs.ResultTypes(routine.Returns)...)
 	return slices.ContainsFunc(types, func(spelled string) bool { return typeNamesRelation(spelled, relation, semantics) }) ||
 		sqlStandardBodyReads(routine, relation, semantics)
 }
@@ -57,25 +57,6 @@ func routineNames(routine difftypes.RoutineChange, relation string, semantics id
 // and the policy refusal ask with; see [readsRelationIn].
 func relationSemantics(diff *difftypes.SchemaDiff) identifier.Semantics {
 	return diff.EffectiveIdentifierSemantics("")
-}
-
-// resultTypes are the types a routine's result names: the type, the element
-// type of SETOF, or each column type of RETURNS TABLE.
-func resultTypes(returns string) []string {
-	result := strings.TrimSpace(returns)
-	if fields := strings.Fields(result); len(fields) > 1 && strings.EqualFold(fields[0], "SETOF") {
-		result = strings.TrimSpace(result[len(fields[0]):])
-	}
-	if len(result) > len("TABLE") && strings.EqualFold(result[:len("TABLE")], "TABLE") {
-		columns := strings.TrimSpace(result[len("TABLE"):])
-		if strings.HasPrefix(columns, "(") && strings.HasSuffix(columns, ")") {
-			return routineargs.ArgumentTypes(columns[1 : len(columns)-1])
-		}
-	}
-	if result == "" {
-		return nil
-	}
-	return []string{result}
 }
 
 // typeNamesRelation reports whether spelled, a type as a routine's definition
@@ -514,12 +495,22 @@ func removalOutlivesDrop(diff *difftypes.SchemaDiff, relation string, ahead rout
 // removedFeatureReads reports whether a database-scope feature change may drop
 // an object that reads relation, which the removal window does only after the
 // tables and columns. The object the change removes answers for itself
-// through [schemaext.RelationReader]: a composite type names a table's row
-// type in an attribute, and an extension reads none. A change whose owner does
-// not say whether it removes state, or whose object cannot answer, counts as
-// one that reads relation.
+// through [schemaext.RelationReader]: an extension reads none. A change whose
+// owner does not say whether it removes state, or whose object cannot answer,
+// counts as one that reads relation.
+//
+// A type the change removes is left out: a composite type that names a
+// table's row type in an attribute, and a domain or a range type over one,
+// is dropped ahead of the table unless something dropped after the tables
+// still uses it, which only the scheduled plan shows.
+// [Planner.cascadeForLaterTypeDrops] decides those table drops there.
 func removedFeatureReads(diff *difftypes.SchemaDiff, relation string) bool {
 	return removedFeatureMatches(diff, func(object schemaext.Value) bool {
+		if _, defines := object.(schemaext.TypeDefiner); defines {
+			if _, reads := object.(schemaext.RelationReader); reads {
+				return false
+			}
+		}
 		reader, ok := object.(schemaext.RelationReader)
 		return !ok || schemaext.ReadsRelationIn(reader, relation, relationSemantics(diff))
 	})

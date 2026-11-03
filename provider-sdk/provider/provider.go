@@ -190,7 +190,8 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 			return err
 		}
 	}
-	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature} {
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
+		ComparisonCountsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
@@ -259,6 +260,9 @@ func validateContractAdditions(value *protocol.Description) error {
 	}
 	if slices.Contains(features, PlanningStatementStyleFeature) && !slices.Contains(features, PlanningPolicyFeature) {
 		return fmt.Errorf("%w: %s requires %s", ErrProtocol, PlanningStatementStyleFeature, PlanningPolicyFeature)
+	}
+	if slices.Contains(features, ComparisonCountsFeature) && !slices.Contains(features, CompareModelsFeature) {
+		return fmt.Errorf("%w: %s requires %s", ErrProtocol, ComparisonCountsFeature, CompareModelsFeature)
 	}
 	for _, feature := range []string{EntryKeysFeature, HCLSourceFeature, EncodeSourceFeature} {
 		if slices.Contains(features, feature) && !slices.Contains(features, DecodeSourceFeature) {

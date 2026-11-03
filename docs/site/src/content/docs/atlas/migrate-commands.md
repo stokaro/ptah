@@ -251,9 +251,9 @@ MySQL and MariaDB do not support `--tx-mode all`, along with every other target
 that commits DDL as it runs; see
 [what `--tx-mode all` cannot carry](../../versioned/apply/#what---tx-mode-all-cannot-carry).
 Ordinary session settings
-remain valid. Ptah runs the body on one pinned session, discards it afterward,
-and replays safe settings such as `SET SESSION time_zone` from a verified
-committed prefix before an automatic retry.
+remain valid. Ptah runs the bodies of a run on one pinned session, discards it
+when the run ends, and replays safe settings such as `SET SESSION time_zone`
+from a verified committed prefix before an automatic retry.
 
 Temporary tables are also allowed: their DDL does not make permanent InnoDB
 work durable by itself, and discarding the session prevents temporary state
@@ -838,6 +838,34 @@ Directories in Atlas's, Goose's, dbmate's, Flyway's and Liquibase's layouts
 keep the per-file transaction, which a file opts out of with its layout's own
 marker.
 
+#### Session state from one file to the next
+
+`migrate apply` runs the files of one run on one database session, in every
+directory layout and transaction mode, and discards the session when the run
+ends. A setting a file leaves, such as `SET search_path`, holds for the files
+after it in the same run, and so do a temporary table and a prepared
+statement. Measured on PostgreSQL 18.6 with three files, `CREATE SCHEMA s1;`,
+then `SET search_path = s1; CREATE TABLE t2 (id int);`, then
+`CREATE TABLE t3 (id int);`:
+
+| run | where `t3` lands |
+| --- | --- |
+| golang-migrate v4.20.1 `up`, through `postgres://` and `pgx5://` | `s1` |
+| the pinned community binary v1.3.0, golang-migrate and Atlas layouts, `--tx-mode` `file`, `none` and `all` | `s1` |
+| `ptah-compat migrate apply`, the same layouts and modes | `s1` |
+| `up 2` then `up`, or `migrate apply 2` then `migrate apply`, on each | `public` |
+
+Nothing carries from one run to the next. A resumed apply starts on a new
+session and restores only the session state of the resumed migration's
+committed prefix, as described above, not what the files of an earlier run
+set. The revision table is qualified with its schema, so a setting a file
+leaves cannot move it. On SQLite the files run on the connection pool's
+sessions instead, so that the run keeps what a caller attached to the pool.
+
+`migrate lint`, `migrate validate` and `migrate diff` replay a directory on one
+session as well, so a setting reaches the same files there; the replay refuses
+`SET search_path` itself on every dev server.
+
 Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
 before `V2`, `V1.10` after `V1.9`). Ptah gives each file two deliberately
 separate values:
@@ -1372,7 +1400,11 @@ ahead of it. In the exact style, the plan also drops a removed table's
 policies before views and columns they read. A removed table a policy of
 another removed table reads is dropped after the table that holds the policy,
 and two removed tables whose policies read each other are dropped in one
-`DROP TABLE`. The plan relies on `CASCADE` only where it removes a dependent
+`DROP TABLE`.
+
+A removed domain, composite type or range type that names the row type of a
+removed table, such as `CREATE TYPE wrap AS (r t, n int)`, is dropped before
+the tables. The plan relies on `CASCADE` only where it removes a dependent
 after the drop:
 
 - a view or table whose row type a removed routine names, when another object
@@ -1382,11 +1414,12 @@ after the drop:
   drops every routine that uses its row type before it;
 - a column a routine the plan removes reads in a SQL-standard body when
   another dependency prevents dropping the routine before that column;
-- a table whose row type a type the plan removes names, such as
-  `CREATE TYPE wrap AS (r t, n int)`. A removed domain, composite type or
-  range type that names no such table, a removed extension and a removed
-  default privilege hold no drop back. An object a feature owner removes and
-  cannot describe holds back every column and table drop.
+- a table whose row type a type the plan removes names, when a table or a
+  routine the plan drops after the tables still uses the type, so the type is
+  dropped after them. Any other removed domain, composite type or range type,
+  a removed extension and a removed default privilege hold no drop back. An
+  object a feature owner removes and cannot describe holds back every column
+  and table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.

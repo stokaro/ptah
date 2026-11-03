@@ -97,7 +97,7 @@ func newSilentNativeMigrateCreateCommand() *cobra.Command {
 // and for a second positional. A run carrying more than one positional is left
 // to it untouched.
 func checkAtlasMigrateNewName(cmd *cobra.Command, verb atlasVerb, args []string) error {
-	_, positionals := splitAtlasPositionals(verb.flags, args)
+	_, positionals := splitAtlasPositionals(atlasPositionalValueFlags(verb), args)
 	if len(positionals) != 1 {
 		return nil
 	}

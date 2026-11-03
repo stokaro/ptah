@@ -11,9 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/execoutcome"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
@@ -34,7 +37,7 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 // built-in engine with query units, or statements.
 func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
 	if conn == nil {
-		return sqlutil.SplitStatements(sql)
+		return statementsAsWritten(sql, "")
 	}
 	return grammarFor(conn).statements(sql)
 }
@@ -45,6 +48,41 @@ func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql stri
 // as where it has query units.
 func splitSQLStatementsForDialect(sql, dialect string) []string {
 	return grammarForDialect(dialect).statements(sql)
+}
+
+// statementsAsWritten splits sql into the statements the migrator runs. A
+// comment before a statement's first token is the file's note to its reader
+// and stays out, as does a statement that is only comments. A comment inside
+// a statement is part of what the author wrote and is sent with it, as the
+// community binary sends it: MySQL and SQL Server keep a trigger's or a
+// routine's body as it arrives, so with the comment taken out the stored body
+// lacks it, and a comparison that reads the body back finds it changed on
+// every run.
+func statementsAsWritten(sql, dialect string) []string {
+	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
+	kept := statements[:0]
+	for _, statement := range statements {
+		if statement = withoutLeadingComments(statement, dialect); statement != "" {
+			kept = append(kept, statement)
+		}
+	}
+	return kept
+}
+
+// withoutLeadingComments returns statement from its first token on, scanned
+// with the dialect's lexer, or "" when it holds only comments and whitespace.
+func withoutLeadingComments(statement, dialect string) string {
+	options := lexer.Options{}
+	if dialect = platform.NormalizeDialect(dialect); dialect != "" {
+		options = dialectlexer.Options(dialect)
+	}
+	scanner := lexer.NewLexerWithOptions(statement, options)
+	for token := scanner.NextToken(); token.Type != lexer.TokenEOF; token = scanner.NextToken() {
+		if token.Type != lexer.TokenComment && token.Type != lexer.TokenWhitespace {
+			return strings.TrimSpace(statement[token.Start:])
+		}
+	}
+	return ""
 }
 
 func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []string {

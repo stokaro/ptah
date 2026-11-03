@@ -21,6 +21,7 @@ sourceOfTruth:
   - "integration/providercli/provider_migration_units_e2e_test.go"
   - "integration/providercli/provider_lint_cli_e2e_test.go"
   - "integration/providercli/provider_devclean_e2e_test.go"
+  - "integration/providercli/provider_drop_all_e2e_test.go"
   - "integration/providercli/provider_sql_lint_e2e_test.go"
   - "integration/providercli/provider_data_e2e_test.go"
   - "internal/embedrpc"
@@ -256,6 +257,17 @@ replays a migration directory on it, and `ptah-compat schema plan lint` and
   host runs nothing there.
 - The host tells the dev database from the target by the database each session
   reports, since it reads no provider address.
+
+`ptah db drop-all` and `ptah-compat schema clean` empty a database the provider
+serves through the same `database.dev-cleanup`. The plan is the provider's
+list, each object under the provider's name for its kind, such as
+`table "users"` or `topic "events" in schema "app"`, and it carries no SQL,
+because the provider runs its own statements. The provider then removes the
+whole list or nothing. A provider that does not declare the feature for the
+engine is refused, and so is a database that holds an object the provider
+cannot remove, dry run included; the refusal names the object and the
+provider's reason. A plan that `--include` or `--exclude` narrowed is refused
+before anything is dropped, since the provider cannot remove part of the list.
 
 `embeddings.store` lets a provider keep the generations of `ptah inference`.
 The host lists the feature, and each engine that lists it declares the
@@ -518,6 +530,26 @@ run, take the same route read-write. A provider reports a row count only when
 its engine measured one, so a script's `expect_rows` is refused on an engine
 that does not. An engine that does not list the feature refuses each of these,
 and a `catch` step fails there rather than passing on the refusal.
+
+A Go caller can bind arguments to such a statement through
+`dbschema.DatabaseConnection.OperatorStatements`. Each one arrives as the
+`DataValue` case its Go type names: a signed integer as `int64_value`, an
+unsigned one as `uint64_value`, a `float64` as `double_value`, a duration as
+`interval_value`, and `nil` as `null`, which carries no type. The host refuses
+an argument that no case holds exactly, such as an `int32`, a pointer or a
+slice, before it sends the statement, so a provider never receives a value
+widened from the type its caller chose.
+
+`RunStatementRequest.arguments` is positional, and the placeholder style of the
+engine's `query_dialect` says which parameter each position binds. Under
+`dollar-named` the Nth parameter is `$pN`, so a provider binds the Nth argument
+to `$pN`, and the host sends a Go argument named `pN` at position N, wherever
+the call put it. That is how a statement the query builder renders for the
+engine, whose arguments are `sql.Named("p1", ...)` and so on, runs through the
+provider. The host refuses a named argument it cannot place exactly before it
+sends anything: one for an engine whose style is another or that declares none,
+names that do not give the positions 1 to N exactly once, and named and
+positional arguments in one statement.
 
 The `--include`, `--exclude` and `--schema` selectors name a provider's objects
 by the selector types its engines declare under `scope.selections`, such as
@@ -1088,8 +1120,8 @@ and a table that carries facets or owned objects, which a reading cannot place
 yet. A command that selects a provider for the engine fails with
 `provider_missing` before it reads the file when none is installed.
 
-The execution adapter does not support managed data, database cleanup, or
-isolated execution of untrusted SQL. It does not add
+The execution adapter does not support managed data or isolated execution of
+untrusted SQL. It does not add
 provider selection to `ptah-compat` or native commands outside the list above. Project-file
 URLs and saved plans do not select a provider: pass `--provider-engine` with
 `--provider-config` for those workflows. The selected connection scope refuses

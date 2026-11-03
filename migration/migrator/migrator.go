@@ -226,10 +226,13 @@ type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
 	noTransactionSession *dbschema.DatabaseConnection
-	migrationProvider    MigrationProvider
-	defaultTimeouts      migrationfile.Timeouts
-	migrationsTable      string
-	migrationsSchema     string
+	// runSession is the session an up run executes every migration body on;
+	// see [Migrator.withRunSession]. Nil outside such a run.
+	runSession        *dbschema.DatabaseConnection
+	migrationProvider MigrationProvider
+	defaultTimeouts   migrationfile.Timeouts
+	migrationsTable   string
+	migrationsSchema  string
 	// atlasPlacedSchema reports that migrationsSchema holds Atlas's placement
 	// for its revision table rather than a schema the caller named. See
 	// placeAtlasRevisionTable.
@@ -1796,6 +1799,17 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 }
 
 // MigrateUpWithOptions migrates up using an explicitly selected apply plan.
+//
+// One call executes the body of every migration it applies on one database
+// session, pinned from the connection and discarded before the call returns,
+// so session state a migration leaves, such as a PostgreSQL search_path or a
+// temporary table, holds for the migrations after it in the call and for none
+// in a later call. Revision bookkeeping names the revision table with its
+// schema, so that state cannot move it. On SQLite the bodies run on the
+// connection pool's sessions instead, and a dry run pins nothing. On a
+// provider's connection that holds the migration lock the bodies run on the
+// connection's own session, where the provider guards each commit, and what
+// they leave there outlives the call.
 func (m *Migrator) MigrateUpWithOptions(ctx context.Context, opts MigrateUpOptions) (err error) {
 	if err := validateMigrateUpOptions(opts); err != nil {
 		return err
@@ -2497,7 +2511,25 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 	return nil
 }
 
+// applyUpMigrationsPerFile runs each migration in the mode it resolves to, every
+// body on the one session [Migrator.withRunSession] pins for the run.
 func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	if len(migrations) == 0 {
+		return nil, nil
+	}
+	var checksDeferred []int64
+	err := m.withRunSession(ctx, func(run *Migrator) error {
+		var err error
+		checksDeferred, err = run.applyUpMigrationsInRun(ctx, migrations)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return checksDeferred, nil
+}
+
+func (m *Migrator) applyUpMigrationsInRun(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	var checksDeferred []int64
 	// The loop index is the migration's position in the RUN, which is what
 	// decides whether its checks observe apply state — see
@@ -3027,7 +3059,7 @@ func (m *Migrator) withTransactionalMigrationSession(
 	direction MigrationDirection,
 	use func(*Migrator) error,
 ) error {
-	return m.conn.WithSession(ctx, func(conn *dbschema.DatabaseConnection) error {
+	return m.withBodySession(ctx, func(conn *dbschema.DatabaseConnection) error {
 		scoped := *m
 		scoped.conn = conn
 		if scoped.migrationsSchema == "" {

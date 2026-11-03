@@ -57,7 +57,10 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `IDENTITY(1,1)`, unless the field gives its own SQL Server
   type. A table takes one identity column (`Msg 2744`), so a serial column
-  beside another auto-increment column is refused by name.
+  beside another auto-increment column is refused by name. A SQL schema file
+  reads `IDENTITY` and `IDENTITY(seed, increment)` as `ptah db read` prints
+  them. An identity column is `NOT NULL` whether or not the file says so, and
+  `NULL` on one is refused, as the server refuses it (`Msg 8147`).
 - Core table DDL: primary keys, unique constraints, foreign keys, `CHECK`
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).
@@ -446,7 +449,9 @@ either compares equal to the database. Each event is written once, and the
 events are separated by commas. A trigger fires once per statement, as every
 SQL Server DML trigger does. A schema in the trigger's name must be the schema
 of its table, and an unqualified table is in `dbo`; SQL Server refuses any
-other schema with `Msg 2103`.
+other schema with `Msg 2103`. The table may be a view: an `INSTEAD OF` trigger
+is how a view takes writes, and `ptah db read` describes one on a view as it
+describes one on a table.
 
 The body follows `AS` and runs to the end of its batch. Ptah ends it at a `GO`
 line, at the `END` that closes a `BEGIN ... END` body, or at the end of the

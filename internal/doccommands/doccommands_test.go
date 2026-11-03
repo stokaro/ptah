@@ -55,7 +55,6 @@ func fixture() doccommands.Trees {
 		target.Flags().String("engine", "", "")
 		return target
 	})
-	cmdforward.ReadsPositionals(edit)
 	migrate.AddCommand(forward, raw, edit)
 	compat.AddCommand(migrate)
 	return doccommands.NewTrees(native, compat)
@@ -104,8 +103,10 @@ func TestCheck_HappyPath(t *testing.T) {
 		compat("migrate", "down", "--target", "5", "--log-level", "info"),
 		compat("migrate", "down", "--help"),
 		compat("migrate", "raw", "--whatever", "the", "target", "parses"),
-		// A verb that reads positionals takes a target flag's value with "=".
+		// A verb that reads positionals takes a target flag's value after it,
+		// with or without "=".
 		compat("migrate", "edit", "1", "--engine=x"),
+		compat("migrate", "edit", "1", "--engine", "x"),
 	} {
 		t.Run(strings.Join(append([]string{line.Program}, line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)
@@ -148,8 +149,6 @@ func TestCheck_FailurePath(t *testing.T) {
 		// not reach it.
 		{compat("migrate", "down", "--verbose"), `"ptah-compat migrate down" has no flag --verbose`},
 		{compat("migrate", "bogus"), `"ptah-compat migrate" has no subcommand "bogus"`},
-		// The verb would read x as a second positional argument.
-		{compat("migrate", "edit", "1", "--engine", "x"), `"ptah-compat migrate edit" reads the word after --engine as an argument; write --engine=VALUE`},
 	} {
 		t.Run(strings.Join(append([]string{test.line.Program}, test.line.Args...), " "), func(t *testing.T) {
 			c := qt.New(t)

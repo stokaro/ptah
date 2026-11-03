@@ -77,6 +77,11 @@ type ColumnGrammar struct {
 	// `$$x$$` and `E'x'` are the default 'x'. Without it a string default is
 	// kept as written.
 	StoredStringDefaults bool `json:"stored_string_defaults,omitempty"`
+	// IdentityProperty reports that IDENTITY, with or without a (seed,
+	// increment) pair, makes the column an identity column, as T-SQL writes
+	// it. A bare IDENTITY is IDENTITY(1, 1). Without it IDENTITY is refused
+	// as an unsupported column attribute.
+	IdentityProperty bool `json:"identity_property,omitempty"`
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may
@@ -264,6 +269,10 @@ type AlterTableGrammar struct {
 	// ColumnGuards reports that DROP COLUMN takes IF EXISTS and ADD COLUMN
 	// takes IF NOT EXISTS. The parser asks it only where ChecksCapabilities is set.
 	ColumnGuards bool `json:"column_guards,omitempty"`
+	// KeyUsingIndex reports that ADD [CONSTRAINT name] UNIQUE | PRIMARY KEY
+	// USING INDEX index makes an existing unique index the key, its columns
+	// the index's, as PostgreSQL writes it. Without it the clause is refused.
+	KeyUsingIndex bool `json:"key_using_index,omitempty"`
 }
 
 const (

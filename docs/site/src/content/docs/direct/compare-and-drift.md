@@ -297,8 +297,10 @@ privilege the database does not hold yet.
 
 `rls_policies` and `rls_enabled_tables` count the policies and the enablements
 the shared comparison pairs. Against PostgreSQL, policies and row-level security
-belong to their feature owner, so a PostgreSQL report has neither kind and
-counts its policies under the owner's kind below.
+belong to their feature owner, so a PostgreSQL report has neither kind. It
+counts the policies under `ptah.run/pgpolicy/policy-change` and the tables with
+row-level security on, by `ENABLE` or `FORCE`, under
+`ptah.run/pgpolicy/table-state-change`.
 
 An object a feature owner compares, such as a PostgreSQL extension, policy or
 domain, is counted by its owner, which decides which objects on the two sides
@@ -320,7 +322,9 @@ object type and grantee, and a declaration the built-in privileges already
 satisfy counts on both sides.
 
 An owner that does not count its objects has no entry, though its changes are
-still findings. A provider installed separately counts nothing yet.
+still findings. A setting that stands for no object, such as a ClickHouse
+table's TTL, has no entry either. A provider installed separately counts
+nothing yet.
 
 ### An extension the schema does not describe
 
@@ -571,6 +575,15 @@ and `--schema-cmd` runs an explicit external loader. A configured
 `external_schema` needs `--config ... --allow-config-exec`. Repeated
 sources merge into one composite desired schema. See
 [Composite desired schema](../../schema/composite/) for the merge rules.
+
+## Which schemas are read
+
+On an engine with schemas, these commands read what `ptah schema apply` reads.
+`--schemas`, or `schemas` in `ptah.yaml`, names the schemas. Without either, a
+PostgreSQL URL that pins `search_path` is read at that schema and one that pins
+none across every schema, together with every schema the desired schema names.
+A URL that pins no schema therefore reports the tables of a schema the desired
+schema does not describe as removals, as `schema apply` would drop them.
 
 ## Diff two arbitrary schema states
 

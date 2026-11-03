@@ -119,6 +119,22 @@ Generated 1 migration statements.
 Because the database is empty, the difference is the whole schema. On a
 migrated database the plan contains only the delta.
 
+### Which schemas plan and generate read
+
+On an engine with schemas, `plan` and `generate` read the database at the
+scope `ptah schema apply` reads. `--schemas`, or `schemas` in `ptah.yaml`,
+names the schemas. Without either, the URL decides: a PostgreSQL URL that pins
+`search_path` is read at that schema, and one that pins none across every
+schema of the database. The schemas the desired schema names are read too, so a
+table it declares in another schema is compared with the table the database
+holds, and the migration alters that table instead of creating it again.
+
+A URL that pins no schema also brings the tables of every schema the desired
+schema does not describe into the plan, and the migration drops them, as
+`schema apply` would. Pin `search_path` or pass `--schemas` to plan for one
+schema. With `--qualifier`, a plan that touches more than one schema is
+refused.
+
 ### Send the plan verdict to CI
 
 Use `--report json` when automation needs the safety verdict:

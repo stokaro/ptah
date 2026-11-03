@@ -703,12 +703,18 @@ are invalid because a completed rollback deletes its revision row.
 `RepairMigration` holds the session advisory lock across revision inspection,
 resumed SQL, safety checks, and the final metadata write.
 
-SQL-backed `MigrationTxModeNone` attempts pin their migration SQL to one
-physical database session. Server-database revision metadata remains on the
-original connection; SQLite uses the pinned session with a `main`-qualified
-table to support its single-connection in-memory mode. Resume replays recognized
-session controls from the verified committed prefix on a fresh session and
-refuses prefixes whose session-local state cannot be reconstructed safely.
+An up run executes every migration body on one pinned physical database
+session and discards it when the run returns, so session state one migration
+leaves holds for the later migrations of the run. SQL-backed
+`MigrationTxModeNone` attempts run on that session.
+
+Server-database revision metadata remains on the original connection or is
+qualified with the connection's schema. SQLite pins a session for each
+`MigrationTxModeNone` attempt instead and keeps its metadata there, in a
+`main`-qualified table, to support its single-connection in-memory mode.
+Resume replays recognized session controls from the verified committed prefix
+on a fresh session and refuses prefixes whose session-local state cannot be
+reconstructed safely.
 Top-level transaction-control statements are rejected before session pinning or
 revision mutation because their commit boundary would conflict with Ptah's
 durable per-statement checkpoints.
@@ -877,6 +883,23 @@ native connection returns a `database/sql` handle over its provider's
 when the engine did not measure the count; a provider that runs no statement
 refuses with `ptaherr.ErrUnsupportedFeature`. `dbschema.OperatorStatementProvider`
 is the interface a native session implements to serve it.
+
+On that handle an argument reaches the provider with the type its Go value
+names: an `int` or `int64` as a signed 64-bit integer, a `uint` or `uint64` as
+an unsigned one, a `time.Duration` as an interval, a named type as its
+underlying kind, and a `driver.Valuer` as the value its `Value` method returns.
+An argument the provider contract cannot carry exactly is refused with
+`ptaherr.ErrUnsupportedFeature` before the statement is sent, rather than
+converted: an integer narrower than 64 bits, a `float32`, a pointer, a
+`database/sql` `Null` value, an array, and a slice other than a byte slice.
+
+The contract carries arguments by position. A named argument binds where the
+engine's query dialect declares the `dollar-named` placeholder style, whose Nth
+parameter is `$pN`: the argument named `pN` is sent at position N, wherever the
+call put it, so a statement `core/query` renders for that engine runs on the
+handle. Every other named argument is refused the same way: one under another
+style or none, names that do not give the positions 1 to N exactly once, and
+named and positional arguments in one statement.
 
 `migration/migrator.CheckFailedError` identifies one failed or invalid
 pre-migration assertion. `CheckGroupFailedError` identifies an Atlas `oneof`

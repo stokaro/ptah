@@ -1,26 +1,8 @@
-package atlasschema
-
-// White-box testing required: applyReadScope is the step that decides which
-// schemas the DATABASE side of a `schema apply` is read at, and it runs between
-// two package-private stages -- loading the desired state and reading the
-// catalog -- that no exported entry point exposes separately. Driving the
-// decision through PrepareApply would need a live multi-schema server for every
-// row, and the property under test is which names go to the reader, not what
-// the reader answers. The end-to-end property -- inspecting a two-schema
-// database and applying its own description back plans nothing -- is covered
-// live by TestPostgreSQLSchemaBoundaryGuardIntegration's `two_schemas_plain_url`
-// fixture.
-//
-// The load-bearing rows are the ones where base and the document disagree. base
-// is what schemascope.ReadNames said this URL covers, and it is the same answer
-// `schema diff`, `schema inspect` and `migrate diff` get; the document's own
-// schemas are added on top rather than replacing it, because a URL pinned by
-// search_path covers less than a document may name and a creation planned for
-// an object that exists fails the run. A row that returned only the document's
-// schemas would make a whole schema silently unmanaged, which is
-// stokaro/ptah#1276 with the sign flipped.
+package schemascope_test
 
 import (
+	"database/sql/driver"
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -32,7 +14,23 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgtype"
+	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/schemascope"
 )
+
+// TestComparisonScope pins which names go to the reader of the live side of a
+// comparison. The end-to-end property -- inspecting a two-schema database and
+// applying its own description back plans nothing -- is covered live by
+// TestPostgreSQLSchemaBoundaryGuardIntegration's `two_schemas_plain_url`
+// fixture.
+//
+// The load-bearing rows are the ones where base and the document disagree. base
+// is what schemascope.ReadNames said this URL covers; the document's own
+// schemas are added on top rather than replacing it, because a URL pinned by
+// search_path covers less than a document may name and a creation planned for
+// an object that exists fails the run. A row that returned only the document's
+// schemas would make a whole schema silently unmanaged, which is
+// stokaro/ptah#1276 with the sign flipped.
 
 // postgresPinned is a connection whose URL pins one schema, so its scope is a
 // list of names that a document's schemas extend.
@@ -50,7 +48,7 @@ var postgresRealm = catalog.ServerInfo{Dialect: "postgres", URL: "postgres://loc
 // has no name, and its reader's default is every directory.
 var ydbRoot = catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local"}
 
-func TestApplyReadScope(t *testing.T) {
+func TestComparisonScope(t *testing.T) {
 	tests := []struct {
 		name      string
 		info      catalog.ServerInfo
@@ -183,9 +181,59 @@ func TestApplyReadScope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			names, err := applyReadScope(tt.info, tt.requested, tt.base, tt.desired)
+			names, err := schemascope.ComparisonScope(tt.info, tt.requested, tt.base, tt.desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(names, qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// reportingTable is a document declaring reporting.b and nothing in public.
+var reportingTable = &schemamodel.Database{Tables: []schemamodel.Table{{Name: "b", Schema: "reporting"}}}
+
+// TestComparisonReadNames_HappyPath reads, for a document declaring
+// reporting.b, every schema the URL covers and reporting with them. A read of
+// the connection's schema alone, public, finds no reporting.b, and the
+// comparison plans `CREATE TABLE "reporting"."b"` for a table that exists
+// (stokaro/ptah#5030).
+func TestComparisonReadNames_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		info       catalog.ServerInfo
+		requested  []string
+		want       []string
+		wantProbes int
+	}{
+		{name: "a URL pinning no schema reads the realm and the declared schemas", info: postgresRealm,
+			want: []string{"extra", "public", "reporting"}, wantProbes: 1},
+		{name: "a URL pinning a schema reads it and the declared schemas", info: postgresPinned,
+			want: []string{"public", "reporting"}, wantProbes: 0},
+		{name: "an explicit selection is the scope and asks the server nothing", info: postgresRealm,
+			requested: []string{"public"}, want: []string{"public"}, wantProbes: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, realmProbeRows("public", "extra"))
+
+			got, err := schemascope.ComparisonReadNames(t.Context(), test.info, test.requested, postgresConnection(db.SQL), reportingTable)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(db.QueryCount(), qt.Equals, test.wantProbes)
+		})
+	}
+}
+
+func TestComparisonReadNames_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	failure := errors.New("realm probe exploded")
+	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{}, failure
+	})
+
+	got, err := schemascope.ComparisonReadNames(t.Context(), postgresRealm, nil, postgresConnection(db.SQL), reportingTable)
+
+	c.Assert(err, qt.ErrorIs, failure)
+	c.Assert(got, qt.IsNil)
 }

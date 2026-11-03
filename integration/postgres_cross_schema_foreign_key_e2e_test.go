@@ -150,11 +150,16 @@ func TestReadingAPostgresKeyIntoAnotherSchemaE2E(t *testing.T) {
 // TestSchemaCompareFindsAPostgresKeyIntoAnotherSchemaSyncedE2E compares the
 // database with a schema file declaring the same keys, and with what
 // `schema inspect` wrote for public. Each is synced.
+//
+// The URL's search_path scopes the comparison to public, as it scopes the
+// apply below: compare reads what apply reads, and a URL naming no schema
+// covers crm, where the file's silence asks for crm.customers to be dropped.
 func TestSchemaCompareFindsAPostgresKeyIntoAnotherSchemaSyncedE2E(t *testing.T) {
 	for _, engine := range crossSchemaEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			keys := newCrossSchemaKeys(c, engine.engine)
+			target := withURLParameter(keys.url, "search_path", "public")
 			inspected := filepath.Join(c.TempDir(), "inspected")
 			c.Assert(os.MkdirAll(inspected, 0o750), qt.IsNil)
 			sources := []string{writeShopSchema(c, "crm.customers", "customers")}
@@ -168,7 +173,7 @@ func TestSchemaCompareFindsAPostgresKeyIntoAnotherSchemaSyncedE2E(t *testing.T) 
 			}
 
 			for _, source := range sources {
-				got := runPtahIn(c, "schema", "compare", "--db-url", keys.url, "--schema-file", source, "--exit-code")
+				got := runPtahIn(c, "schema", "compare", "--db-url", target, "--schema-file", source, "--exit-code")
 
 				c.Assert(got.ExitCode, qt.Equals, 0,
 					qt.Commentf("source %s\nstdout:\n%s\nstderr:\n%s", source, got.Stdout, got.Stderr))
@@ -243,15 +248,17 @@ func TestSchemaApplyRefusesAPostgresKeyIntoASchemaItWouldDropE2E(t *testing.T) {
 // TestSchemaCompareReportsAPostgresKeyThatReferencesTheOtherTableE2E is the
 // control for the tests above: a key into crm and a key into public's own
 // customers are two keys, in both directions. The file swaps the targets of
-// the two keys, and the plan drops and adds both.
+// the two keys, and the plan drops and adds both. The URL is scoped to public
+// as in the synced comparison.
 func TestSchemaCompareReportsAPostgresKeyThatReferencesTheOtherTableE2E(t *testing.T) {
 	for _, engine := range crossSchemaEngines {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			keys := newCrossSchemaKeys(c, engine.engine)
 			schema := writeShopSchema(c, "customers", "crm.customers")
+			target := withURLParameter(keys.url, "search_path", "public")
 
-			got := runPtahIn(c, "schema", "compare", "--db-url", keys.url, "--schema-file", schema, "--exit-code")
+			got := runPtahIn(c, "schema", "compare", "--db-url", target, "--schema-file", schema, "--exit-code")
 
 			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stdout, qt.Contains,

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
@@ -42,6 +43,9 @@ import (
 // OwnerCreateOnce replaced no switch. It is the measurement its declarations
 // state: PostgreSQL and YugabyteDB refuse a second CREATE EXTENSION of one
 // extension, and CockroachDB accepts it.
+//
+// A serial column's NOT NULL replaces no switch: the comparison reads it, and
+// its tests pin what it decides, so it is left out here.
 func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	pgFamily := descriptor.IndexNaming{PrimaryKeySuffix: "pkey"}
 	tests := []struct {
@@ -60,7 +64,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			indexNaming:      pgFamily,
 			constraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 			columns:          descriptor.Columns{IdentityNotNull: true},
-			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql"},
+			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql", RelationsShareNames: true},
 		},
 		{
 			dialect: platform.MySQL,
@@ -97,13 +101,13 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 				Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true,
 			},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
 		},
 		{
 			dialect:     platform.YugabyteDB,
 			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
 		{
 			dialect:     platform.Spanner,
@@ -128,7 +132,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			c.Assert(got.IndexNaming, qt.DeepEquals, test.indexNaming)
 			c.Assert(got.CheckNaming, qt.Equals, test.checkNaming)
 			c.Assert(got.ConstraintNaming, qt.Equals, test.constraintNaming)
-			c.Assert(got.Columns, qt.DeepEquals, test.columns)
+			c.Assert(got.Columns, qt.CmpEquals(cmpopts.IgnoreFields(descriptor.Columns{}, "SerialNotNull")), test.columns)
 			c.Assert(got.Statements, qt.DeepEquals, test.statements)
 			c.Assert(got.TableOptions, qt.DeepEquals, test.tableOptions)
 		})

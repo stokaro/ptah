@@ -39,6 +39,24 @@ type OperatorStatementProvider interface {
 // row count its provider did not measure is an error from
 // [sql.Result.RowsAffected] rather than a zero. A native connection whose
 // provider serves no statement refuses with ptaherr.ErrUnsupportedFeature.
+//
+// On a native connection an argument reaches the provider with the type its
+// Go value names, so the provider can bind it at that type: an int or an int64
+// as a signed 64-bit integer, a uint or a uint64 as an unsigned one, a float64
+// as a double, a time.Duration as an interval, a named type as its underlying
+// kind, and a driver.Valuer as the value its Value method returns. An
+// argument the provider contract cannot carry exactly is refused with
+// ptaherr.ErrUnsupportedFeature before the statement is sent, rather than
+// converted: an integer narrower than 64 bits, a float32, a pointer, a
+// database/sql Null value, an array, and a slice other than a byte slice.
+//
+// The contract carries arguments by position. A named argument binds where the
+// engine's query dialect declares the dollar-named placeholder style, whose Nth
+// parameter is $pN: the argument named pN is sent at position N, wherever the
+// call put it, so a statement the query builder renders for that engine runs
+// on this handle. Every other named argument is refused the same way: one under
+// another style or none, names that do not give the positions 1 to N exactly
+// once, and named and positional arguments in one statement.
 func (dc *DatabaseConnection) OperatorStatements() (OperatorStatements, func() error, error) {
 	if dc == nil {
 		return nil, nil, fmt.Errorf("operator statements require an open database connection")

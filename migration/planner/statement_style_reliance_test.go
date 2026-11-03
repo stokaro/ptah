@@ -131,12 +131,14 @@ func droppedColumnBesideComposite() styleChange {
 }
 
 // removedTableBesideComposite removes the table archive and the composite
-// type wrap, whose attribute r is of type rowType.
-func removedTableBesideComposite(rowType string) styleChange {
+// type wrap, whose attribute r is of type rowType, and the tables also holds,
+// which go too.
+func removedTableBesideComposite(rowType string, also ...catalog.Table) styleChange {
 	declared := styleDeclared()
 	declared.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Desired))
 	return styleChange{declared: declared, held: styleHeldWith(func(h *catalog.Database) {
 		h.Tables = append(h.Tables, styleTable("archive", styleKey("id")))
+		h.Tables = append(h.Tables, also...)
 		h.FeatureObjects = must.Must(schemaext.NewObjects(schemaext.Object{
 			Ref: pgtype.Ref(pgtype.CompositeKind, "public", "wrap"),
 			Value: &pgtype.ObservedComposite{Attributes: []pgtype.Attribute{
@@ -145,6 +147,14 @@ func removedTableBesideComposite(rowType string) styleChange {
 		}))
 		h.FeatureCoverage = must.Must(pgtype.CompleteCoverage(schemaext.Observed))
 	})}
+}
+
+// removedTableBesideCompositeAndRoutine is removedTableBesideComposite over
+// archive's row type, with routine removed too.
+func removedTableBesideCompositeAndRoutine(routine catalog.Function) styleChange {
+	change := removedTableBesideComposite("archive")
+	change.held.Functions = []catalog.Function{routine}
+	return change
 }
 
 // droppedColumnUnderTrigger drops owners.email, which a trigger the
@@ -569,10 +579,33 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 				`DROP TABLE "public"."archive"`,
 				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
 			}},
+		// The type goes ahead of the table whose row type it names, so the
+		// table's drop needs no CASCADE; the drop after an owner operation
+		// keeps its guard (stokaro/ptah#5000).
 		{name: "a table removed beside a composite type that names its row type",
 			change: removedTableBesideComposite("archive"),
 			want: []string{
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				`DROP TABLE IF EXISTS "public"."archive"`,
+			}},
+		// A removed table whose column is the type is dropped after the
+		// tables, so the type stays after it, and the table whose row type it
+		// names relies on CASCADE to strip the attribute.
+		{name: "a table removed beside a composite type over its row type that another removed table uses",
+			change: removedTableBesideComposite("archive", styleTable("ledger", styleKey("id"),
+				catalog.Column{Name: "w", DataType: "USER-DEFINED", UDTName: "wrap", UDTSchema: "public", IsNullable: "YES"})),
+			want: []string{
 				`DROP TABLE "public"."archive" CASCADE`,
+				`DROP TABLE IF EXISTS "public"."ledger"`,
+				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+			}},
+		// A removed routine that takes the type is dropped after the tables,
+		// so the type stays after it, as it does for a removed table's column.
+		{name: "a table removed beside a composite type over its row type that a removed routine takes",
+			change: removedTableBesideCompositeAndRoutine(styleRoutine("wrap_n", "w wrap", "integer", "SELECT w.n")),
+			want: []string{
+				`DROP TABLE "public"."archive" CASCADE`,
+				`DROP FUNCTION IF EXISTS "public"."wrap_n"(w wrap)`,
 				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a column dropped under a trigger the declaration removes", change: droppedColumnUnderTrigger(), want: []string{

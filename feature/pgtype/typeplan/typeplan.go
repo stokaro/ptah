@@ -32,10 +32,17 @@ import (
 // A type is created, changed in place, or dropped and created again in
 // [featureplan.PhaseType], before the routines and tables that may name it,
 // and a type nothing declares is dropped in that phase's removal window,
-// after the tables. The plan orders its own steps: the drops of the types it
-// rebuilds first, a type that names another before it, then every creation, a
-// type another names first, each followed by its comment, then the changes in
-// place, domains before composite types.
+// after the tables. A type whose definition names the row type of a relation
+// the plan creates, directly or through the types it names, joins
+// [featureplan.PhaseDefault] instead, after the tables and columns, and a
+// type the plan drops with a table whose row type it names joins it before
+// the tables, unless a later drop still uses the type. A plan no window
+// serves is refused; see placement.
+//
+// The plan orders its own steps: the drops of the types it rebuilds first, a
+// type that names another before it, then every creation, a type another
+// names first, each followed by its comment, then the changes in place,
+// domains before composite types.
 //
 // A domain changes in place when only its CHECK, its default or its NOT NULL
 // differ: ALTER DOMAIN drops every CHECK the catalog names and adds the
@@ -85,13 +92,20 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 		problem.Kind = string(refused.changeKind)
 		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Problem: problem, Change: new(refused.index)}}}, nil
 	}
-	steps := planChanges(changes, request.Types, request.CommonSteps, request.Policy.Statements)
+	markRebuilt(changes, request.Types.Current, request.CommonSteps)
+	places := placeChanges(changes, request.Types, request.CommonSteps, request.Identifiers)
+	if refused, problem := places.refuse(changes, request.CommonSteps); refused != nil {
+		problem.Kind = string(refused.changeKind)
+		return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{{Problem: problem, Change: new(refused.index)}}}, nil
+	}
+	steps := planChanges(changes, places, request.Types, request.Policy.Statements)
 	result := featureplan.Result{Complete: true, Changes: make([]featureplan.ChangePlan, len(changes))}
 	for i, planned := range changes {
-		result.Changes[i] = featureplan.ChangePlan{Subject: planned.subject, Kind: planned.changeKind, Strategy: planned.strategy(), Steps: planned.steps}
+		result.Changes[i] = featureplan.ChangePlan{Subject: planned.subject, Kind: planned.changeKind, Strategy: planned.strategy(places), Steps: planned.steps}
 	}
 	if contribution := steps.contribution(); len(contribution.Steps) > 0 {
 		contribution.Dependencies = append(contribution.Dependencies, commonDependencies(request.Types, request.CommonSteps, contribution.Steps)...)
+		contribution.Dependencies = append(contribution.Dependencies, places.dependencies(changes)...)
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
 	}
 	return result, ctx.Err()
@@ -118,20 +132,29 @@ func (Service) PlanDeclarations(ctx context.Context, request featureplan.Declara
 		}
 		changes = append(changes, planned)
 	}
-	if refused, problem := refuse(request.Target, request.Capabilities, changes); refused != nil {
+	refusal := func(refused *change, problem schemavalidation.Diagnostic) (featureplan.DeclarationResult, error) {
 		// A declaration's refusal names the declared model, which is what
 		// the render was handed, not the change it was planned as.
 		problem.Kind = string(refused.model)
 		return featureplan.DeclarationResult{Complete: true,
 			Diagnostics: []featureplan.DeclarationDiagnostic{{Problem: problem, Object: new(refused.index)}}}, nil
 	}
-	steps := planDeclarations(changes, request.Types)
+	if refused, problem := refuse(request.Target, request.Capabilities, changes); refused != nil {
+		return refusal(refused, problem)
+	}
+	types := featureplan.TypeContext{Desired: request.Types}
+	places := placeChanges(changes, types, request.CommonSteps, request.Identifiers)
+	if refused, problem := places.refuse(changes, request.CommonSteps); refused != nil {
+		return refusal(refused, problem)
+	}
+	steps := planDeclarations(changes, places, request.Types)
 	result := featureplan.DeclarationResult{Complete: true, Declarations: make([]featureplan.DeclarationPlan, len(changes))}
 	for i, planned := range changes {
-		result.Declarations[i] = featureplan.DeclarationPlan{Subject: planned.subject, Strategy: planned.strategy(), Steps: planned.steps}
+		result.Declarations[i] = featureplan.DeclarationPlan{Subject: planned.subject, Strategy: planned.strategy(places), Steps: planned.steps}
 	}
 	if contribution := steps.contribution(); len(contribution.Steps) > 0 {
-		contribution.Dependencies = append(contribution.Dependencies, commonDependencies(featureplan.TypeContext{Desired: request.Types}, request.CommonSteps, contribution.Steps)...)
+		contribution.Dependencies = append(contribution.Dependencies, commonDependencies(types, request.CommonSteps, contribution.Steps)...)
+		contribution.Dependencies = append(contribution.Dependencies, places.dependencies(changes)...)
 		result.Contributions = []plangraph.Contribution[featureplan.Operation]{contribution}
 	}
 	return result, ctx.Err()
@@ -337,11 +360,15 @@ func readRange(planned *change, value *pgtype.RangeChange) {
 // survives reports a change of a type both sides hold.
 func (c *change) survives() bool { return c.before && c.after }
 
-// strategy says how the change is carried out.
-func (c *change) strategy() string {
+// strategy says how the change is carried out, where places puts it.
+func (c *change) strategy(places placement) string {
 	switch {
+	case !c.before && places.late(c):
+		return "create the type after the relations whose row types it names, and before the types that name it"
 	case !c.before:
 		return "create the type before the columns, routines and types that name it"
+	case !c.after && places.ahead(c):
+		return "drop the type before the tables whose row types it names, after the objects that use it"
 	case !c.after:
 		return "drop the type with CASCADE after the objects that use it"
 	case c.rebuilt:
@@ -408,22 +435,23 @@ func (s *sequence) add(planned *change, step plangraph.Step[featureplan.Operatio
 	planned.steps = append(planned.steps, step.ID)
 }
 
-// windows are the plan's three sequences: the type creation window, the type
-// removal window, and the dependent window the comments of surviving types
-// join.
+// windows are the plan's sequences: the type creation window, the type
+// removal window, the default creation and removal windows the types that
+// name a relation's row type join, and the dependent window the comments of
+// surviving types join.
 type windows struct {
-	creation, removal, comments sequence
+	creation, removal, late, ahead, comments sequence
 }
 
 func (w windows) contribution() plangraph.Contribution[featureplan.Operation] {
 	return plangraph.Contribution[featureplan.Operation]{Owner: pgtype.Owner,
-		Steps:        slices.Concat(w.creation.steps, w.removal.steps, w.comments.steps),
-		Dependencies: slices.Concat(w.creation.edges, w.removal.edges, w.comments.edges)}
+		Steps:        slices.Concat(w.creation.steps, w.late.steps, w.removal.steps, w.ahead.steps, w.comments.steps),
+		Dependencies: slices.Concat(w.creation.edges, w.late.edges, w.removal.edges, w.ahead.edges, w.comments.edges)}
 }
 
-// planChanges orders the steps of a batch of changes.
-func planChanges(changes []*change, types featureplan.TypeContext, common []featureplan.CommonStep, style featureplan.StatementStyle) windows {
-	markRebuilt(changes, types.Current, common)
+// planChanges orders the steps of a batch of changes, each type in the
+// window places gives it. markRebuilt has run.
+func planChanges(changes []*change, places placement, types featureplan.TypeContext, style featureplan.StatementStyle) windows {
 	var plan windows
 	exact := style == featureplan.StatementStyleExact
 	// The drops of rebuilt types run against the database as it stands, so
@@ -435,14 +463,18 @@ func planChanges(changes []*change, types featureplan.TypeContext, common []feat
 	creations := slices.Concat(byKind(changes, func(c *change) bool { return !c.before }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind),
 		byKind(changes, func(c *change) bool { return c.rebuilt }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind))
 	for _, planned := range createOrder(creations, types.Desired) {
-		addCreation(&plan.creation, planned)
+		addCreation(places.creationWindow(&plan, planned), planned, places.creationPhase(planned))
 	}
 	for _, planned := range byKind(changes, func(c *change) bool { return c.survives() && c.changed && !c.rebuilt && c.alter != nil },
 		pgtype.DomainKind, pgtype.CompositeKind) {
-		plan.creation.add(planned, step(planned, "alter", plangraph.Alter, featureplan.PhaseType, planned.alter))
+		places.creationWindow(&plan, planned).add(planned, step(planned, "alter", plangraph.Alter, places.creationPhase(planned), planned.alter))
 	}
 	for _, planned := range removalOrder(byKind(changes, func(c *change) bool { return !c.after }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind), types.Current) {
-		plan.removal.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType,
+		window, phase := &plan.removal, featureplan.PhaseType
+		if places.ahead(planned) {
+			window, phase = &plan.ahead, featureplan.PhaseDefault
+		}
+		window.add(planned, step(planned, "drop", plangraph.Drop, phase,
 			&pgtype.Drop{Target: pgtype.TargetOf(planned.subject), IfExists: !exact, Cascade: !exact},
 			"WARNING: Make sure no columns use this "+pgtype.Label(planned.subject)+"!"))
 	}
@@ -457,19 +489,20 @@ func planChanges(changes []*change, types featureplan.TypeContext, common []feat
 }
 
 // planDeclarations orders the creation steps of declared types.
-func planDeclarations(changes []*change, types []schemaext.DefinedType) windows {
+func planDeclarations(changes []*change, places placement, types []schemaext.DefinedType) windows {
 	var plan windows
 	for _, planned := range createOrder(byKind(changes, func(*change) bool { return true }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind), types) {
-		addCreation(&plan.creation, planned)
+		addCreation(places.creationWindow(&plan, planned), planned, places.creationPhase(planned))
 	}
 	return plan
 }
 
-// addCreation adds a type's creation and, where it declares one, its comment.
-func addCreation(window *sequence, planned *change) {
-	window.add(planned, step(planned, "create", plangraph.Create, featureplan.PhaseType, planned.create))
+// addCreation adds a type's creation and, where it declares one, its comment,
+// both in phase.
+func addCreation(window *sequence, planned *change, phase featureplan.Phase) {
+	window.add(planned, step(planned, "create", plangraph.Create, phase, planned.create))
 	if planned.comment != "" {
-		window.add(planned, step(planned, "comment", plangraph.Alter, featureplan.PhaseType,
+		window.add(planned, step(planned, "comment", plangraph.Alter, phase,
 			&pgtype.Comment{Target: pgtype.TargetOf(planned.subject), Comment: planned.comment}))
 	}
 }

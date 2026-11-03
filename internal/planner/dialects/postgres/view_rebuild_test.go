@@ -210,6 +210,23 @@ var (
 	orderReportMoved   = rebuildObject{name: "order_report", body: "SELECT 1 AS one, total FROM order_totals"}
 	orderTop           = rebuildObject{name: "order_top", body: "SELECT max(total) AS top FROM order_totals", materialized: true}
 	orderTopReport     = rebuildObject{name: "order_top_report", body: "SELECT top FROM order_top"}
+	// orderTotalsTop reads order_totals, and orderTotalsTopOfOrders, its new
+	// declaration, reads orders instead. Its name sorts after order_totals, so
+	// an order that sees only the new body drops order_totals first.
+	orderTotalsTop         = rebuildObject{name: "order_totals_top", body: "SELECT max(total) AS top FROM order_totals", materialized: true}
+	orderTotalsTopOfOrders = rebuildObject{name: "order_totals_top", body: "SELECT max(amount) AS top FROM orders", materialized: true}
+	// order_sums_b reads order_sums_a, and in the swapped declarations
+	// order_sums_a reads order_sums_b instead. The views order_rows_a and
+	// order_rows_b do the same, and every column moves, so CREATE OR REPLACE
+	// VIEW cannot make either change.
+	orderSumsA         = rebuildObject{name: "order_sums_a", body: "SELECT id, amount FROM orders", materialized: true}
+	orderSumsB         = rebuildObject{name: "order_sums_b", body: "SELECT id, amount FROM order_sums_a", materialized: true}
+	orderSumsAOfB      = rebuildObject{name: "order_sums_a", body: "SELECT id, amount FROM order_sums_b", materialized: true}
+	orderSumsBOfOrders = rebuildObject{name: "order_sums_b", body: "SELECT id, amount FROM orders", materialized: true}
+	orderRowsA         = rebuildObject{name: "order_rows_a", body: "SELECT id, amount FROM orders"}
+	orderRowsB         = rebuildObject{name: "order_rows_b", body: "SELECT id, amount FROM order_rows_a"}
+	orderRowsAOfB      = rebuildObject{name: "order_rows_a", body: "SELECT amount, id FROM order_rows_b"}
+	orderRowsBOfOrders = rebuildObject{name: "order_rows_b", body: "SELECT amount, id FROM orders"}
 	orderList          = rebuildObject{name: "order_list", body: "SELECT id, amount FROM orders"}
 	orderListMoved     = rebuildObject{name: "order_list", body: "SELECT amount, id FROM orders"}
 	orderMix           = rebuildObject{name: "order_mix", body: "SELECT l.id, t.total FROM order_list l, order_totals t"}
@@ -255,6 +272,12 @@ const (
 // read the column. Each object the plan drops goes after the objects that read
 // it, so the exact style drops without CASCADE and writes no guard, and Ptah's
 // own style keeps both.
+//
+// The drops follow what the database holds and the creates follow the
+// declaration. When two changed views, or two changed materialized views, swap
+// which one reads the other, the two orders are opposite, and a single order
+// over both definitions has a cycle. The swap rows come in both directions,
+// because an order that falls back to arrival order is right in one of them.
 //
 // An added object that reads a rebuilt one is created after it, a removed one
 // is only dropped, and a reader that also reads a view the plan cannot replace
@@ -307,6 +330,81 @@ func TestViewRebuild_HappyPath(t *testing.T) {
 				createTop,
 				createTopReport,
 			},
+		},
+		{
+			name:     "a changed materialized view whose held body reads another changed one and whose new body does not",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderTotalsTop}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderTotalsChanged, orderTotalsTopOfOrders}},
+			annotated: []string{
+				`DROP MATERIALIZED VIEW IF EXISTS "order_totals_top" CASCADE`,
+				`DROP MATERIALIZED VIEW IF EXISTS "order_totals" CASCADE`,
+				createTotalsChanged,
+				createTotalsTopOfOrders,
+			},
+			exact: []string{
+				`DROP MATERIALIZED VIEW "order_totals_top"`,
+				`DROP MATERIALIZED VIEW "order_totals"`,
+				createTotalsChanged,
+				createTotalsTopOfOrders,
+			},
+		},
+		{
+			name:     "two changed materialized views that swap which one reads the other",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderSumsA, orderSumsB}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderSumsAOfB, orderSumsBOfOrders}},
+			annotated: []string{
+				`DROP MATERIALIZED VIEW IF EXISTS "order_sums_b" CASCADE`,
+				`DROP MATERIALIZED VIEW IF EXISTS "order_sums_a" CASCADE`,
+				createSumsBOfOrders,
+				createSumsAOfB,
+			},
+			exact: []string{
+				`DROP MATERIALIZED VIEW "order_sums_b"`,
+				`DROP MATERIALIZED VIEW "order_sums_a"`,
+				createSumsBOfOrders,
+				createSumsAOfB,
+			},
+		},
+		{
+			name:     "two changed materialized views that swap back",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderSumsAOfB, orderSumsBOfOrders}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderSumsA, orderSumsB}},
+			annotated: []string{
+				`DROP MATERIALIZED VIEW IF EXISTS "order_sums_a" CASCADE`,
+				`DROP MATERIALIZED VIEW IF EXISTS "order_sums_b" CASCADE`,
+				createSumsA,
+				createSumsB,
+			},
+			exact: []string{
+				`DROP MATERIALIZED VIEW "order_sums_a"`,
+				`DROP MATERIALIZED VIEW "order_sums_b"`,
+				createSumsA,
+				createSumsB,
+			},
+		},
+		{
+			name:     "two changed views that swap which one reads the other",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderRowsA, orderRowsB}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderRowsAOfB, orderRowsBOfOrders}},
+			annotated: []string{
+				`DROP VIEW IF EXISTS "order_rows_b" CASCADE`,
+				`DROP VIEW IF EXISTS "order_rows_a" CASCADE`,
+				createRowsBOfOrders,
+				createRowsAOfB,
+			},
+			exact: []string{`DROP VIEW "order_rows_b"`, `DROP VIEW "order_rows_a"`, createRowsBOfOrders, createRowsAOfB},
+		},
+		{
+			name:     "two changed views that swap back",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderRowsAOfB, orderRowsBOfOrders}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderRowsA, orderRowsB}},
+			annotated: []string{
+				`DROP VIEW IF EXISTS "order_rows_a" CASCADE`,
+				`DROP VIEW IF EXISTS "order_rows_b" CASCADE`,
+				createRowsA,
+				createRowsB,
+			},
+			exact: []string{`DROP VIEW "order_rows_a"`, `DROP VIEW "order_rows_b"`, createRowsA, createRowsB},
 		},
 		{
 			name:      "a view the plan adds over a changed materialized view",
@@ -516,6 +614,15 @@ const (
 	createReportMoved       = "CREATE VIEW \"order_report\" AS\nSELECT 1 AS one, total FROM order_totals"
 	createTop               = "CREATE MATERIALIZED VIEW \"order_top\" AS\nSELECT max(total) AS top FROM order_totals"
 	createTopReport         = "CREATE VIEW \"order_top_report\" AS\nSELECT top FROM order_top"
+	createTotalsTopOfOrders = "CREATE MATERIALIZED VIEW \"order_totals_top\" AS\nSELECT max(amount) AS top FROM orders"
+	createSumsA             = "CREATE MATERIALIZED VIEW \"order_sums_a\" AS\nSELECT id, amount FROM orders"
+	createSumsB             = "CREATE MATERIALIZED VIEW \"order_sums_b\" AS\nSELECT id, amount FROM order_sums_a"
+	createSumsAOfB          = "CREATE MATERIALIZED VIEW \"order_sums_a\" AS\nSELECT id, amount FROM order_sums_b"
+	createSumsBOfOrders     = "CREATE MATERIALIZED VIEW \"order_sums_b\" AS\nSELECT id, amount FROM orders"
+	createRowsA             = "CREATE VIEW \"order_rows_a\" AS\nSELECT id, amount FROM orders"
+	createRowsB             = "CREATE VIEW \"order_rows_b\" AS\nSELECT id, amount FROM order_rows_a"
+	createRowsAOfB          = "CREATE VIEW \"order_rows_a\" AS\nSELECT amount, id FROM order_rows_b"
+	createRowsBOfOrders     = "CREATE VIEW \"order_rows_b\" AS\nSELECT amount, id FROM orders"
 	createNewReport         = "CREATE VIEW \"new_report\" AS\nSELECT total, n FROM order_totals"
 	createListMoved         = "CREATE VIEW \"order_list\" AS\nSELECT amount, id FROM orders"
 	createMix               = "CREATE VIEW \"order_mix\" AS\nSELECT l.id, t.total FROM order_list l, order_totals t"

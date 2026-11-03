@@ -178,9 +178,14 @@ func sqlite() descriptor.Dialect {
 		// directives when its dialect is unknown. A migration that rebuilds a
 		// table turns foreign key enforcement off around the rebuild, and the
 		// setting belongs to the session, so a replay sets it back to what it
-		// was before the replay ran.
+		// was before the replay ran. VACUUM, with or without INTO, is refused
+		// inside a transaction (`cannot VACUUM from within a transaction`,
+		// measured with sqlite3 3.51); REINDEX is accepted there.
 		Migration: descriptor.Migration{
 			DirectivesWithoutDialect: true,
+			RefusedInTransaction: []descriptor.TransactionRefusal{
+				{Statement: "VACUUM", StartsWith: []string{"VACUUM"}},
+			},
 			ReplayedSession: []descriptor.SessionSetting{{
 				Name:  "SQLite foreign key state",
 				Query: "PRAGMA foreign_keys",

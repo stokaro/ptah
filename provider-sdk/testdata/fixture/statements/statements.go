@@ -30,8 +30,13 @@ type Sessions interface {
 // Service is the fixture's statement service.
 type Service struct {
 	Sessions Sessions
-	mu       sync.Mutex
-	open     map[string]*result
+	// ByName binds the Nth argument of a statement to the parameter $pN by
+	// name, as an engine whose query dialect declares the dollar-named
+	// placeholder style binds it. Otherwise SQLite takes the arguments in the
+	// order of its parameters.
+	ByName bool
+	mu     sync.Mutex
+	open   map[string]*result
 }
 
 // result is what is left of an open result, bound to the session and the
@@ -58,6 +63,9 @@ func (s *Service) RunStatement(ctx context.Context, request *protocol.RunStateme
 	args := make([]any, len(request.GetArguments()))
 	for i, argument := range request.GetArguments() {
 		args[i] = goValue(argument)
+		if s.ByName {
+			args[i] = sql.Named(fmt.Sprintf("p%d", i+1), args[i])
+		}
 	}
 	err := s.Sessions.WithSession(ctx, request.GetSessionId(), request.GetTransactionId(), func(access backend.Access) error {
 		switch {

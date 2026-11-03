@@ -1718,6 +1718,12 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// Where the database is does not change with what a filter keeps of
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
+		// The planning context is what a filtered read established outside its
+		// scope, for planning only. A filter narrows the compared description
+		// and leaves the context as it is; without it a provider's plan cannot
+		// prove what lies outside the scope.
+		PlanningContextObjects:  schema.PlanningContextObjects,
+		PlanningContextCoverage: schema.PlanningContextCoverage,
 	}
 }
 

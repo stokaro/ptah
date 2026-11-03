@@ -59,8 +59,9 @@ func ValidateComparisonRequest(description *protocol.Description, request *proto
 	return validateComparisonState(description, request, service, protocol.ValueInput_OBSERVED, request.GetCurrent())
 }
 
-// ValidateComparedModels refuses partial replies, foreign models, and changes
-// to excluded facets. Engine validation subsequently enforces migration policy.
+// ValidateComparedModels refuses partial replies, foreign models, changes to
+// excluded facets, and object counts that were not negotiated or that its
+// changes contradict. Engine validation subsequently enforces migration policy.
 func ValidateComparedModels(description *protocol.Description, request *protocol.CompareModelsRequest, result *protocol.ComparedModels) error {
 	if err := requireResolvedContext(result); err != nil {
 		return err
@@ -84,6 +85,9 @@ func ValidateComparedModels(description *protocol.Description, request *protocol
 	// ValidateComparisonRequest resolved the engine.
 	engine, _, _ := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
 	if err := validateResolvedRequests(description, engine, request, result); err != nil {
+		return err
+	}
+	if err := validateComparisonCounts(description, engine, request, service, result); err != nil {
 		return err
 	}
 	for _, diagnostic := range result.GetUndecided() {

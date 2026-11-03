@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/genexprprobe"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/migration/planner"
@@ -97,7 +98,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	tablerebuild.Register(cmd)
 	secretrotation.Register(cmd)
@@ -201,7 +202,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 
-	schemas := dbcli.ParseSchemas(schemasValue)
+	schemas, err := schemascope.ComparisonReadNames(cmd.Context(), conn.Info(), dbcli.ParseSchemas(schemasValue), conn, result)
+	if err != nil {
+		return fmt.Errorf("error reading database schema: %w", err)
+	}
 	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(cmd.Context(), conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)

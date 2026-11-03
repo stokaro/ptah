@@ -179,6 +179,15 @@ type Services struct {
 	// session it pins, qualified against the connection's schema, where a
 	// database may have a single physical connection.
 	PinnedMetadata bool
+	// PoolSessions runs the migrations of an up run on the connection pool's
+	// sessions, each migration that needs a session of its own pinning one,
+	// rather than every body on one session the run pins and discards
+	// afterwards. An in-memory database's pool holds its only connection,
+	// which such a session would take from the run's own bookkeeping, and a
+	// caller keeps state on a file database's pool, an attached database or a
+	// temporary table, that a session discarded after the run would take with
+	// it.
+	PoolSessions bool
 	// BlockBegin reports that BEGIN and END delimit a block, and only BEGIN
 	// TRAN, BEGIN TRANSACTION or BEGIN DISTRIBUTED opens a transaction.
 	BlockBegin bool

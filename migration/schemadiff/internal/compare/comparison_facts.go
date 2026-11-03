@@ -14,6 +14,14 @@ func comparisonOf(dialect string) descriptor.Comparison {
 	return described.Comparison
 }
 
+// columnFactsOf returns what dialect's descriptor states about how its server
+// reads a column definition, and the zero value for a dialect the registry
+// does not know.
+func columnFactsOf(dialect string) descriptor.Columns {
+	described, _ := platform.Lookup(dialect)
+	return described.Columns
+}
+
 // foreignKeyNameRulesOf returns the names dialect's server gives an unnamed
 // foreign key beside the ones its ForeignKeyNaming gives, and the zero value
 // for a dialect the registry does not know.

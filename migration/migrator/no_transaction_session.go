@@ -45,7 +45,7 @@ func (m *Migrator) withNoTransactionSession(
 			if err := metadataScoped.refuseMySQLTemporaryMetadataShadow(ctx); err != nil {
 				return err
 			}
-			return m.conn.WithSession(ctx, func(bodyConn *dbschema.DatabaseConnection) error {
+			return m.withBodySession(ctx, func(bodyConn *dbschema.DatabaseConnection) error {
 				scoped := metadataScoped
 				scoped.noTransactionSession = bodyConn
 				scoped.postgresIndexObservation = nil
@@ -53,7 +53,7 @@ func (m *Migrator) withNoTransactionSession(
 			})
 		})
 	}
-	return m.conn.WithSession(ctx, func(conn *dbschema.DatabaseConnection) error {
+	return m.withBodySession(ctx, func(conn *dbschema.DatabaseConnection) error {
 		scoped := *m
 		scoped.noTransactionSession = conn
 		scoped.postgresIndexObservation = nil
