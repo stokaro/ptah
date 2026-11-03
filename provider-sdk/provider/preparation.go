@@ -80,14 +80,20 @@ func validatePreparationIdentity(subject *protocol.ComparisonIdentity, name, nam
 	return nil
 }
 
-// ValidatePreparedTables refuses incomplete, reordered, or unbound results.
-// A failed batch exposes no prefix, even when earlier tables were valid.
+// ValidatePreparedTables refuses incomplete, reordered, or unbound results,
+// and index methods that were not negotiated or that do not state one kind
+// for each declared index. A failed batch exposes no prefix, even when
+// earlier tables were valid.
 func ValidatePreparedTables(description *protocol.Description, request *protocol.PrepareTablesRequest, result *protocol.PreparedTables) error {
 	if err := ValidatePreparationRequest(description, request); err != nil {
 		return err
 	}
 	if result == nil || !result.Complete || len(result.Tables) != len(request.Tables) {
 		return fmt.Errorf("%w: incomplete table preparation", ErrProtocol)
+	}
+	engine, _, err := valueTarget(description, request.GetEngine(), request.GetTargetFeatures())
+	if err != nil {
+		return err
 	}
 	for i, output := range result.Tables {
 		input := request.Tables[i]
@@ -98,6 +104,9 @@ func ValidatePreparedTables(description *protocol.Description, request *protocol
 			return err
 		}
 		if err := validateResolvedFacets(description, request, input, output.ResolvedFacets); err != nil {
+			return err
+		}
+		if err := validatePreparedIndexes(description, engine, request, input, output); err != nil {
 			return err
 		}
 	}

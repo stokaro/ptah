@@ -66,6 +66,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0054](0054-a-filtered-read-carries-the-planning-context-it-does-not-compare.md) | A filtered read carries the planning context it does not compare | Proposed |
 | [0055](0055-a-provider-splits-a-migration-body-into-the-units-its-engine-runs.md) | A provider splits a migration body into the units its engine runs | Proposed |
 | [0056](0056-a-comparison-service-counts-the-objects-it-compares.md) | A comparison service counts the objects it compares | Proposed |
+| [0057](0057-a-provider-spells-a-declared-index-kind-as-it-reports-a-held-one.md) | A provider spells a declared index's kind as it reports a held one | Proposed |
 
 ## Writing one
 

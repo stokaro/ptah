@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.13. `provider-sdk/v0.11.0` speaks 25.9.
+speaks contract 25.14. `provider-sdk/v0.12.0` speaks 25.12.
+`provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
@@ -96,6 +97,7 @@ returns to 0.
   Contract 25.11 adds [the planning context of a filtered read](#planning-context-of-a-filtered-read).
   Contract 25.12 adds [migration splits](#migration-splits).
   Contract 25.13 adds [comparison counts](#comparison-counts).
+  Contract 25.14 adds [prepared index kinds](#prepared-index-kinds).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -124,7 +126,8 @@ does not oblige a peer to use it.
   `values.context`, `schema.common-view-facets`, `schema.observed-columns`,
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
-  `units.migration-split`, and `models.compare-counts`. The embedding store's
+  `units.migration-split`, `models.compare-counts`, and
+  `schema.index-methods`. The embedding store's
   calls and `PrepareCommonObjects` are new, and each comes with an addition to
   `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -185,7 +188,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `PlanFeatures` | Complete offline graph contributions and ordered change and parent receipts, or diagnostics with no successful output. |
 | `PlanDeclarations` | Complete offline creation contributions and ordered authored-object receipts, without observed state. |
 | `DescribeExecutionInputs` | Complete offline discovery of the exact unit batch's sensitive input references, without reading values. |
-| `PrepareTables` | Complete prepared key membership and declared facet adjustments from captured table state. |
+| `PrepareTables` | Complete prepared key membership, declared facet adjustments and, under `schema.index-methods`, declared index kinds from captured table state. |
 | `PrepareCommonObjects` | Offline: the declared views, sequences, roles and grants in the engine's spelling, each entry keeping its identity. |
 | `ProjectTableCreations` | Complete predicted CREATE effects within the host's eligible facet owner inventory. |
 | `ValidateSchema` | A completed offline schema check with typed invalid, unsupported, or omitted-declaration diagnostics. |
@@ -1792,6 +1795,32 @@ creation operand.
 [ADR 0052](../docs/adr/0052-inspected-indexes-reach-the-host-and-index-changes-reach-the-table-owner.md)
 defines how the host compares the list and how an index change reaches the
 provider that owns the table.
+
+The host compares an index's uniqueness, key columns and covered columns with
+the held index. Without [prepared index kinds](#prepared-index-kinds) it
+compares no kind, so a change of kind alone plans nothing.
+
+## Prepared index kinds
+
+`schema.index-methods` lets table preparation state the kind of each common
+index a table declares, in `PreparedTable.indexes`: one `PreparedIndex` per
+`DeclaredTable.indexes` entry, in the same order. Its `method` spells the kind
+exactly as `ObservedIndex.method` spells the kind of a held index, so the host
+compares the two spellings exactly and plans a change of kind alone as a drop
+and a create. An empty method is a kind like any other. The provider reads the
+kind from the declaration alone, never from the held index. It refuses the
+preparation of a kind it cannot read, and its schema validation gives the
+reason.
+
+The provider and the engine both declare this two-way feature, which requires
+`schema.observed-indexes` and `schema.prepare-tables` on the engine. A reply
+states kinds only for a request whose `target_features` list it. Both
+transport boundaries refuse kinds without negotiation and, with it, a list
+that misses a declared index, names one the table does not declare, names one
+twice or leaves the declared order. The host keeps the source's type in the
+declaration: the prepared kind serves the comparison alone.
+[ADR 0057](../docs/adr/0057-a-provider-spells-a-declared-index-kind-as-it-reports-a-held-one.md)
+records why the provider spells the declared kind.
 
 ## Comparison counts
 
