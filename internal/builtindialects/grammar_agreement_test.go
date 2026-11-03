@@ -62,7 +62,8 @@ import (
 //     whose indexes alone end with a visibility; SQL Server alone read DROP
 //     INDEX t.idx as table.index.
 //   - No switch answered SQL Server's trigger grammar, the T-SQL header with
-//     the table before the timing; the descriptor is its one statement.
+//     the table before the timing, or its IDENTITY column property; the
+//     descriptor is the one statement of each.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
@@ -162,6 +163,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 	},
 	platform.SQLServer: {
+		Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
