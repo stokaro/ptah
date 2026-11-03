@@ -141,6 +141,12 @@ func exemptDialectVerbs() []dialectVerb {
 				"canonical HCL and no dialect SQL is rendered, and --version is the " +
 				"write-once artifact tag",
 		},
+		{
+			verb: "schema export",
+			why: "--dialect is a parser hint for SQL schema files, such as the 63 bytes PostgreSQL " +
+				"cuts a name to; the export renders a contract or a document, not SQL for a server, " +
+				"so no server version refines it",
+		},
 	}
 }
 

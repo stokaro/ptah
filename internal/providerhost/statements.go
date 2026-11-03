@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/providerhost/statementargs"
 )
 
 // A provider runs the statements the operator wrote, such as a check, a test
@@ -246,47 +247,37 @@ func (c *statementConn) closeResult(ctx context.Context, token string) error {
 	return err
 }
 
-// statementArguments binds positional arguments. A named one has no place on
-// the wire: the provider binds arguments in the order the statement's
-// placeholders take them.
+// CheckNamedValue gives an argument its wire form while database/sql still
+// holds the Go value the caller passed. Without it database/sql converts the
+// argument to a driver value first, which has no width, no sign and no null of
+// its own: an int32 and a uint reach the provider as int64, and a pointer as its
+// target. A named argument has no place on the wire, since the provider binds
+// arguments in the order the statement's placeholders take them, and is refused
+// here too, so every refusal comes before anything is sent.
+func (c *statementConn) CheckNamedValue(argument *driver.NamedValue) error {
+	if argument.Name != "" {
+		return unsupported(fmt.Sprintf("the named argument %q", argument.Name))
+	}
+	value, err := statementargs.Wire(argument.Value)
+	if err != nil {
+		return err
+	}
+	argument.Value = value
+	return nil
+}
+
+// statementArguments collects the wire forms CheckNamedValue gave the
+// arguments, in their order.
 func statementArguments(args []driver.NamedValue) ([]*protocol.DataValue, error) {
 	values := make([]*protocol.DataValue, 0, len(args))
 	for _, arg := range args {
-		if arg.Name != "" {
-			return nil, unsupported(fmt.Sprintf("the named argument %q", arg.Name))
-		}
-		value, err := dataValueOf(arg.Value)
-		if err != nil {
-			return nil, err
+		value, checked := arg.Value.(*protocol.DataValue)
+		if !checked {
+			return nil, fmt.Errorf("statement argument %d of type %T reached the provider handle unchecked", arg.Ordinal, arg.Value)
 		}
 		values = append(values, value)
 	}
 	return values, nil
-}
-
-// dataValueOf is the wire form of a driver value, after database/sql has
-// converted it to one of the driver.Value types.
-func dataValueOf(value driver.Value) (*protocol.DataValue, error) {
-	switch v := value.(type) {
-	case nil:
-		return &protocol.DataValue{Value: &protocol.DataValue_Null{Null: &protocol.Empty{}}}, nil
-	case int64:
-		return &protocol.DataValue{Value: &protocol.DataValue_Int64Value{Int64Value: v}}, nil
-	case float64:
-		return &protocol.DataValue{Value: &protocol.DataValue_DoubleValue{DoubleValue: v}}, nil
-	case bool:
-		return &protocol.DataValue{Value: &protocol.DataValue_BoolValue{BoolValue: v}}, nil
-	case string:
-		return &protocol.DataValue{Value: &protocol.DataValue_StringValue{StringValue: v}}, nil
-	case []byte:
-		return &protocol.DataValue{Value: &protocol.DataValue_BytesValue{BytesValue: append([]byte(nil), v...)}}, nil
-	case time.Time:
-		utc := v.UTC()
-		return &protocol.DataValue{Value: &protocol.DataValue_TimestampValue{TimestampValue: &protocol.TimestampValue{
-			Seconds: utc.Unix(), Nanos: int32(utc.Nanosecond())}}}, nil // #nosec G115 -- Nanosecond is in [0, 1e9)
-	default:
-		return nil, unsupported(fmt.Sprintf("a %T statement argument", value))
-	}
 }
 
 // statementResult answers the row count only when the engine measured it, so

@@ -273,7 +273,16 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	if m.services().Indexes == nil {
 		return nil
 	}
-	return m.withNoTransactionSession(ctx, func(scoped *Migrator) error {
+	// The preflight replays the migration's session statements before the
+	// migration runs, and PostgreSQL keeps a PREPARE or a DEALLOCATE through a
+	// rollback and refuses DISCARD ALL inside a transaction. On the session
+	// the run's bodies share, the replay would change the state the
+	// migration's own first statements start from, so it gets a session of
+	// its own, which starts from the connection's search_path. The check
+	// after the body runs on the body's session.
+	detached := *m
+	detached.runSession = nil
+	return detached.withNoTransactionSession(ctx, func(scoped *Migrator) error {
 		executionConn := scoped.noTransactionConnection()
 		if txMode == MigrationTxModeNone {
 			return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn, migration, resumeFrom, run)
@@ -460,7 +469,7 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 		// the migration for a reason that is not the preflight's, before
 		// any revision row exists. The statement meets the server's own
 		// answer when it runs.
-		if ownTransactionResumeAction(i, statement, conn.Info().Dialect, run) == noTransactionPrefixReplay &&
+		if ownTransactionResumeAction(i, statement, grammarFor(conn), run) == noTransactionPrefixReplay &&
 			!locksTables(statement, conn.Info().Dialect) {
 			if err := executeSQLOn(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)

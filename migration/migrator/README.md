@@ -804,12 +804,13 @@ removes both transactional DML and its witness. A retry skips only the verified
 durable prefix and replays safe session settings from that prefix on a newly
 pinned session before continuing.
 
-Temporary tables remain available in `file` mode. Creating one does not make
-permanent InnoDB work durable by itself, and Ptah discards the pinned physical
-session after every attempt, so a temporary table or nontransactional temporary
-table data cannot leak into the retry. If a later implicit commit makes a
-prefix containing a temporary object durable, automatic resume refuses that
-prefix because the object cannot be reconstructed safely.
+Temporary tables remain available in `file` mode, to the migrations after the
+one that creates them in the same run. Creating one does not make permanent
+InnoDB work durable by itself, and Ptah discards the run's physical session
+when the run ends, so a temporary table or nontransactional temporary table
+data cannot leak into the retry. If a later implicit commit makes a prefix
+containing a temporary object durable, automatic resume refuses that prefix
+because the object cannot be reconstructed safely.
 
 The configured migration metadata table name is reserved. Before reading or
 writing revision metadata, Ptah refuses and discards a pinned MySQL-family
@@ -819,9 +820,9 @@ prevents a temporary table from shadowing the permanent InnoDB witness,
 including through a schema-qualified name.
 
 In `none` mode, MySQL and MariaDB keep revision bookkeeping on a separate
-checked metadata session while the migration body runs on its own discarded
-session. Body-local temporary objects therefore cannot shadow revision
-bookkeeping, while nontransactional progress is still recorded durably.
+checked metadata session while the migration body runs on the run's session.
+Body-local temporary objects therefore cannot shadow revision bookkeeping,
+while nontransactional progress is still recorded durably.
 
 The witness requires InnoDB for revision metadata, the session default, and
 every existing base table in the selected database. Ptah-created native and
@@ -885,6 +886,51 @@ out-of-band DDL from the safety preflight until the migration finishes.
 
 Rejection diagnostics omit the SQL text so credentials in a refused statement
 are not disclosed.
+
+### One Session Per Run
+
+An up run executes the body of every migration it applies on one physical
+database session, which it pins before the first migration and discards when
+the run ends. Session state a migration leaves therefore holds for the
+migrations after it in the same run: a `SET search_path` in one file decides
+where the next file's unqualified table lands, and a temporary table or a
+prepared statement stays available. golang-migrate runs a directory on one
+connection and the community Atlas binary carries a setting from one file to
+the next as well; both put `t3` in `s1` here, measured on PostgreSQL 18.6
+(stokaro/ptah#5034):
+
+```sql
+-- 1: CREATE SCHEMA s1;
+-- 2: SET search_path = s1; CREATE TABLE t2 (id int);
+-- 3: CREATE TABLE t3 (id int);
+```
+
+Nothing carries from one run to the next. A run that applies the third file
+alone starts on a new session, and `t3` lands in the connection's default
+schema, as it does with both tools.
+
+Revision bookkeeping that runs on the session, as a transactional migration's
+does, is qualified with the connection's schema, so a setting a migration
+leaves cannot move the revision table. A timeout Ptah sets for one migration
+ends with it: outside a transaction Ptah resets the setting to the connection's
+default afterwards. The index preflight on PostgreSQL replays a migration's own
+settings on a session of its own, because PostgreSQL keeps a `PREPARE` through
+a rollback; it resolves names from the connection's `search_path`, and the
+check after the body runs on the run's session.
+
+SQLite keeps the connection pool's sessions. An in-memory database has one
+connection, and a pinned session would take it from the run's bookkeeping; a
+file database's pool keeps what a caller attached to it, such as a database a
+`migrate test` step attaches, and a session discarded after the run would take
+that with it. YDB keeps no session state between queries. A dry run executes
+nothing, so it pins nothing.
+
+A provider's connection runs the bodies on its own session, where the provider
+holds the migration lock. A provider's lock guards the writes and commits of
+the session that took it and of no other, so a body committed on a session the
+run pinned would commit even after the lock was lost. That session belongs to
+the connection, and what a migration leaves on it outlives the run. A run
+without the migration lock pins a session, as it does on any other connection.
 
 ### Non-Transactional Migrations
 
@@ -967,17 +1013,22 @@ pending down. A validation or session-acquisition failure therefore leaves
 revision metadata unchanged.
 
 Each `no_transaction` attempt executes its migration SQL on one pinned physical
-database session. Session-local changes such as `SET search_path` therefore
-remain in effect for later statements in that attempt. Revision checkpoints use
-the original database connection on server databases, so changing the migration
-session's search path cannot redirect or hide the revision table. SQLite keeps
-bookkeeping on the pinned session and qualifies the table in `main`, which
-avoids deadlocking its single-connection in-memory database without allowing a
-temporary table to shadow the revision table. Ptah discards the pinned session
-after a server or file-backed attempt to prevent its state from leaking to
-another pool user; in-memory SQLite returns its only connection to the pool so
-the database itself remains alive, which also retains that connection's session
-state.
+database session: on a server database the run's, which the migrations after
+it in the run share, and on SQLite one pinned for the attempt. Session-local
+changes such as `SET search_path` therefore remain in effect for later
+statements in that attempt, and on a server database for the migrations after
+it.
+
+Revision checkpoints use the original database connection on server
+databases, so changing the migration session's search path cannot redirect or
+hide the revision table. SQLite keeps bookkeeping on the pinned session and
+qualifies the table in `main`, which avoids deadlocking its single-connection
+in-memory database without allowing a temporary table to shadow the revision
+table. Ptah discards the pinned session when the run ends on a server database
+and after the attempt on a file-backed SQLite database, to prevent its state
+from leaking to another pool user; in-memory SQLite returns its only connection
+to the pool so the database itself remains alive, which also retains that
+connection's session state.
 
 SQL-backed migrations executed through `Migrator` use a two-phase progress
 record around each autocommit statement. Before execution, Ptah records the
@@ -999,9 +1050,13 @@ Atlas-format rows use cumulative `partial_hashes`. Legacy rows without prefix
 metadata resume only when their full-file checksum still matches. Editing only
 the unapplied suffix is allowed, and a failed retry cannot reduce `applied`
 below the previously committed prefix when the transaction mode changes.
-The resumed attempt uses a new pinned session. Ptah replays recognized
-session-control statements from the verified prefix (`SET`, `RESET`, `USE`,
-`PRAGMA`, and related controls) while continuing to skip durable DDL and DML.
+
+The resumed attempt runs on the new session of its run. Ptah replays
+recognized session-control statements (`SET`, `RESET`, `USE`, `PRAGMA`, and
+related controls) from the verified prefix of the resumed migration while
+continuing to skip durable DDL and DML. State that migrations an earlier run
+applied left is not restored, as golang-migrate and the community Atlas binary
+do not restore it either.
 A prefix that created a temporary object, or contains a statement whose
 session-local effect cannot be classified safely, is refused instead of being
 partially reconstructed.

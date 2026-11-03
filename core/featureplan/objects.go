@@ -14,6 +14,12 @@ import (
 type ObjectContext struct {
 	Desired, Current schemaext.ObjectState
 	ChangedSubjects  []objectidentity.ID
+	// Context is the observed objects of the assessed kinds that a filtered
+	// read left out of its scope, with their coverage across the database. A
+	// planning service reads it as proof of what lies outside the scope. It is
+	// never compared, is not part of Subjects or AllSubjects, and no receipt
+	// accounts for it.
+	Context schemaext.ObjectState
 }
 
 // Subjects returns the exact union assigned to kinds, in structured identity

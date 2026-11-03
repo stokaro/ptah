@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/root"
+	"ptah.run/internal/errorkind"
 )
 
 // These rows drive `ptah schema plan --json` and `ptah schema apply --json`
@@ -200,7 +201,8 @@ func TestSchemaApplyJSONRefusesAnExportedEdit(t *testing.T) {
 	c.Assert(decoder.Decode(&report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout))
 	c.Assert(report, qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           refusal,
+		Error:           &errorkind.Report{Message: refusal},
 	})
 }

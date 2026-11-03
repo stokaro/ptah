@@ -51,6 +51,9 @@ func TestProviderNativeApplyExecutesMixedPlan(t *testing.T) {
 	}{
 		{"outside transaction", "native", migrator.MigrationTxModeNone, plangraph.TransactionForbidden},
 		{"inside transaction", "native-transactional", migrator.MigrationTxModeAll, plangraph.TransactionRequired},
+		// A provider that states its server refuses a schema statement inside
+		// a transaction runs the default mode without one.
+		{"default mode where the server refuses a transaction", "native-unwrapped", migrator.MigrationTxModeFile, plangraph.TransactionForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

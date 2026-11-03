@@ -1568,14 +1568,18 @@ func (s *exclusionState) qualifiedSchemaExcluded(name string) bool {
 	return s.schemaExcluded(schema)
 }
 
+// excludeTable and tableExcluded key a table in its effective schema, so a
+// table written `public.audit` and an object that names it `audit` are one
+// table under the default schema `public`. A feature object's owning table
+// arrives with an empty schema where its source left the schema out.
 func (s *exclusionState) excludeTable(schema, table string) {
-	if key, ok := tableIdentityKey(schema, table); ok {
+	if key, ok := tableIdentityKey(s.effectiveSchema(schema), table); ok {
 		s.excludedTables[key] = struct{}{}
 	}
 }
 
 func (s *exclusionState) tableExcluded(schema, table string) bool {
-	key, ok := tableIdentityKey(schema, table)
+	key, ok := tableIdentityKey(s.effectiveSchema(schema), table)
 	if !ok {
 		return false
 	}
@@ -1714,6 +1718,12 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// Where the database is does not change with what a filter keeps of
 		// it, and a YDB plan names a Serial column's sequence by that path.
 		DatabasePath: schema.DatabasePath,
+		// The planning context is what a filtered read established outside its
+		// scope, for planning only. A filter narrows the compared description
+		// and leaves the context as it is; without it a provider's plan cannot
+		// prove what lies outside the scope.
+		PlanningContextObjects:  schema.PlanningContextObjects,
+		PlanningContextCoverage: schema.PlanningContextCoverage,
 	}
 }
 

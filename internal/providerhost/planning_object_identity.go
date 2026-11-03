@@ -15,7 +15,7 @@ func canonicalizePlanningObjectDatabases(request *protocol.PlanFeaturesRequest) 
 			subject.Database = nil
 		}
 	}
-	for _, state := range []*protocol.ComparisonState{request.DesiredObjects, request.CurrentObjects} {
+	for _, state := range []*protocol.ComparisonState{request.DesiredObjects, request.CurrentObjects, request.ContextInventory} {
 		for _, record := range state.GetRecords() {
 			canonicalize(record.Subject)
 		}

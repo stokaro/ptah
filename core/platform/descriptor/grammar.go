@@ -77,6 +77,11 @@ type ColumnGrammar struct {
 	// `$$x$$` and `E'x'` are the default 'x'. Without it a string default is
 	// kept as written.
 	StoredStringDefaults bool `json:"stored_string_defaults,omitempty"`
+	// IdentityProperty reports that IDENTITY, with or without a (seed,
+	// increment) pair, makes the column an identity column, as T-SQL writes
+	// it. A bare IDENTITY is IDENTITY(1, 1). Without it IDENTITY is refused
+	// as an unsupported column attribute.
+	IdentityProperty bool `json:"identity_property,omitempty"`
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may
@@ -264,6 +269,10 @@ type AlterTableGrammar struct {
 	// ColumnGuards reports that DROP COLUMN takes IF EXISTS and ADD COLUMN
 	// takes IF NOT EXISTS. The parser asks it only where ChecksCapabilities is set.
 	ColumnGuards bool `json:"column_guards,omitempty"`
+	// KeyUsingIndex reports that ADD [CONSTRAINT name] UNIQUE | PRIMARY KEY
+	// USING INDEX index makes an existing unique index the key, its columns
+	// the index's, as PostgreSQL writes it. Without it the clause is refused.
+	KeyUsingIndex bool `json:"key_using_index,omitempty"`
 }
 
 const (
@@ -317,6 +326,12 @@ type RoutineGrammar struct {
 	// TriggerStatementBody reports that a trigger's body may be one statement
 	// rather than a BEGIN ... END block.
 	TriggerStatementBody bool `json:"trigger_statement_body,omitempty"`
+	// Trigger is how CREATE TRIGGER is written: [TriggerTransactSQL], or empty
+	// for the order the other engines share, `CREATE TRIGGER name {BEFORE |
+	// AFTER | INSTEAD OF} events ON table`. TriggerConditions and
+	// TriggerStatementBody refine that order, so a registry refuses either of
+	// them beside [TriggerTransactSQL].
+	Trigger string `json:"trigger,omitempty"`
 	// DefaultDoBlockLanguage is the language of a DO block that writes no
 	// LANGUAGE clause, in lower case, such as plpgsql. The parser gives such a
 	// block this language. Empty leaves its language unknown. Only the
@@ -343,6 +358,18 @@ const (
 // RoutineGrammars returns the values a [RoutineGrammar.Body] may be.
 func RoutineGrammars() []string {
 	return []string{RoutineQuotedBody, RoutineCompoundStatement, RoutineTransactSQL}
+}
+
+// TriggerTransactSQL is SQL Server's CREATE TRIGGER: `CREATE [OR ALTER]
+// TRIGGER [schema.]name ON table [WITH options] {FOR | AFTER | INSTEAD OF}
+// events AS body`. The table comes before the timing, FOR is AFTER, the
+// events are separated by commas, a trigger fires once per statement, and the
+// body runs to the end of its batch.
+const TriggerTransactSQL = "transact-sql"
+
+// TriggerGrammars returns the values a [RoutineGrammar.Trigger] may be.
+func TriggerGrammars() []string {
+	return []string{TriggerTransactSQL}
 }
 
 // KeyVisibility states which visibility clauses among a key's options the
@@ -446,6 +473,7 @@ func validateGrammarNames(grammar Grammar) error {
 		{"ALTER INDEX", grammar.Indexes.Alter, AlterIndexGrammars()},
 		{"MODIFY", grammar.AlterTable.Modify, ModifyGrammars()},
 		{"routine body", grammar.Routines.Body, RoutineGrammars()},
+		{"trigger", grammar.Routines.Trigger, TriggerGrammars()},
 	} {
 		if field.value != "" && !slices.Contains(field.allowed, field.value) {
 			return fmt.Errorf("%s grammar %q is not one of %q", field.label, field.value, field.allowed)
@@ -456,8 +484,17 @@ func validateGrammarNames(grammar Grammar) error {
 
 // validateRoutineGrammar checks the default language of a DO block: it is
 // stated only with the grammar that reads a DO block, and in the form the
-// parser gives a block, one lower-case word.
+// parser gives a block, one lower-case word. It also refuses a refinement of
+// the shared trigger order beside a trigger grammar that does not read it.
 func validateRoutineGrammar(grammar Grammar) error {
+	if trigger := grammar.Routines.Trigger; trigger != "" {
+		switch {
+		case grammar.Routines.TriggerConditions:
+			return fmt.Errorf("trigger conditions are stated, and trigger grammar %q reads no WHEN or REFERENCING", trigger)
+		case grammar.Routines.TriggerStatementBody:
+			return fmt.Errorf("a one-statement trigger body is stated, and trigger grammar %q reads its own body", trigger)
+		}
+	}
 	language := grammar.Routines.DefaultDoBlockLanguage
 	switch {
 	case language == "":

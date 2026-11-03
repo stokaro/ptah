@@ -32,6 +32,13 @@ func (r reader) observedValues(ctx context.Context, request *protocol.InspectReq
 	if err := provider.ValidateNormalizedInspection(h.description, request, snapshot, normalized); err != nil {
 		return nil, err
 	}
+	return r.resolvedValues(batch, normalized)
+}
+
+// resolvedValues are a normalized batch's values as the host's models read
+// them, each with the subject its owner names.
+func (r reader) resolvedValues(batch *protocol.NormalizeValuesRequest, normalized *protocol.NormalizedValues) ([]observedValue, error) {
+	h := r.session.target.host
 	result := make([]observedValue, 0, len(normalized.GetValues()))
 	for _, value := range normalized.GetValues() {
 		kind := schemaext.Kind(value.GetValue().GetKind())
@@ -121,4 +128,42 @@ func (r reader) observedNativeIdentity(source, normalized *protocol.Reference) (
 		return objectidentity.ID{}, err
 	}
 	return id, selected.fit(id)
+}
+
+// planningContext reads a filtered snapshot's planning context: the objects of
+// the provider's planning context kinds outside the read's scope, normalized as
+// the snapshot's own values are, and what the read established about them
+// across the database. A snapshot without one returns nothing.
+func (r reader) planningContext(ctx context.Context, request *protocol.InspectRequest, snapshot *protocol.Schema) (schemaext.Objects, schemaext.Coverage, error) {
+	h := r.session.target.host
+	batch, err := provider.PlanningContextValues(h.description, request, snapshot)
+	if err != nil || snapshot.GetPlanningContext() == nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
+	}
+	var objects []schemaext.Object
+	if len(batch.GetValues()) != 0 {
+		normalized, err := h.client.NormalizeValues(ctx, batch)
+		if err != nil {
+			return schemaext.Objects{}, schemaext.Coverage{}, err
+		}
+		if err := provider.ValidateNormalizedValues(h.description, batch, normalized); err != nil {
+			return schemaext.Objects{}, schemaext.Coverage{}, err
+		}
+		values, err := r.resolvedValues(batch, normalized)
+		if err != nil {
+			return schemaext.Objects{}, schemaext.Coverage{}, err
+		}
+		for _, value := range values {
+			objects = append(objects, schemaext.Object{Ref: value.subject, Value: value.value})
+		}
+	}
+	result, err := schemaext.NewObjects(objects...)
+	if err != nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
+	}
+	coverage, err := r.observedCoverage(snapshot.GetPlanningContext().GetCoverage())
+	if err != nil {
+		return schemaext.Objects{}, schemaext.Coverage{}, err
+	}
+	return result, coverage, nil
 }

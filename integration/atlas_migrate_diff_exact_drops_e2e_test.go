@@ -55,8 +55,10 @@ func applyBothWays(c *qt.C, target *sql.DB, pairs []migrationPair) {
 // so it needs neither, and runs every file forward, back to an empty database,
 // and forward again on PostgreSQL. Without the order or the reason the plan
 // relies on, each of these stops the server at a statement: a removed routine
-// that returns, takes or reads a removed relation's row, a policy of a removed
-// table that reads a removed table, view or column, a column that changes type
+// that returns, takes or reads a removed relation's row, a composite type
+// whose attribute is a table's row type, created after the table and dropped
+// before it, a policy of a removed table that reads a removed table, view or
+// column, a column that changes type
 // across an enum, an array of one or a domain over one with its default, a
 // trigger on a dropped column, a generated column computed from one, an index on a
 // materialized view a column type change rebuilds, and a materialized view put
@@ -83,6 +85,11 @@ CREATE FUNCTION a_of(r v) RETURNS int LANGUAGE sql AS $$ SELECT r.a $$;
 			`CREATE TABLE keep (id bigint PRIMARY KEY);
 CREATE TABLE t (id bigint PRIMARY KEY, a int);
 CREATE FUNCTION count_t() RETURNS bigint LANGUAGE sql STABLE RETURN (SELECT count(*) FROM t);
+`, "CREATE TABLE keep (id bigint PRIMARY KEY);\n")},
+		{name: "a composite type over a table's row type", steps: exactSteps(
+			`CREATE TABLE keep (id bigint PRIMARY KEY);
+CREATE TABLE t (id bigint PRIMARY KEY, a int);
+CREATE TYPE wrap AS (r t, n int);
 `, "CREATE TABLE keep (id bigint PRIMARY KEY);\n")},
 		{name: "a policy that reads a table the rollback removes", steps: exactSteps(
 			`CREATE TABLE allowed (id bigint PRIMARY KEY, who text);
@@ -153,9 +160,10 @@ CREATE TABLE t (id bigint PRIMARY KEY, b int);
 // file stops at the drop with 2BP01 and the undeclared view is still there.
 // The plan holds a removed object beside each drop that does not hold the drop
 // back: a removed view that read the column and goes first, a domain the plan
-// adds or removes, a composite type it removes that names no table, a routine
-// that reads nothing, and a routine that returns the dropped view's rows,
-// which goes first.
+// adds or removes, a composite type it removes that names no table, a
+// composite type over the dropped table's row type, which goes first, a
+// routine that reads nothing, and a routine that returns the dropped view's
+// rows, which goes first.
 func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredReaderStopsTheDrop(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -176,6 +184,10 @@ func TestCompatMigrateDiffStatementStyleE2E_AnUndeclaredReaderStopsTheDrop(t *te
 			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
 		{name: "a table dropped beside a composite type the plan removes", steps: exactSteps(
 			"CREATE TABLE keep (id bigint PRIMARY KEY);\nCREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE TYPE pair AS (x int, y text);\n",
+			"CREATE TABLE keep (id bigint PRIMARY KEY);\n"),
+			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
+		{name: "a table dropped beside a composite type over its row type", steps: exactSteps(
+			"CREATE TABLE keep (id bigint PRIMARY KEY);\nCREATE TABLE t (id bigint PRIMARY KEY, a int);\nCREATE TYPE wrap AS (r t, n int);\n",
 			"CREATE TABLE keep (id bigint PRIMARY KEY);\n"),
 			reader: "CREATE VIEW reporting.copy AS SELECT id, a FROM public.t"},
 		{name: "a column dropped beside a routine that reads nothing", steps: exactSteps(

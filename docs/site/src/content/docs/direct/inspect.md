@@ -67,6 +67,10 @@ ptah db read --db-url "sqlite://$PWD/app.db" >schema.sql
 sqlite3 restored.db <schema.sql
 ```
 
+On SQL Server, a `GO` line follows each statement and ends its batch, so
+`sqlcmd -i schema.sql` runs the output as written. See
+[SQL Server scripts and batches](../../databases/sqlserver/#scripts-and-batches).
+
 On PostgreSQL-family databases, `--schemas` accepts a comma-separated list of
 database schemas to read; when empty, Ptah reads the connection's default
 schema.

@@ -41,7 +41,7 @@ const nativeDirtyChecksumPrefix = "partial:"
 // what that binary writes: nothing applied has no prefix to record, and a clean
 // success has nothing to resume.
 func (m *Migrator) atlasPartialHashes(sqlText string, applied, total int) any {
-	hashes, ok := atlasPartialHashValues(sqlText, m.connectionDialect(), applied, total)
+	hashes, ok := atlasPartialHashValues(sqlText, m.grammar(), applied, total)
 	if !ok {
 		return m.atlasNullJSONValue()
 	}
@@ -61,7 +61,7 @@ func (m *Migrator) atlasDirtyPartialHashes(
 	if direction == MigrationDirectionUp {
 		return m.atlasPartialHashes(sqlText, applied, total)
 	}
-	hashes, ok := cumulativePartialHashValues(sqlText, m.connectionDialect(), applied)
+	hashes, ok := cumulativePartialHashValues(sqlText, m.grammar(), applied)
 	if !ok {
 		return m.atlasNullJSONValue()
 	}
@@ -81,22 +81,22 @@ func (m *Migrator) atlasPartialHashesJSON(hashes []string) any {
 
 // atlasPartialHashValues computes the cumulative digests, reporting false when
 // the run is not a partial application or the statements cannot be recovered.
-func atlasPartialHashValues(sqlText, dialect string, applied, total int) ([]string, bool) {
+func atlasPartialHashValues(sqlText string, grammar bodyGrammar, applied, total int) ([]string, bool) {
 	if applied <= 0 || applied >= total {
 		return nil, false
 	}
-	return cumulativePartialHashValues(sqlText, dialect, applied)
+	return cumulativePartialHashValues(sqlText, grammar, applied)
 }
 
 // cumulativePartialHashValues computes the digest chain through applied,
 // including the whole body when applied equals total. Atlas writes null for a
 // clean full application, but native dirty rows need the full-prefix form when
 // statement execution finished and a later safety check blocked completion.
-func cumulativePartialHashValues(sqlText, dialect string, applied int) ([]string, bool) {
+func cumulativePartialHashValues(sqlText string, grammar bodyGrammar, applied int) ([]string, bool) {
 	if applied <= 0 {
 		return nil, false
 	}
-	statements := sourceStatementsForDialect(sqlText, dialect)
+	statements := grammar.sourceStatements(sqlText)
 	if len(statements) < applied {
 		// The executor counted more statements than the source split finds.
 		// Recording a prefix shorter than the one that ran would tell a resume
@@ -113,8 +113,8 @@ func cumulativePartialHashValues(sqlText, dialect string, applied int) ([]string
 	return hashes, true
 }
 
-func nativeDirtyChecksum(sqlText, dialect string, applied int, fallback string) string {
-	hashes, ok := cumulativePartialHashValues(sqlText, dialect, applied)
+func nativeDirtyChecksum(sqlText string, grammar bodyGrammar, applied int, fallback string) string {
+	hashes, ok := cumulativePartialHashValues(sqlText, grammar, applied)
 	if !ok {
 		return fallback
 	}

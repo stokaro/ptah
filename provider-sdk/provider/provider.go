@@ -184,12 +184,14 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
+		validateMigrationSplitEngine,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
 		}
 	}
-	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature} {
+	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
+		ComparisonCountsFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
@@ -259,12 +261,15 @@ func validateContractAdditions(value *protocol.Description) error {
 	if slices.Contains(features, PlanningStatementStyleFeature) && !slices.Contains(features, PlanningPolicyFeature) {
 		return fmt.Errorf("%w: %s requires %s", ErrProtocol, PlanningStatementStyleFeature, PlanningPolicyFeature)
 	}
+	if slices.Contains(features, ComparisonCountsFeature) && !slices.Contains(features, CompareModelsFeature) {
+		return fmt.Errorf("%w: %s requires %s", ErrProtocol, ComparisonCountsFeature, CompareModelsFeature)
+	}
 	for _, feature := range []string{EntryKeysFeature, HCLSourceFeature, EncodeSourceFeature} {
 		if slices.Contains(features, feature) && !slices.Contains(features, DecodeSourceFeature) {
 			return fmt.Errorf("%w: %s requires source decoding", ErrProtocol, feature)
 		}
 	}
-	return nil
+	return validateMigrationSplitFeatures(features)
 }
 
 // ValidateIdentifierRules refuses missing or unknown comparison facts. The

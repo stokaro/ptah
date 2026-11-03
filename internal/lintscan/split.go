@@ -29,6 +29,12 @@ import (
 // v1.3.0 on `-- atlas:nolint DS103`, a blank line, then a DROP COLUMN, it
 // reports DS103 and exits 1, while the same two lines with no blank line
 // between them exit 0.
+//
+// A batch separator on a line of its own, SQL Server's GO, ends the statement
+// before it as the migrator's splitter ends it, and the separator, its count
+// and the comments on its line belong to no statement. Read as a word, GO
+// opened the next statement, and every rule that reads a statement's first
+// words passed over it: a DROP TABLE after a GO line was not linted at all.
 func Split(sql string, mode Mode) []lintext.Statement {
 	var statements []lintext.Statement
 	start := -1
@@ -40,9 +46,18 @@ func Split(sql string, mode Mode) []lintext.Statement {
 	emit := func() {
 		statements = append(statements, statement(sql[start:end], start, end, startLine, active, mode))
 	}
-	for _, tok := range scanSQL(sql, mode) {
+	for _, tok := range batchEnds(sql, scanSQL(sql, mode), mode) {
 		observeCompoundToken(&compound, tok, mode)
 		switch tok.kind {
+		case tokBatchEnd:
+			compound.Reset()
+			if start >= 0 {
+				emit()
+				start = -1
+				active = nil
+			}
+			pending = nil
+			lastStatementEndLine = tok.line
 		case tokSemicolon:
 			if compound.KeepSemicolonInsideStatement() {
 				// Body text. It extends the statement exactly as a word would,
@@ -222,4 +237,34 @@ func routineBodySQL(node ast.Node) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// batchEnds returns toks with each batch separator line of mode's dialect --
+// the separator, the count and the comments after it, and the line break that
+// ends the line -- as one tokBatchEnd token.
+func batchEnds(sql string, toks []lintToken, mode Mode) []lintToken {
+	if mode.batchSeparator == "" {
+		return toks
+	}
+	marked := make([]lintToken, 0, len(toks))
+	for i := 0; i < len(toks); i++ {
+		if !mode.separates(sql, toks[i]) {
+			marked = append(marked, toks[i])
+			continue
+		}
+		first := toks[i]
+		for i+1 < len(toks) && !endsLine(toks[i]) {
+			i++
+		}
+		marked = append(marked, lintToken{
+			kind: tokBatchEnd, text: sql[first.start:toks[i].end], start: first.start, end: toks[i].end, line: first.line,
+		})
+	}
+	return marked
+}
+
+// endsLine reports whether tok ends the line it is on: whitespace or a comment
+// that holds a line break.
+func endsLine(tok lintToken) bool {
+	return (tok.kind == tokWhitespace || tok.kind == tokComment) && strings.ContainsAny(tok.text, "\r\n")
 }

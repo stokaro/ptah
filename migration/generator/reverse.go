@@ -80,6 +80,10 @@ func reverseSchemaDiffWithPrior(
 		routineGrants.granted, routineGrants.revoked = routineGrantsFromRemovals(
 			append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...), dbSchema)
 	}
+	var tableGrants []difftypes.GrantRef
+	if caps.Has(capability.RoleManagement) {
+		tableGrants = tableGrantsFromRemovals(diff.TablesRemoved.Names(), dbSchema, diff.GrantsRemoved, semantics)
+	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 		TablePreparation:    cloneTablePreparation(diff.TablePreparation),
@@ -239,9 +243,9 @@ func reverseSchemaDiffWithPrior(
 		RoleMembershipsAdded:   diff.RoleMembershipsRemoved,
 		RoleMembershipsRemoved: diff.RoleMembershipsAdded,
 		// Grants to remove become grants to add, and grants to add become grants
-		// to revoke. A routine the rollback creates again also gets back the
-		// privileges the pre-change database held on it.
-		GrantsAdded:         append(slices.Clone(diff.GrantsRemoved), routineGrants.granted...),
+		// to revoke. A routine or a table the rollback creates again also gets
+		// back the privileges the pre-change database held on it.
+		GrantsAdded:         slices.Concat(diff.GrantsRemoved, routineGrants.granted, tableGrants),
 		GrantsRemoved:       append(slices.Clone(diff.GrantsAdded), routineGrants.revoked...),
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
 		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
@@ -297,6 +301,10 @@ func reverseSchemaDiffWithPrior(
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
+	// Last of the constraint additions, so these read every key they restore.
+	reversed.ConstraintsRemoved = append(reversed.ConstraintsRemoved,
+		reverseColumnKeyRemovals(diff, reversed.ConstraintsAdded, dialect, semantics)...)
+	dropColumnUniqueRestoredByConstraints(reversed, semantics)
 	// The tables those constraint changes name, as the PRE-CHANGE database
 	// declared them: a rollback rebuilds the table that database had, so the
 	// columns, indexes and triggers the rebuild renders are its. Filled last

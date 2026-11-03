@@ -75,6 +75,10 @@ type MigrationStatus struct {
 	// document it does not understand instead of reading the fields it
 	// recognizes out of a shape that means something else.
 	ContractVersion int `json:"contract_version"`
+	// Command names the command that printed the status as its document, such
+	// as "migrations status". It is empty in a status a caller computed, and
+	// in the status a run document carries.
+	Command string `json:"command,omitempty"`
 	// Migrations is every migration the directory holds, in directory order,
 	// with what the file is, what the database recorded for it, and whether the
 	// two still agree. The version lists above answer "which versions"; this
@@ -222,10 +226,13 @@ type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
 	noTransactionSession *dbschema.DatabaseConnection
-	migrationProvider    MigrationProvider
-	defaultTimeouts      migrationfile.Timeouts
-	migrationsTable      string
-	migrationsSchema     string
+	// runSession is the session an up run executes every migration body on;
+	// see [Migrator.withRunSession]. Nil outside such a run.
+	runSession        *dbschema.DatabaseConnection
+	migrationProvider MigrationProvider
+	defaultTimeouts   migrationfile.Timeouts
+	migrationsTable   string
+	migrationsSchema  string
 	// atlasPlacedSchema reports that migrationsSchema holds Atlas's placement
 	// for its revision table rather than a schema the caller named. See
 	// placeAtlasRevisionTable.
@@ -488,8 +495,11 @@ func (m *Migrator) runMigrationChecks(
 	if len(selected) == 0 {
 		return nil
 	}
-	info := conn.Info()
-	return runCheckGroups(ctx, conn, info.Dialect, info.Version, migration.Version, selected)
+	rule, err := m.checkAssertionRule(ctx, conn, migration, direction)
+	if err != nil {
+		return err
+	}
+	return runCheckGroups(ctx, conn, rule, migration.Version, selected)
 }
 
 // runPostMigrationChecks evaluates a migration's `phase=after` assertions once
@@ -521,9 +531,12 @@ func (m *Migrator) runPostMigrationChecks(
 	if len(selected) == 0 {
 		return false, nil
 	}
-	info := m.conn.Info()
 	if m.conn.Writer().IsDryRun() {
-		if err := validateCheckGroups(selected, info.Dialect, info.Version, migration.Version); err != nil {
+		rule, err := m.checkAssertionRule(ctx, m.conn, migration, direction)
+		if err != nil {
+			return false, err
+		}
+		if err := validateCheckGroups(selected, rule, migration.Version); err != nil {
 			return false, &PostMigrationCheckFailedError{
 				Version: migration.Version, Direction: direction, Err: err,
 			}
@@ -547,7 +560,7 @@ func (m *Migrator) runPostMigrationChecks(
 // text, so that verdict is as available in a dry run as in a real apply and is
 // still worth failing on. Only the part of the verdict that needs state — does
 // the predicate hold? — is deferred.
-func (m *Migrator) validateDeferredMigrationChecks(migration *Migration) (bool, error) {
+func (m *Migrator) validateDeferredMigrationChecks(ctx context.Context, migration *Migration) (bool, error) {
 	if m.skipChecks {
 		return false, nil
 	}
@@ -559,8 +572,11 @@ func (m *Migrator) validateDeferredMigrationChecks(migration *Migration) (bool, 
 	if len(selected) == 0 {
 		return false, nil
 	}
-	info := m.conn.Info()
-	if err := validateCheckGroups(selected, info.Dialect, info.Version, migration.Version); err != nil {
+	rule, err := m.checkAssertionRule(ctx, m.conn, migration, MigrationDirectionUp)
+	if err != nil {
+		return false, err
+	}
+	if err := validateCheckGroups(selected, rule, migration.Version); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1783,6 +1799,17 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 }
 
 // MigrateUpWithOptions migrates up using an explicitly selected apply plan.
+//
+// One call executes the body of every migration it applies on one database
+// session, pinned from the connection and discarded before the call returns,
+// so session state a migration leaves, such as a PostgreSQL search_path or a
+// temporary table, holds for the migrations after it in the call and for none
+// in a later call. Revision bookkeeping names the revision table with its
+// schema, so that state cannot move it. On SQLite the bodies run on the
+// connection pool's sessions instead, and a dry run pins nothing. On a
+// provider's connection that holds the migration lock the bodies run on the
+// connection's own session, where the provider guards each commit, and what
+// they leave there outlives the call.
 func (m *Migrator) MigrateUpWithOptions(ctx context.Context, opts MigrateUpOptions) (err error) {
 	if err := validateMigrateUpOptions(opts); err != nil {
 		return err
@@ -2177,7 +2204,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	if err != nil {
 		return err
 	}
-	if err := m.validateDownMigrations(migrationsToRollback); err != nil {
+	if err := m.validateDownMigrations(ctx, migrationsToRollback); err != nil {
 		return err
 	}
 	ctx, inputs, err := m.prepareMigrationInputs(ctx, migrationsToRollback, MigrationDirectionDown)
@@ -2302,7 +2329,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	if err != nil {
 		return err
 	}
-	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
+	if err := m.validateUpTransactionMode(ctx, migrationsToApply); err != nil {
 		return err
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
@@ -2359,7 +2386,7 @@ func (m *Migrator) admitUpPlan(
 	if err := runMigrationPlanGuard(ctx, opts.PlanGuard, plan); err != nil {
 		return err
 	}
-	if err := m.validateUpTransactionMode(migrations); err != nil {
+	if err := m.validateUpTransactionMode(ctx, migrations); err != nil {
 		return err
 	}
 	return runPreMigrationHook(ctx, opts.Preflight, plan)
@@ -2484,7 +2511,25 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 	return nil
 }
 
+// applyUpMigrationsPerFile runs each migration in the mode it resolves to, every
+// body on the one session [Migrator.withRunSession] pins for the run.
 func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) ([]int64, error) {
+	if len(migrations) == 0 {
+		return nil, nil
+	}
+	var checksDeferred []int64
+	err := m.withRunSession(ctx, func(run *Migrator) error {
+		var err error
+		checksDeferred, err = run.applyUpMigrationsInRun(ctx, migrations)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return checksDeferred, nil
+}
+
+func (m *Migrator) applyUpMigrationsInRun(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	var checksDeferred []int64
 	// The loop index is the migration's position in the RUN, which is what
 	// decides whether its checks observe apply state — see
@@ -2533,7 +2578,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	if len(migrations) == 0 {
 		return nil, nil
 	}
-	if err := m.validateUpTransactionMode(migrations); err != nil {
+	if err := m.validateUpTransactionMode(ctx, migrations); err != nil {
 		return nil, err
 	}
 	checksDeferred, err := m.runBatchPreMigrationChecks(ctx, migrations)
@@ -2653,8 +2698,11 @@ func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []
 	return checksDeferred, nil
 }
 
-func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
-	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionUp); err != nil {
+func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*Migration) error {
+	if err := m.refuseUnsplittableMigrations(ctx, migrations, MigrationDirectionUp); err != nil {
+		return err
+	}
+	if err := m.refuseUpPlacements(migrations); err != nil {
 		return err
 	}
 	if err := m.validateUpOwnTransactions(migrations); err != nil {
@@ -2872,7 +2920,7 @@ func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter s
 	observesApplyState bool,
 ) (bool, error) {
 	if m.deferPreMigrationChecks(observesApplyState) {
-		declaresChecks, err := m.validateDeferredMigrationChecks(migration)
+		declaresChecks, err := m.validateDeferredMigrationChecks(ctx, migration)
 		if err != nil {
 			return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
 		}
@@ -3011,7 +3059,7 @@ func (m *Migrator) withTransactionalMigrationSession(
 	direction MigrationDirection,
 	use func(*Migrator) error,
 ) error {
-	return m.conn.WithSession(ctx, func(conn *dbschema.DatabaseConnection) error {
+	return m.withBodySession(ctx, func(conn *dbschema.DatabaseConnection) error {
 		scoped := *m
 		scoped.conn = conn
 		if scoped.migrationsSchema == "" {
@@ -3729,11 +3777,11 @@ func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []in
 	return rollbackMigrations, nil
 }
 
-func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
+func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Migration) error {
 	if err := m.reportMisplacedDirectives(migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
-	if err := m.refuseUnsplittableMigrations(migrations, MigrationDirectionDown); err != nil {
+	if err := m.refuseUnsplittableMigrations(ctx, migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
 	for _, migration := range migrations {
@@ -3750,7 +3798,11 @@ func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 				Description: migration.Description,
 			}
 		}
-		if _, err := m.resolveDownMigrationTxMode(migration); err != nil {
+		mode, err := m.resolveDownMigrationTxMode(migration)
+		if err != nil {
+			return err
+		}
+		if err := m.refusePlacement(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
 	}

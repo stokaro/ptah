@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/routineext"
 	routinebuiltin "ptah.run/internal/routineext/builtin"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 )
 
@@ -1172,6 +1173,9 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 	if operation.Constraint == nil {
 		return nil
 	}
+	if operation.Constraint.UsingIndex != "" {
+		return applyKeyUsingIndex(database, target, operation.Constraint)
+	}
 	if operation.Constraint.Type == ast.PrimaryKeyConstraint {
 		return applyAlterTablePrimaryKey(target, operation.Constraint, target.sourcePlatform)
 	}
@@ -1179,6 +1183,12 @@ func applyAddConstraint(database *schemamodel.Database, target alterTarget, oper
 	if !ok {
 		return nil
 	}
+	return addTableConstraint(database, target, constraintSchema)
+}
+
+// addTableConstraint adds constraintSchema, a constraint an ALTER TABLE adds
+// to the table target names, under the name the server gives it.
+func addTableConstraint(database *schemamodel.Database, target alterTarget, constraintSchema schemamodel.Constraint) error {
 	if strings.EqualFold(constraintSchema.Type, "UNIQUE") {
 		target.releaseKeyIndexes(ascending(constraintSchema.Columns))
 	}
@@ -1285,12 +1295,28 @@ func applyAlterTableAddColumn(
 			return err
 		}
 	}
+	foldAddedColumnKey(&field, structName, sourcePlatform)
 	if key, numbered := numberedAddedColumnKey(field, target); numbered {
 		field.Unique = false
 		database.Constraints = append(database.Constraints, key)
 	}
 	database.Fields = append(database.Fields, field)
 	return nil
+}
+
+// foldAddedColumnKey takes out the UNIQUE of an added column that a server
+// builds no index for: the column's own UNIQUE beside its own PRIMARY KEY is
+// one key, which PostgreSQL builds once, as it does for the same column in a
+// CREATE TABLE; see [schemaprep.FoldedIndexConstraints]. Measured on
+// PostgreSQL 18.6, `ADD COLUMN id int PRIMARY KEY UNIQUE` leaves t_pkey
+// alone, in either order of the two. Kept, the UNIQUE is a key the database
+// the file built does not hold, and every comparison plans it.
+func foldAddedColumnKey(field *schemamodel.Field, structName, sourcePlatform string) {
+	folds := schemaprep.FoldedIndexConstraints(schemamodel.Table{StructName: structName},
+		[]schemamodel.Field{*field}, nil, sourcePlatform)
+	if len(folds) > 0 {
+		field.Unique = false
+	}
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary
@@ -1331,9 +1357,8 @@ func markPrimaryFields(fields []schemamodel.Field, structName string, columns []
 // "has no owning table" -- and answering it with silence would leave a second
 // hole of exactly the kind this function exists to close.
 func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNode, sourcePlatform string) error {
-	// PostgreSQL 18.6: `multiple primary keys for table "t" are not allowed`.
-	if len(target.table.PrimaryKey) > 0 || target.hasPrimaryField() {
-		return fmt.Errorf("ALTER TABLE %s ADD PRIMARY KEY: the table already declares a primary key", target.written)
+	if err := target.refuseSecondPrimaryKey(); err != nil {
+		return err
 	}
 	target.table.PrimaryKeyName = constraint.Name
 	target.table.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
@@ -1346,6 +1371,16 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	target.table.PrimaryKeyFacets = constraint.Facets
 	for _, database := range target.databases {
 		markPrimaryFields(database.Fields, target.structName, target.table.PrimaryKey)
+	}
+	return nil
+}
+
+// refuseSecondPrimaryKey refuses a primary key an ALTER TABLE adds to a
+// table that declares one. PostgreSQL 18.6: `multiple primary keys for table
+// "t" are not allowed`.
+func (t alterTarget) refuseSecondPrimaryKey() error {
+	if len(t.table.PrimaryKey) > 0 || t.hasPrimaryField() {
+		return fmt.Errorf("ALTER TABLE %s ADD PRIMARY KEY: the table already declares a primary key", t.written)
 	}
 	return nil
 }

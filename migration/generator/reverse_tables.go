@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
@@ -99,7 +100,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			TableName:       tableDiff.TableName,
 			ColumnsAdded:    clonedColumnChanges(tableDiff.ColumnsRemoved),
 			ColumnsRemoved:  clonedColumnChanges(tableDiff.ColumnsAdded),
-			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior),
+			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior, semantics),
 			// The table as the PRE-CHANGE database declared it. A rollback that
 			// rebuilds is rebuilding what that database held, and the forward
 			// declaration describes the state being rolled back from.
@@ -123,7 +124,6 @@ func clonedColumnChanges(changes difftypes.ColumnChanges) difftypes.ColumnChange
 	return result
 }
 
-// reverseColumnDiffs reverses column modifications for down migrations
 // reverseColumnDiffs turns the forward direction's column modifications into
 // the rollback's, giving each the column the PRE-CHANGE database held.
 //
@@ -139,6 +139,7 @@ func reverseColumnDiffs(
 	columnDiffs []difftypes.ColumnDiff,
 	tableName string,
 	prior *schemamodel.Database,
+	semantics identifier.Semantics,
 ) []difftypes.ColumnDiff {
 	reversed := make([]difftypes.ColumnDiff, len(columnDiffs))
 	for i, columnDiff := range columnDiffs {
@@ -158,7 +159,7 @@ func reverseColumnDiffs(
 		reversed[i] = difftypes.ColumnDiff{
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
-			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName),
+			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName, semantics),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
 			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,
@@ -167,9 +168,21 @@ func reverseColumnDiffs(
 	return reversed
 }
 
-// priorColumn answers with the named column of the named table as the
-// pre-change database held it, folded the same way the comparison folds a
-// declaration so an embedded column is found under the name it renders with.
+// priorTable is the table of the pre-change database a forward diff entry
+// names, or nil when that database holds no single table under the name.
+//
+// The entry is matched by identity rather than by name text, the way the
+// comparison paired the two sides. The comparison keys `public.items` and
+// `items` to one table on PostgreSQL, so a diff names the table as the
+// declaration spells it while the database read names it bare; a text match
+// finds nothing there, and the rollback loses the table's prior shape.
+func priorTable(prior *schemamodel.Database, tableName string, semantics identifier.Semantics) *schemamodel.Table {
+	if prior == nil {
+		return nil
+	}
+	return objectlookup.Qualified(prior.Tables, tableName, semantics)
+}
+
 // priorTableDeclaration answers with everything the pre-change database
 // declared about the named table.
 //
@@ -177,30 +190,32 @@ func reverseColumnDiffs(
 // dialect that rebuilds rather than alters recreates the table, and the one
 // it has to recreate is the one that database held.
 func priorTableDeclaration(prior *schemamodel.Database, tableName string, semantics identifier.Semantics) schemacapture.TableDeclaration {
-	if prior == nil {
+	table := priorTable(prior, tableName, semantics)
+	if table == nil {
 		return schemacapture.TableDeclaration{}
 	}
-	for _, table := range prior.Tables {
-		if table.Name == tableName || table.QualifiedName() == tableName {
-			return schemacapture.DeclareTable(prior, table, semantics)
-		}
-	}
-	return schemacapture.TableDeclaration{}
+	return schemacapture.DeclareTable(prior, *table, semantics)
 }
 
-func priorColumn(prior *schemamodel.Database, tableName, columnName string) schemamodel.Field {
-	if prior == nil {
+// priorColumn answers with the named column of the named table as the
+// pre-change database held it, folded the same way the comparison folds a
+// declaration so an embedded column is found under the name it renders with.
+// The column is matched by the dialect's column identity, as the comparison
+// matched it, with an exact spelling preferred.
+func priorColumn(prior *schemamodel.Database, tableName, columnName string, semantics identifier.Semantics) schemamodel.Field {
+	table := priorTable(prior, tableName, semantics)
+	if table == nil {
 		return schemamodel.Field{}
 	}
-	for _, table := range prior.Tables {
-		if table.Name != tableName && table.QualifiedName() != tableName {
-			continue
-		}
-		for _, field := range generatedschema.FieldsForTable(prior, table) {
-			if field.Name == columnName {
-				return field.Clone()
-			}
-		}
+	fields := generatedschema.FieldsForTable(prior, *table)
+	if i := slices.IndexFunc(fields, func(field schemamodel.Field) bool { return field.Name == columnName }); i >= 0 {
+		return fields[i].Clone()
+	}
+	key := semantics.ColumnIdentityKey(columnName)
+	if i := slices.IndexFunc(fields, func(field schemamodel.Field) bool {
+		return semantics.ColumnIdentityKey(field.Name) == key
+	}); i >= 0 {
+		return fields[i].Clone()
 	}
 	return schemamodel.Field{}
 }
@@ -226,6 +241,55 @@ func tableCreationsFromRemovals(names []string, prior *schemamodel.Database, sem
 		creations = append(creations, priorTableCreation(prior, name, semantics))
 	}
 	return creations
+}
+
+// tableGrantsFromRemovals is the privileges the rollback gives back to the
+// tables it creates again, as the pre-change database held them, column
+// privileges included.
+//
+// The forward direction revokes only the privileges a comparison manages,
+// which are those of a role the schema declares or grants to. Dropping the
+// table takes the others with it, and the table the rollback creates holds
+// none of them. The privileges the forward direction revokes are left out here:
+// the rollback grants those back already. So is a privilege its grantor holds
+// on the table, which is the owner's, and which the owner of the new table
+// holds without a grant. A read that reported no grants restores none.
+func tableGrantsFromRemovals(
+	names []string,
+	current *catalog.Database,
+	revoked []difftypes.GrantRef,
+	semantics identifier.Semantics,
+) []difftypes.GrantRef {
+	if len(names) == 0 || current == nil {
+		return nil
+	}
+	var granted []difftypes.GrantRef
+	for _, grant := range current.Grants {
+		if !strings.EqualFold(strings.TrimSpace(grant.ObjectType), "TABLE") || grant.Implicit || grant.IsPartialRevoke ||
+			strings.EqualFold(strings.TrimSpace(grant.Role), strings.TrimSpace(grant.GrantedBy)) ||
+			!objectlookup.Contains(names, grant.QualifiedTarget(), semantics) {
+			continue
+		}
+		ref := difftypes.GrantRef{
+			Role:       strings.TrimSpace(grant.Role),
+			Privilege:  strings.ToUpper(strings.TrimSpace(grant.Privilege)),
+			ObjectType: "TABLE",
+			ObjectName: grant.QualifiedTarget(),
+			Column:     strings.TrimSpace(grant.Column),
+			WithOption: grant.WithOption,
+		}
+		if !slices.ContainsFunc(revoked, func(planned difftypes.GrantRef) bool { return sameTableGrant(planned, ref, semantics) }) {
+			granted = append(granted, ref)
+		}
+	}
+	return granted
+}
+
+// sameTableGrant reports whether two table privileges are one: the same role,
+// privilege and column on the same table.
+func sameTableGrant(a, b difftypes.GrantRef, semantics identifier.Semantics) bool {
+	return strings.EqualFold(a.ObjectType, b.ObjectType) && a.Role == b.Role && a.Privilege == b.Privilege &&
+		a.Column == b.Column && objectlookup.Same(a.ObjectName, b.ObjectName, semantics)
 }
 
 // reverseTableRemovals orders the reverse removal intents. Their observations

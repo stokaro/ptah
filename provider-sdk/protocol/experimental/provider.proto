@@ -93,6 +93,8 @@ service Provider {
   rpc RunStatement(RunStatementRequest) returns (StatementResult);
   rpc ReadStatementRows(ReadStatementRowsRequest) returns (StatementRows);
   rpc CloseStatement(CloseStatementRequest) returns (Empty);
+  // Contract 25.12. Used only when both sides list units.migration-split.
+  rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
 }
 
 message Empty {}
@@ -504,6 +506,17 @@ message Schema {
   // The common objects beyond tables, with coverage for each kind the engine
   // declares. Contract 25.3, under schema.common-objects.
   ObservedCommonObjects common_objects = 10;
+  // The planning context a filtered read leaves out of its scope. Contract
+  // 25.11, under planning.context-inventory.
+  PlanningContextInventory planning_context = 11;
+}
+// PlanningContextInventory is the observed values of the engine's planning
+// context kinds outside a filtered read's scope, and their coverage, which may
+// span the session's database. The host never compares it; it reaches the
+// planning service that assesses those kinds as context only.
+message PlanningContextInventory {
+  repeated Envelope objects = 1;
+  ModelCoverage coverage = 2;
 }
 // ObservedCommonObjects is what a read established about the common objects
 // of the kinds its engine declares. A kind is complete or uninspected; an
@@ -833,6 +846,10 @@ message TransactionResult {
   string diagnostic_code = 2;
   // Provider-authored, redacted text. Never include credentials or raw URLs.
   string message = 3;
+  // ROLLED_BACK in answer to COMMIT only: the engine aborted the transaction
+  // for a conflict, applied nothing, and a new attempt may succeed. Sent only
+  // when both sides list units.migration-split. Contract 25.12.
+  bool aborted = 4;
 }
 message Execution {
   enum Outcome {
@@ -856,6 +873,11 @@ message Execution {
   // NOT_APPLIED, PARTIAL or UNKNOWN: UNKNOWN when the server may still run
   // the unit after the provider stopped waiting. Contract 25.1.
   bool statement_timed_out = 5;
+  // NOT_APPLIED in a caller transaction only, and never beside
+  // statement_timed_out: the engine aborted the transaction for a conflict,
+  // applied nothing, and a new attempt may succeed. Sent only when both sides
+  // list units.migration-split. Contract 25.12.
+  bool transaction_aborted = 6;
 }
 
 // AnalyzeSQL keeps statement boundaries and safety knowledge with the owner.
@@ -1569,11 +1591,34 @@ message ComparedModels {
   // The desired object each written request named, for the requests this
   // service recognized. Contract 25.3, under planning.policy.
   repeated ResolvedRequest resolved_requests = 5;
+  // How many objects the comparison compared, one entry per change kind it
+  // counted. Contract 25.13, negotiated under models.compare-counts.
+  repeated ComparisonCount counts = 6;
 }
 message ResolvedRequest {
   // Index into CompareModelsRequest.requests.
   uint32 request = 1;
   ComparisonIdentity subject = 2;
+}
+// The objects of one change kind a comparison compared. A facet comparison
+// counts the objects its settings stand for, such as the tables with
+// row-level security enabled. The desired state holds matched plus added of
+// them and the observed state matched plus removed. An object the comparison
+// leaves out is counted nowhere. An entry claims every object of its kind; a
+// kind the service does not count has no entry. Contract 25.13, under
+// models.compare-counts.
+message ComparisonCount {
+  // A change kind of the comparison, counted once.
+  string kind = 1;
+  // Objects both sides hold that the comparison takes to be one object,
+  // whether or not they differ, and even when the plan drops and creates it
+  // again.
+  uint32 matched = 2;
+  // Changes of the kind that create an object the observed state lacks.
+  uint32 added = 3;
+  // Changes of the kind that drop an object the desired state does not
+  // declare.
+  uint32 removed = 4;
 }
 
 // OperationSemantics carries local safety facts without rendering or I/O.
@@ -1742,6 +1787,11 @@ message PlanFeaturesRequest {
   // Sorted accepted native-change subjects from the complete host batch.
   // Read-only context; this list grants no operation ownership.
   repeated ComparisonIdentity changed_subjects = 19;
+  // The observed values of the assigned context kinds that a filtered read
+  // left out of its scope, with their coverage across the database. Never
+  // compared, and outside the assessment inventory: the service returns no
+  // receipt for them. Contract 25.11, under planning.context-inventory.
+  ComparisonState context_inventory = 20;
 }
 // PlanningPolicy is a request, not a prediction: an engine without the
 // behavior plans as it would without it.
@@ -3746,6 +3796,60 @@ message StatementRows {
 message CloseStatementRequest {
   string session_id = 1;
   string page_token = 2;
+}
+
+// SplitMigrationRequest asks the owner how its engine runs one migration
+// body. The split reads the text alone: no session, no server version and no
+// database. Contract 25.12, under units.migration-split.
+message SplitMigrationRequest {
+  string engine = 1;
+  // One body in one direction, directives included.
+  string body = 2;
+  // The migration's check assertions, in file order. None runs.
+  repeated string assertions = 3;
+}
+// MigrationSplit is the units the engine runs, or a refusal, and a verdict
+// for each assertion.
+message MigrationSplit {
+  // In run order. Empty with a refusal, or for a body with no statement.
+  repeated MigrationUnit units = 1;
+  SplitRefusal refusal = 2;
+  // One per request assertion, in request order, with a refusal too.
+  repeated AssertionVerdict assertions = 3;
+}
+// MigrationUnit is one execution unit of a body.
+message MigrationUnit {
+  // Execute's Unit.sql, with every definition and setting it needs carried
+  // in from earlier statements.
+  string sql = 1;
+  // The unit's own statements as written. Partial hashes and failure
+  // records read it.
+  string source = 2;
+  enum Placement {
+    PLACEMENT_UNSPECIFIED = 0;
+    // Changes data only. The host runs it in a serializable transaction of
+    // its own and commits its checkpoint in that transaction.
+    WITH_CHECKPOINT = 1;
+    // Runs outside any transaction. The host marks it in flight, runs it and
+    // checkpoints it.
+    OUTSIDE = 2;
+  }
+  Placement placement = 3;
+}
+// SplitRefusal names the text the engine cannot run as units.
+message SplitRefusal {
+  // The refused text's byte range in body, which the host quotes.
+  uint32 start = 1;
+  uint32 end = 2;
+  // One line. It quotes nothing from the body.
+  string reason = 3;
+}
+// AssertionVerdict says whether a check assertion is one statement that
+// changes nothing.
+message AssertionVerdict {
+  bool read_only = 1;
+  // Set exactly when read_only is false. One line.
+  string reason = 2;
 }
 
 // schema.columns owns offline equivalence and readback of captured common

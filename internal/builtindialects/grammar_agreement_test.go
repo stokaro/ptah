@@ -61,6 +61,11 @@ import (
 //   - ALTER INDEX renamed on PostgreSQL and changed visibility on CockroachDB,
 //     whose indexes alone end with a visibility; SQL Server alone read DROP
 //     INDEX t.idx as table.index.
+//   - No switch answered SQL Server's trigger grammar, the T-SQL header with
+//     the table before the timing, or its IDENTITY column property; the
+//     descriptor is the one statement of each.
+//   - a key USING INDEX in ALTER TABLE ... ADD reads PostgreSQL alone, the one
+//     engine measured to take it.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
@@ -73,6 +78,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			Match:       descriptor.Match{Clause: true},
 		},
 		Indexes:    descriptor.IndexGrammar{Alter: descriptor.AlterIndexRename},
+		AlterTable: descriptor.AlterTableGrammar{KeyUsingIndex: true},
 		Statements: descriptor.StatementGrammar{Extensions: true, UserTypes: true, GrantTargetLists: true},
 		Routines: descriptor.RoutineGrammar{
 			Body: descriptor.RoutineQuotedBody, TriggerConditions: true, DefaultDoBlockLanguage: "plpgsql",
@@ -160,10 +166,11 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 	},
 	platform.SQLServer: {
+		Columns:    descriptor.ColumnGrammar{IdentityProperty: true},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
-		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL},
+		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineTransactSQL, Trigger: descriptor.TriggerTransactSQL},
 	},
 	platform.CockroachDB: {
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},

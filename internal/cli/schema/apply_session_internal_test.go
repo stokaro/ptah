@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/errorkind"
 )
 
 type redirectApplySession struct {
@@ -260,7 +261,7 @@ func testSchemaApplyJSONSessionLoss(t *testing.T, setup applySessionLossSetup) {
 	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
-	c.Assert(report.Error, qt.Contains, sessionFailure.Error())
+	c.Assert(report.Error.Message, qt.Contains, sessionFailure.Error())
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
@@ -320,7 +321,7 @@ func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossS
 	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
 	c.Assert(report.Refusal, qt.IsNil)
-	c.Assert(report.Error, qt.Equals, "internal error: lock session lost its connection")
+	c.Assert(report.Error, qt.DeepEquals, &errorkind.Report{Message: "internal error: lock session lost its connection"})
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(stderr.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(listApplySessionSQLiteTables(c, targetPath), qt.DeepEquals, []string{"orders", "users"})
@@ -363,8 +364,9 @@ func TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed(t *testing.T) {
 	c.Assert(json.Unmarshal(stdout.Bytes(), &report), qt.IsNil, qt.Commentf("stdout:\n%s", stdout.String()))
 	c.Assert(report, qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           "internal error: lock session could not start",
+		Error:           &errorkind.Report{Message: "internal error: lock session could not start"},
 	})
 	c.Assert(listApplySessionSQLiteTables(c, rootPath), qt.DeepEquals, []string{"users"})
 }

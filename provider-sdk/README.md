@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.10. `provider-sdk/v0.11.0` speaks 25.9.
+speaks contract 25.13. `provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
 `provider-sdk/v0.9.0` speaks 25.7.
 `provider-sdk/v0.8.0` speaks 25.6.
@@ -93,6 +93,9 @@ returns to 0.
   [statement style for feature owners](#planning-policy). Contract 25.9 adds
   [ordered primary-key observations](#ordered-primary-key-observations).
   Contract 25.10 adds [common index observations](#common-index-observations).
+  Contract 25.11 adds [the planning context of a filtered read](#planning-context-of-a-filtered-read).
+  Contract 25.12 adds [migration splits](#migration-splits).
+  Contract 25.13 adds [comparison counts](#comparison-counts).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -118,10 +121,14 @@ does not oblige a peer to use it.
   `scope.selections`, `source.encode-groups`, `source.limits`,
   `schema.declarations`, `schema.common-access`, `planning.lifecycle`,
   `units.sensitive-inputs`, `schema.columns`, `database.context`,
-  `values.context`, `schema.common-view-facets`, `schema.observed-columns`, and
-  `planning.object-context`. The embedding store's calls and `PrepareCommonObjects` are
-  new, and each comes with an addition to `Engine`, so a host lists the
-  feature to receive either.
+  `values.context`, `schema.common-view-facets`, `schema.observed-columns`,
+  `schema.observed-primary-keys`, `schema.observed-indexes`,
+  `planning.object-context`, `planning.context-inventory`,
+  `units.migration-split`, and `models.compare-counts`. The embedding store's
+  calls and `PrepareCommonObjects` are new, and each comes with an addition to
+  `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
+  and comes with the abort flags of `Execution` and `TransactionResult`, so a
+  host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
   `provider.NegotiatedDescription`, so neither side sends an addition the other
   did not ask for. A service reads what the host listed with
@@ -228,6 +235,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `RunStatement` | What one statement the operator wrote did: its columns and first page of rows, a row count only when the engine measured one, the server's message for a statement it refused, a refusal that ran nothing, or an explicit unknown outcome. |
 | `ReadStatementRows` | The next bounded page of an open result, or an error and no rows. |
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
+| `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -691,7 +699,8 @@ model, subject, and target binding, and permits no change or diagnostic.
 
 The owner validates complete payload semantics again. Captured canonical
 projections do not prove desired/observed equivalence. Results include effective
-desired schema, normalized `CHANGE` values, and explicit undecided diagnostics.
+desired schema, normalized `CHANGE` values, explicit undecided diagnostics and,
+when negotiated, [counts of the compared objects](#comparison-counts).
 Both transport boundaries refuse incomplete replies and unowned models. The
 host's comparison runtime enforces common migration policy before planning.
 
@@ -1547,6 +1556,12 @@ and types, common creation steps, target features, identifier rules and
 capability facts. It carries no current schema, coverage or session. An authored
 object is not evidence of observed absence.
 
+Each object's subject names its value's owner. A value converted from a read,
+as when a read schema is rendered, keeps the owner the read gave it, bound to
+the database the read was of, while the host names the subject relative to
+that database. The SDK accepts the pair when the value's database context names
+the owner's database, and refuses any other owner database.
+
 A successful complete result contains contributions and one declaration receipt
 per object in input order. Each receipt preserves the subject, names a strategy
 and accounts for creation steps. Every contributed step has a receipt.
@@ -1778,6 +1793,44 @@ creation operand.
 defines how the host compares the list and how an index change reaches the
 provider that owns the table.
 
+## Comparison counts
+
+`models.compare-counts` lets a comparison service say how many objects it
+compared, in `ComparedModels.counts`: one `ComparisonCount` per change kind it
+counts. A change record carries no direction a reader could count, so the
+owner states its additions and removals itself. The provider lists this
+two-way feature beside `models.compare`, and so does each engine whose
+services count. A service counts only for a request whose `target_features`
+list the feature. The SDK refuses counts in any other reply.
+
+`matched` counts the objects both sides hold that the service takes to be one
+object, whether or not they differ. An object the plan drops and creates again
+is matched, because the service reports one change for it. `added` counts the
+changes of the kind that create an object the observed schema lacks, and
+`removed` the changes that drop an object the desired schema does not declare.
+The desired schema holds `matched + added` objects of the kind, and the observed
+schema `matched + removed`. An object the service leaves out counts nowhere:
+one the run excludes, one it keeps without comparing, one it reports as
+undecided, and one below a parent only one side holds, whose state the
+parent's own change owns. A facet service counts the objects its settings
+stand for, such as the tables with row-level security enabled, by the same
+rules.
+
+An entry claims every object of its kind in the batch. A kind the service
+does not count has no entry, and a reader then knows nothing about the kind
+rather than that it holds none. A kind the batch holds nothing of may have no
+entry or an entry of zeros.
+
+Both transport boundaries refuse counts without negotiation, a kind that is not
+one of the service's change kinds, and a kind counted twice. They refuse
+`added + removed` above the number of the reply's changes of the kind, since
+one change cannot both add and drop an object, and more changes of the kind
+than `matched + added + removed`. The changes of a kind are those whose value
+has the kind, `ComparedChange.value.value.kind`; `ComparedChange.kind` names
+the compared model.
+[ADR 0056](../docs/adr/0056-a-comparison-service-counts-the-objects-it-compares.md)
+records why the owner counts and what an older peer does.
+
 ## Native object assessment
 
 [ADR 0049](../docs/adr/0049-native-object-context-is-assessed-without-inventing-schema-differences.md)
@@ -1811,3 +1864,67 @@ An observed model can retain its database while its selected subject is local.
 That localization requires both captured owner database spellings to equal the
 request's nonempty `database_path`. Other identity components remain exact.
 Foreign roots and invented replacement observations are refused.
+
+## Planning context of a filtered read
+
+[ADR 0054](../docs/adr/0054-a-filtered-read-carries-the-planning-context-it-does-not-compare.md)
+defines `planning.context-inventory`, which requires `planning.object-context`.
+A filtered read covers only its selected namespaces, and its snapshot may claim
+nothing outside them. A planning service that must prove what lies outside,
+such as one that asks whether any streaming query in the database reads a
+changed input, gets that proof from `Schema.planning_context`.
+
+The inventory holds the observed values of the engine's context kinds that the
+read leaves out of its scope, and their coverage, which may span the session's
+database. Each object lies outside the scope and has complete subject
+coverage. An unfiltered read carries none. `provider.PlanningContextValues`
+returns the values for the host to normalize.
+
+The host never compares the inventory. It passes it to the planning service
+that assesses those kinds as `PlanFeaturesRequest.context_inventory`, an
+observed `ComparisonState` disjoint from `desired_objects` and
+`current_objects`. Its subjects are outside the assessment inventory, so the
+service returns no receipt for them.
+
+## Migration splits
+
+[ADR 0055](../docs/adr/0055-a-provider-splits-a-migration-body-into-the-units-its-engine-runs.md)
+defines `units.migration-split`. The provider lists it beside
+`sessions.transactions`, which requires `units.execute`, and
+`sessions.history`. Each engine that declares it also declares its own
+transactions and history. It adds an RPC and fields to existing messages, so
+it is two-way.
+
+`SplitMigration` splits one migration body, in one direction and with its
+directives, into the units the engine runs. It reads the text alone: the
+request names the engine and carries the body and the migration's check
+assertions, and no session, server version or database. Each unit carries the
+text `Execute` receives, with every definition and setting it needs carried in
+from earlier statements; `source`, the unit's own statements as written, which
+partial hashes and failure records read; and a placement.
+
+- `WITH_CHECKPOINT` changes data only. The host runs it in a serializable
+  transaction of its own and commits its checkpoint in that transaction.
+- `OUTSIDE` runs outside any transaction. The host marks it in flight, runs it
+  and checkpoints it.
+
+A body the engine cannot run as units is refused whole: no unit, the refused
+byte range in the body, and a reason on one line that quotes nothing from the
+body. A body with no statement has no unit. The reply carries one verdict per
+assertion, in request order, beside a refusal too: `read_only`, or a reason on
+one line saying why the assertion is not one statement that changes nothing.
+
+`Execution.transaction_aborted` and `TransactionResult.aborted` say that the
+engine aborted a transaction for a conflict and applied nothing, so a new
+attempt may succeed. The first answers `NOT_APPLIED` in a caller transaction
+only, and never beside `statement_timed_out`; the second answers `ROLLED_BACK`
+to `COMMIT` only. The host decides whether to try again; the SDK never does.
+
+Both transport boundaries refuse a request without an engine or a body, or for
+an engine that does not declare the feature; a unit with empty `sql` or
+`source` or no placement; units beside a refusal; a refusal range outside the
+body, or a reason that is not one line; a verdict count unlike the request's;
+a reason beside a `read_only` verdict, or none without one; and either abort
+flag on another outcome or without the feature. A client that receives a
+misused abort flag returns no reply and reports an unknown outcome, so no
+caller reads the flag and tries again.

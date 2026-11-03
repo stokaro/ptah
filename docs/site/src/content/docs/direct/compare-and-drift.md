@@ -195,7 +195,8 @@ Three more flags shape the check:
   describe](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings, the
   [inventory](#how-much-each-side-holds) and the full structured diff, for
-  tooling), or `github-actions` (workflow annotations).
+  tooling, under `contract_version` and `command`), or `github-actions`
+  (workflow annotations).
 
 A declared object the read could not check is graded as well. It is not a
 difference, so the report opens with `No schema drift found, but 1 declared
@@ -296,8 +297,10 @@ privilege the database does not hold yet.
 
 `rls_policies` and `rls_enabled_tables` count the policies and the enablements
 the shared comparison pairs. Against PostgreSQL, policies and row-level security
-belong to their feature owner, so a PostgreSQL report has neither kind and
-counts its policies under the owner's kind below.
+belong to their feature owner, so a PostgreSQL report has neither kind. It
+counts the policies under `ptah.run/pgpolicy/policy-change` and the tables with
+row-level security on, by `ENABLE` or `FORCE`, under
+`ptah.run/pgpolicy/table-state-change`.
 
 An object a feature owner compares, such as a PostgreSQL extension, policy or
 domain, is counted by its owner, which decides which objects on the two sides
@@ -319,7 +322,9 @@ object type and grantee, and a declaration the built-in privileges already
 satisfy counts on both sides.
 
 An owner that does not count its objects has no entry, though its changes are
-still findings. A provider installed separately counts nothing yet.
+still findings. A setting that stands for no object, such as a ClickHouse
+table's TTL, has no entry either. A provider installed separately counts
+nothing yet.
 
 ### An extension the schema does not describe
 
@@ -712,7 +717,13 @@ is new; an extension that is not relocatable exits 2 before SQL output.
 
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —
   an unreachable database, a bad URL, or an unparsable schema source — so
-  pipelines can tell "drift found" from "check broken".
+  pipelines can tell "drift found" from "check broken". With `--format json`
+  standard output then carries a failure document in place of the report:
+  `contract_version`, `command` and an `error` object, and none of the report's
+  fields, so no reader takes it for a database without drift. `error.message`
+  is the line standard error prints after `error:`, and `error.kind` says why
+  the target database could not be opened; see
+  [Why a command failed](../../reference/exit-codes/#why-a-command-failed).
 - `ptah schema compare` without `--exit-code` never signals differences through
   its status code; scripts that forget the flag silently pass.
 

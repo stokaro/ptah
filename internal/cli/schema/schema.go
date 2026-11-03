@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/annotationmeta"
 	"ptah.run/internal/annotationschema"
@@ -41,6 +42,7 @@ const (
 	exportToFlag             = "to"
 	exportRootDirFlag        = "root-dir"
 	exportSchemaFileFlag     = "schema-file"
+	exportDialectFlag        = "dialect"
 	exportOutFlag            = "out"
 	exportOpenFlag           = "open"
 	exportIncludeTablesFlag  = "include-tables"
@@ -247,6 +249,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var to string
 	var rootDir string
 	var schemaFiles []string
+	var dialect string
 	var outPath string
 	var includeTables []string
 	var fieldPolicy string
@@ -342,6 +345,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				rootDir:                   rootDir,
 				rootDirExplicit:           cmd.Flags().Changed(exportRootDirFlag),
 				schemaFiles:               schemaFiles,
+				dialect:                   dialect,
 				outPath:                   outPath,
 				includeTables:             includeTables,
 				fieldPolicy:               fieldPolicy,
@@ -374,6 +378,9 @@ part of the compatibility state, so all of them must be committed together.`,
 		"SQL, YAML, HCL, or DBML schema file to export instead of Go annotations (repeatable; "+
 			"merged with --root-dir into one composite schema when both are given; "+
 			"not supported for --to hcl)")
+	flags.StringVar(&dialect, exportDialectFlag, "",
+		"Dialect a SQL --schema-file is read in, such as postgres, which resolves a name the engine cuts "+
+			"(default: read it without a dialect)")
 	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; required for protobuf)")
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringVar(&fieldPolicy, exportFieldPolicyFlag, string(schemaexport.FieldPolicyAll),
@@ -421,8 +428,11 @@ type exportOptions struct {
 	rootDir      string
 	// rootDirExplicit records whether --root-dir was passed, so its "." default
 	// is not merged into a schema-file export as a second source.
-	rootDirExplicit   bool
-	schemaFiles       []string
+	rootDirExplicit bool
+	schemaFiles     []string
+	// dialect is the dialect a SQL schema file is read in; empty reads it
+	// without one.
+	dialect           string
 	outPath           string
 	includeTables     []string
 	fieldPolicy       string
@@ -689,6 +699,9 @@ func normalizeExportFormat(format string) string {
 func validateExportOptions(opts exportOptions) error {
 	if err := validateExportSource(opts); err != nil {
 		return err
+	}
+	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
+		return fmt.Errorf("unsupported --%s %q", exportDialectFlag, opts.dialect)
 	}
 	if !slices.Contains(exportTargetFormats, opts.to) {
 		return fmt.Errorf("unsupported --to %q: expected %s", opts.to, exportTargetList())

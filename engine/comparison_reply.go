@@ -65,10 +65,10 @@ func (r *Runtime) validateComparisonReply(ctx context.Context, service int, requ
 
 // comparisonCounts checks the counts a comparer reports against its changes:
 // each names a change kind of its service once, and no count is negative.
-// Every addition and every removal it counts is one of its changes of the
-// kind, and every such change adds an object, removes one, or changes one both
-// sides hold, so the changes of a kind are never more than its three counts
-// together.
+// Every addition and every removal it counts is a change of the kind of its
+// own, since one change either adds an object, removes one, or changes one
+// both sides hold, so the additions and the removals together are never more
+// than the changes, and the changes never more than the three counts together.
 func comparisonCounts(kinds []schemaext.Kind, changes []schemaext.ChangeRecord, counts []schemaext.ObjectCount) ([]schemaext.ObjectCount, error) {
 	counted := make(map[schemaext.Kind]bool, len(counts))
 	for _, count := range counts {
@@ -82,7 +82,7 @@ func comparisonCounts(kinds []schemaext.Kind, changes []schemaext.ChangeRecord, 
 				changed++
 			}
 		}
-		if count.Matched < 0 || count.Added < 0 || count.Removed < 0 || count.Added > changed || count.Removed > changed ||
+		if count.Matched < 0 || count.Added < 0 || count.Removed < 0 || count.Added+count.Removed > changed ||
 			changed > count.Matched+count.Added+count.Removed {
 			return nil, fmt.Errorf("%w: comparison counted %d matched, %d added and %d removed objects of change kind %q, which its %d changes of the kind contradict",
 				schemaext.ErrInvalidValue, count.Matched, count.Added, count.Removed, count.Kind, changed)
@@ -247,4 +247,25 @@ func comparisonParent(parents []schemaext.ParentState, subject objectidentity.ID
 		}
 	}
 	return schemaext.ParentState{}, false
+}
+
+// joinCounts sums the counts of the object and the facet comparisons of one
+// run by change kind, sorted by kind, and returns nil when there is none.
+func joinCounts(lists ...[]schemaext.ObjectCount) []schemaext.ObjectCount {
+	sums := make(map[schemaext.Kind]schemaext.ObjectCount)
+	for _, list := range lists {
+		for _, count := range list {
+			sum := sums[count.Kind]
+			sum.Kind = count.Kind
+			sum.Matched += count.Matched
+			sum.Added += count.Added
+			sum.Removed += count.Removed
+			sums[count.Kind] = sum
+		}
+	}
+	var joined []schemaext.ObjectCount
+	for _, kind := range slices.Sorted(maps.Keys(sums)) {
+		joined = append(joined, sums[kind])
+	}
+	return joined
 }

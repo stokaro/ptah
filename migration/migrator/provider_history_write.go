@@ -94,7 +94,7 @@ func (m *Migrator) pendingProviderRevision(migration *Migration, startedAt time.
 		record.AtlasType = uint32(revisionType)
 		record.Checksum = migrationRevisionHash(migration)
 		record.OperatorVersion = migration.atlasOperatorVersion()
-		record.PartialHashes, _ = atlasPartialHashValues(migration.UpSQL, m.connectionDialect(), applied, record.Total)
+		record.PartialHashes, _ = atlasPartialHashValues(migration.UpSQL, m.grammar(), applied, record.Total)
 	}
 	return record, nil
 }
@@ -147,9 +147,9 @@ func (m *Migrator) providerRevisionProgress(record *dbschema.HistoryRecord, migr
 	record.OperatorVersion = atlasOperatorVersionForMigration(migration, direction)
 	sqlText := migrationSQLForDirection(migration, direction)
 	if direction == MigrationDirectionDown {
-		record.PartialHashes, _ = cumulativePartialHashValues(sqlText, m.connectionDialect(), applied)
+		record.PartialHashes, _ = cumulativePartialHashValues(sqlText, m.grammar(), applied)
 	} else {
-		record.PartialHashes, _ = atlasPartialHashValues(sqlText, m.connectionDialect(), applied, total)
+		record.PartialHashes, _ = atlasPartialHashValues(sqlText, m.grammar(), applied, total)
 	}
 }
 
@@ -185,7 +185,14 @@ func (m *Migrator) failProviderRevision(ctx context.Context, failed failedRevisi
 		return err != nil, err
 	}
 	_, rolledBack := migrationTransactionRollbackVersion(failed.failure)
-	if !rolledBack && (txMode != MigrationTxModeNone || errors.Is(failed.failure, ptaherr.ErrOutcomeUnknown)) {
+	// Outside a transaction a provider that splits bodies commits a data unit
+	// together with its checkpoint and marks every other unit in flight, so
+	// the row records what committed even when a commit reply was lost; a
+	// marked unit of unknown outcome is kept before this point (see
+	// preservesUnknownStatementOutcome). The failure is written over the row
+	// without lowering its progress.
+	units := txMode == MigrationTxModeNone && m.grammar().hasUnits()
+	if !rolledBack && (txMode != MigrationTxModeNone || (errors.Is(failed.failure, ptaherr.ErrOutcomeUnknown) && !units)) {
 		// A pending row already records uncertainty. If commit actually succeeded,
 		// the applied row or deletion is durable instead. Overwrite neither.
 		return true, nil
@@ -199,13 +206,17 @@ func (m *Migrator) failProviderRevision(ctx context.Context, failed failedRevisi
 		if m.providerRecordState(*record) == migrationStateApplied && txMode != MigrationTxModeNone {
 			return fmt.Errorf("refusing to replace completed provider revision %s with failure", record.Version)
 		}
-		m.providerRevisionProgress(record, failed.migration, failed.startedAt, applied, failed.total, failed.direction)
+		progress := applied
+		if units {
+			progress = max(applied, record.Applied)
+		}
+		m.providerRevisionProgress(record, failed.migration, failed.startedAt, progress, failed.total, failed.direction)
 		record.State = migrationStateFailed
 		record.Error = revisiontext.ValidUTF8(strings.TrimSpace(failed.failure.Error()))
 		record.ErrorStatement = revisiontext.ValidUTF8(failed.statement)
 		if m.revisionTableFormat.isAtlas() {
 			record.Error = atlasFailureError(failed.failure)
-			record.ErrorStatement = atlasFailureStatement(failed.sqlText, m.connectionDialect(), failed.failedIndex, failed.statement)
+			record.ErrorStatement = atlasFailureStatement(failed.sqlText, m.grammar(), failed.failedIndex, failed.statement)
 		}
 		return nil
 	})

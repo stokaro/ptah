@@ -16,5 +16,7 @@ func Features(desired *schemamodel.Database, database *catalog.Database, diff *d
 		DesiredCoverage: desired.FeatureCoverage,
 		CurrentObjects:  database.FeatureObjects,
 		CurrentCoverage: database.FeatureCoverage,
+		ContextObjects:  database.PlanningContextObjects,
+		ContextCoverage: database.PlanningContextCoverage,
 	}
 }

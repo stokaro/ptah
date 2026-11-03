@@ -19,6 +19,10 @@ func migrating() descriptor.Dialect {
 			{Name: "alpha triggers", Query: "SHOW triggers", On: "SET triggers = 1", Off: "SET triggers = 0"},
 		},
 		EnumValuesCommitFirst: true,
+		RefusedInTransaction: []descriptor.TransactionRefusal{
+			{Statement: "VACUUM", StartsWith: []string{"VACUUM"}},
+			{Statement: "REINDEX ... CONCURRENTLY", StartsWith: []string{"REINDEX"}, Keywords: []string{"CONCURRENTLY"}},
+		},
 	}
 	return described
 }
@@ -95,6 +99,31 @@ func TestNewRegistry_Migration_FailurePath(t *testing.T) {
 			name:    "a session setting stated twice",
 			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.ReplayedSession[1].Name = "alpha checks" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": replayed session setting "alpha checks" is stated twice`,
+		},
+		{
+			name:    "a refused statement without a name",
+			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.RefusedInTransaction[0].Statement = "" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a statement refused in a transaction needs a name and upper-case keywords it starts with: .*`,
+		},
+		{
+			name:    "a refused statement that starts with nothing",
+			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.RefusedInTransaction[0].StartsWith = nil }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a statement refused in a transaction needs a name and upper-case keywords it starts with: .*`,
+		},
+		{
+			name:    "a refused statement with a lower-case keyword",
+			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.RefusedInTransaction[1].Keywords = []string{"concurrently"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a statement refused in a transaction needs a name and upper-case keywords it starts with: .*`,
+		},
+		{
+			name:    "a refused statement whose keyword holds a space",
+			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.RefusedInTransaction[0].StartsWith = []string{"VACUUM FULL"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a statement refused in a transaction needs a name and upper-case keywords it starts with: .*`,
+		},
+		{
+			name:    "a refused statement stated twice",
+			edit:    withMigration(func(d *descriptor.Dialect) { d.Migration.RefusedInTransaction[1].Statement = "VACUUM" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": statement "VACUUM" refused in a transaction is stated twice`,
 		},
 	}
 	for _, test := range tests {

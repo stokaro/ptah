@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 10
+const ContractMinor uint32 = 13
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -39,13 +39,15 @@ const (
 // Options.HostFeatures; a provider sees what the host listed in HostFeatures.
 // A new RPC needs no host feature, since a host that does not know it never
 // calls it, unless it comes with an addition to an existing message: the
-// embedding store declares Engine.embeddings, and the common-object wire
-// declares Engine.common_objects, so their calls are two-way too.
+// embedding store declares Engine.embeddings, the common-object wire declares
+// Engine.common_objects, and a migration split comes with the abort flags of
+// Execution and TransactionResult, so their calls are two-way too.
 func TwoWayFeatures() []string {
 	return []string{StatementTimeoutFeature, LintStatementFactsFeature, DevRealmsFeature, QueryDialectFeature, EmbeddingStoreFeature,
 		CommonObjectsFeature, TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, HCLSourceFeature, ScopeSelectionsFeature,
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
-		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature}
+		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
+		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:

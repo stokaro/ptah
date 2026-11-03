@@ -1,11 +1,15 @@
 package descriptor
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Migration states how migration files are read, replayed and generated for
 // the engine where engines differ. The zero value takes no part in a read of
 // directives whose dialect is unknown, restores no session setting after a
-// replay and lets a generated ALTER TYPE ... ADD VALUE share a transaction.
+// replay, lets a generated ALTER TYPE ... ADD VALUE share a transaction and
+// refuses no statement inside one.
 type Migration struct {
 	// DirectivesWithoutDialect reports that the engine's reading of a
 	// migration file decides its directives when the file's dialect is not
@@ -28,6 +32,27 @@ type Migration struct {
 	// that keeps an enum a type of its own (an empty [Preparation.Enums]) can
 	// state it.
 	EnumValuesCommitFirst bool `json:"enum_values_commit_first,omitempty"`
+	// RefusedInTransaction are the statements the engine refuses inside a
+	// transaction block whatever else the block holds, such as PostgreSQL's
+	// VACUUM. A migration file that holds one has to run outside a
+	// transaction, and a check that knows it can say so before the file runs
+	// rather than after the server refuses it part way through.
+	RefusedInTransaction []TransactionRefusal `json:"refused_in_transaction,omitempty"`
+}
+
+// TransactionRefusal is one statement an engine refuses inside a transaction
+// block. A statement matches when it begins with StartsWith and, where
+// Keywords is set, holds one of them anywhere after. Keywords are written in
+// upper case and match a bare token in any letter case.
+type TransactionRefusal struct {
+	// Statement names the statement in a finding, such as "VACUUM" or
+	// "REINDEX ... CONCURRENTLY".
+	Statement string `json:"statement"`
+	// StartsWith is the keyword sequence the statement begins with.
+	StartsWith []string `json:"starts_with"`
+	// Keywords, when set, are keywords one of which the statement holds after
+	// StartsWith, as REINDEX holds CONCURRENTLY.
+	Keywords []string `json:"keywords,omitempty"`
 }
 
 // SessionSetting is one boolean setting of a session, read before a replay
@@ -68,5 +93,28 @@ func (d Dialect) validateMigration() error {
 		}
 		names[setting.Name] = true
 	}
+	refused := make(map[string]bool, len(migration.RefusedInTransaction))
+	for _, refusal := range migration.RefusedInTransaction {
+		if refusal.Statement == "" || len(refusal.StartsWith) == 0 ||
+			!upperKeywords(refusal.StartsWith) || !upperKeywords(refusal.Keywords) {
+			return fmt.Errorf("%w: dialect %q: a statement refused in a transaction needs a name and upper-case keywords it starts with: %+v",
+				ErrInvalidDescriptor, d.Name, refusal)
+		}
+		if refused[refusal.Statement] {
+			return fmt.Errorf("%w: dialect %q: statement %q refused in a transaction is stated twice",
+				ErrInvalidDescriptor, d.Name, refusal.Statement)
+		}
+		refused[refusal.Statement] = true
+	}
 	return nil
+}
+
+// upperKeywords reports whether every keyword is a non-empty upper-case word.
+func upperKeywords(keywords []string) bool {
+	for _, keyword := range keywords {
+		if keyword == "" || keyword != strings.ToUpper(keyword) || strings.ContainsAny(keyword, " \t\n") {
+			return false
+		}
+	}
+	return true
 }

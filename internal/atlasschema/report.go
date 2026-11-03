@@ -7,6 +7,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 
 	"ptah.run/core/renderer"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/schemadiff"
@@ -20,12 +21,24 @@ import (
 // gains a value, because a reader cannot act on an outcome it does not know. A
 // new field a reader may ignore is not a new version. Neither is a new refusal
 // code: a refusal of any code means that nothing reached the target database,
-// which a reader that does not know the code can still act on. A consumer that
-// does not know the version it reads refuses the document rather than reading
-// the fields it recognizes out of a shape that means something else.
+// which a reader that does not know the code can still act on. Nor is a new
+// error kind, which a reader that does not know it reads as no kind. A
+// consumer that does not know the version it reads refuses the document rather
+// than reading the fields it recognizes out of a shape that means something
+// else.
+//
+// Plan version 3 and apply version 4 carry error as an object with a kind and
+// a message, where the versions before carried the message alone.
 const (
-	PlanReportContractVersion  = 2
-	ApplyReportContractVersion = 3
+	PlanReportContractVersion  = 3
+	ApplyReportContractVersion = 4
+)
+
+// PlanReportCommand and ApplyReportCommand are the commands the two documents
+// name in their command field.
+const (
+	PlanReportCommand  = "schema plan"
+	ApplyReportCommand = "schema apply"
 )
 
 // PlanOutcome is how one `schema plan` run ended.
@@ -127,6 +140,8 @@ type Refusal struct {
 type PlanReport struct {
 	// ContractVersion is [PlanReportContractVersion].
 	ContractVersion int `json:"contract_version"`
+	// Command is [PlanReportCommand].
+	Command string `json:"command"`
 	// Outcome is how the run ended.
 	Outcome PlanOutcome `json:"outcome"`
 	// PlanDigest is the SHA-256 of the plan document's canonical bytes, in
@@ -166,9 +181,10 @@ type PlanReport struct {
 	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
-	// Error is the run's error message, present when Outcome is refused or
-	// failed. It is the sentence the command prints on standard error.
-	Error string `json:"error,omitempty"`
+	// Error is the run's error, present when Outcome is refused or failed:
+	// its kind, when the failure is one [errorkind] names, and the sentence
+	// the command prints on standard error.
+	Error *errorkind.Report `json:"error,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 	// SchemaDiagnostics are every diagnostic a provider reported when it
@@ -194,9 +210,13 @@ type PlanEvidence struct {
 
 // NewPlanReport classifies one plan run from its evidence.
 func NewPlanReport(evidence PlanEvidence) PlanReport {
-	report := PlanReport{ContractVersion: PlanReportContractVersion, Undecided: evidence.Undecided.Clone()}
+	report := PlanReport{
+		ContractVersion: PlanReportContractVersion,
+		Command:         PlanReportCommand,
+		Undecided:       evidence.Undecided.Clone(),
+	}
 	if evidence.Err != nil {
-		report.Error = evidence.Err.Error()
+		report.Error = errorkind.NewReport(evidence.Err)
 		report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
 		report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 		report.Refusal = refusalFor(evidence.Err)
@@ -228,6 +248,8 @@ func NewPlanReport(evidence PlanEvidence) PlanReport {
 type ApplyReport struct {
 	// ContractVersion is [ApplyReportContractVersion].
 	ContractVersion int `json:"contract_version"`
+	// Command is [ApplyReportCommand].
+	Command string `json:"command"`
 	// Outcome is how the run ended.
 	Outcome ApplyOutcome `json:"outcome"`
 	// PlanName and PlanDigest identify the plan file --plan read: the name it
@@ -253,10 +275,10 @@ type ApplyReport struct {
 	Undecided schemadiff.Diagnostics `json:"undecided,omitzero"`
 	// Refusal is present when Outcome is refused.
 	Refusal *Refusal `json:"refusal,omitempty"`
-	// Error is the run's error message, present when Outcome is refused,
-	// failed or unknown. It is the sentence the command prints on standard
-	// error.
-	Error string `json:"error,omitempty"`
+	// Error is the run's error, present when Outcome is refused, failed or
+	// unknown: its kind, when the failure is one [errorkind] names, and the
+	// sentence the command prints on standard error.
+	Error *errorkind.Report `json:"error,omitempty"`
 	// ProviderDiagnostic preserves structured provider setup and trust failures.
 	ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic,omitempty"`
 	// SchemaDiagnostics is [PlanReport.SchemaDiagnostics] for this run.
@@ -297,6 +319,7 @@ type ApplyEvidence struct {
 func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	report := ApplyReport{
 		ContractVersion: ApplyReportContractVersion,
+		Command:         ApplyReportCommand,
 		PlanName:        evidence.PlanName,
 		PlanDigest:      evidence.PlanDigest,
 		Units:           evidence.Units,
@@ -307,7 +330,7 @@ func NewApplyReport(evidence ApplyEvidence) ApplyReport {
 	if evidence.Err == nil {
 		return report
 	}
-	report.Error = evidence.Err.Error()
+	report.Error = errorkind.NewReport(evidence.Err)
 	report.ProviderDiagnostic, _ = errors.AsType[*providerdiagnostic.Diagnostic](evidence.Err)
 	report.SchemaDiagnostics = schemaDiagnostics(evidence.Err)
 	if evidence.Dispatched {

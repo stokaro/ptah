@@ -12,9 +12,16 @@ import "ptah.run/core/schemaext"
 // CurrentCoverage is what the read established about each kind, so a
 // planner can tell an object the read recorded and could not describe from
 // one the database does not hold.
+//
+// ContextObjects and ContextCoverage are what a filtered read established,
+// as context only, about the objects of a provider's planning context kinds
+// outside its scope (catalog.Database.PlanningContextObjects). Nothing
+// compares them.
 type FeatureContext struct {
 	DesiredObjects  schemaext.Objects
 	DesiredCoverage schemaext.Coverage
 	CurrentObjects  schemaext.Objects
 	CurrentCoverage schemaext.Coverage
+	ContextObjects  schemaext.Objects
+	ContextCoverage schemaext.Coverage
 }

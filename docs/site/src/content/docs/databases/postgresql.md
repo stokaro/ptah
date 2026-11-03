@@ -134,7 +134,9 @@ asked with its body too, a procedure without arguments included. PostgreSQL
 keeps such a body parsed, and `pg_get_function_sqlbody` prints it in its own
 spelling, so the temporary copy carries the declared body and its stored form
 is compared with the one the database holds. The copy takes the routine's own
-name, because the server qualifies a parameter with it, as `f.x`.
+name, because the server qualifies a parameter with it, as `f.x`. A schema file
+may leave the language out of such a routine: the server records it in
+`LANGUAGE sql`, and the SQL schema reader does too.
 
 - The body reads the tables and views the database holds. A body that reads
   one the plan has not created yet makes the server refuse the copy. A second
@@ -142,9 +144,6 @@ name, because the server qualifies a parameter with it, as `f.x`.
   and the body is compared as written.
 - A body that selects `*` is answered only while no table the database holds
   gains or loses a column, as on CockroachDB.
-- A `RETURN` written in a schema file is not asked: the SQL schema reader drops
-  the keyword and keeps the expression as a quoted body, which reads back as
-  written ([stokaro/ptah#4981](https://github.com/stokaro/ptah/issues/4981)).
 - YugabyteDB keeps a routine created in `pg_temp` past the rollback, so there
   the copy carries no body.
 
@@ -473,6 +472,13 @@ where another relation or constraint the file declares holds that name. Beside
 plans `ALTER TABLE c ADD CONSTRAINT c_x_key1 UNIQUE (x)`; under `c_x_key`,
 PostgreSQL 18.6 refuses the statement with `relation "c_x_key" already
 exists`.
+
+The rollback of a plan that gives a column its `UNIQUE` drops the key the
+column took, under the same name. The rollback of a plan that drops a key adds
+the key back with the body the database held, and a column the rollback makes
+`UNIQUE` again or adds back takes no second key through its `UNIQUE`. Where a
+key the rollback adds back takes the name of the key a column holds, the
+rollback drops that column's key first.
 
 MySQL and MariaDB name an unnamed foreign key `<table>_ibfk_<n>`, which the
 [MySQL page](../mysql/) describes. The other engines keep Ptah's own name for
@@ -1024,6 +1030,12 @@ compares equal to the database it was read from. That holds for the sequence a
 items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
+
+A plan that removes a table revokes the privileges of the roles the schema
+manages and leaves the others to `DROP TABLE`. The rollback of that plan
+creates the table again and grants every privilege the database held on it,
+column privileges included, whichever role held it. The owner's privileges are
+left out: the owner of the new table holds them without a grant.
 
 Such a grant belongs to the column, not to the sequence's name. Renaming a
 table or a column leaves its sequence's name as it was, so a table created as
@@ -1623,8 +1635,9 @@ never reported as drift.
 
 Domains, composite types, and range types are declared with
 `//ptah:schema:domain`, `:composite`, and `:range`. They are created after
-extensions and enums but before tables, and their drops are classified as
-destructive by the safety gate. Reconciliation is deliberately conservative:
+extensions and enums but before tables, except for a type over a table's row
+type (see below), and their drops are classified as destructive by the safety
+gate. Reconciliation is deliberately conservative:
 
 - A domain's `check` and `default` are compared through the server.
   PostgreSQL rewrites both on read-back, so against a live database Ptah asks
@@ -1651,6 +1664,18 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   not by kind: `CREATE TYPE addr AS (...)` precedes `CREATE DOMAIN d AS addr`,
   and `CREATE DOMAIN qty AS integer` precedes a composite with a `qty` field.
   Both directions occur, and PostgreSQL has no forward declaration for a type.
+- A type may name a table's row type: `CREATE TYPE wrap AS (r t, n int)`, a
+  domain over a table's row type, or a type that names such a type. When the
+  same plan creates the table, Ptah creates the type after the tables and
+  columns. When the same plan drops the table, Ptah drops the type before the
+  tables, so the table's drop does not rely on `CASCADE`. The type stays after
+  the tables when a table or a routine the plan drops after them still uses
+  it. A render and a rollback are planned the same way.
+- Ptah refuses a plan or a render that no order serves, and names the type,
+  the relation and the object that uses the type: a table, a column or a
+  routine the plan creates that uses a type over a created table's row type,
+  a type over the row type of a view the plan creates, and such a type that
+  has to be dropped and created again.
 - The drops a recreation emits are ordered by the shape the **database holds**,
   which is a different graph from the one above and does not have to agree with
   it. A `DROP` runs against the current schema, so only a reference that schema
@@ -1662,6 +1687,31 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
   duplicate-object error. Ptah reads ownership from `pg_depend`; a similar name
   does not make a user type part of an extension. Extension-owned functions
   follow the same rule.
+
+## Unique indexes and access methods
+
+Of PostgreSQL's built-in access methods, only `btree` builds a unique index.
+A unique index declared with `hash`, `gin`, `gist`, `brin` or `spgist` in any
+schema source, such as `CREATE UNIQUE INDEX ... USING hash` in a SQL file, is
+refused when Ptah renders or plans the schema, and the refusal names the index.
+Applied, PostgreSQL would refuse the statement with `access method "hash" does
+not support unique indexes`.
+
+## Statements that run outside a transaction
+
+PostgreSQL refuses some statements inside a transaction block whatever else
+the block holds: `VACUUM`, `REINDEX ... CONCURRENTLY`, `REINDEX` of a schema, a
+database or the system catalogs, `CREATE DATABASE` and `DROP DATABASE`,
+`ALTER DATABASE ... SET TABLESPACE`, `ALTER SYSTEM`, `CREATE TABLESPACE` and
+`DROP TABLESPACE`, and `DISCARD ALL`. A migration that holds one runs in a file
+marked `-- +ptah no_transaction` (`-- atlas:txmode none` in an Atlas
+directory). In a file the migrator wraps in a transaction, the migrator refuses
+the file before any of its statements runs and names the statement, rather
+than leaving PostgreSQL to refuse it part way through. A golang-migrate file
+whose one statement is among them runs without a transaction, as
+golang-migrate sends it. `CLUSTER` without a table is refused too, and is not
+recognized here: only the statement as a whole tells it from `CLUSTER` of a
+table.
 
 ## Concurrent index creation
 

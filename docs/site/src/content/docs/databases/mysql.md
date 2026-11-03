@@ -117,6 +117,12 @@ SQL:
   compared beside it. Both engines build `a INT UNIQUE` and
   `CONSTRAINT uq_a UNIQUE (a)` as two keys, so a database with `uq_a` alone
   is planned the key `a`, as Atlas CE plans it.
+- A plan that drops a column with its own `UNIQUE` writes no `DROP INDEX` for
+  that key. Both engines drop an index with the last of its columns, and
+  MySQL 26.10 answers a later `DROP INDEX x` with `Can't DROP 'x'; check that
+  column/key exists`. The rollback of a plan that gives a column its `UNIQUE`
+  drops the key again, and a key the rollback adds back is added once, as a
+  constraint, not through the column's `UNIQUE` as well.
 - A plan that changes a column writes `MODIFY COLUMN` with the whole new
   definition, and writes `UNIQUE` in it only when the change gives the column
   its `UNIQUE`. Both engines read the clause as a request for a new key, so

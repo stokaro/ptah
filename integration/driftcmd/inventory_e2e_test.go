@@ -19,6 +19,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/drift"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/errorkind"
 	"ptah.run/migration/safety"
 )
 
@@ -178,7 +179,7 @@ func TestSchemaDriftInventoryE2E(t *testing.T) {
 
 			report := runDrift(c, "--db-url", url, "--schema-file", schema, "--format", "json")
 
-			c.Assert(report.Error, qt.Equals, "")
+			c.Assert(report.Error, qt.IsNil)
 			c.Assert(report.Drift, qt.Equals, test.wantDrift)
 			c.Assert(report.Inventory, qt.DeepEquals, test.want)
 		})
@@ -233,7 +234,7 @@ func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 			report := runDrift(c,
 				"--db-url", url, "--schema-file", schema, "--format", "json", "--ignore", "tables=audit_log")
 
-			c.Assert(report.Error, qt.Equals, "")
+			c.Assert(report.Error, qt.IsNil)
 			c.Assert(report.Drift, qt.IsFalse)
 			c.Assert(report.Inventory, qt.DeepEquals, []safety.InventoryEntry{
 				{Kind: "columns", Desired: 2, Observed: 2},
@@ -251,18 +252,20 @@ var postgresFeatureTable = []string{
 }
 
 // TestSchemaDriftInventoryCountsFeatureOwnersE2E counts the objects
-// PostgreSQL's feature owners compare, an extension and a policy, under each
-// owner's change kind, against a live server that decides what the catalog
-// holds: the plpgsql every database has, the spelling a policy's clause is
-// stored in.
+// PostgreSQL's feature owners compare, an extension, a policy and a table with
+// row-level security on, under each owner's change kind, against a live server
+// that decides what the catalog holds: the plpgsql every database has, the
+// spelling a policy's clause is stored in.
 //
 // A database that matches counts each the same on both sides. One that lacks
 // the declared extension and holds a policy the declaration does not counts
-// one fewer extension and one more policy. An extension the run excludes is
+// one fewer extension and one more policy, and one whose table has row-level
+// security off counts one fewer secured table. An extension the run excludes is
 // counted on neither side, which the run without the exclusion controls.
 func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 	extension := "ptah.run/pgextension/extension-change"
 	policy := "ptah.run/pgpolicy/policy-change"
+	secured := "ptah.run/pgpolicy/table-state-change"
 	tenant := `CREATE POLICY tenant ON docs USING (tenant_id = 1)`
 	declared := slices.Concat([]string{`CREATE EXTENSION hstore`}, postgresFeatureTable, []string{tenant})
 	tests := []struct {
@@ -281,6 +284,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 1, Observed: 1},
 				{Kind: policy, Desired: 1, Observed: 1},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -293,6 +297,18 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 1, Observed: 0},
 				{Kind: policy, Desired: 1, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 1},
+				{Kind: "tables", Desired: 1, Observed: 1},
+			},
+		},
+		{
+			name:      "a table whose row-level security the database has off",
+			desired:   postgresFeatureTable,
+			database:  postgresFeatureTable[:1],
+			wantDrift: true,
+			want: []safety.InventoryEntry{
+				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 0},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -304,6 +320,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 			want: []safety.InventoryEntry{
 				{Kind: "columns", Desired: 2, Observed: 2},
 				{Kind: extension, Desired: 0, Observed: 1},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -314,6 +331,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 			args:     []string{"--ignore-extension", "hstore"},
 			want: []safety.InventoryEntry{
 				{Kind: "columns", Desired: 2, Observed: 2},
+				{Kind: secured, Desired: 1, Observed: 1},
 				{Kind: "tables", Desired: 1, Observed: 1},
 			},
 		},
@@ -327,7 +345,7 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 
 			report := runDrift(c, slices.Concat([]string{"--db-url", url, "--schema-file", schema, "--format", "json"}, test.args)...)
 
-			c.Assert(report.Error, qt.Equals, "")
+			c.Assert(report.Error, qt.IsNil)
 			c.Assert(report.Drift, qt.Equals, test.wantDrift)
 			c.Assert(report.Inventory, qt.DeepEquals, test.want)
 		})
@@ -337,14 +355,14 @@ func TestSchemaDriftInventoryCountsFeatureOwnersE2E(t *testing.T) {
 // driftReport is the part of the JSON report these tests read.
 type driftReport struct {
 	Drift     bool                    `json:"drift"`
-	Error     string                  `json:"error"`
+	Error     *errorkind.Report       `json:"error"`
 	Findings  []safety.Finding        `json:"findings"`
 	Inventory []safety.InventoryEntry `json:"inventory"`
 }
 
-// runDrift runs `ptah schema drift` in-process and decodes the JSON report it
-// writes. A comparison writes it to standard output, and an error to standard
-// error, so a run that failed to compare reads back with Error set.
+// runDrift runs `ptah schema drift` in-process and decodes the JSON document
+// it writes on standard output: the report of a comparison, or the failure of
+// a run that could not compare, which reads back with Error set.
 func runDrift(c *qt.C, args ...string) driftReport {
 	c.Helper()
 	cmd := drift.NewDriftCommand()
@@ -353,12 +371,8 @@ func runDrift(c *qt.C, args ...string) driftReport {
 	cmd.SetErr(&errOut)
 	cmd.SetArgs(args)
 	runErr := cmd.ExecuteContext(c.Context())
-	document := out.Bytes()
-	if out.Len() == 0 {
-		document = errOut.Bytes()
-	}
 	var report driftReport
-	c.Assert(json.Unmarshal(document, &report), qt.IsNil,
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil,
 		qt.Commentf("error: %v\nstdout:\n%s\nstderr:\n%s", runErr, out.String(), errOut.String()))
 	return report
 }

@@ -230,6 +230,11 @@ const (
 	// the PostgreSQL family accept it, and a whole-schema render runs such a
 	// step after its enums and before the routines that name a type and the
 	// tables; every other host refuses it.
+	//
+	// A type that names a relation's row type, such as a composite type with
+	// an attribute of a table's row type, fits neither window when the plan
+	// creates or drops that relation. Its owner asks for [PhaseDefault]
+	// instead and orders the step against the relation's common step.
 	PhaseType Phase = "type"
 	// PhaseLifecycle places an operation inside a host-defined span of the
 	// common sequence, without an implicit creation-before-removal order.

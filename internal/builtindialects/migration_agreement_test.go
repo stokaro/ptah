@@ -31,6 +31,9 @@ import (
 // type, so its descriptor states no enum value rule, which the descriptor
 // validation refuses for an engine without enum types. No plan for Spanner
 // holds an ALTER TYPE, since an enum column is TEXT with a CHECK there.
+//
+// The statements an engine refuses inside a transaction replace no switch, so
+// they are left out here; internal/txrequire tests what they decide.
 func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 	sqliteForeignKeys := descriptor.SessionSetting{
 		Name:  "SQLite foreign key state",
@@ -64,7 +67,7 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 			c := qt.New(t)
 			expected, found := want[dialect.Name]
 			c.Assert(found, qt.IsTrue)
-			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty()), expected)
+			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.IgnoreFields(descriptor.Migration{}, "RefusedInTransaction")), expected)
 		})
 	}
 }

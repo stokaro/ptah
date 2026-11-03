@@ -111,8 +111,11 @@ func TestOpensTransactionOn_AnswersAsBeginTransactionDoes(t *testing.T) {
 		{"ClickHouse runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.ClickHouse)}, &recordingExecutor{}, false},
 		{"Spanner runs unwrapped", catalog.ServerInfo{Capabilities: capability.ForDialect(platform.Spanner)}, &recordingExecutor{}, false},
 		// An external provider's writer accepts or refuses the transaction it
-		// is asked for, whatever the built-in profile beside it says.
-		{"an external provider is asked for the transaction", catalog.ServerInfo{Provider: provider, Capabilities: capability.ForDialect(platform.YDB)}, &recordingExecutor{}, true},
+		// is asked for, unless its session states that the server refuses a
+		// schema statement inside one.
+		{"an external provider that states nothing is asked for the transaction", catalog.ServerInfo{Provider: provider, Capabilities: capability.Of(map[capability.Capability]bool{capability.TransactionalDDL: false})}, &recordingExecutor{}, true},
+		{"an external provider whose server takes DDL in a transaction is asked for it", catalog.ServerInfo{Provider: provider, Capabilities: capability.Of(map[capability.Capability]bool{capability.DDLInsideTransaction: true})}, &recordingExecutor{}, true},
+		{"an external provider whose server refuses DDL in a transaction runs unwrapped", catalog.ServerInfo{Provider: provider, Capabilities: capability.Of(map[capability.Capability]bool{capability.DDLInsideTransaction: false})}, &recordingExecutor{}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

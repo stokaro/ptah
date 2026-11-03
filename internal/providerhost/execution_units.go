@@ -119,9 +119,12 @@ func (s *session) dispatchUnits(ctx context.Context, transactionID string, prepa
 	if timeout, bounded := statementtimeout.From(ctx); bounded {
 		request.StatementTimeoutNanoseconds = timeout.Nanoseconds()
 	}
-	_, err := s.target.host.client.Execute(ctx, request)
+	result, err := s.target.host.client.Execute(ctx, request)
 	if err == nil {
 		return nil
+	}
+	if result.GetTransactionAborted() {
+		err = abortedError(err)
 	}
 	if outcome, ok := errors.AsType[*provider.ExecutionError](err); ok {
 		return &dbschema.UnitExecutionError{Err: nativeOutcomeError(err), Applied: int(outcome.Applied), Total: len(prepared.units)}

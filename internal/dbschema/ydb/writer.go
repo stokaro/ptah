@@ -13,6 +13,7 @@ import (
 
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Operation_V1"
 	"github.com/ydb-platform/ydb-go-genproto/Ydb_Scheme_V1"
+	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb_Scheme"
 	ydbsdk "github.com/ydb-platform/ydb-go-sdk/v3"
 
@@ -171,7 +172,8 @@ func (w *Writer) IsDryRun() bool { return w.dryRun }
 // A data query -- INSERT, UPSERT, REPLACE, UPDATE, DELETE and the rest --
 // commits on its own and is run again when YDB aborts it for a conflicting
 // transaction (`Transaction locks invalidated`), since an aborted query
-// changed nothing. A scheme query is run once.
+// changed nothing. A scheme query is run once, unless its table is locked by
+// another scheme operation; see [schemePathLocked].
 func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	queries, err := yqlquery.Split(sqlExpr)
 	if err != nil {
@@ -198,23 +200,52 @@ func (w *Writer) execute(ctx context.Context, query yqlquery.Query, args []any) 
 	if w.runner == nil {
 		return fmt.Errorf("no database connection")
 	}
-	attempts := 1
-	if query.Kind == yqlquery.Data {
-		attempts = maxDataAttempts
-	}
-	for attempt := range attempts {
+	waiting := false
+	for attempt := 0; ; attempt++ {
 		_, err := w.runner.ExecContext(ctx, query.Text, args...)
 		if err == nil {
 			return nil
 		}
-		if attempt == attempts-1 || !atlasretry.IsRetryable(err) {
+		locked := schemePathLocked(err)
+		aborted := query.Kind == yqlquery.Data && attempt < maxDataAttempts-1 && atlasretry.IsRetryable(err)
+		if !locked && !aborted {
 			return executionError(err, query.Text)
+		}
+		if locked && !waiting {
+			waiting = true
+			slog.Info("ydb: waiting for another scheme operation on the path to finish, such as a changefeed's initial scan",
+				"sql", query.Text, "error", err)
 		}
 		if err := w.pause(ctx, attempt); err != nil {
 			return err
 		}
 	}
-	return nil
+}
+
+// pathLockedIssue is the issue code YDB answers with OVERLOADED when the path
+// a scheme query changes is locked by another scheme operation:
+// `path '[OwnerId: ..., LocalPathId: ...]' has been locked by tx: ...`.
+const pathLockedIssue = 2010
+
+// schemePathLocked reports a query YDB refused because another scheme
+// operation holds its path. The refusal changed nothing, and the lock ends
+// when that operation does, so the query is run again for as long as the
+// context allows rather than a fixed number of times.
+//
+// A changefeed created with INITIAL_SCAN holds its table's path until the
+// scan has read every row, and a plan often changes the same table again
+// right after. Measured on YDB 25.1.4.7, a table of 300000 rows stayed locked
+// for 3.6 seconds, and the lock grows with the table, so any fixed budget
+// fails the next table that is a little larger.
+func schemePathLocked(err error) bool {
+	if !ydbsdk.IsOperationError(err, Ydb.StatusIds_OVERLOADED) {
+		return false
+	}
+	locked := false
+	ydbsdk.IterateByIssues(err, func(_ string, code Ydb.StatusIds_StatusCode, _ uint32) {
+		locked = locked || code == pathLockedIssue
+	})
+	return locked
 }
 
 // executionError names the statement a failure belongs to. Where the server's
@@ -239,10 +270,10 @@ func executionError(err error, statement string) error {
 // maxDataAttempts bounds how often a data query YDB aborted is run.
 const maxDataAttempts = 5
 
-// retryPause waits longer after each aborted attempt, and stops waiting when
-// ctx ends.
+// retryPause waits longer after each refused attempt, a second at most, and
+// stops waiting when ctx ends.
 func retryPause(ctx context.Context, attempt int) error {
-	timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
+	timer := time.NewTimer(min(time.Duration(attempt+1)*50*time.Millisecond, time.Second))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

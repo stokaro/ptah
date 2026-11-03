@@ -12,9 +12,15 @@ import (
 //
 // It is emitted so a consumer can refuse a document it does not understand
 // rather than reading the fields it recognizes and acting on a shape that
-// means something else. It rises when a field changes meaning or leaves; a new
-// field a reader may ignore is not a new version.
-const StatusContractVersion = 1
+// means something else. It rises when a field changes meaning or leaves, or
+// when the document takes a new shape; a new field a reader may ignore is not
+// a new version.
+//
+// Version 2 is the version in which `ptah migrations status --json` also
+// prints a document when it fails: the version, the command and an error
+// object, and none of the status fields. A version 1 reader would read that
+// document as a database with nothing applied.
+const StatusContractVersion = 2
 
 // Migration states a [MigrationRecord] reports.
 const (

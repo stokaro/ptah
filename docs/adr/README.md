@@ -62,6 +62,10 @@ a new record that names it, and its own status line is updated to point there.
 | [0050](0050-statement-style-reaches-feature-owners.md) | Statement style reaches feature owners | Proposed |
 | [0051](0051-inspected-primary-keys-retain-their-common-order.md) | Inspected primary keys retain their common order | Proposed |
 | [0052](0052-inspected-indexes-reach-the-host-and-index-changes-reach-the-table-owner.md) | Inspected indexes reach the host, and index changes reach the table owner | Proposed |
+| [0053](0053-a-machine-readable-failure-names-why-the-target-could-not-be-opened.md) | A machine-readable failure names why the target could not be opened | Proposed |
+| [0054](0054-a-filtered-read-carries-the-planning-context-it-does-not-compare.md) | A filtered read carries the planning context it does not compare | Proposed |
+| [0055](0055-a-provider-splits-a-migration-body-into-the-units-its-engine-runs.md) | A provider splits a migration body into the units its engine runs | Proposed |
+| [0056](0056-a-comparison-service-counts-the-objects-it-compares.md) | A comparison service counts the objects it compares | Proposed |
 
 ## Writing one
 

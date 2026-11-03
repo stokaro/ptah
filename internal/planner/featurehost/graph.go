@@ -283,6 +283,22 @@ func (g *Graph) CommonSteps() []featureplan.CommonStep {
 // leaves no prefix, including a replacement its owner left unordered; it is
 // refused with [ptaherr.ErrInvalidSchemaDiff]. g is not changed.
 func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, error) {
+	steps, err := g.ScheduleSteps(ctx, features)
+	if err != nil {
+		return nil, err
+	}
+	var nodes []ast.Node
+	for _, step := range steps {
+		nodes = append(nodes, step.Payload...)
+	}
+	return nodes, nil
+}
+
+// ScheduleSteps is [Graph.Schedule] returning the scheduled steps, each with
+// its nodes and its effects, for a host that reads the plan by what each step
+// does: whether a feature owner drops an object before a common statement
+// that needs it gone, for one. The window markers are steps with no nodes.
+func (g *Graph) ScheduleSteps(ctx context.Context, features Result) ([]plangraph.Step[[]ast.Node], error) {
 	if err := refuseSplitReplacements(features); err != nil {
 		return nil, err
 	}
@@ -328,11 +344,10 @@ func (g *Graph) Schedule(ctx context.Context, features Result) ([]ast.Node, erro
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ptaherr.ErrInvalidSchemaDiff, err)
 	}
-	var nodes []ast.Node
-	for _, step := range plan.Steps {
-		nodes = append(nodes, step.Payload...)
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return nodes, ctx.Err()
+	return plan.Steps, nil
 }
 
 // window is the window a step of phase joins. drops says the step drops an

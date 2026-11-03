@@ -1,6 +1,7 @@
 package descriptor_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -83,6 +84,29 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 	got, found := registry.Lookup("alpha")
 	c.Assert(found, qt.IsTrue)
 	c.Assert(got.Grammar, qt.DeepEquals, described.Grammar)
+}
+
+// TestNewRegistry_TriggerGrammar_HappyPath pins that every trigger grammar is
+// accepted, beside each routine grammar. A trigger grammar is stated apart
+// from the WHEN and one-statement body that refine the shared order, which
+// TestNewRegistry_Grammar_HappyPath states.
+func TestNewRegistry_TriggerGrammar_HappyPath(t *testing.T) {
+	for _, trigger := range descriptor.TriggerGrammars() {
+		for _, body := range append(descriptor.RoutineGrammars(), "") {
+			t.Run(fmt.Sprintf("%s with routine grammar %q", trigger, body), func(t *testing.T) {
+				c := qt.New(t)
+				described := head("alpha")
+				described.Grammar.Routines = descriptor.RoutineGrammar{Body: body, Trigger: trigger}
+
+				registry, err := descriptor.NewRegistry(described)
+
+				c.Assert(err, qt.IsNil)
+				got, found := registry.Lookup("alpha")
+				c.Assert(found, qt.IsTrue)
+				c.Assert(got.Grammar.Routines, qt.DeepEquals, described.Grammar.Routines)
+			})
+		}
+	}
 }
 
 func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
@@ -224,6 +248,27 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 				g.Routines = descriptor.RoutineGrammar{Body: descriptor.RoutineQuotedBody, DefaultDoBlockLanguage: "pl alpha"}
 			}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default DO-block language "pl alpha" is not one lower-case word`,
+		},
+		{
+			name:    "an undeclared trigger grammar",
+			dialect: with(func(g *descriptor.Grammar) { g.Routines.Trigger = "standard" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: trigger grammar "standard" is not one of .*`,
+		},
+		{
+			name: "trigger conditions with a trigger grammar that reads none",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Trigger: descriptor.TriggerTransactSQL, TriggerConditions: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: trigger conditions are stated, ` +
+				`and trigger grammar "transact-sql" reads no WHEN or REFERENCING`,
+		},
+		{
+			name: "a one-statement trigger body with a trigger grammar that reads its own",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Routines = descriptor.RoutineGrammar{Trigger: descriptor.TriggerTransactSQL, TriggerStatementBody: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a one-statement trigger body is stated, ` +
+				`and trigger grammar "transact-sql" reads its own body`,
 		},
 	}
 	for _, test := range tests {

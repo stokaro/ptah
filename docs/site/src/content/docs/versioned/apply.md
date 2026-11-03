@@ -350,7 +350,8 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
   "total_migrations": 1,
   "has_pending_changes": false,
   "current_version_key": "1785255952",
-  "contract_version": 1,
+  "contract_version": 2,
+  "command": "migrations status",
   "migrations": [
     {
       "version": 1785255952,
@@ -370,6 +371,26 @@ ptah migrations status --db-url "sqlite://app.db" --migrations-dir ./migrations 
 does not know the version it reads should refuse the document rather than read
 the fields it recognizes out of a shape that means something else. A new field
 an existing reader can ignore does not raise it.
+
+A status that could not be read prints a document of its own, in the same
+contract version: the version, the command and an `error` object, and none of
+the fields above. A document that carries `error` is never a status, so a
+reader checks for it before reading anything else. `error.message` is the
+sentence printed on standard error, and `error.kind` says why the target
+database could not be opened; it is absent for every other failure.
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+lists the kinds. Against a server that refuses the connection:
+
+```json
+{
+  "contract_version": 2,
+  "command": "migrations status",
+  "error": {
+    "kind": "database_unreachable",
+    "message": "error connecting to database: failed to ping database: failed to connect to `user=app database=app`: 10.0.0.5:5432 (db.internal): dial error: dial tcp 10.0.0.5:5432: connect: connection refused"
+  }
+}
+```
 
 The `migrations` array is what a caller plans from. Each entry carries the
 migration's version and exact revision identity, its description, the checksum
@@ -449,12 +470,13 @@ parses one stream and reads the other.
 
 ```json
 {
-  "contract_version": 1,
+  "contract_version": 2,
+  "command": "migrations up",
   "direction": "up",
   "outcome": "failed",
   "planned": [1785255952, 1785255999],
   "applied": [1785255952],
-  "error": "failed to apply migration 1785255999: ...",
+  "error": { "message": "failed to apply migration 1785255999: ..." },
   "failure": {
     "version": 1785255999,
     "version_key": "1785255999",
@@ -475,7 +497,7 @@ way as one that never started:
 | `up-to-date` | Nothing was pending, so nothing was selected |
 | `applied` | Every selected migration is recorded applied, and no row is dirty |
 | `dry-run` | The run was asked to change nothing, and did not |
-| `failed` | The run stopped, and the migration that failed committed nothing: its dirty row counts no applied statements |
+| `failed` | The run stopped, and the migration that failed committed nothing: its dirty row counts no applied statements. A run that stopped before it selected anything, such as one that could not open the target, is `failed` with nothing planned and no `status` |
 | `partial` | The migration that failed committed some of its statements and not the rest |
 | `unknown` | The evidence could not be read, or a dirty row does not say how far it got |
 
@@ -489,10 +511,14 @@ a `--limit`, a target version or a checkpoint narrows; `applied` names the
 selected migrations the history records afterwards, so a migration that was
 already applied before the run is not counted as this run's work.
 
-`error` is the message written for a person, and it quotes what the database
-said. That can include a row of data, such as the key in a duplicate-key error,
-and the statement itself. A caller that must not publish data reads `failure`
-instead, which carries no text:
+`error.message` is the message written for a person, and it quotes what the
+database said. That can include a row of data, such as the key in a
+duplicate-key error, and the statement itself. A caller that must not publish
+data reads `error.kind` and `failure` instead, which carry no text. `error.kind`
+says why the run could not open the target database, as
+[Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+lists, and is absent for every other failure. `failure` names the statement the
+run stopped at:
 
 | Field | Meaning |
 | --- | --- |
@@ -588,14 +614,19 @@ and pipelines share a directory:
   Atlas-format rows carry cumulative `partial_hashes`. Editing only the
   unapplied suffix is allowed. A failed retry cannot reduce `applied` below the
   previously committed prefix, even when the transaction mode changed.
-  Every `none` attempt runs its migration SQL on one pinned physical database
+  A run executes every migration body on one pinned physical database
   session, so a statement such as `SET search_path` remains effective for the
-  statements that follow. On server databases, revision checkpoints remain on
-  the original connection and cannot be redirected by that session state.
-  SQLite uses the pinned session but qualifies its revision table in `main`, so
-  in-memory databases do not deadlock and temporary objects cannot shadow the
-  metadata. A resumed attempt uses a fresh session: Ptah replays recognized
-  session-control statements from the verified prefix, skips recognized durable
+  statements that follow and for the later migrations of the run, as
+  golang-migrate and Atlas apply a directory. On server databases, revision
+  checkpoints stay on the original connection or are qualified with the
+  connection's schema, and cannot be redirected by that session state. SQLite
+  pins a session for each `none` attempt instead and qualifies its revision
+  table in `main`, so in-memory databases do not deadlock and temporary objects
+  cannot shadow the metadata. A provider's connection runs the bodies on its
+  own session, where the provider holds the migration lock and guards each
+  commit, so what they leave there outlives the run. A resumed attempt starts a
+  run on a fresh session: Ptah replays recognized session-control statements
+  from the verified prefix of the resumed migration, skips recognized durable
   DDL and DML, and refuses prefixes that created temporary objects or whose
   session-local effect cannot be classified safely.
   A `none` body cannot contain top-level transaction-control statements such as
@@ -849,6 +880,10 @@ the run writes anything:
 | `COMMIT`, `ROLLBACK` or `BEGIN` | YDB refuses `COMMIT` inside a query, and Ptah decides where each transaction begins and ends |
 | A `DO` block, an action call or an `EVALUATE` loop that runs a schema statement and a statement that reads or writes a table | YDB refuses such a query whole (`Queries with mixed data and scheme operations are not supported`), and the schema statements before it would already be applied |
 
+A YDB provider that lists `units.migration-split` splits the body itself, and
+the same rules apply through it; see
+[migration bodies the provider splits](../../extend/executable-providers/#migration-bodies-the-provider-splits).
+
 The revision table, the migration log and the tag table sit in the directory
 `--migrations-schema` names, or at the database root. YDB has no
 `information_schema`, so Ptah asks the scheme service whether they exist.
@@ -1021,13 +1056,14 @@ skips is only ever the prefix that really survived:
   A server-side implicit commit therefore makes the matching witness durable;
   an ordinary rollback removes both user DML and its witness. Plain DML that
   rolls back retries from the first statement, while a durable DDL/DML prefix
-  resumes at the first statement not witnessed as complete. Ptah pins and then
-  discards the physical session; a retry replays safe session settings from the
-  verified prefix before it continues. Temporary tables remain available:
-  their DDL does not make permanent InnoDB work durable by itself, and
-  discarding the session prevents temporary state from leaking into a retry. If
-  a later implicit commit makes a prefix containing a temporary object durable,
-  automatic resume refuses because that object cannot be reconstructed safely.
+  resumes at the first statement not witnessed as complete. Ptah pins the
+  run's physical session and discards it when the run ends; a retry replays
+  safe session settings from the verified prefix before it continues. Temporary
+  tables remain available to the later migrations of the run: their DDL does
+  not make permanent InnoDB work durable by itself, and discarding the session
+  prevents temporary state from leaking into a retry. If a later implicit
+  commit makes a prefix containing a temporary object durable, automatic resume
+  refuses because that object cannot be reconstructed safely.
   The configured migration metadata table name is reserved. Before reading or
   writing revision metadata, Ptah refuses and discards a pinned session that
   already contains a same-named temporary table. It also rejects statements
@@ -1040,9 +1076,8 @@ skips is only ever the prefix that really survived:
 Recorded progress therefore excludes transactional work that a rollback undid,
 while non-transactional mode retains work that no rollback could undo.
 On MySQL and MariaDB, non-transactional mode keeps revision bookkeeping on a
-separate checked metadata session while the migration body runs on its own
-discarded session, so body-local temporary objects cannot shadow the metadata
-table.
+separate checked metadata session while the migration body runs on the run's
+session, so body-local temporary objects cannot shadow the metadata table.
 
 **A non-transactional statement was interrupted.** If the process exits, the
 context is canceled, its deadline expires, or the connection breaks while an

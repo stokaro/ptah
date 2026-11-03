@@ -49,6 +49,20 @@ func TestTransactionPreflight_RefusesBeforeReachingPostgres(t *testing.T) {
 			wantMessage: "not usable until the transaction that added it commits",
 			wantRemedy:  "no_transaction",
 		},
+		{
+			name: "a vacuum after transactional DDL",
+			sql: "CREATE TABLE pf_a (id integer PRIMARY KEY);\n" +
+				"VACUUM pf_a;\n",
+			wantMessage: "VACUUM is refused inside a transaction block",
+			wantRemedy:  "no_transaction",
+		},
+		{
+			name: "a concurrent reindex after transactional DDL",
+			sql: "CREATE TABLE pf_b (id integer PRIMARY KEY);\n" +
+				"REINDEX TABLE CONCURRENTLY pf_b;\n",
+			wantMessage: "REINDEX ... CONCURRENTLY is refused inside a transaction block",
+			wantRemedy:  "no_transaction",
+		},
 	}
 
 	for _, test := range tests {
@@ -101,6 +115,16 @@ func TestTransactionPreflight_RefusesWhatPostgresRefuses(t *testing.T) {
 			sql:       "ALTER TYPE pr_mood ADD VALUE 'great'; CREATE TABLE pr_b (m pr_mood DEFAULT 'great');",
 			wantError: "unsafe use of new value",
 		},
+		{
+			name:      "vacuum",
+			sql:       "CREATE TABLE pr_v (id integer); VACUUM pr_v;",
+			wantError: "VACUUM cannot run inside a transaction block",
+		},
+		{
+			name:      "concurrent reindex",
+			sql:       "CREATE TABLE pr_r (id integer PRIMARY KEY); REINDEX TABLE CONCURRENTLY pr_r;",
+			wantError: "REINDEX CONCURRENTLY cannot run inside a transaction block",
+		},
 	}
 
 	for _, test := range tests {
@@ -142,6 +166,13 @@ func TestTransactionPreflight_KeepsTheValidEnumWorkflow(t *testing.T) {
 			sql: "-- +ptah no_transaction\n" +
 				"CREATE TABLE ok_u (id integer PRIMARY KEY, v integer);\n" +
 				"CREATE INDEX CONCURRENTLY ok_u_v_idx ON ok_u (v);\n",
+		},
+		{
+			name: "no_transaction, a vacuum and a concurrent reindex",
+			sql: "-- +ptah no_transaction\n" +
+				"CREATE TABLE ok_v (id integer PRIMARY KEY);\n" +
+				"VACUUM ok_v;\n" +
+				"REINDEX TABLE CONCURRENTLY ok_v;\n",
 		},
 	}
 

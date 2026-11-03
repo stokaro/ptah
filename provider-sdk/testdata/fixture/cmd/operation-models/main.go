@@ -27,9 +27,12 @@ type owner struct {
 	operationEnvelope *protocol.Envelope
 	nativeUnits       bool
 	transactionalDDL  bool
-	ownedLifecycle    bool
-	ownedEdits        bool
-	statementStyle    bool
+	// refusesDDLTransactions states that the server refuses a schema
+	// statement inside an explicit transaction.
+	refusesDDLTransactions bool
+	ownedLifecycle         bool
+	ownedEdits             bool
+	statementStyle         bool
 	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
 	// place, as a rebuild of its table when the host's planning policy asks
 	// for one, and refuses it in the words of that policy when it does not.
@@ -56,7 +59,7 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	modes := []string{"", "native", "native-transactional", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style"}
+	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style"}
 	if !slices.Contains(modes, mode) {
 		panic("unknown fixture render mode")
 	}
@@ -156,7 +159,8 @@ func main() {
 	p := &owner{Provider: &backend.Provider{},
 		nativeUnits:    mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" && mode != "statement-style",
 		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit", ownedEdits: mode == "owned-edit",
-		rebuilds: mode == "policy", statementStyle: mode == "statement-style", transactionalDDL: transactional, operationEnvelope: envelope, inputMode: inputMode}
+		rebuilds: mode == "policy", statementStyle: mode == "statement-style", transactionalDDL: transactional, refusesDDLTransactions: mode == "native-unwrapped",
+		operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
 	if inputMode != "" {
 		server.ExecutionInputs = p
