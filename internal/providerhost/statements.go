@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -178,8 +179,9 @@ func (c *statementConn) run(ctx context.Context, query string, args []driver.Nam
 	if err := c.session.lockError(); err != nil {
 		return nil, nil, err
 	}
-	values, err := statementargs.Arguments(c.session.target.placeholder(), args)
-	if err != nil {
+	request := &protocol.RunStatementRequest{SessionId: c.session.remote.GetId(), RequestId: rand.Text(), Sql: query,
+		Access: protocol.RunStatementRequest_READ_WRITE, MaxRows: statementPageRows}
+	if err := c.place(request, args); err != nil {
 		return nil, nil, err
 	}
 	inputs, err := c.session.target.executionInputs(ctx, []*protocol.Unit{{ChangeId: "statement", Body: &protocol.Unit_Sql{Sql: query}}})
@@ -192,8 +194,6 @@ func (c *statementConn) run(ctx context.Context, query string, args []driver.Nam
 		}
 		return c.executeInputStatement(ctx, query)
 	}
-	request := &protocol.RunStatementRequest{SessionId: c.session.remote.GetId(), RequestId: rand.Text(), Sql: query, Arguments: values,
-		Access: protocol.RunStatementRequest_READ_WRITE, MaxRows: statementPageRows}
 	if c.readOnly {
 		request.Access = protocol.RunStatementRequest_READ_ONLY
 	}
@@ -250,19 +250,49 @@ func (c *statementConn) closeResult(ctx context.Context, token string) error {
 	return err
 }
 
+// place sets the statement's arguments at the positions the provider binds
+// them in: typed when the provider negotiated typed arguments, and plain
+// otherwise.
+func (c *statementConn) place(request *protocol.RunStatementRequest, args []driver.NamedValue) error {
+	var err error
+	if c.session.target.typedArguments() {
+		request.TypedArguments, err = statementargs.TypedArguments(c.session.target.placeholder(), args)
+	} else {
+		request.Arguments, err = statementargs.Arguments(c.session.target.placeholder(), args)
+	}
+	return err
+}
+
 // CheckNamedValue gives an argument its wire form while database/sql still
 // holds the Go value the caller passed. Without it database/sql converts the
 // argument to a driver value first, which has no width, no sign and no null of
 // its own: an int32 and a uint reach the provider as int64, and a pointer as its
-// target. The argument keeps its name, which run reads to place it: the wire
-// carries arguments by position alone.
+// target. A provider that negotiated typed arguments receives each with the
+// type the caller chose; any other receives the plain form, which refuses what
+// it cannot carry exactly. The argument keeps its name, which run reads to
+// place it: the wire carries arguments by position alone.
 func (c *statementConn) CheckNamedValue(argument *driver.NamedValue) error {
-	value, err := statementargs.Wire(argument.Value)
+	var (
+		value any
+		err   error
+	)
+	if c.session.target.typedArguments() {
+		value, err = statementargs.Typed(argument.Value)
+	} else {
+		value, err = statementargs.Wire(argument.Value)
+	}
 	if err != nil {
 		return err
 	}
 	argument.Value = value
 	return nil
+}
+
+// typedArguments reports whether the provider negotiated typed statement
+// arguments. The feature is the provider's alone, since a statement names no
+// engine.
+func (t *target) typedArguments() bool {
+	return slices.Contains(t.host.description.GetFeatures(), provider.TypedArgumentsFeature)
 }
 
 // placeholder is the placeholder style the engine declares for its query

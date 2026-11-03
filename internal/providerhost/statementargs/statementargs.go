@@ -1,15 +1,16 @@
 // Package statementargs gives an argument of a statement the operator wrote
 // the wire form an executable provider binds, read from the Go type the caller
 // passed, and puts the arguments of a statement at the positions the provider
-// binds them in. The provider host's database/sql statement handle calls Wire
-// before database/sql converts the argument to a driver value. That conversion
-// widens every integer to int64 and a float32 to float64, replaces a pointer
-// with its target and an unsigned integer with a signed one, and leaves a
-// provider no way to bind the type the caller chose. An argument whose type
-// the contract cannot carry exactly is refused instead of converted. The
-// contract carries arguments by position alone, so Arguments reads the
+// binds them in. The provider host's database/sql statement handle calls Wire,
+// or Typed for a provider that negotiated typed arguments, before database/sql
+// converts the argument to a driver value. That conversion widens every
+// integer to int64 and a float32 to float64, replaces a pointer with its
+// target and an unsigned integer with a signed one, and leaves a provider no
+// way to bind the type the caller chose. An argument whose type the wire form
+// cannot carry exactly is refused instead of converted. The contract carries
+// arguments by position alone, so Arguments and TypedArguments read the
 // position of a named argument from the placeholder style the provider's
-// engine declares, and refuses a name that gives none.
+// engine declares, and refuse a name that gives none.
 package statementargs
 
 import (
@@ -30,7 +31,8 @@ import (
 
 var valuerType = reflect.TypeFor[driver.Valuer]()
 
-// Wire returns the wire form of a statement argument, read from its Go type:
+// Wire returns the wire form of a statement argument for a provider that did
+// not negotiate typed arguments, read from its Go type:
 //
 //   - nil is null;
 //   - a bool is a bool, a string a string, a float64 a double, and a byte
@@ -152,9 +154,22 @@ func refuse(argument any, reason string) error {
 // name, a name whose position leaves a lower position without an argument,
 // and named and positional arguments in one statement.
 func Arguments(style descriptor.Placeholder, arguments []driver.NamedValue) ([]*protocol.DataValue, error) {
-	values := make([]*protocol.DataValue, 0, len(arguments))
+	return place[*protocol.DataValue](style, arguments)
+}
+
+// TypedArguments is Arguments for a provider that negotiated typed arguments:
+// each argument holds the typed form Typed gave it, and a named argument takes
+// its position by the same rules.
+func TypedArguments(style descriptor.Placeholder, arguments []driver.NamedValue) ([]*protocol.StatementArgument, error) {
+	return place[*protocol.StatementArgument](style, arguments)
+}
+
+// place puts the arguments of a statement, each holding the form V that the
+// handle's check gave it, at the positions the provider binds them in.
+func place[V *protocol.DataValue | *protocol.StatementArgument](style descriptor.Placeholder, arguments []driver.NamedValue) ([]V, error) {
+	values := make([]V, 0, len(arguments))
 	for _, argument := range arguments {
-		value, checked := argument.Value.(*protocol.DataValue)
+		value, checked := argument.Value.(V)
 		if !checked || value == nil {
 			return nil, fmt.Errorf("statement argument %d of type %T reached the provider handle unchecked", argument.Ordinal, argument.Value)
 		}
@@ -170,8 +185,8 @@ func Arguments(style descriptor.Placeholder, arguments []driver.NamedValue) ([]*
 // gives. An argument whose position is past the count of the arguments
 // leaves a lower position without one, and the lowest such is the one the
 // refusal names.
-func byName(style descriptor.Placeholder, arguments []driver.NamedValue, values []*protocol.DataValue) ([]*protocol.DataValue, error) {
-	placed := make([]*protocol.DataValue, len(values))
+func byName[V *protocol.DataValue | *protocol.StatementArgument](style descriptor.Placeholder, arguments []driver.NamedValue, values []V) ([]V, error) {
+	placed := make([]V, len(values))
 	past, pastPosition := "", math.MaxInt
 	for i, argument := range arguments {
 		if argument.Name == "" {
@@ -193,7 +208,7 @@ func byName(style descriptor.Placeholder, arguments []driver.NamedValue, values 
 			placed[position-1] = values[i]
 		}
 	}
-	if missing := slices.Index(placed, nil); missing >= 0 {
+	if missing := slices.IndexFunc(placed, func(value V) bool { return value == nil }); missing >= 0 {
 		return nil, refuseName(past, fmt.Sprintf(" without one named %q, since it carries arguments by position", "p"+strconv.Itoa(missing+1)))
 	}
 	return placed, nil

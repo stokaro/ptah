@@ -535,13 +535,21 @@ A Go caller can bind arguments to such a statement through
 `dbschema.DatabaseConnection.OperatorStatements`. Each one arrives as the
 `DataValue` case its Go type names: a signed integer as `int64_value`, an
 unsigned one as `uint64_value`, a `float64` as `double_value`, a duration as
-`interval_value`, and `nil` as `null`, which carries no type. The host refuses
-an argument that no case holds exactly, such as an `int32`, a pointer or a
-slice, before it sends the statement, so a provider never receives a value
+`interval_value`, and `nil` as `null`, which carries no type. The host
+refuses an argument that no case holds exactly, such as an `int32`, a pointer
+or a slice, before it sends the statement, so a provider never receives a value
 widened from the type its caller chose.
 
-`RunStatementRequest.arguments` is positional, and the placeholder style of the
-engine's `query_dialect` says which parameter each position binds. Under
+A provider that lists `sessions.typed-arguments` receives each argument in
+`RunStatementRequest.typed_arguments` instead, with the type its caller bound
+it at: the scalar at its width, such as `INT32` for an `int32`, whether the type
+admits null, as a pointer and a `sql.Null` value do, and whether it is a list,
+as a slice other than a byte slice is. The host refuses what even that form
+cannot carry, such as an array, a nested list or a second level of null.
+
+`RunStatementRequest.arguments` and `typed_arguments` are positional, and the
+placeholder style of the engine's `query_dialect` says which parameter each
+position binds. Under
 `dollar-named` the Nth parameter is `$pN`, so a provider binds the Nth argument
 to `$pN`, and the host sends a Go argument named `pN` at position N, wherever
 the call put it. That is how a statement the query builder renders for the

@@ -134,6 +134,9 @@ var hostFeatures = []string{
 	// it into, and runs a unit again that the engine aborted for a
 	// conflict; see session.SplitMigration and session.BeginUnitTransaction.
 	provider.MigrationSplitFeature,
+	// An operator statement's arguments reach the provider with the types
+	// their caller bound them at; see statementConn.CheckNamedValue.
+	provider.TypedArgumentsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.
