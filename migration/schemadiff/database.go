@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/routinebody"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
 	"ptah.run/migration/internal/generatedschema"
 	"ptah.run/migration/schemadiff/internal/compare"
@@ -902,6 +903,16 @@ func liveTableColumns(
 // attach the connected server's own spelling of what they declare, the way the
 // resolvers above do for the common families. The desired schema is copied,
 // never changed in place; with no declared object it is returned as it is.
+//
+// An owner probes only the declarations the database holds, and finds them by
+// identity, so both sides are bound to the connection first, as the comparison
+// binds them. A reader and a source fill a schema they did not write with the
+// offline default: under `search_path=reporting,public` a policy read on
+// `reporting.audit` arrives as `public.audit`, and without the binding it
+// never meets the declaration on `reporting.audit`, so the owner compares the
+// declared text with the server's and plans a change on every run. The bound
+// states are a working copy, as in [normalizeFeatureFacets]: each answer goes
+// back under the identity the caller gave it.
 func normalizeFeatureObjects(
 	ctx context.Context,
 	conn Connection,
@@ -913,10 +924,18 @@ func normalizeFeatureObjects(
 	if desired.FeatureObjects.Len() == 0 || info.Dialect == "" {
 		return desired, nil
 	}
+	selected, err := runtime.ResolveTarget(info.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := comparisonTableIdentities(desired, database, &config.CompareOptions{Dialect: info.Dialect, IdentifierSemantics: &info.IdentifierSemantics}, selected)
+	if err != nil {
+		return nil, err
+	}
 	result, err := runtime.NormalizeObjects(ctx, schemaext.NormalizationRequest{
-		Target: info.Dialect, Identifiers: info.IdentifierSemantics, Capabilities: info.Capabilities,
-		Desired: schemaext.ObjectState{Objects: desired.FeatureObjects, Coverage: desired.FeatureCoverage},
-		Current: schemaext.ObjectState{Objects: database.FeatureObjects, Coverage: database.FeatureCoverage},
+		Target: info.Dialect, Identifiers: identity.semantics, Capabilities: info.Capabilities,
+		Desired: schemaext.ObjectState{Objects: identity.desired.FeatureObjects, Coverage: identity.desired.FeatureCoverage},
+		Current: schemaext.ObjectState{Objects: identity.current.FeatureObjects, Coverage: identity.current.FeatureCoverage},
 		Session: conn,
 	})
 	if err != nil {
@@ -925,9 +944,35 @@ func normalizeFeatureObjects(
 	if !result.Complete {
 		return nil, fmt.Errorf("%w: feature normalization did not complete", schemaext.ErrInvalidValue)
 	}
+	objects, err := answersUnderDeclaredIdentities(desired.FeatureObjects, result.Desired.Objects, info.Dialect, identity.semantics)
+	if err != nil {
+		return nil, err
+	}
 	normalized := *desired
-	normalized.FeatureObjects = result.Desired.Objects
+	normalized.FeatureObjects = objects
 	return &normalized, nil
+}
+
+// answersUnderDeclaredIdentities returns each declared object under its own
+// identity, with the value the owners answered for its bound identity.
+// Binding refuses two objects that become one identity, so each answer has
+// exactly one declaration.
+func answersUnderDeclaredIdentities(declared, answered schemaext.Objects, target string, semantics identifier.Semantics) (schemaext.Objects, error) {
+	objects, err := declared.All()
+	if err != nil {
+		return schemaext.Objects{}, err
+	}
+	for i, object := range objects {
+		answer, found, err := answered.Get(tableidentity.BindRef(object.Ref, target, semantics))
+		if err != nil {
+			return schemaext.Objects{}, err
+		}
+		if !found {
+			return schemaext.Objects{}, fmt.Errorf("%w: feature normalization lost %s", schemaext.ErrInvalidValue, object.Ref)
+		}
+		objects[i].Value = answer.Value
+	}
+	return schemaext.NewObjects(objects...)
 }
 
 func collectIdentifierNames(
