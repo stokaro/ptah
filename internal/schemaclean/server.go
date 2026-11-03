@@ -63,7 +63,7 @@ func (p ServerCleanPolicy) Refuse(info catalog.ServerInfo, plan Plan) error {
 	var drops strings.Builder
 	for _, change := range plan.Changes {
 		if change.Type == ObjectTypeSchema {
-			fmt.Fprintf(&drops, "\n- %s", change.Cmd)
+			fmt.Fprintf(&drops, "\n- %s", change.Summary())
 		}
 	}
 	if drops.Len() == 0 {

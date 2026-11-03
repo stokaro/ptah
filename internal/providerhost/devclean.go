@@ -40,9 +40,23 @@ func (s *session) ResetObjects(ctx context.Context, scope dbreset.Scope) ([]dbre
 	objects := make([]dbreset.Object, 0, len(listed.GetObjects()))
 	for _, object := range listed.GetObjects() {
 		ref := object.GetObject()
-		objects = append(objects, dbreset.Object{Kind: ref.GetKind(), Schema: ref.GetSchema(), Name: ref.GetName()})
+		objects = append(objects, dbreset.Object{Kind: ref.GetKind(), Schema: ref.GetSchema(), Name: ref.GetName(), Refusal: object.GetRefusal()})
 	}
 	return objects, nil
+}
+
+// OffersCleanup reports whether the provider and the session's engine both
+// offer the dev database cleanup, without which the session can neither list
+// nor remove what its database holds.
+func (s *session) OffersCleanup() bool {
+	return s.target.offers(provider.DevCleanupFeature)
+}
+
+// CleanupObjects lists every object DropAllTables removes, or stops at, in
+// the scope DropAllTables cleans. It is the provider's list, so a plan built
+// from it names what the cleanup removes.
+func (s *session) CleanupObjects(ctx context.Context) ([]dbreset.Object, error) {
+	return s.ResetObjects(ctx, dbreset.Scope{Schemas: s.cleanupSchemas()})
 }
 
 // DropAllTables empties the session's schema through the provider.
@@ -50,11 +64,17 @@ func (s *session) DropAllTables(ctx context.Context) error {
 	if s.IsDryRun() {
 		return nil
 	}
-	var schemas []string
+	return s.cleanDev(ctx, s.cleanupSchemas())
+}
+
+// cleanupSchemas is the scope DropAllTables cleans and CleanupObjects lists:
+// the session's schema, or the whole realm when the session names none. One
+// function answers both, so the list and the cleanup cannot read two scopes.
+func (s *session) cleanupSchemas() []string {
 	if schema := strings.TrimSpace(s.info.Schema); schema != "" {
-		schemas = []string{schema}
+		return []string{schema}
 	}
-	return s.cleanDev(ctx, schemas)
+	return nil
 }
 
 // DropDatabaseRealm empties the whole realm the session treats as its

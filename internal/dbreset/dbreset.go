@@ -34,6 +34,10 @@ type Object struct {
 	// does. It is empty where the writer drops objects some other way, such
 	// as with the schema that holds them.
 	Statement string
+	// Refusal says in one line why the reset cannot remove the object, which
+	// stops the reset before it removes anything. It is empty for an object
+	// the reset removes. Only an executable provider's listing sets it.
+	Refusal string
 }
 
 // Scope is the part of a PostgreSQL-family database a reset empties: the
