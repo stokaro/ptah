@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -89,12 +90,37 @@ func validateModelSourceFormats(model *protocol.ValueModel) error {
 	return nil
 }
 
+// canonicalDefinitions holds the digests of model definitions found to be
+// canonical nonempty JSON objects, so that each definition is canonicalized
+// once per process. Every request a peer validates names the engine whose
+// models it checks, and canonicalizing all of them again made up most of the
+// validation work. The set is keyed by the digest of the bytes themselves, so
+// a changed definition is checked again, and it stops growing at
+// maxCanonicalDefinitions.
+var canonicalDefinitions = struct {
+	sync.RWMutex
+	digests map[[sha256.Size]byte]struct{}
+}{digests: make(map[[sha256.Size]byte]struct{})}
+
+const maxCanonicalDefinitions = 4096
+
 func validateModelDefinition(model *protocol.ValueModel) error {
-	canonical, err := modeljson.Canonical(model.GetDefinitionJson())
-	if err != nil || len(canonical) == 0 || canonical[0] != '{' || string(canonical) == "{}" || !bytes.Equal(canonical, model.GetDefinitionJson()) {
-		return fmt.Errorf("%w: model definition must be a canonical nonempty JSON object", ErrProtocol)
+	definition := model.GetDefinitionJson()
+	digest := sha256.Sum256(definition)
+	canonicalDefinitions.RLock()
+	_, known := canonicalDefinitions.digests[digest]
+	canonicalDefinitions.RUnlock()
+	if !known {
+		canonical, err := modeljson.Canonical(definition)
+		if err != nil || len(canonical) == 0 || canonical[0] != '{' || string(canonical) == "{}" || !bytes.Equal(canonical, definition) {
+			return fmt.Errorf("%w: model definition must be a canonical nonempty JSON object", ErrProtocol)
+		}
+		canonicalDefinitions.Lock()
+		if len(canonicalDefinitions.digests) < maxCanonicalDefinitions {
+			canonicalDefinitions.digests[digest] = struct{}{}
+		}
+		canonicalDefinitions.Unlock()
 	}
-	digest := sha256.Sum256(canonical)
 	if hex.EncodeToString(digest[:]) != model.GetDefinitionSha256() {
 		return fmt.Errorf("%w: model definition digest differs from its content", ErrProtocol)
 	}
