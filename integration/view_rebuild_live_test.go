@@ -328,6 +328,32 @@ CREATE MATERIALIZED VIEW order_sums_top AS SELECT id FROM t;
 `
 )
 
+// sumsBOverA holds sums_b over sums_a, and sumsAOverB sums_a over sums_b: the
+// two materialized views swap which one reads the other. rowsBOverA and
+// rowsAOverB do the same with views, and every column moves, so CREATE OR
+// REPLACE VIEW cannot make either change. Ordered by both bodies of each
+// object, the two read each other, and the drops keep the order the
+// comparison reports them in, which in one of the two directions drops the
+// object the other one still reads.
+const (
+	sumsBOverA = `CREATE TABLE t (id integer PRIMARY KEY, a integer NOT NULL);
+CREATE MATERIALIZED VIEW sums_a AS SELECT id, a FROM t;
+CREATE MATERIALIZED VIEW sums_b AS SELECT id, a FROM sums_a;
+`
+	sumsAOverB = `CREATE TABLE t (id integer PRIMARY KEY, a integer NOT NULL);
+CREATE MATERIALIZED VIEW sums_b AS SELECT id, a FROM t;
+CREATE MATERIALIZED VIEW sums_a AS SELECT id, a FROM sums_b;
+`
+	rowsBOverA = `CREATE TABLE t (id integer PRIMARY KEY, a integer NOT NULL);
+CREATE VIEW rows_a AS SELECT id, a FROM t;
+CREATE VIEW rows_b AS SELECT id, a FROM rows_a;
+`
+	rowsAOverB = `CREATE TABLE t (id integer PRIMARY KEY, a integer NOT NULL);
+CREATE VIEW rows_b AS SELECT a, id FROM t;
+CREATE VIEW rows_a AS SELECT a, id FROM rows_b;
+`
+)
+
 // viewRebuildCase is one change a view rebuild plans.
 type viewRebuildCase struct {
 	name string
@@ -359,7 +385,8 @@ type viewRebuildCase struct {
 // materialized view declared WITH NO DATA, which stays empty both ways. Two
 // changed materialized views, where one reads the other on one side of the
 // change only, are dropped in the order the body the database holds asks for,
-// in both directions (stokaro/ptah#5013).
+// in both directions (stokaro/ptah#5013), and so are two changed views, or two
+// changed materialized views, that swap which one reads the other.
 var viewRebuildCases = []viewRebuildCase{
 	{
 		name:     "a view that reads a changed materialized view",
@@ -579,6 +606,30 @@ CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total, count(*) A
 			"relation order_sums_top options= acl= comment=",
 			"populated order_sums=true",
 			"populated order_sums_top=true",
+		},
+	},
+	{
+		name:     "two changed materialized views that swap which one reads the other",
+		live:     sumsBOverA,
+		declared: sumsAOverB,
+		want:     []string{"matview/sums_a", "matview/sums_b"},
+		held:     []string{"matview/sums_a", "matview/sums_b"},
+		after: []string{
+			"relation sums_a options= acl= comment=",
+			"relation sums_b options= acl= comment=",
+			"populated sums_a=true",
+			"populated sums_b=true",
+		},
+	},
+	{
+		name:     "two changed views that swap which one reads the other",
+		live:     rowsBOverA,
+		declared: rowsAOverB,
+		want:     []string{"view/rows_a", "view/rows_b"},
+		held:     []string{"view/rows_a", "view/rows_b"},
+		after: []string{
+			"relation rows_a options= acl= comment=",
+			"relation rows_b options= acl= comment=",
 		},
 	},
 	{

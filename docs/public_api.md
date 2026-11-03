@@ -5264,9 +5264,10 @@ aliases. This changes behavior; pre-v1, so no compatibility is owed.
 
 `MaterializedViewDiff.PreviousBody`, also off the wire, is the query the
 database holds the view with before the change runs. A planner orders the
-view's drop by what that query reads as well as by what the declaration reads,
-because the server refuses to drop a relation another one still reads. An
-embedder that leaves it empty gets the order the declaration alone gives.
+view's drop by what that query reads, not by what the declaration reads,
+because the drop runs against the database and the server refuses to drop a
+relation another one still reads there. An embedder that leaves it empty gets
+the order the declaration gives.
 
 `core/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
 field too, and the reference type is the one place where it means something on

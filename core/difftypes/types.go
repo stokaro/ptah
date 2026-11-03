@@ -2172,13 +2172,14 @@ type MaterializedViewDiff struct {
 	//
 	// A replacement drops the view while the database still holds this body,
 	// and the server refuses to drop a relation another one still reads. So a
-	// planner orders the drop by what this body reads as well as by what
+	// planner orders the drop by what this body reads, and not by what
 	// Desired's body reads: a materialized view whose new body stops reading
 	// another changed one still reads it in the database, and has to be
-	// dropped before it.
+	// dropped before it, and a reference only Desired's body makes does not
+	// exist yet when the drop runs.
 	//
 	// An empty value means not known, and a planner orders the drop by
-	// Desired's body alone. It stays off the wire, as Desired does.
+	// Desired's body instead. It stays off the wire, as Desired does.
 	PreviousBody string `json:"-"`
 }
 
