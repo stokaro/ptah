@@ -380,7 +380,7 @@ func printAtlasSchemaCleanPlan(
 	fmt.Fprintf(out, "Connected to %s database successfully.\n", conn.Info().Dialect)
 	fmt.Fprintf(out, "Planned cleanup changes: %d\n", len(plan.Changes))
 	for _, change := range plan.Changes {
-		fmt.Fprintf(out, "- %s\n", change.Cmd)
+		fmt.Fprintf(out, "- %s\n", change.Summary())
 	}
 	if opts.dryRun {
 		fmt.Fprintln(out, "[DRY RUN] No changes were applied.")

@@ -301,6 +301,10 @@ func reverseSchemaDiffWithPrior(
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
+	// Last of the constraint additions, so these read every key they restore.
+	reversed.ConstraintsRemoved = append(reversed.ConstraintsRemoved,
+		reverseColumnKeyRemovals(diff, reversed.ConstraintsAdded, dialect, semantics)...)
+	dropColumnUniqueRestoredByConstraints(reversed, semantics)
 	// The tables those constraint changes name, as the PRE-CHANGE database
 	// declared them: a rollback rebuilds the table that database had, so the
 	// columns, indexes and triggers the rebuild renders are its. Filled last

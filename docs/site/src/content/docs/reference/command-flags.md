@@ -1609,6 +1609,7 @@ Read the columns as follows.
 | `--cleanup-diff` | `bool` | `false` | `PTAH_CLEANUP_DIFF` | — |
 | `--cleanup-dry-run` | `bool` | `false` | `PTAH_CLEANUP_DRY_RUN` | — |
 | `--cleanup-go-annotations` | `bool` | `false` | `PTAH_CLEANUP_GO_ANNOTATIONS` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
 | `--exclude-tables` | `stringSlice` | `[]` | `PTAH_EXCLUDE_TABLES` | — |
 | `--from` | `string` | `go` | `PTAH_FROM` | — |
 | `--go-package` | `string` | — | `PTAH_GO_PACKAGE` | — |

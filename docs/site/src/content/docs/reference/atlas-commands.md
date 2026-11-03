@@ -1856,6 +1856,13 @@ so a `--dry-run` or `--format` report is not narrower than the apply:
 | SQL Server | Foreign keys and tables. Views are not dropped, so they are not reported. |
 | ClickHouse | Base tables, views, and materialized views. A materialized view is removed with `DROP VIEW`, which takes its inner storage table with it; live views and window views are neither read nor dropped. |
 
+On a database an executable provider serves, the plan is the provider's own
+list of what its cleanup removes, each object under the provider's name for its
+kind. Its changes carry an empty `Cmd`, because the provider runs its own
+statements, and the text output names each object by kind and name instead.
+The provider removes the whole list or nothing, so a plan that `--include` or
+`--exclude` narrowed is refused before anything is dropped.
+
 Ptah's own migration revision table is included in that accounting. On
 PostgreSQL, MySQL, MariaDB and SQL Server the cleanup destroys it like any other
 table, so the plan names it and the operator confirming a destructive run is

@@ -17,7 +17,7 @@ func (r *Runtime) snapshotPlanningObjects(ctx context.Context, target string, ob
 	if err != nil {
 		return featureplan.ObjectContext{}, err
 	}
-	for _, state := range []*schemaext.ObjectState{&objects.Desired, &objects.Current} {
+	for _, state := range []*schemaext.ObjectState{&objects.Desired, &objects.Current, &objects.Context} {
 		state.Objects, err = state.Objects.ForTarget(selection)
 		if err != nil {
 			return featureplan.ObjectContext{}, err
@@ -32,6 +32,10 @@ func (r *Runtime) snapshotPlanningObjects(ctx context.Context, target string, ob
 		return featureplan.ObjectContext{}, err
 	}
 	objects.Current, err = r.codecs.SnapshotObjectState(ctx, schemaext.Observed, objects.Current)
+	if err != nil {
+		return featureplan.ObjectContext{}, err
+	}
+	objects.Context, err = r.codecs.SnapshotObjectState(ctx, schemaext.Observed, objects.Context)
 	if err != nil {
 		return featureplan.ObjectContext{}, err
 	}
@@ -88,7 +92,8 @@ func (r *Runtime) planningObjectsFor(owner, target string, objects featureplan.O
 			kinds = append(kinds, key.kind)
 		}
 	}
-	result := featureplan.ObjectContext{Desired: selectObjectState(objects.Desired, kinds), Current: selectObjectState(objects.Current, kinds)}
+	result := featureplan.ObjectContext{Desired: selectObjectState(objects.Desired, kinds), Current: selectObjectState(objects.Current, kinds),
+		Context: selectObjectState(objects.Context, kinds)}
 	for _, subject := range objects.ChangedSubjects {
 		if slices.Contains(kinds, schemaext.Kind(subject.Kind)) {
 			result.ChangedSubjects = append(result.ChangedSubjects, subject)

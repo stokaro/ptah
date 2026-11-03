@@ -25,6 +25,9 @@ func TestAloneOutsideATransaction(t *testing.T) {
 		{"a concurrent drop alone", []string{"DROP INDEX CONCURRENTLY i"}, true},
 		{"a concurrent index beside a table", []string{"CREATE TABLE t (id int)", "CREATE INDEX CONCURRENTLY i ON t (id)"}, false},
 		{"a plain index alone", []string{"CREATE INDEX i ON t (id)"}, false},
+		{"a vacuum alone", []string{"VACUUM base"}, true},
+		{"a concurrent reindex alone", []string{"REINDEX INDEX CONCURRENTLY base_i"}, true},
+		{"a plain reindex alone", []string{"REINDEX INDEX base_i"}, false},
 		{"nothing", nil, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

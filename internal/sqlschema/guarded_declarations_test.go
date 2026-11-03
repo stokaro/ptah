@@ -15,7 +15,13 @@ import (
 // readGuarded reads sql as PostgreSQL with no owners.
 func readGuarded(c *qt.C, sql string) schemamodel.Database {
 	c.Helper()
-	database, _, err := sqlschema.ReadWith(context.Background(), []byte(sql), platform.Postgres, nil, sqlschema.Options{Owners: sqlext.None()})
+	return readGuardedAs(c, platform.Postgres, sql)
+}
+
+// readGuardedAs reads sql as dialect with no owners.
+func readGuardedAs(c *qt.C, dialect, sql string) schemamodel.Database {
+	c.Helper()
+	database, _, err := sqlschema.ReadWith(context.Background(), []byte(sql), dialect, nil, sqlschema.Options{Owners: sqlext.None()})
 	c.Assert(err, qt.IsNil)
 	return database
 }

@@ -880,6 +880,18 @@ func (s *storedNames) constraint(table relation, constraint *ast.ConstraintNode)
 	}
 	kind := constraintKind(constraint.Type)
 	owned := ownership{table: table.tableKey(), columns: append(s.storedColumns(constraint.Columns), s.storedColumns(constraint.IncludeColumns)...)}
+	if constraint.UsingIndex != "" {
+		// A key made of an existing index takes the index as its own, renamed
+		// to the constraint's name, or keeping its name where the statement
+		// names none. PostgreSQL 18.6 renames it, so the name it held is free
+		// again: `ADD CONSTRAINT k UNIQUE USING INDEX i` and then `CREATE INDEX
+		// i ...` build a second index. Recorded as a key that lists its
+		// columns, an unnamed key takes a name derived from no columns, and the
+		// index's name stays taken: a key named as its index collides with it,
+		// and a later index of that name is skipped or refused.
+		s.drop(relationSpace, table.schema, constraint.UsingIndex)
+		return s.indexConstraint(table, kind, cmp.Or(strings.TrimSpace(constraint.Name), constraint.UsingIndex), owned)
+	}
 	if buildsIndex(constraint) {
 		if strings.TrimSpace(constraint.Name) == "" {
 			s.derived = append(s.derived, func() { s.claimIndexConstraintName(table, kind, s.derivedKeyName(table, constraint), owned) })

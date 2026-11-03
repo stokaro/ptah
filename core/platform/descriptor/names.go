@@ -120,6 +120,10 @@ type Columns struct {
 	// IdentityNotNull reports that an identity column is NOT NULL whether or
 	// not the definition says so.
 	IdentityNotNull bool `json:"identity_not_null,omitempty"`
+	// SerialNotNull reports that a column of a serial type, SERIAL, BIGSERIAL
+	// or SMALLSERIAL, is NOT NULL whether or not the definition says so, as
+	// PostgreSQL makes it.
+	SerialNotNull bool `json:"serial_not_null,omitempty"`
 	// CheckOwnColumnOnly reports that a CHECK written on a column may name
 	// that column alone, and one naming another column is refused.
 	CheckOwnColumnOnly bool `json:"check_own_column_only,omitempty"`
@@ -146,6 +150,12 @@ type Statements struct {
 	// ViewsBlockDropTable reports that a plain DROP TABLE is refused while a
 	// view or a materialized view reads the table.
 	ViewsBlockDropTable bool `json:"views_block_drop_table,omitempty"`
+	// RelationsShareNames reports that tables, views, materialized views and
+	// sequences take their names from one namespace per schema, and that a
+	// CREATE TABLE IF NOT EXISTS or a CREATE SEQUENCE IF NOT EXISTS is skipped
+	// when the schema holds a relation of any of those kinds under its name,
+	// not only one of its own kind.
+	RelationsShareNames bool `json:"relations_share_names,omitempty"`
 	// DoBlocks is the procedural language an anonymous DO block of a schema
 	// file is written in where the file declares roles in one, one of
 	// [DoBlockLanguages]. Empty means the engine has no such block. A read

@@ -33,12 +33,6 @@ const Annotation = "ptah.run/forwards-to"
 // them.
 const RefusedAnnotation = "ptah.run/forward-refuses"
 
-// PositionalsAnnotation marks a forwarder that reads positional arguments
-// itself. Such a forwarder takes the word after a flag as that flag's value only
-// for a flag it registers, so a flag only its target declares has to carry its
-// value as --flag=value.
-const PositionalsAnnotation = "ptah.run/forward-positionals"
-
 // factories maps a registered forwarder, held weakly, to the factory that
 // builds its target. An entry leaves the map when its forwarder is collected.
 var factories sync.Map
@@ -60,11 +54,6 @@ func Refuse(forwarder *cobra.Command, flags ...string) {
 	}
 }
 
-// ReadsPositionals records that forwarder reads positional arguments itself.
-func ReadsPositionals(forwarder *cobra.Command) {
-	annotate(forwarder, PositionalsAnnotation, "true")
-}
-
 func annotate(cmd *cobra.Command, key, value string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = make(map[string]string)
@@ -84,11 +73,6 @@ func Refused(cmd *cobra.Command) []string {
 		return strings.Split(value, ",")
 	}
 	return nil
-}
-
-// Positionals reports whether cmd reads positional arguments itself.
-func Positionals(cmd *cobra.Command) bool {
-	return cmd.Annotations[PositionalsAnnotation] == "true"
 }
 
 // Build returns a new instance of the command forwarder runs, built by the

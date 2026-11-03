@@ -5,6 +5,7 @@ package builtinlowering
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/dialect/ydb/ydbscheme"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/pgeffects"
@@ -37,14 +39,19 @@ func ForTarget(ctx context.Context, runtime featureplan.DeclarationRuntime, targ
 }
 
 // postgresMetadata describes the relations and columns each common statement
-// of a PostgreSQL-family render creates, so a feature owner can order itself
-// against them: after the tables it reads, before the views that read it.
-func postgresMetadata(target string) func(context.Context, []ast.Node) ([]featureplan.CommonStep, error) {
-	return func(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+// of a PostgreSQL-family render creates, and the declared types it uses, so a
+// feature owner can order itself against them: after the tables it reads,
+// before the views that read it, and a type before the columns and routines
+// that use it.
+func postgresMetadata(target string) func(context.Context, []ast.Node, []schemaext.DefinedType) ([]featureplan.CommonStep, error) {
+	return func(ctx context.Context, nodes []ast.Node, types []schemaext.DefinedType) ([]featureplan.CommonStep, error) {
 		effects := pgeffects.Sequence(objectidentity.NewBuilder(identifier.ForDialect(target)), nodes)
 		result := make([]featureplan.CommonStep, len(nodes))
-		for i := range nodes {
+		for i, node := range nodes {
 			result[i].Effects = effects[i]
+			if effects[i] != nil {
+				result[i].Effects = slices.Concat(effects[i], pgeffects.TypeReads(node, types))
+			}
 		}
 		return result, ctx.Err()
 	}
@@ -62,7 +69,7 @@ func ydbGrantPath(objectType, objectName, databasePath string) string {
 	return path
 }
 
-func ydbMetadata(ctx context.Context, nodes []ast.Node) ([]featureplan.CommonStep, error) {
+func ydbMetadata(ctx context.Context, nodes []ast.Node, _ []schemaext.DefinedType) ([]featureplan.CommonStep, error) {
 	result := make([]featureplan.CommonStep, len(nodes))
 	builder := objectidentity.NewBuilder(identifier.ForDialect(platform.YDB))
 	for i, node := range nodes {

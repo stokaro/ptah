@@ -803,6 +803,10 @@ replacement needs the dependent, type or lifecycle phase. A
 whole-schema render runs such a step after its enums and before the routines
 that name a type and the tables. Every other host refuses it.
 
+A type that names the row type of a relation the plan creates or drops fits
+neither window of `PhaseType`. Its owner asks for `PhaseDefault` and orders
+the step against the relation's common step.
+
 `PhaseLifecycle` places operations across a host-defined span of its common
 sequence. The external provider host offers the complete sequence when both
 sides negotiate `planning.lifecycle`. Resource effects and explicit dependencies
@@ -1228,9 +1232,12 @@ many of its changes add or remove an object, since a change carries no
 direction a caller could read. The runtime refuses a count its changes
 contradict, a kind the service does not own and a kind counted twice. It sums
 the owners of a kind and leaves the kind out when one owner that ran did not
-count it. `ComparisonResult.Counts` carries the result, a schema diff carries
-it in `SchemaDiff.FeatureCounts`, and `safety.Inventory` reports each counted
-kind under its change kind.
+count it. A facet owner counts the objects its settings stand for in
+`FacetComparisonResult.Counts`, under the same rules: the row-level security
+owner counts a table with `ENABLE` or `FORCE` on. `ComparisonResult.Counts`
+carries the object and facet counts together, a schema diff carries them in
+`SchemaDiff.FeatureCounts`, and `safety.Inventory` reports each counted kind
+under its change kind.
 
 Before table preparation, comparison binds table and index coverage claims to the
 same identifier semantics and default database as their common owners. Explicit schemas
@@ -3374,6 +3381,14 @@ dropped with CASCADE in that phase's removal window, and the comment of a type
 that survives joins `featureplan.PhaseDependent`. A type the target cannot
 create is refused with the scope advice the common refusal gives.
 
+A type over the row type of a table the plan creates, directly or through the
+types it names, joins `featureplan.PhaseDefault` instead, after the table's
+common step. A removed type over a table the plan drops joins it before the
+table's drop, unless a later drop still uses the type; the common steps' type
+reads say which. A table, column or routine the plan creates that uses such a
+type, a type over a view the plan creates, and such a type that would be
+rebuilt are refused.
+
 `feature/pgtype/typereverse` drops what the forward plan created, creates
 again what it dropped, and returns a surviving type to its observation. A
 domain CHECK the forward plan adds in place carries a name the plan chose, the
@@ -4707,6 +4722,16 @@ when the engine did not measure the count; a provider that runs no statement
 refuses with `ptaherr.ErrUnsupportedFeature`. `dbschema.OperatorStatementProvider`
 is the interface a native session implements to serve it.
 
+On that handle an argument reaches the provider with the type its Go value
+names: an `int` or `int64` as a signed 64-bit integer, a `uint` or `uint64` as
+an unsigned one, a `time.Duration` as an interval, a named type as its
+underlying kind, and a `driver.Valuer` as the value its `Value` method returns.
+An argument the provider contract cannot carry exactly is refused with
+`ptaherr.ErrUnsupportedFeature` before the statement is sent, rather than
+converted: an integer narrower than 64 bits, a `float32`, a pointer, a
+`database/sql` `Null` value, an array, a slice other than a byte slice, and a
+named argument.
+
 `migration/migrator.CheckFailedError` identifies one failed or invalid
 assertion, in either phase: its `Phase` field carries `CheckPhaseBefore` or
 `CheckPhaseAfter`, and the zero value is the precondition phase a directive
@@ -5237,6 +5262,12 @@ entry holding only in-place owner changes keeps the view. The former
 `RefreshChange` field and `MatViewRefreshChange` type are removed without
 aliases. This changes behavior; pre-v1, so no compatibility is owed.
 
+`MaterializedViewDiff.PreviousBody`, also off the wire, is the query the
+database holds the view with before the change runs. A planner orders the
+view's drop by what that query reads as well as by what the declaration reads,
+because the server refuses to drop a relation another one still reads. An
+embedder that leaves it empty gets the order the declaration alone gives.
+
 `core/difftypes.TriggerRef` and `TriggerDiff` carry a `Desired`
 field too, and the reference type is the one place where it means something on
 one list and nothing on another: a `TriggersAdded` entry carries the declaration
@@ -5428,6 +5459,10 @@ that the name is the key's own rather than its index's alone where no
 CONSTRAINT symbol is written. A refusal the engine answers in its own words is
 a sentence of the descriptor, which the parser writes after the position of
 the construct it refuses.
+
+`Grammar.Columns.IdentityProperty` says that IDENTITY, with or without a
+(seed, increment) pair, makes a column an identity column, as T-SQL writes it.
+SQL Server states it.
 
 `core/dataext` is the contract for what an engine does with data that its
 descriptor cannot state:

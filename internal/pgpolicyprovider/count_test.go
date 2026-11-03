@@ -67,3 +67,53 @@ func TestComparePolicies_CountsWhatItCompares(t *testing.T) {
 		})
 	}
 }
+
+// TestCompareTableStates_CountsTheTablesRowSecurityGuards pins the counts the
+// inventory reports for row-level security switches: a table with ENABLE or
+// FORCE on is one object, matched where both sides have it on whether or not
+// the switches differ, added where the plan switches it on and removed where
+// the plan switches it off. A table off on both sides, one the comparison
+// keeps for a source that cannot describe it, and one only one side holds are
+// counted on neither side.
+func TestCompareTableStates_CountsTheTablesRowSecurityGuards(t *testing.T) {
+	notDescribed := must.Must(pgpolicy.Coverage(pgpolicy.TableStateKind, schemaext.Desired, schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not read"}, nil))
+	described := must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
+	enabled := &pgpolicy.ObservedTableState{Enabled: true}
+	tests := []struct {
+		name     string
+		declared []schemaext.Value
+		observed []schemaext.Value
+		coverage schemaext.Coverage
+		owner    schemaext.ParentState
+		want     schemaext.ObjectCount
+	}{
+		{name: "enabled on both sides", declared: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true}}, observed: []schemaext.Value{enabled},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind, Matched: 1}},
+		{name: "forced on one side", declared: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true, Forced: true}}, observed: []schemaext.Value{enabled},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind, Matched: 1}},
+		{name: "switched on", declared: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true}},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind, Added: 1}},
+		{name: "switched off", observed: []schemaext.Value{enabled},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind, Removed: 1}},
+		{name: "force the server kept through a disable, switched off", observed: []schemaext.Value{&pgpolicy.ObservedTableState{Forced: true}},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind, Removed: 1}},
+		{name: "off on both sides", declared: []schemaext.Value{&pgpolicy.DesiredTableState{}}, observed: []schemaext.Value{&pgpolicy.ObservedTableState{}},
+			coverage: described, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind}},
+		{name: "kept for a source that cannot describe it", observed: []schemaext.Value{enabled},
+			coverage: notDescribed, owner: surviving("orders"), want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind}},
+		{name: "a table the plan creates", declared: []schemaext.Value{&pgpolicy.DesiredTableState{Enabled: true}},
+			coverage: described, owner: schemaext.ParentState{Subject: tableRef("orders"), Desired: true}, want: schemaext.ObjectCount{Kind: pgpolicy.TableStateChangeKind}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := facetComparison(c, records(c, test.declared...), records(c, test.observed...), test.owner)
+			request.Desired.Coverage = test.coverage
+
+			result, err := newRuntime(c).CompareFacets(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Counts, qt.DeepEquals, []schemaext.ObjectCount{test.want})
+		})
+	}
+}

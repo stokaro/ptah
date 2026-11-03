@@ -304,3 +304,21 @@ func TestPlanningDiagnosticKeepsCallerIndexAcrossTargetFiltering(t *testing.T) {
 	c.Assert(*result.Diagnostics[0].ContextObject, qt.Equals, 1)
 	c.Assert(result.ValidateOutcome(request), qt.IsNil)
 }
+
+// The planning context a filtered read leaves out reaches the assessing
+// service beside the captured objects, selected by the service's kinds. It
+// is not part of the assessment inventory, so no receipt accounts for it.
+func TestPlanningCarriesTheContextOutsideTheScope(t *testing.T) {
+	c := qt.New(t)
+	var received featureplan.Request
+	p := objectPlanningProvider(planningFunc(func(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
+		received = request
+		return plannedObjects(ctx, request)
+	}))
+	request := featureplan.Request{Target: "custom", Objects: featureplan.ObjectContext{Context: comparisonRequest(c).Desired}}
+	result, err := mustRuntime(c, p).PlanFeatures(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(received.Objects.Context.Objects.Len(), qt.Equals, 2)
+	c.Assert(received.Objects.Subjects(received.ContextKinds), qt.HasLen, 0)
+	c.Assert(result.Objects, qt.HasLen, 0)
+}

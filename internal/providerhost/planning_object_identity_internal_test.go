@@ -77,3 +77,17 @@ func TestPlanningObjectDatabaseCanonicalizationChecksObservedSessionBinding(t *t
 		})
 	}
 }
+
+// The context inventory takes the same absent-part spelling of the session
+// database as the captured objects do.
+func TestPlanningObjectDatabaseCanonicalizationCoversTheContextInventory(t *testing.T) {
+	c := qt.New(t)
+	subject := &protocol.ComparisonIdentity{Kind: "fixture/query", Database: &protocol.ComparisonPart{}, Name: &protocol.ComparisonPart{Source: "outside", Normalized: "outside"}}
+	request := &protocol.PlanFeaturesRequest{DatabasePath: "/local", ContextInventory: &protocol.ComparisonState{
+		Records:  []*protocol.ComparisonRecord{{Kind: subject.Kind, Subject: proto.CloneOf(subject)}},
+		Coverage: &protocol.ComparisonCoverage{Subjects: []*protocol.ComparisonSubjectCoverage{{Kind: subject.Kind, Subject: proto.CloneOf(subject)}}},
+	}}
+	canonicalizePlanningObjectDatabases(request)
+	c.Assert(request.ContextInventory.Records[0].Subject.Database, qt.IsNil)
+	c.Assert(request.ContextInventory.Coverage.Subjects[0].Subject.Database, qt.IsNil)
+}

@@ -116,7 +116,11 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	}
 
 	guarded, stopGuard := lock.Guard(ctx)
-	runErr := fn(withHeldMigrationLock(guarded, lock))
+	runCtx := withHeldMigrationLock(guarded, lock)
+	if service, err := m.conn.SessionLocker(); err == nil && service != nil {
+		runCtx = withMigrationLockSession(runCtx, m.conn)
+	}
+	runErr := fn(runCtx)
 	// Read before the release, which is not a loss and hides one.
 	lostErr := lock.Err()
 	stopGuard()
@@ -162,6 +166,26 @@ type heldLock interface {
 
 func withHeldMigrationLock(ctx context.Context, lock heldLock) context.Context {
 	return context.WithValue(ctx, heldMigrationLockKey{}, lock)
+}
+
+// migrationLockSessionKey stores the connection whose own session holds the
+// migration lock a provider took for the run.
+type migrationLockSessionKey struct{}
+
+// withMigrationLockSession records that conn's own session holds the
+// migration lock. A provider's lock guards the writes and commits of the
+// session that took it and of no other (see [dbschema.SessionLocker]), so a
+// migration body committed on another session commits unguarded: a lock lost
+// just before the commit would not stop it.
+func withMigrationLockSession(ctx context.Context, conn *dbschema.DatabaseConnection) context.Context {
+	return context.WithValue(ctx, migrationLockSessionKey{}, conn)
+}
+
+// migrationLockSession returns the connection whose own session holds the
+// provider's migration lock, or nil when the run holds no such lock.
+func migrationLockSession(ctx context.Context) *dbschema.DatabaseConnection {
+	conn, _ := ctx.Value(migrationLockSessionKey{}).(*dbschema.DatabaseConnection)
+	return conn
 }
 
 // migrationLockLost returns an error once the migration lock the run holds

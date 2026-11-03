@@ -21,10 +21,12 @@ import (
 	"ptah.run/internal/sqlident"
 )
 
-// Object kinds a cleanup plan can name. Every constant here must correspond to
-// an object kind that at least one dialect's SchemaWriter.DropAllTables really
-// destroys — see coverageFor for the per-dialect mapping and for the writer
-// files that define each dialect's coverage.
+// Object kinds a cleanup plan of a built-in engine can name; a provider's plan
+// names its objects by the provider's own kinds. Every constant here must
+// correspond to an object kind that at least one dialect's
+// SchemaWriter.DropAllTables really destroys — see coverageFor for the
+// per-dialect mapping and for the writer files that define each dialect's
+// coverage.
 const (
 	ObjectTypeAggregate        = "aggregate"
 	ObjectTypeCollation        = "collation"
@@ -71,6 +73,12 @@ type InspectOptions struct {
 // listed on the dialects whose writer drops them explicitly before the tables.
 // Enumerating the full transitive closure of a DROP is not tractable; "what the
 // writer names" is.
+//
+// On a database an executable provider serves (catalog.ServerInfo.Provider),
+// the plan is the provider's own list of what its cleanup removes, the same
+// list its DropAllTables removes. Each object keeps the provider's kind in
+// the provider's words, such as "column table" or "topic", and each change
+// carries no statement, since the provider drops the object in its own way.
 type Plan struct {
 	Objects []Object
 	Changes []Change
@@ -80,8 +88,15 @@ type Plan struct {
 	// dependents before the objects they depend on.
 	executionChanges []Change
 	executionDepths  map[executionObjectIdentity]int
+
+	// provider records a plan built from a provider's list, whose changes
+	// carry no statement, so that narrowing it keeps them that way.
+	provider bool
 }
 
+// Object is one object a cleanup plan names. Type is one of the ObjectType
+// kinds, or, on a database an executable provider serves, the kind the
+// provider names it by, which may be one no constant here carries.
 type Object struct {
 	Type         string
 	Schema       string
@@ -185,8 +200,16 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection) (Plan, erro
 
 // InspectWithOptions returns a cleanup plan after applying caller-selected
 // validation to the reader snapshot. The returned plan also includes the
-// writer-only live-catalog objects that the reader cannot represent.
+// writer-only live-catalog objects that the reader cannot represent. On a
+// database an executable provider serves, the plan is the provider's list,
+// and the reader is read only when opts names a validator.
 func InspectWithOptions(ctx context.Context, conn *dbschema.DatabaseConnection, opts InspectOptions) (Plan, error) {
+	// Before the snapshot and every dialect rule below: those read a built-in
+	// descriptor by the dialect's name, and a provider's cleanup is not
+	// described there.
+	if servedByProvider(conn) {
+		return inspectProviderPlan(ctx, conn, opts)
+	}
 	schema, err := conn.Reader().ReadSchemaContext(ctx)
 	if err != nil {
 		return Plan{}, fmt.Errorf("inspect schema before cleanup: %w", err)
@@ -291,6 +314,11 @@ type ApplyPlanOptions struct {
 
 // ApplyPlanWithOptions executes exactly the changes plan carries and applies
 // the optional execution-boundary validation before the first mutation.
+//
+// On a database an executable provider serves, the provider removes every
+// object it lists together, so a plan runs only when it names exactly the
+// objects the provider lists at execution time. A plan a selector narrowed,
+// or one the database changed under, is refused before anything is removed.
 func ApplyPlanWithOptions(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -303,6 +331,9 @@ func ApplyPlanWithOptions(
 			return opts.ValidateBeforeExecute(nil)
 		}
 		return nil
+	}
+	if servedByProvider(conn) {
+		return applyProviderPlan(ctx, conn, plan, opts)
 	}
 	conn.SchemaWriter().SetDryRun(false)
 	if run, scoped := scopedExecution(describedOf(conn.Info().Dialect), conn.Info().Capabilities); scoped {
@@ -632,6 +663,9 @@ func PlanFromObjects(objects []Object, dialect string) Plan {
 // execution metadata from the receiver. Compatibility adapters use it after
 // selectors remove objects from an inspected plan.
 func (p Plan) WithObjects(objects []Object, dialect string) Plan {
+	if p.provider {
+		return providerPlan(objects)
+	}
 	return planFromObjects(objects, dialect, p.executionDepths)
 }
 

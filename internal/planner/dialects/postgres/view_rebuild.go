@@ -892,20 +892,40 @@ func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.Schema
 	return result
 }
 
-// heldDefinitions is objects with each changed view's definition in the
-// database added to its body, so the drop order sees what the old definition
-// reads.
+// heldDefinitions is objects with each changed view's and materialized view's
+// definition in the database added to its body, so the drop order sees what
+// the old definition reads. Without it, a materialized view whose new body
+// stops reading another changed one is ordered as if it read nothing, and the
+// drop of the one it still reads in the database comes first and is refused.
 func heldDefinitions(diff *difftypes.SchemaDiff, objects []deporder.ViewLike) []deporder.ViewLike {
 	held := make([]deporder.ViewLike, 0, len(objects))
 	for _, object := range objects {
-		for _, viewDiff := range diff.ViewsModified {
-			if !object.Materialized && !object.Routine && viewDiff.Desired.Name == object.Name && viewDiff.PreviousBody != "" {
-				object.Body += "\n" + viewDiff.PreviousBody
-			}
+		if !object.Routine {
+			object.Body += heldBody(diff, object)
 		}
 		held = append(held, object)
 	}
 	return held
+}
+
+// heldBody is the definition the database holds a changed view or
+// materialized view with, after a line break, or empty when the plan does not
+// change the object or does not know that definition.
+func heldBody(diff *difftypes.SchemaDiff, object deporder.ViewLike) string {
+	if object.Materialized {
+		for _, viewDiff := range diff.MaterializedViewsModified {
+			if viewDiff.Desired.Name == object.Name && viewDiff.PreviousBody != "" {
+				return "\n" + viewDiff.PreviousBody
+			}
+		}
+		return ""
+	}
+	for _, viewDiff := range diff.ViewsModified {
+		if viewDiff.Desired.Name == object.Name && viewDiff.PreviousBody != "" {
+			return "\n" + viewDiff.PreviousBody
+		}
+	}
+	return ""
 }
 
 // dropNodes is the statements that drop every overload the database holds.

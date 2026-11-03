@@ -33,11 +33,12 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	}
 	// Preconditions read committed state before this transaction starts. They
 	// must not query the pool while a single-connection transaction owns it.
-	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, m.conn, sqlText)
+	body := m.bodyConnection()
+	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, body, sqlText)
 	if err != nil {
 		return fail(err, fmt.Sprintf("failed to begin transaction for migration %d", migration.Version))
 	}
-	txConn := m.conn.WithExecutor(tx)
+	txConn := body.WithExecutor(tx)
 	rollback := func(err error, prefix string) error {
 		return fail(migrationFailureAfterRollback(migration.Version, err, tx.Rollback(), tx), prefix)
 	}

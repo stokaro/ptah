@@ -94,8 +94,9 @@ func columnDropRelies(diff *difftypes.SchemaDiff, tableDiff difftypes.TableDiff,
 //     policy that reads this table. The tables are ordered so the one holding
 //     the policy goes first, and only a cycle leaves one after;
 //   - an owner operation that may drop a standalone object that reads the
-//     table, such as a type whose attribute is the table's row type, or one
-//     whose object cannot say; see [removedFeatureReads].
+//     table, or one whose object cannot say; see [removedFeatureReads]. A
+//     removed type whose attribute is the table's row type is decided on the
+//     scheduled plan by [Planner.cascadeForLaterTypeDrops].
 func tableDropRelies(diff *difftypes.SchemaDiff, name string, droppedBefore map[string]bool, ahead routinesAhead, droppedPolicies map[objectidentity.Key]bool) bool {
 	return removedRoutineNames(diff, name, ahead) ||
 		removedTableReadsExcept(diff, name, droppedBefore, droppedPolicies) ||

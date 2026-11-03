@@ -101,6 +101,12 @@ func (s modelPlanner) planningRequest(request featureplan.Request) (*protocol.Pl
 		if err != nil {
 			return nil, err
 		}
+		if request.Objects.Context.Objects.Len() != 0 || !request.Objects.Context.Coverage.IsZero() {
+			remote.ContextInventory, err = capture.objects(schemaext.Observed, request.Objects.Context)
+			if err != nil {
+				return nil, err
+			}
+		}
 		canonicalizePlanningObjectDatabases(remote)
 	}
 	for i, change := range request.Changes {
