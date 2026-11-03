@@ -295,10 +295,9 @@ an object the plan creates counts on the database side too: the plan revokes
 what PostgreSQL grants the object when it is created, so the `REVOKE` names a
 privilege the database does not hold yet.
 
-`rls_policies` and `rls_enabled_tables` count the policies and the enablements
-the shared comparison pairs. Against PostgreSQL, policies and row-level security
-belong to their feature owner, so a PostgreSQL report has neither kind. It
-counts the policies under `ptah.run/pgpolicy/policy-change` and the tables with
+`rls_policies` and `rls_enabled_tables` count the policies and enablements the
+shared comparison pairs. A PostgreSQL report has neither: its feature owner
+counts policies under `ptah.run/pgpolicy/policy-change` and tables with
 row-level security on, by `ENABLE` or `FORCE`, under
 `ptah.run/pgpolicy/table-state-change`.
 
@@ -316,8 +315,8 @@ The owner counts as the comparison does. An object both sides hold counts on
 both, also when the plan drops it and creates it again. An object the owner
 leaves alone or cannot decide counts on neither, such as an extension
 `--ignore-extension` names, one a declared column's type needs, or one the
-server installs in every database. An object on a table only one side holds counts with the
-table, under `tables`. A default privilege counts one entry per grantor, schema,
+server installs in every database. An object on a table only one side holds
+counts with the table. A default privilege counts one entry per grantor, schema,
 object type and grantee, and a declaration the built-in privileges already
 satisfy counts on both sides.
 
@@ -578,12 +577,11 @@ sources merge into one composite desired schema. See
 
 ## Which schemas are read
 
-On an engine with schemas, these commands read what `ptah schema apply` reads.
-`--schemas`, or `schemas` in `ptah.yaml`, names the schemas. Without either, a
-PostgreSQL URL that pins `search_path` is read at that schema and one that pins
-none across every schema, together with every schema the desired schema names.
-A URL that pins no schema therefore reports the tables of a schema the desired
-schema does not describe as removals, as `schema apply` would drop them.
+These commands read the schemas `ptah schema apply` reads: the ones `--schemas`
+or `schemas` in `ptah.yaml` name, or else what the URL covers plus every schema
+the desired schema names. A PostgreSQL URL covers its pinned `search_path`, or
+every schema when it pins none, and then the tables of a schema the desired
+schema does not describe are reported as removals, as apply would drop them.
 
 ## Diff two arbitrary schema states
 
@@ -727,12 +725,10 @@ is new; an extension that is not relocatable exits 2 before SQL output.
 - `ptah schema drift` exits `2` (not `1`) when the check itself cannot run —
   an unreachable database, a bad URL, or an unparsable schema source — so
   pipelines can tell "drift found" from "check broken". With `--format json`
-  standard output then carries a failure document in place of the report:
-  `contract_version`, `command` and an `error` object, and none of the report's
-  fields, so no reader takes it for a database without drift. `error.message`
-  is the line standard error prints after `error:`, and `error.kind` says why
-  the target database could not be opened; see
-  [Why a command failed](../../reference/exit-codes/#why-a-command-failed).
+  standard output then carries only `contract_version`, `command` and an
+  `error` object, so no reader takes it for a database without drift.
+  [Why a command failed](../../reference/exit-codes/#why-a-command-failed)
+  describes `error`.
 - `ptah schema compare` without `--exit-code` never signals differences through
   its status code; scripts that forget the flag silently pass.
 
