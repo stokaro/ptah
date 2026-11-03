@@ -76,3 +76,52 @@ func TestAcceptRejectsFeatureChanges(t *testing.T) {
 		})
 	}
 }
+
+// indexKindRequest is one table declaring index by_status, and its reply.
+func indexKindRequest() (schemapreparation.Request, schemapreparation.Result) {
+	request := schemapreparation.Request{Tables: []schemapreparation.Table{{Desired: schemacapture.TableDeclaration{
+		Table:   schemamodel.Table{Name: "events"},
+		Indexes: []schemamodel.Index{{Name: "by_status", Fields: []string{"status"}, Type: "GLOBAL ASYNC"}},
+	}}}}
+	reply := request.Clone()
+	reply.Tables[0].IndexMethods = map[string]string{"by_status": "async"}
+	return request, schemapreparation.Result{Complete: true, Tables: reply.Tables}
+}
+
+func TestAcceptIndexMethods_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	request, result := indexKindRequest()
+	capture, err := schemapreparation.Accept(request, result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(capture.Prepared[0].IndexMethods, qt.DeepEquals, map[string]string{"by_status": "async"})
+	c.Assert(capture.Source[0].IndexMethods, qt.IsNil)
+	// The declaration keeps the type the source wrote, and the capture its
+	// own copy of the kinds.
+	c.Assert(capture.Prepared[0].Desired.Indexes[0].Type, qt.Equals, "GLOBAL ASYNC")
+	result.Tables[0].IndexMethods["by_status"] = "changed"
+	c.Assert(capture.Prepared[0].IndexMethods, qt.DeepEquals, map[string]string{"by_status": "async"})
+	clone := capture.Clone()
+	clone.Prepared[0].IndexMethods["by_status"] = "changed"
+	c.Assert(capture.Prepared[0].IndexMethods, qt.DeepEquals, map[string]string{"by_status": "async"})
+}
+
+func TestAcceptIndexMethods_FailurePath(t *testing.T) {
+	t.Run("a kind for an index the table does not declare", func(t *testing.T) {
+		c := qt.New(t)
+		request, result := indexKindRequest()
+		result.Tables[0].IndexMethods["by_other"] = "async"
+		capture, err := schemapreparation.Accept(request, result)
+		c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+		c.Assert(err, qt.ErrorMatches, `.*states the kind of index "by_other", which the table does not declare`)
+		c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
+	})
+	t.Run("an input that already states kinds", func(t *testing.T) {
+		c := qt.New(t)
+		request, result := indexKindRequest()
+		request.Tables[0].IndexMethods = map[string]string{"by_status": "async"}
+		capture, err := schemapreparation.Accept(request, result)
+		c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+		c.Assert(err, qt.ErrorMatches, `.*preparation input already states index kinds`)
+		c.Assert(capture, qt.DeepEquals, schemapreparation.Capture{})
+	})
+}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 
@@ -17,6 +18,7 @@ import (
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
 )
 
@@ -41,6 +43,14 @@ type Table struct {
 	// ColumnPrimaryKeysPrepared makes Fields.Primary authoritative for column
 	// comparison instead of deriving membership from common table constraints.
 	ColumnPrimaryKeysPrepared bool
+	// IndexMethods holds the kind the target reads each declared index as,
+	// keyed by the index's declared name and spelled as the target's reader
+	// spells [ptah.run/catalog.Index.Method]. It is output-only, and a target
+	// that states no kind leaves it nil. The index comparison hands the
+	// target's index rules a declared index with its stated kind in Type
+	// ([schemacomparison.Indexes.OptionsEqual]); the source declaration in
+	// Desired keeps the type it was written with.
+	IndexMethods map[string]string
 }
 
 // Clone returns independent common state and immutable feature snapshots.
@@ -48,6 +58,7 @@ func (t Table) Clone() Table {
 	t.Desired = t.Desired.Clone()
 	t.Current = t.Current.Clone()
 	t.ResolvedFacets = slices.Clone(t.ResolvedFacets)
+	t.IndexMethods = maps.Clone(t.IndexMethods)
 	return t
 }
 
@@ -71,7 +82,8 @@ func (r Request) Clone() Request {
 // Result contains target-normalized comparison inputs in request order. Services
 // may resolve desired Fields.Primary and set ColumnPrimaryKeysPrepared. All
 // other captured state, including observations and coverage, stays unchanged.
-// ResolvedFacets may carry resolved values for existing declared facet kinds.
+// ResolvedFacets may carry resolved values for existing declared facet kinds,
+// and IndexMethods the kinds of declared indexes.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -163,6 +175,9 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	if err := acceptResolvedFacets(before, after.ResolvedFacets, semantics); err != nil {
 		return err
 	}
+	if err := acceptIndexMethods(before, after.IndexMethods); err != nil {
+		return err
+	}
 	before, after = before.Clone(), after.Clone()
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)
@@ -180,6 +195,20 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	}
 	if !reflect.DeepEqual(before.Desired, unchanged) {
 		return fmt.Errorf("%w: preparation changed state outside column key membership", ErrInvalid)
+	}
+	return nil
+}
+
+// acceptIndexMethods refuses a stated kind for an index the table does not
+// declare, and an input that already states kinds.
+func acceptIndexMethods(source Table, methods map[string]string) error {
+	if len(source.IndexMethods) != 0 {
+		return fmt.Errorf("%w: preparation input already states index kinds", ErrInvalid)
+	}
+	for name := range methods {
+		if !slices.ContainsFunc(source.Desired.Indexes, func(index schemamodel.Index) bool { return index.Name == name }) {
+			return fmt.Errorf("%w: preparation states the kind of index %q, which the table does not declare", ErrInvalid, name)
+		}
 	}
 	return nil
 }

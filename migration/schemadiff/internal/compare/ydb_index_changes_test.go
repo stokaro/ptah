@@ -21,7 +21,7 @@ func compareYDBIndexes(desired []schemamodel.Index, database []catalog.Index, ca
 	compare.IndexesWithSemantics(
 		&schemamodel.Database{Indexes: desired},
 		&catalog.Database{Indexes: database},
-		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps, ydbcomparison.Rules(),
+		diff, platform.YDB, identifier.ForDialect(platform.YDB), nil, caps, ydbcomparison.Rules(), nil,
 	)
 	return diff
 }
@@ -36,7 +36,7 @@ func columnsWithYDBRules(desired schemamodel.Field, current catalog.Column, dial
 // built-in runtime registers for YDB.
 func indexesWithYDBRules(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
 	compare.IndexesWithSemantics(desired, current, diff, dialect, identifier.ForDialect(dialect), nil,
-		capability.ForDialect(dialect), ydbcomparison.Rules())
+		capability.ForDialect(dialect), ydbcomparison.Rules(), nil)
 }
 
 // namedIndex renames one of the indexes ydbDeclaredIndex and ydbIndex build.
@@ -75,7 +75,7 @@ func TestIndexes_YDBPairsARenamedIndex(t *testing.T) {
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(compare.IndexRenames(&schemamodel.Database{Indexes: desired}, &catalog.Database{Indexes: database},
-		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), ydbcomparison.Rules()), qt.DeepEquals, want)
+		platform.YDB, identifier.ForDialect(platform.YDB), nil, capability.YDB262(), ydbcomparison.Rules(), nil), qt.DeepEquals, want)
 }
 
 // TestIndexes_YDBPairsEqualRenamesInNameOrder pairs two equal indexes renamed

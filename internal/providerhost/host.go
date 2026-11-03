@@ -113,6 +113,10 @@ var hostFeatures = []string{
 	// hands their changes to the table's owner; see reader.ReadSchemaContext
 	// and commonPlanner.indexChanges.
 	provider.ObservedIndexesFeature,
+	// Table preparation states the kind of each declared index, and the
+	// index rules compare it with the held index's method; see
+	// observedIndexRules.
+	provider.IndexMethodsFeature,
 	provider.DatabaseContextFeature,
 	provider.ValueContextFeature,
 	// A command's scope names a provider's objects by the selector types its

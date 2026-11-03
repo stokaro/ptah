@@ -168,6 +168,16 @@ func declaredRelations(desired *schemamodel.Database, semantics identifier.Seman
 }
 
 func featureParents(desired *schemamodel.Database, current *catalog.Database, target string, semantics identifier.Semantics) ([]schemaext.ParentState, error) {
+	parents, err := declaredParents(desired, target, semantics)
+	if err != nil {
+		return nil, err
+	}
+	return withObservedParents(parents, current, target, semantics)
+}
+
+// declaredParents returns the declared owners of feature values, keyed by
+// identity, and refuses a nameless or repeated one.
+func declaredParents(desired *schemamodel.Database, target string, semantics identifier.Semantics) (map[objectidentity.Key]schemaext.ParentState, error) {
 	declared, err := declaredFacetSlots(desired, target, semantics)
 	if err != nil {
 		return nil, err
@@ -183,6 +193,14 @@ func featureParents(desired *schemamodel.Database, current *catalog.Database, ta
 		}
 		parents[ref.Key()] = schemaext.ParentState{Subject: ref, Desired: true}
 	}
+	return parents, nil
+}
+
+// withObservedParents adds the owners current holds to the declared ones,
+// which it consumes, and returns them in identity order.
+func withObservedParents(parents map[objectidentity.Key]schemaext.ParentState, current *catalog.Database, target string,
+	semantics identifier.Semantics,
+) ([]schemaext.ParentState, error) {
 	for _, slot := range observedFacetSlots(current, target, semantics) {
 		ref := slot.subject
 		parent, found := parents[ref.Key()]

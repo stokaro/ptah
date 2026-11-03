@@ -2382,6 +2382,13 @@ target scopes. Source facets, target bindings, observations, and knowledge stay
 unchanged. The runtime validates ownership and snapshots values through codecs
 before comparison. Incomplete or invalid replies and cancellation return no result.
 
+A prepared table's `IndexMethods` may state the kind of each declared index,
+keyed by its name and spelled as the target's reader spells
+`catalog.Index.Method`. The index comparison then hands the target's index
+rules that kind in the declared index's `Type`, and the diff keeps the type the
+source wrote. The runtime rejects a kind for an index the table does not
+declare, and an input that already states kinds.
+
 `Target.Lowering` selects `schemapreparation.Lowering`. It rewrites the whole
 desired schema into the shape the target's reader reports it in before a
 comparison reads it, such as a YDB UNIQUE constraint as the unique index the
