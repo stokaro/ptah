@@ -116,3 +116,58 @@ func TestSplitter_SplitStatements_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// splitStatement is the part of a split statement the batch tests compare.
+type splitStatement struct {
+	SQL      string
+	Line     int
+	Comments []string
+}
+
+// A GO on a line of its own ends a SQL Server batch, and the statement in it,
+// as the migrator's splitter ends them. A statement-bodied trigger therefore
+// ends at the GO rather than taking the DROP TABLE after it into its body; a
+// count and a comment on the GO line belong to no statement; and a comment on
+// the line after the GO is the next statement's. Read as a word, GO opened the
+// next statement, and no rule saw a DROP TABLE behind one.
+func TestSplit_EndsABatchAtTheSeparator(t *testing.T) {
+	for _, test := range []struct {
+		name, dialect, sql string
+		want               []splitStatement
+	}{
+		{
+			name:    "SQL Server",
+			dialect: "sqlserver",
+			sql: "CREATE TRIGGER trg ON t AFTER INSERT AS SET NOCOUNT ON;\nGO\nDROP TABLE users;\n" +
+				"  go 2 -- twice\n-- audit\nDROP TABLE audit\nGO",
+			want: []splitStatement{
+				{SQL: "CREATE TRIGGER trg ON t AFTER INSERT AS SET NOCOUNT ON;", Line: 1},
+				{SQL: "DROP TABLE users", Line: 3},
+				{SQL: "DROP TABLE audit", Line: 6, Comments: []string{"-- audit"}},
+			},
+		},
+		{
+			name:    "a GO that shares its line is a word",
+			dialect: "sqlserver",
+			sql:     "SELECT 1 AS GO;\nDROP TABLE users;",
+			want:    []splitStatement{{SQL: "SELECT 1 AS GO", Line: 1}, {SQL: "DROP TABLE users", Line: 2}},
+		},
+		{
+			name:    "a dialect without a separator",
+			dialect: "postgres",
+			sql:     "SELECT 1;\nGO\nDROP TABLE users;",
+			want:    []splitStatement{{SQL: "SELECT 1", Line: 1}, {SQL: "GO\nDROP TABLE users", Line: 2}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var got []splitStatement
+
+			for _, statement := range lintscan.Split(test.sql, lintscan.ForDialect(test.dialect)) {
+				got = append(got, splitStatement{SQL: statement.SQL, Line: statement.Line, Comments: statement.Comments})
+			}
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
