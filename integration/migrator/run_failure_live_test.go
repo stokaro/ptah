@@ -126,7 +126,7 @@ func TestRunResultCarriesTheServerCodeLive(t *testing.T) {
 			// The control: the message still quotes the server, so the object
 			// carries the code alone by construction and not because the
 			// server said nothing.
-			c.Assert(result.Error, qt.Contains, createdTable+"_absent")
+			c.Assert(result.Error.Message, qt.Contains, createdTable+"_absent")
 		})
 	}
 }

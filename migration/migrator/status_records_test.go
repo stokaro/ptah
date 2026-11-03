@@ -136,7 +136,7 @@ func TestMigrationStatusDocumentCarriesItsContractVersion(t *testing.T) {
 	encoded, err := json.Marshal(status)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(encoded), qt.Contains, `"contract_version":1`)
+	c.Assert(string(encoded), qt.Contains, `"contract_version":2`)
 	c.Assert(string(encoded), qt.Contains, `"state":"pending"`)
 	var decoded migrator.MigrationStatus
 	c.Assert(json.Unmarshal(encoded, &decoded), qt.IsNil)

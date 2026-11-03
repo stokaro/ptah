@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/onlineddl"
@@ -175,8 +176,9 @@ explicitly opts out with -- +ptah no_transaction. Use --tx-mode=all to wrap the
 whole pending up batch in one transaction on supported dialects, or
 --tx-mode=none to run without migration transaction wrapping.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := migrateUpCommand(cmd, &opts); err != nil {
-				return err
+			document := &runDocument{enabled: opts.jsonOutput, out: cmd.OutOrStdout()}
+			if err := migrateUpCommand(cmd, &opts, document); err != nil {
+				return document.failBeforeRun(err, opts.dryRun)
 			}
 			// The work is finite and it is done, so an interrupt arriving
 			// between here and the process exit stopped nothing. See
@@ -410,7 +412,7 @@ func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
 	return cmd.ErrOrStderr()
 }
 
-func migrateUpCommand(cmd *cobra.Command, opts *options) error {
+func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) error {
 	// --limit and --to-version select different prefixes of the pending list and
 	// neither outranks the other, so the pair is refused here rather than deep
 	// in the migrator, whose own refusal names an operand ("amount") that no
@@ -633,7 +635,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 		)
 		emit.Println("✅ Database is already up to date!")
-		return emitUpToDateResult(cmd, opts, status)
+		return document.write(migrator.RunEvidence{Direction: migrator.MigrationDirectionUp, After: status, DryRun: opts.dryRun})
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
@@ -669,7 +671,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 
 	// Run migrations
 	startedAt := time.Now()
-	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, expected)
+	outcome := applyPendingMigrations(cmd, conn, mig, opts, toVersion, preflightHook, expected, document)
 	// A pre-migration hook is work a run does before applying something, so a
 	// selection that came out empty passes none of them, the report above
 	// included. That report is what says why nothing was applied, and a bounded
@@ -748,7 +750,7 @@ func connectTarget(
 	defer cancelConnect()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to database: %w", err)
+		return nil, fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))
 	}
 	return conn, nil
 }
@@ -878,6 +880,7 @@ func applyPendingMigrations(
 	toVersion int64,
 	preflightHook migrator.PreMigrationHook,
 	expected *expectedSequence,
+	document *runDocument,
 ) migrateUpOutcome {
 	outcome := migrateUpOutcome{}
 	// The selected plan is captured rather than derived from the pending list
@@ -919,10 +922,7 @@ func applyPendingMigrations(
 		status = nil
 	}
 	outcome.status = status
-	if !opts.jsonOutput {
-		return outcome
-	}
-	if err := emitRunResult(cmd.OutOrStdout(), migrator.RunEvidence{
+	if err := document.write(migrator.RunEvidence{
 		Direction: migrator.MigrationDirectionUp,
 		Plan:      outcome.plan,
 		After:     status,
@@ -934,11 +934,48 @@ func applyPendingMigrations(
 	return outcome
 }
 
-func emitUpToDateResult(cmd *cobra.Command, opts *options, status *migrator.MigrationStatus) error {
-	if !opts.jsonOutput {
+// Command is the command a run document names.
+const Command = "migrations up"
+
+// runDocument is the one document a --json run prints on standard output. It
+// is written at most once, so a failure that follows the run's document adds
+// no second one.
+type runDocument struct {
+	enabled bool
+	out     io.Writer
+	written bool
+}
+
+// write writes the run's evidence as its document, and does nothing without
+// --json or once a document was written.
+func (d *runDocument) write(evidence migrator.RunEvidence) error {
+	if !d.enabled || d.written {
 		return nil
 	}
-	return emitRunResult(cmd.OutOrStdout(), migrator.RunEvidence{Direction: migrator.MigrationDirectionUp, After: status, DryRun: opts.dryRun})
+	d.written = true
+	evidence.Command = Command
+	return emitRunResult(d.out, evidence)
+}
+
+// failBeforeRun writes the document for a run that failed with err before it
+// wrote one, and returns err.
+//
+// Every failure that reaches here without a document stopped before the
+// migrator selected anything: the run's own document is written as soon as the
+// migrator returns, and nothing before it changes the database. So the run
+// sent no migration statement, and the document says failed, with nothing
+// planned and no status.
+func (d *runDocument) failBeforeRun(err error, dryRun bool) error {
+	writeErr := d.write(migrator.RunEvidence{
+		Direction:  migrator.MigrationDirectionUp,
+		Err:        err,
+		DryRun:     dryRun,
+		NotStarted: true,
+	})
+	if writeErr != nil {
+		return errors.Join(err, writeErr)
+	}
+	return err
 }
 
 // humanOutput selects where this command's human-facing output goes.

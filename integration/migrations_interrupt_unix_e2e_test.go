@@ -71,6 +71,10 @@ ORDER BY tablename COLLATE "C"`
 // gadgets table" is also what a migration 2 that never applies would produce.
 func TestMigrationsUpInterruptedDuringAMigrationE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	// The binary is compiled on its first use in this test process, which
+	// takes minutes on a CI runner. Compiling it before the deadline starts
+	// leaves the whole deadline to the runs it bounds.
+	clirun.Build(qt.New(t), clirun.Ptah)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -120,6 +124,10 @@ func TestMigrationsUpInterruptedDuringAMigrationE2E(t *testing.T) {
 // body does drop the table when nobody stops it.
 func TestMigrationsDownInterruptedDuringARollbackE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	// The binary is compiled on its first use in this test process, which
+	// takes minutes on a CI runner. Compiling it before the deadline starts
+	// leaves the whole deadline to the runs it bounds.
+	clirun.Build(qt.New(t), clirun.Ptah)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 

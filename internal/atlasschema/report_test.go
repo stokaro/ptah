@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/dblock"
+	"ptah.run/internal/errorkind"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/schemadiff"
@@ -33,6 +35,9 @@ type reportErrors struct {
 	preflight   error
 	simulation  error
 	plain       error
+	// unreachable is a target connection the command marked as one, whose
+	// dial failed.
+	unreachable error
 }
 
 func newReportErrors(c *qt.C) reportErrors {
@@ -60,6 +65,9 @@ func newReportErrors(c *qt.C) reportErrors {
 		preflight:  preflight,
 		simulation: &atlasschema.SimulationError{Stage: "plan", Err: errors.New("no such table: users")},
 		plain:      errors.New("connect to --db-url: connection refused"),
+		unreachable: fmt.Errorf("connect to --db-url: %w", errorkind.TargetConnection(
+			&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
+		)),
 	}
 }
 
@@ -89,6 +97,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeApplied,
 				PlanName:        "add_orders",
 				PlanDigest:      "sha256:" + fmt.Sprintf("%064x", 9),
@@ -100,6 +109,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Completed: atlasschema.ApplyOutcomeNoChanges},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeNoChanges,
 			},
 		},
@@ -112,6 +122,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeNoChanges,
 				Undecided:       withheldRoles("reporter"),
 			},
@@ -124,6 +135,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeApplied,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Undecided:       withheldRoles("reporter"),
@@ -134,6 +146,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Completed: atlasschema.ApplyOutcomeDryRun},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeDryRun,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
 			},
@@ -143,6 +156,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Completed: atlasschema.ApplyOutcomeCanceled},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeCanceled,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
 			},
@@ -152,6 +166,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Err: errs.staleSchema},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Refusal: &atlasschema.Refusal{
 					Code:                atlasschema.RefusalStalePlan,
@@ -159,7 +174,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 					PlanFingerprint:     "sha256:" + fmt.Sprintf("%064x", 1),
 					DatabaseFingerprint: "sha256:" + fmt.Sprintf("%064x", 2),
 				},
-				Error: errs.staleSchema.Error(),
+				Error: &errorkind.Report{Message: errs.staleSchema.Error()},
 			},
 		},
 		{
@@ -167,6 +182,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Err: errs.staleRows},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Refusal: &atlasschema.Refusal{
 					Code:                atlasschema.RefusalStalePlan,
@@ -174,7 +190,7 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 					PlanFingerprint:     "sha256:" + fmt.Sprintf("%064x", 3),
 					DatabaseFingerprint: "sha256:" + fmt.Sprintf("%064x", 4),
 				},
-				Error: errs.staleRows.Error(),
+				Error: &errorkind.Report{Message: errs.staleRows.Error()},
 			},
 		},
 		{
@@ -182,12 +198,13 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Err: errs.fenced},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Refusal: &atlasschema.Refusal{
 					Code:   atlasschema.RefusalProtectedTable,
 					Tables: []string{"public.regions", "regions"},
 				},
-				Error: errs.fenced.Error(),
+				Error: &errorkind.Report{Message: errs.fenced.Error()},
 			},
 		},
 		{
@@ -195,9 +212,10 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Err: errs.lockTimeout},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalLockTimeout},
-				Error:           errs.lockTimeout.Error(),
+				Error:           &errorkind.Report{Message: errs.lockTimeout.Error()},
 			},
 		},
 		{
@@ -205,10 +223,11 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.preflight},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalTransactionPreflight},
-				Error:           errs.preflight.Error(),
+				Error:           &errorkind.Report{Message: errs.preflight.Error()},
 			},
 		},
 		{
@@ -216,10 +235,11 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Err: errs.simulation},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeRefused,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
 				Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalSimulationFailed},
-				Error:           errs.simulation.Error(),
+				Error:           &errorkind.Report{Message: errs.simulation.Error()},
 			},
 		},
 		{
@@ -227,8 +247,19 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Err: errs.plain},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeFailed,
-				Error:           errs.plain.Error(),
+				Error:           &errorkind.Report{Message: errs.plain.Error()},
+			},
+		},
+		{
+			name:     "a target the run could not reach",
+			evidence: atlasschema.ApplyEvidence{Err: errs.unreachable},
+			want: atlasschema.ApplyReport{
+				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
+				Outcome:         atlasschema.ApplyOutcomeFailed,
+				Error:           &errorkind.Report{Kind: errorkind.DatabaseUnreachable, Message: errs.unreachable.Error()},
 			},
 		},
 		{
@@ -236,9 +267,10 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.ApplyEvidence{Units: atlasschema.SQLApplyUnitReports(statements), Dispatched: true, Err: errs.plain},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeUnknown,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
-				Error:           errs.plain.Error(),
+				Error:           &errorkind.Report{Message: errs.plain.Error()},
 			},
 		},
 		{
@@ -248,9 +280,10 @@ func TestNewApplyReport_ClassifiesFromTheEvidence(t *testing.T) {
 			},
 			want: atlasschema.ApplyReport{
 				ContractVersion: atlasschema.ApplyReportContractVersion,
+				Command:         atlasschema.ApplyReportCommand,
 				Outcome:         atlasschema.ApplyOutcomeUnknown,
 				Units:           atlasschema.SQLApplyUnitReports(statements),
-				Error:           errs.lockTimeout.Error(),
+				Error:           &errorkind.Report{Message: errs.lockTimeout.Error()},
 			},
 		},
 	}
@@ -296,6 +329,7 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &plan, Document: document, Path: "add_orders.plan.json"},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeChanges,
 				PlanDigest:      digest.FromBytes(document).String(),
 				PlanPath:        "add_orders.plan.json",
@@ -307,6 +341,7 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &plan, Document: document},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeChanges,
 				PlanDigest:      digest.FromBytes(document).String(),
 				Plan:            &plan,
@@ -317,6 +352,7 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &synced},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeNoChanges,
 			},
 		},
@@ -325,6 +361,7 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &synced, Undecided: withheldRoles("reporter")},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeNoChanges,
 				Undecided:       withheldRoles("reporter"),
 			},
@@ -334,6 +371,7 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &plan, Document: document, Undecided: withheldRoles("reporter")},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeChanges,
 				PlanDigest:      digest.FromBytes(document).String(),
 				Plan:            &plan,
@@ -345,12 +383,13 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Err: errs.fenced},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeRefused,
 				Refusal: &atlasschema.Refusal{
 					Code:   atlasschema.RefusalProtectedTable,
 					Tables: []string{"public.regions", "regions"},
 				},
-				Error: errs.fenced.Error(),
+				Error: &errorkind.Report{Message: errs.fenced.Error()},
 			},
 		},
 		{
@@ -358,8 +397,19 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Err: errs.plain},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeFailed,
-				Error:           errs.plain.Error(),
+				Error:           &errorkind.Report{Message: errs.plain.Error()},
+			},
+		},
+		{
+			name:     "a target the run could not reach",
+			evidence: atlasschema.PlanEvidence{Err: errs.unreachable},
+			want: atlasschema.PlanReport{
+				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
+				Outcome:         atlasschema.PlanOutcomeFailed,
+				Error:           &errorkind.Report{Kind: errorkind.DatabaseUnreachable, Message: errs.unreachable.Error()},
 			},
 		},
 		{
@@ -367,8 +417,9 @@ func TestNewPlanReport_ClassifiesFromTheEvidence(t *testing.T) {
 			evidence: atlasschema.PlanEvidence{Plan: &plan, Document: document, Path: "add_orders.plan.json", Err: errs.plain},
 			want: atlasschema.PlanReport{
 				ContractVersion: atlasschema.PlanReportContractVersion,
+				Command:         atlasschema.PlanReportCommand,
 				Outcome:         atlasschema.PlanOutcomeFailed,
-				Error:           errs.plain.Error(),
+				Error:           &errorkind.Report{Message: errs.plain.Error()},
 			},
 		},
 	}
@@ -400,7 +451,8 @@ func TestReports_WireNames(t *testing.T) {
 	}
 
 	planReport, err := json.Marshal(atlasschema.PlanReport{
-		ContractVersion: 2,
+		ContractVersion: 3,
+		Command:         atlasschema.PlanReportCommand,
 		Outcome:         atlasschema.PlanOutcomeChanges,
 		PlanDigest:      "sha256:d",
 		PlanPath:        "p.plan.json",
@@ -410,32 +462,34 @@ func TestReports_WireNames(t *testing.T) {
 			Code: atlasschema.RefusalStalePlan, Tables: []string{"t"}, Changed: "rows",
 			PlanFingerprint: "sha256:a", DatabaseFingerprint: "sha256:b",
 		},
-		Error: "e",
+		Error: &errorkind.Report{Kind: errorkind.DatabaseUnreachable, Message: "e"},
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(planReport), qt.Equals, `{"contract_version":2,"outcome":"changes",`+
+	c.Assert(string(planReport), qt.Equals, `{"contract_version":3,"command":"schema plan","outcome":"changes",`+
 		`"plan_digest":"sha256:d","plan_path":"p.plan.json",`+
 		`"plan":{"format_version":1,"name":"p","dialect":"sqlite","from_fingerprint":"sha256:f",`+
 		`"to_fingerprint":"sha256:t","destructive":true,"statements":[{"sql":"S","severity":"destructive","reason":"R"}]},`+
 		`"undecided":{"common":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}]},`+
 		`"refusal":{"code":"stale-plan","tables":["t"],"changed":"rows",`+
-		`"plan_fingerprint":"sha256:a","database_fingerprint":"sha256:b"},"error":"e"}`)
+		`"plan_fingerprint":"sha256:a","database_fingerprint":"sha256:b"},`+
+		`"error":{"kind":"database_unreachable","message":"e"}}`)
 
 	applyReport, err := json.Marshal(atlasschema.ApplyReport{
-		ContractVersion: 3,
+		ContractVersion: 4,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeUnknown,
 		PlanName:        "p",
 		PlanDigest:      "sha256:d",
 		Units:           atlasschema.SQLApplyUnitReports([]string{"S"}),
 		Undecided:       withheldRoles("r"),
 		Refusal:         &atlasschema.Refusal{Code: atlasschema.RefusalLockTimeout},
-		Error:           "e",
+		Error:           &errorkind.Report{Message: "e"},
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(applyReport), qt.Equals, `{"contract_version":3,"outcome":"unknown",`+
+	c.Assert(string(applyReport), qt.Equals, `{"contract_version":4,"command":"schema apply","outcome":"unknown",`+
 		`"plan_name":"p","plan_digest":"sha256:d","units":[{"sql":"S"}],`+
 		`"undecided":{"common":[{"kind":"role","name":"r","reason":"not-inspected","provenance":"observed"}]},`+
-		`"refusal":{"code":"lock-timeout"},"error":"e"}`)
+		`"refusal":{"code":"lock-timeout"},"error":{"message":"e"}}`)
 }
 
 // withheldRoles is what the comparison withholds for declared roles a read
@@ -483,8 +537,10 @@ func TestReports_OutcomeAndRefusalValues(t *testing.T) {
 	}, qt.DeepEquals, []atlasschema.RefusalCode{
 		"stale-plan", "protected-table", "lock-timeout", "transaction-preflight", "simulation-failed",
 	})
-	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 2)
-	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 3)
+	c.Assert(atlasschema.PlanReportContractVersion, qt.Equals, 3)
+	c.Assert(atlasschema.ApplyReportContractVersion, qt.Equals, 4)
+	c.Assert(atlasschema.PlanReportCommand, qt.Equals, "schema plan")
+	c.Assert(atlasschema.ApplyReportCommand, qt.Equals, "schema apply")
 }
 
 // TestDecodePlanFile_HappyPath holds the digest and the plan to the bytes the

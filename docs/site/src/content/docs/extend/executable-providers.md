@@ -708,7 +708,7 @@ The confirmation output shows the operation's kind, subject, and captured
 impact and access assessments. A conflicting transaction requirement refuses
 the whole plan before any operation runs.
 
-Apply JSON reports use contract version `3` and an ordered `units` list.
+Apply JSON reports use contract version `4` and an ordered `units` list.
 Each entry contains `sql` or a `native` summary. Native summaries omit opaque
 provider payloads and are reports, not execution plans.
 

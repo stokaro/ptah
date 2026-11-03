@@ -905,3 +905,10 @@ v0.16.1 ptah.run/dialect/timescaledb/tsschema
 # and BindValueContexts; custom runtimes implement the explicit services rather
 # than infer a root from an object's identity. Pre-v1, so no compatibility is owed.
 v0.16.1 ptah.run/engine
+
+# A run document names why a run could not open its target database.
+# RunResult.Error becomes an *ErrorReport carrying the message and a kind from a
+# closed vocabulary, and StatusContractVersion and RunContractVersion rise to 2
+# because the status command gains a failure document and the run document's
+# error changes shape. Pre-v1, so no compatibility is owed to the string field.
+v0.17.0 ptah.run/migration/migrator

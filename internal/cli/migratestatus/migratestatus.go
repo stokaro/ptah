@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/ddltx"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -79,12 +80,62 @@ This command displays information about:
 This is useful for checking the state of your database before running
 migrations or for debugging migration issues.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return migrateStatusCommand(cmd, &opts)
+			document := &statusDocument{enabled: opts.jsonOutput, out: cmd.OutOrStdout()}
+			err := migrateStatusCommand(cmd, &opts, document)
+			if err == nil {
+				return nil
+			}
+			if writeErr := document.writeFailure(err); writeErr != nil {
+				return errors.Join(err, writeErr)
+			}
+			return err
 		},
 	}
 	registerFlags(cmd, &opts)
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+// Command is the command a status document names.
+const Command = "migrations status"
+
+// NewFailureDocument is what `migrations status --json` prints when it fails
+// with err: the status contract version, the command and the error, and none
+// of the status fields. A document carrying error is never a status.
+func NewFailureDocument(err error) errorkind.Failure {
+	return errorkind.NewFailure(migrator.StatusContractVersion, Command, err)
+}
+
+// statusDocument is the one document a --json run prints on standard output:
+// the status when the run read one, and the failure otherwise. A failure that
+// follows the status, such as the --exit-code verdict, adds no second one.
+type statusDocument struct {
+	enabled bool
+	out     io.Writer
+	written bool
+}
+
+// writeStatus writes status as the run's document.
+func (d *statusDocument) writeStatus(status *migrator.MigrationStatus) error {
+	d.written = true
+	document := *status
+	document.Command = Command
+	return outputJSON(d.out, &document)
+}
+
+// writeFailure writes the failure document for err, unless the run already
+// wrote its document or was not asked for one.
+func (d *statusDocument) writeFailure(err error) error {
+	if !d.enabled || d.written {
+		return nil
+	}
+	d.written = true
+	encoder := json.NewEncoder(d.out)
+	encoder.SetIndent("", "  ")
+	if encodeErr := encoder.Encode(NewFailureDocument(err)); encodeErr != nil {
+		return fmt.Errorf("write the JSON result: %w", encodeErr)
+	}
+	return nil
 }
 
 func registerFlags(cmd *cobra.Command, opts *options) {
@@ -94,7 +145,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output with detailed migration information")
-	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Output status in JSON format")
+	flags.BoolVar(&opts.jsonOutput, jsonFlag, false,
+		"Print the status as one JSON document, or the failure when the status cannot be read")
 	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false,
 		"Exit with 1 when the database is not up to date with the migration directory")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
@@ -121,7 +173,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
-func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
+func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDocument) error {
 	dbURL := opts.dbURL
 	migrationsDir := opts.migrationsDir
 	dirFormatValue := opts.dirFormat
@@ -277,7 +329,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
-		return fmt.Errorf("error connecting to database: %w", err)
+		return fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 	// A status is a read, and an account that may only read the database has
@@ -312,7 +364,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.jsonOutput {
-		if err := outputJSON(cmd.OutOrStdout(), status); err != nil {
+		if err := document.writeStatus(status); err != nil {
 			return err
 		}
 	} else if err := outputHuman(emit, status, conn, opts.verbose); err != nil {
