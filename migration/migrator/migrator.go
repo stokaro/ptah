@@ -1806,7 +1806,10 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 // temporary table, holds for the migrations after it in the call and for none
 // in a later call. Revision bookkeeping names the revision table with its
 // schema, so that state cannot move it. On SQLite the bodies run on the
-// connection pool's sessions instead, and a dry run pins nothing.
+// connection pool's sessions instead, and a dry run pins nothing. On a
+// provider's connection that holds the migration lock the bodies run on the
+// connection's own session, where the provider guards each commit, and what
+// they leave there outlives the call.
 func (m *Migrator) MigrateUpWithOptions(ctx context.Context, opts MigrateUpOptions) (err error) {
 	if err := validateMigrateUpOptions(opts); err != nil {
 		return err

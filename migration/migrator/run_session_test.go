@@ -100,12 +100,42 @@ func (t *sessionTrail) statementsOn(session int) []string {
 	return statements
 }
 
+// lockingRecorder is a sessionRecorder whose connection's own session takes
+// the migration lock, as a provider's does. The sessions it opens take none.
+type lockingRecorder struct {
+	*sessionRecorder
+}
+
+func (r lockingRecorder) Open(context.Context, dbschema.NativeRequest) (dbschema.NativeSession, error) {
+	return r, nil
+}
+
+func (r lockingRecorder) SessionLocker() (dbschema.SessionLocker, error) { return r, nil }
+
+func (lockingRecorder) TryLock(context.Context, string) (dbschema.SessionLock, error) {
+	return heldSessionLock{}, nil
+}
+
+// heldSessionLock is a provider lock that stays held.
+type heldSessionLock struct{}
+
+func (heldSessionLock) CheckOwnership(context.Context) error { return nil }
+func (heldSessionLock) Release(context.Context) error        { return nil }
+
 // newRunSessionMigrator returns a migrator over three migrations of one
-// statement each, run outside a transaction, on a connection to recorder.
+// statement each, run outside a transaction and without the migration lock,
+// on a connection to recorder.
 func newRunSessionMigrator(c *qt.C, recorder *sessionRecorder) *migrator.Migrator {
 	c.Helper()
+	return runSessionMigrator(c, recorder).WithoutMigrationLock()
+}
+
+// runSessionMigrator returns a migrator over three migrations of one statement
+// each, run outside a transaction, on a connection to connector.
+func runSessionMigrator(c *qt.C, connector dbschema.NativeConnector) *migrator.Migrator {
+	c.Helper()
 	ctx, err := dbschema.WithNativeConnections(c.Context(), map[string]dbschema.NativeRegistration{
-		"recorder": {Target: "postgres", Connector: recorder},
+		"recorder": {Target: "postgres", Connector: connector},
 	})
 	c.Assert(err, qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(ctx, "recorder://database")
@@ -115,8 +145,7 @@ func newRunSessionMigrator(c *qt.C, recorder *sessionRecorder) *migrator.Migrato
 		migrator.CreateMigrationFromSQL(1, "init", "CREATE SCHEMA s1;", "DROP SCHEMA s1;"),
 		migrator.CreateMigrationFromSQL(2, "set", "SET search_path = s1;", "RESET search_path;"),
 		migrator.CreateMigrationFromSQL(3, "next", "CREATE TABLE t3 (id int);", "DROP TABLE t3;"),
-	)).WithMigrationsTable("public", "_revisions").WithTransactionMode(migrator.MigrationTxModeNone).
-		WithoutMigrationLock()
+	)).WithMigrationsTable("public", "_revisions").WithTransactionMode(migrator.MigrationTxModeNone)
 }
 
 func TestMigrateUpRunSession_HappyPath(t *testing.T) {
@@ -149,5 +178,20 @@ func TestMigrateUpRunSession_HappyPath(t *testing.T) {
 		later := recorder.trail.lastSession()
 		c.Assert(later, qt.Not(qt.Equals), first)
 		c.Assert(recorder.trail.statementsOn(later), qt.DeepEquals, []string{"CREATE TABLE t3 (id int)"})
+	})
+
+	// A provider's lock guards the commits of the session that took it alone,
+	// so a run holding one executes every body there rather than on a session
+	// of its own, where a lock lost before a commit would not stop the commit.
+	t.Run("a provider's migration lock keeps every body on the session that holds it", func(t *testing.T) {
+		c := qt.New(t)
+		recorder := newSessionRecorder()
+
+		err := runSessionMigrator(c, lockingRecorder{recorder}).MigrateUp(c.Context())
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(recorder.trail.lastSession(), qt.Equals, 0)
+		c.Assert(recorder.trail.statementsOn(0), qt.DeepEquals,
+			[]string{"CREATE SCHEMA s1", "SET search_path = s1", "CREATE TABLE t3 (id int)"})
 	})
 }

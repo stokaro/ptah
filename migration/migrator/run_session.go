@@ -26,20 +26,35 @@ import (
 // whose services ask for the pool's sessions keeps them (see
 // migratorext.Services.PoolSessions): SQLite, where a migration in a
 // transaction runs on the pool's connection.
+//
+// On a provider's connection the run's session is the connection's own, where
+// the provider holds the migration lock, because the provider guards the
+// commits of that session alone (see withMigrationLockSession). That session
+// belongs to the connection, so what a migration leaves on it outlives the
+// run.
 func (m *Migrator) withRunSession(ctx context.Context, use func(*Migrator) error) error {
 	services := m.services()
 	if m.runSession != nil || m.conn == nil || m.conn.Writer().IsDryRun() ||
 		services.Units != nil || services.PoolSessions {
 		return use(m)
 	}
+	if locked := migrationLockSession(ctx); locked != nil {
+		return use(m.inRunSession(locked))
+	}
 	return m.conn.WithSessionOrCurrent(ctx, func(session *dbschema.DatabaseConnection) error {
-		scoped := *m
-		scoped.runSession = session
-		if scoped.migrationsSchema == "" {
-			scoped.migrationsSchema = scoped.connectionSchemaName()
-		}
-		return use(&scoped)
+		return use(m.inRunSession(session))
 	})
+}
+
+// inRunSession returns a copy of the migrator whose up run executes every
+// migration body on session.
+func (m *Migrator) inRunSession(session *dbschema.DatabaseConnection) *Migrator {
+	scoped := *m
+	scoped.runSession = session
+	if scoped.migrationsSchema == "" {
+		scoped.migrationsSchema = scoped.connectionSchemaName()
+	}
+	return &scoped
 }
 
 // withBodySession calls use with the session a migration body runs on: the

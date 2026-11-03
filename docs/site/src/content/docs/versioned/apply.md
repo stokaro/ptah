@@ -622,11 +622,13 @@ and pipelines share a directory:
   connection's schema, and cannot be redirected by that session state. SQLite
   pins a session for each `none` attempt instead and qualifies its revision
   table in `main`, so in-memory databases do not deadlock and temporary objects
-  cannot shadow the metadata. A resumed attempt starts a run on a fresh
-  session: Ptah replays recognized session-control statements from the verified
-  prefix of the resumed migration, skips recognized durable DDL and DML, and
-  refuses prefixes that created temporary objects or whose session-local effect
-  cannot be classified safely.
+  cannot shadow the metadata. A provider's connection runs the bodies on its
+  own session, where the provider holds the migration lock and guards each
+  commit, so what they leave there outlives the run. A resumed attempt starts a
+  run on a fresh session: Ptah replays recognized session-control statements
+  from the verified prefix of the resumed migration, skips recognized durable
+  DDL and DML, and refuses prefixes that created temporary objects or whose
+  session-local effect cannot be classified safely.
   A `none` body cannot contain top-level transaction-control statements such as
   `BEGIN`, `COMMIT`, `ROLLBACK`, savepoint commands, MySQL or MariaDB
   `SET autocommit`, or SQL Server `SET IMPLICIT_TRANSACTIONS`. Ptah validates

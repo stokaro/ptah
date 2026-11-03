@@ -925,6 +925,13 @@ file database's pool keeps what a caller attached to it, such as a database a
 that with it. YDB keeps no session state between queries. A dry run executes
 nothing, so it pins nothing.
 
+A provider's connection runs the bodies on its own session, where the provider
+holds the migration lock. A provider's lock guards the writes and commits of
+the session that took it and of no other, so a body committed on a session the
+run pinned would commit even after the lock was lost. That session belongs to
+the connection, and what a migration leaves on it outlives the run. A run
+without the migration lock pins a session, as it does on any other connection.
+
 ### Non-Transactional Migrations
 
 Most migrations should stay transactional. When the database rejects
