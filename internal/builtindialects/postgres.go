@@ -121,7 +121,11 @@ func postgres() descriptor.Dialect {
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 		Columns:          descriptor.Columns{IdentityNotNull: true},
-		Statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: descriptor.DoBlocksPLpgSQL},
+		// A second CREATE EXTENSION of one extension is refused, measured on
+		// 18.6: `extension "pgcrypto" already exists`.
+		Statements: descriptor.Statements{
+			ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: descriptor.DoBlocksPLpgSQL,
+		},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{

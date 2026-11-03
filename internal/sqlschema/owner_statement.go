@@ -27,6 +27,10 @@ import (
 // [declaredChild]. The owner's facets of a table are merged into the table
 // the schema declares; see [setTableFacets]. A statement that reports a change
 // without objects or table facets is refused with [ErrUnmodeledStatement].
+//
+// A file runs its statements in order, so an object it created already, and
+// creates again without a guard, is refused where the server refuses that
+// statement; see [refuseRepeatedCreate].
 func applyOwnerStatement(database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string) (handled bool, err error) {
 	statement, ok := stmt.(*ast.ExtensionStatement)
 	if !ok {
@@ -52,6 +56,9 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 		object.Ref = declaredChild(databases, object.Ref, sourcePlatform)
 		objects, err := database.FeatureObjects.Declare(object)
 		if err != nil {
+			return true, err
+		}
+		if err := refuseRepeatedCreate(database.FeatureObjects, object, sourcePlatform); err != nil {
 			return true, err
 		}
 		database.FeatureObjects = objects
@@ -221,4 +228,34 @@ func statementExcerpt(written string) string {
 		return string(runes[:limit]) + "..."
 	}
 	return excerpt
+}
+
+// refuseRepeatedCreate refuses object when the file declared it before, held
+// being what the file declared, and its statement carries no guard
+// ([schemaext.Guarded]), where the source dialect's server refuses such a
+// statement ([descriptor.Statements.OwnerCreateOnce]). Measured on PostgreSQL
+// 18.6, `CREATE EXTENSION pgcrypto; CREATE EXTENSION pgcrypto;` stops at the
+// second statement with `extension "pgcrypto" already exists`. Without this,
+// an equal second declaration combines with the first
+// ([schemaext.Redeclarable]) and the file reads as one the server runs. A
+// read with no dialect keeps no dialect's rule, as a table created twice is
+// refused only where the stored names are followed. A second declaration
+// that differs from the first is refused by [schemaext.Objects.Declare]
+// before this is asked, and one in a later file of a schema directory by the
+// directory's check.
+func refuseRepeatedCreate(held schemaext.Objects, object schemaext.Object, sourcePlatform string) error {
+	guarded, ok := object.Value.(schemaext.Guarded)
+	if !ok || guarded.Guarded() {
+		return nil
+	}
+	if !factsOf(sourcePlatform).statements.OwnerCreateOnce {
+		return nil
+	}
+	_, found, err := held.Get(object.Ref)
+	if err != nil || !found {
+		return err
+	}
+	declared := sqldecl.Owned(object.Ref)
+	return fmt.Errorf("%w: %s %q is created again without IF NOT EXISTS, and the server refuses the second declaration",
+		ErrNameInUse, declared.Kind, declared.Name)
 }

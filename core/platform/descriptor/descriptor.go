@@ -195,7 +195,7 @@ type Dialect struct {
 	// Columns states how the server reads a column definition.
 	Columns Columns `json:"columns,omitzero"`
 	// Statements states how the server reads statements a schema file
-	// writes about roles and tables.
+	// writes about roles, tables and the objects a feature owner declares.
 	Statements Statements `json:"statements,omitzero"`
 	// TableOptions are the options the engine's grammar writes after a
 	// CREATE TABLE, such as SQLite's STRICT, each with the property of the
