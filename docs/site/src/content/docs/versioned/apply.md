@@ -535,6 +535,12 @@ a lost connection or a canceled statement.
 
 ## Execution controls
 
+Each statement reaches the server with the comments inside it, and without
+the comments before its first token. MySQL, MariaDB and SQL Server store a
+trigger's or a routine's body as it arrives, so a comment written in the body
+is still there when the database is read back. A statement that holds only
+comments is not sent.
+
 The defaults are safe for most runs. These controls matter once several people
 and pipelines share a directory:
 

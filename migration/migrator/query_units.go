@@ -148,11 +148,11 @@ func (g bodyGrammar) hasUnits() bool { return g.units != nil }
 // for it here are counted but never executed.
 func (g bodyGrammar) statements(sqlText string) []string {
 	if g.units == nil {
-		return sqlutil.SplitStatementsForDialect(g.dialect, sqlText)
+		return statementsAsWritten(sqlText, g.dialect)
 	}
 	units, err := g.units.split(sqlText)
 	if err != nil {
-		return sqlutil.SplitStatementsForDialect(g.dialect, sqlText)
+		return statementsAsWritten(sqlText, g.dialect)
 	}
 	texts := make([]string, 0, len(units))
 	for _, unit := range units {
