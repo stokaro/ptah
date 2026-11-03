@@ -12,6 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/cli/generate"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/root"
@@ -290,4 +291,24 @@ func TestGenerateCommand_OmittedDialectIncludesSQLServerReviewTarget(t *testing.
 	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Contains, "-- sqlserver schema")
 	c.Assert(stdout, qt.Contains, "-- spanner schema")
+}
+
+// A SQL Server trigger's body runs to the end of its batch, so rendered with
+// nothing between them, a statement-bodied trigger took the table after it
+// into its body. Every SQL Server statement now ends its batch with GO, and
+// the output splits back into its statements.
+func TestGenerateCommand_EndsEverySQLServerBatch(t *testing.T) {
+	c := qt.New(t)
+	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int PRIMARY KEY);\nGO\n"+
+		"CREATE TRIGGER trg ON t AFTER INSERT AS SET NOCOUNT ON;\nGO\n"+
+		"CREATE TABLE u (id int PRIMARY KEY);\nGO\n"), 0o600), qt.IsNil)
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--schema-file", schemaPath, "--dialect", "sqlserver"})
+
+	stdout, stderr, err := executeGenerate(c, cmd)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
+	c.Assert(outputStatementContaining(stdout, "CREATE TRIGGER"), qt.Contains, "AS SET NOCOUNT ON;\nGO\n")
+	c.Assert(sqlutil.SplitSQLStatementsForDialect(stdout, "sqlserver"), qt.HasLen, 3)
 }

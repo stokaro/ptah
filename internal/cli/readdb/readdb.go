@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/hashshard"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/timescale"
 )
 
@@ -140,7 +141,14 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(rendered.Statements, "\n\n"))
+	// A SQL Server statement ends its batch with GO, or a trigger or routine
+	// takes the statements printed after it into its body; see
+	// [sqlscript.BatchEnd].
+	script := make([]string, 0, len(rendered.Statements))
+	for _, statement := range rendered.Statements {
+		script = append(script, sqlscript.WithBatchEnd(info.Dialect, statement))
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(script, "\n\n"))
 
 	return nil
 }

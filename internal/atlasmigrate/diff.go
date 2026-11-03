@@ -874,6 +874,7 @@ func renderMigrationDiffSQL(dialect string, statements []Statement, format FileF
 		Dialect:           dialect,
 		Changes:           changes,
 		CommentsAsWritten: format.Foreign,
+		ForeignLayout:     format.Foreign,
 	})
 	var out bytes.Buffer
 	if err := atlasreport.WriteMigrateDiff(&out, format.Template, report); err != nil {
