@@ -184,6 +184,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 	for _, check := range []func(*protocol.Description, *protocol.Engine) error{
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
+		validateMigrationSplitEngine,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
@@ -264,7 +265,7 @@ func validateContractAdditions(value *protocol.Description) error {
 			return fmt.Errorf("%w: %s requires source decoding", ErrProtocol, feature)
 		}
 	}
-	return nil
+	return validateMigrationSplitFeatures(features)
 }
 
 // ValidateIdentifierRules refuses missing or unknown comparison facts. The

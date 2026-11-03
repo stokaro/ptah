@@ -112,7 +112,9 @@ func cockroachDB() descriptor.Dialect {
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names:       descriptor.Names{Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
-		Statements:  descriptor.Statements{ViewsBlockDropTable: true},
+		// OwnerCreateOnce stays off: a second CREATE EXTENSION of one
+		// extension succeeds, measured on 26.3.2.
+		Statements: descriptor.Statements{ViewsBlockDropTable: true},
 
 		// Dev databases. The server takes no advisory lock Ptah can hold, so runs on
 		// one dev database are serialized with a lock file, which only serializes
@@ -144,8 +146,12 @@ func cockroachDB() descriptor.Dialect {
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.
+		// An inverted index, which gin and gist build, cannot be unique,
+		// measured on 26.3.2: `inverted indexes can't be unique`. Hash is no
+		// access method there, unique or not.
 		Preparation: descriptor.Preparation{
-			PostgresBuiltInTypes: true,
+			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"gin", "gist"},
 		},
 
 		// A serial column owns its sequence, every routine carries EXECUTE

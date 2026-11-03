@@ -35,16 +35,19 @@ type policyRemovalShape struct {
 
 // rowSecurityState is what the catalog says about the relations of the public
 // schema: each relation with its row-security switches, each policy, and each
-// table grant to a role other than the owner.
+// table and column grant to a role other than the owner.
 type rowSecurityState struct {
-	Relations []string
-	Policies  []string
-	Grants    []string
+	Relations    []string
+	Policies     []string
+	Grants       []string
+	ColumnGrants []string
 }
 
 // policyRemovalShapes are the shapes a project with row-level security
-// removes tables in. role names a role the server has and both schemas
-// declare, so the plans manage its grants and neither creates nor drops it.
+// removes tables in. role names a role the server has. Where both schemas
+// declare it, the plans manage its grants and neither creates nor drops it;
+// where neither does, the second plan leaves its grants to DROP TABLE, and the
+// rollback has to grant them again.
 func policyRemovalShapes(role string) []policyRemovalShape {
 	other := "CREATE TABLE other (id bigint PRIMARY KEY);\n"
 	otherState := rowSecurityState{Relations: []string{"other table rls=false force=false"}}
@@ -80,6 +83,20 @@ GRANT SELECT, INSERT ON docs TO %[1]s;
 					fmt.Sprintf("docs.p_insert RESTRICTIVE {%s} INSERT using= check=(author = CURRENT_USER)", role),
 				},
 				Grants: []string{"docs " + role + " INSERT", "docs " + role + " SELECT"},
+			},
+			secondState: otherState,
+		},
+		{
+			name: "a table with grants to a role neither schema declares",
+			first: fmt.Sprintf(`CREATE TABLE docs (id bigint PRIMARY KEY, member_id bigint);
+GRANT SELECT, INSERT ON docs TO %[1]s;
+GRANT UPDATE (member_id) ON docs TO %[1]s;
+`, role),
+			second: other,
+			firstState: rowSecurityState{
+				Relations:    []string{"docs table rls=false force=false"},
+				Grants:       []string{"docs " + role + " INSERT", "docs " + role + " SELECT"},
+				ColumnGrants: []string{"docs.member_id " + role + " UPDATE"},
 			},
 			secondState: otherState,
 		},
@@ -192,6 +209,12 @@ FROM pg_policies WHERE schemaname = 'public' ORDER BY 1`),
 		Grants: queryRows(c, db, `SELECT table_name || ' ' || grantee || ' ' || privilege_type
 FROM information_schema.role_table_grants
 WHERE table_schema = 'public' AND grantee <> current_user ORDER BY 1`),
+		ColumnGrants: queryRows(c, db, `SELECT cl.relname || '.' || a.attname || ' ' || pg_get_userbyid(acl.grantee) || ' ' || acl.privilege_type
+FROM pg_attribute a
+JOIN pg_class cl ON cl.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = cl.relnamespace
+CROSS JOIN LATERAL aclexplode(a.attacl) acl
+WHERE n.nspname = 'public' AND a.attacl IS NOT NULL ORDER BY 1`),
 	}
 }
 

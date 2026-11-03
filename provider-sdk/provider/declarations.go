@@ -104,7 +104,7 @@ func ValidateDeclarationsRequest(description *protocol.Description, request *pro
 		if !slices.Contains(service.GetKinds(), object.GetKind()) || object.GetValue() == nil || object.GetValue().GetValue().GetKind() != object.GetKind() || object.GetSubject().GetKind() != object.GetKind() {
 			return declarationError("an object needs an assigned desired value and its model kind as subject kind")
 		}
-		if !declarationIdentityMatches(request, object) {
+		if !declaredObjectIdentityMatches(request, object) {
 			return declarationError("an object's subject differs from its value owner")
 		}
 		if err := validateComparisonNames(object.GetTargets()); err != nil {

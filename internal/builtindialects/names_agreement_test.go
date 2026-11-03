@@ -38,6 +38,10 @@ import (
 //   - STRICT and WITHOUT ROWID set SQLite's strict and without_rowid
 //     properties, and the parser read them, on every dialect, as two arms
 //     of parseTableOptions spelled STRICT and WITHOUT ROWID.
+//
+// OwnerCreateOnce replaced no switch. It is the measurement its declarations
+// state: PostgreSQL and YugabyteDB refuse a second CREATE EXTENSION of one
+// extension, and CockroachDB accepts it.
 func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	pgFamily := descriptor.IndexNaming{PrimaryKeySuffix: "pkey"}
 	tests := []struct {
@@ -56,7 +60,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			indexNaming:      pgFamily,
 			constraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 			columns:          descriptor.Columns{IdentityNotNull: true},
-			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, DoBlocks: "plpgsql"},
+			statements:       descriptor.Statements{ViewsBlockDropTable: true, CreateRoleOnce: true, OwnerCreateOnce: true, DoBlocks: "plpgsql"},
 		},
 		{
 			dialect: platform.MySQL,
@@ -99,7 +103,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect:     platform.YugabyteDB,
 			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
 			indexNaming: pgFamily,
-			statements:  descriptor.Statements{ViewsBlockDropTable: true},
+			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true},
 		},
 		{
 			dialect:     platform.Spanner,

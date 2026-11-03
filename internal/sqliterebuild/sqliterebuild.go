@@ -121,13 +121,18 @@ func OpensTransactionOn(info catalog.ServerInfo, writer catalog.SchemaExecutor) 
 //
 // This is the only place schema SQL opens a transaction, which is why the
 // answer belongs here rather than in each writer. External providers own their
-// transaction behavior; their empty built-in capability profile cannot authorize
-// this wrapper. Their writer must accept or refuse the requested transaction.
+// transaction behavior, and their capabilities are only what their session
+// states: a provider runs unwrapped when it states that its server refuses a
+// schema statement inside an explicit transaction. One that states nothing is
+// asked for the transaction, and its writer accepts or refuses it.
 func beginWithoutTransaction(
 	info catalog.ServerInfo,
 	writer catalog.SchemaExecutor,
 ) (catalog.SchemaTransaction, bool) {
-	if writer == nil || !info.Provider.IsZero() || info.Capabilities.Has(capability.DDLInsideTransaction) {
+	if writer == nil || info.Capabilities.Has(capability.DDLInsideTransaction) {
+		return nil, false
+	}
+	if !info.Provider.IsZero() && !info.Capabilities.Established(capability.DDLInsideTransaction) {
 		return nil, false
 	}
 	return unwrappedTransaction{writer: writer}, true

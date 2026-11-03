@@ -376,13 +376,17 @@ PTAH_DEV_SERVER_DISPOSABLE=1 ptah migrations validate --dir migrations --dev-url
 ```
 
 The declaration covers the whole server, its default database (`postgres`)
-included; Ptah cleans only the dev database after a replay. A YDB dev URL
-declared this way gets no dev realm: its database is the dev database, and it
-has to be empty. A role or
-database a replay creates stays on the server until the container is removed.
-A later command that replays the same directory on the same server meets it,
-so a migration that creates a role without checking for it first fails the
-second time. Declare only a server that nothing else uses.
+included. After a replay Ptah cleans the dev database. On PostgreSQL,
+CockroachDB and YugabyteDB it also drops every role the server did not hold
+when the command claimed the dev database. On a server nothing else uses, those
+roles are the run's, so a later command that replays the same directory creates
+them again. A role the server already held stays, whoever created it. A YDB dev
+URL declared this way gets no dev realm: its database is the dev database, and
+it has to be empty. A database a replay creates, and a role or a user on any
+other engine, stays on the server until the container is removed. A later
+command that replays the same directory on the same server meets it, so a
+migration that creates one without checking for it first fails the second
+time. Declare only a server that nothing else uses.
 
 Every command that replays a migration directory or rehearses a plan on a dev
 database reads the variable, on both binaries, and refuses a non-boolean value

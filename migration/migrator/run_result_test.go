@@ -206,7 +206,7 @@ func TestRunResultOverARealFailure(t *testing.T) {
 			})
 
 			c.Assert(result.Outcome, qt.Equals, test.outcome)
-			c.Assert(result.Error, qt.Not(qt.Equals), "")
+			c.Assert(result.Error, qt.IsNotNil)
 			c.Assert(after.DirtyRevision, qt.IsNotNil)
 			c.Assert(after.DirtyRevision.Applied, qt.Equals, test.applied)
 			c.Assert(after.DirtyRevision.Total, qt.Equals, test.statement)
@@ -279,7 +279,7 @@ func TestRunResultHasNoFailureForARefusalBeforeAnyStatement(t *testing.T) {
 		Err:   runErr,
 	})
 
-	c.Assert(result.Error, qt.Not(qt.Equals), "")
+	c.Assert(result.Error, qt.IsNotNil)
 	c.Assert(result.Failure, qt.IsNil)
 }
 
@@ -303,7 +303,7 @@ func TestRunResultDocumentCarriesItsContractVersion(t *testing.T) {
 	}))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(encoded), qt.Contains, `"contract_version":1`)
+	c.Assert(string(encoded), qt.Contains, `"contract_version":2`)
 	c.Assert(string(encoded), qt.Contains, `"outcome":"applied"`)
 	c.Assert(string(encoded), qt.Contains, `"direction":"up"`)
 	var decoded migrator.RunResult

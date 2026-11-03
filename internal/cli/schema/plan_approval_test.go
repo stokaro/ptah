@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/schema"
+	"ptah.run/internal/errorkind"
 	"ptah.run/migration/safety"
 )
 
@@ -216,6 +217,7 @@ func TestSchemaApplyRequireApprovalExecutesTheBytesItVerified(t *testing.T) {
 	c.Assert(fileDigest(c, planPath), qt.Equals, digest.FromBytes(replacement).String())
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout.String()), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeApplied,
 		PlanName:        plan.Name,
 		PlanDigest:      digest.FromBytes(approved).String(),
@@ -241,8 +243,9 @@ func TestSchemaApplyJSONReportsAnUnapprovedPlanAsFailed(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(stderr, qt.Equals, "error: "+err.Error()+"\n")
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
@@ -271,8 +274,9 @@ func TestSchemaApplyJSONReportsAPlanEditedAfterApprovalAsFailed(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--require-approval: approval does not verify against .*: either the plan changed after it was approved.*`)
 	c.Assert(decodeOneDocument[atlasschema.ApplyReport](c, stdout), qt.DeepEquals, atlasschema.ApplyReport{
 		ContractVersion: atlasschema.ApplyReportContractVersion,
+		Command:         atlasschema.ApplyReportCommand,
 		Outcome:         atlasschema.ApplyOutcomeFailed,
-		Error:           err.Error(),
+		Error:           &errorkind.Report{Message: err.Error()},
 	})
 	c.Assert(listSQLiteTables(c, f.dbPath), qt.DeepEquals, []string{"users"})
 }

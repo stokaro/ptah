@@ -51,7 +51,7 @@ func TestProviderNativeSchemaApplyCommand(t *testing.T) {
 	applied := f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve", "--json")
 	var report atlasschema.ApplyReport
 	c.Assert(json.Unmarshal([]byte(applied), &report), qt.IsNil)
-	c.Assert(report.ContractVersion, qt.Equals, 3)
+	c.Assert(report.ContractVersion, qt.Equals, atlasschema.ApplyReportContractVersion)
 	c.Assert(report.Outcome, qt.Equals, atlasschema.ApplyOutcomeApplied)
 	c.Assert(report.Units, qt.HasLen, 1)
 	c.Assert(report.Units[0].SQL, qt.Equals, "")

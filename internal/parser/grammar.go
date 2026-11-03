@@ -25,6 +25,9 @@ type targetGrammar struct {
 	// family is the descriptor's Family, whose head's string rules a routine
 	// of the quoted-body grammar is read with.
 	family string
+	// defaultSchema is the descriptor's DefaultSchema, the schema an
+	// unqualified table name resolves to.
+	defaultSchema string
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -37,6 +40,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		nullableTypes:      described.Comparison.NullableTypes,
 		checkOwnColumnOnly: described.Columns.CheckOwnColumnOnly,
 		family:             described.Family,
+		defaultSchema:      described.DefaultSchema,
 	}
 })
 

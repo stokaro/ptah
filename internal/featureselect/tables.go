@@ -9,7 +9,8 @@ import (
 )
 
 // Tables selects table-owned feature objects and their knowledge with the same
-// parent selection. Filtering either alone loses retained state or leaves an
+// parent selection. keepTable receives an empty schema for a table the source
+// did not qualify, and resolves it with its own default. Filtering either alone loses retained state or leaves an
 // unknown child attached to a table outside the comparison. Kind-wide knowledge
 // remains the source's claim, including namespaces with no concrete values.
 // Revision-table removal and user-selected scopes share this rule so neither
@@ -25,12 +26,20 @@ func Tables(objects schemaext.Objects, coverage schemaext.Coverage, keepTable fu
 
 // keepOwned keeps a table, or an object of a table, when keepTable keeps the
 // table, and every other subject.
+//
+// keepTable gets the schema the source wrote, and the empty string for one
+// the identity's builder filled in. A reader and a source build identities
+// before any connection is known, so a defaulted schema holds the offline
+// default, `public` on PostgreSQL, whatever the session's default is. Passed
+// on, a policy the read found in `reporting` under `search_path=reporting`
+// names a `public` table, and a scope that keeps the table leaves the policy
+// out.
 func keepOwned(ref objectidentity.ID, keepTable func(schema, table string) bool) bool {
 	if !ref.Parent.Empty() {
-		return keepTable(ref.Schema.Source, ref.Parent.Source)
+		return keepTable(ref.Schema.Authored(), ref.Parent.Source)
 	}
 	if ref.Kind == objectidentity.KindTable {
-		return keepTable(ref.Schema.Source, ref.Name.Source)
+		return keepTable(ref.Schema.Authored(), ref.Name.Source)
 	}
 	return true
 }

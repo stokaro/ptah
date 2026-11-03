@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/datamigrate"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -134,7 +135,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
 	cancelConnect()
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to database: %w", err)
+		return nil, fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 

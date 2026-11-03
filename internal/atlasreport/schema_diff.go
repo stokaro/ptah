@@ -57,6 +57,8 @@ type SchemaDiff struct {
 	dialect string
 	// commentsAsWritten is [SchemaDiffOptions.CommentsAsWritten].
 	commentsAsWritten bool
+	// foreignLayout is [SchemaDiffOptions.ForeignLayout].
+	foreignLayout bool
 }
 
 // SchemaChange is one planned statement. Its fields are those of the community
@@ -97,6 +99,13 @@ type SchemaDiffOptions struct {
 	// reads, such as golang-migrate, is written by that binary through a
 	// template of its own, which writes the comment unchanged.
 	CommentsAsWritten bool
+	// ForeignLayout marks a migration file of a layout another tool reads,
+	// such as golang-migrate or goose. The `sql` helper then writes no batch
+	// separator: SQL Server's GO is a command of sqlcmd and of Ptah's own
+	// splitter, not of the server, and such a tool may send it to the server
+	// as written. Without it the helper ends every SQL Server statement's
+	// batch with GO; see sqlscript.BatchEnd.
+	ForeignLayout bool
 }
 
 // NewSchemaDiff builds the template payload of `schema diff` and `migrate
@@ -115,6 +124,7 @@ func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
 		Changes:           changes,
 		dialect:           opts.Dialect,
 		commentsAsWritten: opts.CommentsAsWritten,
+		foreignLayout:     opts.ForeignLayout,
 	}
 }
 
@@ -242,7 +252,11 @@ func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if r.commentsAsWritten {
 		spell = asWritten
 	}
-	sql := schemaChangesSQLText(r.Changes, spell)
+	end := statementEnd(r.dialect)
+	if r.foreignLayout {
+		end = sqlscript.Terminator
+	}
+	sql := schemaChangesSQLText(r.Changes, spell, end)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
@@ -257,8 +271,8 @@ func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
 // function returns: each change's comment on a line of its own, spelled by
 // spell, then the statement. A change that is only comments -- a planner's
 // note with nothing to run after it -- ends without a semicolon; see
-// [sqlscript].
-func schemaChangesSQLText(changes []SchemaChange, spell func(string) string) string {
+// [sqlscript]. What follows each statement is end's answer.
+func schemaChangesSQLText(changes []SchemaChange, spell, end func(string) string) string {
 	var sql strings.Builder
 	for _, change := range changes {
 		if change.Comment != "" {
@@ -269,9 +283,17 @@ func schemaChangesSQLText(changes []SchemaChange, spell func(string) string) str
 			// A note ends its own line; the script adds the line break.
 			cmd = strings.TrimRight(cmd, "\n")
 		}
-		fmt.Fprintf(&sql, "%s%s\n", cmd, sqlscript.Terminator(cmd))
+		fmt.Fprintf(&sql, "%s%s\n", cmd, end(cmd))
 	}
 	return sql.String()
+}
+
+// statementEnd is [sqlscript.StatementEnd] for dialect: the terminator, and
+// for a dialect whose scripts have batches, the end of the statement's batch.
+func statementEnd(dialect string) func(string) string {
+	return func(statement string) string {
+		return sqlscript.StatementEnd(dialect, statement)
+	}
 }
 
 // asWritten is text as it is.

@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/dbschema"
 	ydbschema "ptah.run/internal/dbschema/ydb"
-	"ptah.run/internal/migratorext/builtin"
 	"ptah.run/internal/yqlquery"
 	"ptah.run/migration/migrationfile"
 )
@@ -49,11 +48,12 @@ import (
 // for a while rather than once.
 var buildWait = ydbschema.BuildWait{Appear: 2 * time.Second, Settle: 30 * time.Second, Poll: 100 * time.Millisecond}
 
-// boundsEachQuery reports whether the statement timeout on this dialect is a
-// deadline the executor puts on each query, rather than a setting the
-// migrator sends to the session.
-func boundsEachQuery(dialect string) bool {
-	return builtin.Lookup(dialect).QueryDeadlines
+// boundsEachQuery reports whether the statement timeout on conn is a deadline
+// the executor puts on each query, rather than a setting the migrator sends to
+// the session. A provider's session never is: its provider stops a unit at
+// the timeout the unit carries (see [withStatementBound]).
+func boundsEachQuery(conn *dbschema.DatabaseConnection) bool {
+	return servicesFor(conn).QueryDeadlines
 }
 
 // queryTimeoutContextKey carries the statement timeout the queries of a

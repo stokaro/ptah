@@ -38,6 +38,12 @@ type Preparation struct {
 	// or grammar defines names that built-in type, so a user type of the same
 	// name is not assumed.
 	PostgresBuiltInTypes bool `json:"postgres_built_in_types,omitempty"`
+	// NonUniqueIndexMethods are the index access methods, in lower case,
+	// that the server builds no UNIQUE index with, as PostgreSQL refuses one
+	// with `access method "hash" does not support unique indexes`. A UNIQUE
+	// index declared over one of them is refused before anything is
+	// rendered. Empty refuses none.
+	NonUniqueIndexMethods []string `json:"non_unique_index_methods,omitempty"`
 }
 
 // EnumStyle is how an engine holds an enum column.

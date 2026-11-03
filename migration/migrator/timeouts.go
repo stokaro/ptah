@@ -168,7 +168,7 @@ func (m *Migrator) applySessionTimeouts(
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
-	if boundsEachQuery(m.connectionDialect()) {
+	if boundsEachQuery(m.conn) {
 		ctx = withQueryTimeout(ctx, timeouts)
 	}
 	return withStatementBound(ctx, m.noTransactionConnection(), timeouts), restore, nil

@@ -115,7 +115,7 @@ func TestAtlasPartialHashValues(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			got, ok := atlasPartialHashValues(test.sql, "sqlite", test.applied, test.total)
+			got, ok := atlasPartialHashValues(test.sql, grammarForDialect("sqlite"), test.applied, test.total)
 
 			c.Assert(ok, qt.Equals, test.wantOK)
 			c.Assert(got, qt.DeepEquals, test.want)

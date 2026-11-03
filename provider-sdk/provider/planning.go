@@ -63,7 +63,10 @@ func ValidatePlanningRequest(description *protocol.Description, request *protoco
 	if err := validatePlanningTables(description, request, engine); err != nil {
 		return err
 	}
-	return validatePlanningObjects(description, engine, service, request)
+	if err := validatePlanningObjects(description, engine, service, request); err != nil {
+		return err
+	}
+	return validatePlanningContextInventory(description, engine, service, request)
 }
 
 // validatePlanningCommonObjects checks the common objects a planning request

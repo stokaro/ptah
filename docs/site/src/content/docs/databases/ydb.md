@@ -869,6 +869,11 @@ ALTER TABLE `orders` ADD CHANGEFEED `updates` WITH (MODE = 'NEW_AND_OLD_IMAGES',
 ALTER TOPIC `orders/updates` ADD CONSUMER `billing` WITH (important = TRUE);
 ```
 
+An initial scan holds the table until it has read every row, and YDB refuses
+any other change to the table until then. Ptah runs the next statement again
+until the scan is done and logs that it is waiting. On a large table this can
+take minutes. Stopping the run stops the wait; the changefeed already exists.
+
 The [annotation reference](../../reference/go-annotations/#ptahschemachangefeed)
 lists every attribute, and a YAML table takes the same keys under its
 `changefeeds` map. An interval is an ISO 8601 duration such as `PT12H`. YDB

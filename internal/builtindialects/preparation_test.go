@@ -18,7 +18,8 @@ import (
 // folds equal index constraints, and which reads a bare name as a PostgreSQL
 // built-in type. The rows are keyed by the constants those switches compared
 // with, so a descriptor that drifts from the switch it replaced fails here by
-// name.
+// name. NonUniqueIndexMethods replaced no switch; its rows are the access
+// methods each server was measured refusing a unique index with.
 func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 	mysqlFamily := descriptor.Preparation{
 		Enums:                   descriptor.EnumColumnType,
@@ -30,9 +31,10 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 		platform.Postgres: {
 			FoldsIndexConstraints: true,
 			PostgresBuiltInTypes:  true,
+			NonUniqueIndexMethods: []string{"brin", "gin", "gist", "hash", "spgist"},
 		},
-		platform.CockroachDB: {PostgresBuiltInTypes: true},
-		platform.YugabyteDB:  {PostgresBuiltInTypes: true},
+		platform.CockroachDB: {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "gist"}},
+		platform.YugabyteDB:  {PostgresBuiltInTypes: true, NonUniqueIndexMethods: []string{"gin", "ybgin"}},
 		platform.Spanner: {
 			Enums:                   descriptor.EnumCheck,
 			EnumCheckType:           "TEXT",

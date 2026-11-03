@@ -5,16 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
-	"time"
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasretry"
 	"ptah.run/internal/migratorext"
-	"ptah.run/internal/migratorext/builtin"
 )
 
-// How a migration body runs on YDB.
+// How a migration body runs on the built-in YDB engine.
 //
 // YDB runs a scheme statement only outside a transaction and never in the same
 // query as a data statement, and a named expression, an action, a DECLARE or a
@@ -22,64 +19,34 @@ import (
 // body as the queries internal/yqlquery splits it into -- each scheme
 // statement a query of its own, each run of data statements one query -- and
 // those queries are the units it counts, records progress over and resumes
-// from, in place of statements.
-//
-// A scheme query, and a BATCH query, which YDB runs only outside a
-// transaction, is marked in flight before it runs and checkpointed after, as
-// every statement outside a transaction is: an interruption between the two
-// leaves an outcome nobody knows, and a resume refuses to guess it. A data
-// query runs in one serializable transaction together with the checkpoint that
-// records it, so the two commit together or not at all.
-//
-// The revision row is therefore the record of what a body committed, and a
-// failure never records less than the row holds (see
-// [revisionFailureRecord]). A resume after an interruption starts at the
-// first query the row does not record, which for a data query is exactly the
-// one that did not commit.
+// from (see query_units.go). A data query commits with its checkpoint through
+// database/sql, and a failure is written with a read of the row in one
+// serializable transaction, so it never records less than the row holds.
 
-// unitTexts is the texts of the queries a body runs as on an engine with
-// query units. A body the split refuses is refused before anything runs (see
-// refuseUnsplittableSQL), so the statements returned for it here are counted
-// but never executed.
-func unitTexts(units migratorext.Units, sqlText, dialect string) []string {
-	queries, err := units.Split(sqlText)
-	if err != nil {
-		return sqlutil.SplitStatementsForDialect(dialect, sqlText)
-	}
-	texts := make([]string, 0, len(queries))
-	for _, query := range queries {
-		texts = append(texts, query.Text)
-	}
-	return texts
+// builtinUnits are the queries a built-in engine's services divide a body
+// into.
+type builtinUnits struct {
+	units   migratorext.Units
+	dialect string
 }
 
-// sourceStatementsForDialect returns the source text of each unit the migrator
-// runs a body as, which is what partial hashes digest and what a failure
-// records as the failing statement. On an engine with query units a unit is a
-// query, whose source is its statements' sources.
-func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStatement {
-	units := builtin.Lookup(dialect).Units
-	if units == nil {
-		return sqlutil.SplitSourceStatements(sqlText, dialect)
-	}
-	queries, err := units.Split(sqlText)
+func (b builtinUnits) split(sqlText string) ([]queryUnit, error) {
+	split, err := b.units.Split(sqlText)
 	if err != nil {
-		return sqlutil.SplitSourceStatements(sqlText, dialect)
+		return nil, err
 	}
-	statements := make([]sqlutil.SourceStatement, 0, len(queries))
-	for _, query := range queries {
-		statements = append(statements, sqlutil.SourceStatement{
-			Text:       query.Source,
-			Terminated: strings.HasSuffix(query.Source, ";"),
+	units := make([]queryUnit, 0, len(split))
+	for _, unit := range split {
+		units = append(units, queryUnit{
+			text: unit.Text, source: unit.Source, statements: unit.Statements, mixed: unit.Mixed, data: b.units.IsData(unit.Text),
 		})
 	}
-	return statements
+	return units, nil
 }
 
-// refuseUnsplittableSQL refuses, on an engine with query units, a body the
-// migrator cannot split the way the engine reads it: one holding a statement
-// that controls a transaction, and one holding a query the engine refuses
-// whole. Every other engine passes.
+// refuse refuses a body the migrator cannot split the way the engine reads
+// it: one holding a statement that controls a transaction, and one holding a
+// query the engine refuses whole.
 //
 // YQL refuses COMMIT inside a query (`COMMIT not supported inside YDB
 // query`, measured on 26.2.1.14), and the migrator decides where each
@@ -91,23 +58,19 @@ func sourceStatementsForDialect(sqlText, dialect string) []sqlutil.SourceStateme
 // scheme operations are not supported`; see [yqlquery.Reader.Mixed]). A scheme
 // statement runs outside any transaction, so the queries before such a block
 // would stay applied when it fails; it is refused here, before any of them.
-func refuseUnsplittableSQL(dialect, sqlText string) error {
-	units := builtin.Lookup(dialect).Units
-	if units == nil {
-		return nil
-	}
-	queries, err := units.Split(sqlText)
+func (b builtinUnits) refuse(sqlText string) error {
+	units, err := b.split(sqlText)
 	if err != nil {
 		return err
 	}
-	for _, query := range queries {
-		if query.Mixed {
+	for _, unit := range units {
+		if unit.mixed {
 			return fmt.Errorf("%q runs a scheme statement and a statement that reads or writes a table in one "+
 				"query, which YDB refuses whole (Queries with mixed data and scheme operations are not supported); "+
-				"move the scheme statement out of the block or action into a statement of its own", query.Source)
+				"move the scheme statement out of the block or action into a statement of its own", unit.source)
 		}
-		for _, statement := range query.Statements {
-			if isTransactionControlStatement(statement, dialect) {
+		for _, statement := range unit.statements {
+			if isTransactionControlStatement(statement, b.dialect) {
 				return fmt.Errorf("%q controls a transaction, and on YDB the migrator runs each data query "+
 					"in a transaction of its own; remove it", statement)
 			}
@@ -116,201 +79,66 @@ func refuseUnsplittableSQL(dialect, sqlText string) error {
 	return nil
 }
 
-// refuseUnsplittableMigrations refuses, before a run touches anything, a
-// migration whose body in direction refuseUnsplittableSQL refuses.
-func (m *Migrator) refuseUnsplittableMigrations(migrations []*Migration, direction MigrationDirection) error {
-	for _, migration := range migrations {
-		if err := refuseUnsplittableSQL(m.connectionDialect(), migrationSQLForDirection(migration, direction)); err != nil {
-			return fmt.Errorf("migration %d cannot run %s on %s: %w",
-				migration.Version, direction, m.connectionDialect(), err)
-		}
-	}
-	return nil
-}
-
-// runsQueriesOnTheirOwn reports whether the target runs every query of a
-// migration on its own, whatever transaction mode the run asked for: an
-// engine with query units has no transaction a scheme statement can join, so
-// a file's transaction would hold nothing but data queries, which already
-// commit one by one together with their checkpoints. `file` is therefore run
-// the way `none` is, with progress recorded after each query, and `all` is
-// refused by the transactional-DDL capability before anything runs.
-func (m *Migrator) runsQueriesOnTheirOwn() bool {
-	return m.services().Units != nil
-}
-
-// effectiveTxMode is the mode a migration runs in on this target, given the
-// mode it resolved to.
-func (m *Migrator) effectiveTxMode(mode MigrationTxMode) MigrationTxMode {
-	if mode == MigrationTxModeFile && m.runsQueriesOnTheirOwn() {
-		return MigrationTxModeNone
-	}
-	return mode
-}
-
-// withRecordedStatementProgress installs what records a body's progress while
-// it runs outside a transaction: a mark before each statement, a checkpoint
-// after it, and on YDB the committer that runs a data query and its checkpoint
-// in one transaction.
-func (m *Migrator) withRecordedStatementProgress(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	direction MigrationDirection,
-) context.Context {
-	ctx = withStatementProgressRecorder(
-		ctx,
-		func(ctx context.Context, event StatementEvent) error {
-			return m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction)
-		},
-		func(ctx context.Context, event StatementEvent) error {
-			return m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction)
-		},
-	)
-	if !m.runsQueriesOnTheirOwn() || m.conn.Writer().IsDryRun() {
-		return ctx
-	}
-	return withStatementCommitter(ctx, statementCommitter{
-		claims: m.services().Units.IsData,
-		run: func(ctx context.Context, event StatementEvent) error {
-			return m.commitDataQuery(ctx, migration, startedAt, event, direction)
-		},
-	})
-}
-
-// ydbTransactionAttempts bounds how often a transaction YDB aborted for a
-// conflicting one is run again.
-const ydbTransactionAttempts = 5
-
-// commitDataQuery runs one data query of a YDB body and the checkpoint that
-// records it in one serializable transaction; see [dataQueryCommit].
-func (m *Migrator) commitDataQuery(
-	ctx context.Context,
-	migration *Migration,
-	startedAt time.Time,
-	event StatementEvent,
-	direction MigrationDirection,
-) error {
-	return dataQueryCommit{
-		begin: m.conn.BeginTx,
-		query: event.Statement,
-		checkpoint: func() (string, []any) {
-			return m.checkpointMigrationRevisionStatement(migration, startedAt, event, direction)
-		},
-		recorded: func(ctx context.Context) (bool, error) {
-			revision, err := m.getMigrationRevision(ctx, migration)
-			if err != nil {
-				return false, err
-			}
-			return checkpointRecorded(revision, event.Index), nil
-		},
-		wait: waitForYDBTransactionRetry,
-	}.run(ctx)
-}
-
-// dataQueryCommit runs a data query and the checkpoint that records it in one
-// serializable transaction.
+// sqlDataQueryCommit is the [dataQueryCommit] of a database/sql connection:
+// each attempt runs the query and the checkpoint statement in one
+// serializable transaction begin opens.
 //
 // YDB's optimistic locking aborts the transaction of two conflicting ones that
-// commits second, with `Transaction locks invalidated`, and nothing of an
-// aborted transaction is applied, so the whole transaction runs again. Any
-// other failure leaves the transaction uncommitted and is returned, and the
-// caller records the query as not applied.
-//
-// A commit that fails without saying whether it took effect is answered by
-// recorded, which reads the revision back: the checkpoint commits with the
-// query, so a recorded checkpoint is the proof that the query did too.
-type dataQueryCommit struct {
-	begin func(context.Context, *sql.TxOptions) (*sql.Tx, error)
-	query string
-	// checkpoint is the statement that records the query, and its arguments.
-	// It is built after the query ran in each attempt, so the execution time
-	// it records includes the query and is not carried over from an attempt
-	// YDB aborted.
-	checkpoint func() (string, []any)
-	recorded   func(context.Context) (bool, error)
-	wait       func(context.Context, int) error
+// commits second, with `Transaction locks invalidated`, which
+// internal/atlasretry reads as retryable.
+func sqlDataQueryCommit(
+	begin func(context.Context, *sql.TxOptions) (*sql.Tx, error),
+	query string,
+	checkpoint func() (string, []any),
+	recorded func(context.Context) (bool, error),
+) dataQueryCommit {
+	return dataQueryCommit{
+		begin: func(ctx context.Context) (dataQueryAttempt, error) {
+			tx, err := begin(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+			if err != nil {
+				return nil, err
+			}
+			return sqlDataQuery{tx: tx, query: query, statement: checkpoint}, nil
+		},
+		retryable: atlasretry.IsRetryable,
+		recorded:  recorded,
+		wait:      waitForConflictRetry,
+	}
 }
 
-func (d dataQueryCommit) run(ctx context.Context) error {
-	var err error
-	for attempt := range ydbTransactionAttempts {
-		var committing bool
-		committing, err = d.try(ctx)
-		if err == nil {
-			return nil
-		}
-		if committing && !atlasretry.IsRetryable(err) {
-			return d.outcome(ctx, err)
-		}
-		if !atlasretry.IsRetryable(err) || attempt == ydbTransactionAttempts-1 {
-			return err
-		}
-		if waitErr := d.wait(ctx, attempt); waitErr != nil {
-			return errors.Join(err, waitErr)
-		}
+// sqlDataQuery is one attempt's database/sql transaction.
+type sqlDataQuery struct {
+	tx    *sql.Tx
+	query string
+	// statement is the checkpoint statement and its arguments.
+	statement func() (string, []any)
+}
+
+// execute runs the query under the statement timeout's deadline. The
+// transaction holds the checkpoint too and never commits after the deadline
+// stopped the query, so the query is known not to have been applied.
+func (q sqlDataQuery) execute(ctx context.Context) error {
+	queryCtx, done, timeout := boundedQueryContext(ctx)
+	_, err := q.tx.ExecContext(queryCtx, q.query)
+	if timedOut := done(); err != nil && timedOut {
+		return queryNotAppliedError(timeout, "YDB canceled the query, whose transaction never committed")
 	}
 	return err
 }
 
-// try is one attempt. committing reports that the failure, if any, was the
-// commit's own, whose outcome the server did not report.
-func (d dataQueryCommit) try(ctx context.Context) (committing bool, err error) {
-	tx, err := d.begin(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return false, err
-	}
-	queryCtx, done, timeout := boundedQueryContext(ctx)
-	_, err = tx.ExecContext(queryCtx, d.query)
-	if timedOut := done(); err != nil {
-		// YDB has ended the transaction already: a rollback of it answers
-		// `Transaction not found`, and the statement's failure is the one
-		// that matters.
-		_ = tx.Rollback()
-		if timedOut {
-			// The transaction holds the checkpoint too and never commits,
-			// so the query is known not to have been applied.
-			return false, queryNotAppliedError(timeout, "YDB canceled the query, whose transaction never committed")
-		}
-		return false, err
-	}
-	checkpoint, args := d.checkpoint()
-	if _, err := tx.ExecContext(ctx, checkpoint, args...); err != nil {
-		_ = tx.Rollback()
-		return false, fmt.Errorf("record the query in the revision table: %w", err)
-	}
-	// The migration lock is asked for last, right before the commit, which
-	// is the step that cannot be taken back.
-	if err := migrationLockLost(ctx); err != nil {
-		_ = tx.Rollback()
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return true, err
-	}
-	return false, nil
+func (q sqlDataQuery) checkpoint(ctx context.Context) error {
+	statement, args := q.statement()
+	_, err := q.tx.ExecContext(ctx, statement, args...)
+	return err
 }
 
-// outcome answers a commit that failed without saying whether it took effect.
-func (d dataQueryCommit) outcome(ctx context.Context, commitErr error) error {
-	readCtx, cancel := durableRevisionWriteContext(ctx)
-	defer cancel()
-	recorded, err := d.recorded(readCtx)
-	if err != nil {
-		return errors.Join(commitErr, fmt.Errorf("read back whether the query committed: %w", err))
-	}
-	if recorded {
-		return nil
-	}
-	return commitErr
-}
+func (q sqlDataQuery) commit() error { return q.tx.Commit() }
 
-// checkpointRecorded reports whether revision records the unit at index as
-// committed: its progress reaches the unit, and no failure was written over
-// the checkpoint, which clears the failure columns.
-func checkpointRecorded(revision *MigrationRevision, index int) bool {
-	return revision != nil && revision.Applied >= index && revision.Error == ""
-}
+// rollback ends a transaction the attempt will not commit. After a failed
+// statement YDB has ended the transaction already, and a rollback of it
+// answers `Transaction not found`; the statement's failure is the one that
+// matters.
+func (q sqlDataQuery) rollback() { _ = q.tx.Rollback() }
 
 // revisionFailureRecord records a failed migration on YDB without moving its
 // progress backwards.
@@ -341,9 +169,9 @@ type revisionFailureRecord struct {
 
 func (r revisionFailureRecord) run(ctx context.Context) error {
 	var err error
-	for attempt := range ydbTransactionAttempts {
+	for attempt := range conflictAttempts {
 		err = r.try(ctx)
-		if err == nil || !atlasretry.IsRetryable(err) || attempt == ydbTransactionAttempts-1 {
+		if err == nil || !atlasretry.IsRetryable(err) || attempt == conflictAttempts-1 {
 			return err
 		}
 		if waitErr := r.wait(ctx, attempt); waitErr != nil {
@@ -395,18 +223,6 @@ func (m *Migrator) ydbFailureRecord(failed failedRevision, applied int) revision
 		},
 		statement: func(applied int) (string, []any) { return m.failedRevisionStatement(failed, applied) },
 		applied:   applied,
-		wait:      waitForYDBTransactionRetry,
-	}
-}
-
-// waitForYDBTransactionRetry waits longer after each aborted attempt.
-func waitForYDBTransactionRetry(ctx context.Context, attempt int) error {
-	timer := time.NewTimer(time.Duration(attempt+1) * 50 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
+		wait:      waitForConflictRetry,
 	}
 }

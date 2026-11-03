@@ -2,12 +2,12 @@ package sqlutil
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlbatch"
 	"ptah.run/internal/sqlcompound"
 )
 
@@ -225,7 +225,7 @@ func handleBatchSeparator(
 	state *sqlcompound.State,
 	batchStart int,
 ) ([]string, int, bool) {
-	repeatCount, ok := batchSeparatorRepeatCountAt(sql, token.Start, token.End)
+	repeatCount, ok := sqlbatch.SeparatorAt(sql, token.Start, token.End)
 	if !ok {
 		return statements, batchStart, false
 	}
@@ -281,80 +281,4 @@ func observeToken(state *sqlcompound.State, token lexer.Token) {
 	case lexer.TokenOperator:
 		state.Symbol(token.Value)
 	}
-}
-
-// batchSeparatorRepeatCountAt reports whether a separator token, such as SQL
-// Server's GO, stands alone on its line, and returns the optional count after
-// it. A plain separator has count 1; a count of 0 discards the pending batch,
-// as SQL Server client tooling does.
-func batchSeparatorRepeatCountAt(input string, start, end int) (int, bool) {
-	if !separatorLinePrefixIsEmpty(input, start) {
-		return 0, false
-	}
-	return separatorTrailerRepeatCount(input, end)
-}
-
-func separatorLinePrefixIsEmpty(input string, start int) bool {
-	for i := start - 1; i >= 0 && input[i] != '\n' && input[i] != '\r'; i-- {
-		if input[i] != ' ' && input[i] != '\t' {
-			return false
-		}
-	}
-	return true
-}
-
-func separatorTrailerRepeatCount(input string, pos int) (int, bool) {
-	i := pos
-	count := 1
-	consumedCount := false
-	for {
-		i = skipHorizontalSpace(input, i)
-		if !consumedCount && i < len(input) && input[i] >= '0' && input[i] <= '9' {
-			consumedCount = true
-			countStart := i
-			i = skipDigits(input, i)
-			parsedCount, err := strconv.Atoi(input[countStart:i])
-			if err != nil {
-				return 0, false
-			}
-			count = parsedCount
-			continue
-		}
-		switch {
-		case i >= len(input) || input[i] == '\n' || input[i] == '\r':
-			return count, true
-		case strings.HasPrefix(input[i:], "--"):
-			return count, true
-		case strings.HasPrefix(input[i:], "/*"):
-			next, ok := skipBlockComment(input, i)
-			if !ok {
-				return 0, false
-			}
-			i = next
-		default:
-			return 0, false
-		}
-	}
-}
-
-func skipHorizontalSpace(input string, pos int) int {
-	for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t') {
-		pos++
-	}
-	return pos
-}
-
-func skipDigits(input string, pos int) int {
-	for pos < len(input) && input[pos] >= '0' && input[pos] <= '9' {
-		pos++
-	}
-	return pos
-}
-
-func skipBlockComment(input string, pos int) (int, bool) {
-	commentEnd := strings.Index(input[pos+2:], "*/")
-	if commentEnd == -1 {
-		return pos, false
-	}
-	return pos + commentEnd + len("/**/"), true
 }

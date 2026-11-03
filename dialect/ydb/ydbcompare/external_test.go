@@ -107,3 +107,48 @@ func TestExternalComparison_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// TestExternalComparison_LeavesAnUndecidedTableOverARecreatedSource compares
+// a data source the plan drops and creates again, with a table over it that
+// both sides hold and one side cannot describe.
+//
+// The table is reported undecided, and a recreated source takes along every
+// declared table over it that the comparison names nowhere yet. Taken along
+// as well, the table is named by a change and a diagnostic at once, and the
+// engine refuses the whole reply as `invalid comparison diagnostic for
+// ext.events` instead of reporting why the table could not be compared.
+func TestExternalComparison_LeavesAnUndecidedTableOverARecreatedSource(t *testing.T) {
+	events := ydbexternal.Table{DataSource: "ext/bucket", Location: "e/", Columns: []ydbexternal.Column{{Name: "id", Type: "Int64"}}}
+	relocated := comparedBucket
+	relocated.Location = "https://storage.example/other/"
+	limited := schemaext.SubjectCoverage{Kind: ydbexternal.TableKind, Subject: ydbexternal.TableRef("ext", "events"),
+		Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "an unreadable setting"}}
+	declared := []schemaext.Object{
+		ydbexternal.DesiredSourceObject("ext", "bucket", "", relocated), ydbexternal.DesiredTableObject("ext", "events", "", events)}
+	held := []schemaext.Object{
+		ydbexternal.ObservedSourceObject("ext", "bucket", comparedBucket), ydbexternal.ObservedTableObject("ext", "events", events)}
+	tests := []struct {
+		name             string
+		desired, current schemaext.ObjectState
+	}{
+		{name: "the declaration cannot describe the table",
+			desired: externalState(schemaext.Desired, declared, limited), current: externalState(schemaext.Observed, held)},
+		{name: "the read cannot describe the table",
+			desired: externalState(schemaext.Desired, declared), current: externalState(schemaext.Observed, held, limited)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := externalComparison("/local", test.desired, test.current)
+			request.Capabilities = request.Capabilities.With(capability.ExternalObjectReplace, false)
+
+			result, err := externalRuntime(c).CompareObjects(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Changes, qt.HasLen, 1)
+			c.Assert(result.Changes[0].Subject, qt.DeepEquals, ydbexternal.SourceRef("ext", "bucket"))
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Subject, qt.DeepEquals, ydbexternal.TableRef("ext", "events"))
+		})
+	}
+}

@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/errorkind"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -476,7 +477,7 @@ func applySchema(
 	defer cancel()
 	conn, err := dbschema.ConnectToServer(connectCtx, opts.dbURL)
 	if err != nil {
-		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err)
+		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 
@@ -684,7 +685,7 @@ func applySchemaPlanFile(
 	defer cancel()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	if err != nil {
-		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, err)
+		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}
 	defer dbschema.CloseAndWarn(conn)
 

@@ -91,7 +91,7 @@ func (r *Reader) readCockroachRelationGrants(ctx context.Context, schemaName str
 			g.is_grantable = 'YES'
 		FROM information_schema.role_table_grants g
 		JOIN pg_namespace n ON n.nspname = g.table_schema
-		JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = g.table_name
+		JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
 		WHERE g.table_schema = $1
 		AND ` + notCockroachBuiltin("g.grantee") + `
 		AND g.grantee <> pg_get_userbyid(c.relowner)
@@ -236,7 +236,7 @@ func cockroachRolesInScopeClauses() []string {
 		`SELECT grantee.oid AS roleoid FROM information_schema.role_table_grants g
 			JOIN pg_namespace n ON n.nspname = g.table_schema
 			JOIN scope s ON s.oid = n.oid
-			JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = g.table_name
+			JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
 			JOIN pg_roles grantee ON grantee.rolname = g.grantee
 			WHERE ` + notCockroachBuiltin("g.grantee") + `
 			AND g.grantee <> pg_get_userbyid(c.relowner)`,

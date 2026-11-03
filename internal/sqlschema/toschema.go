@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/routineext"
 	routinebuiltin "ptah.run/internal/routineext/builtin"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
 )
 
@@ -1285,12 +1286,28 @@ func applyAlterTableAddColumn(
 			return err
 		}
 	}
+	foldAddedColumnKey(&field, structName, sourcePlatform)
 	if key, numbered := numberedAddedColumnKey(field, target); numbered {
 		field.Unique = false
 		database.Constraints = append(database.Constraints, key)
 	}
 	database.Fields = append(database.Fields, field)
 	return nil
+}
+
+// foldAddedColumnKey takes out the UNIQUE of an added column that a server
+// builds no index for: the column's own UNIQUE beside its own PRIMARY KEY is
+// one key, which PostgreSQL builds once, as it does for the same column in a
+// CREATE TABLE; see [schemaprep.FoldedIndexConstraints]. Measured on
+// PostgreSQL 18.6, `ADD COLUMN id int PRIMARY KEY UNIQUE` leaves t_pkey
+// alone, in either order of the two. Kept, the UNIQUE is a key the database
+// the file built does not hold, and every comparison plans it.
+func foldAddedColumnKey(field *schemamodel.Field, structName, sourcePlatform string) {
+	folds := schemaprep.FoldedIndexConstraints(schemamodel.Table{StructName: structName},
+		[]schemamodel.Field{*field}, nil, sourcePlatform)
+	if len(folds) > 0 {
+		field.Unique = false
+	}
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary

@@ -84,6 +84,26 @@ func waitForSessionEnd(c *qt.C, realm *dbschema.DatabaseConnection, first, secon
 	}
 }
 
+// waitForRelationGone waits until no relation named name is left in the
+// catalog. A replay that fails or is canceled discards its session as well,
+// and the session's temporary tables go while its backend exits, as
+// waitForSessionEnd describes. A durable table the replay created is dropped
+// before the replay returns, so a test asserts that one at once.
+func waitForRelationGone(c *qt.C, realm *dbschema.DatabaseConnection, name string) {
+	c.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var left int
+		c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE relname = $1", name).Scan(&left), qt.IsNil)
+		if left == 0 {
+			return
+		}
+		c.Assert(time.Now().Before(deadline), qt.IsTrue,
+			qt.Commentf("%d relations named %s are still in pg_class", left, name))
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestPostgresTemporaryTableReplay_StatementFailure(t *testing.T) {
 	c := qt.New(t)
 	realm, err := dbschema.ConnectToDatabase(c.Context(), newPostgresReplayRealmDatabase(c))
@@ -101,9 +121,10 @@ SELECT missing_column FROM temporary_stage;
 	err = migrationreplay.WithReplayedSnapshot(c.Context(), realm, snapshot, migrationfile.DirFormatAtlas, func(*dbschema.DatabaseConnection, devclean.Baseline) error { return nil })
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `column "missing_column" does not exist`)
-	var count int
-	c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE relname IN ('durable_stage', 'temporary_stage')").Scan(&count), qt.IsNil)
-	c.Assert(count, qt.Equals, 0)
+	var durable int
+	c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE relname = 'durable_stage'").Scan(&durable), qt.IsNil)
+	c.Assert(durable, qt.Equals, 0)
+	waitForRelationGone(c, realm, "temporary_stage")
 }
 
 func TestPostgresTemporaryTableReplay_Cancellation(t *testing.T) {
@@ -122,7 +143,8 @@ func TestPostgresTemporaryTableReplay_Cancellation(t *testing.T) {
 		return ctx.Err()
 	})
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	var count int
-	c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE relname IN ('durable_stage', 'temporary_stage')").Scan(&count), qt.IsNil)
-	c.Assert(count, qt.Equals, 0)
+	var durable int
+	c.Assert(realm.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_class WHERE relname = 'durable_stage'").Scan(&durable), qt.IsNil)
+	c.Assert(durable, qt.Equals, 0)
+	waitForRelationGone(c, realm, "temporary_stage")
 }

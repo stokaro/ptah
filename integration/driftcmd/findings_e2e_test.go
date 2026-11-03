@@ -299,7 +299,7 @@ func TestSchemaDriftNamesEveryKindE2E(t *testing.T) {
 
 			report := runDrift(c, "--db-url", url, "--schema-file", schema, "--format", "json")
 
-			c.Assert(report.Error, qt.Equals, "")
+			c.Assert(report.Error, qt.IsNil)
 			c.Assert(report.Drift, qt.Equals, len(test.wantFindings) > 0)
 			c.Assert(report.Findings, qt.DeepEquals, test.wantFindings)
 			c.Assert(report.Inventory, qt.DeepEquals, test.wantInventory)

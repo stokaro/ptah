@@ -133,3 +133,32 @@ func TestRegister_RoutineConversionUsesTheSourceGrammar(t *testing.T) {
 		})
 	}
 }
+
+// TestRegister_ReadsTriggersInTheTriggerGrammarItStates registers an engine
+// whose descriptor states the T-SQL trigger grammar. Before the registration
+// the shared order is read, and the T-SQL header is refused at its table.
+// After it the header is read and the SQL reader keeps the trigger, with the
+// schema in its name checked against the engine's default schema, app: the
+// trigger grammar the descriptor states decides, not the engine's name.
+func TestRegister_ReadsTriggersInTheTriggerGrammarItStates(t *testing.T) {
+	const trigger = "CREATE TRIGGER app.stamp ON notes WITH EXECUTE AS CALLER FOR INSERT, DELETE AS SET NOCOUNT ON;"
+	c := qt.New(t)
+	statements, err := parser.NewParser(trigger, parser.WithDialect("tsqltriggerdb")).Parse()
+	c.Assert(err, qt.ErrorMatches, `expected trigger timing, got Identifier at position 25`)
+	c.Assert(statements, qt.IsNil)
+
+	engine := described("tsqltrigger", "", "tsqltriggerdb")
+	engine.Grammar.Routines = descriptor.RoutineGrammar{Trigger: descriptor.TriggerTransactSQL}
+	c.Assert(platform.Register(engine), qt.IsNil)
+
+	node, isTrigger := parsedStatement(c, trigger, "tsqltriggerdb").(*ast.CreateTriggerNode)
+	c.Assert(isTrigger, qt.IsTrue)
+	c.Assert(node.Name, qt.Equals, "stamp")
+	c.Assert(node.Table, qt.Equals, "notes")
+	database, _, err := sqlschema.Read([]byte(trigger), "tsqltriggerdb")
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Triggers, qt.DeepEquals, []schemamodel.Trigger{{
+		Name: "stamp", Table: "notes", Timing: "AFTER", Event: "INSERT OR DELETE", ForEach: "STATEMENT",
+		Body: "SET NOCOUNT ON;",
+	}})
+}

@@ -460,7 +460,7 @@ func (m *Migrator) postgresIndexStatesBlockingAttempt(
 		// the migration for a reason that is not the preflight's, before
 		// any revision row exists. The statement meets the server's own
 		// answer when it runs.
-		if ownTransactionResumeAction(i, statement, conn.Info().Dialect, run) == noTransactionPrefixReplay &&
+		if ownTransactionResumeAction(i, statement, grammarFor(conn), run) == noTransactionPrefixReplay &&
 			!locksTables(statement, conn.Info().Dialect) {
 			if err := executeSQLOn(ctx, conn, statement); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)

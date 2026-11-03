@@ -130,11 +130,19 @@ type Columns struct {
 }
 
 // Statements states how a server reads statements a schema file writes about
-// roles and tables.
+// roles, tables and the objects a feature owner declares.
 type Statements struct {
 	// CreateRoleOnce reports that the server refuses a CREATE ROLE for a role
 	// the file already declared, wherever the first declaration was.
 	CreateRoleOnce bool `json:"create_role_once,omitempty"`
+	// OwnerCreateOnce reports that the server refuses a feature owner's
+	// CREATE of an object the file already created when the statement is
+	// written without IF NOT EXISTS, as PostgreSQL refuses a second CREATE
+	// EXTENSION with `extension "pgcrypto" already exists`. It covers the
+	// objects whose owner reports whether their statement carried the
+	// guard. False means the server accepts such a statement, as
+	// CockroachDB accepts CREATE EXTENSION of an extension it has.
+	OwnerCreateOnce bool `json:"owner_create_once,omitempty"`
 	// ViewsBlockDropTable reports that a plain DROP TABLE is refused while a
 	// view or a materialized view reads the table.
 	ViewsBlockDropTable bool `json:"views_block_drop_table,omitempty"`
