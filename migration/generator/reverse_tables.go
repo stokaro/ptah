@@ -100,7 +100,7 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			TableName:       tableDiff.TableName,
 			ColumnsAdded:    clonedColumnChanges(tableDiff.ColumnsRemoved),
 			ColumnsRemoved:  clonedColumnChanges(tableDiff.ColumnsAdded),
-			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior),
+			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior, semantics),
 			// The table as the PRE-CHANGE database declared it. A rollback that
 			// rebuilds is rebuilding what that database held, and the forward
 			// declaration describes the state being rolled back from.
@@ -124,7 +124,6 @@ func clonedColumnChanges(changes difftypes.ColumnChanges) difftypes.ColumnChange
 	return result
 }
 
-// reverseColumnDiffs reverses column modifications for down migrations
 // reverseColumnDiffs turns the forward direction's column modifications into
 // the rollback's, giving each the column the PRE-CHANGE database held.
 //
@@ -140,6 +139,7 @@ func reverseColumnDiffs(
 	columnDiffs []difftypes.ColumnDiff,
 	tableName string,
 	prior *schemamodel.Database,
+	semantics identifier.Semantics,
 ) []difftypes.ColumnDiff {
 	reversed := make([]difftypes.ColumnDiff, len(columnDiffs))
 	for i, columnDiff := range columnDiffs {
@@ -159,7 +159,7 @@ func reverseColumnDiffs(
 		reversed[i] = difftypes.ColumnDiff{
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
-			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName),
+			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName, semantics),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.
 			CurrentSequenceRestart: columnDiff.CurrentSequenceRestart,
@@ -168,9 +168,21 @@ func reverseColumnDiffs(
 	return reversed
 }
 
-// priorColumn answers with the named column of the named table as the
-// pre-change database held it, folded the same way the comparison folds a
-// declaration so an embedded column is found under the name it renders with.
+// priorTable is the table of the pre-change database a forward diff entry
+// names, or nil when that database holds no single table under the name.
+//
+// The entry is matched by identity rather than by name text, the way the
+// comparison paired the two sides. The comparison keys `public.items` and
+// `items` to one table on PostgreSQL, so a diff names the table as the
+// declaration spells it while the database read names it bare; a text match
+// finds nothing there, and the rollback loses the table's prior shape.
+func priorTable(prior *schemamodel.Database, tableName string, semantics identifier.Semantics) *schemamodel.Table {
+	if prior == nil {
+		return nil
+	}
+	return objectlookup.Qualified(prior.Tables, tableName, semantics)
+}
+
 // priorTableDeclaration answers with everything the pre-change database
 // declared about the named table.
 //
@@ -178,30 +190,32 @@ func reverseColumnDiffs(
 // dialect that rebuilds rather than alters recreates the table, and the one
 // it has to recreate is the one that database held.
 func priorTableDeclaration(prior *schemamodel.Database, tableName string, semantics identifier.Semantics) schemacapture.TableDeclaration {
-	if prior == nil {
+	table := priorTable(prior, tableName, semantics)
+	if table == nil {
 		return schemacapture.TableDeclaration{}
 	}
-	for _, table := range prior.Tables {
-		if table.Name == tableName || table.QualifiedName() == tableName {
-			return schemacapture.DeclareTable(prior, table, semantics)
-		}
-	}
-	return schemacapture.TableDeclaration{}
+	return schemacapture.DeclareTable(prior, *table, semantics)
 }
 
-func priorColumn(prior *schemamodel.Database, tableName, columnName string) schemamodel.Field {
-	if prior == nil {
+// priorColumn answers with the named column of the named table as the
+// pre-change database held it, folded the same way the comparison folds a
+// declaration so an embedded column is found under the name it renders with.
+// The column is matched by the dialect's column identity, as the comparison
+// matched it, with an exact spelling preferred.
+func priorColumn(prior *schemamodel.Database, tableName, columnName string, semantics identifier.Semantics) schemamodel.Field {
+	table := priorTable(prior, tableName, semantics)
+	if table == nil {
 		return schemamodel.Field{}
 	}
-	for _, table := range prior.Tables {
-		if table.Name != tableName && table.QualifiedName() != tableName {
-			continue
-		}
-		for _, field := range generatedschema.FieldsForTable(prior, table) {
-			if field.Name == columnName {
-				return field.Clone()
-			}
-		}
+	fields := generatedschema.FieldsForTable(prior, *table)
+	if i := slices.IndexFunc(fields, func(field schemamodel.Field) bool { return field.Name == columnName }); i >= 0 {
+		return fields[i].Clone()
+	}
+	key := semantics.ColumnIdentityKey(columnName)
+	if i := slices.IndexFunc(fields, func(field schemamodel.Field) bool {
+		return semantics.ColumnIdentityKey(field.Name) == key
+	}); i >= 0 {
+		return fields[i].Clone()
 	}
 	return schemamodel.Field{}
 }
