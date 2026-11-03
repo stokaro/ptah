@@ -41,10 +41,14 @@ type ComposableDeclaration interface {
 
 // Guarded is an owner's statement that its object was declared under the
 // statement's "may already exist" clause, as CREATE EXTENSION IF NOT EXISTS
-// declares one. A SQL schema directory runs its files in order, so it admits
-// a later file's guarded declaration of an object an earlier file declared,
-// as the server running them would, and refuses an unguarded one. Whether the
-// two declarations then combine is [Redeclarable]'s question, not this one's.
+// declares one. A SQL schema document runs its statements in order, and a
+// schema directory its files, so a reader of one skips a guarded declaration
+// of an object an earlier statement declared, as the server running them
+// would: the earlier declaration stands whole, and nothing of the guarded one
+// is kept, so the two need not be equal. An unguarded declaration of an object
+// an earlier file declared is refused. Declarations that have no order, such
+// as those of two packages, combine by [Redeclarable], as [Objects.Declare]
+// combines them.
 type Guarded interface {
 	Value
 	Guarded() bool

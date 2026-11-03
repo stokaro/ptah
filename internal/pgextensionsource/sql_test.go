@@ -192,8 +192,8 @@ func TestSQL_ACommentOnNothingDeclaredIsRefused(t *testing.T) {
 
 // TestSQL_ADirectoryIsOneScript pins the files of a schema directory as one
 // script: a comment amends the extension an earlier file declared, and a
-// later file that declares it again under IF NOT EXISTS, alike, declares
-// nothing new.
+// later file that declares it again under IF NOT EXISTS declares nothing new,
+// alike or not, as the server skips the statement and keeps the first.
 func TestSQL_ADirectoryIsOneScript(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -208,6 +208,10 @@ func TestSQL_ADirectoryIsOneScript(t *testing.T) {
 			"001.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			"002.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE TABLE t (id int);",
 		}, want: map[string]pgextension.DesiredExtension{"pg_trgm": {IfNotExists: true}}},
+		{name: "a guarded declaration that differs", files: map[string]string{
+			"001.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.5';",
+			"002.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.6';",
+		}, want: map[string]pgextension.DesiredExtension{"pg_trgm": {Version: "1.5", IfNotExists: true}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -222,9 +226,8 @@ func TestSQL_ADirectoryIsOneScript(t *testing.T) {
 }
 
 // TestSQL_ADirectoryRefusesASecondDeclaration pins the refusals of a later
-// file that declares an extension an earlier file declared: without IF NOT
-// EXISTS the server running the files refuses it, and under it a declaration
-// that differs is refused rather than one of the two kept in silence.
+// file that declares an extension an earlier file declared without IF NOT
+// EXISTS, which the server running the files refuses.
 func TestSQL_ADirectoryRefusesASecondDeclaration(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -239,10 +242,6 @@ func TestSQL_ADirectoryRefusesASecondDeclaration(t *testing.T) {
 			"001.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			"002.sql": "CREATE EXTENSION pg_trgm;",
 		}, wantErr: `read state from "002.sql": extension "pg_trgm" already exists`},
-		{name: "a guarded declaration that differs", files: map[string]string{
-			"001.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.5';",
-			"002.sql": "CREATE EXTENSION IF NOT EXISTS pg_trgm VERSION '1.6';",
-		}, wantErr: `.*conflicting definitions of ptah.run/pgextension/extension pg_trgm`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

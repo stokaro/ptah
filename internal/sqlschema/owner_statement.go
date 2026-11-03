@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -22,7 +23,9 @@ import (
 //
 // An object is added as a declaration, so declaring an extension a second
 // time with the same definition declares nothing new, and one that differs is
-// refused; see [schemaext.Objects.Declare]. A child object names its table as
+// refused; see [schemaext.Objects.Declare]. A second declaration its owner
+// states was guarded is skipped instead, as the server skips the statement;
+// see [skipsGuardedRepeat]. A child object names its table as
 // the statement writes it, and is keyed by the table the schema declares; see
 // [declaredChild]. The owner's facets of a table are merged into the table
 // the schema declares; see [setTableFacets]. A statement that reports a change
@@ -54,6 +57,9 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 	}
 	for _, object := range note.Objects {
 		object.Ref = declaredChild(databases, object.Ref, sourcePlatform)
+		if skipsGuardedRepeat(databases, object) {
+			continue
+		}
 		objects, err := database.FeatureObjects.Declare(object)
 		if err != nil {
 			return true, err
@@ -73,6 +79,26 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 		return true, setTableFacets(databases, *note.TableFacets, note.Text, sourcePlatform)
 	}
 	return true, nil
+}
+
+// skipsGuardedRepeat reports whether the server skips the statement that
+// declares object: its owner states the statement was guarded, as CREATE
+// EXTENSION IF NOT EXISTS is ([schemaext.Guarded]), and a statement before it,
+// in this file or an earlier file of the document, declared the same object.
+// The server keeps the first declaration whole and reads nothing of the
+// second, so the two need not agree: measured on PostgreSQL 18.6, `CREATE
+// EXTENSION pgcrypto; CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA ext;`
+// leaves pgcrypto in public. Combined as declarations instead, the two are
+// refused as conflicting definitions of one extension.
+func skipsGuardedRepeat(databases []*schemamodel.Database, object schemaext.Object) bool {
+	guarded, ok := object.Value.(schemaext.Guarded)
+	if !ok || !guarded.Guarded() {
+		return false
+	}
+	return slices.ContainsFunc(databases, func(database *schemamodel.Database) bool {
+		_, found, _ := database.FeatureObjects.Get(object.Ref)
+		return found
+	})
 }
 
 // changesUndeclared reports an owner's statement that changes a named object
