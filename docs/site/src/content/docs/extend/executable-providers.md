@@ -531,6 +531,17 @@ an argument that no case holds exactly, such as an `int32`, a pointer or a
 slice, before it sends the statement, so a provider never receives a value
 widened from the type its caller chose.
 
+`RunStatementRequest.arguments` is positional, and the placeholder style of the
+engine's `query_dialect` says which parameter each position binds. Under
+`dollar-named` the Nth parameter is `$pN`, so a provider binds the Nth argument
+to `$pN`, and the host sends a Go argument named `pN` at position N, wherever
+the call put it. That is how a statement the query builder renders for the
+engine, whose arguments are `sql.Named("p1", ...)` and so on, runs through the
+provider. The host refuses a named argument it cannot place exactly before it
+sends anything: one for an engine whose style is another or that declares none,
+names that do not give the positions 1 to N exactly once, and named and
+positional arguments in one statement.
+
 The `--include`, `--exclude` and `--schema` selectors name a provider's objects
 by the selector types its engines declare under `scope.selections`, such as
 `*[type=topic]`. A grant whose object type a selection declares leaves a scope

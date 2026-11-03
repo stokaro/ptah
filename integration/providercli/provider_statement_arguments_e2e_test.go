@@ -117,7 +117,6 @@ func TestProviderStatementArguments_FailurePath(t *testing.T) {
 		{name: "a null int32", argument: sql.NullInt32{Int32: 5, Valid: true},
 			wantErr: ` a statement argument of type sql.NullInt32, since it cannot say that a type admits null`},
 		{name: "a slice", argument: []int{5}, wantErr: ` a statement argument of type \[\]int, since it carries no list`},
-		{name: "a named argument", argument: sql.Named("p1", 5), wantErr: ` the named argument "p1"`},
 	}
 
 	for _, test := range tests {
