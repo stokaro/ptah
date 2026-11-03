@@ -489,7 +489,7 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 		       ` + r.rowDeletionPolicyExpr() + `
 			FROM information_schema.tables t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
-			LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
+			LEFT JOIN pg_class c ON ` + relationByName("c", "n.oid", "t.table_name") + `
 			` + r.rowStatisticsJoin() + `
 			WHERE t.table_schema = $1
 			AND t.table_type = 'BASE TABLE'
@@ -901,7 +901,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			AND tbl.table_name = col.table_name
 			AND tbl.table_type = 'BASE TABLE'
 		JOIN pg_namespace n ON n.nspname = col.table_schema
-		JOIN pg_class cls ON cls.relname = col.table_name AND cls.relnamespace = n.oid
+		JOIN pg_class cls ON ` + relationByName("cls", "n.oid", "col.table_name") + `
 		LEFT JOIN pg_attribute a ON a.attrelid = cls.oid
 			AND a.attname = col.column_name
 			AND NOT a.attisdropped
@@ -2295,8 +2295,7 @@ func (r *Reader) basicConstraintsQuery() string {
 		JOIN pg_namespace AS constraint_schema
 			ON constraint_schema.nspname = tc.table_schema
 		JOIN pg_class AS constraint_table
-			ON constraint_table.relnamespace = constraint_schema.oid
-			AND constraint_table.relname = tc.table_name
+			ON ` + relationByName("constraint_table", "constraint_schema.oid", "tc.table_name") + `
 		JOIN pg_constraint AS pc
 			ON pc.connamespace = constraint_schema.oid
 			AND pc.conrelid = constraint_table.oid
@@ -4514,7 +4513,7 @@ func (r *Reader) readColumnGrantsForSchema(ctx context.Context, schemaName strin
 }
 
 func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
-	const query = `
+	query := `
 		SELECT
 			grantee,
 			privilege_type,
@@ -4539,10 +4538,9 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		-- did not define once role reporting was scoped (stokaro/ptah#1267),
 		-- and the pinned Atlas community binary refuses such a document.
 		AND EXISTS (
-			SELECT 1 FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
+			SELECT 1 FROM pg_namespace n
+			JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
 			WHERE n.nspname = g.table_schema
-			AND c.relname = g.table_name
 			AND c.relacl IS NOT NULL
 		)
 		UNION ALL
