@@ -1091,13 +1091,11 @@ It resolves each command line against the command tree the binary builds, the
 way cobra does, without running it: a word a command with subcommands does not
 know is refused, and a forwarding verb of `ptah-compat` is held to the flags it
 and its ancestors register and the flags the native command it forwards to
-declares itself, less those it refuses before forwarding. A forwarding verb that
-reads positional arguments takes a value for a flag only its target declares as
-`--flag=value`, as the verb itself does. So a renamed verb or flag fails the
-change that renames it until every page that spells it is updated. It does not
-check a flag's value, the number of arguments, or what the command prints. Those
-are runtime questions, and the quick-start contour and the example acceptance
-job answer them for the pages they run.
+declares itself, less those it refuses before forwarding. So a renamed verb or
+flag fails the change that renames it until every page that spells it is
+updated. It does not check a flag's value, the number of arguments, or what the
+command prints. Those are runtime questions, and the quick-start contour and
+the example acceptance job answer them for the pages they run.
 
 A page sometimes names a command in order to say it does not exist, or quotes
 output that begins with the program's name. Each such text is listed in the

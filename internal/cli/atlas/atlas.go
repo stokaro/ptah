@@ -1251,9 +1251,6 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 		)
 		registerAtlasFlags(cmd, verb.flags)
 		cmdforward.Refuse(cmd, verb.nativeOnlyFlags...)
-		if len(verb.positionals) > 0 {
-			cmdforward.ReadsPositionals(cmd)
-		}
 		return cmd
 	}
 	cmd := &cobra.Command{
@@ -1604,7 +1601,7 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remain
 	if len(verb.positionals) != 1 {
 		return nil, nil, fmt.Errorf("atlas %s %s declares unsupported positional mapping", group, verb.use)
 	}
-	withoutPositionals, positionals := splitAtlasPositionals(verb.flags, args)
+	withoutPositionals, positionals := splitAtlasPositionals(atlasPositionalValueFlags(verb), args)
 	positional := verb.positionals[0]
 	switch len(positionals) {
 	case 0:
@@ -1667,11 +1664,10 @@ func mapAtlasPositionalValue(group string, verb atlasVerb, positional atlasPosit
 	return mapped, nil
 }
 
-func splitAtlasPositionals(flags []atlasargs.Flag, args []string) (
+func splitAtlasPositionals(valueFlags map[string]struct{}, args []string) (
 	withoutPositionals,
 	positionals []string,
 ) {
-	valueFlags := atlasValueFlagNames(flags)
 	withoutPositionals = make([]string, 0, len(args))
 	positionals = make([]string, 0, 1)
 	for i := 0; i < len(args); i++ {
@@ -1694,6 +1690,37 @@ func splitAtlasPositionals(flags []atlasargs.Flag, args []string) (
 		positionals = append(positionals, arg)
 	}
 	return withoutPositionals, positionals
+}
+
+// atlasPositionalValueFlags names the flags whose next argument is their value
+// when a verb's positionals are split out: the verb's own value flags, and the
+// value flags of the native command it forwards to, which reach that command
+// although the verb does not register them. Without the second set, the value
+// of a flag only the target declares reads as a positional, and the flag takes
+// the next argument the verb forwards. A flag the verb registers keeps the
+// kind the verb gives it, and a target flag that takes no value when it is
+// written alone, such as a boolean, takes none here.
+func atlasPositionalValueFlags(verb atlasVerb) map[string]struct{} {
+	names := atlasValueFlagNames(verb.flags)
+	if verb.factory == nil {
+		return names
+	}
+	registered := make(map[string]bool, 2*len(verb.flags))
+	for _, flag := range verb.flags {
+		registered[flag.Name] = true
+		registered[flag.Shorthand] = true
+	}
+	verb.factory().LocalFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.NoOptDefVal != "" {
+			return
+		}
+		for _, name := range []string{flag.Name, flag.Shorthand} {
+			if name != "" && !registered[name] {
+				names[name] = struct{}{}
+			}
+		}
+	})
+	return names
 }
 
 func atlasValueFlagNames(flags []atlasargs.Flag) map[string]struct{} {
