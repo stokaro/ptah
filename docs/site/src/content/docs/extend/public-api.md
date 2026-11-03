@@ -878,6 +878,16 @@ when the engine did not measure the count; a provider that runs no statement
 refuses with `ptaherr.ErrUnsupportedFeature`. `dbschema.OperatorStatementProvider`
 is the interface a native session implements to serve it.
 
+On that handle an argument reaches the provider with the type its Go value
+names: an `int` or `int64` as a signed 64-bit integer, a `uint` or `uint64` as
+an unsigned one, a `time.Duration` as an interval, a named type as its
+underlying kind, and a `driver.Valuer` as the value its `Value` method returns.
+An argument the provider contract cannot carry exactly is refused with
+`ptaherr.ErrUnsupportedFeature` before the statement is sent, rather than
+converted: an integer narrower than 64 bits, a `float32`, a pointer, a
+`database/sql` `Null` value, an array, a slice other than a byte slice, and a
+named argument.
+
 `migration/migrator.CheckFailedError` identifies one failed or invalid
 pre-migration assertion. `CheckGroupFailedError` identifies an Atlas `oneof`
 check file in which no assertion returned a truthy result, including an empty
