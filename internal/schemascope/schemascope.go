@@ -63,12 +63,14 @@ func FilterGeneratedWithDefaultSchema(
 	filtered := *db
 	keptStructs := make(map[string]struct{})
 	keptTables := make(map[string]schemamodel.Table)
+	keptRelations := newRelations()
 	filtered.Tables = keep(db.Tables, func(table schemamodel.Table) bool {
 		if !schemaAllowed(allowed, effectiveSchema(table.Schema, defaultSchema)) {
 			return false
 		}
 		keptStructs[table.StructName] = struct{}{}
 		keptTables[table.QualifiedName()] = table
+		keptRelations.add(table.QualifiedName(), table.Name)
 		return true
 	})
 	filtered.Schemas = keep(db.Schemas, func(schema schemamodel.Schema) bool {
@@ -98,10 +100,18 @@ func FilterGeneratedWithDefaultSchema(
 		return generatedNamedObjectAllowed(allowed, keptStructs, function.StructName, function.Name, defaultSchema)
 	})
 	filtered.Views = keep(db.Views, func(view schemamodel.View) bool {
-		return generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema)
+		if !generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema) {
+			return false
+		}
+		keptRelations.addSpelled(view.Name)
+		return true
 	})
 	filtered.MaterializedViews = keep(db.MaterializedViews, func(view schemamodel.MaterializedView) bool {
-		return generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema)
+		if !generatedNamedObjectAllowed(allowed, keptStructs, view.StructName, view.Name, defaultSchema) {
+			return false
+		}
+		keptRelations.addSpelled(view.Name)
+		return true
 	})
 	filtered.Triggers = keep(db.Triggers, func(trigger schemamodel.Trigger) bool {
 		return tableReferenceAllowed(keptTables, trigger.Table)
@@ -125,10 +135,10 @@ func FilterGeneratedWithDefaultSchema(
 		return nil, err
 	}
 	filtered.Grants = keep(db.Grants, func(grant schemamodel.Grant) bool {
-		return grantAllowed(allowed, keptTables, grant, defaultSchema)
+		return grantAllowed(allowed, keptRelations, grant, defaultSchema)
 	})
 	filtered.RevokedGrants = keep(db.RevokedGrants, func(grant schemamodel.Grant) bool {
-		return grantAllowed(allowed, keptTables, grant, defaultSchema)
+		return grantAllowed(allowed, keptRelations, grant, defaultSchema)
 	})
 	filtered.Enums = keepReferencedGeneratedEnums(db.Enums, filtered.Fields)
 	filtered.Dependencies = filterDependencies(db.Dependencies, keptTables)
@@ -168,11 +178,13 @@ func FilterDatabaseWithDefaultSchema(
 
 	filtered := *db
 	keptTables := make(map[string]struct{})
+	keptRelations := newRelations()
 	filtered.Tables = keep(db.Tables, func(table catalog.Table) bool {
 		if !schemaAllowed(allowed, effectiveSchema(table.Schema, defaultSchema)) {
 			return false
 		}
 		keptTables[table.QualifiedName()] = struct{}{}
+		keptRelations.add(table.QualifiedName(), table.Name)
 		return true
 	})
 	filtered.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
@@ -186,10 +198,18 @@ func FilterDatabaseWithDefaultSchema(
 			schemaAllowed(allowed, effectiveSchema(constraint.ForeignSchema, defaultSchema))
 	})
 	filtered.Views = keep(db.Views, func(view catalog.View) bool {
-		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
+		if !schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema)) {
+			return false
+		}
+		keptRelations.add(view.QualifiedName(), view.Name)
+		return true
 	})
 	filtered.MatViews = keep(db.MatViews, func(view catalog.MaterializedView) bool {
-		return schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema))
+		if !schemaAllowed(allowed, effectiveSchema(view.Schema, defaultSchema)) {
+			return false
+		}
+		keptRelations.add(view.QualifiedName(), view.Name)
+		return true
 	})
 	filtered.Triggers = keep(db.Triggers, func(trigger catalog.Trigger) bool {
 		return schemaAllowed(allowed, effectiveSchema(trigger.Schema, defaultSchema)) &&
@@ -209,7 +229,7 @@ func FilterDatabaseWithDefaultSchema(
 		return nil, err
 	}
 	filtered.Grants = keep(db.Grants, func(grant catalog.Grant) bool {
-		return dbGrantAllowed(allowed, keptTables, grant, defaultSchema)
+		return dbGrantAllowed(allowed, keptRelations, grant, defaultSchema)
 	})
 	filtered.Enums = keepReferencedDatabaseEnums(db.Enums, filtered.Tables)
 
@@ -343,7 +363,7 @@ func schemaFromQualifiedName(name string) string {
 
 func grantAllowed(
 	allowed map[string]struct{},
-	keptTables map[string]schemamodel.Table,
+	keptRelations relations,
 	grant schemamodel.Grant,
 	defaultSchema string,
 ) bool {
@@ -355,7 +375,9 @@ func grantAllowed(
 		return schemaAllowed(allowed, effectiveSchema(grant.OnSchema, defaultSchema))
 	}
 	if grant.OnTable != "" {
-		return tableReferenceAllowed(keptTables, grant.OnTable)
+		// OnTable names a view or a materialized view as well as a table; see
+		// [relations].
+		return keptRelations.holds(grant.OnTable)
 	}
 	if grant.OnRoutine != "" {
 		// A routine is kept by its schema, and its grants ride it.
@@ -374,8 +396,8 @@ func grantAllowed(
 }
 
 func dbGrantAllowed(
-	allowed,
-	keptTables map[string]struct{},
+	allowed map[string]struct{},
+	keptRelations relations,
 	grant catalog.Grant,
 	defaultSchema string,
 ) bool {
@@ -399,7 +421,60 @@ func dbGrantAllowed(
 		return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema))
 	}
 	return schemaAllowed(allowed, effectiveSchema(grant.Schema, defaultSchema)) &&
-		dbTableReferenceAllowed(keptTables, grant.QualifiedTarget())
+		keptRelations.holds(grant.QualifiedTarget())
+}
+
+// relations is the set of relations a selection keeps -- its tables, views
+// and materialized views -- by the names a grant reaches one with. A privilege
+// names a view as it names a table: PostgreSQL reports a grant on either as a
+// TABLE grant, and a schema file writes GRANT ... ON v for both. Scoped by the
+// kept tables alone, a grant on a view leaves the read side of a comparison
+// that applies a selection while the desired side keeps it, and `migrate diff`,
+// which selects the schemas it read, plans the grant again on every run
+// (stokaro/ptah#5047, stokaro/ptah#5016).
+type relations struct {
+	qualified map[string]struct{}
+	names     map[string]struct{}
+}
+
+func newRelations() relations {
+	return relations{qualified: make(map[string]struct{}), names: make(map[string]struct{})}
+}
+
+// add records a kept relation by its qualified name and its bare name.
+func (r relations) add(qualified, name string) {
+	r.qualified[qualified] = struct{}{}
+	r.names[name] = struct{}{}
+}
+
+// addSpelled records a kept relation a declaration names in one string,
+// qualified or not, as a declared view does.
+func (r relations) addSpelled(spelled string) {
+	ref, ok := tableref.Parse(spelled)
+	if !ok {
+		r.add(strings.TrimSpace(spelled), strings.TrimSpace(spelled))
+		return
+	}
+	r.add(schemamodel.QualifyTableName(ref.Schema, ref.Name), ref.Name)
+}
+
+// holds reports whether reference names a kept relation: exactly, or, for an
+// unqualified reference, by the bare name of any kept relation, as
+// [tableReferenceAllowed] matches a table.
+func (r relations) holds(reference string) bool {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return false
+	}
+	if _, ok := r.qualified[reference]; ok {
+		return true
+	}
+	ref, ok := tableref.Parse(reference)
+	if !ok || ref.Qualified {
+		return false
+	}
+	_, ok = r.names[ref.Name]
+	return ok
 }
 
 func tableKeyAllowed(keptTables map[string]struct{}, tableName string) bool {
