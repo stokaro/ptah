@@ -46,6 +46,10 @@ space-separated `key="value"` attributes.
   `primary` is equivalent to `primary="true"`.
 - An unknown attribute fails parsing with
   `unknown annotation attribute "<name>" on //<directive>`.
+- An unknown directive, a `//ptah:` comment on a struct or a field that names
+  no directive of Ptah or of a selected provider, fails parsing with
+  `unknown annotation directive "//<name>" on <struct or field> at <file>:<line>`.
+  A misspelled `//ptah:schema:colum` would otherwise leave its column out.
 - Directives marked "Platform overrides: yes" also accept
   `platform.<dialect>.<attribute>="..."` pairs that override the base
   attribute for one dialect, for example
@@ -142,7 +146,8 @@ of the field it describes. File-scoped RLS directives may use a separate comment
 group, but they still need enough attributes to resolve to a parsed RLS object.
 `ptah schema export --cleanup-go-annotations` refuses to remove any recognized
 standalone directive that does not meet those conditions. Directive names use an
-exact token boundary: `//ptah:schema:tableau` is an ordinary comment, not a table
+exact token boundary: `//ptah:schema:tableau` is not read as a table directive.
+It names no directive, so on a struct or a field it fails parsing as an unknown
 directive.
 
 ## Scoping an object to dialects

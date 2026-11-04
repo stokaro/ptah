@@ -704,6 +704,10 @@ type User struct{}
 	assertFileBytes(c, output, outputData)
 }
 
+// TestExport_HappyPath_NearPrefixDirectiveIsPreservedByCleanup keeps a
+// comment that only shares a prefix with a directive and sits apart from any
+// declaration: the parse reads no comment there, and cleanup removes only the
+// directives it recognizes.
 func TestExport_HappyPath_NearPrefixDirectiveIsPreservedByCleanup(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
@@ -712,6 +716,7 @@ func TestExport_HappyPath_NearPrefixDirectiveIsPreservedByCleanup(t *testing.T) 
 	sourceData := []byte(`package models
 
 //ptah:schema:tableau name="not_a_table"
+
 //ptah:schema:table name="users"
 type User struct{}
 `)
@@ -731,6 +736,38 @@ type User struct{}
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(after), qt.Contains, `//ptah:schema:tableau name="not_a_table"`)
 	c.Assert(string(after), qt.Not(qt.Contains), `//ptah:schema:table name="users"`)
+}
+
+// TestExport_FailurePath_AttachedNearPrefixDirectiveRefusesTheExport is the
+// same comment in the struct's doc comment. There it names an unknown
+// directive, so the parse refuses it, and neither the source nor the output is
+// touched.
+func TestExport_FailurePath_AttachedNearPrefixDirectiveRefusesTheExport(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "model.go")
+	output := filepath.Join(root, "schema.hcl")
+	sourceData := []byte(`package models
+
+//ptah:schema:tableau name="not_a_table"
+//ptah:schema:table name="users"
+type User struct{}
+`)
+	outputData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(source, sourceData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(output, outputData, 0o600), qt.IsNil)
+
+	result, err := goannotationexport.Export(t.Context(), goannotationexport.Options{HCL: builtintest.Runtime().HCL(),
+		Annotations: builtintest.Annotations(),
+		RootDir:     root,
+		OutputPath:  output,
+		Cleanup:     true,
+	})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownDirective)
+	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
+	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c, output, outputData)
 }
 
 func TestExport_HappyPath_CleanupMatchesEscapedRLSAttributes(t *testing.T) {

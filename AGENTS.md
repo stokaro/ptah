@@ -91,7 +91,7 @@ from their declarations, not from counts here:
   struct's `_ int` field and name the table:
   `//ptah:schema:index name="..." fields="name" table="products"`.
 - `fields=` is current and `columns=` a legacy synonym; unknown attributes
-  fail at parse time.
+  and unknown directive names on a struct or a field fail at parse time.
 
 ## The Native CLI Surface
 

@@ -815,7 +815,7 @@ func (s *schemaParseState) parseAttachedComment(
 ) error {
 	directive, ok := s.catalog.MatchCommentDirective(comment.Text)
 	if !ok {
-		return nil
+		return s.refuseUnknownDirective(comment, target)
 	}
 	if !annotationmeta.AllowsScope(directive, scope) {
 		return nil
@@ -827,6 +827,36 @@ func (s *schemaParseState) parseAttachedComment(
 		return s.parseOwnerDirective(comment, directive, target)
 	}
 	return s.parseSharedDirective(comment, directive.Name, target)
+}
+
+// refuseUnknownDirective refuses a `//ptah:` comment that names no directive
+// the parse knows: not one of the frontend's own, and not one a selected
+// owner declares. Read as documentation, a misspelled directive declares
+// nothing -- `//ptah:schema:column` leaves a table without its column,
+// `//ptah:schema:tabel` leaves out the table -- and the render that follows
+// succeeds. A comment that is not written as a directive is documentation and
+// is left alone.
+//
+// Only an [annotation.Set.Exhaustive] selection refuses: a caller that selects
+// some owners reads the directives of the others as documentation.
+func (s *schemaParseState) refuseUnknownDirective(comment *ast.Comment, target schemaCommentTarget) error {
+	name, written := annotationmeta.CommentDirectiveName(comment.Text)
+	if !written || !s.annotations.IsExhaustive() {
+		return nil
+	}
+	location := target.structName
+	if target.field != nil && len(target.field.Names) > 0 {
+		location += "." + target.field.Names[0].Name
+	}
+	ctx := s.annotationContext(comment, "//"+name, location)
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: name,
+		Err:       ptaherr.ErrUnknownDirective,
+		Message: fmt.Sprintf("unknown annotation directive %q on %s at %s:%d: neither Ptah nor a selected provider declares it",
+			"//"+name, location, ctx.file, ctx.line),
+	}
 }
 
 func (s *schemaParseState) parsePlacementDirective(
@@ -969,10 +999,14 @@ func (s *schemaParseState) processFieldComments(structDecl structDeclaration) er
 // reading one file of a package gets that package's fields and no others.
 //
 // annotations selects the feature owners whose directives the parse reads,
-// usually the set of the runtime the caller renders and compares with. A parse
-// reads a directive of an owner it did not select no more than one it does not
-// know, so a caller that wants the frontend's own directives only passes
-// [annotation.None]. The zero set is refused with [annotation.ErrUnselected].
+// usually the set of the runtime the caller renders and compares with. With a
+// set that is [annotation.Set.Exhaustive], as a runtime's is, a //ptah:
+// directive that neither the frontend nor a selected owner declares is
+// refused with [ptaherr.ErrUnknownDirective], naming the directive and its
+// line. With any other set such a directive is read as documentation, as a
+// directive of an owner the caller did not select is, so a caller that wants
+// the frontend's own directives only passes [annotation.None]. The zero set is
+// refused with [annotation.ErrUnselected].
 //
 // A file that does not parse as Go returns a [ptaherr.ParseError] naming it.
 func ParseFile(annotations annotation.Set, filename string) (schemamodel.Database, error) {

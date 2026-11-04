@@ -1,9 +1,10 @@
 // Package ptaherr defines the typed errors Ptah's public Go APIs return, in
 // two layers a caller can branch on. The sentinel errors answer errors.Is:
 // [ErrUnsupportedDialect], [ErrUnsupportedFeature], [ErrInvalidSchemaDiff],
-// [ErrOutcomeUnknown], and the annotation family [ErrUnknownAttribute],
-// [ErrMissingRequiredAttribute], [ErrInvalidAttributeValue] and
-// [ErrRetiredAttribute]. The structured types answer errors.As and carry the
+// [ErrOutcomeUnknown], and the annotation family [ErrUnknownDirective],
+// [ErrUnknownAttribute], [ErrMissingRequiredAttribute],
+// [ErrInvalidAttributeValue] and [ErrRetiredAttribute]. The structured types
+// answer errors.As and carry the
 // failure's context in their fields: [ParseError], [PlanError], [RenderError]
 // and [CapabilityError].
 //
@@ -32,6 +33,10 @@ var (
 	// ErrUnsupportedDialect marks errors caused by an unknown or unsupported
 	// database dialect.
 	ErrUnsupportedDialect = errors.New("unsupported database dialect")
+
+	// ErrUnknownDirective marks a Go annotation comment that names a //ptah:
+	// directive neither Ptah nor a selected feature owner declares.
+	ErrUnknownDirective = errors.New("unknown annotation directive")
 
 	// ErrUnknownAttribute marks Go annotation directives containing an
 	// attribute Ptah does not recognize.
@@ -65,7 +70,7 @@ var (
 // ParseError reports a Go annotation or source parsing failure. The
 // core/goschema parser returns it, and errors.As(err, &parseErr) retrieves
 // it. Err usually wraps one of the annotation sentinels --
-// [ErrUnknownAttribute], [ErrMissingRequiredAttribute],
+// [ErrUnknownDirective], [ErrUnknownAttribute], [ErrMissingRequiredAttribute],
 // [ErrInvalidAttributeValue] or [ErrRetiredAttribute] -- so errors.Is on the
 // same error tells the refusals apart. Source that does not parse as Go at
 // all is reported the same way, with Err holding the syntax error rather than

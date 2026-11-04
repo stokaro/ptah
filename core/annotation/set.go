@@ -272,6 +272,9 @@ type Set struct {
 	// vocabulary is the coverage kinds a notdescribed declaration may name
 	// for the common coverage set.
 	vocabulary coverage.Vocabulary
+	// exhaustive reports that the set names every owner a parse with it may
+	// meet; see [Set.Exhaustive].
+	exhaustive bool
 }
 
 // None returns a selected set without owners. A parse with it reads the
@@ -576,6 +579,22 @@ func (g DirectiveAttributes) written(directive string, attributes map[string]str
 // Selected reports whether the set was built by [NewSet] or [None].
 func (s Set) Selected() bool {
 	return s.selected
+}
+
+// Exhaustive returns a copy of s that names every owner whose directives a
+// parse with it may meet, as the set an engine runtime registers does. A parse
+// with an exhaustive set refuses a //ptah: directive that neither the frontend
+// nor one of the set's owners declares, as a misspelling, where a set from
+// [NewSet] or [None] reads it as documentation: a caller that selects some
+// owners leaves the directives of the others to them.
+func (s Set) Exhaustive() Set {
+	s.exhaustive = true
+	return s
+}
+
+// IsExhaustive reports whether s was marked by [Set.Exhaustive].
+func (s Set) IsExhaustive() bool {
+	return s.exhaustive
 }
 
 // Directives returns every directive the set's owners declare, sorted by

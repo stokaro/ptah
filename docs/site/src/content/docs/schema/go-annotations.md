@@ -286,7 +286,9 @@ roles, clauses and composition, and table switches retain enablement and force.
 An owner without this verification cannot authorize annotation cleanup.
 
 Comments that only share a prefix with a directive, such as
-`//ptah:schema:tableau`, are ordinary comments and remain byte-for-byte intact.
+`//ptah:schema:tableau`, are not removed and remain byte-for-byte intact. On a
+struct or a field such a comment names an unknown directive, and the parse the
+export runs refuses it before cleanup starts.
 
 :::caution[Cleanup is a one-time migration]
 Cleanup fails before HCL publication when the export reports any diagnostic,
