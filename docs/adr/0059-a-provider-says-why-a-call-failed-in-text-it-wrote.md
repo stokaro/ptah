@@ -26,10 +26,17 @@ address, a credential or a statement with the values bound into it
 binds secret inputs into statement text for the dispatch RPC alone).
 
 So a refusal the provider wrote for the operator never reaches the operator.
-Through the fixture provider, a role the fixture cannot hold reads `provider
-render failed (Unknown)`, while the fixture wrote `role admin: A fixture role
-has a login and nothing else`. The built-in YDB engine runs in the host
-process and prints its full reason, and it is being removed
+Measured on YDB 26.2.1.14 through `stokaro/ptah-ydb-plugin`, and through the
+fixture provider:
+
+| Case | The host prints | The provider wrote |
+| --- | --- | --- |
+| `schema apply` of a streaming query on a session where none is established | `provider compare models failed (InvalidArgument)` | `streaming query capability was not established` |
+| a YDB address with a password and a token | `provider resolve database context failed (InvalidArgument)` | `provide exactly one nonempty YDB credential source` |
+| a role the fixture cannot hold | `provider render failed (Unknown)` | `role admin: A fixture role has a login and nothing else` |
+
+The built-in YDB engine runs in the host process and prints its full reason,
+and it is being removed
 ([stokaro/ptah#4204](https://github.com/stokaro/ptah/issues/4204)), so the
 provider has to say why too.
 
@@ -196,3 +203,8 @@ always is.
   a reason while its status message quotes the database path, and answers a
   busy lock with a reason. A host that lists the feature reads both reasons and
   not the path; a host that does not reads the code and the outcome alone.
+- Through the YDB provider on 26.2.1.14, a host that lists the feature prints
+  `error: compare database schema: provider compare models failed
+  (InvalidArgument): streaming query capability was not established` for the
+  measurement above, and a busy lock reads `provider lock outcome is BUSY:
+  another YDB session holds the lock`.
