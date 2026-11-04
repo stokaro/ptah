@@ -99,8 +99,7 @@ repository alone.`,
 	flags.String(dbcli.SchemasFlagName, "",
 		"Comma-separated schemas to introspect where the engine has them, or YDB directories relative to the database root. "+
 			"Empty uses the project's schemas, else lets the URL decide: a URL pinning search_path is read at that schema, "+
-			"one pinning none across every schema, a MySQL or MariaDB URL naming no database across every user database, "+
-			"and a YDB URL across every directory.",
+			"one pinning none across every schema, and a YDB URL across every directory.",
 	)
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")

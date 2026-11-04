@@ -78,6 +78,18 @@ func RegisterURLScopedSchemasFlag(flags *pflag.FlagSet, target *string) {
 		"a MySQL or MariaDB URL naming no database across every user database, and a YDB URL across every directory.")
 }
 
+// RegisterURLScopedDatabaseSchemasFlag is [RegisterURLScopedSchemasFlag] for
+// a verb that reads one database and refuses a MySQL or MariaDB URL that
+// names none: `migrations plan`, whose versioned workflow -- `migrations
+// generate`, `up` and `status` -- runs against one database. Its help leaves
+// the whole server out, because the verb refuses the URL the clause describes.
+func RegisterURLScopedDatabaseSchemasFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect: PostgreSQL-family schemas, "+
+		"or YDB directories relative to the database root. "+
+		"Empty lets the URL decide: a URL pinning search_path is read at that schema, one pinning none across every schema, "+
+		"and a YDB URL across every directory.")
+}
+
 // RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
 func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, MigrationsSchemaFlagName, "",

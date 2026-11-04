@@ -184,9 +184,11 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	// in. A postgres:// URL reaches CockroachDB too, and read as PostgreSQL a
 	// CockroachDB file loses what only CockroachDB spells, such as an index's
 	// NOT VISIBLE, which then reads as part of its WHERE condition. `schema
-	// apply` and `schema plan` read the file the same way.
+	// apply` and `schema plan` read the file the same way. A MySQL or MariaDB
+	// URL that names no database is the whole server, as `schema apply` reads
+	// it, so the comparison reports the changes apply would make there.
 	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToServer(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
