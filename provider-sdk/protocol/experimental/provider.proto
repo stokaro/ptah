@@ -1700,6 +1700,16 @@ message CommonPlanningStep {
   // The operand, when this step changes a common object beyond tables.
   // Contract 25.3, under schema.common-objects.
   CommonObjectChange common_object = 5;
+  // The operand, when this step renames one index of the parent in place.
+  // Contract 25.17, under planning.index-renames.
+  CommonIndexRename renamed_index = 6;
+}
+// CommonIndexRename names an index the parent holds as from and declares as
+// to, with one definition under both names. The step's effects read the
+// parent, drop the index subject from and create the index subject to.
+message CommonIndexRename {
+  string from = 1;
+  string to = 2;
 }
 message PlanningOperation {
   NativeOperation.Role role = 1;
