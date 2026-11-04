@@ -391,8 +391,12 @@ func RLSEnabledTablesWithSemantics(
 	for _, policy := range desired.RLSPolicies {
 		declaredPolicyTables[newQualifiedTableIdentity(policy.Table, semantics)] = struct{}{}
 	}
+	cov := removalCoverage(desired, semantics)
 	for identity, tableName := range dbRLSTables {
 		if _, declared := genRLSTables[identity]; declared {
+			continue
+		}
+		if schema, _ := qualifiedName(tableName); !cov.PlansRemovalIn(schema) {
 			continue
 		}
 		if _, hasPolicies := declaredPolicyTables[identity]; hasPolicies {

@@ -116,8 +116,9 @@ func TriggersWithSemanticsAndConditions(
 			diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
 		}
 	}
+	cov := removalCoverage(desired, semantics)
 	for index, trigger := range database.Triggers {
-		if paired[index] {
+		if paired[index] || !cov.PlansRemovalIn(trigger.Schema) {
 			continue
 		}
 		removal := difftypes.TriggerRef{TriggerName: trigger.Name, TableName: trigger.QualifiedTable()}

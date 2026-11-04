@@ -171,8 +171,12 @@ func EnumsWithSemantics(
 		}
 	}
 
+	cov := removalCoverage(desired, semantics)
 	for _, enum := range database.Enums {
 		if _, ok := matched[enum.QualifiedName()]; ok {
+			continue
+		}
+		if schema, _ := enumParts(enum.Schema, enum.Name); !cov.PlansRemovalIn(schema) {
 			continue
 		}
 		diff.EnumsRemoved = append(diff.EnumsRemoved, enumFromCatalog(enum))

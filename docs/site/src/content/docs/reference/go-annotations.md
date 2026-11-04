@@ -680,6 +680,12 @@ the database should not have the object. An extension a bootstrap step installs
 is the usual case — declaring it instead hands Ptah the object, and that
 includes removing it.
 
+`kind="schema"` declines everything in the schema it names. No table, key,
+index, trigger, routine, enum, sequence, view, policy, row-level security
+setting or grant there is removed, which leaves a schema another tool owns
+whole. A table this schema does declare there is still compared with the
+database.
+
 Exports retain the reason and provenance of a limit. Both attributes use the
 closed coverage vocabulary; an unknown token is refused. For example,
 `reason="not-inspected" provenance="observed"` preserves an unread family

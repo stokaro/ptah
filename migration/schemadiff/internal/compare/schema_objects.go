@@ -240,8 +240,12 @@ func functionsWithDialect(
 		diff.RoutinesKept = append(diff.RoutinesKept, keptRoutine(generatedFunction, generatedFunction.Name, databaseFunction))
 	}
 
+	cov := CoverageOf(desired, nil)
 	for _, fn := range database.Functions {
 		if _, ok := matchedDatabaseFunctions[routineKeyWithKind(fn.Kind, fn.QualifiedName())]; ok {
+			continue
+		}
+		if !cov.PlansRemovalIn(fn.Schema) {
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(fn.Kind), "procedure") {
@@ -309,9 +313,13 @@ func FunctionsWithSemantics(
 			diff.RoutinesKept = append(diff.RoutinesKept, keptRoutine(pair.declared, generatedNames[identity], pair.recorded))
 		}
 	}
+	cov := removalCoverage(desired, semantics)
 	for identity, recorded := range databaseFunctions {
 		_, _, removed := pairRoutineOverloads(generatedFunctions[identity], recorded)
 		for _, routine := range removed {
+			if !cov.PlansRemovalIn(routine.Schema) {
+				continue
+			}
 			// The kind travels with the removal because it cannot be recovered
 			// later: there is no declaration left to read it off, and the DROP
 			// verb has to match the object (stokaro/ptah#1722).

@@ -143,7 +143,7 @@ func compareReportingUndecidedAdditions(
 	// gets it. Putting it on the options is how an earlier attempt lost it:
 	// four surfaces resolve a desired state independently, and one of them
 	// built its compare options from a zero value (stokaro/ptah#1276).
-	cov := compare.CoverageOf(desired, database)
+	cov := compare.CoverageOf(desired, database).WithDefaultSchema(identifierSemantics.DefaultSchema)
 
 	// Compare the databases of a whole server, before what is in them, on a
 	// target that compares them; see [config.CompareOptions.ServerSchemas].

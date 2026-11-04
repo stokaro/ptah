@@ -105,9 +105,11 @@ func ConstraintsWithSemantics(
 		}
 	}
 
-	// Find removed constraints (constraints in database but not in generated schema)
+	// Find removed constraints (constraints in database but not in generated
+	// schema). One in a schema the desired state does not describe stays.
+	cov := removalCoverage(desired, semantics)
 	for constraintKey, dbConstraint := range dbConstraints {
-		if _, exists := genConstraints[constraintKey]; !exists {
+		if _, exists := genConstraints[constraintKey]; !exists && cov.PlansRemovalIn(dbConstraint.Schema) {
 			diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
 			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
 		}
