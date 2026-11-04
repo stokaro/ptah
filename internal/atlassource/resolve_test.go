@@ -60,6 +60,29 @@ func TestResolve_DatabaseSourceIntrospectsLiveSchema(t *testing.T) {
 	c.Assert(state.DefaultSchema, qt.Equals, "main")
 }
 
+// TestResolve_DatabaseSourceCarriesTheServersIdentifierRules holds a database
+// state to the identifier rules its connection resolved, among them the
+// schema its unqualified names are in. A diff that holds no connection to
+// that server pairs names by them; without them it pairs by the dialect's
+// offline rules, which know nothing of a schema the URL pins.
+func TestResolve_DatabaseSourceCarriesTheServersIdentifierRules(t *testing.T) {
+	c := qt.New(t)
+	url := seedSQLite(t, "CREATE TABLE live_users (id INTEGER PRIMARY KEY)")
+	conn, err := dbschema.ConnectToDatabase(t.Context(), url)
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	state, err := classifySingle(t, "--to", url).Resolve(t.Context(), atlassource.ResolveOptions{Runtime: sourceRuntime(c),
+		Dialect:     "sqlite",
+		DialectFlag: "--dev-url",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.IdentifierSemantics, qt.IsNotNil)
+	c.Assert(*state.IdentifierSemantics, qt.DeepEquals, conn.Info().IdentifierSemantics)
+	c.Assert(state.IdentifierSemantics.DefaultSchema, qt.Equals, "main")
+}
+
 func TestResolve_DatabaseSourceDialectMismatchFailsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	// The URL points at nothing connectable; the scheme-level dialect check

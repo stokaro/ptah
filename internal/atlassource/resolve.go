@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -203,6 +204,12 @@ type State struct {
 	// WholeServer reports that a database source is a whole MySQL or MariaDB
 	// server; see [catalog.ServerInfo.WholeServer].
 	WholeServer bool
+	// IdentifierSemantics is the identifier rules the server of a database
+	// source resolved, among them the schema its unqualified names are in,
+	// and nil for every other source. A comparison that holds no connection
+	// to that server pairs names by these rather than by the dialect's
+	// offline ones.
+	IdentifierSemantics *identifier.Semantics
 	// EnvironmentExtensions are the extensions the dev database held before a
 	// migration directory was replayed there or a declaration was created
 	// there, and empty for every other source. They are the dev database's,
@@ -528,12 +535,13 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions, finish Ho
 		return fmt.Errorf("convert %s database schema: %w", s.Flag, err)
 	}
 	return finish(State{
-		Kind:          s.Kind,
-		Schema:        desired,
-		DB:            schema,
-		DefaultSchema: conn.Info().Schema,
-		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
-		WholeServer:   conn.Info().WholeServer,
+		Kind:                s.Kind,
+		Schema:              desired,
+		DB:                  schema,
+		DefaultSchema:       conn.Info().Schema,
+		RealmScoped:         schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
+		WholeServer:         conn.Info().WholeServer,
+		IdentifierSemantics: new(conn.Info().IdentifierSemantics.Clone()),
 	}, conn)
 }
 

@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -445,6 +446,9 @@ func diffResolvedStates(
 	// Both documents and live reads may carry knowledge limits. Preserve them
 	// beside the established changes; silence cannot establish agreement.
 	withSecretRotation(compareOpts, opts.Policy)
+	if conn == nil {
+		compareOpts.IdentifierSemantics = offlineDiffSemantics(toState)
+	}
 	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -517,6 +521,25 @@ func compareDiffSides(
 		return nil, schemadiff.Diagnostics{}, fmt.Errorf("compare schemas: %w", err)
 	}
 	return compared, undecided, nil
+}
+
+// offlineDiffSemantics is the identifier rules a diff without a held
+// connection pairs names by: those of the server the --to database was read
+// from, and the dialect's offline rules when --to is not a database.
+//
+// A --to database is read on a connection the diff does not hold for the
+// comparison, and a URL that pins a schema -- a MySQL database, a PostgreSQL
+// search_path -- reports its objects without that schema. Paired by the
+// offline rules, which know nothing of the pinned schema, a --from file naming
+// `f3a.t1` and the database's `t1` were two tables: measured on MySQL 8.4,
+// MariaDB 11.4 and PostgreSQL 18, `schema diff --from <file> --to <database>`
+// planned CREATE TABLE `t1` and DROP TABLE `f3a`.`t1` for a table both sides
+// hold.
+func offlineDiffSemantics(to atlassource.State) *identifier.Semantics {
+	if to.IdentifierSemantics == nil {
+		return nil
+	}
+	return new(to.IdentifierSemantics.Clone())
 }
 
 // Diff is DiffReportingChanges for the callers that render statements and
