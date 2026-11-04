@@ -579,6 +579,12 @@ func withMaterializedDevSchema(
 		if err != nil {
 			return err
 		}
+		// Scoped before the reset, so a document that reaches outside the dev
+		// database is refused with nothing on the dev database touched.
+		statements, err = scopeMaterializationToDev(statements, materializedConn.Info())
+		if err != nil {
+			return fmt.Errorf("materialize schema on dev database: %w", err)
+		}
 		// Rendering completes before reset and before cleanup is armed. A failed
 		// provider call must not trigger a dev-realm mutation on the way out.
 		defer func() {
