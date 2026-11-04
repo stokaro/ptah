@@ -1522,14 +1522,18 @@ without that database, a read's table or column or an object of a
 scope-selected kind, names it too, as the read's values do.
 
 The request's coverage is what the document knows of the provider's models.
-For a document the host read, a kind's coverage carries the namespace regions
-the provider's `Inspect` reported, with the same bounds: the host reads each
-region it spells back and refuses the request, naming the model, when the
-reading differs from the knowledge it holds. The region of a scope-selected
-kind names the one database the document's values and other regions name, or
-no database when the document names no single one. The provider decides
-whether its format can keep that knowledge, through limits or by refusing the
-request.
+A document the host read describes what the read listed. A kind the read knows
+completely in every namespace region it reports is sent as complete, with no
+regions: the document is complete for the selection a later plan applies it
+to, as an embedded engine's writer writes a read that `--schemas` narrowed.
+
+A kind the read knows less in some region carries the regions the provider's
+`Inspect` reported, with the same bounds: the host reads each region it spells
+back and refuses the request, naming the model, when the reading differs from
+the knowledge it holds. The region of a scope-selected kind names the one
+database the document's values and other regions name, or no database when the
+document names no single one. The provider decides whether its format can
+keep that knowledge, through limits or by refusing the request.
 
 With the two-way feature `source.encode-groups`, the reply uses
 `EncodedSource.groups`: each group accounts for its `value_ids` once and writes

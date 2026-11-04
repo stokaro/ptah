@@ -119,11 +119,13 @@ func (b *encodeBatch) add(placement protocol.SourceModelValue_Placement, binding
 
 // coverage sends what the document knows of the provider's models the engine
 // holds. A kind's knowledge is one claim: what holds outside its namespace
-// regions, and the regions, spelled as the provider reports them. A claim
-// that independent sources make, or a region the provider's spelling cannot
-// give back exactly, has no place in the request and is refused, naming the
-// model.
+// regions, and the regions, spelled as the provider reports them. A kind a
+// read knows completely in every region it reports is sent as complete
+// instead (see completeRead). A claim that independent sources make, or a
+// region the provider's spelling cannot give back exactly, has no place in the
+// request and is refused, naming the model.
 func (b *encodeBatch) coverage(known schemaext.Coverage) error {
+	var err error
 	coverage := &protocol.ModelCoverage{Representation: protocol.ValueInput_DESIRED}
 	engine := b.target.engine.GetId()
 	for _, record := range known.KindRecords() {
@@ -136,12 +138,13 @@ func (b *encodeBatch) coverage(known schemaext.Coverage) error {
 			return fmt.Errorf("%w: the document's knowledge of model %q combines independent sources, which an encoding request cannot carry",
 				ptaherr.ErrUnsupportedFeature, record.Model.Kind)
 		}
-		regions, err := b.regions(record.Model.Kind, sources[0], known)
-		if err != nil {
+		knowledge, regions := modelKnowledgeOf(sources[0].Outside), []*protocol.ModelNamespaceKnowledge(nil)
+		if b.completeRead(sources[0]) {
+			knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}
+		} else if regions, err = b.regions(record.Model.Kind, sources[0], known); err != nil {
 			return err
 		}
-		coverage.Kinds = append(coverage.Kinds, &protocol.ModelKindCoverage{Model: proto.CloneOf(contract.engines[engine]), Knowledge: modelKnowledgeOf(sources[0].Outside),
-			Regions: regions})
+		coverage.Kinds = append(coverage.Kinds, &protocol.ModelKindCoverage{Model: proto.CloneOf(contract.engines[engine]), Knowledge: knowledge, Regions: regions})
 	}
 	for _, record := range known.SubjectRecords() {
 		contract := b.target.host.models[modelKey{kind: record.Kind, representation: schemaext.Desired}]
@@ -157,6 +160,35 @@ func (b *encodeBatch) coverage(known schemaext.Coverage) error {
 		b.request.Coverage = coverage
 	}
 	return nil
+}
+
+// completeRead reports whether source is a read that knows its kind
+// completely in every namespace region it reports for this engine. A document
+// written from such a read is complete: it describes the namespaces the read
+// listed, and a later plan applies it to the selection that plan names, as the
+// embedded engines' writers write a read that --schemas narrowed. The read's
+// knowledge outside its regions is not the document's to state, so the kind is
+// sent as complete and its regions are left out. A read with a region it knows
+// less is sent with its regions, for the provider to say what the format can
+// keep of them. Regions come from reads alone: a source's decoded coverage
+// carries none.
+func (b *encodeBatch) completeRead(source schemaext.KnowledgeSource) bool {
+	held := b.engineRegions(source)
+	return len(held) != 0 && !slices.ContainsFunc(held, func(region schemaext.NamespaceKnowledge) bool {
+		return region.Knowledge.State != schemaext.Complete
+	})
+}
+
+// engineRegions are the regions of source that speak of this engine: a region
+// scoped to other engines says nothing of it.
+func (b *encodeBatch) engineRegions(source schemaext.KnowledgeSource) []schemaext.NamespaceKnowledge {
+	var held []schemaext.NamespaceKnowledge
+	for _, region := range source.Regions {
+		if len(region.Scope.Targets) == 0 || slices.Contains(region.Scope.Targets, b.target.engine.GetId()) {
+			held = append(held, region)
+		}
+	}
+	return held
 }
 
 // regions spells the namespace regions of one kind's knowledge as the regions
@@ -179,12 +211,7 @@ func (b *encodeBatch) coverage(known schemaext.Coverage) error {
 // its database then has none at all, and is refused.
 func (b *encodeBatch) regions(kind schemaext.Kind, source schemaext.KnowledgeSource, known schemaext.Coverage) ([]*protocol.ModelNamespaceKnowledge, error) {
 	engine := b.target.engine.GetId()
-	var held []schemaext.NamespaceKnowledge
-	for _, region := range source.Regions {
-		if len(region.Scope.Targets) == 0 || slices.Contains(region.Scope.Targets, engine) {
-			held = append(held, region)
-		}
-	}
+	held := b.engineRegions(source)
 	if len(held) == 0 {
 		return nil, nil
 	}

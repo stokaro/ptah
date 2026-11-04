@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -14,6 +15,26 @@ import (
 // FIXTURE_READ_RETENTION=1 selects. Without it the program reads no value of
 // its own, as the base fixture does.
 func readRetention() bool { return os.Getenv("FIXTURE_READ_RETENTION") == "1" }
+
+// readHidden reports whether a read of selected schemas also reports a
+// nested namespace of the main schema it did not read, which
+// FIXTURE_READ_HIDDEN=1 selects.
+func readHidden() bool { return os.Getenv("FIXTURE_READ_HIDDEN") == "1" }
+
+// hiddenReason is the knowledge of the nested namespace a read does not read.
+const hiddenReason = "the nested namespace was not read"
+
+// readRegions are the regions a read of the main schema in database reports:
+// the schema it listed, complete, and the nested namespace it did not read.
+func readRegions(database string) (listed, hidden *protocol.ModelNamespaceKnowledge) {
+	scope := &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: database, Normalized: database}, Catalog: &protocol.NamespaceComponent{},
+		Schema: &protocol.NamespaceComponent{}}
+	listed = &protocol.ModelNamespaceKnowledge{Scope: scope, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
+	nested := proto.CloneOf(scope)
+	nested.PathPrefix = []*protocol.NamespaceComponent{{Source: "hidden", Normalized: "hidden"}}
+	hidden = &protocol.ModelNamespaceKnowledge{Scope: nested, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: hiddenReason}}
+	return listed, hidden
+}
 
 // readSeconds is the retention a read gives every table.
 const readSeconds = 30
@@ -28,7 +49,8 @@ const narrowedReason = "retention is read for the selected schemas only"
 // own identity as the owner, so a value names the database it was read in.
 // An unfiltered read knows retention completely. A read of selected schemas
 // knows it completely only in the namespaces of their scope bindings, the
-// shape a provider reports when it lists a namespace at a time.
+// shape a provider reports when it lists a namespace at a time, and with
+// readHidden not in a nested namespace of them.
 func (p *hclClaims) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
 	snapshot, err := p.Provider.Inspect(ctx, request)
 	if err != nil || !readRetention() || snapshot.GetCoverage() == nil {
@@ -52,18 +74,23 @@ func (p *hclClaims) Inspect(ctx context.Context, request *protocol.InspectReques
 					Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
 			}
 		}
+		if readHidden() {
+			_, hidden := readRegions(snapshot.GetTables()[0].GetIdentity().GetDatabase())
+			kind.Regions = append(kind.Regions, hidden)
+		}
 	}
 	snapshot.Coverage.Kinds = append(snapshot.Coverage.Kinds, kind)
 	return snapshot, nil
 }
 
-// requireReadRegions refuses an encoding request that does not give back the
-// regions a read of selected schemas reported: wherever the request's
-// knowledge of retention says the read was narrowed, it has to carry the one
-// region of the main schema in the database the request's tables are bound
-// in. A host that left the region out, or bound the tables without their
-// database, would have the program write a source whose knowledge is not the
-// read's.
+// requireReadRegions refuses an encoding request whose knowledge of retention
+// is not the one a host owes a source written from the program's read. A read
+// of selected schemas knows retention completely in the namespaces it listed,
+// so the source is complete for the selection it is applied to: the request
+// carries retention as complete, without the read's regions. A read that also
+// reports a nested namespace it did not read (readHidden) knows less there, and
+// the request carries both regions as the read reported them, in the database
+// the request's tables are bound in.
 func requireReadRegions(request *protocol.EncodeSourceRequest) error {
 	if !readRetention() {
 		return nil
@@ -73,20 +100,26 @@ func requireReadRegions(request *protocol.EncodeSourceRequest) error {
 		databases[binding.GetObject().GetDatabase()] = true
 	}
 	for _, kind := range request.GetCoverage().GetKinds() {
-		if kind.GetModel().GetKind() != retentionKind || kind.GetKnowledge().GetReason() != narrowedReason {
+		if kind.GetModel().GetKind() != retentionKind {
 			continue
 		}
-		if len(databases) != 1 || len(kind.GetRegions()) != 1 {
-			return fmt.Errorf("a narrowed read of retention has one region and binds its tables in one database")
+		if !readHidden() {
+			if len(kind.GetRegions()) != 0 || kind.GetKnowledge().GetReason() == narrowedReason {
+				return fmt.Errorf("a read that knows retention in every namespace it listed writes a source complete for its selection")
+			}
+			continue
+		}
+		if len(databases) != 1 || kind.GetKnowledge().GetReason() != narrowedReason {
+			return fmt.Errorf("a narrowed read of retention binds its tables in one database and knows nothing outside its regions")
 		}
 		var database string
 		for name := range databases {
 			database = name
 		}
-		want := &protocol.ModelNamespaceKnowledge{Scope: &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: database, Normalized: database},
-			Catalog: &protocol.NamespaceComponent{}, Schema: &protocol.NamespaceComponent{}}, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
-		if database == "" || !proto.Equal(kind.GetRegions()[0], want) {
-			return fmt.Errorf("the region of a narrowed read of retention is not the one the read reported")
+		listed, hidden := readRegions(database)
+		if database == "" || len(kind.GetRegions()) != 2 || !slices.ContainsFunc(kind.GetRegions(), func(region *protocol.ModelNamespaceKnowledge) bool { return proto.Equal(region, listed) }) ||
+			!slices.ContainsFunc(kind.GetRegions(), func(region *protocol.ModelNamespaceKnowledge) bool { return proto.Equal(region, hidden) }) {
+			return fmt.Errorf("the regions of a narrowed read of retention are not the ones the read reported")
 		}
 	}
 	return nil

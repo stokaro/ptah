@@ -17,8 +17,11 @@
 // as an int64 field.
 //
 // With FIXTURE_READ_RETENTION=1 a read gives every table a retention, and a
-// read of selected schemas knows it only in their namespaces; the program then
-// refuses to write a source whose request does not give that region back.
+// read of selected schemas knows it only in their namespaces. The program then
+// refuses to write a source whose request does not carry the knowledge a host
+// owes it: complete, for a read that knows every namespace it listed, and the
+// read's regions, for one that also reports a namespace it did not read
+// (FIXTURE_READ_HIDDEN=1).
 package main
 
 import (
