@@ -535,7 +535,7 @@ func runCases(
 	// it an explicit URL keeps its documented behavior of one shared database,
 	// a contract this does not change -- a file that never says `parallel`
 	// never reaches that branch.
-	if err := refuseParallelWithoutIsolation(cases, dbURL); err != nil {
+	if err := refuseParallelWithoutIsolation(ctx, cases, dbURL); err != nil {
 		return nil, err
 	}
 	if anyParallel(cases) {
