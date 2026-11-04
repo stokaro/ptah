@@ -1896,9 +1896,18 @@ func (w *PostgreSQLWriter) DropDatabaseRealmKeeping(ctx context.Context, kept db
 // realm cleanup keeps: the configured root schema and "public", whichever of
 // them exist. A dev database's claim records them, and every cleanup of the
 // run returns the schemas to them; see [dbreset.Kept].
+//
+// It reads nothing, and answers no states, where
+// [capability.PostgresCatalogFunctions] says the catalog is an emulation of
+// PostgreSQL's shape. The Spanner emulator behind PGAdapter 0.56.1 answers
+// pg_get_userbyid with SQLSTATE 42883, so without this check the claim fails
+// there on a dev database it takes on every other engine.
 func (w *PostgreSQLWriter) SchemaStates(ctx context.Context) ([]dbreset.SchemaState, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
+	}
+	if !w.caps.Has(capability.PostgresCatalogFunctions) {
+		return nil, nil
 	}
 	var states []dbreset.SchemaState
 	for _, schema := range slices.Compact([]string{w.schema, "public"}) {
