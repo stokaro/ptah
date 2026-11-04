@@ -32,7 +32,11 @@ type owner struct {
 	refusesDDLTransactions bool
 	ownedLifecycle         bool
 	ownedEdits             bool
-	statementStyle         bool
+	// comments carries comments on the common-object wire beside the owned
+	// table lifecycle and reports the indexes a table holds, as the YDB
+	// provider does.
+	comments       bool
+	statementStyle bool
 	// rebuilds plans an added NOT NULL column, which SQLite cannot add in
 	// place, as a rebuild of its table when the host's planning policy asks
 	// for one, and refuses it in the words of that policy when it does not.
@@ -59,7 +63,8 @@ func main() {
 		d.Features = append(d.Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.SensitiveInputsFeature, provider.HistoryFeature, provider.StatementsFeature)
 	}
-	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style"}
+	modes := []string{"", "native", "native-transactional", "native-unwrapped", "native-cli", "native-text", "owned", "policy", "declarations", "owned-edit", "object-context", "statement-style",
+		"owned-comments"}
 	if !slices.Contains(modes, mode) {
 		panic("unknown fixture render mode")
 	}
@@ -81,10 +86,20 @@ func main() {
 		d.Features = append(d.Features, provider.TextUnitsFeature)
 		d.Engines[0].Features = append(d.Engines[0].Features, provider.TextUnitsFeature)
 	}
-	if mode == "owned" || mode == "declarations" || mode == "owned-edit" {
+	if mode == "owned" || mode == "declarations" || mode == "owned-edit" || mode == "owned-comments" {
 		// The provider owns the table lifecycle: the host never interprets a
 		// table operation, and the provider claims each column step itself.
 		d.Engines[0].Features = slices.DeleteFunc(d.Engines[0].Features, func(feature string) bool { return feature == provider.CommonTableIdentityFeature })
+	}
+	if mode == "owned-comments" {
+		// The provider also reports the columns and the indexes its tables
+		// hold and carries comments on the common-object wire, so the host
+		// sends a comment as a step of its own. It creates a table in the
+		// lifecycle phase.
+		added := []string{provider.CommonObjectsFeature, provider.ObservedColumnsFeature, provider.ObservedIndexesFeature, provider.PlanningLifecycleFeature}
+		d.Features = append(d.Features, added...)
+		d.Engines[0].Features = append(d.Engines[0].Features, added...)
+		d.Engines[0].CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_COMMENT}}
 	}
 	actions, rebuild := `"create", "rename", "drop", "add-column", "drop-column"`, ""
 	if mode == "policy" {
@@ -157,8 +172,10 @@ func main() {
 	d.Engines[0].Planning = []*protocol.ModelPlanning{{Id: "table-actions", ChangeKinds: []string{changeKind}, ParentKinds: []string{"example.org/fixture/retention"}, OperationKinds: []string{operationKind}}}
 	envelope := &protocol.Envelope{ProviderId: d.GetProviderId(), Kind: operationKind, SchemaVersion: 1, Encoding: "json", DefinitionSha256: hex.EncodeToString(hash[:])}
 	p := &owner{Provider: &backend.Provider{},
-		nativeUnits:    mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" && mode != "statement-style",
-		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit", ownedEdits: mode == "owned-edit",
+		nativeUnits: mode != "" && mode != "owned" && mode != "policy" && mode != "declarations" && mode != "owned-edit" && mode != "object-context" && mode != "statement-style" &&
+			mode != "owned-comments",
+		ownedLifecycle: mode == "owned" || mode == "declarations" || mode == "owned-edit" || mode == "owned-comments", ownedEdits: mode == "owned-edit",
+		comments: mode == "owned-comments",
 		rebuilds: mode == "policy", statementStyle: mode == "statement-style", transactionalDDL: transactional, refusesDDLTransactions: mode == "native-unwrapped",
 		operationEnvelope: envelope, inputMode: inputMode}
 	server := runtime.Server{Description: d, Sessions: p, Inspector: p, Renderer: p, Executor: p, SQLAnalyzer: p, ValueNormalizer: p, SourceDecoder: p, ValueConverter: p, FeaturePlanner: p}
@@ -169,6 +186,9 @@ func main() {
 	}
 	if mode == "object-context" {
 		configureObjectContext(d)
+	}
+	if p.comments {
+		server.CommonObjects = p
 	}
 	if mode == "declarations" {
 		configureDeclarations(d)

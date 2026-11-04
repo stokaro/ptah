@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
@@ -141,6 +142,11 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 		// table it creates or alters; planningContext refuses an index of any
 		// other table.
 		fields = append(fields, "IndexesAdded", "IndexesRemoved", "DeclaredIndexes")
+		if p.comments {
+			// The comment of such an index travels on the common-object
+			// wire; see indexCommentNodes.
+			fields = append(fields, "IndexCommentsChanged")
+		}
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err
@@ -186,12 +192,11 @@ func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals [
 	}
 	for _, field := range table.ColumnsAdded {
 		if !p.commonTables {
-			// The owner interprets the whole declaration, so the operand keeps
-			// every property the field carries.
-			if field.Name == "" || field.Type == "" {
-				return nil, nil, fmt.Errorf("provider column requires a name and type")
+			added, err := p.ownedColumnAddition(name, field)
+			if err != nil {
+				return nil, nil, err
 			}
-			nodes = append(nodes, &pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)})
+			nodes = append(nodes, added...)
 			continue
 		}
 		comment := ""
@@ -208,6 +213,22 @@ func (p commonPlanner) alterations(table difftypes.TableDiff) (nodes, removals [
 		}
 	}
 	return nodes, removals, nil
+}
+
+// ownedColumnAddition is the step that adds field to the table name for an
+// owner of the table lifecycle. The owner interprets the whole declaration, so
+// the operand keeps every property the field carries. Its comment is also set
+// with a step of its own on an engine that carries comments on the
+// common-object wire, as for a common column.
+func (p commonPlanner) ownedColumnAddition(name string, field schemamodel.Field) ([]ast.Node, error) {
+	if field.Name == "" || field.Type == "" {
+		return nil, fmt.Errorf("provider column requires a name and type")
+	}
+	nodes := []ast.Node{&pendingColumnChange{table: name, column: field.Name, added: modelast.FromField(field, nil, p.target)}}
+	if p.comments && field.Comment != "" {
+		nodes = append(nodes, commentStep(name, field.Name, field.Comment))
+	}
+	return nodes, nil
 }
 
 // commentOnly reports a column change that changes the column's comment and

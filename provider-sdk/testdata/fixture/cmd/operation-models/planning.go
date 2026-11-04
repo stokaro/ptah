@@ -68,6 +68,9 @@ func (p *owner) PlanFeatures(ctx context.Context, request *protocol.PlanFeatures
 		}
 		contribution.Steps = append(contribution.Steps, steps...)
 		result.Rewrites = append(result.Rewrites, rewrites...)
+		if p.comments {
+			contribution.Dependencies = append(contribution.Dependencies, commentDependencies(request, table, steps)...)
+		}
 		var ids []*protocol.StepIdentity
 		for _, step := range steps {
 			ids = append(ids, proto.CloneOf(step.Id))
@@ -131,4 +134,19 @@ func (p *owner) planTableChange(change *protocol.PlanningChange, id string, styl
 		Operation: &protocol.PlanningOperation{Value: value, Role: role, Parent: parent},
 		Metadata: &protocol.PlanningMetadata{Transaction: transaction, Impact: value.OperationSemantics.Impact, Reason: value.OperationSemantics.Reason,
 			Effects: []*protocol.PlanningEffect{{Subject: proto.CloneOf(change.GetSubject()), Action: action}}}}, nil
+}
+
+// commentDependencies orders the host's comment steps of table after the
+// steps the fixture makes on it: a comment is set on an object that exists.
+func commentDependencies(request *protocol.PlanFeaturesRequest, table *protocol.PlanningTable, steps []*protocol.PlanningStep) []*protocol.PlanningDependency {
+	var result []*protocol.PlanningDependency
+	for _, common := range request.GetCommonSteps() {
+		if common.GetCommonObject().GetSetComment() == nil || !proto.Equal(common.GetParent(), table.GetSubject()) {
+			continue
+		}
+		for _, step := range steps {
+			result = append(result, &protocol.PlanningDependency{Before: proto.CloneOf(step.GetId()), After: proto.CloneOf(common.GetId())})
+		}
+	}
+	return result
 }

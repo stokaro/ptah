@@ -260,8 +260,16 @@ func (t *target) grantTarget(objectType, objectName string) (*protocol.Reference
 	return target, nil
 }
 
-// commentedReference is the object a comment node names.
+// commentedReference is the object a comment node names. An index has its
+// table as the only path component, as the wire names a column.
 func (t *target) commentedReference(node *ast.ObjectCommentNode) (*protocol.Reference, error) {
+	if node.Object == ast.CommentedIndex {
+		table, valid := tableref.Parse(node.Table)
+		if !valid || node.Name == "" {
+			return nil, fmt.Errorf("provider index comment does not name its index and table")
+		}
+		return &protocol.Reference{Engine: t.engine.GetId(), Kind: "index", Schema: table.Schema, Path: []string{table.Name}, Name: node.Name}, nil
+	}
 	kinds := map[ast.CommentedObject]string{ast.CommentedView: "view", ast.CommentedMaterializedView: "materialized_view",
 		ast.CommentedSequence: "sequence", ast.CommentedRole: "role", ast.CommentedSchema: "schema"}
 	kind, known := kinds[node.Object]

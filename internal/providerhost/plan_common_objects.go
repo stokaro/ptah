@@ -91,7 +91,7 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, grant := range diff.GrantOptionsAdded {
 		plan.after = append(plan.after, grantNode(grant, true))
 	}
-	comments, err := commentNodes(diff)
+	comments, err := p.changedComments(diff)
 	if err != nil {
 		return commonObjectPlan{}, err
 	}
@@ -289,6 +289,86 @@ func commentNodes(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	return nodes, nil
 }
 
+// changedComments are the comment steps of diff: those of commentNodes, and
+// for a provider that owns the indexes of its tables and carries comments on
+// the wire, those of indexCommentNodes.
+func (p commonPlanner) changedComments(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	nodes, err := commentNodes(diff)
+	if err != nil || !p.comments || !p.ownsIndexes() {
+		return nodes, err
+	}
+	indexes, err := p.indexCommentNodes(diff)
+	if err != nil {
+		return nil, err
+	}
+	return append(nodes, indexes...), nil
+}
+
+// indexCommentNodes sets the comment of each index of a table the plan keeps
+// or creates whose comment has to change, once the tables and their indexes
+// are in place: an index the plan adds takes the comment its declaration
+// states, and an index the comparison found with another comment takes the
+// declared one. A renamed index's comment moves to its new name, and an index
+// the plan drops loses its comment, which an engine that keeps comments apart
+// from the index would otherwise keep. One step names each index once, with
+// the comment it ends with. An index of a table the plan drops needs none.
+func (p commonPlanner) indexCommentNodes(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(p.target))
+	removed := make(map[objectidentity.Key]bool, len(diff.TablesRemoved))
+	for _, name := range diff.TablesRemoved.Names() {
+		key, err := tableKey(builder, name)
+		if err != nil {
+			return nil, err
+		}
+		removed[key] = true
+	}
+	type indexKey struct {
+		table objectidentity.Key
+		name  string
+	}
+	type target struct {
+		table, name, comment string
+	}
+	var order []indexKey
+	final := make(map[indexKey]target)
+	set := func(key indexKey, value target) {
+		if _, seen := final[key]; !seen {
+			order = append(order, key)
+		}
+		final[key] = value
+	}
+	for _, change := range diff.IndexCommentsChanged {
+		table, err := tableKey(builder, change.TableName)
+		if err != nil {
+			return nil, err
+		}
+		if removed[table] {
+			continue
+		}
+		if change.From != "" && change.Current != "" {
+			set(indexKey{table, change.From}, target{change.TableName, change.From, ""})
+		}
+		set(indexKey{table, change.Name}, target{change.TableName, change.Name, change.Desired})
+	}
+	for _, change := range diff.IndexesAdded {
+		table, err := tableKey(builder, change.TableName)
+		if err != nil {
+			return nil, err
+		}
+		key := indexKey{table, change.Index.Name}
+		if _, recorded := final[key]; removed[table] || !recorded && change.Index.Comment == "" {
+			continue
+		}
+		set(key, target{change.TableName, change.Index.Name, change.Index.Comment})
+	}
+	nodes := make([]ast.Node, 0, len(order))
+	for _, key := range order {
+		comment := final[key]
+		nodes = append(nodes, ast.NewObjectComment(ast.CommentedIndex, comment.name, comment.comment).SetTable(comment.table))
+	}
+	return nodes, nil
+}
+
 // creationComments takes the comments off a table declaration, since the
 // common table message has no place for one, and returns the steps that set
 // them once the table exists: the table's, then each column's in order. The
@@ -333,6 +413,9 @@ var commentedObjects = map[difftypes.CommentedObjectKind]ast.CommentedObject{
 func commonObjectMetadata(builder objectidentity.Builder, parents map[objectidentity.Key]objectidentity.ID, node ast.Node, selections *scopeSelections) (featureplan.CommonStep, bool, error) {
 	if alter, isAlter := node.(*ast.AlterTableNode); isAlter {
 		return tableCommentMetadata(builder, parents, alter)
+	}
+	if comment, isComment := node.(*ast.ObjectCommentNode); isComment && comment.Object == ast.CommentedIndex {
+		return indexCommentMetadata(builder, parents, comment)
 	}
 	step := featureplan.CommonStep{CommonObject: node}
 	if selections != nil {
@@ -387,7 +470,35 @@ func tableCommentMetadata(builder objectidentity.Builder, parents map[objectiden
 	if comment.Column != "" {
 		subject = planningChild(parent, builder.ColumnParts(parent.Schema.Source, parent.Name.Source, comment.Column))
 	}
-	return featureplan.CommonStep{CommonObject: node, Parent: parent, Effects: []plangraph.Effect{{Subject: subject, Action: plangraph.Alter}}}, true, nil
+	return commentStepMetadata(node, parent, subject), true, nil
+}
+
+// commentStepMetadata is the footprint of a comment on object, a table, a
+// column or an index of the table parent: the step reads the table and
+// changes the object's comment. The comment is a resource of its own, apart
+// from the object: an owner of the table lifecycle creates the table, a
+// column or an index, and a step of another owner that wrote the same object
+// would be a second writer of it. The comment of an index the plan drops is
+// cleared after the index is gone, which an effect on the index could not
+// follow.
+func commentStepMetadata(node ast.Node, parent, object objectidentity.ID) featureplan.CommonStep {
+	comment := object
+	comment.Kind = "comment"
+	comment.Namespace = objectidentity.NewParts(objectidentity.Part{Source: string(object.Kind), Normalized: string(object.Kind)})
+	return featureplan.CommonStep{CommonObject: node, Parent: parent,
+		Effects: []plangraph.Effect{{Subject: parent, Action: plangraph.Read}, {Subject: comment, Action: plangraph.Alter}}}
+}
+
+// indexCommentMetadata describes a comment on an index, a step of its table;
+// see commentStepMetadata.
+func indexCommentMetadata(builder objectidentity.Builder, parents map[objectidentity.Key]objectidentity.ID, node *ast.ObjectCommentNode) (featureplan.CommonStep, bool, error) {
+	ref, valid := tableref.Parse(node.Table)
+	parent, found := parents[builder.TableParts(ref.Schema, ref.Name).Key()]
+	if !valid || !found {
+		return featureplan.CommonStep{}, true, fmt.Errorf("%w: an index comment has no captured table", schemaext.ErrInvalidValue)
+	}
+	index := planningChild(parent, builder.IndexParts(parent.Schema.Source, parent.Name.Source, node.Name))
+	return commentStepMetadata(node, parent, index), true, nil
 }
 
 func qualifiedRelation(builder objectidentity.Builder, kind objectidentity.Kind, qualified string) objectidentity.ID {

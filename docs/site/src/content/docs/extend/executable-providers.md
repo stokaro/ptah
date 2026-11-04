@@ -130,8 +130,12 @@ A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
 Missing receipts and refusals discard the plan. Common-object support carries
-table and column comments. These services do not
-grant common SQL rendering.
+table, column and index comments. A provider that owns the table lifecycle and
+lists the `COMMENT` kind receives the comment of a table it creates, of a
+column it adds and of an index it creates as a comment step after its own
+creation, and a changed index comment as one comment step with the comment the
+index ends with. A comment step reads its table and changes the comment alone.
+These services do not grant common SQL rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It

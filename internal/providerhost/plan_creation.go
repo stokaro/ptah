@@ -19,8 +19,11 @@ func (n *pendingTableCreation) Accept(ast.Visitor) error {
 }
 
 // creationNodes creates a table: the provider's step for an owned lifecycle,
-// or the common creation followed by the steps that set its comments on an
-// engine that carries them on the common-object wire.
+// or the common creation, each followed by the steps that set its comments on
+// an engine that carries them on the common-object wire. An owner that
+// creates the table receives the declaration with its comments, and the
+// comment steps are what sets them, as for a common creation: the wire is
+// where an engine that lists comments among its common objects takes them.
 func (p commonPlanner) creationNodes(creation difftypes.TableCreation) ([]ast.Node, error) {
 	allowed := []string{"Name", "Table", "Fields", "OwnedObjects", "FeatureCoverage", "DependsOn"}
 	if !p.commonTables {
@@ -29,13 +32,13 @@ func (p commonPlanner) creationNodes(creation difftypes.TableCreation) ([]ast.No
 	if err := onlyFields(creation, allowed...); err != nil {
 		return nil, err
 	}
-	if !p.commonTables {
-		return []ast.Node{&pendingTableCreation{name: tableref.CanonicalExact(creation.Table.Schema, creation.Table.Name)}}, nil
-	}
 	declaration := schemacapture.TableDeclaration{Table: creation.Table, Fields: creation.Fields}
 	var comments []ast.Node
 	if p.comments {
 		declaration, comments = creationComments(declaration)
+	}
+	if !p.commonTables {
+		return append([]ast.Node{&pendingTableCreation{name: tableref.CanonicalExact(creation.Table.Schema, creation.Table.Name)}}, comments...), nil
 	}
 	node, err := commonTable(declaration)
 	if err != nil {

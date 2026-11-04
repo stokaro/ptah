@@ -218,6 +218,14 @@ func (p *owner) Render(ctx context.Context, r *protocol.RenderRequest) (*protoco
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if comment := change.GetCommonObject().GetSetComment(); comment != nil && p.comments {
+			sql, err := renderComment(comment)
+			if err != nil {
+				return nil, err
+			}
+			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: sql}})
+			continue
+		}
 		if change.GetNative() == nil {
 			rendered, err := p.Provider.Render(ctx, &protocol.RenderRequest{Engine: r.GetEngine(), TargetFeatures: r.GetTargetFeatures(), Changes: []*protocol.Change{change}})
 			if err != nil {
