@@ -109,8 +109,8 @@ inside the dev database, which is handed back empty afterwards — see
 [Atlas schema commands](../../atlas/schema-commands/). `--lock-timeout`
 bounds the session advisory lock that serializes concurrent applies,
 `--tx-mode` selects the transaction mode, `--edit` opens the planned SQL in
-`$VISUAL`/`$EDITOR`, and `--schemas`, `--include`, and `--exclude` scope both
-comparison sides.
+`$VISUAL`/`$EDITOR`, and `--schemas` (or `schemas` in `ptah.yaml`),
+`--include`, and `--exclude` scope both comparison sides.
 
 A plan statement whose effect reaches past the dev database, such as a role or
 a routine body, is refused before anything runs unless the dev server is the
@@ -320,6 +320,12 @@ combine under the rule a versioned migration's directive answers to, and
 `ptah-compat schema apply --plan` resolves the same file the same way: the
 header wins, except under `--tx-mode all`, where a plan carrying a header is
 refused before the database is contacted.
+
+The schema selection belongs to the plan too. `ptah schema plan` records the
+schemas `--schemas` or `schemas` in `ptah.yaml` names, applying the plan
+verifies those schemas alone, and `ptah schema apply --plan` refuses a
+`--schemas` of its own; see
+[Plan and approve changes](../plan-and-approve/).
 
 `--protected-table` belongs to the plan, not to the apply of one. `ptah schema
 plan --protected-table` refuses to save a plan that would change a fenced row

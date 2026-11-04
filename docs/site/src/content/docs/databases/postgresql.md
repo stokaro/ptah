@@ -41,7 +41,7 @@ Commands that introspect PostgreSQL-family targets accept `--schemas` to scope
 reading to a comma-separated list of database schemas. Empty means the
 connection's default schema for a command that only describes the database,
 such as `db read`. A command that compares the database with a desired
-schema, such as `schema compare`, `schema drift`, `schema apply`,
+schema, such as `schema compare`, `schema drift`, `schema plan`, `schema apply`,
 `migrations plan` or `migrations generate`, lets the URL decide instead: a URL
 that pins `search_path` is read at that schema, one that pins none across every
 schema, and the schemas the desired schema names are read too. A schema such a

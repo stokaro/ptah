@@ -91,6 +91,15 @@ type PlanFile struct {
 	FromFingerprint string               `json:"from_fingerprint"`
 	ToFingerprint   string               `json:"to_fingerprint"`
 	Exclude         []string             `json:"exclude,omitempty"`
+	// Schemas is the explicit schema selection the plan was computed at,
+	// sorted, as [PlanFileOptions.Schemas] named it. When it is set, the source
+	// fingerprint describes these schemas and no other, [VerifyPlanTarget]
+	// reads the same set rather than the connection URL's scope, and
+	// SchemasBeyondURL is empty. Read at the scope of a URL that pins no
+	// search_path, a plan computed for one schema would cover every other
+	// schema too, and a change in any of them would make the plan stale for
+	// nothing it writes.
+	Schemas []string `json:"schemas,omitempty"`
 	// SchemasBeyondURL names the schemas the source fingerprint covers that the
 	// connection URL's own scope does not: a desired state naming a schema other
 	// than the one a schema-limited URL connects to. The fingerprint describes
@@ -160,7 +169,11 @@ type PlanFileOptions struct {
 	// variable scopes; see [ApplyOptions.ToSources].
 	ToSources []schemafile.Source
 	Exclude   []string
-	Policy    DiffPolicy
+	// Schemas restricts both comparison sides to the named schemas, as
+	// [ApplyOptions.Schemas] does, and outranks the connection URL's scope.
+	// The plan records the selection in [PlanFile.Schemas].
+	Schemas []string
+	Policy  DiffPolicy
 	// Desired supplies a pre-loaded desired schema model; see
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
 	Desired *schemamodel.Database
@@ -170,6 +183,8 @@ type PlanFileOptions struct {
 
 	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
 	Diagnostics io.Writer
+	// WarnUndescribedSchemas is [ApplyOptions.WarnUndescribedSchemas].
+	WarnUndescribedSchemas bool
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
@@ -248,6 +263,7 @@ func PreparePlanFileReportingUndecided(
 		ToURLs:          opts.ToURLs,
 		ToSources:       opts.ToSources,
 		Exclude:         opts.Exclude,
+		Schemas:         opts.Schemas,
 		Policy:          opts.Policy,
 		ProtectedTables: opts.ProtectedTables,
 		// Carried so the dev URL's schema decides which schema an unqualified
@@ -263,15 +279,24 @@ func PreparePlanFileReportingUndecided(
 		Desired:     opts.Desired,
 		ProjectRoot: opts.ProjectRoot,
 
-		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
-		Vars:                  opts.Vars,
-		Diagnostics:           opts.Diagnostics,
+		IgnoreUnknownHCLNames:  opts.IgnoreUnknownHCLNames,
+		Vars:                   opts.Vars,
+		Diagnostics:            opts.Diagnostics,
+		WarnUndescribedSchemas: opts.WarnUndescribedSchemas,
 	})
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 
-	from, err := planSourceSchema(ctx, conn, computation, opts.Exclude, opts.Runtime)
+	scope := planReadScope{
+		schemas:          schemascope.Union(schemascope.SplitNames(opts.Schemas), nil),
+		schemasBeyondURL: computation.schemasBeyondURL,
+	}
+	// A selection is read as itself, so nothing beyond the URL needs carrying.
+	if len(scope.schemas) > 0 {
+		scope.schemasBeyondURL = nil
+	}
+	from, err := planSourceSchema(ctx, conn, computation, scope, opts.Exclude, opts.Runtime)
 	if err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
@@ -324,7 +349,8 @@ func PreparePlanFileReportingUndecided(
 		FromFingerprint:  fromFingerprint,
 		ToFingerprint:    toFingerprint,
 		Exclude:          opts.Exclude,
-		SchemasBeyondURL: computation.schemasBeyondURL,
+		Schemas:          scope.schemas,
+		SchemasBeyondURL: scope.schemasBeyondURL,
 		ManagedRows:      computation.rowSets,
 		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
@@ -380,13 +406,30 @@ func classifyComputedUnits(
 func planSourceSchema(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	computation applyComputation,
+	scope planReadScope,
 	exclude []string,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
 	if computation.readScope == nil {
 		return computation.current, nil
 	}
-	return planTargetState(ctx, conn, computation.schemasBeyondURL, exclude, runtime)
+	return planTargetState(ctx, conn, scope, exclude, runtime)
+}
+
+// planReadScope is what a saved plan records about the schemas its source
+// fingerprint covers: [PlanFile.Schemas] and [PlanFile.SchemasBeyondURL]. At
+// most one of them is set.
+type planReadScope struct {
+	// schemas is the explicit selection, read as itself.
+	schemas []string
+	// schemasBeyondURL is read together with the URL's scope when there is
+	// no selection.
+	schemasBeyondURL []string
+}
+
+// recordedReadScope is the scope plan recorded.
+func recordedReadScope(plan PlanFile) planReadScope {
+	return planReadScope{schemas: plan.Schemas, schemasBeyondURL: plan.SchemasBeyondURL}
 }
 
 // PlanTargetRuntime fingerprints a database state with its owners' models,
@@ -397,8 +440,11 @@ type PlanTargetRuntime interface {
 }
 
 // planTargetState reads the database state a saved plan's source fingerprint
-// describes: the schemas the connection URL covers now, together with the
-// schemas the plan recorded beyond them, with the plan's exclusion subtracted.
+// describes, with the plan's exclusion subtracted. A plan computed at an
+// explicit selection reads the selected schemas, which outrank the URL's scope
+// as they did when the plan was computed. Any other plan reads the schemas the
+// connection URL covers now, together with the schemas it recorded beyond
+// them.
 //
 // The URL's scope is resolved at the time of the read rather than recorded.
 // On a realm-scoped URL that is what makes a schema created after planning part
@@ -409,14 +455,19 @@ type PlanTargetRuntime interface {
 // different set of objects and report a fresh plan as stale.
 func planTargetState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	schemasBeyondURL, exclude []string,
+	scope planReadScope,
+	exclude []string,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
-	urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
-	if err != nil {
-		return nil, fmt.Errorf("read database schema: %w", err)
+	names := schemascope.Union(scope.schemas, nil)
+	if len(names) == 0 {
+		urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)
+		if err != nil {
+			return nil, fmt.Errorf("read database schema: %w", err)
+		}
+		names = schemascope.Union(urlScope, scope.schemasBeyondURL)
 	}
-	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemascope.Union(urlScope, schemasBeyondURL))
+	current, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, names)
 	if err != nil {
 		return nil, fmt.Errorf("read database schema: %w", err)
 	}
@@ -793,9 +844,10 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // VerifyPlanTarget checks that the connected database is the state the plan
 // was computed against: the dialects must be compatible and the current
 // schema, filtered with the plan's recorded exclude patterns, must match the
-// plan's source fingerprint. The schema is read at the connection URL's scope
-// together with the plan's [PlanFile.SchemasBeyondURL]. A fingerprint mismatch
-// returns *StalePlanError.
+// plan's source fingerprint. The schema is read at the plan's
+// [PlanFile.Schemas] when it records a selection, and otherwise at the
+// connection URL's scope together with the plan's [PlanFile.SchemasBeyondURL].
+// A fingerprint mismatch returns *StalePlanError.
 func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, plan PlanFile, runtime PlanTargetRuntime) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return err
@@ -813,7 +865,7 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 			plan.Dialect, conn.Info().Dialect)
 	}
 
-	current, err := planTargetState(ctx, conn, plan.SchemasBeyondURL, plan.Exclude, runtime)
+	current, err := planTargetState(ctx, conn, recordedReadScope(plan), plan.Exclude, runtime)
 	if err != nil {
 		return err
 	}

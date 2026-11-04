@@ -113,16 +113,18 @@ func TestMigrationsGenerateWarnsAboutTheDropsItWritesE2E(t *testing.T) {
 }
 
 // TestComparisonVerbsDoNotWarnWhenTheScopeIsNamedE2E names the scope each way
-// an operator can. No line warns, while each verb still compares: a scope of
-// public finds the database synced, and a selection naming crm removes its
-// tables because the operator asked for crm. A plan that skips table drops,
-// with `diff.skip: [drop_table]` in ptah.yaml, drops no table and warns about
-// none either.
+// an operator can: search_path, --schemas, or schemas in ptah.yaml. No line
+// warns, while each verb still compares: a scope of public finds the database
+// synced, and a selection naming crm removes its tables because the operator
+// asked for crm. A plan that skips table drops, with `diff.skip: [drop_table]`
+// in ptah.yaml, drops no table and warns about none either.
 func TestComparisonVerbsDoNotWarnWhenTheScopeIsNamedE2E(t *testing.T) {
 	c := qt.New(t)
 	database := newUndescribedSchemaDatabase(c)
 	skipDrops := filepath.Join(c.TempDir(), "ptah.yaml")
 	c.Assert(os.WriteFile(skipDrops, []byte("diff:\n  skip: [drop_table]\n"), 0o600), qt.IsNil)
+	publicOnly := filepath.Join(c.TempDir(), "ptah.yaml")
+	c.Assert(os.WriteFile(publicOnly, []byte("schemas: [public]\n"), 0o600), qt.IsNil)
 	tests := []undescribedRun{
 		{
 			name: "schema compare, search_path=public",
@@ -144,6 +146,35 @@ func TestComparisonVerbsDoNotWarnWhenTheScopeIsNamedE2E(t *testing.T) {
 			args: func(database, schema, _ string) []string {
 				return []string{"schema", "apply", "--db-url", withURLParameter(database, "search_path", "public"),
 					"--schema-file", schema, "--dry-run"}
+			},
+			stdout: "Schema is synced, no changes to be made.\n",
+		},
+		{
+			name: "schema plan, search_path=public",
+			args: func(database, schema, _ string) []string {
+				return []string{"schema", "plan", "--db-url", withURLParameter(database, "search_path", "public"),
+					"--schema-file", schema, "--dry-run"}
+			},
+			stdout: "Schema is synced, no changes to be made.\n",
+		},
+		{
+			name: "schema plan --schemas public",
+			args: func(database, schema, _ string) []string {
+				return []string{"schema", "plan", "--db-url", database, "--schema-file", schema, "--dry-run", "--schemas", "public"}
+			},
+			stdout: "Schema is synced, no changes to be made.\n",
+		},
+		{
+			name: "schema plan, ptah.yaml schemas public",
+			args: func(database, schema, _ string) []string {
+				return []string{"schema", "plan", "--config", publicOnly, "--db-url", database, "--schema-file", schema, "--dry-run"}
+			},
+			stdout: "Schema is synced, no changes to be made.\n",
+		},
+		{
+			name: "schema apply --dry-run, ptah.yaml schemas public",
+			args: func(database, schema, _ string) []string {
+				return []string{"schema", "apply", "--config", publicOnly, "--db-url", database, "--schema-file", schema, "--dry-run"}
 			},
 			stdout: "Schema is synced, no changes to be made.\n",
 		},

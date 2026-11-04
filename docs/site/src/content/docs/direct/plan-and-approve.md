@@ -185,6 +185,21 @@ outside a pinned URL, the plan also records `schemas_beyond_url`, and applying
 the plan reads those schemas as well. A change in any schema the plan writes
 then makes the plan stale.
 
+`--schemas`, or `schemas` in `ptah.yaml`, names the schemas to plan for, as it
+does for `ptah schema apply`, and takes precedence over the URL. `--schemas`
+outranks the file. The plan records the selection as `schemas`, and
+`from_fingerprint` then describes those schemas alone. Applying the plan reads
+the same schemas, so a change in another schema does not make the plan stale,
+and `ptah schema apply --plan` refuses a `--schemas` of its own. Without a
+selection, a URL that pins no `search_path` reads every schema, and the plan
+drops the tables of each schema the desired schema declares nothing in. The
+command then prints the warning `ptah schema apply` prints, once for each such
+schema:
+
+```text
+warning: the desired schema declares nothing in schema "crm", so its 2 tables are planned for removal; to keep them, pin search_path in the URL or pass --schemas
+```
+
 `from_fingerprint` describes structure, not rows. When the desired schema
 declares reference rows and the plan reads a table that holds them, the plan
 also records `managed_rows` -- each table, its key columns and the managed

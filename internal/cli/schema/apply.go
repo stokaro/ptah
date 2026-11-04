@@ -177,9 +177,9 @@ executable provider carries the provider's native operations and is applied
 only through the same provider. --plan refuses
 --protected-table, typed or set in the environment: the fence is read when the
 plan is computed, so pass it to "ptah schema plan", which refuses to save a
-plan that would change a fenced table. --schemas and --include
-positively select what both comparison sides see; --exclude subtracts from the
-result. An --include selection that matches neither the target nor the desired
+plan that would change a fenced table. --schemas, or schemas in ptah.yaml,
+and --include positively select what both comparison sides see; --exclude
+subtracts from the result. An --include selection that matches neither the target nor the desired
 schema refuses the apply rather than reporting a synced schema for work that
 did not happen.
 
@@ -389,6 +389,15 @@ func applySchema(
 		applyDevURLFlag,
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
+	// Resolved as `schema compare` resolves it, so a project that names its
+	// schemas in ptah.yaml has the comparison it previews applied, rather than
+	// a read of every schema that drops the tables of the ones it left out.
+	opts.schemas = dbcli.EffectiveString(
+		cmd,
+		dbcli.SchemasFlagName,
+		opts.schemas,
+		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
 	)
 
 	if strings.TrimSpace(opts.dbURL) == "" {
@@ -794,7 +803,7 @@ func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 		{applyDevURLFlag, "the plan is already computed; there is nothing to re-plan on a dev database"},
 		{applyExcludeFlag, "the plan file records the exclude patterns it was computed with"},
 		{applyEditFlag, "a pre-approved plan must execute exactly as reviewed; recompute the plan with `ptah schema plan` instead"},
-		{dbcli.SchemasFlagName, "the plan file already fixes the planned schema objects"},
+		{dbcli.SchemasFlagName, "the plan file records the schemas it was computed at; pass --schemas to `ptah schema plan`"},
 		{applyIncludeFlag, "the plan file already fixes the planned schema objects"},
 		{applyProtectedTableFlag, "the fence is read when the plan is computed, and the plan file does not record " +
 			"which declared row sets its statements change; pass it to `ptah schema plan --protected-table`, " +

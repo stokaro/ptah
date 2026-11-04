@@ -341,6 +341,27 @@ func TestSchemaApplyPlanRejectsConflictingFlags(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "ptah schema apply --plan cannot be combined with --dev-url: .*", qt.Commentf("%s", out))
 }
 
+// TestSchemaApplyPlanRejectsASchemasSelection refuses --schemas beside --plan:
+// the plan file records the selection it was computed at, so a second one has
+// nothing to select, and the refusal names the command that takes it.
+func TestSchemaApplyPlanRejectsASchemasSelection(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "target.db")
+	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+
+	out, err := runSchema("", "apply",
+		"--db-url", "sqlite://"+dbPath,
+		"--plan", filepath.Join(dir, "missing.plan.json"),
+		"--schemas", "main",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		"ptah schema apply --plan cannot be combined with --schemas: the plan file records the schemas it was computed at; "+
+			"pass --schemas to `ptah schema plan`",
+		qt.Commentf("%s", out))
+}
+
 // writeTxModeDirectivePlan computes a native plan that creates the orders
 // table and rewrites it so its first statement carries `-- atlas:txmode none`,
 // the header `ptah-compat schema plan --directive` writes into a plan file.
