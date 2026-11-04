@@ -29,15 +29,15 @@ type Doc struct {
 
 // TestRender_FieldPropertiesRoundTrip reads a Go source whose field states
 // platform properties, exports the model, and reads the export back: the
-// field keeps every property. The MySQL-family comment the reader derives
-// from the field's comment is not written, since reading the comment derives
-// it again.
+// field keeps every property. The field's comment is its own and no
+// MySQL-family property, so no platform comment is written.
 func TestRender_FieldPropertiesRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	declared, err := goschema.ParseSource(builtintest.Annotations(), "entities.go", fieldPropertiesSource)
 	c.Assert(err, qt.IsNil)
+	c.Assert(declared.Fields[0].Comment, qt.Equals, "about")
 	c.Assert(declared.Fields[0].Overrides, qt.DeepEquals, map[string]map[string]string{
-		"mariadb": {"comment": "about"}, "mysql": {"charset": "latin1", "comment": "about"}, "postgres": {"storage": "plain"},
+		"mysql": {"charset": "latin1"}, "postgres": {"storage": "plain"},
 	})
 
 	files, err := goschematogo.Render(c.Context(), &declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true})

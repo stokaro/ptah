@@ -492,7 +492,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table schemamodel.Table) {
 func (ctx *renderContext) fieldDirectiveAttrs(field schemamodel.Field, table annotationext.Table) []attr {
 	slot := annotationext.Slot{Directive: fieldDirective, Table: table, Name: field.Name}
 	attrs := append(fieldAttrs(field), ctx.ownerAttrs(slot, annotationext.WithOwnAttributes)...)
-	return append(attrs, propertyAttrs(fieldProperties(field))...)
+	return append(attrs, propertyAttrs(field.Overrides)...)
 }
 
 // indexDirectiveAttrs are the attributes of an index's directive.
