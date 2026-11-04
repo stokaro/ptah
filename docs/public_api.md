@@ -968,9 +968,14 @@ receives an independent snapshot. `Result.Rewrites` claims source steps by ident
 and names a contributed replacement; the runtime validates and copies those claims,
 and the host applies them to its complete graph. A refusal discards the claims.
 `AlterTable` requests parent assessment even when no attached feature changed.
+
 `CommonStep.CommonObject` is the operand of a step that changes a common object
 beyond tables: a view, materialized view, sequence, role, membership, grant,
 revocation or comment, as its AST node. It is nil for every other step.
+`CommonStep.RenamedIndex` names the index a step renames in place on its
+parent, as the table holds it and as the declaration names it; such a step
+reads the parent, drops the held index name and creates the declared one. It
+is nil for every other step.
 Common AST operands are local data; process adapters must map them to an explicit
 protocol schema instead of serializing Go AST structs.
 

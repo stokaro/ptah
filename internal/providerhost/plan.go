@@ -33,7 +33,10 @@ type commonPlanner struct {
 	// indexes plans the common indexes of the tables a provider owns: the
 	// provider reports the indexes a table holds, so the comparison has a
 	// current side, and claims the steps that add and drop them.
-	indexes    bool
+	indexes bool
+	// renames plans an index the comparison pairs with one declared under
+	// another name as one step the owner claims, which keeps the index.
+	renames    bool
 	selections *scopeSelections
 }
 
@@ -75,14 +78,16 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	if err != nil {
 		return nil, err
 	}
-	indexRemovals, indexAdditions, err := p.indexChanges(diff)
+	indexes, err := p.indexChanges(diff)
 	if err != nil {
 		return nil, err
 	}
 	// An index is dropped before the tables and columns change, so a
 	// replacement drops the held index before it creates the declared one
-	// under the same name, and is added once its columns exist.
-	nodes := slices.Concat(common.before, indexRemovals, common.prepared)
+	// under the same name, and is added once its columns exist. A rename
+	// neither frees nor takes a name another index change uses: the
+	// comparison pairs only names the other side does not hold.
+	nodes := slices.Concat(common.before, indexes.removals, indexes.renames, common.prepared)
 	var columnRemovals []ast.Node
 	ordered := diff.TablesAdded.InDependencyOrder()
 	if len(ordered) != len(diff.TablesAdded) {
@@ -103,7 +108,7 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 		nodes = append(nodes, additions...)
 		columnRemovals = append(columnRemovals, removals...)
 	}
-	nodes = append(nodes, indexAdditions...)
+	nodes = append(nodes, indexes.additions...)
 	creationStart := len(nodes)
 	nodes = append(nodes, common.after...)
 	removalStart := len(nodes)
@@ -142,6 +147,10 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 		// table it creates or alters; planningContext refuses an index of any
 		// other table.
 		fields = append(fields, "IndexesAdded", "IndexesRemoved", "DeclaredIndexes")
+		if p.renames {
+			// A paired index travels as a rename step; see indexChanges.
+			fields = append(fields, "IndexesRenamed")
+		}
 		if p.comments {
 			// The comment of such an index travels on the common-object
 			// wire; see indexCommentNodes.

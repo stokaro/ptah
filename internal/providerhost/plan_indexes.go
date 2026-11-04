@@ -63,12 +63,34 @@ func (n *pendingIndexChange) Accept(ast.Visitor) error {
 	return unsupported(fmt.Sprintf("unclaimed provider removal of index %s from table %s", n.index, n.table))
 }
 
-// indexChanges stands in for the index additions and removals on the tables
-// the plan keeps. A created table's indexes travel in its declaration, and a
-// removed table takes its indexes with it, so neither gets a step of its own.
-func (p commonPlanner) indexChanges(diff *difftypes.SchemaDiff) (removals, additions []ast.Node, err error) {
+// pendingIndexRename stands in for an index the comparison paired with one
+// declared under another name, on a table whose provider owns the table
+// lifecycle and renames indexes. The owner's graph step keeps the index under
+// its new name; rendering the placeholder is always an error.
+type pendingIndexRename struct {
+	table    string
+	from, to string
+}
+
+func (n *pendingIndexRename) Accept(ast.Visitor) error {
+	return unsupported(fmt.Sprintf("unclaimed provider rename of index %s of table %s to %s", n.from, n.table, n.to))
+}
+
+// indexSteps are the placeholders of the index changes on the tables a plan
+// keeps.
+type indexSteps struct {
+	removals, renames, additions []ast.Node
+}
+
+// indexChanges stands in for the index additions, removals and renames on
+// the tables the plan keeps. A created table's indexes travel in its
+// declaration, and a removed table takes its indexes with it, so neither gets
+// a step of its own. The comparison renames an index only on a table both
+// sides hold.
+func (p commonPlanner) indexChanges(diff *difftypes.SchemaDiff) (indexSteps, error) {
+	var result indexSteps
 	if !p.ownsIndexes() {
-		return nil, nil, nil
+		return result, nil
 	}
 	builder := objectidentity.NewBuilder(diff.EffectiveIdentifierSemantics(p.target))
 	created := make(map[objectidentity.Key]bool, len(diff.TablesAdded))
@@ -79,27 +101,37 @@ func (p commonPlanner) indexChanges(diff *difftypes.SchemaDiff) (removals, addit
 	for _, name := range diff.TablesRemoved.Names() {
 		key, err := tableKey(builder, name)
 		if err != nil {
-			return nil, nil, err
+			return indexSteps{}, err
 		}
 		removed[key] = true
 	}
 	for _, ref := range diff.IndexesRemoved {
 		key, err := tableKey(builder, ref.TableName)
 		if err != nil {
-			return nil, nil, err
+			return indexSteps{}, err
 		}
 		if !removed[key] {
-			removals = append(removals, &pendingIndexChange{table: ref.TableName, index: ref.Name})
+			result.removals = append(result.removals, &pendingIndexChange{table: ref.TableName, index: ref.Name})
 		}
+	}
+	for _, rename := range diff.IndexesRenamed {
+		key, err := tableKey(builder, rename.TableName)
+		if err != nil {
+			return indexSteps{}, err
+		}
+		if created[key] || removed[key] {
+			return indexSteps{}, fmt.Errorf("provider planner received a rename of index %s of table %s, which the plan does not keep", rename.From, rename.TableName)
+		}
+		result.renames = append(result.renames, &pendingIndexRename{table: rename.TableName, from: rename.From, to: rename.To})
 	}
 	for _, change := range diff.IndexesAdded {
 		key, err := tableKey(builder, change.TableName)
 		if err != nil {
-			return nil, nil, err
+			return indexSteps{}, err
 		}
 		if !created[key] {
-			additions = append(additions, &pendingIndexChange{table: change.TableName, index: change.Index.Name, added: true})
+			result.additions = append(result.additions, &pendingIndexChange{table: change.TableName, index: change.Index.Name, added: true})
 		}
 	}
-	return removals, additions, nil
+	return result, nil
 }

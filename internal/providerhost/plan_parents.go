@@ -64,12 +64,15 @@ func (p *planningParents) add(table featureplan.Table, name string) error {
 // any table it alters, so the change reaches it rather than being dropped. An
 // index of a table the plan neither creates, prepares nor removes is refused.
 func (p *planningParents) alterForIndexes(builder objectidentity.Builder, diff *difftypes.SchemaDiff) error {
-	tables := make([]string, 0, len(diff.IndexesAdded)+len(diff.IndexesRemoved))
+	tables := make([]string, 0, len(diff.IndexesAdded)+len(diff.IndexesRemoved)+len(diff.IndexesRenamed))
 	for _, change := range diff.IndexesAdded {
 		tables = append(tables, change.TableName)
 	}
 	for _, ref := range diff.IndexesRemoved {
 		tables = append(tables, ref.TableName)
+	}
+	for _, rename := range diff.IndexesRenamed {
+		tables = append(tables, rename.TableName)
 	}
 	for _, name := range tables {
 		key, err := tableKey(builder, name)

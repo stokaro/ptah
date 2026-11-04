@@ -126,6 +126,16 @@ held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
 Without the feature, index changes are refused.
 
+With `planning.index-renames` as well, a provider renames an index in place.
+When its session reports `index_rename`, the comparison pairs an index the
+table holds with one the declaration states under another name and with one
+definition. The pair reaches the provider as one step that names both names in
+`renamed_index`, reads the table, drops the held name and creates the declared
+one; the provider claims it with an operation that keeps the index. A provider
+reports `index_rename` only to a host that lists the feature, and the host
+refuses a session that reports it from an engine without the feature. Without
+the capability, a renamed index is a drop and a create.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
