@@ -137,6 +137,80 @@ func TestParsePtahEmptyDocument_HappyPath(t *testing.T) {
 	}
 }
 
+// TestParsePtahLaterDocument_FailurePath holds ptah.yaml to one YAML
+// document. The loader reads the first, so a later document that sets
+// anything would be dropped: its unknown keys would pass unchecked and its
+// settings would not apply. The refusal names the line the later document's
+// settings start on.
+func TestParsePtahLaterDocument_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		wantErr  string
+	}{
+		{
+			name:     "a second document repeats a key",
+			document: "url: postgres://first/db\n---\nurl: postgres://second/db\n",
+			wantErr:  `failed to parse ptah config ptah\.yaml: line 3: the file holds a second YAML document, and ptah\.yaml is read as one; move these settings into the first document`,
+		},
+		{
+			name:     "a second document carries an unknown key",
+			document: "url: postgres://first/db\n---\nurll: postgres://typo/db\n",
+			wantErr:  `failed to parse ptah config ptah\.yaml: line 3: the file holds a second YAML document, and ptah\.yaml is read as one; move these settings into the first document`,
+		},
+		{
+			name:     "every setting is in the second document",
+			document: "---\n---\nmigration:\n  dir: elsewhere\n",
+			wantErr:  `failed to parse ptah config ptah\.yaml: line 3: the file holds a second YAML document, and ptah\.yaml is read as one; move these settings into the first document`,
+		},
+		{
+			name:     "a third document after an empty second",
+			document: "url: postgres://first/db\n---\n---\nurl: postgres://third/db\n",
+			wantErr:  `failed to parse ptah config ptah\.yaml: line 4: the file holds a second YAML document, and ptah\.yaml is read as one; move these settings into the first document`,
+		},
+		{
+			name:     "a second document is not YAML",
+			document: "url: postgres://first/db\n---\nurl: [unclosed\n",
+			wantErr:  `(?s)failed to parse ptah config ptah\.yaml: yaml: .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParsePtah([]byte(test.document), "ptah.yaml", "")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(cfg, qt.CmpEquals(cmp.Exporter(func(reflect.Type) bool { return true })), projectconfig.Config{})
+		})
+	}
+}
+
+// TestParsePtahLaterDocument_HappyPath is the control: a later document that
+// sets nothing drops nothing, so the first document is read as written.
+func TestParsePtahLaterDocument_HappyPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+	}{
+		{name: "a trailing separator", document: "url: postgres://first/db\n---\n"},
+		{name: "a trailing separator and a comment", document: "url: postgres://first/db\n---\n# nothing here\n"},
+		{name: "a null second document", document: "url: postgres://first/db\n---\nnull\n"},
+		{name: "an empty second mapping", document: "url: postgres://first/db\n---\n{}\n"},
+		{name: "a document end marker", document: "url: postgres://first/db\n...\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParsePtah([]byte(test.document), "ptah.yaml", "")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://first/db")
+		})
+	}
+}
+
 func TestParsePtahProjectConfigRejectsUnknownOnlineDDLKeys(t *testing.T) {
 	c := qt.New(t)
 
