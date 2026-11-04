@@ -19,9 +19,11 @@ import (
 // readExportProvider is the hcl-claims fixture with a read that gives every
 // table a retention of 30 seconds. Read with --schemas, its knowledge of
 // retention is complete in the main schema of the database it read and
-// uninspected outside it, and its encoder refuses a request that does not give
-// that region back with the tables bound in that database. environment adds
-// to the fixture's settings. The database holds one table, records.
+// uninspected outside it. Its encoder refuses a request that does not carry
+// the knowledge the host owes such a read: complete, or, with
+// FIXTURE_READ_HIDDEN=1, which adds a nested namespace the read did not read,
+// both regions as read, with the tables bound in their database. environment
+// adds to the fixture's settings. The database holds one table, records.
 func readExportProvider(c *qt.C, environment ...string) providerCLI {
 	c.Helper()
 	spec := fixtureReleaseSpec(c, "hcl-claims", testutils.FixtureRelease{})
@@ -41,10 +43,11 @@ func readExportProvider(c *qt.C, environment ...string) providerCLI {
 }
 
 // TestProviderIntrospect_ReadNarrowedBySchemas_HappyPath writes the Go source
-// of a provider read that --schemas narrowed: the host sends the read's region
-// and binds the table in the database its retention was read in, and the
-// provider writes the retention as its directive. Reading the source back
-// gives the retention again.
+// of a provider read that --schemas narrowed: the read knows retention in every
+// namespace it listed, so the host sends it as complete, as an embedded
+// engine's writer writes such a read, and binds the table in the database its
+// retention was read in. The provider writes the retention as its directive,
+// and reading the source back gives the retention again.
 func TestProviderIntrospect_ReadNarrowedBySchemas_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	f := readExportProvider(c)
@@ -98,14 +101,32 @@ func TestProviderIntrospect_ReadOfEverySchema_HappyPath(t *testing.T) {
 	c.Assert(string(written), qt.Contains, "//ptah:fixture:retention seconds=\"30\"\n")
 }
 
-// TestProviderIntrospect_ReadNarrowedBySchemas_FailurePath has a provider that
-// writes only whole-model ptah:not-described entries receive the region of a
-// narrowed read. It cannot write that knowledge, so it refuses, and the
-// export fails and writes nothing rather than a source whose silence claims
-// more than the read knew.
-func TestProviderIntrospect_ReadNarrowedBySchemas_FailurePath(t *testing.T) {
+// TestProviderIntrospect_ReadWithAnUnreadNamespace_HappyPath writes the Go
+// source of a narrowed read that also reports a nested namespace it did not
+// read: the host sends both regions as the read reported them, which the
+// provider checks, and the provider writes the retention it read.
+func TestProviderIntrospect_ReadWithAnUnreadNamespace_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	f := readExportProvider(c, "FIXTURE_SOURCE_LIMITS=1")
+	f := readExportProvider(c, "FIXTURE_READ_HIDDEN=1")
+	out := c.TempDir()
+
+	_, stderr, code := executeProviderCLI(c.Context(), []string{"introspect", "--provider-config", f.manifestPath, "--provider-engine", "fixture",
+		"--db-url", f.address, "--schemas", "main", "--out", out, "--single-file"})
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	written, err := os.ReadFile(filepath.Join(out, "schema.go"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(written), qt.Contains, "//ptah:fixture:retention seconds=\"30\"\n")
+}
+
+// TestProviderIntrospect_ReadWithAnUnreadNamespace_FailurePath has a provider
+// that writes only whole-model ptah:not-described entries receive the regions
+// of a read that did not read a nested namespace. It cannot write that
+// knowledge, so it refuses, and the export fails and writes nothing rather
+// than a source whose silence claims more than the read knew.
+func TestProviderIntrospect_ReadWithAnUnreadNamespace_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	f := readExportProvider(c, "FIXTURE_READ_HIDDEN=1", "FIXTURE_SOURCE_LIMITS=1")
 	out := filepath.Join(c.TempDir(), "models")
 
 	stdout, stderr, code := executeProviderCLI(c.Context(), []string{"introspect", "--provider-config", f.manifestPath, "--provider-engine", "fixture",
