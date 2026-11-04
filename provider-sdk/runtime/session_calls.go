@@ -53,7 +53,7 @@ func (s sessionCall[Q, R]) call(ctx context.Context, c *Client, request Q, invok
 	defer cancel()
 	result, err := invoke(call, proto.CloneOf(request))
 	if err != nil {
-		return zero, s.join(remoteError(call, s.operation, err))
+		return zero, s.join(remoteError(call, c.description, s.operation, err))
 	}
 	if err := s.validateOutput(request, result); err != nil {
 		return zero, s.join(err)

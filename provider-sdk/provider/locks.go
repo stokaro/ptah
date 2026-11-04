@@ -77,6 +77,10 @@ func ValidateLockRequest(request *protocol.LockRequest) error {
 
 // ValidateLockResult checks exact binding and operation-specific outcomes.
 // UNKNOWN is a valid uncertainty report. An invalid receipt proves no ownership.
+// A diagnostic is valid only with an outcome its operation does not succeed
+// with, and only in the shape ValidateDiagnostic accepts. Whether
+// ErrorReasonsFeature was negotiated is not checked here: the SDK removes a
+// diagnostic the description does not list on both sides of the transport.
 func ValidateLockResult(operation LockOperation, request *protocol.LockRequest, result *protocol.LockResult) error {
 	if err := ValidateLockRequest(request); err != nil {
 		return err
@@ -87,7 +91,20 @@ func ValidateLockResult(operation LockOperation, request *protocol.LockRequest, 
 	if result == nil || !proto.Equal(request.GetScope(), result.GetScope()) || request.GetRequestId() != result.GetRequestId() {
 		return fmt.Errorf("%w: lock receipt changed its scope or request identity", ErrProtocol)
 	}
-	switch result.GetOutcome() {
+	if err := validLockOutcome(operation, result.GetOutcome()); err != nil {
+		return err
+	}
+	if result.GetDiagnostic() == nil {
+		return nil
+	}
+	if lockSucceeded(operation, result.GetOutcome()) {
+		return fmt.Errorf("%w: a lock receipt gives a reason only for an outcome its operation does not succeed with", ErrProtocol)
+	}
+	return ValidateDiagnostic(result.GetDiagnostic())
+}
+
+func validLockOutcome(operation LockOperation, outcome protocol.LockResult_Outcome) error {
+	switch outcome {
 	case protocol.LockResult_UNKNOWN, protocol.LockResult_RELEASED, protocol.LockResult_NOT_ACQUIRED, protocol.LockResult_LOST:
 		return nil
 	case protocol.LockResult_ACQUIRED:
@@ -102,14 +119,33 @@ func ValidateLockResult(operation LockOperation, request *protocol.LockRequest, 
 	return fmt.Errorf("%w: lock receipt has an invalid outcome for its operation", ErrProtocol)
 }
 
-// LockError preserves a confirmed refusal or the absence of confirmation.
-// Its zero value records an unknown outcome.
-type LockError struct {
-	Outcome protocol.LockResult_Outcome
+// lockSucceeded reports the outcomes an operation succeeds with: ownership
+// for an acquisition or a check, and a confirmed release or a fenced handle
+// for a release. CheckLockResult accepts exactly these, and a diagnostic
+// never accompanies them, so the two cannot disagree about which outcome is
+// a failure.
+func lockSucceeded(operation LockOperation, outcome protocol.LockResult_Outcome) bool {
+	if operation == LockRelease {
+		return outcome == protocol.LockResult_RELEASED || outcome == protocol.LockResult_NOT_ACQUIRED
+	}
+	return outcome == protocol.LockResult_ACQUIRED
 }
 
-// Error reports the outcome without including connection or lock identifiers.
+// LockError preserves a confirmed refusal or the absence of confirmation.
+// Its zero value records an unknown outcome. Reason is the provider's reason
+// for the outcome, from the receipt's diagnostic, and is empty when the
+// receipt gave none or ErrorReasonsFeature was not negotiated.
+type LockError struct {
+	Outcome protocol.LockResult_Outcome
+	Reason  string
+}
+
+// Error reports the outcome, and the provider's reason when there is one,
+// without including connection or lock identifiers.
 func (e *LockError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("provider lock outcome is %s: %s", e.Outcome, e.Reason)
+	}
 	return fmt.Sprintf("provider lock outcome is %s", e.Outcome)
 }
 
@@ -128,20 +164,19 @@ func (e *LockError) Unwrap() error {
 }
 
 // CheckLockResult accepts only ownership for try/check, or confirmed release
-// and fenced absence for release. A malformed result retains uncertainty.
+// and fenced absence for release. A malformed result retains uncertainty. A
+// failure carries the receipt's reason in LockError.Reason.
 func CheckLockResult(operation LockOperation, request *protocol.LockRequest, result *protocol.LockResult) error {
 	if err := ValidateLockResult(operation, request, result); err != nil {
 		return errors.Join(err, &LockError{})
 	}
 	outcome := result.GetOutcome()
-	if operation == LockRelease && (outcome == protocol.LockResult_RELEASED || outcome == protocol.LockResult_NOT_ACQUIRED) {
+	if lockSucceeded(operation, outcome) {
 		return nil
 	}
-	if operation != LockRelease && outcome == protocol.LockResult_ACQUIRED {
-		return nil
-	}
+	failure := &LockError{Outcome: outcome, Reason: result.GetDiagnostic().GetReason()}
 	if operation == LockCheck && (outcome == protocol.LockResult_RELEASED || outcome == protocol.LockResult_NOT_ACQUIRED) {
-		return errors.Join(ErrLockLost, &LockError{Outcome: outcome})
+		return errors.Join(ErrLockLost, failure)
 	}
-	return &LockError{Outcome: outcome}
+	return failure
 }

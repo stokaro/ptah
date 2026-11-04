@@ -66,7 +66,7 @@ func callWithin[Q proto.Message, R proto.Message](
 	defer cancel()
 	result, err := invoke(call, request)
 	if err != nil {
-		return zero, remoteError(call, operation, err)
+		return zero, remoteError(call, description, operation, err)
 	}
 	if err := call.Err(); err != nil {
 		return zero, err

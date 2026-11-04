@@ -2223,6 +2223,23 @@ message LockResult {
   LockScope scope = 1;
   string request_id = 2;
   Outcome outcome = 3;
+  // Why the lock has an outcome its operation does not succeed with: never
+  // set with ACQUIRED from TryLock or CheckLock, or with RELEASED or
+  // NOT_ACQUIRED from ReleaseLock. Sent only when both sides list
+  // errors.reasons. Contract 25.16.
+  ProviderDiagnostic diagnostic = 4;
+}
+
+// ProviderDiagnostic is the reason a provider gives for a failure: in the
+// details of a failed call's gRPC status, at most one of them, or in a lock
+// receipt. The provider writes the reason itself. It names what failed and
+// why, and never quotes statement text, a value, an address or a credential:
+// the host shows it, and nothing else of the status, to the operator. It is
+// one line of at most 512 bytes of valid UTF-8 with no control character and
+// no surrounding white space. Sent only when both sides list errors.reasons.
+// Contract 25.16.
+message ProviderDiagnostic {
+  string reason = 1;
 }
 
 // MetadataScope identifies an exact store and its execution handle. LOG writes

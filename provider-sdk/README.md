@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.15. `provider-sdk/v0.13.0` speaks 25.14.
+speaks contract 25.16. `provider-sdk/v0.14.0` speaks 25.15.
+`provider-sdk/v0.13.0` speaks 25.14.
 `provider-sdk/v0.12.0` speaks 25.12.
 `provider-sdk/v0.11.0` speaks 25.9.
 `provider-sdk/v0.10.0` speaks 25.8.
@@ -100,6 +101,7 @@ returns to 0.
   Contract 25.13 adds [comparison counts](#comparison-counts).
   Contract 25.14 adds [prepared index kinds](#prepared-index-kinds).
   Contract 25.15 adds [typed statement arguments](#typed-arguments).
+  Contract 25.16 adds [error reasons](#error-reasons).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -129,7 +131,7 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  and `sessions.typed-arguments`. The embedding store's
+  `sessions.typed-arguments` and `errors.reasons`. The embedding store's
   calls and `PrepareCommonObjects` are new, and each comes with an addition to
   `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -401,6 +403,49 @@ Native migration commands use this service for default locking and explicit
 migration lock timeouts. The fixture does not qualify YDB coordination leases.
 Published-module acceptance, read-only lock previews, and official-engine checks
 remain required under #4204.
+
+## Error reasons
+
+[ADR 0059](../docs/adr/0059-a-provider-says-why-a-call-failed-in-text-it-wrote.md)
+decides this addition. A failed call reaches the host as its gRPC code, and
+the host's error reads `provider inspect failed (FailedPrecondition)`. The
+status message is never shown: it is whatever the provider's error chain
+wrote, and a driver's error can quote a connection address, a credential or a
+statement with its values.
+
+`errors.reasons` lets a provider say why. It is two-way and the provider's
+alone. A failed call's status then carries one `ProviderDiagnostic` in its
+details, and the host prints its reason after the code:
+
+```text
+provider inspect failed (FailedPrecondition): the streaming query capability was not established
+```
+
+A lock receipt whose outcome is not the one its operation asked for carries
+one in `LockResult.diagnostic`, and `provider.LockError` reads
+`provider lock outcome is BUSY: <reason>`. It never accompanies `ACQUIRED`
+from `TryLock` or `CheckLock`, or `RELEASED` or `NOT_ACQUIRED` from
+`ReleaseLock`.
+
+Listing the feature is the provider's promise about the text. The provider
+writes each reason itself. It names what failed and why, and never quotes
+statement text, a value, an address or a credential, so a reason is never the
+text of an error the provider received. `runtime.ErrorWithReason(code, reason)`
+builds such an error. The SDK cannot tell whether a reason quotes a value; it
+checks the shape, with `provider.ValidateDiagnostic`: one line of at most 512
+bytes of valid UTF-8, with no control character, no line or paragraph
+separator and no white space around it.
+
+Both transport boundaries enforce the negotiation and the shape alone. The SDK
+server removes every diagnostic from a call's error unless both sides list the
+feature, so a provider sets one without reading `HostFeatures`, and sends `the
+provider's reason is malformed and not shown` in place of a reason the check
+refuses or of more than one. It removes a lock receipt's diagnostic the same
+way, and refuses a receipt whose diagnostic is malformed or accompanies a
+success. The client shows a reason only under the negotiated feature, and
+writes the same sentence for a malformed one. A cancellation and a deadline
+stay the context's errors. Without the feature on both sides, the host's error
+is the operation and the code.
 
 ## Trust and process lifetime
 

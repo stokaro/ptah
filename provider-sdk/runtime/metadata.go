@@ -37,7 +37,7 @@ func metadataClientCall[Q proto.Message, R proto.Message](ctx context.Context, c
 	defer cancel()
 	result, err := invoke(call, proto.CloneOf(request))
 	if err != nil {
-		err = remoteError(call, "migration metadata", err)
+		err = remoteError(call, c.description, "migration metadata", err)
 	} else {
 		err = check(request, result)
 	}

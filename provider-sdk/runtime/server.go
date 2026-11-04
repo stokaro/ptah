@@ -155,25 +155,35 @@ func Serve(server Server) error {
 	}
 	defer stop()
 	server.Description = proto.CloneOf(server.Description)
+	adapter := newServerAdapter(server)
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: handshake,
-		Plugins:         map[string]plugin.Plugin{transportName: &transport{server: server}},
+		Plugins:         map[string]plugin.Plugin{transportName: &transport{adapter: adapter}},
 		Logger:          hclog.NewNullLogger(),
-		GRPCServer: func(options []grpc.ServerOption) *grpc.Server {
-			options = append(options, grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes))
-			return grpc.NewServer(options...)
-		},
+		GRPCServer:      grpcServer(adapter),
 	})
 	return nil
 }
 
+// grpcServer returns the factory go-plugin builds the provider's gRPC server
+// with: messages bounded in both directions, and the reasons check on every
+// call's error, so no service can send a reason the host did not negotiate.
+func grpcServer(adapter *serverAdapter) func([]grpc.ServerOption) *grpc.Server {
+	return func(options []grpc.ServerOption) *grpc.Server {
+		options = append(options, grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.ChainUnaryInterceptor(adapter.reasons))
+		return grpc.NewServer(options...)
+	}
+}
+
+// transport is the go-plugin binding of the provider service. A host's
+// transport has no adapter; it only dials.
 type transport struct {
 	plugin.NetRPCUnsupportedPlugin
-	server Server
+	adapter *serverAdapter
 }
 
 func (t *transport) GRPCServer(_ *plugin.GRPCBroker, server *grpc.Server) error {
-	protocol.RegisterProviderServer(server, newServerAdapter(t.server))
+	protocol.RegisterProviderServer(server, t.adapter)
 	return nil
 }
 
