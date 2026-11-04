@@ -29,6 +29,12 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 		EmptyPolicyRolesArePublic: true,
 		AutoIncrementIdentity:     true,
 	}
+	// PostgreSQL states the schema every database is created with, measured
+	// on 18.6. The other members of the family were not measured, and state
+	// nothing.
+	postgres := postgresFamily
+	postgres.DefaultSchemaUsage = true
+	postgres.DefaultSchemaComment = "standard public schema"
 	mysqlFamily := descriptor.Conversion{
 		PropertyShortcuts:    true,
 		SerialForeignKeyType: "INT",
@@ -36,7 +42,7 @@ func TestDescriptors_ConversionAgreesWithTheRetiredSwitches(t *testing.T) {
 		ConstraintComments:   true,
 	}
 	want := map[string]descriptor.Conversion{
-		platform.Postgres:    postgresFamily,
+		platform.Postgres:    postgres,
 		platform.CockroachDB: postgresFamily,
 		platform.YugabyteDB:  postgresFamily,
 		platform.Spanner:     postgresFamily,

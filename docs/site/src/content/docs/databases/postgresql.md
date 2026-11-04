@@ -614,7 +614,10 @@ of an extension follows the same rule, and so does a schema's comment:
 PostgreSQL creates every database with `public` commented
 `standard public schema`, and an Atlas HCL document declares
 `schema "public" {}` before any table can name it, so a schema declared
-without a comment keeps the one it holds.
+without a comment keeps the one it holds. The rule holds in the other
+direction too: `schema diff --from` such a document `--to` a database, with no
+`--dev-url`, reads the document's `public` with the comment the server gives
+it.
 
 The other engines of the family take fewer of these statements. Ptah writes and
 compares a comment only where the server stores it and reports it back, which
@@ -1106,6 +1109,17 @@ including the implicit `EXECUTE` a function's default ACL gives `PUBLIC`, and
 also in the same plan that creates the table or function, since the privilege
 arrives with the object. A revoke of a privilege the role does not hold
 changes nothing on the server, so the statement is safe either way.
+
+PostgreSQL also creates every database with schema `public`, on which `PUBLIC`
+holds `USAGE`. `schema diff --from <file> --to <database>` with no
+`--dev-url` reads the file as the database a server builds from it, so the
+file's side holds that privilege unless the file grants or revokes it itself.
+A file with `REVOKE USAGE ON SCHEMA public FROM PUBLIC` diffed to a database
+that holds the privilege plans the `GRANT`. PostgreSQL 14 and earlier give
+`PUBLIC` `CREATE` on `public` as well. The file's side is read by the dialect,
+not by the release, so against those releases the diff plans
+`GRANT CREATE ON SCHEMA "public" TO PUBLIC`. A `--dev-url` on the same release
+compares the file with what that release creates.
 
 `ALL`, in a grant or in `ALTER DEFAULT PRIVILEGES`, is compared with what the
 server reports, which is one row per privilege. A role holds `ALL` on a table

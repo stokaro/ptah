@@ -47,4 +47,10 @@ type Conversion struct {
 	// IndexTypeIsMethod reports that an index's declared type is its access
 	// method, as a read reports it.
 	IndexTypeIsMethod bool `json:"index_type_is_method,omitempty"`
+	// DefaultSchemaUsage reports that the server creates every database's
+	// default schema with USAGE for PUBLIC, which a read reports.
+	DefaultSchemaUsage bool `json:"default_schema_usage,omitempty"`
+	// DefaultSchemaComment is the comment the server creates every
+	// database's default schema with, which a read reports. Empty means none.
+	DefaultSchemaComment string `json:"default_schema_comment,omitempty"`
 }
