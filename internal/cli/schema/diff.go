@@ -75,7 +75,13 @@ database. --schemas and --include positively select what both comparison
 sides see; --exclude subtracts from the result. A selected object that
 depends on an unselected object refuses the diff with an explicit diagnostic.
 An --include selection that matches nothing on either side is refused instead
-of reporting a synced schema to a CI check.`,
+of reporting a synced schema to a CI check.
+
+A MySQL or MariaDB URL that names no database is the whole server, compared
+database by database: beside another server, as --from beside a file with no
+--dev-url, and beside a --dev-url that names no database. Beside a --dev-url
+naming one database, and as --to beside a --from file without one, it is
+refused.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaDiff(cmd, opts)
