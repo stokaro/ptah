@@ -880,11 +880,20 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
+	// The URL is read as `schema plan` read it, a whole MySQL or MariaDB
+	// server included, so a plan saved for a server is verified and applied
+	// against the same read. A dev database beside a server is refused as the
+	// computed apply refuses it: the plan is rehearsed there, and a plan for a
+	// server reaches the dev database's other databases.
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.url)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if err := atlasschema.RefuseServerDevDatabase(cmd.Context(), conn.Info(), opts.devURL,
+		classifiedAtlasApplyTo(cmd.Context(), opts, atlassource.ProjectEnv{}), opts.runtime.HCL()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	schemaVars, err := atlasVarFlagValues(cmd)
 	if err != nil {
