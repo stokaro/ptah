@@ -242,7 +242,10 @@ snapshot instead of letting that command reopen either project file. This
 currently applies to `migrate down`; other adapters evaluate Atlas project
 configuration once and map supported values to explicit native command
 arguments. An explicit `--config` path must exist; the conventional
-`./ptah.yaml` is optional.
+`./ptah.yaml` is optional. A `ptah.yaml` that sets nothing is an empty
+configuration, as a missing one is: a file of zero bytes, one holding only
+comments and blank lines, `---`, `null` and `{}` all leave every setting at its
+default.
 
 `--config` takes a `ptah.yaml` file. Pointing it at an `atlas.hcl` is refused by
 name rather than reported as a YAML parse failure: the Atlas project config is
