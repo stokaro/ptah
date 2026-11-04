@@ -15,6 +15,10 @@
 // a column's retention, which it reports as a loss. In Go annotations it
 // writes each as the directive or attribute it reads, and an INTEGER column
 // as an int64 field.
+//
+// With FIXTURE_READ_RETENTION=1 a read gives every table a retention, and a
+// read of selected schemas knows it only in their namespaces; the program then
+// refuses to write a source whose request does not give that region back.
 package main
 
 import (
@@ -170,6 +174,9 @@ func (p *hclClaims) retention(ctx context.Context, document *protocol.SourceDocu
 // table's as a retention block in the table, an index's as its
 // retention_seconds attribute. A column's has no HCL spelling and is a loss.
 func (p *hclClaims) EncodeSource(_ context.Context, request *protocol.EncodeSourceRequest) (*protocol.EncodedSource, error) {
+	if err := requireReadRegions(request); err != nil {
+		return nil, err
+	}
 	if request.GetFormat() == protocol.SourceDocument_GO_ANNOTATIONS {
 		return encodeGo(request)
 	}
