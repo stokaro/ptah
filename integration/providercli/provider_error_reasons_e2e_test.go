@@ -90,7 +90,7 @@ func TestProviderErrorReasons_HappyPath(t *testing.T) {
 // host would not print it.
 func TestProviderErrorReasons_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	f := errorReasonsCLI(c, "PTAH_FIXTURE_UNLISTED_REASONS=1")
+	f := errorReasonsCLI(c, "PTAH_FIXTURE_OMITTED="+provider.ErrorReasonsFeature)
 	c.Assert(checkedFeatures(c, f), qt.Not(qt.Contains), provider.ErrorReasonsFeature)
 
 	_, inspected, inspectCode := f.run(c, c.Context(), "inspect", "--format", "json")

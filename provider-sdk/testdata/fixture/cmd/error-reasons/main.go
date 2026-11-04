@@ -1,6 +1,6 @@
 // Package main serves the fixture and says why it refuses a read. It lists
-// errors.reasons unless PTAH_FIXTURE_UNLISTED_REASONS is set, so a test can
-// run the same refusal with the feature and without it. An inspection of a
+// errors.reasons unless PTAH_FIXTURE_OMITTED names it, so a test
+// can run the same refusal with the feature and without it. An inspection of a
 // database opened with the fault "refuse" fails with a reason this program
 // wrote, while the status message carries text no host may print.
 package main
@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -19,8 +21,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// unlisted is the variable that leaves errors.reasons out of the description.
-const unlisted = "PTAH_FIXTURE_UNLISTED_REASONS"
+// omitted names the variable holding the comma-separated features the
+// fixture leaves out of its description.
+const omitted = "PTAH_FIXTURE_OMITTED"
 
 func main() {
 	if path := os.Getenv("PTAH_FIXTURE_PID_FILE"); path != "" {
@@ -31,7 +34,7 @@ func main() {
 	}
 	description := backend.Description()
 	description.SemanticIdentity += "-error-reasons"
-	if _, set := os.LookupEnv(unlisted); !set {
+	if !slices.Contains(strings.Split(os.Getenv(omitted), ","), provider.ErrorReasonsFeature) {
 		description.Features = append(description.Features, provider.ErrorReasonsFeature)
 	}
 	owner := &reasonsOwner{Provider: &backend.Provider{}}
