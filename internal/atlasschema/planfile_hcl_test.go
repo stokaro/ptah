@@ -340,6 +340,14 @@ func TestMarshalPlanFileHCLRefusesUnrepresentablePlans(t *testing.T) {
 			want:   `the Atlas \.plan\.hcl format has no field for the schemas a plan reads beyond its connection URL's scope \(audit, extra\).*write the native JSON plan format.*`,
 		},
 		{
+			// A plan computed at an explicit selection is verified at that
+			// selection. A .plan.hcl has nowhere to record it, so it would be
+			// verified at the URL's scope, which may cover other schemas.
+			name:   "schema_selection",
+			mutate: func(plan *atlasschema.PlanFile) { plan.Schemas = []string{"crm", "public"} },
+			want:   `the Atlas \.plan\.hcl format has no field for the schema selection a plan was computed at \(crm, public\).*write the native JSON plan format.*`,
+		},
+		{
 			// The rows a plan read are what makes it stale when they move. A
 			// .plan.hcl has nowhere to record them, so verification would
 			// accept it over any row value (stokaro/ptah#3378).

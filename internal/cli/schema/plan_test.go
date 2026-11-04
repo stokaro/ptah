@@ -171,3 +171,48 @@ func TestSchemaPlanMatchesAtlasSchemaPlan(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(nativeDocument), qt.Equals, string(atlasDocument))
 }
+
+// TestSchemaPlanRecordsTheSchemasSelection saves a plan at each spelling of a
+// schema selection and reads back the selection the file records: none
+// without one, and the parsed names, sorted and without repeats, with one. A
+// selection in ptah.yaml counts, and --schemas outranks it. Applying the file
+// then verifies it at the recorded selection.
+func TestSchemaPlanRecordsTheSchemasSelection(t *testing.T) {
+	tests := []struct {
+		name string
+		// config is the ptah.yaml the plan reads; {} sets nothing.
+		config  string
+		schemas []string
+		want    []string
+	}{
+		{name: "no selection", config: "{}\n", schemas: nil, want: nil},
+		{name: "one schema", config: "{}\n", schemas: []string{"--schemas", "main"}, want: []string{"main"}},
+		{name: "a repeated schema with spaces", config: "{}\n", schemas: []string{"--schemas", " main , main"}, want: []string{"main"}},
+		{name: "ptah.yaml schemas", config: "schemas: [main]\n", schemas: nil, want: []string{"main"}},
+		{name: "--schemas outranks ptah.yaml", config: "schemas: [temp]\n", schemas: []string{"--schemas", "main"}, want: []string{"main"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "plan.db")
+			planPath := filepath.Join(dir, "selection.plan.json")
+			seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+			schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+				"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+			configPath := writeSchemaSQLFile(c, dir, "ptah.yaml", test.config)
+			args := append([]string{"plan", "--config", configPath, "--db-url", "sqlite://" + dbPath,
+				"--schema-file", schemaPath, "--output", planPath}, test.schemas...)
+
+			planned, err := runSchema("", args...)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", planned))
+			plan, err := atlasschema.ReadPlanFile(planPath)
+			c.Assert(err, qt.IsNil)
+			applied, err := runSchema("", "apply", "--db-url", "sqlite://"+dbPath, "--plan", planPath, "--auto-approve")
+
+			c.Assert(plan.Schemas, qt.DeepEquals, test.want)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", applied))
+			c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+		})
+	}
+}

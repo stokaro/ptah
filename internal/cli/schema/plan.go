@@ -43,6 +43,7 @@ type schemaPlanOptions struct {
 	rootDirs        []string
 	schemaFiles     []string
 	devURL          string
+	schemas         string
 	exclude         []string
 	protectedTables []string
 	name            string
@@ -77,6 +78,12 @@ schema. Pass --save or
 --output <path> to write the plan file, or --dry-run to print the plan
 document without saving it.
 
+--schemas, or schemas in ptah.yaml, selects the schemas both comparison sides
+see, as it does for "ptah schema apply", and the plan file records the
+selection: applying the plan reads the same schemas to verify the fingerprint,
+so a schema the plan never read cannot make it stale. --exclude subtracts from
+the result and is recorded too.
+
 --json prints one versioned JSON document on standard output once the run
 starts, on success and on failure: whether the plan holds changes, the plan
 document with each statement's severity, the plan digest, and a typed refusal
@@ -104,6 +111,7 @@ environment variable.`,
 	flags.StringArrayVar(&opts.rootDirs, planRootDirFlag, nil, "Root directory to scan for Go entities (repeatable)")
 	flags.StringArrayVar(&opts.schemaFiles, planSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringVar(&opts.devURL, planDevURLFlag, "", "Dev database URL; must match the target dialect when set")
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.exclude, planExcludeFlag, nil, "Schema objects to exclude from planning (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.protectedTables, planProtectedTable, nil,
 		"Declared row set this plan refuses to change, by table or schema.table; repeat to add more. There is no override")
@@ -181,6 +189,14 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		planDevURLFlag,
 		opts.devURL,
 		projectCfg.StringValue(projectconfig.StringDevURL),
+	)
+	// Resolved as `schema apply` resolves it; the plan file records the
+	// result.
+	opts.schemas = dbcli.EffectiveString(
+		cmd,
+		dbcli.SchemasFlagName,
+		opts.schemas,
+		dbcli.JoinSchemasValue(projectCfg.SchemasValue()),
 	)
 	policy, err := nativeDiffPolicy(cmd, projectCfg)
 	if err != nil {
@@ -274,9 +290,13 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		DevURL:          opts.devURL,
 		Desired:         desired,
 		Exclude:         opts.exclude,
+		Schemas:         dbcli.ParseSchemas(opts.schemas),
 		Policy:          policy,
 		ProtectedTables: opts.protectedTables,
 		Diagnostics:     cmd.ErrOrStderr(),
+		// Warned about as `schema apply` warns, since this plan is what
+		// `schema apply --plan` runs; see [schemascope.UndescribedRemovals].
+		WarnUndescribedSchemas: true,
 	})
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err

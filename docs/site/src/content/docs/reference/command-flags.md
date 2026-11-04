@@ -1718,6 +1718,7 @@ Read the columns as follows.
 | `--rotate-secret` | `stringArray` | `[]` | — | — |
 | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
