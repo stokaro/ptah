@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"slices"
@@ -107,7 +108,7 @@ type yamlMigrateGenerateConfig struct {
 }
 
 // LoadPtahFile loads Ptah's project config file. A missing file returns an
-// empty config.
+// empty config, and so does a file that sets nothing; see [ParsePtah].
 func LoadPtahFile(path, envName string) (Config, error) {
 	return loadPtahFile(path, envName, discoveredPtahConfig)
 }
@@ -132,6 +133,9 @@ func loadPtahFile(path, envName string, source ptahConfigSource) (Config, error)
 // locates it in the document, so a typo surfaces at parse time instead of as
 // a silently missing setting.
 //
+// A document that sets nothing is an empty config, the one a missing file
+// gives: zero bytes, only comments and blank lines, `---`, `null` or `{}`.
+//
 // filename is used in diagnostics only and may be empty. envName selects one
 // env block and merges it over the top-level settings; with an empty envName,
 // a document holding a lone env block selects it implicitly and one holding
@@ -149,7 +153,12 @@ func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (
 	var doc yamlDocument
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&doc); err != nil {
+	// A stream that holds no document -- an empty file, or one holding only
+	// comments and blank lines -- is an empty configuration, as `---`, `null`
+	// and `{}` already are. The decoder reports it as io.EOF, which is not a
+	// parse error, and passed on it reads as a bare `EOF` about a file that is
+	// valid YAML.
+	if err := decoder.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, translatePtahYAMLError(err, filename, source)
 	}
 	cfg, err := selectPtahEnv(doc, envName)

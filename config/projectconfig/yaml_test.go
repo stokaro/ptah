@@ -1,9 +1,11 @@
 package projectconfig_test
 
 import (
+	"reflect"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp"
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/planext"
@@ -98,6 +100,41 @@ urll: postgres://typo/db
 	// That name is not a thing the user can look up or act on, so no
 	// diagnostic may carry it.
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
+}
+
+// TestParsePtahEmptyDocument_HappyPath holds every ptah.yaml that sets nothing
+// to the configuration a missing file gives. A file holding no YAML document
+// at all -- zero bytes, or only comments and blank lines -- reaches the decoder
+// as an empty stream rather than as an empty document, and must not be refused
+// where `---`, `null` and `{}` are accepted.
+//
+// The comparison reads unexported fields too: presence is what decides whether
+// a merged-over value is kept, and a config that set nothing must record that
+// it set nothing.
+func TestParsePtahEmptyDocument_HappyPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+	}{
+		{name: "zero bytes", document: ""},
+		{name: "comment only", document: "# settings go here\n"},
+		{name: "blank lines", document: "  \n\n"},
+		{name: "comments and blank lines without a trailing newline", document: "# one\n\n# two"},
+		{name: "explicit empty document", document: "---\n"},
+		{name: "null document", document: "null\n"},
+		{name: "empty mapping", document: "{}\n"},
+	}
+	everyField := cmp.Exporter(func(reflect.Type) bool { return true })
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParsePtah([]byte(test.document), "ptah.yaml", "")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg, qt.CmpEquals(everyField), projectconfig.Config{})
+		})
+	}
 }
 
 func TestParsePtahProjectConfigRejectsUnknownOnlineDDLKeys(t *testing.T) {
