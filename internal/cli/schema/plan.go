@@ -261,7 +261,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := connectTarget(connectCtx, opts.dbURL)
 	if err != nil {
 		return atlasschema.PlanEvidence{}, fmt.Errorf("connect to --%s: %w", planDBURLFlag, errorkind.TargetConnection(err))
 	}

@@ -600,6 +600,8 @@ plan creates each database the desired schema declares and the server lacks,
 changes a declared character set or collation, and drops every other user
 database. When the server holds databases the file does not describe, name
 the ones it does describe with `--schemas`, and the others are left alone.
+`schema plan` reads the same server, and `schema apply --plan` applies its plan
+there.
 [Atlas schema commands](../../atlas/schema-commands/#a-whole-mysql-or-mariadb-server)
 gives the rules, which both surfaces share.
 

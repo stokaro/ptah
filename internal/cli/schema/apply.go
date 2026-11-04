@@ -484,7 +484,7 @@ func applySchema(
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToServer(connectCtx, opts.dbURL)
+	conn, err := connectTarget(connectCtx, opts.dbURL)
 	if err != nil {
 		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}
@@ -696,7 +696,7 @@ func applySchemaPlanFile(
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := connectTarget(connectCtx, opts.dbURL)
 	if err != nil {
 		return "", fmt.Errorf("connect to --%s: %w", applyDBURLFlag, errorkind.TargetConnection(err))
 	}

@@ -256,6 +256,14 @@ func PreparePlanFileReportingUndecided(
 	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
+	// The pair `schema apply` refuses with the same arguments, refused here
+	// too, so no plan is saved for a whole server beside a dev database. The
+	// dev URL is read for the schema an unqualified file is loaded into, and
+	// beside a server it would name one database of a plan for all of them.
+	desired := desiredApplySet(ctx, ApplyRuntimeOptions{Desired: opts.Desired, ToURLs: opts.ToURLs})
+	if err := RefuseServerDevDatabase(ctx, conn.Info(), opts.DevURL, desired, opts.Runtime.HCL()); err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, err
+	}
 	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
