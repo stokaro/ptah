@@ -513,11 +513,14 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 // extension that moves names the schema it moves to, and a default privilege
 // keeps the schema its IN SCHEMA clause names, so all three contribute that
 // exact identifier directly. Names that carry no schema
-// contribute none, which is every name on a single-schema migration.
+// contribute none, which is every name on a single-schema migration, and so
+// do names qualified with the schema the connection resolved; see
+// [connectedSchema].
 func (p *Planner) addSchemaPreconditions(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 ) []ast.Node {
+	connected := connectedSchema(diff, p.targetDialect())
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded.Names()...)
 	names = append(names, diff.EnumsAdded.Names()...)
@@ -543,7 +546,7 @@ func (p *Planner) addSchemaPreconditions(
 		// PostgreSQL that spares a statement nobody needs; on Spanner it is
 		// what makes the migration run at all, because `public` there is
 		// implicit and CREATE SCHEMA for it is refused by name.
-		if pgsystemschema.IsUncreatableSchema(p.dialect, schema) {
+		if pgsystemschema.IsUncreatableSchema(p.dialect, schema) || schema == connected {
 			continue
 		}
 		if _, ok := seen[schema]; ok {
@@ -567,6 +570,36 @@ func (p *Planner) addSchemaPreconditions(
 		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return result
+}
+
+// connectedSchema is the schema the connection the diff was compared over
+// resolved its unqualified names to, empty for a comparison without one.
+//
+// That schema exists: the connector refuses a search_path that resolves to
+// nothing rather than fold it back to `public`. A name qualified with it
+// reaches the schema an unqualified name reaches, so it needs no more of a
+// precondition than an unqualified name does. Without this, every Atlas HCL
+// document -- which has to write `schema "public" {}` and `schema =
+// schema.public` before a table can name the schema -- planned CREATE SCHEMA
+// IF NOT EXISTS "public" against every PostgreSQL database. The statement is
+// not a no-op for the role that runs it: the server checks CREATE on the
+// database before it looks for the schema. Measured on PostgreSQL 18 with a
+// role that holds CREATE on schema public and not on the database, `schema
+// apply` of such a document failed with
+//
+//	ERROR: permission denied for database app (SQLSTATE 42501)
+//	SQL: CREATE SCHEMA IF NOT EXISTS "public"
+//
+// while the same table written without a qualifier applied.
+//
+// A comparison without a connection carries no identifier semantics, and its
+// default schema is the dialect's guess rather than a schema anything
+// resolved, so it keeps the precondition.
+func connectedSchema(diff *difftypes.SchemaDiff, dialect string) string {
+	if diff == nil || diff.IdentifierSemantics == nil {
+		return ""
+	}
+	return strings.TrimSpace(diff.EffectiveIdentifierSemantics(dialect).DefaultSchema)
 }
 
 // placedSchemas are the schemas the plan puts owners' objects into, such as

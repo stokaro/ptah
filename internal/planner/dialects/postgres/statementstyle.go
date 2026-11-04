@@ -135,8 +135,9 @@ func isGenerated(column schemamodel.Field) bool {
 // Names are compared without their schema and without case, so an object that
 // might be the one an earlier statement removed keeps its guard. The pass
 // leaves alone CREATE SCHEMA IF NOT EXISTS, which the plan writes for every
-// schema an added object names whether or not it exists, and every guard the
-// declaration spells itself, such as IF NOT EXISTS on a sequence.
+// schema an added object names other than the connection's own, whether or
+// not it exists, and every guard the declaration spells itself, such as IF
+// NOT EXISTS on a sequence.
 func settleGuards(nodes []ast.Node) {
 	var seen guardState
 	seen.init()
