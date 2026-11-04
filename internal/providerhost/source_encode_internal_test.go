@@ -115,6 +115,11 @@ func complete(scope *protocol.ModelNamespace) *protocol.ModelNamespaceKnowledge 
 	return &protocol.ModelNamespaceKnowledge{Scope: scope, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
 }
 
+// unread is a region the read knows less: a child it lists failed to read.
+func unread(scope *protocol.ModelNamespace) *protocol.ModelNamespaceKnowledge {
+	return &protocol.ModelNamespaceKnowledge{Scope: scope, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "a child failed"}}
+}
+
 // regionTexts writes each region as a line, so a failing assertion prints
 // it: quicktest formats a message by walking its descriptors, which does not
 // finish. A component is written with whether it is present, since an absent
@@ -181,30 +186,30 @@ func TestEncodeCoverageRegions_HappyPath(t *testing.T) {
 		databases []string
 		want      []*protocol.ModelNamespaceKnowledge
 	}{
-		{name: "a schema", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))},
-			want: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))}},
+		{name: "a schema", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))},
+			want: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))}},
 		{name: "several schemas", kind: encodedJobKind, readBy: "example",
-			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main")), complete(namespace("/opened", "", "audit"))},
-			want:    []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "audit")), complete(namespace("/opened", "", "main"))}},
-		{name: "one table's columns", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main", "orders"))},
-			want: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main", "orders"))}},
-		{name: "a path below a catalog", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "catalog", "main", "a/b", "c"))},
-			want: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "catalog", "main", "a/b", "c"))}},
-		{name: "an uninspected region", kind: encodedJobKind, readBy: "example",
-			regions: []*protocol.ModelNamespaceKnowledge{{Scope: namespace("/opened", "", "main"), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "a child failed"}}},
-			want:    []*protocol.ModelNamespaceKnowledge{{Scope: namespace("/opened", "", "main"), Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "a child failed"}}}},
+			regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main")), unread(namespace("/opened", "", "audit"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "audit")), unread(namespace("/opened", "", "main"))}},
+		{name: "one table's columns", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main", "orders"))},
+			want: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main", "orders"))}},
+		{name: "a path below a catalog", kind: encodedJobKind, readBy: "example", regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "catalog", "main", "a/b", "c"))},
+			want: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "catalog", "main", "a/b", "c"))}},
+		{name: "a complete region beside one the read knows less", kind: encodedJobKind, readBy: "example",
+			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main")), unread(namespace("/opened", "", "audit"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "audit")), complete(namespace("/opened", "", "main"))}},
 		{name: "a selected kind in the database its objects name", kind: encodedQueueKind, readBy: "example", databases: []string{"/opened"},
-			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))},
-			want:    []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))}},
+			regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))}},
 		{name: "a selected kind's whole database", kind: encodedQueueKind, readBy: "example", databases: []string{"/opened"},
-			regions: []*protocol.ModelNamespaceKnowledge{complete(databaseOnly("/opened"))},
-			want:    []*protocol.ModelNamespaceKnowledge{complete(databaseOnly("/opened"))}},
+			regions: []*protocol.ModelNamespaceKnowledge{unread(databaseOnly("/opened"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(databaseOnly("/opened"))}},
 		{name: "a selected kind in a document that holds none of its objects", kind: encodedQueueKind, readBy: "example",
-			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))},
-			want:    []*protocol.ModelNamespaceKnowledge{complete(withoutDatabase(namespace("/opened", "", "main")))}},
+			regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(withoutDatabase(namespace("/opened", "", "main")))}},
 		{name: "a selected kind whose objects name two databases", kind: encodedQueueKind, readBy: "example", databases: []string{"/opened", "/other"},
-			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))},
-			want:    []*protocol.ModelNamespaceKnowledge{complete(withoutDatabase(namespace("/opened", "", "main")))}},
+			regions: []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "main"))},
+			want:    []*protocol.ModelNamespaceKnowledge{unread(withoutDatabase(namespace("/opened", "", "main")))}},
 		{name: "a region of another engine", kind: encodedJobKind, readBy: "other", regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -229,13 +234,47 @@ func TestEncodeCoverageRegions_HappyPath(t *testing.T) {
 	}
 }
 
+// TestEncodeCoverageCompleteRead sends a kind a read knows completely in every
+// region it reports as complete, with no regions: the document is complete
+// for the selection a later plan applies it to, as an embedded engine's
+// writer writes a read that --schemas narrowed.
+func TestEncodeCoverageCompleteRead(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		kind    schemaext.Kind
+		regions []*protocol.ModelNamespaceKnowledge
+	}{
+		{name: "a schema", kind: encodedJobKind, regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))}},
+		{name: "several schemas", kind: encodedJobKind,
+			regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main")), complete(namespace("/opened", "", "audit"))}},
+		{name: "one table's columns", kind: encodedJobKind, regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main", "orders"))}},
+		{name: "a selected kind", kind: encodedQueueKind, regions: []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "main"))}},
+		{name: "a whole database", kind: encodedQueueKind, regions: []*protocol.ModelNamespaceKnowledge{complete(databaseOnly("/opened"))}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			host := regionHost(c)
+			known := documentCoverage(c, host, map[schemaext.Kind]schemaext.KnowledgeDomain{row.kind: readKnowledge(c, host, "example", row.kind, row.regions)})
+			batch := host.targets["example"].encodeBatch(protocol.SourceDocument_GO_ANNOTATIONS)
+
+			err := batch.coverage(known)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(coveredKinds(batch.request.GetCoverage()), qt.DeepEquals, []string{"kind " + string(row.kind)})
+			c.Assert(batch.request.GetCoverage().GetKinds()[0].GetKnowledge().GetState(), qt.Equals, protocol.ModelKnowledge_COMPLETE)
+			c.Assert(batch.request.GetCoverage().GetKinds()[0].GetKnowledge().GetReason(), qt.Equals, "")
+			c.Assert(regionTexts(batch.request.GetCoverage().GetKinds()[0].GetRegions()), qt.HasLen, 0)
+		})
+	}
+}
+
 // TestEncodeCoverageRegions_SelectedKindInTheDatabaseOfAnotherKind spells a
 // selected kind's region in a document that holds no object: the database is
 // the one the region of a kind no selection names was read in.
 func TestEncodeCoverageRegions_SelectedKindInTheDatabaseOfAnotherKind(t *testing.T) {
 	c := qt.New(t)
 	host := regionHost(c)
-	region := []*protocol.ModelNamespaceKnowledge{complete(databaseOnly("/opened"))}
+	region := []*protocol.ModelNamespaceKnowledge{unread(databaseOnly("/opened"))}
 	known := documentCoverage(c, host, map[schemaext.Kind]schemaext.KnowledgeDomain{
 		encodedJobKind: readKnowledge(c, host, "example", encodedJobKind, region), encodedQueueKind: readKnowledge(c, host, "example", encodedQueueKind, region)})
 	batch := host.targets["example"].encodeBatch(protocol.SourceDocument_HCL)
@@ -259,22 +298,26 @@ func TestEncodeCoverageRegions_FailurePath(t *testing.T) {
 	scopes, err := namespaceScopes(host.selections, regionSemantics(c, host), "example", encodedJobKind, whole.GetScope())
 	c.Assert(err, qt.IsNil)
 	c.Assert(scopes, qt.HasLen, 2)
-	native := schemaext.NamespaceKnowledge{Scope: scopes[0], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}
-	common := schemaext.NamespaceKnowledge{Scope: scopes[1], Knowledge: schemaext.Knowledge{State: schemaext.Complete}}
+	// The scopes know less than the read's outside knowledge does, so the
+	// request has to spell them: a read complete in every region is sent as
+	// complete and spells none.
+	lacking := schemaext.Knowledge{State: schemaext.Uninspected, Reason: "a child failed"}
+	native := schemaext.NamespaceKnowledge{Scope: scopes[0], Knowledge: lacking}
+	common := schemaext.NamespaceKnowledge{Scope: scopes[1], Knowledge: lacking}
 	scoped := func(regions ...schemaext.NamespaceKnowledge) schemaext.KnowledgeDomain {
 		domain, err := schemaext.NewScopedKnowledge(outside, regions...)
 		c.Assert(err, qt.IsNil)
 		return domain
 	}
 	differing := common
-	differing.Knowledge = schemaext.Knowledge{State: schemaext.Uninspected, Reason: "not listed"}
+	differing.Knowledge = schemaext.Knowledge{State: schemaext.Complete}
 	everyEngine := []schemaext.NamespaceKnowledge{native, common}
 	for i := range everyEngine {
 		everyEngine[i].Scope.Targets = nil
 	}
 	exact := native
 	exact.Scope.PathExact = true
-	other := readKnowledge(c, host, "example", encodedJobKind, []*protocol.ModelNamespaceKnowledge{complete(namespace("/opened", "", "audit"))})
+	other := readKnowledge(c, host, "example", encodedJobKind, []*protocol.ModelNamespaceKnowledge{unread(namespace("/opened", "", "audit"))})
 	joined, err := scoped(native, common).Intersect(other)
 	c.Assert(err, qt.IsNil)
 	// A selected kind's objects hold no database, so a region of them that
@@ -313,7 +356,7 @@ func TestEncodeCoverageRegions_FailurePath(t *testing.T) {
 		{name: "a region without a boundary", kind: encodedJobKind, domain: scoped(unbounded...),
 			wantErr: `.* model "example.org/job" is narrowed to a namespace that no provider region spells.*`},
 		{name: "a selected kind's whole database in a document that names none", kind: encodedQueueKind,
-			domain:  readKnowledge(c, host, "example", encodedQueueKind, []*protocol.ModelNamespaceKnowledge{complete(databaseOnly("/opened"))}),
+			domain:  readKnowledge(c, host, "example", encodedQueueKind, []*protocol.ModelNamespaceKnowledge{unread(databaseOnly("/opened"))}),
 			wantErr: `.* model "example.org/queue" is narrowed to a namespace that no provider region spells.*`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
