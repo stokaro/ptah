@@ -193,9 +193,11 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		// the whole server, and so is a database beside a dev server, which
 		// compares whole servers too (stokaro/ptah#3885). Beside a dev
 		// database, a file or a directory is one database, and so is the
-		// database side.
+		// database side. With no dev URL at all, a --from server beside a file
+		// is the whole server, as `schema compare` reads it: the comparison
+		// runs on that server's connection, which compares its databases.
 		ServerScope: (fromSet.Kind == atlassource.KindDatabase && toSet.Kind == atlassource.KindDatabase) ||
-			isDevServer(opts.DevURL),
+			isDevServer(opts.DevURL) || readsFromServerWithoutDev(opts.DevURL, fromSet),
 		ConnectTimeout:            opts.ConnectTimeout,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
 		ReportIgnored:             opts.Diagnostics,
@@ -1067,6 +1069,18 @@ func validateClickHouseRBAC(dialect string, to *schemamodel.Database, from *cata
 		return err
 	}
 	return clickhouserbac.ValidateLive(dialect, to, from)
+}
+
+// readsFromServerWithoutDev reports a --from database with no dev URL beside
+// it, which a MySQL-family URL naming no database reaches as the whole server.
+//
+// A --to server beside a --from file is left out. The comparison is driven by
+// the --from side, and a file there is compared as text rather than read on a
+// server, so its databases would not be compared with the server's: measured
+// on MySQL 8.4, such a diff dropped the tables of a database the server lacks
+// and kept the database. A dev server is what reads that file as a server.
+func readsFromServerWithoutDev(devURL string, from atlassource.Set) bool {
+	return strings.TrimSpace(devURL) == "" && from.Kind == atlassource.KindDatabase
 }
 
 // comparesTwoServers reports whether both sides of a diff were read from a
