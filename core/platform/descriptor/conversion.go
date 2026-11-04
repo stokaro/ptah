@@ -5,9 +5,10 @@ package descriptor
 // migrations -- read of an engine where engines differ. The zero value
 // gives none of these conventions.
 type Conversion struct {
-	// PropertyShortcuts reports that a table directive's `engine` and
-	// `comment` attributes, and a field's comment, are platform properties of
-	// the engine, read without the platform.<dialect> prefix.
+	// PropertyShortcuts reports that a table directive's `engine` attribute
+	// is a platform property of the engine, read without the
+	// platform.<dialect> prefix. A `comment` attribute is the common comment
+	// on every engine and no shortcut.
 	PropertyShortcuts bool `json:"property_shortcuts,omitempty"`
 	// SerialForeignKeyType is the type an embedded relation's INTEGER foreign
 	// key column is written as, for an engine whose serial key is that type,

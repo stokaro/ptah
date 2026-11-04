@@ -8,7 +8,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaproperties"
@@ -26,28 +25,6 @@ func propertyAttrs(overrides map[string]map[string]string) []attr {
 	return result
 }
 
-// fieldProperties are the platform properties a field's directive writes:
-// its overrides, less the MySQL-family comment the Go annotation reader
-// derives from the field's own comment attribute. Reading the directive back
-// derives it again, so writing it would only repeat the comment.
-func fieldProperties(field schemamodel.Field) map[string]map[string]string {
-	properties := make(map[string]map[string]string, len(field.Overrides))
-	for target, values := range field.Overrides {
-		for key, value := range values {
-			derived := field.Comment != "" && key == "comment" && value == field.Comment &&
-				readsPropertyShortcuts(target)
-			if derived {
-				continue
-			}
-			if properties[target] == nil {
-				properties[target] = make(map[string]string, len(values))
-			}
-			properties[target][key] = value
-		}
-	}
-	return properties
-}
-
 // validateSourceProperties refuses a platform property of a table, a field
 // or an index that a Go annotation cannot spell, rather than write it wrong
 // or leave it out.
@@ -58,7 +35,7 @@ func validateSourceProperties(db *schemamodel.Database) error {
 		}
 	}
 	for _, field := range db.Fields {
-		if err := validateProperties("field", field.StructName+"."+field.Name, fieldProperties(field)); err != nil {
+		if err := validateProperties("field", field.StructName+"."+field.Name, field.Overrides); err != nil {
 			return err
 		}
 	}
@@ -126,13 +103,4 @@ func prepareSourceProperties(requestContext context.Context, db *schemamodel.Dat
 		return nil, err
 	}
 	return facetsplit.Restore(properties, annotated)
-}
-
-// readsPropertyShortcuts reports whether target is the canonical name of a
-// dialect whose descriptor reads a field's comment as a platform property
-// (descriptor.Conversion.PropertyShortcuts), so the Go annotation reader
-// derives it again from the field's comment attribute.
-func readsPropertyShortcuts(target string) bool {
-	described, found := platform.Lookup(target)
-	return found && described.Name == target && described.Conversion.PropertyShortcuts
 }

@@ -57,8 +57,7 @@ func TestParsePlatformSpecific_ExplicitOverridesTakePrecedence(t *testing.T) {
 
 	c.Assert(platform, qt.DeepEquals, map[string]map[string]string{
 		"mariadb": {
-			"comment": "Default comment",
-			"engine":  "InnoDB",
+			"engine": "InnoDB",
 		},
 		"mysql": {
 			"comment": "MySQL comment",
@@ -68,6 +67,18 @@ func TestParsePlatformSpecific_ExplicitOverridesTakePrecedence(t *testing.T) {
 			"comment": "PostgreSQL comment",
 		},
 	})
+}
+
+// A plain comment is the table's or the column's own, which the directive's
+// Comment carries, so it is no platform property: a provider that receives no
+// platform properties refuses one, and a MySQL-family plan writes the comment
+// without it.
+func TestParsePlatformSpecific_CommentIsNoProperty(t *testing.T) {
+	c := qt.New(t)
+
+	platform := parseutils.ParsePlatformSpecific(map[string]string{"comment": "People who sign in"})
+
+	c.Assert(platform, qt.HasLen, 0)
 }
 
 // Every table and field directive of a schema is read through
