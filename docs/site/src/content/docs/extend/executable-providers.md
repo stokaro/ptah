@@ -126,6 +126,16 @@ held one from the current table. A removal comes before the additions, so a
 changed index is dropped before it is created again under the same name.
 Without the feature, index changes are refused.
 
+An engine that reports its indexes and whose session states
+`unique_constraints` as `false` holds a declared UNIQUE constraint, and a
+column's UNIQUE, as a global unique index, as YDB does. The host then reads
+each one as that index before it compares and plans, under the name the
+host's YDB renderer gives it: the constraint's name, or
+`<table>_<columns>_key`. A UNIQUE over the table's key folds into the key. The
+provider receives the index in the table it creates or alters, and never the
+constraint. A session that does not state the key leaves a UNIQUE a
+constraint.
+
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
