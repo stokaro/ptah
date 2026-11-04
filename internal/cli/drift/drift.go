@@ -254,6 +254,10 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		IgnoredExtensions: dbcli.CompareOptionsIgnoringExtensions(
 			cmd, opts.ignoreExtensions, projectCfg, nil,
 		).IgnoredExtensions,
+		// Drift reads what `schema compare` and `schema apply` read, a whole
+		// MySQL or MariaDB server included, so its findings are the changes
+		// apply would make.
+		WholeServer: true,
 	})
 	if err != nil {
 		return fail(cmd, opts.format, err)

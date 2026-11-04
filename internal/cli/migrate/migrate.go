@@ -99,7 +99,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterProjectEnvFlag(flags)
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
-	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
+	dbcli.RegisterURLScopedDatabaseSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))

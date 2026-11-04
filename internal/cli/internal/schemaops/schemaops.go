@@ -75,6 +75,12 @@ type CompareOptions struct {
 	// which answers for both the flag and the project config; the zero value
 	// keeps the defaults.
 	IgnoredExtensions []string
+	// WholeServer reads a MySQL or MariaDB URL that names no database as the
+	// whole server, as `schema apply` reads it, through
+	// [dbschema.ConnectToServer]. Without it such a URL is refused, as a
+	// command that reads one database refuses it. Every other URL connects the
+	// same either way.
+	WholeServer bool
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -141,7 +147,11 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	// Connected first: the server names the dialect a SQL schema file is read
 	// in, because a postgres:// URL reaches CockroachDB too (stokaro/ptah#3952).
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, opts.ConnectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
+	connect := dbschema.ConnectToDatabase
+	if opts.WholeServer {
+		connect = dbschema.ConnectToServer
+	}
+	conn, err := connect(connectCtx, opts.DatabaseURL)
 	cancelConnect()
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to database: %w", errorkind.TargetConnection(err))

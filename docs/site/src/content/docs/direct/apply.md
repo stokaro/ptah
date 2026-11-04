@@ -603,6 +603,11 @@ the ones it does describe with `--schemas`, and the others are left alone.
 [Atlas schema commands](../../atlas/schema-commands/#a-whole-mysql-or-mariadb-server)
 gives the rules, which both surfaces share.
 
+`schema compare` and `schema drift` read the same server and report the changes
+the plan makes, a database to create under `schemas_added`. The versioned verbs
+(`migrations plan`, `generate`, `up` and `status`) read one database and
+refuse a URL that names none.
+
 ## Limitations
 
 - `--schema-file` accepts local SQL, YAML, HCL, and DBML files plus OCI schema
