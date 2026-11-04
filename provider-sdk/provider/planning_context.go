@@ -188,5 +188,5 @@ func validateCommonPlanningOperand(description *protocol.Description, request *p
 			return err
 		}
 	}
-	return nil
+	return validateIndexRename(description, request, step)
 }

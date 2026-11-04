@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.16. `provider-sdk/v0.14.0` speaks 25.15.
+speaks contract 25.17. `provider-sdk/v0.15.0` speaks 25.16.
+`provider-sdk/v0.14.0` speaks 25.15.
 `provider-sdk/v0.13.0` speaks 25.14.
 `provider-sdk/v0.12.0` speaks 25.12.
 `provider-sdk/v0.11.0` speaks 25.9.
@@ -102,6 +103,7 @@ returns to 0.
   Contract 25.14 adds [prepared index kinds](#prepared-index-kinds).
   Contract 25.15 adds [typed statement arguments](#typed-arguments).
   Contract 25.16 adds [error reasons](#error-reasons).
+  Contract 25.17 adds [index renames](#index-renames).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -131,7 +133,8 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  `sessions.typed-arguments` and `errors.reasons`. The embedding store's
+  `sessions.typed-arguments`, `errors.reasons` and `planning.index-renames`.
+  The embedding store's
   calls and `PrepareCommonObjects` are new, and each comes with an addition to
   `Engine`, so a host lists the feature to receive either. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
@@ -1929,6 +1932,36 @@ twice or leaves the declared order. The host keeps the source's type in the
 declaration: the prepared kind serves the comparison alone.
 [ADR 0057](../docs/adr/0057-a-provider-spells-a-declared-index-kind-as-it-reports-a-held-one.md)
 records why the provider spells the declared kind.
+
+## Index renames
+
+`planning.index-renames` lets the owner of a table rename one of its indexes
+in place. The host's comparison pairs an index the table holds with one the
+declaration states under another name and with one definition, on a target
+whose session reports the capability `index_rename`. For an altered table the
+provider owns, the host then sends one common step per pair, with
+`CommonPlanningStep.renamed_index` naming the index as the table holds it
+(`from`) and as the declaration names it (`to`). The step reads the table,
+drops the index subject `from` and creates the index subject `to`, and the
+owner claims it with an operation that keeps the index, as it claims an index
+addition or removal. An unclaimed step refuses the plan.
+
+The provider and the engine both declare this two-way feature, which requires
+`schema.observed-indexes` on the engine. A request carries a rename only when
+its `target_features` list the feature. Both transport boundaries refuse a
+rename that is not negotiated, that sits beside another operand or without a
+parent, that names one index twice, whose parent the request does not alter,
+whose parent does not hold `from` and declare `to`, or whose effects are not
+the read, the drop and the create in that order.
+
+A provider reports `index_rename` only to a host that lists the feature: a
+host that does not list it has no step to send a pair with, and refuses the
+plan. Without the capability the comparison pairs nothing, and a rename is a
+drop and a create. A comment on a renamed index moves with it through the
+[common-object wire](#common-objects): the host clears the comment under the
+held name and sets it under the new one.
+[ADR 0060](../docs/adr/0060-a-table-owner-renames-an-index-in-place.md) records
+the decision.
 
 ## Comparison counts
 
