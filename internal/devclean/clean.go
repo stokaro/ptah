@@ -83,6 +83,16 @@ func DatabaseRealm(ctx context.Context, conn *dbschema.DatabaseConnection) error
 // auth.users included -- and putting back each privilege the run changed. A
 // URL that names no block keeps the rule the community binary applies.
 //
+// The schemas a realm cleanup keeps -- the one the URL resolves to, and
+// public -- are environment in what they hold beside their objects: their
+// owner, their access list and their comment. A run changes those when it
+// creates a document that revokes USAGE on public from PUBLIC or comments the
+// schema, and a cleanup that kept what it found handed the change to the next
+// run. Measured on PostgreSQL 18, the next diff through the same dev database
+// planned `GRANT USAGE ON SCHEMA "public" TO PUBLIC` for a pair it had
+// reported synced before. The baseline records each as the claim found it, and
+// every realm cleanup returns the schema to it.
+//
 // On a server the run owns, the baseline holds the server's roles as well. A
 // replay there runs CREATE ROLE, and a role is the server's rather than the
 // dev database's, so a reset of the database does not reach it. Every reset
@@ -104,6 +114,9 @@ type Baseline struct {
 	defaultPrivileges dbreset.DefaultPrivileges
 	// artifacts are the database-scoped objects the database held; see above.
 	artifacts []dbreset.Object
+	// schemaStates are the owner, access list and comment of the schemas a
+	// realm cleanup keeps, as the claim found them; see above.
+	schemaStates []dbreset.SchemaState
 	// startingPoint is the whole state of a dev database an atlas.hcl docker
 	// block provisioned; see above. Nil for every other dev database.
 	startingPoint *pgsnapshot.Snapshot
@@ -158,6 +171,10 @@ type defaultPrivilegeReader interface {
 
 type schemaLister interface {
 	UserSchemas(context.Context) ([]string, error)
+}
+
+type schemaStateReader interface {
+	SchemaStates(context.Context) ([]dbreset.SchemaState, error)
 }
 
 type databaseRealmKeeper interface {
@@ -237,19 +254,37 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 		}
 		baseline.artifacts = artifacts
 	}
-	if lister, ok := writer.(schemaLister); ok && !baseline.realm {
+	if err := baseline.recordSchemas(ctx, conn, writer); err != nil {
+		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+	}
+	return baseline, nil
+}
+
+// recordSchemas records what b keeps of the database's schemas, through a
+// writer that reads them: the state of the ones a realm cleanup keeps, unless
+// the database returns to a starting point instead, and the other schemas when
+// the URL pinned one; see [Baseline].
+func (b *Baseline) recordSchemas(ctx context.Context, conn *dbschema.DatabaseConnection, writer catalog.SchemaWriter) error {
+	if reader, ok := writer.(schemaStateReader); ok && b.startingPoint == nil {
+		states, err := reader.SchemaStates(ctx)
+		if err != nil {
+			return err
+		}
+		b.schemaStates = states
+	}
+	if lister, ok := writer.(schemaLister); ok && !b.realm {
 		schemas, err := lister.UserSchemas(ctx)
 		if err != nil {
-			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
+			return err
 		}
 		pinned := conn.Info().Schema
 		for _, schema := range schemas {
 			if schema != pinned {
-				baseline.schemas = append(baseline.schemas, schema)
+				b.schemas = append(b.schemas, schema)
 			}
 		}
 	}
-	return baseline, nil
+	return nil
 }
 
 // NotCleanRemedy is the remedy [EnsureClean] names for a dev database that is
@@ -388,6 +423,7 @@ func (b Baseline) kept() dbreset.Kept {
 		Artifacts:         b.artifacts,
 		Server:            b.server,
 		StartingPoint:     b.startingPoint,
+		SchemaStates:      b.schemaStates,
 	}
 }
 
