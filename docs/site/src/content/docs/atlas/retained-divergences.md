@@ -11,7 +11,7 @@ sourceOfTruth:
   - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
-lastVerified: "2026-09-24"
+lastVerified: "2026-11-04"
 evidence:
   - "internal/cli/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
@@ -140,6 +140,7 @@ own measurement conditions.
 | [A dev database holding an object the reset drops](#a-dev-database-holding-an-object-the-reset-drops) | refuses it and names the object | accepts it, then keeps or drops the object depending on the engine and the `search_path` |
 | [A whole server cleaned without an opt-in](#a-whole-server-cleaned-without-an-opt-in) | refuses `schema clean` on a MySQL or MariaDB URL naming no database unless `PTAH_ALLOW_SERVER_CLEAN=1`, and lists the databases | drops every user database at exit `0` |
 | [A dev server that is the `--to` side, or beside one database](#a-dev-server-that-is-the---to-side-or-beside-one-database) | refuses both on `migrate diff` before the replay | replays onto a `--to` server that holds no database, and diffs one database against a server |
+| [A SQL file naming a database beside a dev database](#a-sql-file-naming-a-database-beside-a-dev-database) | creates a file naming one database inside the dev database, and refuses one naming two before running it | runs the file as written on the dev connection and creates its tables in the databases it names, the target included |
 | [A dev database beside a whole server](#a-dev-database-beside-a-whole-server) | refuses it on `schema apply` for every desired schema, before the dev database is contacted | plans a document declaring one database, and replays SQL onto the dev database's server before it refuses |
 | [A YDB database URL](#a-ydb-database-url) | serves it on every verb in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
@@ -1093,6 +1094,31 @@ The divergence is stricter, not looser: `ptah-compat` exits `1` where the binary
 exits `0`, never the reverse.
 
 **Tracking.** [`stokaro/ptah#3885`](https://github.com/stokaro/ptah/issues/3885)
+
+## A SQL file naming a database beside a dev database
+
+**Type.** Deliberate divergence
+
+**Current boundary.** On MySQL and MariaDB a schema is a database. A `--from`
+document that `schema diff` creates on a dev database, and a document that
+`schema inspect` reads through one, may name its tables with a database. When
+the document names one database, Ptah creates it inside the dev database under
+the dev database's own name, as the binary does for an HCL document. When it
+names two, or switches to another database, it is refused before anything runs.
+
+Measured on MySQL 8.4 and MariaDB 11.4, with the same results on both. The
+target `f3a` holds `t1`, and the dev database `f3dev` is on the same server:
+
+| `--from` beside `--to` `f3a` | Pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| a SQL file creating `f3a.t9` | exit `0`, plans `CREATE TABLE t1` and `CREATE TABLE t9`, and leaves `f3a.t9` in the target | exit `0`, plans `CREATE TABLE t1` and `DROP TABLE t9`, the target untouched |
+| a SQL file creating `f3a.t9` and `other.t8` | exit `0`, and leaves `f3a.t9` and `other.t8` behind | exit `1`, the statement and the database it names, nothing created |
+| an HCL document declaring `f3a` alone | exit `0`, plans `CREATE TABLE t1` and `DROP TABLE t9` | the same |
+
+The binary runs a SQL file as written on the dev connection, so a table the
+file names in the target database is created there, by a command that only
+previews a change. Ptah does not copy that. The two-database refusal is
+stricter, not looser: `ptah-compat` exits `1` where the binary exits `0`.
 
 ## A dev database beside a whole server
 

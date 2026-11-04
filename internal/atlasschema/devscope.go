@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
@@ -91,6 +92,54 @@ func rescopeStatementsForDevDatabase(statements []string, dialect, targetSchema,
 		rescoped[i] = rewritten
 	}
 	return rescoped, nil
+}
+
+// scopeMaterializationToDev keeps the creation of a document on the dev
+// database inside it.
+//
+// Where a schema is a database, a document that names its tables with a
+// database -- an HCL document has to, a SQL file may -- renders statements
+// that create them in that database, whichever connection runs them. Run as
+// written on a dev database of the same server, the materialization of a
+// document naming `app` wrote its tables into the target database `app`:
+// measured on MySQL 8.4 and MariaDB 11.4, `schema diff --from <file> --to
+// mysql://…/app --dev-url mysql://…/appdev` left `app`.`t9` in the target.
+//
+// A document that names one database is created in the dev database instead,
+// that name rewritten to the dev database's own, which is how the pinned
+// community binary v1.3.0 creates a one-schema HCL document there. A document
+// naming two databases, or a statement that reaches any other, is refused
+// before anything runs: there is no one database to put it in. That binary
+// runs a SQL file as written and writes into the database it names; that is
+// the defect this refusal exists for, and it is not copied.
+//
+// A whole dev server takes the document database by database, as written, and
+// a dialect whose schema is a namespace inside the connected database already
+// contains every statement, so both are returned untouched.
+func scopeMaterializationToDev(statements []string, info catalog.ServerInfo) ([]string, error) {
+	if info.WholeServer || !schemaScopeNamesDatabase(info.Dialect) {
+		return statements, nil
+	}
+	return rescopeStatementsForDevDatabase(statements, info.Dialect, soleSchemaName(statements, info.Dialect), info.Schema)
+}
+
+// soleSchemaName returns the one schema the statements name, and "" when they
+// name none or more than one.
+func soleSchemaName(statements []string, dialect string) string {
+	sole := ""
+	for _, statement := range statements {
+		tokens := sqlreach.SignificantTokens(statement, sqlreach.DialectUsesBackslashEscapes(dialect), dialect)
+		for _, position := range schemaNamePositions(tokens) {
+			name := unquoteSchemaName(tokens[position])
+			switch {
+			case sole == "":
+				sole = name
+			case name != sole:
+				return ""
+			}
+		}
+	}
+	return sole
 }
 
 // rewriteSchemaNames replaces every schema name spelled `from` with `to`,

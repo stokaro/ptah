@@ -68,7 +68,9 @@ is a schema file and --to is a database or a migration directory, the file is
 created on the --dev-url database and read back before it is compared, so both
 sides carry the server's spelling of every expression. The dev database is
 reset for that, as it is for a replay, and a --dev-url that names the --from or
---to database is refused. This makes
+--to database is refused. On MySQL and MariaDB a file that names one database is
+created inside the dev database under its name, and a file naming two is
+refused. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
