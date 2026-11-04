@@ -200,6 +200,15 @@ schema:
 warning: the desired schema declares nothing in schema "crm", so its 2 tables are planned for removal; to keep them, pin search_path in the URL or pass --schemas
 ```
 
+On MySQL and MariaDB, a URL that names no database is the whole server, as it
+is for `schema apply`. `from_fingerprint` then describes every user database
+the URL's account can see, or the databases `--schemas` names, and `schema
+apply --plan` applies the plan through the same URL. Through a URL naming one
+of those databases the plan is stale,
+and so is a plan for one database applied to the whole server. A `--dev-url`
+naming a database beside a whole server is refused, as `schema apply` refuses
+it.
+
 `from_fingerprint` describes structure, not rows. When the desired schema
 declares reference rows and the plan reads a table that holds them, the plan
 also records `managed_rows` -- each table, its key columns and the managed
