@@ -165,3 +165,11 @@ and the abort flag. Rejected.
   message that quotes the database path. A host that lists the feature reads
   both reasons and not the path; a host that does not reads the outcomes
   alone.
+- Through the YDB provider on 25.1.4.7 and 26.2.1.14, `migrations up` on a
+  host of this contract prints `provider execution: NOT_APPLIED (0 units
+  confirmed applied): YDB refused the statement while compiling it
+  (GENERIC_ERROR, line 1, column 26)` for a column of a type YDB does not
+  have, and `... YDB refused the statement: it violates a constraint of the
+  table, such as a key the table holds (PRECONDITION_FAILED, issue 2012)` for
+  a key the table holds. Ptah v0.19.0, which lists `errors.reasons` and
+  predates the fields, prints the outcome alone.
