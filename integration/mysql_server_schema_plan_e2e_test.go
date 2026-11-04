@@ -115,6 +115,40 @@ func TestSchemaPlanReadsAMySQLServerAsApplyDoesE2E(t *testing.T) {
 	}
 }
 
+// TestSchemaPlanForAMySQLServerKeepsTheDatabasesSchemasLeavesOutE2E adds a
+// database the account sees and the realm does not describe. Planned with
+// --schemas naming the realm's databases, the plan does not drop it, and the
+// plan applied with --plan leaves it and its table in place, while the
+// realm's changes are made.
+func TestSchemaPlanForAMySQLServerKeepsTheDatabasesSchemasLeavesOutE2E(t *testing.T) {
+	for _, engine := range mysqlServerEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			account := newMySQLServerAccount(c, engine.admin, []string{"app", "added", "other"}, []string{"app", "other"})
+			for _, statement := range []string{
+				"CREATE TABLE `" + account.names["app"] + "`.t1 (id int PRIMARY KEY)",
+				"CREATE TABLE `" + account.names["other"] + "`.o (id int PRIMARY KEY)",
+			} {
+				_, err := account.admin.ExecContext(c.Context(), statement)
+				c.Assert(err, qt.IsNil)
+			}
+			realm := filepath.Join(c.TempDir(), "realm.hcl")
+			c.Assert(os.WriteFile(realm, []byte(serverPlanRealm(account.names["app"], account.names["added"])), 0o600), qt.IsNil)
+			planFile := filepath.Join(c.TempDir(), "server.plan.json")
+
+			planned := runPtahNative(c, "schema", "plan", "--db-url", account.url, "--schema-file", realm,
+				"--schemas", account.names["app"]+","+account.names["added"], "--output", planFile)
+			applied := runPtahNative(c, "schema", "apply", "--db-url", account.url, "--plan", planFile, "--auto-approve")
+
+			c.Assert(planned, qt.Not(qt.Contains), "DROP DATABASE")
+			c.Assert(applied, qt.Contains, "Schema apply completed successfully.")
+			c.Assert(account.tables(c, "app"), qt.Equals, "t1,t2")
+			c.Assert(account.tables(c, "added"), qt.Equals, "w")
+			c.Assert(account.tables(c, "other"), qt.Equals, "o")
+		})
+	}
+}
+
 // TestSchemaPlanForAMySQLServerAppliesToThatServerAloneE2E applies the plan
 // saved for the whole server through a URL naming its app database. The read
 // there is one database, so the plan is refused as stale and nothing runs:
