@@ -1,8 +1,11 @@
 package compare
 
 import (
+	"strings"
+
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/tableref"
 )
@@ -57,6 +60,10 @@ type Coverage struct {
 	Desired coverage.Set
 	// Current is what the read of the live database did not look at.
 	Current coverage.Set
+	// defaultSchema is the schema an object read without one lives in: the
+	// connection's own. A reader leaves that schema off what it reports, so a
+	// record naming the schema matches such an object only through it.
+	defaultSchema string
 	// undecided accumulates what the additive gate withheld. It is a pointer
 	// because a Coverage is passed to every comparator by value, and it is
 	// unexported because only [CoverageOf] may create the accumulator: a zero
@@ -92,13 +99,43 @@ func (c Coverage) UndecidedAdditions() []coverage.Object {
 	return *c.undecided
 }
 
+// WithDefaultSchema returns c reading an object reported without a schema as
+// one in schema, the connection's own.
+func (c Coverage) WithDefaultSchema(schema string) Coverage {
+	c.defaultSchema = strings.TrimSpace(schema)
+	return c
+}
+
 // PlansRemoval reports whether an object present in the database and absent
 // from the desired state is a removal. Pass every spelling of the object's name
 // the two sides might carry; the qualified and unqualified forms of one object
 // are routinely spelled differently across the boundary, and a missed spelling
 // restores the defect.
+//
+// It is the one answer every comparator asks before it plans a removal. A
+// schema the desired state does not describe answers false for everything in
+// it, whatever the object's kind: the description says nothing about what that
+// schema holds, so nothing there is read as gone.
 func (c Coverage) PlansRemoval(kind coverage.Kind, schema string, names ...string) bool {
+	if strings.TrimSpace(schema) == "" {
+		schema = c.defaultSchema
+	}
 	return c.Desired.DescribesIn(kind, schema, names...)
+}
+
+// PlansRemovalIn is [Coverage.PlansRemoval] for an object whose kind the
+// not-described vocabulary has no family for -- an index, a constraint, a
+// trigger, a routine, an enum, or a column's table -- so only the schema that
+// owns it can be declined.
+func (c Coverage) PlansRemovalIn(schema string) bool {
+	return c.PlansRemoval(coverage.Schema, schema)
+}
+
+// removalCoverage is the coverage a comparator that is handed none reads its
+// removals through: the desired state's limits, with the default schema of
+// semantics standing for an object reported without one.
+func removalCoverage(desired *schemamodel.Database, semantics identifier.Semantics) Coverage {
+	return CoverageOf(desired, nil).WithDefaultSchema(semantics.DefaultSchema)
 }
 
 // PlansAddition reports whether the read's silence about an object is

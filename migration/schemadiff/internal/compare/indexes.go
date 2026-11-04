@@ -186,7 +186,10 @@ func IndexesWithSemantics(
 		genIndexes,
 		ambiguousGenerated,
 		dbIndexes,
-		indexComparison{dialect: dialect, semantics: semantics, expressions: indexes, caps: caps, rules: rules},
+		indexComparison{
+			dialect: dialect, semantics: semantics, expressions: indexes, caps: caps, rules: rules,
+			coverage: removalCoverage(desired, semantics),
+		},
 	)
 	diff.SetIndexAdditions(diff.IndexesAdded)
 	diff.SetIndexRemovals(diff.IndexRemovals())
@@ -531,6 +534,9 @@ type indexComparison struct {
 	caps        capability.Capabilities
 	// rules are the target's comparison rules.
 	rules schemacomparison.Rules
+	// coverage withholds the removal of an index in a schema the desired
+	// state does not describe.
+	coverage Coverage
 }
 
 // replacementRequired reports whether the database index has to be dropped and
@@ -610,7 +616,7 @@ func appendIndexDifferences(
 		if partitionAttachedIndexIsNotPlannable(entry) {
 			continue
 		}
-		if _, exists := desired[identity]; !exists {
+		if _, exists := desired[identity]; !exists && comparison.coverage.PlansRemovalIn(entry.index.Schema) {
 			removals = append(removals, entry)
 		}
 	}

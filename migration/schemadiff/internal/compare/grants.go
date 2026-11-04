@@ -71,6 +71,7 @@ func GrantsWithSemantics(
 		managedRoles[role.Name] = true
 	}
 
+	cov := removalCoverage(desired, semantics)
 	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
 	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
 	for _, grant := range database.Grants {
@@ -109,7 +110,12 @@ func GrantsWithSemantics(
 		// revoke does. A CockroachDB routine's owner is one: it keeps EXECUTE
 		// through REVOKE ALL, so revoking it from a managed owner the
 		// declaration did not name would be planned again on every run.
-		if (managedRoles[ref.Role] && !grant.Implicit) || revokedGrants[key] || revokedGrants[key.onWholeObject()] {
+		//
+		// A grant on an object in a schema the desired state does not
+		// describe, or on that schema, is left alone for the same reason the
+		// object is. A revoke the desired state writes out is still planned.
+		if (managedRoles[ref.Role] && !grant.Implicit && grantRemovalPlanned(cov, grant)) ||
+			revokedGrants[key] || revokedGrants[key.onWholeObject()] {
 			databaseGrantMapForRemovals[key] = ref
 		}
 	}
@@ -393,6 +399,21 @@ func grantRefFromDatabase(grant catalog.Grant) difftypes.GrantRef {
 		Arguments:  grant.Arguments,
 		Column:     strings.TrimSpace(grant.Column),
 		WithOption: grant.WithOption,
+	}
+}
+
+// grantRemovalPlanned reports whether a grant the desired state leaves out is
+// a removal: false when the object it is on lives in a schema the desired
+// state does not describe, or is that schema. A grant on the database itself
+// lives in no schema.
+func grantRemovalPlanned(cov Coverage, grant catalog.Grant) bool {
+	switch strings.ToUpper(strings.TrimSpace(grant.ObjectType)) {
+	case grantObjectTypeDatabase:
+		return true
+	case grantObjectTypeSchema:
+		return cov.PlansRemovalIn(grant.ObjectName)
+	default:
+		return cov.PlansRemovalIn(grant.Schema)
 	}
 }
 
