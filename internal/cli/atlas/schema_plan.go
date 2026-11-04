@@ -197,7 +197,9 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.fromURLs[0])
+	// A MySQL or MariaDB URL that names no database is the whole server, as
+	// `schema apply` reads it, so the plan is the one apply would compute.
+	conn, err := dbschema.ConnectToServer(connectCtx, opts.fromURLs[0])
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --from: %w", err))
 	}
