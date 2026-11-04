@@ -149,6 +149,7 @@ func (b *encodeBatch) coverage(known schemaext.Coverage) error {
 			continue
 		}
 		subject, normalized := subjectReferences(engine, record.Subject)
+		b.inSession(record.Subject, known, subject, normalized)
 		coverage.Subjects = append(coverage.Subjects, &protocol.ModelSubjectCoverage{Kind: string(record.Kind), Subject: subject, NormalizedSubject: normalized,
 			Knowledge: modelKnowledgeOf(record.Knowledge)})
 	}
@@ -232,6 +233,23 @@ func (b *encodeBatch) regions(kind schemaext.Kind, source schemaext.KnowledgeSou
 		return nil, refused
 	}
 	return spelled, nil
+}
+
+// inSession names, on the wire spelling of a subject, the database the
+// document was read in where the host holds the subject without it: a table,
+// a column or an index, whose common identity names no database, and an
+// object of a scope-selected kind. The provider names a read's values in that
+// database, so their subjects are spelled the same way. A document that names
+// no single database, such as a source, leaves its subjects as the host holds
+// them.
+func (b *encodeBatch) inSession(subject objectidentity.ID, known schemaext.Coverage, source, normalized *protocol.Reference) {
+	common := subject.Kind == objectidentity.KindTable || subject.Kind == objectidentity.KindColumn || subject.Kind == objectidentity.KindIndex
+	if !subject.Database.Empty() || (!common && !b.target.host.selections.selects(subject.Kind)) {
+		return
+	}
+	if database, found := b.sessionDatabase(known); found {
+		source.Database, normalized.Database = database, database
+	}
 }
 
 // sessionDatabase is the database a read of the document was made in: the one

@@ -1517,16 +1517,19 @@ provider never writes text of a format; the host writes the syntax.
 
 A binding names its table as the table's facets name it, so the binding of a
 table the host read names the database the read was made in, and the binding
-of a table a source declared names none. The request's coverage is what the
-document knows of the provider's models. For a document the host read, a
-kind's coverage carries the namespace regions the provider's `Inspect`
-reported, with the same bounds: the host reads each region it spells back and
-refuses the request, naming the model, when the reading differs from the
-knowledge it holds. The host holds a scope-selected kind's objects without the
-database they were read in, so the region of such a kind names the one
-database the document's values and other regions name, or no database when
-the document names no single one. The provider decides whether its format can
-keep that knowledge, through limits or by refusing the request.
+of a table a source declared names none. A coverage subject the host holds
+without that database, a read's table or column or an object of a
+scope-selected kind, names it too, as the read's values do.
+
+The request's coverage is what the document knows of the provider's models.
+For a document the host read, a kind's coverage carries the namespace regions
+the provider's `Inspect` reported, with the same bounds: the host reads each
+region it spells back and refuses the request, naming the model, when the
+reading differs from the knowledge it holds. The region of a scope-selected
+kind names the one database the document's values and other regions name, or
+no database when the document names no single one. The provider decides
+whether its format can keep that knowledge, through limits or by refusing the
+request.
 
 With the two-way feature `source.encode-groups`, the reply uses
 `EncodedSource.groups`: each group accounts for its `value_ids` once and writes

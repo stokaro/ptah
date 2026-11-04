@@ -380,3 +380,78 @@ func TestEncodeBatchBindsTablesInTheirDatabase_FailurePath(t *testing.T) {
 	c.Assert(bindingTexts(batch.request.GetBindings()), qt.DeepEquals, []string{`table-0 orders: example table database "/opened" catalog "" schema "main" name "orders"`})
 	c.Assert(valueIDs(batch.request.GetValues()), qt.DeepEquals, []string{"value-0"})
 }
+
+// subjectTexts writes each subject of a request's coverage as a line, as
+// regionTexts writes regions.
+func subjectTexts(coverage *protocol.ModelCoverage) []string {
+	var texts []string
+	for _, subject := range coverage.GetSubjects() {
+		for _, ref := range []*protocol.Reference{subject.GetSubject(), subject.GetNormalizedSubject()} {
+			texts = append(texts, fmt.Sprintf("%s %s: database %q schema %q path %v name %q", subject.GetKind(), ref.GetKind(), ref.GetDatabase(), ref.GetSchema(),
+				ref.GetPath(), ref.GetName()))
+		}
+	}
+	return texts
+}
+
+// TestEncodeCoverageSubjects spells the subjects the host holds without the
+// database they were read in, a table, a column and an object of a selected
+// kind, in the database a read's values name, and leaves a subject that names
+// its database as it is.
+func TestEncodeCoverageSubjects(t *testing.T) {
+	part := scopePart
+	table := objectidentity.ID{Kind: objectidentity.KindTable, Schema: part("main"), Name: part("orders")}
+	column := objectidentity.ID{Kind: objectidentity.KindColumn, Schema: part("main"), Parent: part("orders"), Name: part("id")}
+	queue := objectidentity.ID{Kind: objectidentity.Kind(encodedQueueKind), Schema: part("main"), Name: part("jobs")}
+	job := objectidentity.ID{Kind: objectidentity.Kind(encodedJobKind), Database: part("/kept"), Schema: part("main"), Name: part("runs")}
+	for _, row := range []struct {
+		name string
+		// databases name the database of each native object the document
+		// holds.
+		databases []string
+		want      string
+	}{
+		{name: "a read names the database it was made in", databases: []string{"/opened"}, want: "/opened"},
+		{name: "a source names none", want: ""},
+		{name: "a document of two databases names none", databases: []string{"/opened", "/other"}, want: ""},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			host := regionHost(c)
+			var subjects []schemaext.SubjectCoverage
+			for _, record := range []struct {
+				kind    schemaext.Kind
+				subject objectidentity.ID
+			}{{encodedJobKind, table}, {encodedJobKind, column}, {encodedQueueKind, queue}, {encodedJobKind, job}} {
+				subjects = append(subjects, schemaext.SubjectCoverage{Kind: record.kind, Subject: record.subject, Knowledge: schemaext.Knowledge{State: schemaext.Complete}})
+			}
+			var kinds []schemaext.KindCoverage
+			for _, kind := range []schemaext.Kind{encodedJobKind, encodedQueueKind} {
+				kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: host.description.GetProviderId(), Kind: kind,
+					Representation: schemaext.Desired, Version: 1, Definition: "definition"}, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
+			}
+			known, err := schemaext.NewCoverage(schemaext.Desired, kinds, subjects)
+			c.Assert(err, qt.IsNil)
+			batch := host.targets["example"].encodeBatch(protocol.SourceDocument_GO_ANNOTATIONS)
+			for _, database := range row.databases {
+				_, err := batch.add(protocol.SourceModelValue_NATIVE_OBJECT, "", encodedValue(encodedQueueKind,
+					&protocol.Reference{Engine: "example", Kind: string(encodedQueueKind), Database: database, Schema: "main", Name: "jobs"}))
+				c.Assert(err, qt.IsNil)
+			}
+
+			err = batch.coverage(known)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(subjectTexts(batch.request.GetCoverage()), qt.DeepEquals, []string{
+				fmt.Sprintf(`example.org/job column: database %q schema "main" path [orders] name "id"`, row.want),
+				fmt.Sprintf(`example.org/job column: database %q schema "main" path [orders] name "id"`, row.want),
+				`example.org/job example.org/job: database "/kept" schema "main" path [] name "runs"`,
+				`example.org/job example.org/job: database "/kept" schema "main" path [] name "runs"`,
+				fmt.Sprintf(`example.org/job table: database %q schema "main" path [] name "orders"`, row.want),
+				fmt.Sprintf(`example.org/job table: database %q schema "main" path [] name "orders"`, row.want),
+				fmt.Sprintf(`example.org/queue example.org/queue: database %q schema "main" path [] name "jobs"`, row.want),
+				fmt.Sprintf(`example.org/queue example.org/queue: database %q schema "main" path [] name "jobs"`, row.want),
+			})
+		})
+	}
+}
