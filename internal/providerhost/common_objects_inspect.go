@@ -152,43 +152,74 @@ func observedGrants(grant *protocol.ObservedGrant) []catalog.Grant {
 
 // placeComment gives the comment to the object of the read it names.
 func placeComment(result *catalog.Database, object *protocol.Reference, text string) error {
-	named := func(schema, name string) bool { return schema == object.GetSchema() && name == object.GetName() }
+	find, known := commentTargets[object.GetKind()]
 	var target *string
-	switch object.GetKind() {
-	case "table":
-		if i := slices.IndexFunc(result.Tables, func(table catalog.Table) bool { return named(table.Schema, table.Name) }); i >= 0 {
-			target = &result.Tables[i].Comment
-		}
-	case "column":
-		table := slices.IndexFunc(result.Tables, func(table catalog.Table) bool {
-			return table.Schema == object.GetSchema() && table.Name == object.GetPath()[0]
-		})
-		if table >= 0 {
-			columns := result.Tables[table].Columns
-			if i := slices.IndexFunc(columns, func(column catalog.Column) bool { return column.Name == object.GetName() }); i >= 0 {
-				target = &columns[i].Comment
-			}
-		}
-	case "view":
-		if i := slices.IndexFunc(result.Views, func(view catalog.View) bool { return named(view.Schema, view.Name) }); i >= 0 {
-			target = &result.Views[i].Comment
-		}
-	case "materialized_view":
-		if i := slices.IndexFunc(result.MatViews, func(view catalog.MaterializedView) bool { return named(view.Schema, view.Name) }); i >= 0 {
-			target = &result.MatViews[i].Comment
-		}
-	case "sequence":
-		if i := slices.IndexFunc(result.Sequences, func(sequence catalog.Sequence) bool { return named(sequence.Schema, sequence.Name) }); i >= 0 {
-			target = &result.Sequences[i].Comment
-		}
-	case "role", "group":
-		if i := slices.IndexFunc(result.Roles, func(role catalog.Role) bool { return role.Name == object.GetName() }); i >= 0 {
-			target = &result.Roles[i].Comment
-		}
+	if known {
+		target = find(result, object)
 	}
 	if target == nil {
 		return unsupported(fmt.Sprintf("a comment on %s %q, which the read does not report", object.GetKind(), object.GetName()))
 	}
 	*target = text
+	return nil
+}
+
+// commentTargets find, by the kind a comment names, the comment field of the
+// object of the read it names, or nil for one the read does not report. A
+// column and an index have their table as the only path component.
+var commentTargets = map[string]func(*catalog.Database, *protocol.Reference) *string{
+	"table": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.Tables, func(table catalog.Table) bool {
+			return table.Schema == object.GetSchema() && table.Name == object.GetName()
+		},
+			func(table *catalog.Table) *string { return &table.Comment })
+	},
+	"column": func(result *catalog.Database, object *protocol.Reference) *string {
+		columns := field(result.Tables, func(table catalog.Table) bool {
+			return table.Schema == object.GetSchema() && table.Name == object.GetPath()[0]
+		},
+			func(table *catalog.Table) *[]catalog.Column { return &table.Columns })
+		if columns == nil {
+			return nil
+		}
+		return field(*columns, func(column catalog.Column) bool { return column.Name == object.GetName() }, func(column *catalog.Column) *string { return &column.Comment })
+	},
+	"index": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.Indexes, func(index catalog.Index) bool {
+			return index.Schema == object.GetSchema() && index.TableName == object.GetPath()[0] && index.Name == object.GetName()
+		}, func(index *catalog.Index) *string { return &index.Comment })
+	},
+	"view": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.Views, func(view catalog.View) bool {
+			return view.Schema == object.GetSchema() && view.Name == object.GetName()
+		},
+			func(view *catalog.View) *string { return &view.Comment })
+	},
+	"materialized_view": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.MatViews, func(view catalog.MaterializedView) bool {
+			return view.Schema == object.GetSchema() && view.Name == object.GetName()
+		},
+			func(view *catalog.MaterializedView) *string { return &view.Comment })
+	},
+	"sequence": func(result *catalog.Database, object *protocol.Reference) *string {
+		return field(result.Sequences, func(sequence catalog.Sequence) bool {
+			return sequence.Schema == object.GetSchema() && sequence.Name == object.GetName()
+		},
+			func(sequence *catalog.Sequence) *string { return &sequence.Comment })
+	},
+	"role":  roleCommentTarget,
+	"group": roleCommentTarget,
+}
+
+func roleCommentTarget(result *catalog.Database, object *protocol.Reference) *string {
+	return field(result.Roles, func(role catalog.Role) bool { return role.Name == object.GetName() }, func(role *catalog.Role) *string { return &role.Comment })
+}
+
+// field is the field of the first element of values that matches, or nil
+// where none does.
+func field[T, F any](values []T, matches func(T) bool, of func(*T) *F) *F {
+	if i := slices.IndexFunc(values, matches); i >= 0 {
+		return of(&values[i])
+	}
 	return nil
 }

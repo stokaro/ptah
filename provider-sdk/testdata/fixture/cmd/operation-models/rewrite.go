@@ -21,7 +21,9 @@ func (p *owner) planColumnRewrites(request *protocol.PlanFeaturesRequest, table 
 	var rewrites []*protocol.PlanningRewrite
 	for i, common := range request.GetCommonSteps() {
 		column := common.GetAddedColumn()
-		if !proto.Equal(common.GetParent(), table.GetSubject()) {
+		if !proto.Equal(common.GetParent(), table.GetSubject()) || common.GetCommonObject() != nil {
+			// A comment of the table is the host's step, which the fixture
+			// orders after its own (see commentDependencies).
 			continue
 		}
 		if column == nil {

@@ -269,7 +269,8 @@ func TestCommonSchemaKeepsCommentsWithoutTheWire(t *testing.T) {
 
 func TestCommonObjectRead_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	result := &catalog.Database{Tables: []catalog.Table{{Name: "items", Columns: []catalog.Column{{Name: "id"}}}}}
+	result := &catalog.Database{Tables: []catalog.Table{{Name: "items", Columns: []catalog.Column{{Name: "id"}}}},
+		Indexes: []catalog.Index{{Name: "items_by_name", TableName: "items"}}}
 	observed := &protocol.ObservedCommonObjects{
 		Coverage: []*protocol.CommonObjectCoverage{
 			{Kind: protocol.CommonObjectSupport_VIEW, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}},
@@ -286,6 +287,7 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 		Comments: []*protocol.ObjectComment{
 			{Object: ref("table", "", "items"), Text: "the items"},
 			{Object: ref("column", "", "id", "items"), Text: "the key"},
+			{Object: ref("index", "", "items_by_name", "items"), Text: "by name"},
 			{Object: ref("view", "app", "recent"), Text: "recent"},
 			{Object: ref("materialized_view", "", "totals"), Text: "totals"},
 			{Object: ref("role", "", "reader"), Text: "reads"},
@@ -297,6 +299,7 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Tables[0].Comment, qt.Equals, "the items")
 	c.Assert(result.Tables[0].Columns[0].Comment, qt.Equals, "the key")
+	c.Assert(result.Indexes[0].Comment, qt.Equals, "by name")
 	c.Assert(result.Views, qt.DeepEquals, []catalog.View{{Name: "recent", Schema: "app", Body: "SELECT 1", CheckOption: "LOCAL", Comment: "recent"}})
 	c.Assert(result.MatViews, qt.DeepEquals, []catalog.MaterializedView{{Name: "totals", Body: "SELECT 2", Comment: "totals"}})
 	c.Assert(result.Roles, qt.DeepEquals, []catalog.Role{{Name: "reader", Login: true, PasswordState: catalog.RolePasswordPresent, Comment: "reads"}})
@@ -321,6 +324,9 @@ func TestCommonObjectRead_FailurePath(t *testing.T) {
 		{name: "a comment on an object the read does not report", observed: &protocol.ObservedCommonObjects{Comments: []*protocol.ObjectComment{
 			{Object: ref("view", "", "missing"), Text: "gone"},
 		}}, wantErr: `.*a comment on view "missing", which the read does not report`},
+		{name: "a comment on an index the read does not report", observed: &protocol.ObservedCommonObjects{Comments: []*protocol.ObjectComment{
+			{Object: ref("index", "", "missing", "items"), Text: "gone"},
+		}}, wantErr: `.*a comment on index "missing", which the read does not report`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
