@@ -13,7 +13,8 @@
 // that names the kind of refusal, a diff the planner refuses matches both
 // *PlanError and [ErrInvalidSchemaDiff], and a dialect nothing renders or
 // plans for matches [ErrUnsupportedDialect] through the structured type that
-// reported it.
+// reported it. A directive written where it is not read matches
+// [ErrMisplacedDirective], which belongs to the annotation family too.
 package ptaherr
 
 import (
@@ -54,6 +55,11 @@ var (
 	// carries the reason it is not accepted.
 	ErrRetiredAttribute = errors.New("retired declaration attribute")
 
+	// ErrMisplacedDirective marks a Go annotation directive written at a
+	// scope it does not take, such as a field directive in a struct's doc
+	// comment, where the parse would read nothing from it.
+	ErrMisplacedDirective = errors.New("misplaced annotation directive")
+
 	// ErrUnsupportedFeature marks dialect or capability feature mismatches.
 	ErrUnsupportedFeature = errors.New("unsupported feature")
 
@@ -71,6 +77,9 @@ var (
 // all is reported the same way, with Err holding the syntax error rather than
 // an annotation sentinel, so a caller that branches on the sentinels needs a
 // default branch as well.
+//
+// A directive written at a scope it does not take wraps
+// [ErrMisplacedDirective].
 type ParseError struct {
 	// File names the source file being parsed. For in-memory parsing it is
 	// the name the caller supplied for diagnostics.

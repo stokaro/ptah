@@ -818,7 +818,7 @@ func (s *schemaParseState) parseAttachedComment(
 		return nil
 	}
 	if !annotationmeta.AllowsScope(directive, scope) {
-		return nil
+		return s.refuseMisplacedDirective(comment, directive, scope, target)
 	}
 	if handled, err := s.parsePlacementDirective(comment, directive.Name, target); handled || err != nil {
 		return err
@@ -902,6 +902,48 @@ func (s *schemaParseState) parseSharedDirective(
 		return nil
 	}
 	return parse(s, comment, target.structName)
+}
+
+// refuseMisplacedDirective refuses a directive written at a scope it does not
+// take, naming where it belongs. Read nowhere, it declares nothing:
+// `//ptah:schema:field` in a struct's doc comment adds no column, and
+// `//ptah:schema:table` on a field adds no table, while the render that
+// follows succeeds.
+func (s *schemaParseState) refuseMisplacedDirective(
+	comment *ast.Comment,
+	directive annotationmeta.Directive,
+	scope annotationmeta.Scope,
+	target schemaCommentTarget,
+) error {
+	location := target.structName
+	if target.field != nil && len(target.field.Names) > 0 {
+		location += "." + target.field.Names[0].Name
+	}
+	ctx := s.annotationContext(comment, "//"+directive.Name, location)
+	belongs := make([]string, 0, len(directive.Scopes))
+	for _, allowed := range directive.Scopes {
+		belongs = append(belongs, scopePlace(allowed))
+	}
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: directive.Name,
+		Err:       ptaherr.ErrMisplacedDirective,
+		Message: fmt.Sprintf("annotation directive %q on %s at %s:%d is not read %s; write it %s",
+			"//"+directive.Name, location, ctx.file, ctx.line, scopePlace(scope), strings.Join(belongs, " or ")),
+	}
+}
+
+// scopePlace names where a comment of scope sits, for a refusal.
+func scopePlace(scope annotationmeta.Scope) string {
+	switch scope {
+	case annotationmeta.ScopeField:
+		return "on a struct field"
+	case annotationmeta.ScopeStruct:
+		return "in a struct's doc comment"
+	default:
+		return "in a comment of its own at file level"
+	}
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {

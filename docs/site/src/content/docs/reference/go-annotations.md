@@ -138,7 +138,10 @@ type StatusEnumMarker struct{}
 
 Placement is semantic, not cosmetic. A struct directive belongs in the doc
 comment of a Go struct declaration; a field directive belongs in the doc comment
-of the field it describes. File-scoped RLS directives may use a separate comment
+of the field it describes. A directive written where it is not read, such as
+`//ptah:schema:field` in a struct's doc comment, fails parsing with
+`annotation directive "//<directive>" on <struct or field> at <file>:<line> is not read ...; write it ...`.
+File-scoped RLS directives may use a separate comment
 group, but they still need enough attributes to resolve to a parsed RLS object.
 `ptah schema export --cleanup-go-annotations` refuses to remove any recognized
 standalone directive that does not meet those conditions. Directive names use an
