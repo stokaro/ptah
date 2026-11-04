@@ -108,8 +108,14 @@ func (r *Reader) changefeed(
 		// An initial scan leaves its progress on the changefeed for good,
 		// measured on both lines: `initialScanProgress: {partsTotal: 1,
 		// partsCompleted: 1}` once the scan ends, and nothing on a
-		// changefeed that asked for none.
-		InitialScan:   feed.GetInitialScanProgress() != nil,
+		// changefeed that asked for none. The scan state comes before the
+		// first progress: right after CREATE ASYNC REPLICATION adds its
+		// changefeed to the source table, 25.1.4.7 reports
+		// STATE_INITIAL_SCAN with no progress yet. Without the state, the
+		// read would report that changefeed as one that asked for no scan,
+		// and a declaration stating the scan would drop and add it again.
+		InitialScan: feed.GetInitialScanProgress() != nil ||
+			feed.GetState() == Ydb_Table.ChangefeedDescription_STATE_INITIAL_SCAN,
 		UserSIDs:      userSIDs,
 		SchemaChanges: feed.GetSchemaChanges(),
 	}
