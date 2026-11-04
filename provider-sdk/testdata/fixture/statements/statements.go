@@ -6,12 +6,20 @@
 // no row count, as an engine that does not measure one would, and the fault
 // read-only-statements refuses every other statement, so a test can tell which
 // access a host asked for.
+//
+// Arguments arrive plain, or typed under contract 25.15's
+// sessions.typed-arguments. SQLite's parameters have no type, so a typed
+// argument binds its value and the type is dropped, and a list binds as the
+// JSON array of its elements, which json_each reads. An argument SQLite has no
+// value for, such as an interval of months or a decimal, refuses the
+// statement rather than binding null.
 package statements
 
 import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -60,10 +68,13 @@ func (s *Service) RunStatement(ctx context.Context, request *protocol.RunStateme
 			return reply, nil
 		}
 	}
-	args := make([]any, len(request.GetArguments()))
-	for i, argument := range request.GetArguments() {
-		args[i] = goValue(argument)
-		if s.ByName {
+	args, refusal := arguments(request)
+	if refusal != "" {
+		reply.Outcome, reply.Refusal = protocol.StatementResult_REFUSED, refusal
+		return reply, nil
+	}
+	if s.ByName {
+		for i := range args {
 			args[i] = sql.Named(fmt.Sprintf("p%d", i+1), args[i])
 		}
 	}
@@ -254,27 +265,78 @@ func failed(reply *protocol.StatementResult, err error) {
 	reply.Outcome, reply.Error = protocol.StatementResult_FAILED, message
 }
 
-// goValue is the argument SQLite binds for a wire value.
-func goValue(value *protocol.DataValue) any {
+// arguments are the values SQLite binds for a statement's arguments, of
+// either form, or the reason the fixture refuses one.
+func arguments(request *protocol.RunStatementRequest) ([]any, string) {
+	args := make([]any, 0, len(request.GetArguments())+len(request.GetTypedArguments()))
+	for _, argument := range request.GetArguments() {
+		value, refusal := goValue(argument)
+		if refusal != "" {
+			return nil, refusal
+		}
+		args = append(args, value)
+	}
+	for _, argument := range request.GetTypedArguments() {
+		value, refusal := typedValue(argument)
+		if refusal != "" {
+			return nil, refusal
+		}
+		args = append(args, value)
+	}
+	return args, ""
+}
+
+// typedValue is the value SQLite binds for a typed argument: its value, or for
+// a list the JSON array of its elements.
+func typedValue(argument *protocol.StatementArgument) (any, string) {
+	if !argument.GetType().GetList() {
+		return goValue(argument.GetValue())
+	}
+	elements := make([]any, 0, len(argument.GetElements()))
+	for _, element := range argument.GetElements() {
+		value, refusal := goValue(element)
+		if refusal != "" {
+			return nil, refusal
+		}
+		elements = append(elements, value)
+	}
+	text, err := json.Marshal(elements)
+	if err != nil {
+		return nil, "the fixture binds a list as JSON, which cannot hold one of its elements"
+	}
+	return string(text), ""
+}
+
+// goValue is the value SQLite binds for a wire value, or the reason the
+// fixture refuses it. An interval binds as its nanoseconds when it has no
+// months or days.
+func goValue(value *protocol.DataValue) (any, string) {
 	switch v := value.GetValue().(type) {
+	case *protocol.DataValue_Null:
+		return nil, ""
 	case *protocol.DataValue_BoolValue:
-		return v.BoolValue
+		return v.BoolValue, ""
 	case *protocol.DataValue_Int64Value:
-		return v.Int64Value
+		return v.Int64Value, ""
 	case *protocol.DataValue_Uint64Value:
-		return v.Uint64Value
+		return v.Uint64Value, ""
 	case *protocol.DataValue_DoubleValue:
-		return v.DoubleValue
+		return v.DoubleValue, ""
 	case *protocol.DataValue_StringValue:
-		return v.StringValue
+		return v.StringValue, ""
 	case *protocol.DataValue_BytesValue:
-		return v.BytesValue
+		return v.BytesValue, ""
 	case *protocol.DataValue_TimestampValue:
-		return time.Unix(v.TimestampValue.GetSeconds(), int64(v.TimestampValue.GetNanos())).UTC()
+		return time.Unix(v.TimestampValue.GetSeconds(), int64(v.TimestampValue.GetNanos())).UTC(), ""
+	case *protocol.DataValue_IntervalValue:
+		if v.IntervalValue.GetMonths() != 0 || v.IntervalValue.GetDays() != 0 {
+			return nil, "the fixture binds an interval as nanoseconds, which cannot hold months or days"
+		}
+		return v.IntervalValue.GetNanoseconds(), ""
 	case *protocol.DataValue_JsonValue:
-		return v.JsonValue
+		return v.JsonValue, ""
 	default:
-		return nil
+		return nil, "the fixture binds no decimal, date or native statement argument"
 	}
 }
 

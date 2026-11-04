@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	// The test reads the fixture's database file back through a driver of its
@@ -25,12 +26,12 @@ import (
 // from reading its database file back.
 
 // argumentStatements opens the operator statement handle of a fresh database
-// of the dev database fixture, which serves the operator statements, holding
-// an empty table "arguments" with one untyped column, and returns it with the
-// database file's path.
-func argumentStatements(c *qt.C) (dbschema.OperatorStatements, string) {
+// of a fixture command that serves the operator statements, holding an empty
+// table "arguments" with one untyped column, and returns it with the database
+// file's path. The dev database fixture, devdb, does not list typed arguments.
+func argumentStatements(c *qt.C, command string) (dbschema.OperatorStatements, string) {
 	c.Helper()
-	host, _ := yamlProviderCommand(c, "devdb")
+	host, _ := yamlProviderCommand(c, command)
 	path := filepath.Join(c.TempDir(), "arguments.db")
 	address := (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/")}).String()
 	operator, release, err := connectTransactionAddress(c, host, address).OperatorStatements()
@@ -84,13 +85,14 @@ func TestProviderStatementArguments_HappyPath(t *testing.T) {
 		{name: "a string", argument: "CZ", want: sql.NullString{String: "CZ", Valid: true}},
 		{name: "a byte slice", argument: []byte("CZ"), want: sql.NullString{String: "CZ", Valid: true}},
 		{name: "a valuer", argument: liveLabel("CZ"), want: sql.NullString{String: "label:CZ", Valid: true}},
+		{name: "a duration", argument: 90 * time.Second, want: sql.NullString{String: "90000000000", Valid: true}},
 		{name: "nil", argument: nil, want: sql.NullString{}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			operator, path := argumentStatements(c)
+			operator, path := argumentStatements(c, "devdb")
 
 			_, err := operator.ExecContext(c.Context(), `INSERT INTO "arguments" ("value") VALUES (?)`, test.argument)
 
@@ -122,7 +124,7 @@ func TestProviderStatementArguments_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			operator, path := argumentStatements(c)
+			operator, path := argumentStatements(c, "devdb")
 
 			_, refused := operator.ExecContext(c.Context(), `INSERT INTO "arguments" ("value") VALUES (?)`, test.argument)
 			stored := storedArguments(c, path)

@@ -4744,6 +4744,14 @@ An argument the provider contract cannot carry exactly is refused with
 converted: an integer narrower than 64 bits, a `float32`, a pointer, a
 `database/sql` `Null` value, an array, and a slice other than a byte slice.
 
+When the provider lists `sessions.typed-arguments`, an argument also carries
+its width, whether its type admits null and whether it is a list. An `int32`
+binds as a 32-bit integer, a pointer and a `database/sql` `Null` value as an
+optional value or a typed null, and a slice other than a byte slice as a list
+of its element's type. What that form cannot carry is refused the same way:
+an array, a nested list, a second level of null, and a pointer or a list whose
+type a `Value` method decides.
+
 The contract carries arguments by position. A named argument binds where the
 engine's query dialect declares the `dollar-named` placeholder style, whose Nth
 parameter is `$pN`: the argument named `pN` is sent at position N, wherever the

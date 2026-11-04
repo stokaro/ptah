@@ -170,7 +170,7 @@ func TestProviderNamedArguments_FailurePath(t *testing.T) {
 // there before anything is sent, and the table stays empty.
 func TestProviderNamedArguments_PositionalEngine(t *testing.T) {
 	c := qt.New(t)
-	operator, path := argumentStatements(c)
+	operator, path := argumentStatements(c, "devdb")
 
 	_, err := operator.ExecContext(c.Context(), `INSERT INTO "arguments" ("value") VALUES (?)`, sql.Named("p1", int64(5)))
 
