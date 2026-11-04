@@ -131,6 +131,73 @@ func countSQLLine(sql, line string) int {
 	return count
 }
 
+// A name qualified with the schema the connection resolved needs no
+// precondition, as an unqualified name needs none: the connector refuses a
+// search_path that resolves to nothing, so the schema exists. An Atlas HCL
+// document has to qualify every table with `schema.public`, and the
+// precondition it planned against every PostgreSQL database is refused to a
+// role that may create tables in `public` but not schemas in the database.
+//
+// The rows that keep the statement are the half that makes this a decision
+// rather than a blanket drop of `public`: another schema on the same
+// connection, `public` on a connection resolved to another schema, and a
+// comparison that carries no connection, whose default schema nothing
+// resolved.
+func TestPlanner_SchemaPreconditionsSkipTheConnectedSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		semantics *identifier.Semantics
+		schema    string
+		wantsPre  bool
+	}{
+		{name: "PostgreSQL connected to public", dialect: "postgres", semantics: connectedTo("postgres", "public"), schema: "public"},
+		{name: "PostgreSQL connected to app", dialect: "postgres", semantics: connectedTo("postgres", "app"), schema: "app"},
+		{name: "CockroachDB connected to public", dialect: "cockroachdb", semantics: connectedTo("cockroachdb", "public"), schema: "public"},
+		{name: "YugabyteDB connected to public", dialect: "yugabytedb", semantics: connectedTo("yugabytedb", "public"), schema: "public"},
+		{name: "another schema on a connection to public", dialect: "postgres", semantics: connectedTo("postgres", "public"), schema: "app", wantsPre: true},
+		{name: "public on a connection to app", dialect: "postgres", semantics: connectedTo("postgres", "app"), schema: "public", wantsPre: true},
+		{name: "public without a connection", dialect: "postgres", schema: "public", wantsPre: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "User", Name: "users", Schema: test.schema}},
+				Fields: []schemamodel.Field{
+					{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
+				},
+				SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
+			}
+			diff := &difftypes.SchemaDiff{
+				TablesAdded:         difftypes.TableCreationsFor(desired, identifier.ForDialect(test.dialect), test.schema+".users"),
+				IdentifierSemantics: test.semantics,
+			}
+
+			nodes, err := postgres.NewForDialect(test.dialect, capability.Capabilities{}).
+				GenerateMigrationAST(
+					context.Background(), must.Must(builtin.New()),
+					withDeclaredObjects(diff, desired),
+				)
+			c.Assert(err, qt.IsNil)
+			sql, err := builtin.RenderSQL(test.dialect, nodes...)
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(strings.Contains(sql, "CREATE SCHEMA"), qt.Equals, test.wantsPre, qt.Commentf("%s", sql))
+			c.Assert(sql, qt.Contains, `CREATE TABLE "`+test.schema+`"."users"`)
+		})
+	}
+}
+
+// connectedTo is the identifier semantics a connection to dialect reports
+// when its search_path resolves to schema.
+func connectedTo(dialect, schema string) *identifier.Semantics {
+	semantics := identifier.ForDialect(dialect)
+	semantics.DefaultSchema = schema
+	return &semantics
+}
+
 // A schema the target owns is reached without a precondition.
 //
 // On Spanner that is what makes the migration run at all: `public` there is the

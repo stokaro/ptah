@@ -1429,7 +1429,10 @@ removed the object: a view a `CASCADE` above it may have taken, a constraint
 of a table whose column the file drops before it, an index on a view the file
 drops before it. `CREATE SCHEMA IF NOT EXISTS` stays as well, because the plan
 writes it for every schema an added object names, whether or not that schema
-exists.
+exists. The exception is the schema the connection resolves unqualified names
+to, usually `public`: it exists, so `public.users` gets no more of a
+precondition than `users` does, and a role that may create tables in it does
+not need `CREATE` on the database.
 
 In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
