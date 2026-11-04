@@ -135,6 +135,8 @@ func loadPtahFile(path, envName string, source ptahConfigSource) (Config, error)
 //
 // A document that sets nothing is an empty config, the one a missing file
 // gives: zero bytes, only comments and blank lines, `---`, `null` or `{}`.
+// The file is one YAML document: a later document that sets anything is
+// refused, since it would not be read. One that sets nothing is accepted.
 //
 // filename is used in diagnostics only and may be empty. envName selects one
 // env block and merges it over the top-level settings; with an empty envName,
@@ -161,6 +163,9 @@ func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (
 	if err := decoder.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, translatePtahYAMLError(err, filename, source)
 	}
+	if err := refuseLaterDocuments(decoder, filename, source); err != nil {
+		return Config{}, err
+	}
 	cfg, err := selectPtahEnv(doc, envName)
 	if err != nil {
 		return Config{}, err
@@ -177,6 +182,45 @@ func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (
 		return Config{}, fmt.Errorf("invalid online_ddl config in %s: %w", filename, err)
 	}
 	return cfg, nil
+}
+
+// refuseLaterDocuments refuses a YAML document after the first that sets
+// anything. The loader reads one document, so a later one would be dropped
+// without a word: none of its keys would be checked, and none of its settings
+// applied. A later document that sets nothing -- a trailing `---`, `null` or
+// `{}` -- drops nothing and is accepted.
+func refuseLaterDocuments(decoder *yaml.Decoder, filename string, source ptahConfigSource) error {
+	for {
+		var next yaml.Node
+		err := decoder.Decode(&next)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return translatePtahYAMLError(err, filename, source)
+		}
+		if line, sets := documentSettings(&next); sets {
+			return fmt.Errorf(
+				"failed to parse ptah config %s: line %d: the file holds a second YAML document, and %s is read as one; "+
+					"move these settings into the first document",
+				filename,
+				line,
+				PtahFileName,
+			)
+		}
+	}
+}
+
+// documentSettings reports whether a decoded document sets anything, and the
+// line its content starts on. A null value and an empty mapping set nothing.
+func documentSettings(document *yaml.Node) (int, bool) {
+	if len(document.Content) == 0 {
+		return document.Line, false
+	}
+	content := document.Content[0]
+	empty := content.Kind == yaml.ScalarNode && content.Tag == "!!null" ||
+		content.Kind == yaml.MappingNode && len(content.Content) == 0
+	return content.Line, !empty
 }
 
 func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
