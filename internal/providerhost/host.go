@@ -137,6 +137,10 @@ var hostFeatures = []string{
 	// An operator statement's arguments reach the provider with the types
 	// their caller bound them at; see statementConn.CheckNamedValue.
 	provider.TypedArgumentsFeature,
+	// A failed provider call, and a lock outcome other than the one asked
+	// for, read with the reason the provider wrote after the code. The SDK
+	// client writes the text; the status message is never shown.
+	provider.ErrorReasonsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

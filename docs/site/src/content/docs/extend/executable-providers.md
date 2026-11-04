@@ -16,6 +16,7 @@ sourceOfTruth:
   - "internal/providercatalog"
   - "provider-sdk"
   - "integration/providercli/provider_cli_integration_test.go"
+  - "integration/providercli/provider_error_reasons_e2e_test.go"
   - "integration/providercli/provider_native_verbs_e2e_test.go"
   - "integration/providercli/provider_migrations_e2e_test.go"
   - "integration/providercli/provider_migration_units_e2e_test.go"
@@ -628,7 +629,8 @@ ptah providers check --provider-config providers.json \
 ```
 
 Success reports `"status": "compatible"`, the executable path, provider version,
-protocol revision, and semantic identity. The process closes after negotiation.
+protocol revision, semantic identity, and in `provider.features` the provider's
+features as negotiated with this Ptah. The process closes after negotiation.
 Compatibility with the transport does not establish support for every schema
 object or database operation.
 
@@ -897,6 +899,22 @@ grant access to that object in one plan. The complete graph still refuses
 missing footprints, conflicting dependencies and unordered writes.
 
 ## Resolve failures
+
+A provider call that fails names the call and its gRPC code:
+`provider inspect failed (FailedPrecondition)`. When the provider lists
+`errors.reasons`, as `providers check --json` shows in `provider.features`, the
+line ends with the reason the provider wrote:
+
+```text
+provider compare models failed (InvalidArgument): streaming query capability was not established
+```
+
+A lock outcome reads `provider lock outcome is BUSY`, followed by the
+provider's reason in the same way. Ptah never prints the rest of a provider's
+error: a driver's error can quote a connection address, a credential or a
+statement with its values, so only text the provider wrote as a reason
+reaches the output. The JSON documents carry the same sentence in their error
+message.
 
 Missing official providers include an engine ID, provider ID, repository URL,
 and setup URL in the error. JSON schema reports and migration setup failures
