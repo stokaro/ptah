@@ -137,3 +137,14 @@ The engine lists the feature, as it lists observed indexes. Rejected.
 - SDK tests accept a negotiated rename step and refuse an engine that lists the
   feature without the provider's or without observed indexes, a host that does
   not list it, and each malformed step above.
+- Through the SDK fixture provider, the host plans a rename as one claimed
+  step followed by the comment moved to the new name, refuses the rename for a
+  provider without the feature, and refuses a session that reports
+  `index_rename` from an engine that does not negotiate it.
+- Through the YDB provider on 26.2.1.14 and 25.1.4.7, with `EnableMoveIndex`
+  on, a renamed index is one `row-table-alter-operation` followed by the two
+  comment steps. The index keeps an `AUTO_PARTITIONING_MIN_PARTITIONS_COUNT`
+  of 3 that no declaration states, and its comment moves to the new name. The
+  next run is synced, and a read through the new name finds the table's row.
+  With the flag off, or with a host that does not list the feature, the
+  rename is a drop and an add.
