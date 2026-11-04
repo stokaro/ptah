@@ -74,8 +74,11 @@ jobs:
     runs-on: ubuntu-latest
     # The whole contour runs in one job, because testcontour fails on a skip
     # and no package selector may narrow it. The total budget also covers
-    # database setup, race builds, and the following smoke suites.
-    timeout-minutes: 120
+    # database setup, race builds, and the following smoke suites. The
+    # packages run one at a time, and the contour step alone measured 78 and
+    # 112 minutes on two neighboring master commits, so 120 cut passing runs
+    # off. A hung test still fails its package at the contour's --timeout.
+    timeout-minutes: 180
     
     services:
       postgres:
