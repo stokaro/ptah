@@ -70,6 +70,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0058](0058-a-statement-argument-carries-the-type-its-caller-bound-it-at.md) | A statement argument carries the type its caller bound it at | Proposed |
 | [0059](0059-a-provider-says-why-a-call-failed-in-text-it-wrote.md) | A provider says why a call failed, in text it wrote | Proposed |
 | [0060](0060-a-table-owner-renames-an-index-in-place.md) | A table owner renames an index in place | Proposed |
+| [0061](0061-a-failed-execution-says-why-in-text-the-provider-wrote.md) | A failed execution says why, in text the provider wrote | Proposed |
 
 ## Writing one
 

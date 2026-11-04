@@ -149,6 +149,58 @@ func (s *serverAdapter) negotiatesReasons() bool {
 	return slices.Contains(s.negotiated().GetFeatures(), provider.ErrorReasonsFeature)
 }
 
+// negotiatedDiagnostic returns the diagnostic a result may carry across the
+// transport: none when the description does not list
+// provider.ErrorReasonsFeature, malformedReason in place of one
+// provider.ValidateDiagnostic refuses, and diagnostic itself otherwise. Unlike
+// a lock receipt, an execution or transaction result with a malformed
+// diagnostic is not refused: refusing it would turn a confirmed outcome into
+// an unknown one, and only the text is at fault.
+func negotiatedDiagnostic(description *protocol.Description, diagnostic *protocol.ProviderDiagnostic) *protocol.ProviderDiagnostic {
+	if diagnostic == nil || !slices.Contains(description.GetFeatures(), provider.ErrorReasonsFeature) {
+		return nil
+	}
+	if provider.ValidateDiagnostic(diagnostic) != nil {
+		return &protocol.ProviderDiagnostic{Reason: malformedReason}
+	}
+	return diagnostic
+}
+
+// negotiatedExecution returns result with the diagnostic it may carry: the
+// negotiated one, and none beside APPLIED, which no reason accompanies. Both
+// ends of Execute apply it, so either one alone keeps an unnegotiated or a
+// malformed reason out of the host's error. result itself is never changed.
+func negotiatedExecution(description *protocol.Description, result *protocol.Execution) *protocol.Execution {
+	diagnostic := negotiatedDiagnostic(description, result.GetDiagnostic())
+	if result.GetOutcome() == protocol.Execution_APPLIED {
+		diagnostic = nil
+	}
+	if diagnostic == result.GetDiagnostic() {
+		return result
+	}
+	result = proto.CloneOf(result)
+	result.Diagnostic = diagnostic
+	return result
+}
+
+// negotiatedTransaction is negotiatedExecution for the result of a finish
+// request with action. It reads success from provider.CheckTransactionResult,
+// so the outcomes a reason may not accompany are the ones the check accepts.
+func negotiatedTransaction(description *protocol.Description, action protocol.FinishTransactionRequest_Action,
+	result *protocol.TransactionResult,
+) *protocol.TransactionResult {
+	diagnostic := negotiatedDiagnostic(description, result.GetDiagnostic())
+	if provider.CheckTransactionResult(action, result) == nil {
+		diagnostic = nil
+	}
+	if diagnostic == result.GetDiagnostic() {
+		return result
+	}
+	result = proto.CloneOf(result)
+	result.Diagnostic = diagnostic
+	return result
+}
+
 // negotiatedReceipt returns a lock receipt without its diagnostic when the
 // feature was not negotiated, and the receipt itself otherwise.
 func negotiatedReceipt(description *protocol.Description, result *protocol.LockResult) *protocol.LockResult {

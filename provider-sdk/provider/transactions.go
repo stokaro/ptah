@@ -80,13 +80,22 @@ func ValidateTransactionAction(action protocol.FinishTransactionRequest_Action) 
 // TransactionError carries the confirmed terminal state, or UNKNOWN when the
 // result does not establish the final effect. It wraps ErrOutcomeUnknown for an
 // unknown outcome and ErrExecution for a confirmed state that contradicts the
-// requested action. The zero value records an unknown outcome.
+// requested action. The zero value records an unknown outcome. Reason is the
+// provider's reason for the outcome, from the result's diagnostic, and is
+// empty when the result gave none, ErrorReasonsFeature was not negotiated, or
+// the result was malformed.
 type TransactionError struct {
 	Outcome protocol.TransactionResult_Outcome
+	Reason  string
 }
 
-// Error names the confirmed state or the absence of confirmation.
+// Error names the confirmed state or the absence of confirmation, followed by
+// the provider's reason when there is one. It never includes
+// TransactionResult.message.
 func (e *TransactionError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("provider transaction outcome is %s: %s", e.Outcome, e.Reason)
+	}
 	return fmt.Sprintf("provider transaction outcome is %s", e.Outcome)
 }
 
@@ -115,7 +124,10 @@ func ValidateTransactionResult(result *protocol.TransactionResult) error {
 // CheckTransactionResult validates a finish reply against the requested action.
 // Rollback accepts NOT_STARTED only because that result fences a late begin.
 // Missing or malformed replies leave the outcome unknown. No result permits an
-// automatic retry of the operation that produced it.
+// automatic retry of the operation that produced it. The error of a result
+// that does not succeed carries its diagnostic in TransactionError.Reason
+// when ValidateDiagnostic accepts it; as with CheckExecution, the negotiation
+// is the transport's to enforce.
 func CheckTransactionResult(action protocol.FinishTransactionRequest_Action, result *protocol.TransactionResult) error {
 	if err := ValidateTransactionAction(action); err != nil {
 		return err
@@ -136,5 +148,5 @@ func CheckTransactionResult(action protocol.FinishTransactionRequest_Action, res
 	default:
 		return errors.Join(ErrProtocol, &TransactionError{})
 	}
-	return &TransactionError{Outcome: result.GetOutcome()}
+	return &TransactionError{Outcome: result.GetOutcome(), Reason: resultReason(result.GetDiagnostic())}
 }
