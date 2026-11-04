@@ -6,6 +6,7 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 )
 
@@ -77,25 +78,11 @@ func (r reader) observedNamespaceKnowledge(kind schemaext.Kind, outside schemaex
 		if err != nil {
 			return schemaext.KnowledgeDomain{}, err
 		}
-		path := make([]objectidentity.Part, len(scope.GetPathPrefix()))
-		for i, component := range scope.GetPathPrefix() {
-			path[i] = *namespacePart(component)
-		}
-		claims = append(claims, schemaext.NamespaceKnowledge{Scope: schemaext.NamespaceScope{
-			SubjectKinds: []objectidentity.Kind{objectidentity.Kind(kind)}, Targets: []string{r.session.remote.GetEngine()},
-			Database: namespacePart(scope.GetDatabase()), Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...),
-		}, Knowledge: knowledge})
-		if r.session.target.host.selections.selects(objectidentity.Kind(kind)) {
-			claims[len(claims)-1].Scope.Database = &objectidentity.Part{}
-			// A selection describes standalone objects, never table-owned facets.
-			// Preserve that bound when shared comparison binds table identities.
-			claims[len(claims)-1].Scope.Parent = &objectidentity.Part{}
-		}
-		common, err := r.commonNamespaceScopes(scope)
+		scopes, err := namespaceScopes(r.session.target.host.selections, r.session.info.IdentifierSemantics, r.session.remote.GetEngine(), kind, scope)
 		if err != nil {
 			return schemaext.KnowledgeDomain{}, err
 		}
-		for _, bound := range common {
+		for _, bound := range scopes {
 			claims = append(claims, schemaext.NamespaceKnowledge{Scope: bound, Knowledge: knowledge})
 		}
 	}
@@ -110,14 +97,41 @@ func (r reader) validateInspectionNamespace(scope *protocol.ModelNamespace) erro
 	return nil
 }
 
-func (r reader) commonNamespaceScopes(scope *protocol.ModelNamespace) ([]schemaext.NamespaceScope, error) {
+// namespaceScopes is how the host holds one namespace region a provider
+// reports for kind on engine: the scope the kind's native objects match, and,
+// where the region can hold common tables and columns, the scope their facets
+// match. Reading an inspection builds its scopes here, and so does spelling an
+// encoding request's regions (encodeBatch.regions), which reads each region it
+// spells back through this function: two copies of this rule would agree when
+// the second is written and drift when the first changes, and the drift would
+// send a provider a region wider or narrower than the one it reported.
+func namespaceScopes(selections *scopeSelections, semantics identifier.Semantics, engine string, kind schemaext.Kind, scope *protocol.ModelNamespace) ([]schemaext.NamespaceScope, error) {
+	path := make([]objectidentity.Part, len(scope.GetPathPrefix()))
+	for i, component := range scope.GetPathPrefix() {
+		path[i] = *namespacePart(component)
+	}
+	native := schemaext.NamespaceScope{SubjectKinds: []objectidentity.Kind{objectidentity.Kind(kind)}, Targets: []string{engine},
+		Database: namespacePart(scope.GetDatabase()), Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...)}
+	if selections.selects(objectidentity.Kind(kind)) {
+		native.Database = &objectidentity.Part{}
+		// A selection describes standalone objects, never table-owned facets.
+		// Preserve that bound when shared comparison binds table identities.
+		native.Parent = &objectidentity.Part{}
+	}
+	common, err := commonNamespaceScopes(semantics, engine, scope)
+	if err != nil {
+		return nil, err
+	}
+	return append([]schemaext.NamespaceScope{native}, common...), nil
+}
+
+func commonNamespaceScopes(semantics identifier.Semantics, engine string, scope *protocol.ModelNamespace) ([]schemaext.NamespaceScope, error) {
 	// These wire regions contain no common identities, whose catalog is empty
 	// and whose only path component, on columns, is their owning table.
 	if scope.GetCatalog().GetNormalized() != "" || len(scope.GetPathPrefix()) > 1 {
 		return nil, nil
 	}
-	semantics := r.session.info.IdentifierSemantics
-	common := schemaext.NamespaceScope{PathExact: true, Targets: []string{r.session.remote.GetEngine()}, Database: &objectidentity.Part{}, Catalog: &objectidentity.Part{}}
+	common := schemaext.NamespaceScope{PathExact: true, Targets: []string{engine}, Database: &objectidentity.Part{}, Catalog: &objectidentity.Part{}}
 	if schema := scope.GetSchema(); schema != nil {
 		if schema.GetNormalized() != semantics.TableIdentityKey(schema.GetSource()) {
 			return nil, unsupported("common namespace schema normalization")

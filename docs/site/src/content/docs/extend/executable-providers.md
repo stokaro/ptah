@@ -983,6 +983,13 @@ key, a routine or a materialized view has no place in an encoding request and is
 reported as a loss too. The `ptah:not-described` entries the provider returns
 are written in the document's header.
 
+For a schema read through the provider, what the document knows includes the
+namespace regions the provider's `Inspect` reported, such as the directories a
+`--schemas` read listed. Ptah sends each region with the bounds it was read
+with, and refuses the export, naming the model, when it cannot. A table's
+binding names the database the table's read facets name. The provider decides
+whether the format can keep that knowledge.
+
 With negotiated `source.encode-groups`, one model value can require several
 ordered declarations. Each group accounts for its values once; each part must
 match a value's model, binding and subject. Ptah keeps each HCL native object's

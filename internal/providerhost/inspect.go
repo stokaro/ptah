@@ -186,7 +186,7 @@ func (r reader) validateInspectionBindings(bindings []*protocol.InspectionScopeB
 			if err := r.validateInspectionNamespace(scope); err != nil {
 				return err
 			}
-			if _, err := r.commonNamespaceScopes(scope); err != nil {
+			if _, err := commonNamespaceScopes(r.session.info.IdentifierSemantics, r.session.remote.GetEngine(), scope); err != nil {
 				return err
 			}
 		}
