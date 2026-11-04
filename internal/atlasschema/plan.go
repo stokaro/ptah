@@ -106,6 +106,11 @@ type PlanFile struct {
 	// those schemas together with the URL's scope, and [VerifyPlanTarget] reads
 	// the same set, so a change in any schema the plan writes makes it stale.
 	SchemasBeyondURL []string `json:"schemas_beyond_url,omitempty"`
+	// Scope is what the connection URL covered when the plan was computed. A
+	// stale plan whose target URL covers something else is refused with both
+	// named, since the source fingerprint then differs because the read does,
+	// not because the database changed; see [PlanScope].
+	Scope *PlanScope `json:"scope,omitempty"`
 	// ManagedRows names the declared row sets the plan read, and RowsFingerprint
 	// is the digest of the rows they held. FromFingerprint describes structure
 	// alone, and a row that moved after planning left it unchanged, so a plan
@@ -198,9 +203,24 @@ type StalePlanError struct {
 	// Rows reports that the structure still matches and the declared rows the
 	// plan read do not. The fingerprints are then the rows fingerprints.
 	Rows bool
+	// PlanScope and DatabaseScope name what the plan's URL covered and what
+	// the target URL covers, as [PlanScope] describes them. When both are set
+	// and differ, the error says so instead of reporting a changed database:
+	// the two reads cover different schemas, so their fingerprints differ
+	// whatever the database holds. PlanScope is empty for a plan that records
+	// no scope.
+	PlanScope     string
+	DatabaseScope string
 }
 
 func (e *StalePlanError) Error() string {
+	if !e.Rows && e.PlanScope != "" && e.DatabaseScope != "" && e.PlanScope != e.DatabaseScope {
+		return fmt.Sprintf(
+			"pre-planned migration is stale: the plan was computed for %s, and the target URL reaches %s "+
+				"(plan %s, database %s); apply the plan through a URL that reaches %s, or re-run `schema plan` "+
+				"through this one and review the fresh plan",
+			e.PlanScope, e.DatabaseScope, e.PlanFingerprint, e.DatabaseFingerprint, e.PlanScope)
+	}
 	if e.Rows {
 		return fmt.Sprintf(
 			"pre-planned migration is stale: the declared rows it reads no longer hold what the plan was computed "+
@@ -359,6 +379,7 @@ func PreparePlanFileReportingUndecided(
 		Exclude:          opts.Exclude,
 		Schemas:          scope.schemas,
 		SchemasBeyondURL: scope.schemasBeyondURL,
+		Scope:            new(planScopeOf(conn.Info())),
 		ManagedRows:      computation.rowSets,
 		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
@@ -882,10 +903,16 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 		return fmt.Errorf("fingerprint current schema: %w", err)
 	}
 	if fingerprint != plan.FromFingerprint {
-		return &StalePlanError{
+		stale := &StalePlanError{
 			PlanFingerprint:     plan.FromFingerprint,
 			DatabaseFingerprint: fingerprint,
 		}
+		if plan.Scope != nil {
+			dialect := conn.Info().Dialect
+			stale.PlanScope = plan.Scope.describe(dialect)
+			stale.DatabaseScope = planScopeOf(conn.Info()).describe(dialect)
+		}
+		return stale
 	}
 	rows, err := managedRowsFingerprint(ctx, conn, plan.ManagedRows)
 	if err != nil {
