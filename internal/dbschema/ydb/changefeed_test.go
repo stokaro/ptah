@@ -97,6 +97,10 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 	scanning := updates()
 	scanning.State = Ydb_Table.ChangefeedDescription_STATE_INITIAL_SCAN
 	scanning.InitialScanProgress = &Ydb_Table.ChangefeedDescription_InitialScanProgress{PartsTotal: 1}
+	// 25.1.4.7 reports the changefeed CREATE ASYNC REPLICATION adds to its
+	// source table this way right after the statement.
+	scanStarting := updates()
+	scanStarting.State = Ydb_Table.ChangefeedDescription_STATE_INITIAL_SCAN
 	disabled := updates()
 	disabled.State = Ydb_Table.ChangefeedDescription_STATE_DISABLED
 
@@ -137,6 +141,8 @@ func TestReader_Changefeed_HappyPath(t *testing.T) {
 			},
 		},
 		{name: "a changefeed still scanning the table", feed: scanning, topic: plainTopic(),
+			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", InitialScan: true}},
+		{name: "a changefeed scanning before its first progress", feed: scanStarting, topic: plainTopic(),
 			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", InitialScan: true}},
 		{name: "a disabled changefeed", feed: disabled, topic: plainTopic(),
 			want: ydbschema.ChangefeedSpec{Name: "feed", Mode: "UPDATES", Format: "JSON", Disabled: true}},
