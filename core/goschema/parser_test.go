@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/goschema"
 	"ptah.run/core/goschema/internal/parseutils"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/annotationmeta"
@@ -202,7 +203,10 @@ type User struct{}
 	c.Assert(database.Tables, qt.HasLen, 0)
 }
 
-func TestParseSource_HappyPath_IgnoresFileOnlyRLSOnField(t *testing.T) {
+// TestParseSource_FailurePath_RefusesFileOnlyRLSOnField refuses a policy
+// written on a field, where no RLS directive is read: skipped, the policy the
+// author wrote would not exist.
+func TestParseSource_FailurePath_RefusesFileOnlyRLSOnField(t *testing.T) {
 	c := qt.New(t)
 
 	database, err := goschema.ParseSource(rowSecurityOwners, "schema.go", `
@@ -215,9 +219,10 @@ type User struct {
 }
 `)
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(database.Tables, qt.HasLen, 1)
-	c.Assert(database.RLSPolicies, qt.HasLen, 0)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrMisplacedDirective)
+	c.Assert(err, qt.ErrorMatches, `annotation directive "//ptah:schema:rls:policy" on User\.ID at schema\.go:6 is not read on a struct field; `+
+		`write it in a comment of its own at file level or in a struct's doc comment`)
+	c.Assert(database.Tables, qt.HasLen, 0)
 }
 
 func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
