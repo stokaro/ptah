@@ -448,6 +448,17 @@ error: pre-planned migration is stale: the target database schema does not match
 
 Re-planning writes a different file, so the fresh plan needs a fresh approval.
 
+The plan records what its URL covered as `scope`: every schema of the database
+for a PostgreSQL URL without `search_path`, one schema for a URL that pins one,
+and on MySQL and MariaDB one database or the whole server. Applied through a URL
+that covers something else, the plan reads a different set of schemas, so the
+fingerprint differs even though nothing changed. The refusal then names both
+scopes instead:
+
+```text
+error: pre-planned migration is stale: the plan was computed for every schema of the database, and the target URL reaches schema "public" (plan sha256:c81456cf..., database sha256:dc76f43f...); apply the plan through a URL that reaches every schema of the database, or re-run `schema plan` through this one and review the fresh plan
+```
+
 ### The key file is missing or unreadable
 
 Key handling belongs to OpenSSH, and its failures reach you unchanged:
