@@ -386,6 +386,7 @@ func diffResolvedStates(
 	}
 	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
 	applyExtensionSupportCoverage(to, fromSide.selection, toSide.selection)
+	fromSide = withDocumentBaseline(fromState, fromSide, dialect)
 	// One empty side is how a create or a drop looks. A selection that matched
 	// neither side cannot answer the requested comparison, so fail instead of
 	// reporting a false synced result to CI.
@@ -980,6 +981,18 @@ func scopeDiffStates(
 	}
 	return scopeDiffState(ctx, fromState, supportScope, "--from schema", dialect, runtime),
 		scopeDiffState(ctx, toState, supportScope, "--to schema", dialect, runtime)
+}
+
+// withDocumentBaseline returns the --from side with what a server gives every
+// database it builds, when that side is a document: the current side stands
+// for the database a server builds from the document, default schema
+// included. See [goschematodb.WithDefaultSchemaBaseline]. A side read from a
+// server already holds it.
+func withDocumentBaseline(state atlassource.State, side scopedDiffState, dialect string) scopedDiffState {
+	if state.DB == nil {
+		side.database = goschematodb.WithDefaultSchemaBaseline(side.database, side.schema, dialect)
+	}
+	return side
 }
 
 // scopeDiffState projects one resolved comparison side without asking either
