@@ -51,6 +51,12 @@ func TestIndexRenamesFeature_HappyPath(t *testing.T) {
 	c.Assert(provider.ValidatePlanningRequest(d, request), qt.IsNil)
 	c.Assert(proto.Equal(before, request), qt.IsTrue)
 	c.Assert(provider.TwoWayFeatures(), qt.Contains, provider.IndexRenamesFeature)
+	// Where index names are scoped to the schema, an index subject names no
+	// parent table.
+	for _, effect := range renameStep(request).Metadata.Effects[1:] {
+		effect.Subject.Parent = nil
+	}
+	c.Assert(provider.ValidatePlanningRequest(d, request), qt.IsNil)
 	negotiated := provider.NegotiatedDescription(d, []string{provider.ObservedColumnsFeature, provider.ObservedIndexesFeature, provider.IndexRenamesFeature})
 	c.Assert(negotiated.Engines[0].Features, qt.Contains, provider.IndexRenamesFeature)
 }

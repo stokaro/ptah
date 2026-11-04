@@ -82,11 +82,13 @@ func validateRenamedParent(request *protocol.PlanFeaturesRequest, parent *protoc
 }
 
 // renamedIndexEffect reports an effect that takes action on the index name
-// of table.
+// of table. An index subject names its table as its parent where index names
+// are scoped to a table, and names none where they are scoped to the schema.
 func renamedIndexEffect(effect *protocol.PlanningEffect, action protocol.PlanningEffect_Action, table *protocol.ComparisonIdentity, name string) bool {
 	subject := effect.GetSubject()
+	parent := subject.GetParent().GetNormalized()
 	return effect.GetAction() == action && subject.GetKind() == "index" && subject.GetName().GetSource() == name &&
-		subject.GetParent().GetNormalized() == table.GetName().GetNormalized() &&
+		(parent == "" || parent == table.GetName().GetNormalized()) &&
 		subject.GetSchema().GetNormalized() == table.GetSchema().GetNormalized() &&
 		subject.GetDatabase().GetNormalized() == table.GetDatabase().GetNormalized()
 }
