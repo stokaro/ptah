@@ -3750,6 +3750,64 @@ message RunStatementRequest {
   // From 1 to 10,000: the rows of the first page. A page also stays within
   // the message limit.
   uint32 max_rows = 7;
+  // The arguments with the types their caller bound them at, in the order of
+  // arguments. Set instead of arguments, never beside it. Contract 25.15,
+  // under sessions.typed-arguments.
+  repeated StatementArgument typed_arguments = 8;
+}
+// StatementArgument is one statement argument and the type its caller bound
+// it at. Contract 25.15, under sessions.typed-arguments.
+message StatementArgument {
+  ArgumentType type = 1;
+  // The value of an argument that is not a list, in the case its scalar
+  // names. Null only when type.optional is set, or for UNTYPED. Unset for a
+  // list.
+  DataValue value = 2;
+  // The elements of a list, in order, each in the case the scalar names.
+  // Null only when type.optional is set. Empty for an empty list and for an
+  // argument that is not a list.
+  repeated DataValue elements = 3;
+}
+// ArgumentType is the type a caller bound an argument at: a scalar at its
+// width, whether the type admits null, and whether the argument is a list of
+// the scalar. Contract 25.15, under sessions.typed-arguments.
+message ArgumentType {
+  enum Scalar {
+    SCALAR_UNSPECIFIED = 0;
+    // A null of no type, such as Go's untyped nil. Never optional or a list;
+    // the value is null.
+    UNTYPED = 1;
+    // bool_value.
+    BOOL = 2;
+    // int64_value, within the width.
+    INT8 = 3;
+    INT16 = 4;
+    INT32 = 5;
+    INT64 = 6;
+    // uint64_value, within the width.
+    UINT8 = 7;
+    UINT16 = 8;
+    UINT32 = 9;
+    UINT64 = 10;
+    // double_value that a 32-bit float holds exactly.
+    FLOAT32 = 11;
+    // double_value.
+    FLOAT64 = 12;
+    // string_value.
+    STRING = 13;
+    // bytes_value.
+    BYTES = 14;
+    // timestamp_value.
+    TIMESTAMP = 15;
+    // interval_value.
+    INTERVAL = 16;
+  }
+  Scalar scalar = 1;
+  // The type admits null, such as a Go pointer or a sql.Null value. For a
+  // list, each element admits null.
+  bool optional = 2;
+  // The argument is a list of the scalar, such as a Go slice.
+  bool list = 3;
 }
 // StatementResult is what one statement did. A reply the host cannot read
 // leaves the outcome unknown, and the host never sends the statement again.
