@@ -142,7 +142,7 @@ func AllowsScope(directive Directive, scope Scope) bool {
 
 // MatchCommentDirective returns the directive matching a comment line.
 func (c Catalog) MatchCommentDirective(comment string) (Directive, bool) {
-	body := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
+	body := commentBody(comment)
 	for _, directive := range c.directivesByDescendingLength() {
 		if !strings.HasPrefix(body, directive.Name) {
 			continue
@@ -153,6 +153,33 @@ func (c Catalog) MatchCommentDirective(comment string) (Directive, bool) {
 		}
 	}
 	return Directive{}, false
+}
+
+// CommentDirectiveName returns the directive a comment line is written as,
+// such as "ptah:schema:field", whether or not any catalog declares it: the
+// first word of a line comment that starts with `ptah:` and a name. A comment
+// that does not is documentation, and reports false.
+//
+// It reads the line as [Catalog.MatchCommentDirective] reads it, so the two
+// agree on what a directive comment is: a line one of them matches the other
+// names.
+func CommentDirectiveName(comment string) (string, bool) {
+	trimmed := strings.TrimSpace(comment)
+	if !strings.HasPrefix(trimmed, "//") {
+		return "", false
+	}
+	name, _, _ := strings.Cut(commentBody(trimmed), " ")
+	name, _, _ = strings.Cut(name, "\t")
+	rest, ok := strings.CutPrefix(name, "ptah:")
+	if !ok || rest == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// commentBody is a comment line without its marker and surrounding space.
+func commentBody(comment string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
 }
 
 // KnownAttributes returns a set containing every declared attribute name.

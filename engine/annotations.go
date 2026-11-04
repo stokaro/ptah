@@ -39,6 +39,9 @@ func (r *Runtime) registerAnnotations(providers []Provider) error {
 	if r.annotations, err = set.WithCoverageVocabulary(r.vocabulary); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRegistration, err)
 	}
+	// The runtime's providers are every owner its parses read, so a
+	// directive none of them declares is a misspelling, not another owner's.
+	r.annotations = r.annotations.Exhaustive()
 	return nil
 }
 
@@ -87,6 +90,8 @@ func (r *Runtime) CoverageVocabulary() coverage.Vocabulary {
 // Annotations returns the Go annotation extensions of the runtime's providers
 // as one frozen set. A runtime whose providers contribute none returns a
 // selected set without owners, which parses the frontend's own directives.
+// The set is [annotation.Set.Exhaustive]: a parse with it refuses a //ptah:
+// directive that neither the frontend nor a provider of the runtime declares.
 func (r *Runtime) Annotations() annotation.Set {
 	return r.annotations
 }
