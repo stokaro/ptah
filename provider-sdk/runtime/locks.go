@@ -71,8 +71,9 @@ func (c *Client) lockCall(ctx context.Context, request *protocol.LockRequest, op
 		return nil, fmt.Errorf("%w: unknown lock operation", provider.ErrProtocol)
 	}
 	if err != nil {
-		return nil, errors.Join(&provider.LockError{}, remoteError(call, "lock operation", err))
+		return nil, errors.Join(&provider.LockError{}, remoteError(call, c.description, "lock operation", err))
 	}
+	result = negotiatedReceipt(c.description, result)
 	if err := provider.ValidateLockResult(operation, request, result); err != nil {
 		return nil, errors.Join(err, &provider.LockError{})
 	}
@@ -116,6 +117,7 @@ func (s *serverAdapter) lockCall(ctx context.Context, request *protocol.LockRequ
 		return nil, status.Error(codes.InvalidArgument, "unknown lock operation")
 	}
 	if err == nil {
+		result = negotiatedReceipt(s.negotiated(), result)
 		if failure := provider.ValidateLockResult(operation, request, result); failure != nil {
 			err = status.Error(codes.Internal, "provider returned an invalid lock receipt")
 		}

@@ -68,6 +68,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0056](0056-a-comparison-service-counts-the-objects-it-compares.md) | A comparison service counts the objects it compares | Proposed |
 | [0057](0057-a-provider-spells-a-declared-index-kind-as-it-reports-a-held-one.md) | A provider spells a declared index's kind as it reports a held one | Proposed |
 | [0058](0058-a-statement-argument-carries-the-type-its-caller-bound-it-at.md) | A statement argument carries the type its caller bound it at | Proposed |
+| [0059](0059-a-provider-says-why-a-call-failed-in-text-it-wrote.md) | A provider says why a call failed, in text it wrote | Proposed |
 
 ## Writing one
 

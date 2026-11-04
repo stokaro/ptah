@@ -39,7 +39,7 @@ func (c *Client) BeginTransaction(ctx context.Context, request *protocol.BeginTr
 	defer cancel()
 	result, err := c.rpc.BeginTransaction(call, proto.CloneOf(request))
 	if err != nil {
-		err = remoteError(call, "begin transaction", err)
+		err = remoteError(call, c.description, "begin transaction", err)
 	} else {
 		err = provider.ValidateTransaction(request, result)
 	}
@@ -74,7 +74,7 @@ func (c *Client) FinishTransaction(ctx context.Context, request *protocol.Finish
 	defer cancel()
 	result, err := c.rpc.FinishTransaction(call, proto.CloneOf(request))
 	if err != nil {
-		return nil, errors.Join(&provider.TransactionError{}, remoteError(call, "finish transaction", err))
+		return nil, errors.Join(&provider.TransactionError{}, remoteError(call, c.description, "finish transaction", err))
 	}
 	if err := provider.ValidateTransactionResult(result); err != nil {
 		return nil, errors.Join(err, &provider.TransactionError{})

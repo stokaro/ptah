@@ -22,8 +22,6 @@ import (
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
 	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -114,7 +112,7 @@ func Start(ctx context.Context, options Options) (*Client, error) {
 		HostContract: provider.Contract(), HostFeatures: options.HostFeatures})
 	if err != nil {
 		client.Close()
-		return nil, remoteError(startup, "negotiate", err)
+		return nil, remoteError(startup, nil, "negotiate", err)
 	}
 	description, err = negotiate(description, options)
 	if err != nil {
@@ -178,7 +176,7 @@ func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*prot
 	defer cancel()
 	result, err := c.rpc.Open(call, request)
 	if err != nil {
-		return nil, remoteError(call, "open session", err)
+		return nil, remoteError(call, c.description, "open session", err)
 	}
 	if err := provider.ValidateSessionContext(c.description, request.GetEngine(), expected, result); err != nil {
 		if result.GetId() != "" {
@@ -195,7 +193,7 @@ func (c *Client) CloseSession(ctx context.Context, id string) error {
 	defer cancel()
 	_, err := c.rpc.Close(call, &protocol.CloseRequest{SessionId: id})
 	if err != nil {
-		return remoteError(call, "close session", err)
+		return remoteError(call, c.description, "close session", err)
 	}
 	return nil
 }
@@ -211,7 +209,7 @@ func (c *Client) Inspect(ctx context.Context, request *protocol.InspectRequest) 
 	defer cancel()
 	result, err := c.rpc.Inspect(call, proto.CloneOf(request))
 	if err != nil {
-		return nil, remoteError(call, "inspect", err)
+		return nil, remoteError(call, c.description, "inspect", err)
 	}
 	if err := call.Err(); err != nil {
 		return nil, err
@@ -258,7 +256,7 @@ func (c *Client) Execute(ctx context.Context, request *protocol.ExecuteRequest) 
 	defer cancel()
 	result, err := c.rpc.Execute(call, request)
 	if err != nil {
-		return nil, errors.Join(&provider.ExecutionError{Outcome: protocol.Execution_UNKNOWN}, remoteError(call, "execute", err))
+		return nil, errors.Join(&provider.ExecutionError{Outcome: protocol.Execution_UNKNOWN}, remoteError(call, c.description, "execute", err))
 	}
 	if err := provider.ValidateExecutionAbort(c.description, request, result); err != nil {
 		// The flag invites a retry, so a reply that misuses it is exposed to
@@ -283,21 +281,6 @@ func executeTimeout(request *protocol.ExecuteRequest) time.Duration {
 		return math.MaxInt64
 	}
 	return CallTimeout + limit*units
-}
-
-func remoteError(ctx context.Context, operation string, err error) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	code := status.Code(err)
-	if code == codes.Canceled {
-		return context.Canceled
-	}
-	if code == codes.DeadlineExceeded {
-		return context.DeadlineExceeded
-	}
-	// Raw gRPC messages are provider-authored and can contain connection secrets.
-	return fmt.Errorf("provider %s failed (%s)", operation, code)
 }
 
 func validateOptions(options Options) ([]byte, error) {
@@ -330,7 +313,7 @@ func (c *Client) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQLReq
 	defer cancel()
 	result, err := c.rpc.AnalyzeSQL(call, request)
 	if err != nil {
-		return nil, remoteError(call, "SQL analysis", err)
+		return nil, remoteError(call, c.description, "SQL analysis", err)
 	}
 	if err := provider.ValidateSQLAnalysis(request, result); err != nil {
 		return nil, err

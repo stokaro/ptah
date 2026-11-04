@@ -33,9 +33,9 @@ func (s *serverAdapter) requireHistory(scope *protocol.HistoryScope) error {
 	return nil
 }
 
-func historyCallResult(ctx context.Context, scope *protocol.HistoryScope, requestID string, result *protocol.HistoryResult, err error) (*protocol.HistoryResult, error) {
+func historyCallResult(ctx context.Context, description *protocol.Description, scope *protocol.HistoryScope, requestID string, result *protocol.HistoryResult, err error) (*protocol.HistoryResult, error) {
 	if err != nil {
-		return nil, errors.Join(&provider.HistoryError{}, remoteError(ctx, "write history", err))
+		return nil, errors.Join(&provider.HistoryError{}, remoteError(ctx, description, "write history", err))
 	}
 	if err := provider.ValidateHistoryResult(scope, requestID, result); err != nil {
 		return nil, errors.Join(err, &provider.HistoryError{})
@@ -71,7 +71,7 @@ func (c *Client) ReadHistory(ctx context.Context, request *protocol.ReadHistoryR
 	defer cancel()
 	result, err := c.rpc.ReadHistory(call, proto.CloneOf(request))
 	if err != nil {
-		return nil, remoteError(call, "read history", err)
+		return nil, remoteError(call, c.description, "read history", err)
 	}
 	if err := provider.ValidateHistorySnapshot(request, result); err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (c *Client) PrepareHistory(ctx context.Context, request *protocol.PrepareHi
 	call, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 	result, err := c.rpc.PrepareHistory(call, proto.CloneOf(request))
-	return historyCallResult(call, request.GetScope(), request.GetRequestId(), result, err)
+	return historyCallResult(call, c.description, request.GetScope(), request.GetRequestId(), result, err)
 }
 
 func (s *serverAdapter) PrepareHistory(ctx context.Context, request *protocol.PrepareHistoryRequest) (*protocol.HistoryResult, error) {
@@ -150,7 +150,7 @@ func (c *Client) MutateHistory(ctx context.Context, request *protocol.MutateHist
 	call, cancel := context.WithTimeout(ctx, CallTimeout)
 	defer cancel()
 	result, err := c.rpc.MutateHistory(call, proto.CloneOf(request))
-	return historyCallResult(call, request.GetScope(), request.GetRequestId(), result, err)
+	return historyCallResult(call, c.description, request.GetScope(), request.GetRequestId(), result, err)
 }
 
 func (s *serverAdapter) MutateHistory(ctx context.Context, request *protocol.MutateHistoryRequest) (*protocol.HistoryResult, error) {
