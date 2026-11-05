@@ -464,8 +464,9 @@ the provider keeps without running it is best effort and carries the reason. The
 host refuses a description that claims testing nothing runs.
 `ptah providers check` prints the lines a provider declares, and
 `ptah db capabilities` certifies a server against them: the line its version
-names gives the preset its label and the support level, and the line's facts
-are the baseline the server's own answers are compared with.
+names gives the preset its name, which is the line's label, and the support
+level, and the line's facts are the baseline the server's own answers are
+compared with. The release line prints as the line alone.
 
 [Issue #4204](https://github.com/stokaro/ptah/issues/4204)
 owns official provider extraction, installation, and the eventual stable contract.

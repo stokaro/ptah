@@ -31,8 +31,9 @@ func supported(profile serverprofile.Profile, key capability.Capability) bool {
 
 // A server of an engine a provider serves is profiled on the lines the
 // provider declares: the line its version names supplies the facts, the
-// preset's label and the certification; a version newer than every line is
-// planned with the newest and stays best-effort.
+// preset's name and the certification, which repeats no label, as a built-in
+// line's preset name is not its certification's; a version newer than every
+// line is planned with the newest and stays best-effort.
 func TestWithDeclaredLines_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(capability.RegisterReleaseLines(declaredFacts, "profiled-engine"), qt.IsNil)
@@ -44,11 +45,10 @@ func TestWithDeclaredLines_HappyPath(t *testing.T) {
 	}{
 		{name: "a certified line", banner: "26.2.1.14", returning: true,
 			preset: serverprofile.Preset{Name: "Profiled 26.2", Dialect: "profiled-engine", Source: serverprofile.SourceVersionLadder},
-			want:   serverprofile.Certification{Level: capability.Certified, Line: "26.2", Label: "Profiled 26.2", Reason: "The current release."}},
+			want:   serverprofile.Certification{Level: capability.Certified, Line: "26.2", Reason: "The current release."}},
 		{name: "a line without a note", banner: "25.1.4.7",
 			preset: serverprofile.Preset{Name: "Profiled 25.1", Dialect: "profiled-engine", Source: serverprofile.SourceVersionLadder},
-			want: serverprofile.Certification{Level: capability.BestEffort, Line: "25.1", Label: "Profiled 25.1",
-				Reason: capability.BestEffort.Doc()}},
+			want:   serverprofile.Certification{Level: capability.BestEffort, Line: "25.1", Reason: capability.BestEffort.Doc()}},
 		{name: "a newer release", banner: "26.3.1.18", returning: true,
 			preset: serverprofile.Preset{Dialect: "profiled-engine", Source: serverprofile.SourceSaturated,
 				Note: "profiled-engine 26.3.1.18 is newer than the newest measured release line 26.2; capabilities were planned as 26.2"},

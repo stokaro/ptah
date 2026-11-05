@@ -394,8 +394,11 @@ type DeclaredLine struct {
 // executable provider serves, certified against the release lines the
 // provider declares, as [For] certifies a built-in dialect against the lines
 // this repository declares. The line the server's version names gives the
-// preset its name, the line's label, and the certification its level, label
-// and reason: the line's note, or the level's meaning when it has none. A
+// preset its name, the line's label, and the certification its level and
+// reason: the line's note, or the level's meaning when it has none. The label
+// names the preset, as a built-in line's preset name does, so the
+// certification carries no label of its own and the release line prints as
+// the line alone. A
 // version that names no declared line, such as one newer than all of them,
 // keeps the best-effort certification For gave it.
 //
@@ -417,7 +420,7 @@ func (p Profile) WithDeclaredLines(lines []DeclaredLine) Profile {
 		if reason == "" {
 			reason = line.Support.Doc()
 		}
-		p.Certification = Certification{Level: line.Support, Line: line.Line, Label: line.Label, Reason: reason}
+		p.Certification = Certification{Level: line.Support, Line: line.Line, Reason: reason}
 		return p
 	}
 	return p
