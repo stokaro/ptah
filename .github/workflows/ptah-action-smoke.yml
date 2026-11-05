@@ -65,7 +65,7 @@ jobs:
     # go-integration-tests.yml.
     services:
       ydb:
-        image: ydbplatform/local-ydb:26.2.1.14
+        image: ydbplatform/local-ydb:26.3.1.20
         env:
           YDB_USE_IN_MEMORY_PDISKS: "true"
         options: >-
