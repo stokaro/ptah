@@ -114,7 +114,9 @@ type ModifyColumnOperation struct {
 	HasChanged bool
 	// OmitNullBackfill asks for SET NOT NULL without filling the column's
 	// NULL rows from its declared default first, so the statement fails on a
-	// NULL row as it does when the column declares no default.
+	// NULL row as it does when the column declares no default. It leaves out the
+	// statement that moves a new identity's sequence past the column's values too:
+	// both write more than the statements the change asked for.
 	//
 	// It is read only by a renderer that fills those rows, which the
 	// PostgreSQL family does; the zero value keeps the fill. ClickHouse does

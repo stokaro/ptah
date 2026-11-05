@@ -2122,7 +2122,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 		r.writeColumnDefaultChange(tableName, column)
 	}
 	if changed.Identity && !identityLeaves {
-		r.writeColumnIdentityChange(tableName, column, op.PreviousIdentity)
+		r.writeColumnIdentityChange(tableName, op)
 	}
 }
 
@@ -2131,9 +2131,10 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 // next row would collide with one the table holds, so the statement after it moves
 // the sequence past them. A table with no row at or past the start has nothing to
 // collide with, and an identity that counts down starts below the values it holds.
-func (r *Renderer) writeColumnIdentityChange(tableName string, column *ast.ColumnNode, previous string) {
+func (r *Renderer) writeColumnIdentityChange(tableName string, op *ast.ModifyColumnOperation) {
+	column := op.Column
 	table, name := r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name)
-	if previous != "" {
+	if op.PreviousIdentity != "" {
 		generation, err := renderIdentityGeneration(column.IdentityGeneration)
 		if err != nil {
 			r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
@@ -2148,7 +2149,7 @@ func (r *Renderer) writeColumnIdentityChange(tableName string, column *ast.Colum
 		return
 	}
 	r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s ADD %s;", table, name, identity)
-	if strings.HasPrefix(strings.TrimSpace(column.IdentityIncrement), "-") {
+	if op.OmitNullBackfill || strings.HasPrefix(strings.TrimSpace(column.IdentityIncrement), "-") {
 		return
 	}
 	start := strings.TrimSpace(column.IdentityStart)
