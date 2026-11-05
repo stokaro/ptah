@@ -33,7 +33,7 @@ type statement struct {
 
 // destructive are the statements that take state away, which the analyzer
 // says so of.
-var destructive = []string{"drop_view", "drop_role", "revoke", "remove_member"}
+var destructive = []string{"drop_view", "drop_materialized_view", "drop_role", "revoke", "remove_member"}
 
 // Render writes each common object change as one statement and leaves every
 // other change to the base fixture. The units are text in every form.
@@ -72,11 +72,17 @@ func writeStatement(change *protocol.CommonObjectChange) (string, error) {
 	case *protocol.CommonObjectChange_CreateView:
 		view := operation.CreateView.GetView()
 		written = statement{Op: "create_view", Name: view.GetName(), Body: view.GetBody(), Text: view.GetComment()}
-		if operation.CreateView.GetReplace() {
+		switch {
+		case view.GetMaterialized():
+			written.Op = "create_materialized_view"
+		case operation.CreateView.GetReplace():
 			written.Op = "replace_view"
 		}
 	case *protocol.CommonObjectChange_DropView:
 		written = statement{Op: "drop_view", Name: operation.DropView.GetName()}
+		if operation.DropView.GetKind() == "materialized_view" {
+			written.Op = "drop_materialized_view"
+		}
 	case *protocol.CommonObjectChange_CreateRole:
 		role := operation.CreateRole.GetRole()
 		if operation.CreateRole.GetPassword() != "" || role.GetPasswordDeclared() || role.GetSuperuser() || role.GetCreateDb() || role.GetCreateRole() || role.GetReplication() {
@@ -262,6 +268,21 @@ func apply(ctx context.Context, access backend.Access, read statement) error {
 		// A view's grants go with it, as an engine that keeps them in the
 		// view's own access list drops them; a replacement in place keeps
 		// them.
+		held.Grants = slices.DeleteFunc(held.Grants, func(grant stateGrant) bool { return grant.Kind == "table" && grant.Name == read.Name })
+	case "create_materialized_view":
+		if held.matView(read.Name) >= 0 {
+			return fmt.Errorf("materialized view %s exists", read.Name)
+		}
+		held.MatViews = append(held.MatViews, stateView{Name: read.Name, Body: read.Body})
+		held.setComment(stateComment{Kind: "materialized_view", Name: read.Name, Text: read.Text})
+	case "drop_materialized_view":
+		i := held.matView(read.Name)
+		if i < 0 {
+			return fmt.Errorf("no materialized view %s", read.Name)
+		}
+		held.MatViews = slices.Delete(held.MatViews, i, i+1)
+		held.setComment(stateComment{Kind: "materialized_view", Name: read.Name})
+		// A materialized view's grants go with it, as a view's do.
 		held.Grants = slices.DeleteFunc(held.Grants, func(grant stateGrant) bool { return grant.Kind == "table" && grant.Name == read.Name })
 	case "create_role":
 		if held.role(read.Name) >= 0 {

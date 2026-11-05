@@ -22,7 +22,7 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 		return snapshot, err
 	}
 	observed := &protocol.ObservedCommonObjects{}
-	for _, kind := range commonKinds {
+	for _, kind := range commonKinds() {
 		observed.Coverage = append(observed.Coverage, &protocol.CommonObjectCoverage{Kind: kind, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
 	}
 	err = p.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
@@ -35,6 +35,10 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 			return err
 		}
 		observed.Views = views
+		for _, view := range held.MatViews {
+			observed.Views = append(observed.Views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: "fixture", Kind: "materialized_view", Name: view.Name},
+				Body: foldSpaces(view.Body)})
+		}
 		for _, role := range held.Roles {
 			observed.Roles = append(observed.Roles, &protocol.ObservedRole{Name: role.Name, Login: role.Login, Group: role.Group,
 				MemberOf: slices.Clone(role.MemberOf), Password: protocol.ObservedRole_PASSWORD_NONE})
@@ -111,6 +115,10 @@ func commentedObject(snapshot *protocol.Schema, views []*protocol.ObservedView, 
 	case "view":
 		if slices.ContainsFunc(views, func(view *protocol.ObservedView) bool { return view.GetIdentity().GetName() == comment.Name }) {
 			return &protocol.Reference{Engine: "fixture", Kind: "view", Name: comment.Name}
+		}
+	case "materialized_view":
+		if held.matView(comment.Name) >= 0 {
+			return &protocol.Reference{Engine: "fixture", Kind: "materialized_view", Name: comment.Name}
 		}
 	case "role":
 		if held.role(comment.Name) >= 0 {
