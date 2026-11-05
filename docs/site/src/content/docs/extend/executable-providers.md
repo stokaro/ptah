@@ -926,6 +926,14 @@ provider, as the apply runs the target's. A plan whose operations are not the
 target's, one by one, refuses the apply: the rehearsal would pass on changes
 the apply does not make. `ptah-compat schema apply` rehearses the same way.
 
+`ptah migrations generate` writes the reverse migration of a provider's change
+from the provider's own reversal of it. A provider that lists `models.reverse`
+undoes each change its comparison returned, predicts what the forward change
+leaves, and says how the reverse restores the prior definition and what it
+cannot recover; the down file carries both as comments. Without the feature, a
+plan that holds such a change writes no migration, and the error names the
+change kind that has no reversal.
+
 With `units.sensitive-inputs`, the provider declares environment variable names
 for exact execution units before approval. Native and compatibility schema
 plans retain these references, and JSON plan digests cover them. Input values

@@ -32,13 +32,7 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 	if err != nil {
 		return nil, err
 	}
-	if err := validateInspectedColumns(description, engine, snapshot); err != nil {
-		return nil, err
-	}
-	if err := validateInspectedPrimaryKeys(description, engine, snapshot); err != nil {
-		return nil, err
-	}
-	if err := validateInspectedIndexes(description, engine, snapshot); err != nil {
+	if err := validateInspectedTables(description, engine, snapshot); err != nil {
 		return nil, err
 	}
 	if err := validateInspectedPlanningContext(description, engine, request, snapshot); err != nil {
@@ -80,6 +74,20 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 		}
 	}
 	return result, nil
+}
+
+// validateInspectedTables checks what a snapshot says about its tables beyond
+// their facets: the common columns, primary keys and indexes it observed, and
+// the tables it found and does not describe.
+func validateInspectedTables(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
+	for _, check := range []func(*protocol.Description, *protocol.Engine, *protocol.Schema) error{
+		validateInspectedColumns, validateInspectedPrimaryKeys, validateInspectedIndexes, validateUnreadTables,
+	} {
+		if err := check(description, engine, snapshot); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func inspectionValues(snapshot *protocol.Schema) ([]*protocol.Envelope, error) {

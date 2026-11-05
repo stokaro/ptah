@@ -219,6 +219,9 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err != nil {
 		return nil, fmt.Errorf("reverse feature changes: %w", err)
 	}
+	if err := reverseTablePreparation(ctx, opts.Diff, reverseDiff, prior, dialect, opts.Runtime); err != nil {
+		return nil, fmt.Errorf("reverse table preparation: %w", err)
+	}
 
 	forwardOpts := planext.Options{
 		Capabilities:            caps,

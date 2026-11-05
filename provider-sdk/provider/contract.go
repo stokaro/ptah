@@ -48,7 +48,7 @@ func TwoWayFeatures() []string {
 		EncodeGroupsFeature, CommonAccessFeature, SchemaDeclarationsFeature, SourceLimitsFeature, PlanningLifecycleFeature, SensitiveInputsFeature, ColumnsFeature,
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
-		IndexRenamesFeature, ReverseChangesFeature, DefaultCapabilitiesFeature}
+		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DefaultCapabilitiesFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
