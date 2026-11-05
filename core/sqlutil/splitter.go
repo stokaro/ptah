@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lexerext"
 	"ptah.run/internal/sqlbatch"
 	"ptah.run/internal/sqlcompound"
 )
@@ -24,11 +25,25 @@ func StripComments(sql string) string {
 // whose lexical meaning depends on dialect, including SQL Server bracketed
 // identifiers containing comment markers, and a YDB translation setting such
 // as a leading `--!ansi_lexer`, which changes how the server reads the text
-// after it. The dialect is folded through [platform.NormalizeDialect]; a blank
-// or unrecognized one is not an error and strips exactly as [StripComments]
-// does.
+// after it. The dialect is folded through [platform.NormalizeDialect], and
+// the text of an engine an executable provider serves is read with the scanner
+// its provider registered; a blank or unrecognized one is not an error and
+// strips exactly as [StripComments] does.
 func StripCommentsForDialect(sql, dialect string) string {
-	return stripComments(sql, platform.NormalizeDialect(dialect))
+	return stripComments(sql, lexicalDialect(dialect))
+}
+
+// lexicalDialect is the name the scan of a dialect's text is read under: the
+// normalized name of a dialect a descriptor describes, and otherwise the
+// trimmed lower-case name, so the text of an engine an executable provider
+// serves is read with the scanner its provider registered under that name
+// (internal/lexerext). A name nothing registered reads as a blank dialect
+// does: every rule below that consults a descriptor finds none.
+func lexicalDialect(dialect string) string {
+	if normalized := platform.NormalizeDialect(dialect); normalized != "" {
+		return normalized
+	}
+	return strings.ToLower(strings.TrimSpace(dialect))
 }
 
 func stripComments(sql, dialect string) string {
@@ -78,8 +93,10 @@ func SplitSQLStatements(sql string) []string {
 // SplitSQLStatementsForDialect splits SQL using dialect-specific client
 // statement boundaries where the generic splitter would be too aggressive, or
 // not aggressive enough. The dialect is folded through
-// [platform.NormalizeDialect]; a blank or unrecognized dialect degrades to the
-// generic scanning of [SplitSQLStatements] without error.
+// [platform.NormalizeDialect], and the text of an engine an executable
+// provider serves is read with the scanner its provider registered (see
+// internal/lexerext); a blank or unrecognized dialect degrades to the generic
+// scanning of [SplitSQLStatements] without error.
 //
 // The decisions a caller can see include these. SQL Server scripts are
 // additionally split on the GO batch separator: a GO alone on its line ends the
@@ -93,16 +110,18 @@ func SplitSQLStatements(sql string) []string {
 // stays part of the returned statement instead of being dropped like an
 // ordinary terminator.
 //
-// YDB text is read as YQL: both quote styles are string literals with
-// backslash escapes, and a DEFINE ACTION or DEFINE SUBQUERY body, a DO BEGIN
-// block and a lambda body keep their semicolons. YQL has no client delimiter,
-// so DELIMITER and `-- atlas:delimiter` lines are not honored there: the text
-// is split as written, and the server refuses a terminator it does not know.
-// YQL's named expressions and actions belong to the query that defines them,
-// so a statement that uses one defined by an earlier statement runs only where
-// the statements are sent as one query.
+// A provider's scanner decides where the engine's strings end and which
+// semicolons end a statement. The YDB provider's reads YQL: both quote styles
+// are string literals with backslash escapes, and a DEFINE ACTION or DEFINE
+// SUBQUERY body, a DO BEGIN block and a lambda body keep their semicolons.
+// Such an engine has no client delimiter, so DELIMITER and
+// `-- atlas:delimiter` lines are not honored there: the text is split as
+// written, and the server refuses a terminator it does not know. YQL's named
+// expressions and actions belong to the query that defines them, so a
+// statement that uses one defined by an earlier statement runs only where the
+// statements are sent as one query.
 func SplitSQLStatementsForDialect(sql, dialect string) []string {
-	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
+	return splitSQLStatements(sql, lexicalDialect(dialect))
 }
 
 func splitSQLStatements(sql, dialect string) []string {
@@ -191,13 +210,16 @@ func splitSQLStatements(sql, dialect string) []string {
 
 // normalizeClientDelimitersFor honors client delimiter directives unless the
 // dialect's descriptor says its scripts carry none
-// (descriptor.Scripts.ClientDelimiters). The rewriter reads strings and
-// comments by the rules most dialects share, so on YQL it would rewrite a
-// delimiter inside an @@...@@ literal and stop at a # it reads as a comment;
-// and no YDB client writes a delimiter directive, so there is nothing to
-// honor. A blank or unknown dialect honors them.
+// (descriptor.Scripts.ClientDelimiters), or the dialect is an engine an
+// executable provider serves whose scanner its provider registered. The
+// rewriter reads strings and comments by the rules most dialects share, so on
+// YQL it would rewrite a delimiter inside an @@...@@ literal and stop at a #
+// it reads as a comment; such an engine's text is read by its provider's
+// rules or not at all, and no YDB client writes a delimiter directive. A blank
+// or unknown dialect honors them.
 func normalizeClientDelimitersFor(sql, dialect string) string {
-	if described, ok := platform.Lookup(dialect); ok && !described.Scripts.ClientDelimiters {
+	described, ok := platform.Lookup(dialect)
+	if ok && !described.Scripts.ClientDelimiters || !ok && lexerext.Provided(dialect) != nil {
 		return sql
 	}
 	return NormalizeClientDelimiters(sql)
