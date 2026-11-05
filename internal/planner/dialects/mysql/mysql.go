@@ -454,6 +454,7 @@ func (p *Planner) modifyExistingColumns(
 				continue
 			}
 		}
+		givesUpKey := keyrelease.GivesUpAutoIncrementKey(colDiff)
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange && !gainsAutoIncrementKey(colDiff) &&
 			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName, semantics) {
@@ -541,6 +542,9 @@ func (p *Planner) modifyExistingColumns(
 		if p.targetDialect() == platform.SQLServer {
 			result = append(result, sqlServerColumnChange(tableDiff.TableName, modify)...)
 			continue
+		}
+		if givesUpKey {
+			result = append(result, p.keyAwayFromAutoIncrement(tableDiff.TableName, field, diff)...)
 		}
 		result = append(result, &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{modify}})
 	}
@@ -706,6 +710,24 @@ func primaryKeyColumnChangeOwnedByTableConstraint(
 		}
 	}
 	return false
+}
+
+// keyAwayFromAutoIncrement writes what has to run ahead of the MODIFY COLUMN of a column
+// that gives up AUTO_INCREMENT and the key at once: the column NOT NULL with no
+// AUTO_INCREMENT, then the key's drop; see [keyrelease.PrimaryKeysBehindAutoIncrement].
+func (p *Planner) keyAwayFromAutoIncrement(table string, field schemamodel.Field, diff *difftypes.SchemaDiff) []ast.Node {
+	field.Nullable = false
+	result := []ast.Node{&ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
+		&ast.ModifyColumnOperation{Column: modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())},
+	}}}
+	for _, info := range keyrelease.PrimaryKeysBehindAutoIncrement(diff, p.targetDialect()).Constraints {
+		if objectlookup.Same(table, info.TableName, diff.EffectiveIdentifierSemantics(p.targetDialect())) {
+			result = append(result, &ast.AlterTableNode{Name: table, Operations: []ast.AlterOperation{
+				&ast.DropConstraintOperation{ConstraintName: info.Name, PrimaryKey: true},
+			}})
+		}
+	}
+	return result
 }
 
 // gainsAutoIncrementKey reports a column that becomes AUTO_INCREMENT and the key in
@@ -1634,6 +1656,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	// suppresses any removed-only FK already dropped at step 4, and the keys
 	// DroppedWithColumns finds a key that went with its column at step 4.7.
 	maps.Copy(alreadyDropped, released.ConstraintSet())
+	maps.Copy(alreadyDropped, keyrelease.PrimaryKeysBehindAutoIncrement(diff, p.targetDialect()).ConstraintSet())
 	result = p.removeConstraints(result, diff, alreadyDropped)
 
 	// 6.6. Remove view-like objects before dependent tables. Triggers were
