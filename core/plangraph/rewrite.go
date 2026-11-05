@@ -72,7 +72,7 @@ func redirectContributions[T any](steps []Step[T], edges []Dependency, redirect 
 	}
 	for _, edge := range edges {
 		if edge.Before == edge.After {
-			return nil, fmt.Errorf("%w: a source step depends on itself", ErrCycle)
+			return nil, fmt.Errorf("%w: %s depends on itself", ErrCycle, stepName(edge.Before))
 		}
 		before, after := edge.Before, edge.After
 		if replacement, found := redirect[before]; found {

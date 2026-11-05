@@ -2,6 +2,7 @@ package plangraph_test
 
 import (
 	"context"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -197,4 +198,77 @@ func TestSchedulePropagatesCancellation(t *testing.T) {
 	plan, err := plangraph.Schedule[string](ctx)
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(plan, qt.DeepEquals, plangraph.Plan[string]{})
+}
+
+// cycleFixture is a host sequence and a provider step that close a cycle: the
+// provider step runs after the host's second step and before its first. The
+// host step "prefix" runs before the cycle and "after" waits for it, so
+// neither is part of it, and "after" sorts before every step of the cycle.
+func cycleFixture() (host, provider plangraph.Contribution[string]) {
+	providerStep := plangraph.StepID{Owner: "example.org/provider", Name: "table/items"}
+	host = plangraph.Contribution[string]{Owner: owner, Steps: []plangraph.Step[string]{
+		{ID: id("prefix")}, operation("common/000001", plangraph.Drop), {ID: id("common/000002")}, {ID: id("after")},
+	}, Dependencies: []plangraph.Dependency{
+		edge("prefix", "common/000001"), edge("common/000001", "common/000002"), edge("common/000002", "after"),
+		{Before: providerStep, After: id("common/000001")},
+	}}
+	provider = plangraph.Contribution[string]{Owner: providerStep.Owner, Steps: []plangraph.Step[string]{{ID: providerStep}},
+		Dependencies: []plangraph.Dependency{{Before: id("common/000002"), After: providerStep}}}
+	return host, provider
+}
+
+func TestScheduleNamesTheStepsOfACycle(t *testing.T) {
+	host, provider := cycleFixture()
+	cases := []struct {
+		name          string
+		contributions []plangraph.Contribution[string]
+		want          string
+	}{
+		{
+			name:          "host and provider steps",
+			contributions: []plangraph.Contribution[string]{host, provider},
+			want: `plan dependency cycle: "example.org/common"/"common/000001" (drop table public.items) -> ` +
+				`"example.org/common"/"common/000002" -> "example.org/provider"/"table/items" -> ` +
+				`"example.org/common"/"common/000001" (drop table public.items)`,
+		},
+		{
+			name:          "contribution order",
+			contributions: []plangraph.Contribution[string]{provider, host},
+			want: `plan dependency cycle: "example.org/common"/"common/000001" (drop table public.items) -> ` +
+				`"example.org/common"/"common/000002" -> "example.org/provider"/"table/items" -> ` +
+				`"example.org/common"/"common/000001" (drop table public.items)`,
+		},
+		{
+			name: "self dependency",
+			contributions: []plangraph.Contribution[string]{{Owner: owner, Steps: []plangraph.Step[string]{{ID: id("a")}},
+				Dependencies: []plangraph.Dependency{edge("a", "a")}}},
+			want: `plan dependency cycle: "example.org/common"/"a" -> "example.org/common"/"a"`,
+		},
+		{
+			// "a" waits for the cycle of "d" and "e" and leads into the cycle
+			// of "b" and "c", which the walk from "a" reaches at "c".
+			name: "cycle reached from a step between two cycles",
+			contributions: []plangraph.Contribution[string]{{Owner: owner,
+				Steps: []plangraph.Step[string]{{ID: id("a")}, {ID: id("b")}, {ID: id("c")}, {ID: id("d")}, {ID: id("e")}},
+				Dependencies: []plangraph.Dependency{
+					edge("d", "e"), edge("e", "d"), edge("e", "a"), edge("a", "c"), edge("c", "b"), edge("b", "c"),
+				}}},
+			want: `plan dependency cycle: "example.org/common"/"b" -> "example.org/common"/"c" -> "example.org/common"/"b"`,
+		},
+		{
+			name: "two separate cycles",
+			contributions: []plangraph.Contribution[string]{{Owner: owner, Steps: []plangraph.Step[string]{{ID: id("a")}, {ID: id("b")}, {ID: id("c")}, {ID: id("d")}},
+				Dependencies: []plangraph.Dependency{edge("d", "c"), edge("c", "d"), edge("b", "a"), edge("a", "b")}}},
+			want: `plan dependency cycle: "example.org/common"/"a" -> "example.org/common"/"b" -> "example.org/common"/"a"`,
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan, err := plangraph.Schedule(t.Context(), test.contributions...)
+			c.Assert(err, qt.ErrorIs, plangraph.ErrCycle)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.want))
+			c.Assert(plan, qt.DeepEquals, plangraph.Plan[string]{})
+		})
+	}
 }
