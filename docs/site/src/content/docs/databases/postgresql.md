@@ -1862,15 +1862,17 @@ PostgreSQL creates an implicit sequence for every `SERIAL` column and identity
 column; you do not declare those, and Ptah's introspection deliberately
 excludes them, so a plain `SERIAL` column never produces a spurious diff. A
 column the database holds as `SERIAL` and the declaration writes as a plain type
-is a difference: the plan drops its default and its sequence. So is the reverse: a
-plain column the declaration writes as `SERIAL` takes a sequence, the default and
-the owner, then a `setval` that moves the sequence past the highest value the table
-holds, so the next insert does not collide with a row. On CockroachDB, where a
-`SERIAL` column draws from `unique_rowid()`, it takes that default. A grant on one is
+is a difference: the plan drops its default and its sequence. A grant on one is
 still read and compared; see [Roles and grants](#roles-and-grants). A
 *standalone* sequence — declared with `//ptah:schema:sequence`, typically
 to share one number generator across tables — is a first-class object with the
 full lifecycle.
+
+A plain column the declaration writes as `SERIAL` is a difference too. The column
+takes a sequence, the default and the owner, then a `setval` that moves the
+sequence past the highest value the table holds, so the next insert does not
+collide with a row. On CockroachDB, where a `SERIAL` column draws from
+`unique_rowid()`, it takes that default.
 
 Ordering matters twice: a sequence consumed by a column default is created
 before the table that uses it, while an `owned_by="table.column"` association
