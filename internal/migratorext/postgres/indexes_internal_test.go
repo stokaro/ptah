@@ -12,9 +12,13 @@ package postgres
 // database in integration/gonative.
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"ptah.run/internal/migratorext"
 )
@@ -214,6 +218,79 @@ func TestPostgresDroppedIndexNames(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(postgresDroppedIndexNames(test.sql), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// failingQueryer answers every read with an error and counts the reads.
+type failingQueryer struct{ reads int }
+
+func (q *failingQueryer) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	q.reads++
+	return nil, errors.New("connection lost")
+}
+
+// concurrentBuild is a build whose failure leaves an unusable index, and the one
+// statement the guard asks the catalog about.
+const concurrentBuild = `CREATE UNIQUE INDEX CONCURRENTLY "i" ON "t" ("a")`
+
+// TestExplainBuildFailure_LeavesOtherFailuresAlone pins every path that returns the
+// failure as it arrived, and whether it read the catalog to decide.
+func TestExplainBuildFailure_LeavesOtherFailuresAlone(t *testing.T) {
+	duplicate := &pgconn.PgError{Code: duplicateRelationCode, Message: `relation "i" already exists`}
+	tests := []struct {
+		name      string
+		statement string
+		failure   error
+		reads     int
+	}{
+		{name: "an error the server did not answer", statement: concurrentBuild, failure: errors.New("broken pipe")},
+		{name: "another server error", statement: concurrentBuild, failure: &pgconn.PgError{Code: "23505"}},
+		{name: "a build whose failure leaves no index", statement: `CREATE UNIQUE INDEX "i" ON "t" ("a")`, failure: duplicate},
+		{name: "a guarded build", statement: `CREATE INDEX CONCURRENTLY IF NOT EXISTS "i" ON "t" ("a")`, failure: duplicate},
+		{name: "a table the server already holds", statement: `CREATE TABLE "i" (id int)`, failure: duplicate},
+		{name: "a read that fails", statement: concurrentBuild, failure: duplicate, reads: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			queryer := &failingQueryer{}
+
+			got := indexGuard{}.ExplainBuildFailure(t.Context(), queryer, test.statement, test.failure)
+
+			c.Assert(got, qt.Equals, test.failure)
+			c.Assert(queryer.reads, qt.Equals, test.reads)
+		})
+	}
+}
+
+// TestUnusableHolderError pins the sentence the operator reads, with the server's
+// error first and the index it names, and that nothing is added when no unusable
+// index holds the name.
+func TestUnusableHolderError(t *testing.T) {
+	failure := errors.New(`relation "i" already exists`)
+	tests := []struct {
+		name     string
+		unusable []unusableIndex
+		want     string
+	}{
+		{name: "no unusable index", want: `relation "i" already exists`},
+		{
+			name:     "an index",
+			unusable: []unusableIndex{{Schema: "app", Name: "i"}},
+			want: "relation \"i\" already exists\n" +
+				`PostgreSQL reports index "app"."i" (indisvalid=false, indisready=false) unusable, as a failed concurrent build leaves it, ` +
+				`and it holds the name; drop the index and run the migration again, or run REINDEX INDEX CONCURRENTLY "app"."i" and repair with --force once the rest of the migration has run`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := unusableHolderError(failure, test.unusable)
+
+			c.Assert(got, qt.ErrorIs, failure)
+			c.Assert(got.Error(), qt.Equals, test.want)
 		})
 	}
 }
