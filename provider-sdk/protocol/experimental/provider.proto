@@ -177,6 +177,12 @@ message Engine {
   // Non-empty only when the engine lists models.reverse, and sent only to a
   // host that lists it. Contract 25.19.
   repeated ModelReversal reversals = 21;
+  // The kinds of the OBSERVED models whose objects belong to the session's
+  // database rather than to a namespace of it, such as resource pools. A
+  // filtered read reports them beside its scope, named at the database.
+  // Non-empty exactly when the engine lists schema.database-kinds, and sent
+  // only to a host that lists it. Contract 25.22.
+  repeated string database_kinds = 22;
 }
 // ScopeSelection is how the --include, --exclude and --schema selectors name
 // the engine's objects of one model kind. The host reads a selector's name

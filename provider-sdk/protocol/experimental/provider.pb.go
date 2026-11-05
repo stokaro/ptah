@@ -4596,7 +4596,13 @@ type Engine struct {
 	// The services that reverse the changes this engine's comparisons return.
 	// Non-empty only when the engine lists models.reverse, and sent only to a
 	// host that lists it. Contract 25.19.
-	Reversals     []*ModelReversal `protobuf:"bytes,21,rep,name=reversals,proto3" json:"reversals,omitempty"`
+	Reversals []*ModelReversal `protobuf:"bytes,21,rep,name=reversals,proto3" json:"reversals,omitempty"`
+	// The kinds of the OBSERVED models whose objects belong to the session's
+	// database rather than to a namespace of it, such as resource pools. A
+	// filtered read reports them beside its scope, named at the database.
+	// Non-empty exactly when the engine lists schema.database-kinds, and sent
+	// only to a host that lists it. Contract 25.22.
+	DatabaseKinds []string `protobuf:"bytes,22,rep,name=database_kinds,json=databaseKinds,proto3" json:"database_kinds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4774,6 +4780,13 @@ func (x *Engine) GetGoHeaderKinds() []string {
 func (x *Engine) GetReversals() []*ModelReversal {
 	if x != nil {
 		return x.Reversals
+	}
+	return nil
+}
+
+func (x *Engine) GetDatabaseKinds() []string {
+	if x != nil {
+		return x.DatabaseKinds
 	}
 	return nil
 }
@@ -33483,7 +33496,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x11semantic_identity\x18\x04 \x01(\tR\x10semanticIdentity\x12<\n" +
 	"\aengines\x18\x05 \x03(\v2\".ptah.provider.experimental.EngineR\aengines\x12\x1a\n" +
 	"\bfeatures\x18\x06 \x03(\tR\bfeatures\x12N\n" +
-	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\x9f\v\n" +
+	"\fmin_contract\x18\a \x01(\v2+.ptah.provider.experimental.ContractVersionR\vminContract\"\xc6\v\n" +
 	"\x06Engine\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12%\n" +
@@ -33511,7 +33524,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x10scope_selections\x18\x12 \x03(\v2*.ptah.provider.experimental.ScopeSelectionR\x0fscopeSelections\x12Q\n" +
 	"\fdeclarations\x18\x13 \x03(\v2-.ptah.provider.experimental.ModelDeclarationsR\fdeclarations\x12&\n" +
 	"\x0fgo_header_kinds\x18\x14 \x03(\tR\rgoHeaderKinds\x12G\n" +
-	"\treversals\x18\x15 \x03(\v2).ptah.provider.experimental.ModelReversalR\treversals\"\xdf\x02\n" +
+	"\treversals\x18\x15 \x03(\v2).ptah.provider.experimental.ModelReversalR\treversals\x12%\n" +
+	"\x0edatabase_kinds\x18\x16 \x03(\tR\rdatabaseKinds\"\xdf\x02\n" +
 	"\x0eScopeSelection\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12#\n" +
 	"\rselector_type\x18\x02 \x01(\tR\fselectorType\x12I\n" +
