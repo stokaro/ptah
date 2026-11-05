@@ -39,7 +39,11 @@ func (r Registry) EncodeCoverage(ctx context.Context, representation Representat
 
 // DecodeCoverage restores captured claims only when every recorded definition
 // matches. Newly registered kinds remain unknown; incompatible definitions are
-// errors rather than new authority over missing objects.
+// errors rather than new authority over missing objects. A record named under
+// a predecessor a registration declares (see [OwnedCodec.Predecessors]) is a
+// claim of that registration's model, restored under its current identity,
+// with the same knowledge; a document that also names the current identity
+// claims the kind twice and is refused.
 func (r Registry) DecodeCoverage(ctx context.Context, document CoverageDocument) (Coverage, error) {
 	if err := codecContext(ctx); err != nil {
 		return Coverage{}, err
@@ -47,6 +51,7 @@ func (r Registry) DecodeCoverage(ctx context.Context, document CoverageDocument)
 	if document.Format != coverageFormat || document.Kinds == nil {
 		return Coverage{}, fmt.Errorf("%w: invalid coverage document format or missing kinds", ErrIncompatibleCodec)
 	}
+	document = r.succeed(document)
 	coverage, err := NewCoverage(document.Representation, document.Kinds, document.Subjects)
 	if err != nil {
 		return Coverage{}, err

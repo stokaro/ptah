@@ -3890,7 +3890,11 @@ model identities without adding registered models to the account. No header
 means no claims. `coverage.HeaderComments` supplies the shared boundary before
 the first content line. HCL uses this account for coordination nodes; ordinary
 Atlas HCL does not establish their absence. Split HCL preserves the account in
-every member.
+every member. A registration's `OwnedCodec.Predecessors` are earlier
+identities of its model: `DecodeCoverage` and `DecodeCoverageHeader` read a
+record named under one as the same claim of the registration's model, under
+its current identity, and refuse a document that names the model under both.
+Encoding writes only current identities.
 
 Every schema comparison takes a context and an explicitly selected runtime.
 Catalog comparisons accept `schemapreparation.Runtime`. Document comparisons
