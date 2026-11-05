@@ -184,6 +184,8 @@ Die folgenden Anleitungen sind auf Englisch:
 
 - [Einen Ablauf wählen](https://docs.ptah.run/edge/start/choose-a-workflow/):
   versionierte Migrationen und direkte Schemaänderungen vergleichen.
+- [Das Ptah-Ökosystem ansehen](https://docs.ptah.run/edge/start/ecosystem/):
+  herausfinden, welche öffentlichen Repositories ein Ablauf braucht.
 - [Eine laufende Datenbank untersuchen](https://docs.ptah.run/edge/direct/inspect/)
   oder [Schemas vergleichen und Drift erkennen](https://docs.ptah.run/edge/direct/compare-and-drift/).
 - [Migrationsintegrität prüfen](https://docs.ptah.run/edge/versioned/integrity-and-safety/)

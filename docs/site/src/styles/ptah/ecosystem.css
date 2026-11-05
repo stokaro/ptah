@@ -1,0 +1,510 @@
+/* The ecosystem map (src/components/EcosystemMap.astro). The figure's frame, bar
+ * and caption come from figures.css; this file holds what only this figure has.
+ *
+ * The drawing's sizes and line patterns are presentation attributes, because
+ * the standalone SVG carries the same markup with no stylesheet around it.
+ * Everything here is color and state. Selection never rests on color alone: the
+ * selected node's outline thickens, a related line thickens and its label turns
+ * bold, and the details panel says all of it in words. */
+
+ptah-ecosystem-map {
+	display: block;
+}
+
+.ptah-ecosystem {
+	--eco-node: var(--sl-color-gray-6);
+	--eco-canvas: var(--sl-color-bg-inline-code);
+	container: ptah-ecosystem / inline-size;
+}
+:root[data-theme='light'] .ptah-ecosystem {
+	--eco-node: var(--ptah-surface);
+}
+
+.ptah-ecosystem code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.92em;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- Toolbar ---------- */
+
+.eco-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.75rem;
+	padding: 0.625rem 0.875rem;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-2);
+	font-size: 0.8125rem;
+}
+.eco-toolbar[hidden] {
+	display: none;
+}
+.eco-toolbar__paths {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+.eco-chip,
+.eco-reset {
+	min-height: 2.25rem;
+	padding: 0.25rem 0.625rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-white);
+	font: inherit;
+	cursor: pointer;
+}
+.eco-chip:hover,
+.eco-reset:hover:enabled {
+	border-color: var(--sl-color-accent);
+}
+.eco-chip[aria-pressed='true'] {
+	border-color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+	font-weight: 600;
+}
+.eco-reset {
+	margin-inline-start: auto;
+}
+.eco-reset:disabled {
+	border-color: var(--sl-color-hairline);
+	color: var(--sl-color-gray-3);
+	cursor: default;
+}
+
+/* ---------- Layout ---------- */
+
+.eco-map {
+	background: var(--eco-canvas);
+}
+.eco-drawing {
+	display: none;
+}
+.eco-svg {
+	display: block;
+	width: 100%;
+	max-width: 54rem;
+	height: auto;
+	margin-inline: auto;
+}
+
+.eco-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---------- Drawing ---------- */
+
+.eco-background {
+	fill: var(--eco-canvas);
+}
+.eco-svg text {
+	font-family: var(--sl-font);
+}
+.eco-svg .eco-frame__label,
+.eco-svg .eco-node__badge text {
+	font-family: var(--sl-font-mono);
+}
+.eco-frame {
+	stroke: var(--sl-color-hairline);
+}
+.eco-frame__label {
+	fill: var(--sl-color-gray-3);
+}
+.eco-node__box {
+	fill: var(--eco-node);
+	stroke: var(--sl-color-gray-4);
+}
+.eco-node--entry .eco-node__box,
+.eco-node--infrastructure .eco-node__box {
+	fill: var(--eco-canvas);
+}
+.eco-node--core .eco-node__box {
+	stroke: var(--sl-color-white);
+	stroke-width: 1.5;
+}
+.eco-node__name {
+	fill: var(--sl-color-white);
+}
+.eco-node__role {
+	fill: var(--sl-color-gray-2);
+}
+.eco-node__badge rect {
+	fill: var(--eco-node);
+	stroke: var(--sl-color-gray-4);
+}
+.eco-node__badge text {
+	fill: var(--sl-color-white);
+}
+.eco-node__focus {
+	stroke: transparent;
+}
+.eco-edge__line {
+	stroke: var(--sl-color-gray-3);
+}
+.eco-edge__head {
+	fill: var(--sl-color-gray-3);
+	stroke: var(--sl-color-gray-3);
+}
+.eco-edge--experimental .eco-edge__head,
+.eco-edge--not-implemented .eco-edge__head {
+	fill: var(--eco-canvas);
+}
+.eco-edge__label {
+	fill: var(--sl-color-gray-2);
+	stroke: var(--eco-canvas);
+}
+
+/* ---------- Interaction: drawing ---------- */
+
+ptah-ecosystem-map[data-enhanced] .eco-node {
+	cursor: pointer;
+}
+.eco-node:focus {
+	outline: none;
+}
+.eco-node:focus-visible .eco-node__focus {
+	stroke: var(--sl-color-accent);
+}
+.eco-node:hover .eco-node__box {
+	stroke: var(--sl-color-accent);
+}
+
+ptah-ecosystem-map[data-selection] .eco-edge:not(.is-active) {
+	opacity: 0.25;
+}
+ptah-ecosystem-map[data-selection] .eco-edge__label:not(.is-active) {
+	opacity: 0.35;
+}
+/* A component the selection does not touch stays a working control, so its text
+ * keeps 4.5:1. gray-3 reaches that on the canvas in both themes, not on a raised
+ * surface in the dark one, so the surface goes too. */
+ptah-ecosystem-map[data-selection] .eco-node:not(.is-related, [aria-pressed='true']) .eco-node__box {
+	fill: var(--eco-canvas);
+	stroke: var(--sl-color-hairline);
+}
+ptah-ecosystem-map[data-selection] .eco-node:not(.is-related, [aria-pressed='true']) :is(.eco-node__name, .eco-node__role) {
+	fill: var(--sl-color-gray-3);
+}
+.eco-edge.is-active .eco-edge__line {
+	stroke: var(--sl-color-accent);
+	stroke-width: 2.25;
+}
+.eco-edge.is-active .eco-edge__head {
+	fill: var(--sl-color-accent);
+	stroke: var(--sl-color-accent);
+}
+.eco-edge--experimental.is-active .eco-edge__head,
+.eco-edge--not-implemented.is-active .eco-edge__head {
+	fill: var(--eco-canvas);
+}
+.eco-edge__label.is-active {
+	fill: var(--sl-color-white);
+	font-weight: 600;
+}
+.eco-node.is-related .eco-node__box {
+	stroke: var(--sl-color-accent);
+	stroke-width: 1.5;
+}
+.eco-node[aria-pressed='true'] .eco-node__box {
+	fill: var(--sl-color-accent-low);
+	stroke: var(--sl-color-accent);
+	stroke-width: 3;
+}
+
+/* ---------- Narrow layout ---------- */
+
+.eco-cards {
+	display: grid;
+	gap: 0.875rem;
+	padding: 0.75rem;
+}
+.eco-cards__label {
+	margin: 0 0 0.375rem;
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.eco-cards__list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+	gap: 0.5rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.eco-cards__list > li {
+	display: grid;
+	min-width: 0;
+}
+.eco-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	min-height: 2.75rem;
+	padding: 0.5rem 0.625rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 2px;
+	background: var(--eco-node);
+	color: var(--sl-color-gray-2);
+	font-size: 0.8125rem;
+	line-height: 1.35;
+}
+.eco-card[data-kind='entry'],
+.eco-card[data-kind='infrastructure'] {
+	border-style: dashed;
+	background: transparent;
+}
+.eco-card__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.125rem 0.375rem;
+}
+.eco-card__name {
+	color: var(--sl-color-white);
+	font-size: 0.875rem;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+.eco-card__badge {
+	padding-inline: 0.25rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 2px;
+	color: var(--sl-color-white);
+	font-family: var(--sl-font-mono);
+	font-size: 0.625rem;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.eco-card__line,
+.eco-card__note {
+	margin-top: 0.25rem;
+	color: var(--sl-color-gray-1);
+}
+.eco-card__note {
+	white-space: pre-line;
+}
+.eco-card__note[hidden] {
+	display: none;
+}
+
+ptah-ecosystem-map[data-enhanced] .eco-card {
+	cursor: pointer;
+}
+.eco-card:hover {
+	border-color: var(--sl-color-accent);
+}
+.eco-card:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+ptah-ecosystem-map[data-selection] .eco-card:not(.is-related, [aria-pressed='true']) {
+	border-color: var(--sl-color-hairline);
+	background: transparent;
+}
+ptah-ecosystem-map[data-selection] .eco-card:not(.is-related, [aria-pressed='true']) :is(.eco-card__name, .eco-card__line, .eco-card__role) {
+	color: var(--sl-color-gray-3);
+}
+.eco-card.is-related {
+	border-color: var(--sl-color-accent);
+}
+.eco-card[aria-pressed='true'] {
+	border-width: 3px;
+	border-color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+	padding: calc(0.5rem - 2px) calc(0.625rem - 2px);
+}
+.eco-card__line.is-active,
+.eco-card__note {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+
+/* ---------- Details ---------- */
+
+.eco-details {
+	padding: 0.875rem;
+	border-top: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-1);
+	font-size: 0.875rem;
+	line-height: 1.5;
+}
+.eco-details[hidden],
+.eco-detail[hidden] {
+	display: none;
+}
+.eco-detail {
+	display: grid;
+	gap: 0.5rem;
+}
+.eco-detail > * {
+	margin: 0;
+}
+.eco-detail__kicker,
+.eco-detail__label {
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.eco-detail__label {
+	margin-top: 0.25rem;
+}
+.eco-detail__title {
+	color: var(--sl-color-white);
+	font-size: 1.0625rem;
+	font-weight: 600;
+	line-height: 1.3;
+}
+.eco-detail__title:focus {
+	outline: none;
+}
+.eco-detail__role,
+.eco-detail__hint {
+	color: var(--sl-color-gray-2);
+}
+.eco-detail strong {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.eco-detail__relations,
+.eco-detail__links {
+	display: grid;
+	gap: 0.25rem;
+	padding: 0;
+	list-style: none;
+}
+.eco-details a,
+.eco-link-button {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.eco-link-button {
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	cursor: pointer;
+}
+.eco-link-button:hover,
+.eco-details a:hover {
+	color: var(--sl-color-accent-high);
+}
+.eco-detail__back {
+	justify-self: start;
+}
+
+/* ---------- Legend ---------- */
+
+.eco-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.375rem 0.875rem;
+	padding: 0.625rem 0.875rem;
+	border-top: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-2);
+	font-size: 0.78125rem;
+}
+.eco-legend__title {
+	margin: 0;
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.eco-legend__list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.875rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.eco-legend__list li {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+.eco-legend__sample line {
+	stroke: var(--sl-color-gray-3);
+}
+.eco-legend__sample polygon {
+	fill: var(--sl-color-gray-3);
+	stroke: var(--sl-color-gray-3);
+}
+.eco-legend__sample--open polygon {
+	fill: var(--ptah-surface);
+}
+.eco-legend__sample--box rect {
+	fill: none;
+	stroke: var(--sl-color-gray-3);
+}
+
+/* ---------- Text views ---------- */
+
+.eco-paths {
+	display: grid;
+	gap: 1rem;
+}
+.eco-paths ul {
+	margin-block: 0.25rem;
+}
+.eco-table table {
+	width: 100%;
+}
+.eco-table td:first-child {
+	min-width: 11rem;
+}
+.eco-table__group th {
+	color: var(--sl-color-gray-2);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-align: start;
+	text-transform: uppercase;
+}
+
+/* ---------- Container widths ---------- */
+
+/* These come last because they replace rules above at equal specificity.
+ *
+ * The drawing needs this much room for its smallest label to stay readable.
+ * Below it the narrow layout takes over; the full-size action still opens the
+ * drawing, with zoom. */
+@container ptah-ecosystem (min-width: 44rem) {
+	.eco-drawing {
+		display: block;
+	}
+	.eco-cards {
+		display: none;
+	}
+}
+
+/* The details sit beside the map once both fit, and below it otherwise. */
+@container ptah-ecosystem (min-width: 66rem) {
+	.eco-body {
+		grid-template-columns: minmax(0, 1fr) 17rem;
+	}
+	.eco-details {
+		border-top: 0;
+		border-inline-start: 1px solid var(--sl-color-hairline);
+	}
+	.eco-detail__back {
+		display: none;
+	}
+}
