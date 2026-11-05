@@ -141,6 +141,11 @@ has the same lines for these kinds:
 - an external table counts `external_tables` 1 and `external_columns` its
   columns.
 
+The built-in engine also counts table settings under families such as
+`ydb_ttl_tables` and `ydb_column_families`. The provider does not report them
+yet; each needs its own measurement against the built-in engine, which reads
+the same settings from another model.
+
 ## Alternatives considered
 
 **The host counts the values.** It would need to read each payload, which only
