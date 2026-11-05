@@ -67,7 +67,6 @@ func TestDeclaredTypeRefusals(t *testing.T) {
 		{name: "MySQL", target: platform.MySQL, want: strings.Replace(scope, "%s", "mysql", 1)},
 		{name: "SQLite", target: platform.SQLite, want: strings.Replace(scope, "%s", "sqlite", 1)},
 		{name: "SQL Server", target: platform.SQLServer, want: strings.Replace(scope, "%s", "sqlserver", 1)},
-		{name: "YDB", target: platform.YDB, want: strings.Replace(scope, "%s", "ydb", 1)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/builtindialects"
-	"ptah.run/internal/ydburl"
 )
 
 // scopeAnswers is what the name switches of internal/schemaselection,
@@ -61,10 +60,6 @@ var scopeAgreement = map[string]scopeAnswers{
 		roles:     descriptor.RoleScopeReferenced, widenable: true,
 	},
 	"oracle": {},
-	"ydb": {
-		roles:     descriptor.RoleScopeUserMade,
-		urlValued: []string{ydburl.MonitoringParameter},
-	},
 }
 
 // TestDescriptors_ScopeAgreesWithTheNameSwitches pins the schema, role and URL

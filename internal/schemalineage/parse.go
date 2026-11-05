@@ -2,14 +2,12 @@ package schemalineage
 
 import (
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
-	"ptah.run/internal/lexerext/yql"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -54,23 +52,33 @@ func deriveView(name, body string, materialized bool, columns map[string][]strin
 
 // bodyReading is how one dialect's view bodies are read.
 type bodyReading struct {
-	// yql reads a body as YQL: by the YQL lexer, with a FROM source that is
-	// a YDB path.
-	yql bool
+	// options are the lexer's: the scanner of a dialect that has a lexer of
+	// its own, or the shared lexer's lenient rules.
+	options lexer.Options
+	// dialect names the bodies' dialect, whose names sqlident reads.
+	dialect string
+	// paths reports that a FROM source is one identifier holding a table's
+	// path, as sqlident.NamesArePaths answers for the dialect.
+	paths bool
 }
 
-// readingFor is the reading of dialect's bodies.
+// readingFor is the reading of dialect's view bodies. A dialect with a lexer
+// of its own, such as the scanner a provider registers for its engine, is
+// read by that lexer: on YDB a double-quoted text is a string rather than a
+// name, and a quote inside an @@...@@ string opens no other string. Every
+// other dialect is read by the shared lexer's lenient rules.
 func readingFor(dialect string) bodyReading {
-	return bodyReading{yql: platform.NormalizeDialect(dialect) == platform.YDB}
+	reading := bodyReading{dialect: dialect, paths: sqlident.NamesArePaths(dialect)}
+	if options := dialectlexer.Options(dialect); options.Scanner != nil {
+		reading.options = options
+	}
+	return reading
 }
 
 // tokenize drops whitespace and comments, which carry no lineage and would
 // otherwise have to be skipped at every step below.
 func tokenize(body string, reading bodyReading) []lexer.Token {
-	lex := lexer.NewLexer(body)
-	if reading.yql {
-		lex = lexer.NewLexerWithOptions(body, dialectlexer.Options(platform.YDB))
-	}
+	lex := lexer.NewLexerWithOptions(body, reading.options)
 	var tokens []lexer.Token
 	for {
 		token := lex.NextToken()
@@ -135,8 +143,8 @@ func singleSource(tokens []lexer.Token, fromStart int, reading bodyReading) (sou
 		return sourceRef{}, err
 	}
 	source := sourceRef{table: table, alias: table, columnsKey: table}
-	if reading.yql {
-		source = ydbSource(rest[0])
+	if reading.paths {
+		source = pathSource(rest[0], reading.dialect)
 		consumed = 1
 	}
 	rest = rest[consumed:]
@@ -173,21 +181,17 @@ type sourceRef struct {
 	columnsKey string
 }
 
-// ydbSource reads a YDB FROM source: one identifier holding the table's
-// path, which a `.` never qualifies, since YQL reads `dir`.`t` as a cluster
-// and a table. The table goes by its Ptah name, its directory as the schema,
-// and the path stays the name a column may be qualified with.
-func ydbSource(token lexer.Token) sourceRef {
-	value, ok := yql.IdentifierValue(token.Value)
+// pathSource reads a FROM source of a dialect that names a table by one path:
+// one identifier, which a dot never qualifies, since YQL reads `dir`.`t` as a
+// cluster and a table. The table goes by its Ptah name, its directory as the
+// schema, and the path stays the name a column may be qualified with.
+func pathSource(token lexer.Token, dialect string) sourceRef {
+	value, ok := sqlident.ReadName(dialect, token.Value)
 	if !ok {
 		value = unquote(token.Value)
 	}
-	directory, name := path.Split(value)
-	return sourceRef{
-		table:      tableref.Canonical(strings.TrimSuffix(directory, "/"), name),
-		alias:      value,
-		columnsKey: name,
-	}
+	directory, name := sqlident.SplitPath(value)
+	return sourceRef{table: tableref.Canonical(directory, name), alias: value, columnsKey: name}
 }
 
 func isJoinKeyword(token lexer.Token) bool {

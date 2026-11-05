@@ -95,6 +95,9 @@ func (t *target) registration() engine.Target {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature)}
 		result.Lowering = uniqueIndexLowering{}
 	}
+	if t.offers(provider.IndexMethodsFeature) {
+		result.ReadBack = indexKindReadBack{}
+	}
 	if t.supportsLint() {
 		result.Annotator = t
 	}

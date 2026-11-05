@@ -161,15 +161,10 @@ const sessionRefinementReason = "read from this server's session settings, not f
 const extensionRefinementReason = "read from the extensions installed in this database (pg_extension), " +
 	"not from its release line"
 
-// featureFlagRefinementReason names what the connection reads on YDB: the
-// cluster's feature flags, from the endpoint the URL's monitoring parameter
-// names. Without that parameter nothing is refined.
-const featureFlagRefinementReason = "read from this cluster's feature flags at its monitoring endpoint, " +
-	"not from its release line"
-
 // connectionRefinementReason is the sentence for a connection that reads
-// something else about the server. No dialect but PostgreSQL and YDB does, and
-// a key one changed would otherwise be reported as a session setting.
+// something else about the server, such as an executable provider's session.
+// Of the built-in dialects only PostgreSQL does, and a key one changed would
+// otherwise be reported as a session setting.
 const connectionRefinementReason = "read from this server when Ptah connected, not from its release line"
 
 // ConnectionReading is what the connection read about the server before any
@@ -178,11 +173,8 @@ const connectionRefinementReason = "read from this server when Ptah connected, n
 // path that takes the readings needs a live server.
 func ConnectionReading(dialect string, capabilities capability.Capabilities) serverprofile.Reading {
 	reason := connectionRefinementReason
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
+	if platform.NormalizeDialect(dialect) == platform.Postgres {
 		reason = extensionRefinementReason
-	case platform.YDB:
-		reason = featureFlagRefinementReason
 	}
 	return serverprofile.Reading{Capabilities: capabilities, Reason: reason}
 }

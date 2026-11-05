@@ -32,7 +32,7 @@ func TestChoose_HappyPath(t *testing.T) {
 	t.Run("a built-in engine keeps its implementation without a request", func(t *testing.T) {
 		c := qt.New(t)
 		choice, err := providerselect.Choose(providerselect.Request{
-			Targets:  []providerselect.Target{{Flag: "db-url", Value: "ydb://localhost:2136/local"}},
+			Targets:  []providerselect.Target{{Flag: "db-url", Value: "spanner://localhost:9010/projects/p/instances/i/databases/d"}},
 			Resolver: emptyResolver(),
 		})
 		c.Assert(err, qt.IsNil)
@@ -89,6 +89,15 @@ func TestChoose_FailurePath(t *testing.T) {
 	t.Run("an explicit official engine with nothing installed is missing", func(t *testing.T) {
 		c := qt.New(t)
 		choice, err := providerselect.Choose(providerselect.Request{Engine: "ydb", Explicit: true, Resolver: emptyResolver()})
+		c.Assert(err, qt.ErrorMatches, `(?s).*ptah providers install ydb.*`)
+		c.Assert(choice, qt.IsNil)
+	})
+	t.Run("the URL of an official engine no built-in serves asks for its provider with no request", func(t *testing.T) {
+		c := qt.New(t)
+		choice, err := providerselect.Choose(providerselect.Request{
+			Targets:  []providerselect.Target{{Flag: "db-url", Value: "ydb://localhost:2136/local"}},
+			Resolver: emptyResolver(),
+		})
 		c.Assert(err, qt.ErrorMatches, `(?s).*ptah providers install ydb.*`)
 		c.Assert(choice, qt.IsNil)
 	})

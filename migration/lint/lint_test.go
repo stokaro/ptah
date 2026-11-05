@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -23,6 +25,22 @@ func fixture(files map[string]string) fstest.MapFS {
 		fsys[name] = &fstest.MapFile{Data: []byte(content)}
 	}
 	return fsys
+}
+
+// findingSites returns each finding as file:line:rule.
+func findingSites(findings []lint.Finding) []string {
+	sites := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		sites = append(sites, fmt.Sprintf("%s:%d:%s", finding.File, finding.Line, finding.Rule))
+	}
+	return sites
+}
+
+// dsSites keeps the sites of the DS family.
+func dsSites(sites []string) []string {
+	return slices.DeleteFunc(slices.Clone(sites), func(site string) bool {
+		return !strings.Contains(site, ":DS")
+	})
 }
 
 // rulesOf collects the rule codes of findings, with duplicates.

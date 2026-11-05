@@ -85,18 +85,13 @@ func (s *Scratch) Close(ctx context.Context) error {
 // server. The server engines create a database beside the one the URL names and
 // return an address for it; Close removes what was created.
 //
-// YDB has no SQL that creates a database, so a case gets a dev realm instead:
-// a directory in the database the URL names, which a connection opened from
-// the returned URL treats as its whole database (see
-// ptah.run/internal/ydbrealm). Close removes the realm with everything in it;
-// a realm it could not remove is reported in a warning that names the
-// directory.
-//
 // An engine a provider serves gets its realm from the provider, when ctx
 // carries an owner that creates realms for the URL's scheme
 // ([devdocker.RealmOwner]): the connection to such a URL is the provider's,
-// and so is the way to give it a database of its own. That owner is asked
-// before any built-in isolation, as [devdocker.Resolve] asks it.
+// and so is the way to give it a database of its own, as YDB, which has no
+// SQL that creates a database, gets a directory the connection treats as its
+// whole database. That owner is asked before any built-in isolation, as
+// [devdocker.Resolve] asks it.
 //
 // A dialect this cannot isolate returns [ErrNoIsolation], so a caller refuses
 // rather than silently sharing. So does a provider that creates no realm in

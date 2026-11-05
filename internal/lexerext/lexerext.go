@@ -9,6 +9,10 @@
 // A rule the shared lexer can read by a switch is descriptor data instead
 // (core/platform/descriptor.Lexical). A service holds a lexer whose rules the
 // descriptor's fields do not describe.
+//
+// An engine an executable provider serves has no descriptor. Its provider
+// scans its text, and [Provide] registers that scanner under the engine's
+// names while the provider is selected.
 package lexerext
 
 import "ptah.run/internal/lexer"

@@ -298,10 +298,10 @@ command checks the download against the release's `checksums.txt`, stores the
 executable in your user cache directory, and records its SHA-256, which Ptah
 checks before every start.
 
-A command uses the YDB provider when you pass `--provider-engine ydb`. Without
-that flag, a `ydb://` address is served by the YDB engine built into `ptah` in
-this documentation version. Which engine serves `ydb://` is decided by the Ptah
-release, and the presence of a file on disk does not change it.
+Once installed, the provider serves every command that names a `ydb://` or
+`ydbs://` URL or the `ydb` dialect, with no flag. Ptah holds no YDB
+implementation of its own, so without the provider such a command reports
+`provider_missing` and the command that installs it.
 
 With the provider installed, normal work needs no network. On a host that cannot
 reach GitHub, install from an internal mirror with `--download-base-url` and

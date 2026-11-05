@@ -8,6 +8,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
 )
 
 // withSchemaChanges adds the questions about how a target holds a table and
@@ -20,9 +21,9 @@ import (
 // and leaving the table as it was is a server Ptah cannot plan with, so that
 // outcome reads false with the evidence beside it rather than true.
 //
-// The keys name what the engine does. The YDB planner reads them to decide
-// what it may emit; the planners that already exist keep their own paths
-// (SQLite rebuilds a table whatever these say), and the registry answers for
+// The keys name what the engine does. A planner that reads them decides what
+// it may emit; the planners that keep their own paths (SQLite rebuilds a table
+// whatever these say) still get an answer, because the registry answers for
 // every dialect so the comparison is the same question everywhere.
 func withSchemaChanges(p plan, dialect string) plan {
 	changes, undecided := schemaChangesFor(dialect)
@@ -52,8 +53,6 @@ func schemaChangesFor(dialect string) (schemaChanges, map[capability.Capability]
 		return oracleSchemaChanges(), nil
 	case platform.Spanner:
 		return spannerSchemaChanges(), nil
-	case platform.YDB:
-		return ydbSchemaChanges(), nil
 	default:
 		return postgresSchemaChanges(), nil
 	}
@@ -104,24 +103,6 @@ type schemaChange struct {
 	change []string
 	// after must hold once the change was accepted.
 	after []check
-}
-
-// statements is every statement the change runs that it carries as data:
-// its checks' and the change's own, in the order they run.
-func (sc schemaChange) statements() []string {
-	var statements []string
-	for _, control := range sc.before {
-		if control.statement != "" {
-			statements = append(statements, control.statement)
-		}
-	}
-	statements = append(statements, sc.change...)
-	for _, evidence := range sc.after {
-		if evidence.statement != "" {
-			statements = append(statements, evidence.statement)
-		}
-	}
-	return statements
 }
 
 // check is one statement whose outcome is evidence.
@@ -216,7 +197,6 @@ func proven(key capability.Capability, sc schemaChange) experiment {
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   sc.setup,
-		runs:    sc.statements(),
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			var attempts []Attempt
 			for _, control := range sc.before {
@@ -510,78 +490,6 @@ func oracleSchemaChanges() schemaChanges {
 	}
 }
 
-// ydbSchemaChanges is YDB's spelling. Every key is declared in its own clause,
-// an index is added through ALTER TABLE, and a default is a typed literal.
-//
-// Three experiments differ in shape from the PostgreSQL ones, each for a
-// measured reason. YDB has no length on a string type, so the type change is
-// asked of an integer, and a value only Int64 holds is the evidence: an Int32
-// column refuses 5000000000 as a type mismatch. YDB folds a constant
-// expression into a literal at CREATE TABLE from 26.1 (`DEFAULT 1 + 1` and
-// `DEFAULT Unicode::ToLower("X"u)` are accepted there and refused on 25.x), so
-// a deterministic default cannot tell an evaluated expression from a folded
-// literal; the expression is the per-row function the key's own documentation
-// names, `CurrentUtcTimestamp()`, which every line refuses with `Unsupported
-// type of literal`. And no SQL describes an index, so the covering index is
-// read back through Ptah's own reader.
-func ydbSchemaChanges() schemaChanges {
-	table := func(name, columns string) string {
-		return fmt.Sprintf("CREATE TABLE %s (%s, PRIMARY KEY (id))", name, columns)
-	}
-	return schemaChanges{
-		keyed:   "CREATE TABLE sc_pk (n Int32 NOT NULL, PRIMARY KEY (n))",
-		keyless: "CREATE TABLE sc_nopk (n Int32)",
-		keyChange: schemaChange{
-			setup: []string{
-				"CREATE TABLE sc_pka (a Int32 NOT NULL, b Int32 NOT NULL, PRIMARY KEY (a))",
-				"INSERT INTO sc_pka (a, b) VALUES (1, 1)",
-			},
-			before: []check{refuses("INSERT INTO sc_pka (a, b) VALUES (1, 2)")},
-			change: []string{"ALTER TABLE sc_pka DROP PRIMARY KEY, ADD PRIMARY KEY (a, b)"},
-			after:  []check{accepts("INSERT INTO sc_pka (a, b) VALUES (1, 2)")},
-		},
-		retype: schemaChange{
-			setup:  []string{table("sc_typ", "id Int32 NOT NULL, n Int32")},
-			before: []check{refuses("INSERT INTO sc_typ (id, n) VALUES (1, 5000000000)")},
-			change: []string{"ALTER TABLE sc_typ ALTER COLUMN n SET DATA TYPE Int64"},
-			after:  []check{accepts("INSERT INTO sc_typ (id, n) VALUES (2, 5000000000)")},
-		},
-		setNull: setNotNullChange(table("sc_snn", "id Int32 NOT NULL, n Int32"),
-			"ALTER TABLE sc_snn ALTER COLUMN n SET NOT NULL"),
-		dropNull: dropNotNullChange(table("sc_dnn", "id Int32 NOT NULL, n Int32 NOT NULL"),
-			"ALTER TABLE sc_dnn ALTER COLUMN n DROP NOT NULL"),
-		defaults: defaultChange(table("sc_def", "id Int32 NOT NULL, n Int32"),
-			"ALTER TABLE sc_def ALTER COLUMN n SET DEFAULT 7",
-			"ALTER TABLE sc_def ALTER COLUMN n DROP DEFAULT"),
-		addColumn: addColumnChange(table("sc_add", "id Int32 NOT NULL"),
-			"ALTER TABLE sc_add ADD COLUMN n Int32 NOT NULL DEFAULT 7"),
-		literalDefault: table("sc_exl", `id Int32 NOT NULL, t Timestamp DEFAULT Timestamp("2026-01-01T00:00:00Z")`),
-		exprDefault: schemaChange{
-			change: []string{table("sc_exe", "id Int32 NOT NULL, t Timestamp DEFAULT CurrentUtcTimestamp()")},
-			after: []check{
-				accepts("INSERT INTO sc_exe (id) VALUES (1)"),
-				counts("SELECT COUNT(*) FROM sc_exe WHERE id = 1 AND t IS NOT NULL", 1),
-			},
-		},
-		check: table("sc_chk", "id Int32 NOT NULL, n Int32 CHECK (n > 0)"),
-		createIndex: createIndexChange(table("sc_cix", "id Int32 NOT NULL, n Int32"),
-			"CREATE INDEX sc_cix_n ON sc_cix (n)",
-			"ALTER TABLE sc_cix DROP INDEX sc_cix_n"),
-		coverSetup: []string{table("sc_cov", "id Int32 NOT NULL, a Int32, b Int32")},
-		cover:      "ALTER TABLE sc_cov ADD INDEX sc_cov_ix GLOBAL ON (a) COVER (b)",
-		coverRead: []check{ydbDescribedIndex("sc_cov", "sc_cov_ix", "the index to cover b",
-			func(index catalog.Index) bool { return slices.Equal(index.IncludeColumns, []string{"b"}) })},
-		uniqueIndex: schemaChange{
-			setup:  []string{table("sc_uix", "id Int32 NOT NULL, n Int32"), "INSERT INTO sc_uix (id, n) VALUES (1, 10)"},
-			change: []string{"ALTER TABLE sc_uix ADD INDEX sc_uix_n GLOBAL UNIQUE SYNC ON (n)"},
-			after: []check{
-				accepts("INSERT INTO sc_uix (id, n) VALUES (2, 20)"),
-				refuses("INSERT INTO sc_uix (id, n) VALUES (3, 10)"),
-			},
-		},
-	}
-}
-
 // setNotNullChange adds NOT NULL to a column that accepted a NULL a moment
 // earlier. The NULL row is removed again before the change, because a column
 // holding one cannot take the constraint on any engine.
@@ -675,6 +583,36 @@ func uniqueIndexChange(table string) schemaChange {
 		after: []check{
 			accepts("INSERT INTO sc_uix (id, n) VALUES (2, 20)"),
 			refuses("INSERT INTO sc_uix (id, n) VALUES (3, 10)"),
+		},
+	}
+}
+
+// readBackIndex is a check that reads index of table back through Ptah's
+// reader and answers whether want holds of it. schema names the schema the
+// reader is scoped to, which is dbo inside the probe's database on SQL
+// Server; statement names the read in the probe's report.
+func readBackIndex(
+	table, index, expectation string,
+	schema func(*session) string,
+	want func(catalog.Index) bool,
+	statement func(*session) string,
+) check {
+	return check{
+		describes: expectation,
+		inspect: func(ctx context.Context, s *session) (Attempt, bool, string) {
+			attempt := Attempt{Statement: statement(s)}
+			db, err := dbschema.ReadSchemaWithSchemasContext(ctx, s.conn, []string{schema(s)})
+			if err != nil {
+				attempt.ServerErr = err.Error()
+				return attempt, false, "was refused"
+			}
+			attempt.Accepted = true
+			for _, found := range db.Indexes {
+				if found.TableName == table && found.Name == index {
+					return attempt, want(found), "read " + found.Definition
+				}
+			}
+			return attempt, false, "found no such index"
 		},
 	}
 }

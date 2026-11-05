@@ -57,7 +57,6 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 			ReplayedSession:          []descriptor.SessionSetting{sqliteForeignKeys},
 		},
 		platform.Oracle: {},
-		platform.YDB:    {},
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)

@@ -14,7 +14,6 @@ import (
 	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/dialect/clickhouse/chdiff"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/ydb/ydbast"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -116,9 +115,12 @@ func TestOwnerVerdicts_FailsClosedOnAMixedNodeOnly(t *testing.T) {
 // statement was assessed for access.
 func TestOwnerVerdicts_FailsClosedWithoutAnAccessClaimTheOwnerDidNotMake(t *testing.T) {
 	c := qt.New(t)
+	replacing := &chschema.ObservedTable{Engine: "ReplacingMergeTree(version)", OrderBy: "id, at", PrimaryKey: "id"}
+	shorterKey := replacing.Desired()
+	shorterKey.OrderBy.Value = "id"
 	mixed := &ast.AlterTableNode{Name: "items", Operations: []ast.AlterOperation{
 		&ast.AddColumnOperation{Column: &ast.ColumnNode{Name: "note", Type: "TEXT", Nullable: true}},
-		&ast.ExtensionAlterOperation{Payload: &ydbast.DropChangefeed{Name: "updates"}},
+		&ast.ExtensionAlterOperation{Payload: &chast.AlterStorage{Change: chdiff.Table{Before: replacing, After: shorterKey}}},
 	}}
 
 	verdicts, err := safety.OwnerVerdicts([]ast.Node{mixed}, []int{0, 0})
@@ -199,13 +201,6 @@ func TestOwnerVerdicts_RaiseFeatureOwnerStatementsTheirTextReadsAsSafe(t *testin
 		wantSeverity safety.Severity
 		wantReason   string
 	}{
-		{
-			name: "a YDB changefeed dropped", dialect: platform.YDB,
-			node:         alter("items", &ydbast.DropChangefeed{Name: "updates"}),
-			wantSQL:      "ALTER TABLE `items` DROP CHANGEFEED `updates`",
-			wantSeverity: safety.Destructive,
-			wantReason:   "DROP CHANGEFEED removes the change stream with every record nobody read, and its consumers",
-		},
 		{
 			name: "a ClickHouse TTL removed", dialect: platform.ClickHouse,
 			node:         alter("items", &chast.AlterStorage{Change: chdiff.Table{Before: ttl, After: noTTL}}),

@@ -32,7 +32,6 @@ func TestDescriptors_ConnectionAgreesWithTheSwitchTheyReplace(t *testing.T) {
 		{dialect: platform.SQLite, driver: "sqlite"},
 		{dialect: platform.SQLServer, driver: "sqlserver"},
 		{dialect: platform.Oracle, driver: "oracle"},
-		{dialect: platform.YDB, driver: "ydb"},
 	}
 	described := builtindialects.Descriptors()
 	c := qt.New(t)

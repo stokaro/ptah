@@ -87,13 +87,12 @@ use:
 ptah mcp \
   --database-url "ydb://ydb.internal:2136/app" \
   --database-class dev \
-  --allow-database-inspect ask \
-  --provider-engine ydb
+  --allow-database-inspect ask
 ```
 
-`--provider-engine ydb` selects the provider `ptah providers install ydb`
-installed. `--provider-config` names a manifest of trusted provider builds
-instead, for a build of your own; [Test an executable
+The `ydb://` address selects the provider `ptah providers install ydb`
+installed, and `--provider-engine ydb` asks for it explicitly.
+`--provider-config` names a manifest of trusted provider builds instead, for a build of your own; [Test an executable
 provider](../../extend/executable-providers/) describes both. Ptah selects the
 provider for the `--database-url` address, verifies and starts it before the
 client connects, and stops it when the session ends. A provider flag without

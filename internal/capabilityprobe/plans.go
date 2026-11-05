@@ -20,16 +20,16 @@ func planFor(dialect string) (plan, bool) {
 	if !ok {
 		return plan{}, false
 	}
-	withComments := withCommentAttributes(withConstraintComments(withObjectComments(family, normalized), normalized), normalized)
+	withComments := withCommentAttributes(withConstraintComments(withObjectComments(family, normalized), normalized))
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
-	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized), normalized), normalized)
+	withFamilies := withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized)), normalized)
 	withColumnFamilies := withColumnFamilyKeys(withFamilies, normalized)
-	withChangefeeds := withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized), normalized), normalized)
-	withObjects := withCoordinationNodes(withReplicationKeys(withChangefeeds, normalized), normalized)
+	withChangefeeds := withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized)), normalized)
+	withObjects := withCoordinationNodes(withReplicationKeys(withChangefeeds, normalized))
 	withTableSettings := withTableSettingKeys(withObjects, normalized)
-	withWorkloads := withWorkloadKeys(withFullTextKeys(withVectorKeys(withTableSettings, normalized), normalized), normalized)
-	return withRoutineReplacement(withColumnStoreKeys(withExternalKeys(withSecretKeys(withWorkloads, normalized), normalized), normalized)), true
+	withWorkloads := withWorkloadKeys(withFullTextKeys(withVectorKeys(withTableSettings, normalized), normalized))
+	return withRoutineReplacement(withColumnStoreKeys(withExternalKeys(withSecretKeys(withWorkloads)), normalized)), true
 }
 
 // familyPlan returns the experiments a dialect's family answers, before the
@@ -48,8 +48,6 @@ func familyPlan(dialect string) (plan, bool) {
 		return sqlServerPlan(), true
 	case platform.SQLite:
 		return sqlitePlan(), true
-	case platform.YDB:
-		return ydbPlan(), true
 	default:
 		return plan{}, false
 	}

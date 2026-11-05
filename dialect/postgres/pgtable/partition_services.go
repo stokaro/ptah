@@ -142,7 +142,7 @@ func RefuseForeignPartition(target string) error {
 	switch platform.NormalizeDialect(target) {
 	case platform.Postgres, platform.YugabyteDB, platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse:
 		return nil
-	case platform.YDB, platform.CockroachDB, platform.Spanner:
+	case platform.CockroachDB, platform.Spanner:
 		return fmt.Errorf("%w: PostgreSQL PARTITION BY cannot be rendered on %s", ptaherr.ErrUnsupportedFeature, target)
 	default:
 		return fmt.Errorf("%w: table partition has no policy for %q", ptaherr.ErrUnsupportedDialect, target)

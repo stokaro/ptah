@@ -419,13 +419,6 @@ func TestProviderUnits_RefuseAModeTheUnitsCannotRunIn(t *testing.T) {
 			wantErr: `migration 1 cannot run up on sqlite: the provider does not split a migration body into the units its engine runs ` +
 				`\(units.migration-split\), so a body of 3 statements cannot run outside a transaction; upgrade the provider`,
 		},
-		{
-			// The built-in YDB engine would run these as one query; a
-			// provider's session counts them by the generic grammar.
-			name: "none without a provider split, named like a built-in engine with query units", dialect: "ydb", mode: migrator.MigrationTxModeNone,
-			body:    "INSERT INTO a VALUES (1); INSERT INTO a VALUES (2);",
-			wantErr: `migration 1 cannot run up on ydb: the provider does not split .*, so a body of 2 statements cannot run outside a transaction; .*`,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -504,22 +497,6 @@ func TestProviderUnits_CheckTakesTheVerdict(t *testing.T) {
 			c.Assert(owner.applied, qt.HasLen, 0)
 		})
 	}
-}
-
-// A provider session takes no unit split, query deadline or check rule from a
-// built-in engine of the same name: the units are the provider's, and the
-// statement timeout reaches the provider with the unit alone.
-func TestProviderUnits_TakeNothingFromABuiltInEngineOfTheSameName(t *testing.T) {
-	c := qt.New(t)
-	owner := newUnitsOwner()
-	owner.dialect = "ydb"
-
-	c.Assert(unitsRunner(c, owner, unitsBody).WithDefaultTimeouts(statementTimeout).MigrateUp(c.Context()), qt.IsNil)
-
-	c.Assert(owner.calls, qt.Contains, "outside CREATE TABLE a (id INTEGER) deadline=false")
-	c.Assert(owner.timeouts, qt.DeepEquals, []time.Duration{5 * time.Second, 5 * time.Second, 5 * time.Second})
-	c.Assert(owner.calls, qt.Contains, "inside INSERT INTO a VALUES (1)")
-	c.Assert(unitsRow(owner), qt.DeepEquals, []any{"applied", 3, 3})
 }
 
 // unitsRepair fails a run of broken at its second unit, then repairs the

@@ -276,15 +276,10 @@ func runCheckGroups(
 	if len(groups) == 0 {
 		return nil
 	}
-	reads, err := checkReadProof(ctx, conn)
-	if err != nil {
-		return err
-	}
-
 	dialect := conn.Info().Dialect
 	return conn.WithIsolatedQuerySession(ctx, checkTransactionOptions(dialect), func(queryer dbschema.IsolatedQueryer) error {
 		for _, group := range groups {
-			if err := runCheckGroup(ctx, queryer, reads, rule, version, group); err != nil {
+			if err := runCheckGroup(ctx, queryer, rule, version, group); err != nil {
 				return err
 			}
 		}
@@ -292,47 +287,16 @@ func runCheckGroups(
 	})
 }
 
-// readProof proves what an assertion reads stays in the database, by asking
-// the database; see [checkReadProof].
-type readProof func(ctx context.Context, assertion string) error
-
-// checkReadProof returns what proves, before an assertion runs, that every
-// object it reads keeps its rows in the database the check is sent to, where
-// the engine has a service that proves it (see
-// internal/migratorext.ReadProver). Every other engine reaches another server
-// only through constructs the text names, which [sqlreach.Scan] refuses, and
-// gets nil. A provider's session gets nil too: its provider proves what a
-// check reads when RunStatement runs it read-only.
-func checkReadProof(ctx context.Context, conn *dbschema.DatabaseConnection) (readProof, error) {
-	prover := servicesFor(conn).ReadProof
-	if prover == nil {
-		return nil, nil
-	}
-	session, err := conn.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("open a session to describe what checks read: %w", err)
-	}
-	proof, err := prover.ReadProof(ctx, session)
-	if closeErr := session.Close(); err == nil && closeErr != nil {
-		err = closeErr
-	}
-	if err != nil {
-		return nil, fmt.Errorf("describe what checks read: %w", err)
-	}
-	return proof, nil
-}
-
 func runCheckGroup(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
-	reads readProof,
 	rule assertionRule,
 	version int64,
 	group checkGroup,
 ) error {
 	onePassed := false
 	for _, check := range group.checks {
-		result, err := runCheckAssertion(ctx, queryer, reads, rule, check.Assert)
+		result, err := runCheckAssertion(ctx, queryer, rule, check.Assert)
 		if err != nil {
 			return &CheckFailedError{
 				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
@@ -391,23 +355,15 @@ func checkTransactionOptions(dialect string) *sql.TxOptions {
 	return new(sql.TxOptions)
 }
 
-// runCheckAssertion runs one assertion once rule proves its text read-only
-// and, where reads is not nil, once what it reads is proved to stay in the
-// database.
+// runCheckAssertion runs one assertion once rule proves its text read-only.
 func runCheckAssertion(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
-	reads readProof,
 	rule assertionRule,
 	assertion string,
 ) (any, error) {
 	if err := rule(assertion); err != nil {
 		return nil, err
-	}
-	if reads != nil {
-		if err := reads(ctx, assertion); err != nil {
-			return nil, err
-		}
 	}
 
 	rows, err := queryer.QueryContext(ctx, assertion)

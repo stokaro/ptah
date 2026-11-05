@@ -312,6 +312,34 @@ visual's caption, placement, dimensions, full-size/download/source actions,
 keyboard focus, and local overflow. CI uploads all snapshots for human review;
 it does not compare platform-dependent pixels.
 
+## The ecosystem map
+
+`start/ecosystem` is the one page with an interactive diagram of its own, and
+every view on it comes from one declaration, `src/ecosystem.mjs`: components,
+relationships, usage paths, and what each owning repository says about its
+maturity. To add a repository, or change a relationship or a status, edit that
+file. `src/ecosystem-layout.mjs` places each component and routes each
+relationship in the drawing, keyed by the same ids.
+
+`src/lib/ecosystem-map.mjs` validates the two files when the site builds, so an
+unknown id, a component the layout does not place, or a link to a route or
+heading no page has fails the build. It also draws the map as SVG. The same
+function produces the inline map, whose colors come from
+`src/styles/ptah/ecosystem.css`, and the full-size files under
+`src/pages/diagrams/`, which embed the colors of one theme. Nothing is committed
+as a render, and no raster is involved.
+
+`EcosystemMap.astro` is a figure with ProductPreview's bar and caption. Above the
+width `ecosystem.css` sets it shows the drawing; below it, a list of the same
+components with each relationship written out, because lines and their labels do
+not stay readable at phone width. A client script adds selection by click, tap or
+keyboard, the details panel and the path filter. Without JavaScript the drawing
+or the list remains, and `EcosystemText.astro` renders the paths and the
+repository and relationship tables outside the figure.
+
+`check-accessibility.mjs` runs axe over the page at rest and with a selection,
+and drives the map by keyboard, by touch at 390px, and with JavaScript disabled.
+
 ## The Pages root
 
 The site is served from `https://docs.ptah.run/`, and everything a

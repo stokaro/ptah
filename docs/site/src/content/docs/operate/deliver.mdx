@@ -187,12 +187,10 @@ integration.
 </TabItem>
 <TabItem label="Kubernetes">
 
-The [Ptah Operator](../kubernetes-operator/) reconciles a desired schema from
-an OCI artifact continuously, with plans and approvals as cluster resources.
-
-It does not apply a versioned migration directory: `PtahSchema` reconciles a
-desired schema, and a versioned-migration controller does not exist yet. On the
-versioned path the operator does not replace the apply step above.
+The [Ptah Operator](../kubernetes-operator/) works from an OCI artifact, with
+plans and approvals as cluster resources. `PtahSchema` reconciles a desired
+schema continuously, and `PtahMigration` runs a versioned migration sequence, so
+on either path it can take the place of the apply step above.
 
 </TabItem>
 <TabItem label="Argo CD or Flux">
@@ -206,7 +204,9 @@ resource, let Argo CD or Flux sync it, and the operator reconciles from there.
 Convergence is the operator's job and the controller only has to deliver the
 resource.
 
-**A versioned directory** needs a Job that runs `ptah migrations up` against
+**A versioned directory** can be a `PtahMigration` resource, which the operator
+runs once it is synced. Without the operator it needs a Job that runs
+`ptah migrations up` against
 the pinned digest, ordered before the workload that depends on the new schema.
 Argo CD runs it as a `PreSync` hook; Flux orders it with `dependsOn` between
 Kustomizations. In both cases the Job image is `ghcr.io/stokaro/ptah` pinned by
@@ -231,7 +231,7 @@ does, and the verify step is still yours to run.
   <LinkCard
     title="Kubernetes operator"
     href="../kubernetes-operator/"
-    description="Reconcile a desired schema in a cluster, and what that path does not cover."
+    description="Reconcile a schema or run migrations in a cluster, and what that path does not cover."
   />
   <LinkCard
     title="Rollback"

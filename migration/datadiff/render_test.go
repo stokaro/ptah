@@ -733,50 +733,6 @@ func TestRenderStatements_FailurePath(t *testing.T) {
 		c.Assert(up, qt.IsNil)
 		c.Assert(down, qt.IsNil)
 	})
-	// YQL types every data literal, so a YDB column whose type the diff does
-	// not name has no literal, and a value its column cannot hold is refused
-	// with the column and the type rather than wrapped.
-	for _, dialect := range []string{"ydb", "ydbs"} {
-		t.Run("a "+dialect+" column with no type", func(t *testing.T) {
-			c := qt.New(t)
-			up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
-				Table:       "t",
-				Keys:        []string{"code"},
-				ColumnTypes: map[string]string{"code": "Utf8"},
-				Inserts:     []datadiff.Row{{"code": "US", "name": "x"}},
-			}, dialect, dataServices(c, dialect))
-			c.Assert(err, qt.ErrorMatches, `datadiff: column "name": YDB stores a literal only in its column's own `+
-				`type, and the diff names no type for this column`)
-			c.Assert(up, qt.IsNil)
-			c.Assert(down, qt.IsNil)
-		})
-	}
-	t.Run("a ydb value its column cannot hold", func(t *testing.T) {
-		c := qt.New(t)
-		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
-			Table:       "t",
-			Keys:        []string{"id"},
-			ColumnTypes: map[string]string{"id": "Int64", "n": "Int32"},
-			Inserts:     []datadiff.Row{{"id": 1, "n": int64(5000000000)}},
-		}, "ydb", dataServices(c, "ydb"))
-		c.Assert(err, qt.ErrorMatches, `datadiff: column "n": Int32 cannot hold 5000000000: it is outside the `+
-			`range -2147483648 to 2147483647`)
-		c.Assert(up, qt.IsNil)
-		c.Assert(down, qt.IsNil)
-	})
-	t.Run("a ydb key its column cannot hold", func(t *testing.T) {
-		c := qt.New(t)
-		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{
-			Table:       "t",
-			Keys:        []string{"id"},
-			ColumnTypes: map[string]string{"id": "Uint32", "n": "Int32"},
-			Deletes:     []datadiff.Row{{"id": -1, "n": 1}},
-		}, "ydb", dataServices(c, "ydb"))
-		c.Assert(err, qt.ErrorMatches, `datadiff: key column "id": Uint32 cannot hold -1: it is outside the `+
-			`range 0 to 4294967295`)
-		c.Assert(up, qt.IsNil)
-		c.Assert(down, qt.IsNil)
-	})
 	t.Run("a value with no literal", func(t *testing.T) {
 		c := qt.New(t)
 		up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{

@@ -6,7 +6,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
-	"ptah.run/internal/ydblowering"
+	"ptah.run/internal/uniquelowering"
 )
 
 // uniqueIndexLowering reads a declared UNIQUE constraint, and a column's
@@ -16,8 +16,8 @@ import (
 // reports the unique index a plan created for the constraint, so without the
 // lowering a schema applied once would compare as a missing constraint and a
 // stray index forever, and the provider would receive a constraint it has no
-// way to create. The indexes take the names the host's YDB renderer gives
-// them, so a table that renderer created compares as declared too.
+// way to create. The indexes take the names [uniquelowering.IndexName] gives
+// them, which the provider gives the index it creates for a constraint.
 //
 // A session that does not state the key leaves the declaration as it is: the
 // absence of an answer is not an engine without UNIQUE constraints.
@@ -30,5 +30,5 @@ func (uniqueIndexLowering) LowerDesired(ctx context.Context, request schemaprepa
 	if !request.Capabilities.Established(capability.UniqueConstraints) || request.Capabilities.Has(capability.UniqueConstraints) {
 		return request.Desired, nil
 	}
-	return ydblowering.UniqueConstraintsAsIndexes(request.Desired), nil
+	return uniquelowering.ConstraintsAsIndexes(request.Desired), nil
 }
