@@ -212,36 +212,17 @@ target does anyway.
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
 
-YQL has no advisory lock, so on YDB the provider takes the lock as a semaphore
-on the coordination node `ptah_locks` at the database root, one semaphore per
-lock name. It is exclusive and ephemeral: the server releases it when the
-session that holds it ends, whether the run released it or died. The provider
-creates a missing node with strict consistency and refuses a node that is not
-strict, as its
-[Coordination locks](https://github.com/stokaro/ptah-ydb-plugin#coordination-locks)
-documentation describes.
-The node holds no data, so dropping it while no run is active is safe, and the
-next run creates it again. The provider's read leaves it out, so a plan never
-drops it. Like every advisory lock, it keeps Ptah runs apart; it does not stop a
-client that ignores it.
+On YDB the provider takes the lock on a coordination node, and the server can
+take it away while the run goes on; see
+[The migration lock](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md#the-migration-lock).
 
-The semaphore is held by a coordination session of its own, not by the
-connection the migrations run on, so the server can take it away while the run
-goes on. When the provider reports the lock lost, the statement running then is
-canceled, no further statement starts and no data query commits, nothing more
-is written to the revision table, and the run fails with the loss. The revision
-table then records what the run committed, and a resume starts there. See
-[Coordination locks](https://github.com/stokaro/ptah-ydb-plugin#coordination-locks)
-for the session and its keepalives.
-
-On the other engines the lock belongs to a database session the run opens for
+On a built-in engine the lock belongs to a database session the run opens for
 the lock alone, and the migrations run on other connections. The server
 releases the lock when that session ends, and another runner can take it at
 once: `pg_terminate_backend` or `KILL` ends it, and so does a broken
 connection. The run pings that session every second, and asks
 it again before a statement once the last answer is a second old. A session
-that does not answer is treated as a lost lock, with the same result as a lock
-the YDB provider reports lost:
+that does not answer is treated as a lost lock:
 the statement running then is canceled, nothing more runs, and the run fails
 with the loss.
 
@@ -742,7 +723,7 @@ and pipelines share a directory:
   outside a transaction changes nothing. That session belongs to the one
   migration, so the settings end with it. YDB has no such setting, and its
   provider bounds each query with the statement timeout; see
-  [Statement timeouts on YDB](#statement-timeouts-on-ydb). On a target with no
+  [Statement timeouts on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md#statement-timeouts). On a target with no
   way to honor a timeout, a migration that declares one is refused in every
   transaction mode, before any SQL runs or the revision row changes.
   SQL-backed non-transactional migrations record a durable progress marker
@@ -829,101 +810,11 @@ reproduces the schema it was pointed at.
 
 ## Migrations on YDB
 
-YDB runs a schema statement only outside a transaction, never in the same query
-as a data statement, and a named expression, an action, a `DECLARE` or a
-`PRAGMA` exists only in the query that holds it. The YDB provider therefore
-lists `units.migration-split` and splits a YDB migration into a sequence of
-queries, which Ptah runs, counts and records:
-
-- Each schema statement — `CREATE`, `ALTER`, `DROP`, `GRANT`, `REVOKE`,
-  `TRUNCATE` and the rest — is a query of its own, in file order. So is a block
-  or an action call that runs one: `DO BEGIN ... END DO` holding a schema
-  statement, or `DO $action()` and `EVALUATE FOR ... DO $action($x)` over an
-  action whose body holds one. So is Ptah's own `COMMENT ON`, which the
-  provider runs through YDB's table service.
-- Each `BATCH UPDATE` and `BATCH DELETE` is a query of its own, outside any
-  transaction, which is the only way YDB runs one. YDB applies it in batches
-  rather than atomically, so an interrupted one leaves its outcome unknown, as
-  an interrupted schema query does.
-- Consecutive data statements are one query. It runs in a serializable
-  transaction together with the revision checkpoint that records it, and a
-  transaction YDB aborts for a conflict runs again.
-- A definition — `PRAGMA`, `DECLARE`, `$name = ...`, `DEFINE ACTION`,
-  `DEFINE SUBQUERY` — is carried into every query after it, so each query sees
-  what the file defined above it.
-- A `--!syntax_v1` line at the head of the file heads every query.
-
-In this file the `UPDATE` uses `$name` across the `ALTER TABLE`, which runs as
-a query of its own:
-
-```sql illustration
-CREATE TABLE `app/items` (id Int64 NOT NULL, name Utf8, PRIMARY KEY (id));
-$name = 'first'u;
-UPSERT INTO `app/items` (id, name) VALUES (1l, $name);
-ALTER TABLE `app/items` ADD COLUMN note Utf8;
-UPDATE `app/items` SET note = $name WHERE id = 1l;
-```
-
-It runs as four queries: the `CREATE TABLE`, the definition with the `UPSERT`,
-the definition with the `ALTER TABLE`, and the definition with the `UPDATE`.
-
-The queries are what the revision counts, what partial hashes digest and what a
-resume skips. Progress is recorded after each query. An interrupted schema query
-leaves its outcome unknown, as an interrupted statement does under `none`, and
-the row has to be inspected and repaired. A data query commits together with
-its checkpoint, so the revision row records it exactly when it committed. A
-failed run never records fewer queries than the row holds, even when the answer
-to a commit was lost, and when the row cannot be read the run writes nothing to
-it. `up --allow-dirty` then resumes at the first query the row does not record.
-
-Some files cannot be split the way YDB reads them, and the provider refuses them
-before the run writes anything:
-
-| In a YDB migration file | Why it is refused |
-| --- | --- |
-| `DELIMITER` or `-- atlas:delimiter` | YQL has no client delimiter; every statement ends with a semicolon |
-| A `--!` setting other than `--!syntax_v1` | `--!ansi_lexer` changes how the text is read, and YDB refuses `--!syntax_pg`, `--!syntax_v0` and unknown settings |
-| `COMMIT`, `ROLLBACK` or `BEGIN` | YDB refuses `COMMIT` inside a query, and Ptah decides where each transaction begins and ends |
-| A `DO` block, an action call or an `EVALUATE` loop that runs a schema statement and a statement that reads or writes a table | YDB refuses such a query whole (`Queries with mixed data and scheme operations are not supported`), and the schema statements before it would already be applied |
-
-[Migration bodies the provider splits](../../extend/executable-providers/#migration-bodies-the-provider-splits)
-shows how such a refusal reads, and
-[Migration splits](https://github.com/stokaro/ptah-ydb-plugin#migration-splits)
-gives the provider's rules in full.
-
-The provider keeps the revision table, the migration log and the tag table, in
-the directory `--migrations-schema` names or at the database root; see
-[Migration history](https://github.com/stokaro/ptah-ydb-plugin#migration-history).
-
-A primary key change, a column type change or `SET NOT NULL` is planned only as
-a table rebuild, and only when `migrations generate` is given
-`--allow-table-rebuild`; see [YDB](../../databases/ydb/#where-the-provider-documents-ydb).
-Each step of the rebuild is a query of its own, so a run interrupted between two
-of them resumes at the next with `up --allow-dirty`.
-
-### Statement timeouts on YDB
-
-YDB has no statement timeout a session can set, and a schema statement ignores
-the operation timeout of a request. So `--statement-timeout`, the
-`statement_timeout` directive and `migration.statement_timeout` reach the
-provider with each query of the migration, and the provider puts the deadline on
-the query. What happens when it fires depends on the query:
-
-| Query | When the deadline fires |
-| --- | --- |
-| Data statements | YDB cancels the query. Its transaction holds the revision checkpoint and never commits, so nothing is applied and the revision records the query as not run. |
-| `ALTER TABLE ... ADD INDEX`, or `ADD COLUMN` with a default | YDB runs these as builds, which go on after the client stops waiting. The provider cancels the build through the operation service and waits for it to end. A canceled build leaves no index and no column, and the revision records the query as not run. |
-| Any other schema statement, or a build that cannot be found or does not end | YDB keeps running it and cannot cancel it. The run stops, and the revision records the outcome as unknown: inspect the table, then repair the revision. |
-
-In each case the migration fails and the revision records which of these
-happened. A rerun with `up --allow-dirty` and a larger timeout, or none,
-resumes at the query that was stopped.
-
-`--lock-timeout`, the `lock_timeout` directive and `migration.lock_timeout` are
-refused on YDB. No statement there waits for a lock: a schema statement on a
-table under another schema operation fails at once with `has been locked by
-tx`, and a schema change made while a transaction holds locks on the table
-succeeds at once and aborts that transaction at its commit.
+A YDB migration runs through the YDB provider, which splits it into the queries
+YDB runs, takes the migration lock on a coordination node and bounds each query
+by the statement timeout. Its
+[Migrations on YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/migrations.md)
+page describes each of them and the files it refuses.
 
 ## Operational hooks
 
