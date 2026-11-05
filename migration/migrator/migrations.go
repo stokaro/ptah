@@ -1082,7 +1082,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		}
 		if err := executeSQLOn(ctx, conn, stmt); err != nil {
 			return sentStatementError(
-				fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, err)),
+				fmt.Errorf("failed to execute SQL statement: %w", markedStatementFailure(ctx, explainFailedIndexBuild(ctx, conn, stmt, err))),
 				stmt,
 				i+1,
 				len(statements),
@@ -1207,7 +1207,7 @@ func runMigrationFileStatement(
 	}
 	if !handled {
 		if err := executeSQLOn(ctx, conn, event.Statement); err != nil {
-			return migrationFileStatementError(markedStatementFailure(ctx, err), event)
+			return migrationFileStatementError(markedStatementFailure(ctx, explainFailedIndexBuild(ctx, conn, event.Statement, err)), event)
 		}
 	}
 	if err := recordAndObserveExecutedStatement(ctx, event); err != nil {

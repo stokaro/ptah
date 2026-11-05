@@ -268,6 +268,19 @@ func (m *Migrator) postgresIndexesLeftByFailedBuildsOn(
 	return leftBehind, nil
 }
 
+// explainFailedIndexBuild adds what the engine's index guard reads about the
+// failure of statement on conn: the unusable index that holds the name a build
+// without IF NOT EXISTS stopped at. The read happens after the server's answer
+// and on the session that got it, so it asks about the name as the statement
+// resolved it, and a file that frees the name earlier never reaches it.
+func explainFailedIndexBuild(ctx context.Context, conn *dbschema.DatabaseConnection, statement string, failure error) error {
+	guard := builtin.Lookup(conn.Info().Dialect).Indexes
+	if guard == nil {
+		return failure
+	}
+	return guard.ExplainBuildFailure(ctx, indexQueryer(conn), statement, failure)
+}
+
 // refuseUpOverUnsafeIndex refuses to run a migration while PostgreSQL already
 // reports a relation that prevents the migration from creating its intended
 // usable index.

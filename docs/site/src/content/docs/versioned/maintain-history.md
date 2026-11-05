@@ -305,9 +305,17 @@ reconciling revision metadata that no longer matches reality.
 
 On PostgreSQL, a `CREATE INDEX CONCURRENTLY` that fails partway leaves an
 **invalid** index behind. The leftover keeps the name, so running the generated
-statement again stops with `relation ... already exists`, and an `IF NOT
-EXISTS` form of it is skipped rather than retried and reports no error. Repair
-refuses to record such a migration (exit `2`):
+statement again stops with `relation ... already exists`. Ptah then reads what
+holds the name and adds it to the error:
+
+```text
+error: error running migrations: failed to apply migration 5: failed to execute migration SQL: SQL execution failed: ERROR: relation "idx_members_email" already exists (SQLSTATE 42P07)
+SQL: CREATE UNIQUE INDEX CONCURRENTLY "idx_members_email" ON "members" ("email")
+PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, as a failed concurrent build leaves it, and it holds the name; drop the index and run the migration again, or run REINDEX INDEX CONCURRENTLY "public"."idx_members_email" and repair with --force once the rest of the migration has run
+```
+
+An `IF NOT EXISTS` form of the statement is skipped rather than retried and
+reports no error. Repair refuses to record such a migration (exit `2`):
 
 ```text
 error: migration 5 cannot be repaired: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, so recording the migration applied would report a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index and rerun the migration, then repair again

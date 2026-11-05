@@ -2,9 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
@@ -82,6 +85,10 @@ func (indexGuard) Usable(state migratorext.IndexState) bool {
 
 func (indexGuard) Unusable(state migratorext.IndexState) bool {
 	return isUnusableTargetIndex(state)
+}
+
+func (indexGuard) ExplainBuildFailure(ctx context.Context, q migratorext.RowsQueryer, sqlText string, failure error) error {
+	return explainBuildFailure(ctx, q, sqlText, failure)
 }
 
 func (indexGuard) ApplyError(version int64, unsafe []migratorext.IndexState) error {
@@ -556,6 +563,44 @@ func unusableIndexStateError(
 		rebuild,
 		noun,
 		retryAction,
+	)
+}
+
+// duplicateRelationCode is the SQLSTATE PostgreSQL answers a CREATE INDEX with
+// when any relation holds the name.
+const duplicateRelationCode = "42P07"
+
+// explainBuildFailure adds the index that holds the name to the server's
+// `relation "x" already exists`, which does not say that the relation is an index
+// a failed concurrent build left behind, or that a retry cannot get past it. See
+// [migratorext.IndexGuard].
+func explainBuildFailure(ctx context.Context, q migratorext.RowsQueryer, sqlText string, failure error) error {
+	server, ok := errors.AsType[*pgconn.PgError](failure)
+	if !ok || server.Code != duplicateRelationCode {
+		return failure
+	}
+	var unsafe []migratorext.IndexState
+	for _, ref := range postgresUnconditionalConcurrentIndexNames(sqlText) {
+		state, err := indexState(ctx, q, ref)
+		if err != nil {
+			return failure
+		}
+		unsafe = append(unsafe, state)
+	}
+	return unusableHolderError(failure, postgresUnusableIndexes(unsafe))
+}
+
+// unusableHolderError is failure with the unusable indexes that hold its name,
+// and failure itself when none does.
+func unusableHolderError(failure error, unusable []unusableIndex) error {
+	if len(unusable) == 0 {
+		return failure
+	}
+	details, rebuild, noun := unusableIndexPhrases(unusable)
+	return fmt.Errorf(
+		"%w\nPostgreSQL reports %s %s unusable, as a failed concurrent build leaves it, and it holds the name; "+
+			"drop the %s and run the migration again, or run %s and repair with --force once the rest of the migration has run",
+		failure, noun, details, noun, rebuild,
 	)
 }
 
