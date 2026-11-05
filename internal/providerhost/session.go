@@ -65,6 +65,13 @@ func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, erro
 	if err := caps.Validate(); err != nil {
 		return catalog.ServerInfo{}, fmt.Errorf("provider session capabilities: %w", err)
 	}
+	// The comparison pairs a renamed index under index_rename, and only an
+	// engine that renames has a step to receive the pair with: without one,
+	// every renamed index would refuse the plan.
+	if flags[capability.IndexRename] && !t.offers(provider.IndexRenamesFeature) {
+		return catalog.ServerInfo{}, fmt.Errorf("%w: provider session capabilities: %s needs %s, which engine %s does not negotiate",
+			provider.ErrProtocol, capability.IndexRename, provider.IndexRenamesFeature, t.engine.GetId())
+	}
 	identity, err := t.identity(remote)
 	if err != nil {
 		return catalog.ServerInfo{}, err

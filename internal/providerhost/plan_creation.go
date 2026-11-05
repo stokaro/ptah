@@ -90,6 +90,8 @@ func rejectUnclaimedChanges(nodes []ast.Node) error {
 			return pending.Accept(nil)
 		case *pendingIndexChange:
 			return pending.Accept(nil)
+		case *pendingIndexRename:
+			return pending.Accept(nil)
 		}
 	}
 	return nil

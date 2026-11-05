@@ -16,6 +16,7 @@ type operation struct {
 	Action      string        `json:"action"`
 	Transaction string        `json:"transaction,omitempty"`
 	To          *string       `json:"to,omitempty"`
+	Index       string        `json:"index,omitempty"`
 	Column      *addedColumn  `json:"column,omitempty"`
 	DropColumn  string        `json:"dropColumn,omitempty"`
 	IfExists    *bool         `json:"ifExists,omitempty"`
@@ -95,8 +96,11 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	if err := json.Unmarshal(canonical, &fields); err != nil {
 		return nil, err
 	}
-	if _, present := fields["to"]; present && op.Action != "rename" {
-		return nil, fmt.Errorf("only rename accepts a target")
+	if _, present := fields["to"]; present && op.Action != "rename" && op.Action != "rename-index" {
+		return nil, fmt.Errorf("only a rename accepts a target")
+	}
+	if _, present := fields["index"]; present && op.Action != "rename-index" {
+		return nil, fmt.Errorf("only rename-index accepts an index")
 	}
 	if op.Transaction != "" && op.Transaction != "required" {
 		return nil, fmt.Errorf("unknown transaction requirement")
@@ -143,6 +147,11 @@ func normalize(input *protocol.ValueInput) (*protocol.NormalizedValue, error) {
 	case "rename":
 		if op.To == nil || *op.To == "" || strings.ContainsRune(*op.To, 0) {
 			return nil, fmt.Errorf("rename requires a target name")
+		}
+		impact = protocol.ChangeSemantics_BEHAVIORAL
+	case "rename-index":
+		if op.Index == "" || strings.ContainsRune(op.Index, 0) || op.To == nil || *op.To == "" || strings.ContainsRune(*op.To, 0) || *op.To == op.Index {
+			return nil, fmt.Errorf("rename-index requires an index and another name")
 		}
 		impact = protocol.ChangeSemantics_BEHAVIORAL
 	default:
@@ -292,6 +301,11 @@ func renderNative(native *protocol.NativeOperation) (string, error) {
 			return "", fmt.Errorf("rename requires its actual table parent")
 		}
 		return "ALTER TABLE " + name + " RENAME TO " + quote(*op.To) + ";", nil
+	case "rename-index":
+		if native.GetRole() != protocol.NativeOperation_ALTER_TABLE || !proto.Equal(native.GetParent(), subject) {
+			return "", fmt.Errorf("rename-index requires its actual table parent")
+		}
+		return "ALTER TABLE " + name + " RENAME INDEX " + quote(op.Index) + " TO " + quote(*op.To) + ";", nil
 	case "rebuild":
 		if native.GetRole() != protocol.NativeOperation_STATEMENT {
 			return "", fmt.Errorf("standalone table operation required")

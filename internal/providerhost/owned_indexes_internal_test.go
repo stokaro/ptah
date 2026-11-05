@@ -199,10 +199,11 @@ func TestOwnedLifecycleIndexChangesOfCreatedAndRemovedTables_HappyPath(t *testin
 		IndexesAdded:   difftypes.IndexChanges{{Index: schemamodel.Index{Name: "records_email", Fields: []string{"email"}}, TableName: "main.records"}},
 		IndexesRemoved: []difftypes.IndexRef{{Name: "old_email", TableName: "main.old"}},
 	}
-	removals, additions, err := indexPlanner().indexChanges(diff)
+	steps, err := indexPlanner().indexChanges(diff)
 	c.Assert(err, qt.IsNil)
-	c.Assert(removals, qt.HasLen, 0)
-	c.Assert(additions, qt.HasLen, 0)
+	c.Assert(steps.removals, qt.HasLen, 0)
+	c.Assert(steps.renames, qt.HasLen, 0)
+	c.Assert(steps.additions, qt.HasLen, 0)
 }
 
 // The host reads back every field of a common index it sends a provider.
