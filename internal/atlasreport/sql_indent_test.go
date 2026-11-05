@@ -44,7 +44,6 @@ func TestMigrateDiffIndentPreservesQuotedSQL(t *testing.T) {
 		{"backslash escape", platform.MySQL, "SELECT 'first\\'\n  second';", "SELECT 'first\\'\n  second';\n"},
 		{"bracket identifier", platform.SQLServer, "SELECT [first\n  second];", "SELECT [first\n  second];\nGO\n"},
 		{"backtick identifier", platform.MySQL, "SELECT `first\n  second`;", "SELECT `first\n  second`;\n"},
-		{"multiline string", platform.YDB, "SELECT @@first\n  second@@;", "SELECT @@first\n  second@@;\n"},
 		{"doubled quote", platform.Postgres, "SELECT 'first''\n  second';", "SELECT 'first''\n  second';\n"},
 		{"Unicode literal", platform.Postgres, "SELECT 'café\n  日本';", "SELECT 'café\n  日本';\n"},
 		{"comment quotes", platform.Postgres, "-- 'not a string\n  SELECT 'first\n  second';", "-- 'not a string\n\tSELECT 'first\n  second';\n"},
@@ -68,7 +67,6 @@ func TestMigrateDiffIndentPreservesQuotedSQL(t *testing.T) {
 func TestMigrateDiffIndentReadsTheStatementsDialect(t *testing.T) {
 	tests := []struct{ name, dialect, sql, want string }{
 		{"T-SQL global variables", platform.SQLServer, "SELECT @@ROWCOUNT,\n  @@ERROR;", "SELECT @@ROWCOUNT,\n\t@@ERROR;\nGO\n"},
-		{"YQL multiline string", platform.YDB, "SELECT @@ROWCOUNT,\n  @@ERROR;", "SELECT @@ROWCOUNT,\n  @@ERROR;\n"},
 		{"PostgreSQL array", platform.Postgres, "SELECT ARRAY[1,\n  2];", "SELECT ARRAY[1,\n\t2];\n"},
 		{"T-SQL bracket identifier", platform.SQLServer, "SELECT ARRAY[1,\n  2];", "SELECT ARRAY[1,\n  2];\nGO\n"},
 		{"standard string ending in a backslash", platform.Postgres, "SELECT 'a\\',\n  'b\n  c';", "SELECT 'a\\',\n\t'b\n  c';\n"},

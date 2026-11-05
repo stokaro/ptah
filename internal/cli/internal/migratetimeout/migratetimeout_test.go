@@ -45,18 +45,6 @@ func TestRequestDecide_FailurePath(t *testing.T) {
 			wantMissing: []capability.Capability{capability.MigrationLockTimeout, capability.MigrationStatementTimeout},
 		},
 		{
-			// YDB bounds each statement, so only the lock timeout is refused.
-			name:     "both flags typed at a target with a statement timeout only",
-			dialect:  "ydb",
-			caps:     capability.YDB262(),
-			args:     []string{"--lock-timeout", "2s", "--statement-timeout", "30s"},
-			timeouts: both,
-			wantErr: `--lock-timeout sets a timeout for every migration, and dialect "ydb" has ` +
-				`no lock wait Ptah can bound around a migration \(target capability migration_lock_timeout\). ` +
-				`Remove --lock-timeout to run without one`,
-			wantMissing: []capability.Capability{capability.MigrationLockTimeout},
-		},
-		{
 			name:     "one flag typed",
 			dialect:  "sqlite",
 			caps:     capability.SQLite3(),
@@ -66,15 +54,6 @@ func TestRequestDecide_FailurePath(t *testing.T) {
 				`no lock or statement timeout Ptah can set and restore around a migration. ` +
 				`Remove --statement-timeout to run without one`,
 			wantMissing: []capability.Capability{capability.MigrationLockTimeout, capability.MigrationStatementTimeout},
-		},
-		{
-			name:           "project config",
-			dialect:        "ydb",
-			caps:           capability.YDB262(),
-			lockFromConfig: true,
-			timeouts:       migrationfile.Timeouts{LockTimeout: 2 * time.Second, HasLockTimeout: true},
-			wantErr:        `migration.lock_timeout sets a timeout for every migration, and dialect "ydb" has no lock wait .*`,
-			wantMissing:    []capability.Capability{capability.MigrationLockTimeout},
 		},
 	}
 	for _, test := range tests {
@@ -107,11 +86,11 @@ func TestRequestDecide_HappyPath(t *testing.T) {
 		caps     capability.Capabilities
 		timeouts migrationfile.Timeouts
 	}{
-		{name: "nobody asked", caps: capability.YDB262()},
+		{name: "nobody asked", caps: capability.Postgres18()},
 		{name: "the target takes timeouts", args: []string{"--lock-timeout", "2s"}, caps: capability.Postgres18(),
 			timeouts: migrationfile.Timeouts{LockTimeout: 2 * time.Second, HasLockTimeout: true}},
 		{name: "the target takes the statement timeout it was given", args: []string{"--statement-timeout", "30s"},
-			caps:     capability.YDB262(),
+			caps:     capability.Postgres18(),
 			timeouts: migrationfile.Timeouts{StatementTimeout: 30 * time.Second, HasStatementTimeout: true}},
 		{name: "a value nobody typed or configured", caps: capability.SQLite3(), timeouts: both},
 	}
@@ -153,10 +132,10 @@ func TestRequestDecideFromURL_FailurePath(t *testing.T) {
 	}{
 		{name: "sqlite", url: "sqlite://versioned.db", args: []string{"--statement-timeout", "30s"}, timeouts: statement,
 			wantErr: `--statement-timeout sets a timeout .* dialect "sqlite" .*`},
-		{name: "ydb lock timeout", url: "ydb://localhost:2136/local", args: []string{"--lock-timeout", "2s"},
-			timeouts: lock, wantErr: `--lock-timeout sets a timeout .* dialect "ydb" has no lock wait .*`},
 		{name: "clickhouse", url: "clickhouse://localhost:9000/db", args: []string{"--statement-timeout", "30s"},
 			timeouts: statement, wantErr: `--statement-timeout sets a timeout .* dialect "clickhouse" .*`},
+		{name: "sqlite lock timeout", url: "sqlite://versioned.db", args: []string{"--lock-timeout", "2s"},
+			timeouts: lock, wantErr: `--lock-timeout sets a timeout .* dialect "sqlite" .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -186,8 +165,6 @@ func TestRequestDecideFromURL_HappyPath(t *testing.T) {
 		{name: "a PostgreSQL-wire URL may reach Spanner", url: "postgres://localhost/db",
 			args: []string{"--statement-timeout", "30s"}},
 		{name: "a MySQL URL", url: "mysql://localhost/db", args: []string{"--statement-timeout", "30s"}},
-		{name: "a YDB URL takes a statement timeout", url: "ydb://localhost:2136/local",
-			args: []string{"--statement-timeout", "30s"}},
 		{name: "a URL Ptah cannot classify", url: "nosuch://x", args: []string{"--statement-timeout", "30s"}},
 		{name: "nothing typed", url: "sqlite://versioned.db"},
 	}

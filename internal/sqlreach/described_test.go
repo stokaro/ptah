@@ -121,7 +121,7 @@ func TestScan_DescribedConstructsStayOnTheirEngines(t *testing.T) {
 // against the switch it replaces, which answered true for MySQL, MariaDB,
 // ClickHouse and YDB, and false for every other dialect and for none.
 func TestDialectUsesBackslashEscapes_AgreesWithTheSwitchItReplaces(t *testing.T) {
-	escaping := map[string]bool{platform.MySQL: true, platform.MariaDB: true, platform.ClickHouse: true, platform.YDB: true}
+	escaping := map[string]bool{platform.MySQL: true, platform.MariaDB: true, platform.ClickHouse: true}
 	for _, spelling := range append(platform.DialectSpellings(), "", "nonesuch") {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)

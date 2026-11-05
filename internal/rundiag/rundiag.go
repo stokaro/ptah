@@ -71,6 +71,11 @@ const (
 	// command logs through a logger of its own, with a --log-level flag; see
 	// [UseLogger].
 	ListedAtDebugLevelOrFlag Listing = "PTAH_LOG_LEVEL=debug or --log-level debug lists them"
+	// ListedInToolResult is for an MCP tool call, whose warnings reach an
+	// agent in the call's result rather than on a terminal it can read: the
+	// result lists the objects beside each warning, in its _meta under the
+	// key the MCP server names.
+	ListedInToolResult Listing = "the result's _meta lists them under ptah.run/warnings"
 )
 
 // Report collects the records of one run.
@@ -268,6 +273,51 @@ func (r *Report) Count(category *Category) int {
 		}
 	}
 	return 0
+}
+
+// A Warning is the warning of one category, for a surface that hands it on
+// rather than writing it to a stream; see [Report.Drain].
+type Warning struct {
+	// Category is the category's name.
+	Category string
+	// Count is how many objects the warning concerns.
+	Count int
+	// Message is the warning without the "warning: " prefix: the object's own
+	// line for one object, and for several their summary and the report's
+	// [Listing].
+	Message string
+	// Objects are the objects' lines, in the order they were raised.
+	Objects []string
+}
+
+// Drain returns, for each category in the order it was first raised, its
+// warning, and empties the report. The objects' records are logged at debug
+// level, as [Report.Flush] logs them, and no warning is written: the caller
+// hands the warnings on, as the MCP server hands a call's warnings to the
+// agent in the call's result.
+func (r *Report) Drain() []Warning {
+	r.mu.Lock()
+	buckets, logger := r.buckets, r.logger
+	r.buckets = nil
+	r.mu.Unlock()
+	log := cmp.Or(logger, slog.Default())
+	warnings := make([]Warning, 0, len(buckets))
+	for _, target := range buckets {
+		message, _ := r.summary(target)
+		if message == "" {
+			continue
+		}
+		objects := make([]string, 0, len(target.records))
+		for _, record := range target.records {
+			log.LogAttrs(context.Background(), slog.LevelDebug, record.Line,
+				append([]slog.Attr{slog.String("category", target.category.Name)}, record.Attrs...)...)
+			objects = append(objects, record.Line)
+		}
+		warnings = append(warnings, Warning{
+			Category: target.category.Name, Count: len(target.records), Message: message, Objects: objects,
+		})
+	}
+	return warnings
 }
 
 // Shared returns the value every record holds for the attribute key, and

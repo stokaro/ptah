@@ -11,10 +11,10 @@ import (
 
 // TestRenderStatements_FailurePath_OwnerServicesMissing pins the refusal of a
 // dialect whose owner writes some of its literals when the caller passes no
-// data services: rendering every value from its Go type alone would send YDB
-// literals it refuses and Oracle text it reads through a session format.
+// data services: rendering every value from its Go type alone would send
+// Oracle text it reads through a session format.
 func TestRenderStatements_FailurePath_OwnerServicesMissing(t *testing.T) {
-	for _, dialect := range []string{"ydb", "ydbs", "oracle"} {
+	for _, dialect := range []string{"oracle"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &datadiff.DataDiff{
@@ -26,7 +26,7 @@ func TestRenderStatements_FailurePath_OwnerServicesMissing(t *testing.T) {
 
 			up, down, err := datadiff.RenderStatements(diff, dialect, dataext.Services{})
 
-			c.Assert(err, qt.ErrorMatches, `datadiff: (ydb|oracle) writes literals through its owner's data services, `+
+			c.Assert(err, qt.ErrorMatches, `datadiff: oracle writes literals through its owner's data services, `+
 				`and the caller gave none; pass the services engine.Runtime.DataServices returns for the dialect`)
 			c.Assert(up, qt.IsNil)
 			c.Assert(down, qt.IsNil)
@@ -40,7 +40,7 @@ func TestRenderStatements_FailurePath_OwnerServicesMissing(t *testing.T) {
 func TestRenderStatements_HappyPath_EmptyDiffNeedsNoServices(t *testing.T) {
 	c := qt.New(t)
 
-	up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "events"}, "ydb", dataext.Services{})
+	up, down, err := datadiff.RenderStatements(&datadiff.DataDiff{Table: "events"}, "oracle", dataext.Services{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.IsNil)

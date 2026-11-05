@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 
@@ -100,7 +99,7 @@ type Report struct {
 	// ConnectionCapabilities is the set the connection resolved before any
 	// session was pinned: the version resolution, refined by what the
 	// connection reads about the server -- an installed TimescaleDB extension
-	// on PostgreSQL, the cluster's feature flags on YDB.
+	// on PostgreSQL.
 	ConnectionCapabilities capability.Capabilities
 	// ConnectionDeltas names the keys where ConnectionCapabilities differs
 	// from the version resolution.
@@ -135,27 +134,15 @@ type Report struct {
 	// Control is the statement the server had to refuse for any acceptance in
 	// this run to be worth reading.
 	Control Attempt
-	// Namespace is the throwaway schema or database the run used. On YDB it is
-	// the absolute path of the directory the run worked in.
+	// Namespace is the throwaway schema or database the run used.
 	Namespace string
-	// StatementPrefix is the text sent ahead of every statement the evidence
-	// lists, empty where the namespace is session state the run set once. On
-	// YDB it is the pragma naming the namespace directory, so re-running a
-	// statement by hand means sending it after this.
-	StatementPrefix string
 	// Namespaced records the statements that proved the namespace applies.
 	// Entering one is not evidence that it governs where objects land, and a
 	// namespace that silently does not apply is how one run's leftovers become
 	// the next run's findings.
 	Namespaced []Attempt
-	// Cleanup records the teardown statements, and on YDB the reads that
-	// confirm the teardown removed what the run created.
+	// Cleanup records the teardown statements.
 	Cleanup []Attempt
-	// Leftovers names what the run created and the teardown did not remove,
-	// on a dialect the probe can ask; any entry fails the run. The nightly
-	// tier runs the integration suite on the server the probe used, and an
-	// object left here is one the suite's first cleanup meets.
-	Leftovers []string
 }
 
 // Count returns how many rows carry an outcome.
@@ -223,10 +210,6 @@ func (r *Report) Err() error {
 			"%s: preset says %t, server does %t", row.Capability, row.PresetSays, row.ServerDoes))
 	}
 	problems = append(problems, r.staleUnderstatements()...)
-	if len(r.Leftovers) > 0 {
-		problems = append(problems, fmt.Errorf(
-			"the run left objects it created on the server: %s", strings.Join(r.Leftovers, "; ")))
-	}
 	if r.Decided() < r.Floor() {
 		problems = append(problems, r.coverageProblem())
 	}
@@ -279,36 +262,6 @@ func (r *Report) cellProblems() []error {
 		problems = append(problems, fmt.Errorf(
 			"matrix cell %s names preset %s, but the resolver handed this server a different set",
 			r.Cell, r.Cell.PresetName))
-	}
-	problems = append(problems, r.flagProblems()...)
-	return problems
-}
-
-// flagProblems reports every key where a YDB cluster's feature flags moved the
-// connection's set away from the cell's preset.
-//
-// A YDB preset describes a release line with its default flags, and the
-// connection refines it by the flags the cluster reports. The rows compare the
-// server with that refined set, so a cluster whose flags disagree with the
-// preset agrees with every row while the preset goes unmeasured: a flag whose
-// default changed in a new build, or a container started off its defaults,
-// would leave the cell certified for a set nobody compared with the server.
-//
-// It reads only YDB. A TimescaleDB extension adds keys on a PostgreSQL server
-// that no PostgreSQL preset claims, because the extension is the database's
-// and not the line's, and MySQL's session deltas belong to a session rather
-// than to the connection; neither says anything about the preset.
-func (r *Report) flagProblems() []error {
-	if r.Dialect != platform.YDB {
-		return nil
-	}
-	preset := r.Cell.Preset()
-	var problems []error
-	for _, key := range deltas(preset, r.ConnectionCapabilities) {
-		problems = append(problems, fmt.Errorf(
-			"%s: the cluster's feature flags make it %t where preset %s says %t; the rows compared the server "+
-				"with the flags' set, so this run measured nothing about the %s preset for that key",
-			key, r.ConnectionCapabilities.Has(key), r.Cell.PresetName, preset.Has(key), r.Cell.PresetName))
 	}
 	return problems
 }
@@ -368,29 +321,11 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	if err := conn.WithSession(ctx, func(pinned *dbschema.DatabaseConnection) error {
 		report.SessionCapabilities = pinned.Info().Capabilities
 		report.SessionDeltas = deltas(report.ConnectionCapabilities, report.SessionCapabilities)
-		return measure(ctx, measuredOn(report.Dialect, conn, pinned), report)
+		return measure(ctx, pinned, report)
 	}); err != nil {
 		return nil, err
 	}
 	return report, nil
-}
-
-// measuredOn picks the connection the plan runs on: the pinned session, where
-// the namespace is session state, and the pool on YDB.
-//
-// A YDB namespace is a pragma every statement carries, so no statement there
-// depends on the session before it, and the run does depend on the pool to
-// survive a session the server ends. Measured on 25.1.4.7: the CREATE TABLE
-// the small_integer_defaults experiment sends fails with INTERNAL_ERROR and
-// ends the server session, every later statement on a pinned session answers
-// BAD_SESSION, and the run died with the namespace and its group left behind.
-// On the pool the driver drops the dead session and the next statement takes
-// a new one.
-func measuredOn(dialect string, pool, pinned *dbschema.DatabaseConnection) *dbschema.DatabaseConnection {
-	if dialect == platform.YDB {
-		return pool
-	}
-	return pinned
 }
 
 // ProductVersion asks the server for a version surface cleaner than its
@@ -441,26 +376,14 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 	}
 	report.Namespace = namespace
 	s := &session{conn: pinned, dialect: report.Dialect, namespace: namespace}
-	if report.Dialect == platform.YDB {
-		if err := s.enterYDBDirectory(); err != nil {
-			return err
-		}
-		report.Namespace = path.Join(s.database, namespace)
-		report.StatementPrefix = strings.TrimSpace(s.prefix)
-	}
 
 	enter, leave := namespaceSQL(report.Dialect, namespace)
 	if attempts, ok := s.runAll(ctx, enter); !ok {
 		return fmt.Errorf("create the throwaway probe namespace: %s", attempts[len(attempts)-1].ServerErr)
 	}
 	defer func() {
-		report.Cleanup = append(report.Cleanup, s.dropResourcePools(ctx)...)
 		report.Cleanup = append(report.Cleanup, s.dropRoles(ctx)...)
-		removal := s.leave(ctx, leave)
-		report.Cleanup = append(report.Cleanup, removal...)
-		confirmed, remaining := s.leftovers(ctx, removal)
-		report.Cleanup = append(report.Cleanup, confirmed...)
-		report.Leftovers = remaining
+		report.Cleanup = append(report.Cleanup, s.leave(ctx, leave)...)
 	}()
 
 	confirmations, err := s.confirmNamespace(ctx)

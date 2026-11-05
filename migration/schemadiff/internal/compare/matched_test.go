@@ -100,19 +100,6 @@ func TestIndexes_CountsTheIndexesThePlanKeeps(t *testing.T) {
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 2)
 }
 
-// TestIndexes_YDBCountsARenamedIndexAsAPair is the one index the plan keeps
-// under another name: one object on each side, neither added nor removed.
-func TestIndexes_YDBCountsARenamedIndexAsAPair(t *testing.T) {
-	c := qt.New(t)
-	desired := []schemamodel.Index{namedIndex(ydbDeclaredIndex("async", false, []string{"a"}, nil), "by_a")}
-	database := []catalog.Index{namedCatalogIndex(ydbIndex("GLOBAL ASYNC", false, []string{"a"}, nil), "old_a")}
-
-	diff := compareYDBIndexes(desired, database, capability.YDB262())
-
-	c.Assert(diff.IndexesRenamed, qt.HasLen, 1)
-	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{Indexes: 1})
-}
-
 // TestEnums_CountsTheTypesAndValuesBothSidesHold pairs the enum both sides
 // hold and the values it holds on both, and leaves a type one side holds to
 // its addition or removal.
@@ -411,7 +398,7 @@ func TestRoleMemberships_CountsTheMembershipsBothSidesHold(t *testing.T) {
 	}}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RoleMemberships(desired, database, diff, capability.YDB262())
+	compare.RoleMemberships(desired, database, diff, capability.Of(map[capability.Capability]bool{capability.RoleMembership: true}))
 
 	c.Assert(diff.Matched, qt.Equals, difftypes.MatchedCounts{RoleMemberships: 1})
 	c.Assert(diff.RoleMembershipsAdded, qt.DeepEquals, []difftypes.RoleMembershipRef{{Role: "writers", Member: "batch"}})

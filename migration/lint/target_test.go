@@ -48,19 +48,6 @@ func TestResolveTarget_HappyPath(t *testing.T) {
 		c.Assert(target.Dialect, qt.Equals, "oracle")
 	})
 
-	// YDB's TLS URL scheme is a spelling of the dialect, and a YDB line
-	// answers the capability the YD rules read.
-	t.Run("a YDB release line", func(t *testing.T) {
-		c := qt.New(t)
-
-		target, err := lint.ResolveTarget("ydbs", "25.1.4.7")
-
-		c.Assert(err, qt.IsNil)
-		c.Assert(target.Dialect, qt.Equals, "ydb")
-		c.Assert(target.Note, qt.Equals, "")
-		c.Assert(target.Capabilities, qt.DeepEquals, capability.YDB251())
-	})
-
 	t.Run("a newer release line answers differently", func(t *testing.T) {
 		c := qt.New(t)
 

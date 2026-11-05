@@ -139,9 +139,9 @@ the capability, a renamed index is a drop and a create.
 An engine that reports its indexes and whose session states
 `unique_constraints` as `false` holds a declared UNIQUE constraint, and a
 column's UNIQUE, as a global unique index, as YDB does. The host then reads
-each one as that index before it compares and plans, under the name the
-host's YDB renderer gives it: the constraint's name, or
-`<table>_<columns>_key`. A UNIQUE over the table's key folds into the key. The
+each one as that index before it compares and plans, under the constraint's
+name, or `<table>_<columns>_key` for one that has none, which is the name the
+provider gives the index it creates. A UNIQUE over the table's key folds into the key. The
 provider receives the index in the table it creates or alters, and never the
 constraint. A session that does not state the key leaves a UNIQUE a
 constraint.
@@ -240,14 +240,39 @@ A provider without these features refuses declared rows and seed files: the
 host does not write its own `INSERT` text or `schema_seeds` table for it. An
 engine's `query_dialect` is how the query builder, `core/query`, spells
 statements for it. The host registers it with `query.RegisterDialect` when it
-starts the provider.
+starts the provider, and writes and reads the engine's names with its quoting
+everywhere else. With `paths`, a qualified name is one path, `dir/t`, and Ptah's
+schema is the directory that holds the object.
+
+`engine.default-capabilities` lets a provider state the capability facts its
+engine is planned with offline: a render, a generation or an export with no
+database, and each release line's for a `--server-version`. A version selects
+the line it equals, or the longest line it starts with followed by a dot, so
+`26.2.1.14` selects `26.2`, and a version that selects no line is refused. Ptah
+has no preset for an engine only a provider serves, so without the facts every
+fact is unknown offline, and a provider that refuses to plan against an
+unknown fact refuses the command. A command that connects plans with the facts
+the session states.
+
+`sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
+without parsing it in many places: the lineage of view bodies, the indentation
+of the `sql` template function of `ptah-compat`, placeholder rewriting,
+statement splitting and the scans of migration bodies. The shared rules read
+the SQL standard's strings and quoted names. An engine whose strings or quoted
+names differ, as YQL's `"..."` strings and `@@...@@` strings do, lists the
+feature. While the provider is selected, Ptah asks `ScanSQL` for the tokens of
+each text of the engine it reads, and caches them by text. A scan that fails
+reads the rest of the text as unknown, never by the shared rules.
 
 `lint.migrations` lets a provider own the lint rules of its engine. The provider
 declares the rule catalog in its description, splits migration files with its own
 lexing, and returns findings for the rule codes the host enables. A result that
 is not complete is an error, never a clean run. The host keeps output formats,
-severity thresholds, and suppression. It also resolves a `--server-version` to
-the engine's capabilities and sends them with each check.
+severity thresholds, and suppression. It sends the target's capabilities with
+each check: a dev database's session states them, and a `--server-version`, or
+a `server-version` in `.ptah-lint.yaml`, selects a release line the provider
+declares facts for (`engine.default-capabilities`). A version that names no
+declared line is refused, not dropped.
 
 A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request
@@ -473,9 +498,9 @@ then takes the first candidate that exists. Later candidates are not consulted.
 
 A command asks for an executable provider with `--provider-engine`, when a
 manifest entry claims the engine, or when it names an official engine with no
-built-in implementation, such as DuckDB. An official engine that still has a
-built-in implementation, such as YDB, keeps it when the command does none of
-these, and the presence of an installed provider changes nothing.
+built-in implementation, such as YDB or DuckDB. A built-in engine keeps its
+implementation when the command does none of these, and the presence of an
+installed provider changes nothing.
 
 Rule 2 builds the installation in memory from the catalog and the install
 record: the provider ID and engines come from the catalog, and the expected

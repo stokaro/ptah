@@ -565,7 +565,6 @@ func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 		{name: "clickhouse 24.10 is probe-only", id: "clickhouse-24-10", wantSuite: false},
 		{name: "spanner runs the suite now that its cleanup path lands", id: "spanner-0", wantSuite: true},
 		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
-		{name: "ydb runs the scenarios that opted in", id: "ydb-25-1", wantSuite: true},
 	}
 
 	for _, tt := range tests {
@@ -631,35 +630,4 @@ func TestCICell_RefusesAContradictorySuiteDeclaration(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, tt.want)
 		})
 	}
-}
-
-// TestCIMatrix_ProbesTheYDBLinesTheProjectSupports pins the YDB fan-out: the
-// current release and 25.1, the one line with a published support date, run;
-// the four lines between them are declared, keep their image, and are skipped
-// for the policy their Unprobed reason states rather than for a missing recipe
-// or plan.
-func TestCIMatrix_ProbesTheYDBLinesTheProjectSupports(t *testing.T) {
-	c := qt.New(t)
-	matrix := capabilityprobe.CIMatrix()
-	notYDB := func(cell capabilityprobe.CICell) bool { return cell.Dialect != "ydb" }
-	runnable := slices.DeleteFunc(slices.Clone(matrix.Cells), notYDB)
-	skipped := slices.DeleteFunc(slices.Clone(matrix.Skipped), notYDB)
-
-	c.Assert(cellIDs(runnable), qt.DeepEquals, []string{"ydb-26-2", "ydb-25-1"})
-	c.Assert(cellIDs(skipped), qt.DeepEquals, []string{"ydb-26-1", "ydb-25-4", "ydb-25-3", "ydb-25-2"})
-	for _, cell := range skipped {
-		c.Check(cell.Skip, qt.Equals, "YDB publishes no support period for its open-source lines, and the matrix "+
-			"probes the current release and the one line with a published support date", qt.Commentf("%s", cell.ID))
-		c.Check(cell.Image, qt.Not(qt.Equals), "", qt.Commentf("%s keeps the container it ran on", cell.ID))
-		c.Check(cell.Support, qt.Equals, capability.BestEffort, qt.Commentf("%s", cell.ID))
-	}
-}
-
-// cellIDs lists the ids of cells, in their order.
-func cellIDs(cells []capabilityprobe.CICell) []string {
-	ids := make([]string, 0, len(cells))
-	for _, cell := range cells {
-		ids = append(ids, cell.ID)
-	}
-	return ids
 }

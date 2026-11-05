@@ -1070,8 +1070,7 @@ Indentation never moves a line that starts inside a quoted token. Line breaks
 and whitespace inside string literals, quoted identifiers, and dollar-quoted
 routine bodies stay as they are, so formatting does not change stored values.
 The helper reads the statements by the quoting rules of the dev database's
-engine: a bracketed name is quoted on SQL Server and SQLite, and `@@...@@` is a
-string on YDB.
+engine: a bracketed name is quoted on SQL Server and SQLite.
 
 Ptah snapshots the desired schema first, cleans the dev database, and replays
 the migration directory into it. It compares the replayed state to the
@@ -1456,11 +1455,10 @@ ordered, in type spelling, and in where the keys of a new table are written;
 matches it, so `POSTGRES` is refused. A `postgis` dev database is created empty;
 the image's extensions are created by a migration that needs them.
 
-`docker://ydb` starts a YDB server for native `ptah` (see
+`docker://ydb` asks the YDB provider to start a YDB server for the run (see
 [YDB](../../databases/ydb/#dev-shadow-and-scratch-databases)). It is a Ptah
-extension here: the verbs refuse it until they reach YDB, and strict
-compatibility refuses it as Atlas CE does, with `unsupported docker image
-"ydb"`.
+extension here, and strict compatibility refuses it as Atlas CE does, with
+`unsupported docker image "ydb"`.
 
 A `docker+<driver>://` URL starts the image it names instead, such as an image
 with an extension installed, or one that carries a provider's roles and

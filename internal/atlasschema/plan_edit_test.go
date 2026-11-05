@@ -213,21 +213,21 @@ func TestPlanFileWithStatementsFromSQLClassifiesExecutableComments(t *testing.T)
 }
 
 // An edited plan's statements are judged by the owner of the plan's dialect:
-// a dropped topic is destructive in a YDB plan, and a PostgreSQL plan reads
-// the same words as words, which name no data loss.
+// a dropped PolyBase external table needs review in a SQL Server plan, and a
+// PostgreSQL plan reads the same words as words, which name no data loss.
 func TestPlanFileWithStatementsFromSQLAsksThePlansOwner(t *testing.T) {
 	tests := []struct {
 		dialect     string
 		severity    safety.Severity
 		destructive bool
 	}{
-		{dialect: "ydb", severity: safety.Destructive, destructive: true},
+		{dialect: "sqlserver", severity: safety.Warning, destructive: false},
 		{dialect: "postgres", severity: safety.Safe, destructive: false},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			plan := withStatements(c, atlasschema.PlanFile{Dialect: test.dialect}, "DROP TOPIC `events`;")
+			plan := withStatements(c, atlasschema.PlanFile{Dialect: test.dialect}, "DROP EXTERNAL TABLE ext_orders;")
 
 			c.Assert(plan.Statements, qt.HasLen, 1)
 			c.Assert(plan.Statements[0].Severity, qt.Equals, test.severity)

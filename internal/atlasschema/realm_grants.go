@@ -23,8 +23,10 @@ import (
 //
 // A database root is what an engine has whose root reader
 // [schemafile.RootReader] returns, and the dev realm is the one that reader
-// reads from the dev connection's URL. A URL whose realm cannot be read omits
-// nothing.
+// reads from the dev connection's URL. On an engine an executable provider
+// serves, the dev connection names a realm when the database its session
+// works in is not the root its authored references are read against
+// (schemaext.DatabaseContext). A URL whose realm cannot be read omits nothing.
 func omitRealmRootGrants(info catalog.ServerInfo, target *schemamodel.Database, dev *catalog.Database) {
 	if !namesDevRealm(info) {
 		return
@@ -49,6 +51,9 @@ const databaseGrantObject = "DATABASE"
 // database root, as the dialect's root reader reads it. A dialect with no
 // root names no realm.
 func namesDevRealm(info catalog.ServerInfo) bool {
+	if bound := info.DatabaseContext; !bound.IsZero() {
+		return bound.Database != bound.SourceDatabase
+	}
 	reader, err := schemafile.RootReader(info.Dialect)
 	if err != nil || reader == nil {
 		return false

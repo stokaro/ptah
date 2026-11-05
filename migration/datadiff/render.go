@@ -75,21 +75,19 @@ import (
 // services are the dialect's data services, from
 // engine.Runtime.DataServices. Most dialects have none and render every value
 // from its Go value. A dialect whose descriptor says its owner writes some
-// literals (descriptor.Literals.ByOwner), as YDB's and Oracle's do, is refused
+// literals (descriptor.Literals.ByOwner), as Oracle's does, is refused
 // with an error naming it when services carries neither a Literals nor a
 // Columns service; an empty diff needs none. An owner that spells whole row
 // writes (dataext.Services.Writes) renders through [RenderContext] and
 // [RenderStatementsContext], and Render refuses a non-empty diff for it.
 //
-// # YDB
+// # Typed literals
 //
-// YQL types every literal and converts few of them, so on YDB each value is
-// written by the YDB owner in the type of its column, which
-// [DataDiff.ColumnTypes] names: an Int32 column takes `5`, an Int64 column
-// `5l`, a Utf8 column `'x'u`, a Timestamp column `Timestamp('...')`. A column the map does not name is an
-// error rather than a guess, and so is a value its column cannot hold -- an
-// integer outside the type's range, a negative one for an unsigned type -- which
-// the error names together with the column and its type.
+// An owner whose engine types every literal and converts few of them, as YQL
+// does, writes each value through its dataext.Literals service in the type of
+// its column, which [DataDiff.ColumnTypes] names. A column the map does not
+// name is the owner's to refuse rather than guess, and so is a value its
+// column cannot hold.
 func Render(diff *DataDiff, dialect string, services dataext.Services) (up, down string, err error) {
 	upStmts, downStmts, err := RenderStatements(diff, dialect, services)
 	if err != nil {

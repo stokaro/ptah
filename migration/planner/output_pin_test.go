@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -15,7 +14,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/goschema"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -106,12 +104,10 @@ func parsePinSchema(c *qt.C, name string) *schemamodel.Database {
 	return database
 }
 
-// pinnedDialects are the default dialects whose output the pin holds: every one
-// except YDB, which is still being built and whose output moves with it.
+// pinnedDialects are the default dialects whose output the pin holds: every
+// built-in one.
 func pinnedDialects() []string {
-	return slices.DeleteFunc(capability.DefaultDialects(), func(dialect string) bool {
-		return dialect == platform.YDB
-	})
+	return capability.DefaultDialects()
 }
 
 // pinnedOutput renders and plans the pin schemas for one dialect. A refusal is

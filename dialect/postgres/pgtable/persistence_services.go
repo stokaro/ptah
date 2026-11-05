@@ -131,7 +131,7 @@ func comparePersistence(request schemaext.FacetComparisonRequest, owner schemaex
 		}
 	}
 	if !SupportsPersistence(request.Target) {
-		return nil, "", refuseForeignPersistence(request.Target, desired)
+		return nil, "", nil
 	}
 	if !owner.Desired || !owner.Current || !request.Includes(PersistenceKind, owner.Subject) {
 		return nil, "", nil
@@ -231,11 +231,4 @@ func persistenceDesiredUnlogged(value *DesiredPersistence) bool {
 }
 func persistenceObservedUnlogged(value *ObservedPersistence) bool {
 	return value != nil && value.Unlogged
-}
-
-func refuseForeignPersistence(target string, desired *DesiredPersistence) error {
-	if platform.NormalizeDialect(target) == platform.YDB && desired != nil && desired.Unlogged {
-		return fmt.Errorf("%w: UNLOGGED is PostgreSQL's; YDB has no unlogged table", ptaherr.ErrUnsupportedFeature)
-	}
-	return nil
 }

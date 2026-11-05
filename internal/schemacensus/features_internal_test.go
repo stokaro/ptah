@@ -12,7 +12,6 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/clickhouse/chschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 )
 
@@ -26,13 +25,13 @@ func TestFeatureCensusIncludesEveryBundledDesiredCodec(t *testing.T) {
 
 	c.Assert(len(expected) > 0, qt.IsTrue)
 	c.Assert(selected.Definitions(), qt.DeepEquals, expected)
-	c.Assert(Fields(), qt.Contains, "ydbschema.ChangefeedSpec.TopicMinActivePartitions")
-	c.Assert(Fields(), qt.Contains, "ydbschema.DesiredChangefeed.Spec")
+	c.Assert(Fields(), qt.Contains, "chschema.RoleSelection.Except")
+	c.Assert(Fields(), qt.Contains, "chschema.DesiredRowPolicy.Filter")
 }
 
 func TestCensusCopiesPreserveFeatureObjectsAndCoverage(t *testing.T) {
 	c := qt.New(t)
-	source := tableChangefeedFixture()
+	source := tableRowPolicyAllExceptFixture()
 	copyOfSchema := deepCopyDatabase(source)
 	c.Assert(copyOfSchema.FeatureObjects.Equal(source.FeatureObjects), qt.IsTrue)
 	c.Assert(copyOfSchema.FeatureCoverage.Equal(source.FeatureCoverage), qt.IsTrue)
@@ -42,27 +41,30 @@ func TestCensusCopiesPreserveFeatureObjectsAndCoverage(t *testing.T) {
 }
 
 func TestCensusAblatesNestedOwnerValuesWithoutChangingTheSource(t *testing.T) {
+	ref := chschema.RowPolicyRef("", "t", "tenant_rows")
 	for _, test := range []struct {
-		name       string
-		field      string
-		partitions uint64
-		codecs     []string
+		name      string
+		field     string
+		hasFilter bool
+		except    []string
 	}{
-		{name: "stream setting", field: "ydbschema.ChangefeedSpec.TopicMinActivePartitions", codecs: []string{"raw"}},
-		{name: "nested consumer", field: "ydbtopic.ConsumerSpec.SupportedCodecs", partitions: 2},
+		{name: "policy setting", field: "chschema.DesiredRowPolicy.Filter", except: []string{"admin"}},
+		{name: "nested role selection", field: "chschema.RoleSelection.Except", hasFilter: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			source := tableChangefeedFixture()
+			source := tableRowPolicyAllExceptFixture()
 			c.Assert(Populated(source, test.field), qt.IsTrue)
 			ablated := Ablate(source, test.field)
 			c.Assert(Populated(ablated, test.field), qt.IsFalse)
-			values, err := ydbschema.DesiredChangefeeds(ablated.FeatureObjects, "", "t")
+			object, found, err := ablated.FeatureObjects.Get(ref)
 			c.Assert(err, qt.IsNil)
-			c.Assert(values, qt.HasLen, 1)
-			c.Assert(values[0].TopicMinActivePartitions, qt.Equals, test.partitions)
-			c.Assert(values[0].Consumers[0].SupportedCodecs, qt.DeepEquals, test.codecs)
-			c.Assert(source.FeatureObjects.Equal(tableChangefeedFixture().FeatureObjects), qt.IsTrue)
+			c.Assert(found, qt.IsTrue)
+			policy, ok := object.Value.(*chschema.DesiredRowPolicy)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(policy.Filter != nil, qt.Equals, test.hasFilter)
+			c.Assert(policy.Roles.Except, qt.DeepEquals, test.except)
+			c.Assert(source.FeatureObjects.Equal(tableRowPolicyAllExceptFixture().FeatureObjects), qt.IsTrue)
 			c.Assert(ablated.FeatureCoverage.Equal(source.FeatureCoverage), qt.IsTrue)
 		})
 	}

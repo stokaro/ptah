@@ -56,7 +56,6 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 			ForeignKeyNamesFoldCase: true,
 		},
 		platform.Oracle: {Enums: descriptor.EnumCheck, EnumCheckType: "VARCHAR2(255)", EnumCheckQuotesColumn: true},
-		platform.YDB:    {},
 	}
 
 	described := builtindialects.Descriptors()
@@ -89,7 +88,7 @@ func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 		platform.Postgres: cut63, platform.CockroachDB: bytes63, platform.YugabyteDB: cut63,
 		platform.Spanner: characters(128), platform.SQLServer: characters(128),
 		platform.MySQL: characters(64), platform.MariaDB: characters(64),
-		platform.ClickHouse: {}, platform.SQLite: {}, platform.Oracle: {}, platform.YDB: {},
+		platform.ClickHouse: {}, platform.SQLite: {}, platform.Oracle: {},
 	}
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {

@@ -155,44 +155,6 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
-// A YDB source is read as YQL: the double-quoted "a;b" is one string, so the
-// file is one statement, and a line without a column default is named by
-// --server-version.
-func TestSQLLint_LintsYQL(t *testing.T) {
-	tests := []struct {
-		name    string
-		dialect string
-		version string
-		sql     string
-		want    string
-	}{
-		{
-			name:    "a table without a key",
-			dialect: "ydb",
-			sql:     `CREATE TABLE t (id Uint64 NOT NULL, note Utf8 DEFAULT "a;b"u);`,
-			want:    `<stdin>:1:1: warning DDL001: table "t" has no primary key, which YDB refuses (Primary key is required for ydb tables)`,
-		},
-		{
-			name:    "a column default on the oldest line",
-			dialect: "ydbs",
-			version: "25.1.4.7",
-			sql:     "ALTER TABLE t ADD COLUMN a Int64 DEFAULT 7;",
-			want: "<stdin>:1:1: error CAP001: ADD COLUMN a with a default on table t requires target capability " +
-				"add_column_with_default, unavailable on this target",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			stdout, _, err := executeWithStdin(test.sql, "lint", "--dialect", test.dialect, "--server-version", test.version, "--stdin")
-
-			c.Assert(exitcode.Code(err, 0), qt.Not(qt.Equals), 2)
-			c.Assert(stdout, qt.Equals, test.want+"\n\n1 finding(s).\n")
-		})
-	}
-}
-
 // TestSQLLint_VersionThatNamesNoServerExitsTwo is the defect of issue #916
 // this command owned: `--version not-a-version` exited 0, linted against the
 // dialect default, and printed that string back as the version it had used.

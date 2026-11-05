@@ -11,15 +11,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	identifiers "ptah.run/core/platform/identifier"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/capabilityprobe"
-	"ptah.run/internal/ydbflags"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -101,13 +98,13 @@ func renderSurface(ctx context.Context, service renderer.SchemaService) surface 
 // rather than once per worker.
 func measure(surface surface) ([]Observation, error) {
 	fixtures := Fixtures()
-	cells := measuredCells()
+	cells := capabilityprobe.Cells
 	fields := Fields()
 
 	baselines := make([]map[string]string, len(fixtures))
 	baseline := func(index int) error {
 		fixture := fixtures[index]
-		answers, err := everyCell(surface, fixture.Schema, fixture.Cells(cells))
+		answers, err := everyCell(surface, fixture.Schema, cells)
 		if err != nil {
 			return fmt.Errorf("baseline %s: %w", fixture.Name, err)
 		}
@@ -150,7 +147,7 @@ func observe(
 			continue
 		}
 		observation.Covered = append(observation.Covered, fixture.Name)
-		ablated, err := everyCell(surface, Ablate(fixture.Schema, field), fixture.Cells(cells))
+		ablated, err := everyCell(surface, Ablate(fixture.Schema, field), cells)
 		if err != nil {
 			return Observation{}, fmt.Errorf("ablate %s from %s: %w", field, fixture.Name, err)
 		}
@@ -197,35 +194,6 @@ func inParallel(n int, work func(index int) error) error {
 	}
 	wg.Wait()
 	return failure
-}
-
-// measuredCells are the declared release lines, and each YDB line again with
-// every feature flag Ptah reads turned on, named with a `+flags` suffix.
-//
-// A YDB preset describes a cluster running its line's default flags, and a
-// declaration a flag gates is refused on every one of them: a resource pool
-// is, since EnableResourcePools is off by default on every line. Rendered only
-// on the presets, every setting of a pool would read as a field nothing reads,
-// because the refusal comes first and names none of them. [ydbflags.Flags.Refine]
-// is how Ptah turns a flag the cluster reports into its key, and each gate's
-// flag was measured on every line with the flag on, so the refined set is one
-// Ptah plans for on such a cluster.
-func measuredCells() []capabilityprobe.Cell {
-	allOn := make(ydbflags.Flags)
-	for _, gate := range ydbflags.Gates() {
-		allOn[gate.Flag] = true
-	}
-	cells := slices.Clone(capabilityprobe.Cells)
-	for _, cell := range capabilityprobe.Cells {
-		if cell.Dialect != platform.YDB || cell.Preset == nil {
-			continue
-		}
-		preset := cell.Preset
-		cell.Line += "+flags"
-		cell.Preset = func() capability.Capabilities { return allOn.Refine(preset()) }
-		cells = append(cells, cell)
-	}
-	return cells
 }
 
 // everyCell applies one surface to one schema against every declared release

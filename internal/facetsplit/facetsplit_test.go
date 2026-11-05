@@ -8,20 +8,22 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/cockroachdb/crdbschema"
+	"ptah.run/dialect/spanner/spannerschema"
 	"ptah.run/internal/facetsplit"
 )
 
-func ownsFamilies(kind schemaext.Kind) bool { return kind == ydbschema.ColumnFamiliesKind }
+func ownsRowTTL(kind schemaext.Kind) bool { return kind == crdbschema.RowTTLKind }
 
-// splitSchema has a table with a TTL and column families, each bound to YDB,
-// and a table with neither.
+// splitSchema has a table with a Spanner row deletion policy and a
+// CockroachDB row-level TTL, each bound to its target, and a table with
+// neither.
 func splitSchema() *schemamodel.Database {
 	facets := must.Must(schemaext.NewFacets(
-		&ydbschema.DesiredTTL{Policy: ydbschema.TTL{Column: "ts", Interval: "P1D"}},
-		&ydbschema.DesiredColumnFamilies{Families: []ydbschema.ColumnFamily{{Name: "cold", Columns: []string{"body"}}}},
+		&spannerschema.DesiredRowDeletion{Policy: spannerschema.Policy{Column: "ts", Interval: "30 days"}},
+		&crdbschema.DesiredRowTTL{Policy: crdbschema.Policy{ExpireAfter: "1 day"}},
 	))
-	facets = must.Must(must.Must(facets.WithTargetScope(ydbschema.TTLKind, "ydb")).WithTargetScope(ydbschema.ColumnFamiliesKind, "ydb"))
+	facets = must.Must(must.Must(facets.WithTargetScope(spannerschema.RowDeletionKind, "spanner")).WithTargetScope(crdbschema.RowTTLKind, "cockroachdb"))
 	return &schemamodel.Database{Tables: []schemamodel.Table{{Name: "events", Facets: facets}, {Name: "plain"}}}
 }
 
@@ -33,18 +35,18 @@ func TestSetAside_TakesOnlyTheOwnedFacetsAndRestorePutsThemBack(t *testing.T) {
 	c := qt.New(t)
 	db := splitSchema()
 
-	kept, aside := facetsplit.SetAside(db, ownsFamilies)
+	kept, aside := facetsplit.SetAside(db, ownsRowTTL)
 	restored, err := facetsplit.Restore(kept, aside)
 
-	c.Assert(kept.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.TTLKind})
-	c.Assert(kept.Tables[0].Facets.TargetScope(ydbschema.TTLKind), qt.DeepEquals, []string{"ydb"})
+	c.Assert(kept.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{spannerschema.RowDeletionKind})
+	c.Assert(kept.Tables[0].Facets.TargetScope(spannerschema.RowDeletionKind), qt.DeepEquals, []string{"spanner"})
 	c.Assert(aside, qt.HasLen, 2)
-	c.Assert(aside[0].Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.ColumnFamiliesKind})
+	c.Assert(aside[0].Kinds(), qt.DeepEquals, []schemaext.Kind{crdbschema.RowTTLKind})
 	c.Assert(aside[1].IsZero(), qt.IsTrue)
-	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{ydbschema.ColumnFamiliesKind, ydbschema.TTLKind})
+	c.Assert(db.Tables[0].Facets.Kinds(), qt.DeepEquals, []schemaext.Kind{crdbschema.RowTTLKind, spannerschema.RowDeletionKind})
 	c.Assert(err, qt.IsNil)
 	c.Assert(restored.Tables[0].Facets.Equal(db.Tables[0].Facets), qt.IsTrue)
-	c.Assert(restored.Tables[0].Facets.TargetScope(ydbschema.ColumnFamiliesKind), qt.DeepEquals, []string{"ydb"})
+	c.Assert(restored.Tables[0].Facets.TargetScope(crdbschema.RowTTLKind), qt.DeepEquals, []string{"cockroachdb"})
 	c.Assert(restored.Tables[1].Facets.IsZero(), qt.IsTrue)
 }
 
@@ -52,7 +54,7 @@ func TestSetAside_TakesOnlyTheOwnedFacetsAndRestorePutsThemBack(t *testing.T) {
 // tables they were taken from.
 func TestRestore_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	kept, aside := facetsplit.SetAside(splitSchema(), ownsFamilies)
+	kept, aside := facetsplit.SetAside(splitSchema(), ownsRowTTL)
 	kept.Tables = kept.Tables[:1]
 
 	restored, err := facetsplit.Restore(kept, aside)

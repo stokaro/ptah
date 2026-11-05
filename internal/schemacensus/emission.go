@@ -335,7 +335,7 @@ func MeasureEmissions(ctx context.Context, service renderer.SchemaService) (Corp
 	}
 	for _, fixture := range Fixtures() {
 		render := newFinalizedRender(ctx, service, fixture.Schema)
-		for _, cell := range fixture.Cells(capabilityprobe.Cells) {
+		for _, cell := range capabilityprobe.Cells {
 			statements, err := render.statements(cell)
 			if err != nil {
 				if !completedSchemaRefusal(err) {

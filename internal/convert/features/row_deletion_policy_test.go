@@ -13,7 +13,6 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/spanner/spannerschema"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlashclrender"
 	"ptah.run/internal/builtintest"
@@ -48,13 +47,6 @@ func spannerRead(policy spannerschema.Policy) *catalog.Database {
 	return observedTTLTable("spanner", &spannerschema.ObservedRowDeletion{Policy: policy}, coverage)
 }
 
-func ydbRead(policy ydbschema.TTL) *catalog.Database {
-	coverage := must.Must(ydbschema.TTLCoverage(schemaext.Observed,
-		schemaext.Knowledge{State: schemaext.Uninspected, Reason: "only returned tables were read"},
-		[]schemaext.SubjectCoverage{{Kind: ydbschema.TTLKind, Subject: eventsSubject("ydb"), Knowledge: schemaext.Knowledge{State: schemaext.Complete}}}))
-	return observedTTLTable("ydb", &ydbschema.ObservedTTL{Policy: policy}, coverage)
-}
-
 // TestSpannerRowDeletion_GoExportRoundTrip pins that `ptah introspect` keeps a
 // Spanner policy: the read is converted to a declaration, written as
 // platform.spanner properties in the spelling the server stores, and parses
@@ -81,29 +73,6 @@ func TestSpannerRowDeletion_GoExportRoundTrip(t *testing.T) {
 	c.Assert(restored.Policy, qt.DeepEquals, policy)
 }
 
-// TestYDBTTL_GoExportRoundTrip pins that `ptah introspect` keeps a YDB TTL on
-// an integer column with its unit, written as platform.ydb properties.
-func TestYDBTTL_GoExportRoundTrip(t *testing.T) {
-	c := qt.New(t)
-	runtime := must.Must(builtin.New())
-	policy := ydbschema.TTL{Column: "created_at", Interval: "PT1H", Unit: "SECONDS"}
-
-	declared, err := dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), ydbRead(policy), "ydb", runtime)
-	c.Assert(err, qt.IsNil)
-	files, err := goschematogo.Render(t.Context(), declared, goschematogo.Options{Annotations: builtintest.Annotations(), SingleFile: true, Dialect: "ydb", Runtime: runtime})
-	c.Assert(err, qt.IsNil)
-	c.Assert(files, qt.HasLen, 1)
-	c.Assert(string(files[0].Data), qt.Contains, `platform.ydb.row_deletion_unit="SECONDS"`)
-
-	parsed := must.Must(goschema.ParseSource(builtintest.Annotations(), "schema.go", string(files[0].Data)))
-	decoded, err := schemaproperties.DecodeTables(t.Context(), &parsed, "ydb", runtime)
-	c.Assert(err, qt.IsNil)
-	restored, found, err := schemaext.FacetAs[*ydbschema.DesiredTTL](decoded.Tables[0].Facets, ydbschema.TTLKind)
-	c.Assert(err, qt.IsNil)
-	c.Assert(found, qt.IsTrue)
-	c.Assert(restored.Policy, qt.DeepEquals, policy)
-}
-
 // TestRowDeletion_HCLExportReportsTheLoss pins that HCL, which has no
 // spelling for either policy, says it dropped one instead of writing a
 // document that silently describes a table without it.
@@ -116,8 +85,6 @@ func TestRowDeletion_HCLExportReportsTheLoss(t *testing.T) {
 	}{
 		{name: "Spanner", dialect: "spanner", want: "feature facet ptah.run/spanner/row-deletion-policy is not represented in HCL",
 			read: spannerRead(spannerschema.Policy{Column: "created_at", Interval: "30 days"})},
-		{name: "YDB", dialect: "ydb", want: "feature facet ptah.run/ydb/ttl is not represented in HCL",
-			read: ydbRead(ydbschema.TTL{Column: "created_at", Interval: "P30D"})},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

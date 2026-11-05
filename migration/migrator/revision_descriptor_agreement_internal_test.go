@@ -138,17 +138,7 @@ func TestRevisionTableDescriptors_AgreeWithTheSwitches(t *testing.T) {
 			literal:        "'a\\b'",
 			rolledBack:     false,
 		},
-		{
-			dialect:        "ydb",
-			firstRow:       "LIMIT 1",
-			emptyIsNull:    false,
-			versionNumber:  "CAST(CASE WHEN version LIKE '.%' OR version = 'R' OR version LIKE '%R' THEN NULL ELSE version END AS Int64)",
-			engineClause:   "",
-			noEngineClause: true,
-			update:         "UPDATE T\nSET a = ?\nWHERE version = ?",
-			literal:        "'a\\\\b'u",
-			rolledBack:     false,
-		}}
+	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)

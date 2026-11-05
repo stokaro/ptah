@@ -99,7 +99,7 @@ env:
 | `migration.revisions_table` | Migration metadata table |
 | `migration.revision_format` | Revision table layout: `ptah` or `atlas` |
 | `migration.lock_timeout` | Default per-migration lock timeout; on MySQL and MariaDB it bounds row-lock and metadata-lock waits; refused on YDB, where no statement waits for a lock |
-| `migration.statement_timeout` | Default per-migration statement timeout; on YDB a deadline on each query of the migration |
+| `migration.statement_timeout` | Default per-migration statement timeout; on YDB the provider puts it as a deadline on each query of the migration |
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
 | `migration.exec_order` | Pending migration execution policy |

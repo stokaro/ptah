@@ -138,25 +138,6 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/timescaledb/tsreverse`
 - `ptah.run/dialect/timescaledb/tsschema`
 - `ptah.run/dialect/timescaledb/tssource`
-- `ptah.run/dialect/ydb/ydbast`
-- `ptah.run/dialect/ydb/ydbcompare`
-- `ptah.run/dialect/ydb/ydbconvert`
-- `ptah.run/dialect/ydb/ydbcoordination`
-- `ptah.run/dialect/ydb/ydbdiff`
-- `ptah.run/dialect/ydb/ydbexternal`
-- `ptah.run/dialect/ydb/ydblint`
-- `ptah.run/dialect/ydb/ydbplan`
-- `ptah.run/dialect/ydb/ydbrender`
-- `ptah.run/dialect/ydb/ydbreplication`
-- `ptah.run/dialect/ydb/ydbreport`
-- `ptah.run/dialect/ydb/ydbreverse`
-- `ptah.run/dialect/ydb/ydbschema`
-- `ptah.run/dialect/ydb/ydbscheme`
-- `ptah.run/dialect/ydb/ydbsecret`
-- `ptah.run/dialect/ydb/ydbstreaming`
-- `ptah.run/dialect/ydb/ydbsyntax`
-- `ptah.run/dialect/ydb/ydbtopic`
-- `ptah.run/dialect/ydb/ydbworkload`
 - `ptah.run/catalog`
 - `ptah.run/docs`
 - `ptah.run/feature/oratype`
@@ -604,7 +585,7 @@ Missing source coverage leaves persistence unmanaged; an unknown catalog value
 leaves the comparison undecided. `WithPersistence` adds a nondefault declaration;
 use `schemaext.NewFacets` with `DesiredPersistence{Unlogged: false}` to retain an
 explicit default. PostgreSQL plans `ALTER TABLE ... SET LOGGED` or `SET UNLOGGED`.
-Other targets report an omitted declaration, except YDB, which refuses it.
+Other targets report an omitted declaration.
 `dialect/postgres/pgtablerender` renders the owner's prefix and typed operation.
 Its preparation and omission helpers preserve inputs and reject unknown targets.
 
@@ -692,15 +673,6 @@ The bundled runtime registers both on the postgres target.
 MariaDB: `Rules` publishes the MY family and the online rule ON102 as data, and
 `Service` checks them. The bundled runtime registers both on the mysql target;
 each rule names the targets it judges.
-
-`dialect/ydb/ydblint` is the YDB owner's part of migration lint: `Rules`
-publishes the YD family as data and `Service` checks it, reading what a table
-looks like from the directory's own history. `Splitter` reads YDB migrations as
-YQL and reports each statement's effects, its safety judgment included, and
-`Annotator` judges dropped topics, transfers, coordination nodes, streaming
-queries and async replications, and those judgments, over the split of a run
-that names no dialect. The bundled runtime registers all four on the ydb
-target.
 
 `core/featureplan.Service` plans a batch of typed changes against captured
 parents and explicit target facts. `Provider.Planning` assigns change kinds and
@@ -916,17 +888,6 @@ and capability error identities. Successful contributions still need scheduling
 with the complete host graph. These local request types are not a wire protocol;
 a process adapter maps common definitions to explicit protocol records.
 
-`dialect/ydb/ydbplan.Service` validates changefeed operands against desired and
-observed table captures. It plans stream replacement and backing-topic changes
-with explicit dependencies. A host-selected table rebuild still owns attached
-streams; the service validates and accounts for those changes without emitting
-them again. Drop and rebuild assessment requires complete captured changefeed
-coverage, including subject-specific limits. A known stream is removed with its
-parent; an uninspected or unrepresentable stream blocks the operation. Stream
-state remains irrecoverable. A receipt describes planning ownership, not
-successful execution. Semantic refusals return a completed diagnostic result;
-invalid service setup and execution failures remain errors.
-
 `core/plangraph.Schedule` combines owner contributions into a deterministic
 dependency order before rendering. Steps carry typed payloads, structured object
 effects, transaction requirements, and conservative safety assessments. It refuses
@@ -981,10 +942,10 @@ is nil for every other step.
 Common AST operands are local data; process adapters must map them to an explicit
 protocol schema instead of serializing Go AST structs.
 
-YDB changefeed changes contribute graph steps with table references and explicit
+An owner's changes contribute graph steps with table references and explicit
 drop-before-add dependencies. Surrounding target-planner phases participate in
 that order as batches; their object-level effects remain unspecified. Parent
-rebuilds own their attached streams. A target planner orders the statements
+rebuilds own their attached objects. A target planner orders the statements
 inside its own phases; the graph orders owner steps against those phases as
 whole batches.
 
@@ -1277,10 +1238,7 @@ merely because the runtime gained its codec.
 `schemaext.ReversalRuntime` is the narrow contract for this stage. A predicted
 post-forward operand is not inspection evidence. `ErrIrreversible` means the
 owner cannot restore the prior schema definition; recoverable definitions with
-unrecoverable data carry explicit limitations instead. `dialect/ydb/ydbreverse`
-reconstructs stream definitions and reports lost messages and consumer positions.
-It refuses recreation of a disabled stream while allowing an in-place topic
-change that leaves the disabled stream intact.
+unrecoverable data carry explicit limitations instead.
 
 `Target.Constraints` selects a `schemaprojection.ConstraintService` for common
 constraint side effects. `Runtime.ProjectConstraints` gives that owner independent
@@ -1312,15 +1270,7 @@ is source context, so an export from Go declarations can report omitted values
 without choosing a database. `schemaext.ReportingRuntime` supplies this stage;
 `schemaext.ModelRuntime` supplies codecs without requiring unrelated services.
 Counts describe captured values. A zero count does not establish inspected
-absence. `dialect/ydb/ydbreport` counts changefeeds and their consumers, including
-disabled streams, in both desired and observed representations.
-
-`dialect/ydb/ydbcompare.Service` compares individual changefeeds using YDB
-defaults. It preserves inspected streams omitted by an incomplete desired
-source. A table namespace claim can establish absence; an empty object list
-cannot. An explicit subject limitation prevents comparison of that stream even
-when its surrounding namespace was inspected. Unknown namespaces remain visible
-in comparison diagnostics. Disabled streams retain their observed state.
+absence.
 
 Schema conversion passes named objects and every attached facet through this
 service. `Registry.ConvertCoverage` preserves source knowledge while selecting
@@ -1459,8 +1409,7 @@ return errors and no partial result. Inputs and outputs are independent snapshot
 
 `engine.SchemaRuntime` includes `selectext.Runtime`. The zero set is refused
 with `selectext.ErrUnselected`, and `selectext.None` names the common objects
-alone. The YDB owner names its standalone objects in their directory and its
-resource pools and classifiers by database-wide name. `tssource.Selections`
+alone. `tssource.Selections`
 names a continuous aggregate, and `synonym.Selections` a synonym, whose
 comment an exclusion may subtract.
 
@@ -2199,133 +2148,6 @@ the prior policy and reports that rows deleted under the forward policy cannot
 be recovered, and `spannerconvert.Service` and `spannerreport.Service` complete
 the provider.
 
-`dialect/ydb/ydbschema` owns a YDB table's TTL as a table facet under
-`TTLKind`. `DesiredTTL` and `ObservedTTL` hold a `TTL` of a column, an ISO 8601
-interval and, for an integer column, the unit it counts; `ObservedTTL` also
-records the run interval the SDK or CLI set, which YQL cannot write.
-`ValidateDesiredTTL` refuses a missing column, an interval YDB would not keep as
-written, and a unit outside the four YDB names. `EquivalentTTL` compares the
-interval by the seconds it denotes. `TTLCoverage` builds coverage under `Owner`.
-The TTL services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and
-`ydbreport` handle the facet, `ydbdiff.TTL` carries a change, and
-`ydbast.AlterTTL` lowers through `ydbrender.TTLHandler` to
-`SET (TTL = ...)` or `RESET (TTL)`. `ydbplan.TTLService` refuses a change that
-would reset a run interval and allows its removal. A column table's tiered TTL
-belongs to its column storage, below.
-
-`ydbschema` owns a YDB table's column storage as a table facet under
-`ColumnStoreKind`; a table without the value is a row table.
-`DesiredColumnStore` and `ObservedColumnStore` hold a `ColumnStore` of hash
-columns, a shard count and a `TieredTTL`, whose `TTLTier` values move rows to an
-external data source named by its absolute path or delete them.
-`CheckColumnStore` and the validators refuse repeated hash columns, intervals
-that do not grow, deletion before the last tier, and a policy that moves no row.
-`LayoutSatisfied` and `TieredTTLEqual` are the comparison's equality, and
-`ColumnStoreCoverage` builds coverage under `Owner`.
-
-`ydbdiff.ColumnStore` carries a column storage change, and `ydbast.AlterColumnStoreTTL` lowers through
-`ydbrender.ColumnStoreTTLHandler` to `SET (TTL = ...)` or `RESET (TTL)`.
-`ydbplan.ColumnStoreService` refuses a change of storage kind, hash key or shard
-count, and plans a TTL change as a RESET that reads the old policy's sources
-early and a SET that reads the new one's, both acting on the TTL setting the
-row TTL's owner writes too.
-
-`ydbschema` owns a YDB row table's column families as a table facet under
-`ColumnFamiliesKind`. `DesiredColumnFamilies` and `ObservedColumnFamilies` hold
-`ColumnFamily` values, each with a name, the settings DATA, COMPRESSION and
-CACHE_MODE, the columns it holds, and `KeepInMemory`, which only a read and a
-value adopted from one carry. A setting left empty is not stated, and a table
-keeps what it holds of it. `ValidateDesiredColumnFamilies` and
-`ValidateObservedColumnFamilies` refuse two families of one name, a column in
-two families, a default family listing columns, and a compression or a cache
-mode outside the values a row table takes. `ColumnFamiliesCodecs` write the
-families sorted, through the types' `MarshalJSON`, and `ColumnFamiliesCoverage`
-builds coverage under `Owner`.
-
-`ydbcompare.ColumnFamiliesService` compares what a table holds once the
-declaration is applied: every family it holds stays, and each setting the
-declaration leaves out keeps the held value. A source that cannot describe
-families, HCL or DBML, leaves them unmanaged, and the comparison adopts the
-families the table holds.
-
-`ydbdiff.ColumnFamilies` carries a change and
-`ydbast.AlterColumnFamilies` lowers through `ydbrender.ColumnFamiliesHandler` to
-one `ALTER TABLE` of `ADD FAMILY`, `ALTER FAMILY ... SET` and
-`ALTER COLUMN ... SET FAMILY` actions. `ydbrender.CreateTableFamilies` writes a
-new table's families. `ydbplan.ColumnFamiliesService` plans a change after the
-table's added columns and leaves a dropped column out of it, and
-`ydbplan.RebuiltFamilies` gives a rebuilt table the families the old one holds.
-`ydbreverse.ColumnFamiliesService` reports the families and settings a rollback
-cannot remove, and `ydbconvert` and `ydbreport` complete the provider.
-
-`ydbschema` owns a YDB row table's settings -- how it splits into
-partitions, its read replicas, its key bloom filter and the partitions it
-starts with -- as a table facet under `TablePartitioningKind`.
-`DesiredTablePartitioning` and `ObservedTablePartitioning` hold a
-`TablePartitioning`, each field a setting it states; a read never states a
-starting layout and names only the settings that differ from YDB's
-documented defaults. `TablePartitioningCodecs` and
-`TablePartitioningCoverage` complete the model.
-
-`ydbcompare`, `ydbconvert`,
-`ydbplan`, `ydbreverse` and `ydbreport` carry `TablePartitioningService`, and
-`ydbdiff.TablePartitioning` lowers through `ydbast.AlterTablePartitioning`
-and `ydbrender.TablePartitioningHandler` to one `ALTER TABLE ... SET (...)`.
-`ydbrender.CreateTablePartitioning` writes a new table's settings,
-`ydbplan.RebuiltTablePartitioning` gives a rebuilt table every setting the
-old one holds, and `ydbplan.TablePartitioningRebuildReason` says which change
-only a rebuild makes.
-
-A YDB global index's partitioning and read replicas are an index facet under
-`ydbschema.IndexPartitioningKind`: `DesiredIndexPartitioning` and
-`ObservedIndexPartitioning` hold an `IndexPartitioning`, and a read names only
-the settings that differ from YDB's documented defaults.
-`IndexPartitioningCodecs` and `IndexPartitioningCoverage` complete the model.
-`ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse` and `ydbreport` carry
-`IndexPartitioningService`. `ydbdiff.IndexPartitioning` lowers through
-`ydbast.AlterIndexPartitioning` and `ydbrender.IndexPartitioningHandler` to
-one `ALTER TABLE ... ALTER INDEX ... SET (...)`, and
-`ydbplan.RebuiltIndexPartitioning` gives an index of a rebuilt table every
-setting the old index holds. A renamed index is compared under its new name.
-
-The former `ast.YDBColumnFamilySpec`, `ast.CloneYDBColumnFamilies`,
-`ast.SetYDBColumnFamiliesOperation`, the `YDBColumnFamilies` fields of
-`ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
-`difftypes.YDBColumnFamiliesChange` and `coverage.ColumnFamily` are removed
-without aliases, and so are `ast.YDBTablePartitioningSpec`,
-`ast.SetYDBTablePartitioningOperation`, the `YDBPartitioning` fields of
-`ast.CreateTableNode`, `schemamodel.Table` and `catalog.Table`,
-`difftypes.YDBTablePartitioningChange`, `TableDiff.YDBPartitioningChange`
-and `YDBHeldSettings.Partitioning`, and so are `ast.IndexPartitioningSpec`,
-`ast.SetIndexPartitioningOperation`, the `Partitioning` fields of
-`ast.IndexNode`, `schemamodel.Index` and `catalog.Index`,
-`SchemaDiff.IndexPartitioningChanged`, `difftypes.IndexPartitioningChange`,
-`SchemaDiff.CurrentYDBSettings` and `difftypes.YDBHeldSettings`. This changes
-behavior; pre-v1, so no compatibility is owed.
-
-`ydbschema` owns a YDB vector index's settings as an index facet under
-`VectorIndexKind`. `DesiredVectorIndex` and `ObservedVectorIndex` hold the
-`VectorSettings` of a `vector_kmeans_tree` index: the metric, the element type,
-the dimension, and the levels and clusters of its tree. A declaration may leave
-any setting out, and the stage that builds the index refuses what YDB would
-refuse; an observation names one metric, an element type and a dimension.
-`VectorIndexCodecs` and `VectorIndexCoverage` complete the model, and
-`HasVectorIndex` reports the facet. A source attaches a declaration to every
-index it declares as a vector index, and folds a pgvector operator class into
-the metric it names.
-
-`ydbcompare.VectorIndexService` compares the settings of an index both sides
-hold under one name, and `ydbplan.VectorIndexService` plans a change as
-`ydbast.DropVectorIndex` and `ydbast.AddVectorIndex`, which
-`ydbrender.DropVectorIndexHandler` and `ydbrender.AddVectorIndexHandler` lower,
-because YDB changes no setting of a built vector index. A common replacement or
-a table rebuild carries the settings itself. `ydbrender.ValidateIndexFacets`
-and `ydbrender.VectorIndexDeclaration` serve the YDB renderer, and
-`ydbconvert`, `ydbreverse` and `ydbreport` complete the provider. An index
-carrying an owner's facet a rename cannot carry, such as a vector index's
-settings, is never paired as a rename. An index's partitioning is carried, and
-the owner compares it under the new name.
-
 The former `ast.VectorIndexSpec` and the `Vector` fields of `ast.IndexNode`,
 `schemamodel.Index` and `catalog.Index` are removed without aliases. This
 changes behavior; pre-v1, so no compatibility is owed.
@@ -2543,232 +2365,7 @@ cloneable owner payloads. The ALTER interface stays sealed. An
 materialized view, which is how an owner changes a setting of the view in
 place. `ast.CreateMaterializedViewNode.Facets` carries owner settings the
 CREATE states inline; rendering prepares them for the target like table facets
-and refuses an active value the target's owner does not accept. YDB changefeed
-operations live in `dialect/ydb/ydbast`: `AddChangefeed`, `DropChangefeed`, and
-`AlterChangefeedTopic` each travel inside an `ExtensionAlterOperation`.
-
-`ydbast.StreamingQuery` travels inside an `ExtensionStatement`, with separate
-directory and leaf names, creation guards, both ALTER operands, and explicit
-reset permission. `StreamingCodec` provides the versioned operation record;
-`ydbrender.StreamingHandler` validates captured capabilities and renders it.
-Clones preserve independent optional run settings. Safety uses the owner's
-checkpoint-loss effect, including guarded replacement and body changes.
-
-`ydbast.ResourcePool` and `ResourcePoolClassifier` travel inside an
-`ExtensionStatement`. Create requires desired settings, alter requires both
-operands, and drop carries neither. Their versioned codecs distinguish missing
-settings from explicit zero limits and require an explicit classifier rank.
-`ydbrender.ResourcePoolHandler` and `ResourcePoolClassifierHandler` require the
-selected YDB target and its resource-pool capability. A registered codec grants
-neither. Invalid operations fail before any SQL is returned.
-
-Pool and classifier payloads expose structured subjects and workload effects.
-Safety reports retain their names and classify routing or limit changes as
-warnings. Removing the server-owned `default` pool is refused.
-`dialect/ydb/ydbworkload` owns `PoolSpec`, `ClassifierSpec`, and distinct desired
-and observed values. Go, YAML, and YQL sources carry these values in
-`Database.FeatureObjects`, with exact database-scoped names. Dots in a pool or
-classifier name are literal. They never introduce a scheme directory.
-The common desired and observed models hold no separate pool or classifier
-collections. Merging declarations with the same feature identity returns
-`schemaext.ErrDuplicate`, including identical settings from different holders.
-
-Include selectors retain captured destination pools of selected classifiers
-and streaming queries. Explicit exclusions still remove those pools. Filtering
-preserves namespace knowledge and limits subject records to the retained scope.
-HCL cannot declare workload objects: export reports omitted objects, and reading
-the document leaves these namespaces uninspected.
-
-The workload services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
-`ydbreport` handle these objects through the selected runtime. Changes retain
-complete before and after settings in `ydbdiff.ResourcePool` and
-`ydbdiff.ResourcePoolClassifier`, carried by `SchemaDiff.FeatureChanges`.
-Safety reports classify these records through their owner-provided effects.
-Reversal restores captured settings and reports that past query execution
-cannot be undone.
-
-`ydbplan.WorkloadStreamingService` plans
-pools, classifiers, and streaming queries together: a classifier rank swap
-releases occupied ranks before assigning them, and running queries stop before
-workload mutations and resume afterward. These operations cannot run inside a
-SQL transaction.
-
-`ydbast.DefaultPoolSettings` is a set-only declaration of the existing default
-pool. It preserves omitted settings without inventing an observation. An empty
-declaration emits no SQL. A migration that changes default-pool settings still
-requires an inspected before state.
-
-Pool and classifier inspection records namespace and subject coverage
-separately. A refused read, a directory outside the database-wide scope, or an
-empty system view without enabled resource-pool support cannot establish
-absence. Valid returned objects remain captured independently of target
-capabilities. Unsupported settings leave the affected subject unrepresentable.
-
-Workload comparison requires `resource_pools` capability for changes, not for
-retaining observed objects. Incomplete namespace enumeration does not block an
-unrelated table migration because source omission never removes workload objects.
-A declared workload object still requires evidence of its current settings or
-absence. Explicit subject limitations remain undecided; comparison preserves
-source coverage without claiming new inspection.
-
-Go export writes explicit unmanaged-namespace annotations when workload
-coverage is missing and preserves source-authored namespace and object limits
-through repeated export. It refuses recorded inspection limits it cannot preserve.
-The generated Go keeps unmanaged scopes unmanaged when parsed.
-Explicit absence and default coverage assertions also require a lossless
-spelling; Go export refuses them instead of replacing them with omission.
-Coverage must name the exact desired model definition the source supports.
-Matching a kind's name alone does not establish that the model is understood.
-
-`dialect/ydb/ydbsyntax` provides YQL identifier and string-literal quoting to
-owner packages without importing host implementation helpers.
-
-`dialect/ydb/ydbstreaming` owns the query `Spec` and its desired and observed
-representations in `Database.FeatureObjects`. `Desired.AllowStateReset` carries
-authored permission; conversion from an observation never grants it. The common
-schema, catalog, AST, and diff types contain no streaming-query fields.
-
-The streaming services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
-`ydbreport` consume this model. `ydbdiff.StreamingQuery` captures both change
-operands. Explicit namespace and subject coverage distinguish absence from
-uninspected or unrepresentable queries. Planning stops running queries before
-common operations and restarts them afterward. Reverse planning preserves
-permission from an accepted body change and reports checkpoint recovery limits.
-
-`dialect/ydb/ydbsecret` owns YDB secrets: the desired and observed models in
-`Database.FeatureObjects`, the declaration grammar and the statements. No
-model carries a secret's value. `Desired.ValueEnv` names the environment
-variable the value comes from, and an empty one selects `DefaultValueEnv` for
-the secret's path. `Observed` is empty, because the server returns a secret's
-path and nothing else. A desired and an observed secret compare by path alone;
-a rotation request from `RotationRequests` is the only way a plan writes
-`ALTER SECRET`, and no declaration carries one; `WithRotations` adds them to
-compare options without repeating one.
-
-`Declare` is how every source format adds a secret declaration, and
-`ParsePath` reads every other spelling of a secret as its path below the
-database root, with a slash as the only separator, and refuses a leading or
-trailing slash. `ResolvePath` reads the path a statement names, which YDB
-stores absolute, against the database root, and refuses one outside it. The
-common schema, catalog, AST, and diff types contain no secret fields.
-
-The secret services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
-`ydbreport` consume this model, `ydbdiff.Secret` captures both change operands,
-and `ydbast.Secret` is the statement payload `ydbrender.SecretHandler` writes;
-a change with both operands is a rotation. Planning creates or drops a secret
-before the common statements, except a creation at a path the plan frees or
-beneath one, and before every external data source, async replication, or
-transfer that names the secret by path. Every standalone YDB object orders
-itself against the paths above it the same way, and the planner orders objects
-of different owners against each other's paths. `ydbscheme.CommonEffects` reads such a
-path relative to the database root it is given. Reverse planning reports the
-values a rollback cannot restore, and the reversal of a rotation carries no
-change.
-
-`dialect/ydb/ydbtopic` owns standalone YDB topics: the `Spec` of settings and
-consumers, the desired and observed models in `Database.FeatureObjects`, the
-declaration grammar, the checks a declaration and a change are held to, and the
-statements. A setting a declaration leaves out stands for the value YDB gives a
-new topic, and `Equal` compares two specs with every setting resolved that way.
-`ConsumerSpec` is the consumer of a topic and of a changefeed's topic alike.
-`Declare` is how every source format adds a topic declaration and refuses a
-second one with a `DuplicateError`, and `ParsePath` and `ResolvePath` read a
-topic's path by the rules a secret's path follows. The common schema, catalog,
-AST, and diff types contain no topic fields.
-
-The topic services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`, and
-`ydbreport` consume this model, `ydbdiff.Topic` captures both change operands,
-and `ydbast.Topic` and `ydbast.TopicConsumer` are the statement payloads
-`ydbrender.TopicHandler` and `ydbrender.TopicConsumerHandler` write. Planning
-places a topic statement as a secret's, creates or changes a topic before a
-transfer reads it, and drops it after the transfer that reads it. A reversal
-returns a changed topic to the nearest state YDB reaches in place and reports
-what it cannot restore.
-
-`dialect/ydb/ydbexternal` owns YDB external data sources and external tables:
-the `DataSource` and `Table` specs, the desired and observed models of both
-kinds in `Database.FeatureObjects`, the declaration grammar, the checks a
-declaration is held to, and the statements. A spec keeps every setting as
-written, and `SameDataSource` and `SameTable` compare two specs with a path
-an option or a table holds read against the database root. `DeclareSource` and
-`DeclareTable` are how every source format adds a declaration and refuse a
-second one with a `DuplicateError`; `ParsePath` reads a limit by the rules a
-secret's path follows, and `ResolveSource` reads the data source an external
-table names against the database root. The common schema, catalog, AST,
-coverage and diff types contain no external object fields.
-
-The external services in `ydbcompare`, `ydbconvert`, `ydbplan`, `ydbreverse`,
-and `ydbreport` consume this model for both kinds in one batch.
-`ydbdiff.ExternalDataSource` and `ydbdiff.ExternalTable` capture both change
-operands, and `ExternalDataSource.Displaces` is the one predicate the
-comparison and the planner ask whether the tables over a changed source must
-be dropped and created again. `ydbast.ExternalDataSource` and
-`ydbast.ExternalTable` are the statement payloads
-`ydbrender.ExternalDataSourceHandler` and `ydbrender.ExternalTableHandler`
-write; `ExternalRecreate` is a data source's drop and creation as one
-operation. Planning places each statement early, reads the secrets a data
-source names and the source an external table names, and orders the host's
-column-table eviction policies and removed tables against the sources they
-read. `ydbscheme.TieredTTLReads` names the sources a policy reads.
-
-`dialect/ydb/ydbreplication` owns YDB async replications and transfers: the
-`Connection`, `ReplicationSpec` and `TransferSpec` specs, the desired and
-observed models of both kinds, whose observations carry the state the object
-reported, the declaration grammar, the checks a declaration and a change are
-held to, and the statements. `ReplicationsEqual` and `TransfersEqual` compare
-two specs as YDB keeps them: a directory item read back as its tables and a
-consumer YDB created for a transfer are no change.
-
-`DeclareReplication` and `DeclareTransfer` are how a source declares one, and
-refuse a second declaration at the same path with `schemaext.ErrDuplicate`.
-The Go, YAML and YQL sources declare these models, and the YDB reader reports
-them, with a replication or a transfer it could not describe recorded as
-uninspected under `UnsupportedReplicationReason`, `UnsupportedTransferReason`
-or `ServiceUnavailableReason`. The common schema, catalog, AST, coverage and
-diff types contain no replication or transfer fields. `difftypes.FeatureContext`
-carries the owned objects of both sides into planning, where the YDB planner
-reads them for the rules that span a replication and the tables it owns, or a
-transfer and the table and topic it uses.
-
-The replication services in `ydbcompare`, `ydbconvert`, `ydbplan`,
-`ydbreverse` and `ydbreport` consume this model, one batch per kind.
-`ydbdiff.AsyncReplication` and `ydbdiff.Transfer` capture both change operands,
-and `AsyncReplication.Cascade` says whether a drop takes the replica tables
-along. `ydbast.AsyncReplication` and `ydbast.Transfer` are the statement
-payloads `ydbrender.AsyncReplicationHandler` and `ydbrender.TransferHandler`
-write, and `RefuseReplication` and `RefuseTransfer` are the one rule the
-planner and the renderer hold a statement to.
-
-Planning places a drop early and any other statement after the common
-statements, with these effects, which the host orders against the other
-owners' statements on the same subjects:
-
-- A creation writes a replica at each target path, and a drop with CASCADE
-  drops them.
-- A creation or a change reads the secrets its connection names by path.
-- A transfer reads its table and the topic or changefeed it reads, and its drop
-  reads what the transfer used.
-
-`ydbscheme.SecretPathReads` and `ydbscheme.TopicPathReads` name those reads for
-the common statements and the owner alike. A reversal returns a change in place
-in the state the forward change ran in, keeps a credential YDB cannot take away,
-and reports what it cannot restore.
-
-`dialect/ydb/ydbschema` owns changefeed data. Desired and observed changefeeds
-are distinct values in `Database.FeatureObjects`, with their table recorded as
-a structured parent. `Table` has no changefeed slice. A `CreateTableNode` carries
-its children in `OwnedObjects`. `dialect/ydb/ydbconvert.Service` converts between
-these representations; `dialect/ydb/ydbdiff.Changefeed` carries the before and
-after values of one named stream.
-
-`ObservedChangefeed.Replication` records a server-reported destination binding.
-Conversion preserves it as `DesiredChangefeed.RetainedReplication`, a requirement
-to keep an existing stream. Comparison can retain that state across repeated
-plans, but a renderer cannot treat it as a creation instruction. Codecs, cloning,
-and equality include the binding. The spec-only `DesiredChangefeeds` and
-`ObservedChangefeeds` accessors omit it; use the typed objects when replacing or
-capturing state. A binding can refer to a remote destination and does not name a
-local replication controller.
+and refuses an active value the target's owner does not accept.
 
 `dialect/timescaledb/tsschema` owns the TimescaleDB models. Hypertable
 settings are a table facet under `HypertableKind`: `DesiredHypertable` declares
@@ -3722,9 +3319,8 @@ narrows the document's claim by what it declares of the owner's models.
 An owner may add keys to the frontend's table, index, function, and
 materialized-view entries too. `EntryMaterializedView` selects `matviews`. An
 `EntryAttributes` names scalar keys and the entry's own keys it reads, such
-as an index's type, in the shape of `annotation.DirectiveAttributes`, so the
-YDB owner reads an index's partitioning from Go and from YAML with one
-decoder. An `EntrySection` reads a table key whose value is not a scalar,
+as an index's type, in the shape of `annotation.DirectiveAttributes`, so an
+owner reads an index's settings from Go and from YAML with one decoder. An `EntrySection` reads a table key whose value is not a scalar,
 such as a table's changefeeds, through the same strict decode callback a
 `Section` gets.
 
@@ -3921,9 +3517,7 @@ pending switches and policies. Spanner has no row-security SQL reader.
 
 `chsource.SQL` reads ClickHouse's data-skipping index inside a column list and
 in ALTER TABLE ... ADD INDEX, and a materialized view's refresh schedule and
-storage clause, and claims refresh coverage for a ClickHouse document. The
-YDB owner registers a grammar that reads YQL, and claims what a YQL document
-declares less the objects its header leaves unmanaged.
+storage clause, and claims refresh coverage for a ClickHouse document.
 `atlascompat.ParseSQLOptions.SQL` selects the owners a parse reads with; its
 zero value reads the shared grammar alone. A lint run reads statements with the
 SQL owners of its `lint.Runtime`.
@@ -4107,12 +3701,7 @@ the frozen set. The zero set is refused with `hclext.ErrUnselected`, and
 
 `synonym.HCL` reads and writes the `synonym` block, `tssource.HCL` the
 `hypertable` and `continuous_aggregate` blocks, and `mssqlproperty.HCL` the
-`extended_property` block. `ydbsource.HCL` reads and writes the
-`coordination_node` block, the captured header, and the vector and
-partitioning attributes of an `index` block, and reads the `coordination_node`
-header entries. It reports the column families, column storage and
-partitioning of a table as losses at the table, and names the YDB secrets,
-topics, external objects, replications and transfers as unrecorded. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
+`extended_property` block. `pgpolicysource.HCL` reads and writes the `policy` block and a table's
 `row_security` block, and `pgextensionsource.HCL` the `extension` block.
 
 `mysqlsource.HCL` reads no block: it claims that an index an HCL document
@@ -4211,8 +3800,8 @@ ends in: `read state from "002.sql": extension "pg_trgm" already exists`.
 Whether the two declarations then combine is `Redeclarable`'s question.
 
 The constants of `core/coverage` are the common kinds. An owner that records
-state it does not model declares its own kinds, such as `ydbschema.CoverageChangefeed`
-or `spannerschema.CoverageChangeStream`, and registers the ones a document may
+state it does not model declares its own kinds, such as
+`spannerschema.CoverageChangeStream`, and registers the ones a document may
 name in `engine.Provider.CoverageKinds`. `Runtime.CoverageVocabulary` returns a
 `coverage.Vocabulary` of the common kinds and every selected provider's; two
 providers claiming one kind, or a provider claiming a common kind, is an
@@ -4223,8 +3812,7 @@ is the one-method interface a reader of document headers takes it through;
 carries the same vocabulary for a Go `notdescribed` declaration.
 
 A kind a read records for its owner to consult in the same process, which no
-document names, such as `ydbschema.CoverageReplicaTable`, is registered in
-`engine.Provider.ProcessCoverageKinds`. `Vocabulary.WithProcess` adds such
+document names, is registered in `engine.Provider.ProcessCoverageKinds`. `Vocabulary.WithProcess` adds such
 kinds and `Vocabulary.InProcess` reports one. `ParseKind` still refuses it, and
 a kind may not be registered both ways. A document writer leaves a record of
 an in-process kind out, and refuses a record of a kind its vocabulary does not
@@ -4242,9 +3830,7 @@ format, sorted.
 
 A schema document loader records each of them as not described,
 with the reason `unsupported` and the provenance `derived-from-fact`, so a
-document's silence about one is not read as a request to remove it.
-`ydbschema.CoverageFormatLimits` states that HCL and DBML cannot spell a
-changefeed or a column table, and that DBML cannot spell a TTL. A run whose vocabulary does not select an
+document's silence about one is not read as a request to remove it. A run whose vocabulary does not select an
 owner records none of that owner's kinds.
 
 `coverage.DecodeHeader` takes the vocabulary and an explicit `HeaderExtension`
@@ -4595,8 +4181,7 @@ comparison. Readers without it perform an ordinary schema read. Unknown state
 stays unknown, and a failed read returns no partial schema. The caller must
 validate the entire generated baseline against the allowed execution scope
 before applying any statement. An environment observation grants no permission
-to change it. YDB uses this to compare database-wide workload settings while
-rehearsing directory-local table changes.
+to change it.
 
 `dbschema.WithNativeConnections` freezes an exclusive selection of URL schemes
 and their provider-owned connectors in a context. Every database connection made
@@ -4872,13 +4457,6 @@ additions. They retain feature coverage limits and do not use an edited desired
 document as evidence of what the forward plan creates. A projected capture is
 planning input; it does not establish that the migration executed.
 
-A programmatically built YDB declaration must enroll its changefeed model even
-when it declares no streams if rollback will remove the created table. Use
-`ydbschema.ChangefeedCoverage(schemaext.Desired, nil)` for a complete empty
-namespace. Zero coverage means the source did not describe that namespace;
-reverse planning retains this limit and refuses the drop. A later edit to the
-desired document cannot strengthen the already accepted creation capture.
-
 Rollback restores a removed table and its captured children from the observation.
 Later edits to the caller's catalog cannot replace that state. Missing captures,
 mismatched identities, and children owned by another table are refused before
@@ -5117,11 +4695,12 @@ The index changes a plan makes in place each have a `SchemaDiff` list:
 
 An index renamed is in neither `IndexesAdded` nor `IndexesRemoved`. The
 comparison fills these lists only on a target whose capability set holds
-`index_rename` or `comment_attributes`, which only the YDB presets do. A
-change of a YDB global index's partitioning is the YDB owner's feature
-change, carried by its table's `TableDiff.FeatureChanges`. Every planner but YDB's
-refuses a diff that carries one with `ptaherr.ErrUnsupportedFeature`, so a
-diff built by hand cannot reach a planner that would plan nothing for it.
+`index_rename` or `comment_attributes`, which no built-in preset holds and an
+executable provider's session may state. A change of an index setting an owner
+holds, such as a YDB global index's partitioning, is the owner's feature
+change, carried by its table's `TableDiff.FeatureChanges`. Every built-in
+planner refuses a diff that carries one with `ptaherr.ErrUnsupportedFeature`,
+so a diff built by hand cannot reach a planner that would plan nothing for it.
 
 A PostgreSQL extension's installation, removal, version update, move and
 comment are the extension owner's changes in `SchemaDiff.FeatureChanges`
@@ -5379,6 +4958,19 @@ written without one resolves in, in search order: on PostgreSQL the session's
 `current_schemas(false)`. An empty path is not known, and a reader of
 unqualified names takes one to be in any schema. `Equal` and `IsZero` compare
 the path too, and `Clone` copies it.
+
+`core/platform/capability.ForDialect` answers the default preset a dialect's
+descriptor names, which an offline command plans with. An engine no descriptor
+describes has none. When an executable provider states the facts its engine is
+planned with offline (`Engine.default_capabilities`, contract 25.27), the host
+records them with `capability.RegisterDefaults` while the provider is selected,
+and `ForDialect` answers them under the engine's names. The facts of each
+release line it declares (`ReleaseLine.capabilities`) are recorded with
+`capability.RegisterReleaseLines`, and `capability.ProvidedReleaseLine`
+resolves a server version to the line it equals or the longest line it starts
+with followed by a dot. A registration lasts for the life of the process. A
+name a descriptor describes, or one already registered with other facts, is
+refused.
 
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
 data only. Beside its names and aliases, protocol family, default schema,
@@ -5734,8 +5326,8 @@ one. Earlier versions set it for a bare enum alone. The PostgreSQL renderer
 reads it to cast a column changing type into such a type through text, `USING
 s::text::status` or `USING s::text[]::status[]`, and to drop and set its
 default around the TYPE clause. The flag reaches providers in the planning
-column. A renderer that refuses enum columns, as the YDB renderer does,
-refuses an array of an enum too, which it could not create either.
+column. A renderer that refuses enum columns refuses an array of an enum too,
+which it could not create either.
 
 ### Provider session locks
 

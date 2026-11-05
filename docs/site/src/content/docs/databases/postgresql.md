@@ -1617,8 +1617,7 @@ render, in a plan and beside a `schema apply` result:
 -- MYSQL: PostgreSQL extension pgcrypto is not supported by this target; skipped.
 ```
 
-YDB refuses the declaration instead, because a skipped object would let an
-apply exit 0 without it. Add `dialects="postgres,yugabytedb"` to a Go
+Add `dialects="postgres,yugabytedb"` to a Go
 annotation to keep an extension off the other targets. YAML and HCL
 declarations carry no scope.
 

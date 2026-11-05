@@ -13,6 +13,7 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -394,7 +395,7 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, fromErr
 	}
 
-	if err := setDiffRoot(dialect, opts.DevURL, fromSide.database); err != nil {
+	if err := setDiffRoot(ctx, dialect, opts.DevURL, fromSide.database, opts.Runtime); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	compareOpts := config.DefaultCompareOptions()
@@ -911,10 +912,10 @@ func prepareDiffSources(ctx context.Context, opts DiffOptions) (preparedDiffSour
 	// create them again. Atlas CE refuses the same argv with `connected
 	// database is not clean`.
 	if resetsDevDatabase(fromSet, toSet, opts.DevURL) {
-		if err := fromSet.EnsureDevIsolation(opts.DevURL); err != nil {
+		if err := fromSet.EnsureDevIsolation(ctx, opts.DevURL); err != nil {
 			return preparedDiffSources{}, err
 		}
-		if err := toSet.EnsureDevIsolation(opts.DevURL); err != nil {
+		if err := toSet.EnsureDevIsolation(ctx, opts.DevURL); err != nil {
 			return preparedDiffSources{}, err
 		}
 	}
@@ -1143,11 +1144,27 @@ func sourceDatabaseURL(devURL string, sets ...atlassource.Set) string {
 // The engines this applies to name objects by absolute paths under a database
 // root, and the root is the one their root reader reads from the dev URL; see
 // [schemafile.RootReader]. A dev URL that names none is refused in the
-// reader's words.
-func setDiffRoot(dialect, devURL string, current *catalog.Database) error {
+// reader's words. An engine an executable provider serves has no root reader:
+// its provider interprets the dev URL (schemaext.DatabaseContext), and the root
+// is the one authored references are read against, SourceDatabase.
+func setDiffRoot(ctx context.Context, dialect, devURL string, current *catalog.Database, contexts schemaext.DatabaseContextResolver) error {
+	if current.DatabasePath != "" || devURL == "" {
+		return nil
+	}
 	reader, err := schemafile.RootReader(dialect)
-	if err != nil || reader == nil || current.DatabasePath != "" || devURL == "" {
+	if err != nil {
 		return err
+	}
+	if reader == nil {
+		if contexts == nil || platform.NormalizeDialect(dialect) != "" {
+			return nil
+		}
+		bound, err := contexts.ResolveDatabaseContext(ctx, schemaext.DatabaseContextRequest{Target: dialect, Address: devURL})
+		if err != nil {
+			return err
+		}
+		current.DatabasePath = bound.SourceDatabase
+		return nil
 	}
 	root, err := schemafile.SourceRoot(dialect, devURL)
 	if err != nil {

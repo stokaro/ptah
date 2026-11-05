@@ -26,6 +26,10 @@ finalization, dependency ordering, planner, and renderer paths.
 Use YAML when a project wants a compact Ptah-owned schema file without tying the
 schema to Go structs or HCL syntax.
 
+The keys below that declare a YDB object or setting are claimed by the
+[YDB provider](../../databases/ydb/). Ptah reads them only when a command
+selects the provider.
+
 ## Command
 
 ```bash
@@ -98,12 +102,12 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `grants` | Permission grants on a table, schema, sequence, function or procedure. On YDB, `on_database: true` names the database, and `on_topic`, `on_secret` and the other keys of the Go annotation name a scheme object. A routine is `on_function` or `on_procedure` with its argument types, such as `purge(uuid)`. |
 | `revokes` | Privileges a role must not hold, named like a grant: `role`, `privileges`, one target, and `comment`. |
 | `default_privileges` | PostgreSQL default privileges: what a grantee receives on objects a role creates later. |
-| `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](../../databases/ydb/#topics). |
-| `streaming_queries` | YDB streaming queries, keyed by name: `schema`, `text`, `run`, `resource_pool` and `allow_state_reset`. See [streaming queries](../../databases/ydb/#streaming-queries). |
-| `resource_pools` | YDB resource pools, keyed by name, with the settings of `//ptah:schema:resourcepool`. See [resource pools](../../databases/ydb/#resource-pools-and-classifiers). |
+| `topics` | YDB topics: the settings their annotation takes, and `consumers` keyed by name. See [Topics](https://github.com/stokaro/ptah-ydb-plugin#topics). |
+| `streaming_queries` | YDB streaming queries, keyed by name: `schema`, `text`, `run`, `resource_pool` and `allow_state_reset`. See [streaming queries](https://github.com/stokaro/ptah-ydb-plugin#streaming-queries). |
+| `resource_pools` | YDB resource pools, keyed by name, with the settings of `//ptah:schema:resourcepool`. See [resource pools](https://github.com/stokaro/ptah-ydb-plugin#resource-pools-and-classifiers). |
 | `resource_pool_classifiers` | YDB resource pool classifiers, keyed by name, with `resource_pool`, `member_name` and `rank`. |
 | `coordination_nodes` | YDB coordination nodes: `schema` and the settings of [`//ptah:schema:coordinationnode`](../go-annotations/#ptahschemacoordinationnode). |
-| `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](../../databases/ydb/#async-replications-and-transfers). |
+| `async_replications` | YDB async replications: the connection and consistency settings their annotation takes, and `items`, a list of `source` and `target` pairs. See [Async replications and transfers](https://github.com/stokaro/ptah-ydb-plugin#async-replications-and-transfers). |
 | `transfers` | YDB transfers: `source`, `target`, `using` and the settings their annotation takes. |
 | `secrets` | YDB secrets, each by its directory and the environment variable its value comes from; see [Secrets](#secrets). |
 | `external_data_sources` | YDB external data sources; see [External data sources and tables](#external-data-sources-and-tables). |
@@ -237,8 +241,8 @@ Each entry under `tables` declares one table.
 | `column_families` | Ordered map of a YDB table's column families; see [Column families](#column-families). |
 | `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](#changefeeds). |
 | `rls_enabled` | Enables row-level security for the table. |
-| `platform` / `overrides` | Dialect-specific override map. A [Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy) sits in its `spanner` group and a [YDB TTL](../../databases/ydb/#ttl) in its `ydb` group, as `row_deletion_column`, `row_deletion_interval` and, on YDB, `row_deletion_unit`. |
-| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's [partitioning, read replicas and key bloom filter](../../databases/ydb/#table-partitioning-read-replicas-and-key-bloom-filter), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
+| `platform` / `overrides` | Dialect-specific override map. A [Spanner row deletion policy](../../databases/distributed/#spanner-row-deletion-policy) sits in its `spanner` group and a [YDB TTL](https://github.com/stokaro/ptah-ydb-plugin#ttl) in its `ydb` group, as `row_deletion_column`, `row_deletion_interval` and, on YDB, `row_deletion_unit`. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's [partitioning, read replicas and key bloom filter](https://github.com/stokaro/ptah-ydb-plugin#partitioning-settings-read-replicas-and-key-bloom-filter), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 
 Table-local `columns`, `fields`, `indexes`, and `constraints` preserve YAML
 author order. Top-level maps render deterministically by sorted key.
@@ -314,13 +318,13 @@ map with a `table` key.
 | `include` | Covered columns: `INCLUDE` on the PostgreSQL family, `COVER` on YDB. |
 | `unique` | Builds a unique index. |
 | `type` | Dialect-specific index type; `async`, `vector_kmeans_tree`, `fulltext_plain` or `fulltext_relevance` on YDB. |
-| Full-text analyzer attributes | YDB [full-text indexes](../../databases/ydb/#full-text-indexes). |
+| Full-text analyzer attributes | YDB [full-text indexes](https://github.com/stokaro/ptah-ydb-plugin#vector-and-full-text-indexes). |
 | `where` / `condition` | Partial-index condition where the target has one. |
 | `ops` | Operator class. |
 | `platform` | Source properties grouped by target. A selected provider decodes the keys it owns; ClickHouse reads `type` and `granularity` under `clickhouse` for a data-skipping index. |
 | `comment` | Index comment. |
-| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](../../databases/ydb/#index-partitioning), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
-| `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB [vector index](../../databases/ydb/#vector-indexes)'s settings, with the values the annotation attributes of the same names take. Every other dialect refuses them. |
+| `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings` | A YDB global index's [partitioning](https://github.com/stokaro/ptah-ydb-plugin#index-alteration), with the values the annotation attributes of the same names take. Every other dialect refuses them. |
+| `distance`, `similarity`, `vector_type`, `vector_dimension`, `levels`, `clusters` | A YDB [vector index](https://github.com/stokaro/ptah-ydb-plugin#vector-and-full-text-indexes)'s settings, with the values the annotation attributes of the same names take. Every other dialect refuses them. |
 
 ## Column families
 
@@ -328,7 +332,7 @@ A YDB table's column families sit under `tables.<table>.column_families`, keyed
 by name. The keys are the attributes of `//ptah:schema:columnfamily`, with the
 same values; `fields` is a list of the columns the family holds. Every other
 dialect refuses a table that declares a column family. See
-[column families](../../databases/ydb/#column-families).
+[column families](https://github.com/stokaro/ptah-ydb-plugin#column-families).
 
 ```yaml
 tables:
@@ -349,7 +353,7 @@ name, and each changefeed's consumers under its `consumers` map, keyed by
 name. The keys are the attributes of `//ptah:schema:changefeed` and
 `//ptah:schema:changefeed:consumer`, with the same values; `supported_codecs`
 is a list. Every other dialect refuses a table that declares a changefeed. See
-[changefeeds](../../databases/ydb/#changefeeds).
+[changefeeds](https://github.com/stokaro/ptah-ydb-plugin#changefeeds).
 
 ```yaml
 tables:
@@ -374,7 +378,7 @@ directory, and `value_env` for the environment variable that holds the value,
 whose name starts with `PTAH_SECRET_`. A document never holds the value: a
 `value` key is refused, and the error names the key and not what it held. A
 dot is part of the name, and a slash in it is refused. Every other dialect
-refuses a secret. See [secrets](../../databases/ydb/#secrets).
+refuses a secret. See [secrets](https://github.com/stokaro/ptah-ydb-plugin#secrets).
 
 ```yaml
 secrets:
@@ -390,7 +394,7 @@ table under `external_tables`, each keyed by name, with the attributes of
 `//ptah:schema:externaldatasource` and `//ptah:schema:externaltable`. `options`
 is a map of option names, in any letter case, to values, and each column of a
 table has a `name`, a `type` and `not_null`. Every other dialect refuses both.
-See [external data sources](../../databases/ydb/#external-data-sources-and-external-tables).
+See [external data sources](https://github.com/stokaro/ptah-ydb-plugin#external-data-sources-and-external-tables).
 
 ```yaml
 external_data_sources:
