@@ -4687,6 +4687,12 @@ func (r *Reader) readSchemaGrantsForSchema(ctx context.Context, schemaName strin
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		-- PostgreSQL creates public owned by pg_database_owner, with that role's
+		-- own rights in nspacl. No statement declared them, so a read that keeps
+		-- them describes a grant on every stock database, and the strict
+		-- compatibility surface refuses every one. Another schema's grant to the
+		-- role is declared, and it stays.
+		AND NOT (grantee.rolname = 'pg_database_owner' AND acl.grantee = n.nspowner)
 		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
 
 	rows, err := r.db.QueryContext(ctx, query, schemaName)

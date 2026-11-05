@@ -1575,7 +1575,9 @@ reserved`, SQLSTATE 42939). The prefix is matched literally, so `pgbouncer`,
 
 A grant to a `pg_` role is read and compared like any other, so `GRANT SELECT
 ON t TO pg_monitor` is planned once. A source cannot declare the role, so Ptah
-never revokes a grant it holds.
+never revokes a grant it holds. The rights `pg_database_owner` holds on `public`,
+the schema it owns on a stock database, are not read as grants, because no
+statement declared them.
 
 One thing the refusal costs, so it stays reachable rather than being removed:
 on a cluster bootstrapped under another name, `CREATE ROLE "postgres"` succeeds.
