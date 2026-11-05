@@ -43,6 +43,9 @@ func validateSQLSchemaDeclaration(description *protocol.Description, engine *pro
 	if offered && !slices.Contains(description.GetFeatures(), ReadSQLSchemaFeature) {
 		return sqlSchemaError("engine reading requires the service")
 	}
+	if err := validateSQLFacetsFeature(description, engine); err != nil {
+		return err
+	}
 	if declaration == nil {
 		if offered {
 			return sqlSchemaError("engine reading requires the DOCUMENT mode")
@@ -165,6 +168,7 @@ func ValidateSQLSchema(description *protocol.Description, request *protocol.Read
 		func() error {
 			return validateSQLNativeObjects(description, engine, features, result)
 		},
+		func() error { return validateSQLFacets(description, engine, features, request, result) },
 		func() error { return validateSQLTraces(request, result) },
 	} {
 		if err := check(); err != nil {
@@ -177,7 +181,7 @@ func ValidateSQLSchema(description *protocol.Description, request *protocol.Read
 func validateSQLSchemaEmpty(result *protocol.SQLSchema) error {
 	if len(result.GetTables()) != 0 || len(result.GetNativeObjects()) != 0 || len(result.GetDeclarations()) != 0 || result.GetCoverage() != nil ||
 		len(result.GetNamespaces()) != 0 || len(result.GetEnums()) != 0 || len(result.GetViews()) != 0 || len(result.GetSequences()) != 0 ||
-		len(result.GetRoles()) != 0 || len(result.GetGrants()) != 0 || len(result.GetTraces()) != 0 {
+		len(result.GetRoles()) != 0 || len(result.GetGrants()) != 0 || len(result.GetTraces()) != 0 || len(result.GetFacets()) != 0 {
 		return sqlSchemaError("an incomplete reply exposes no schema")
 	}
 	return nil
@@ -441,6 +445,7 @@ func validateSQLTraces(request *protocol.ReadSQLSchemaRequest, result *protocol.
 		protocol.SQLObjectTrace_SEQUENCES:      uint64(len(result.GetSequences())),
 		protocol.SQLObjectTrace_ROLES:          uint64(len(result.GetRoles())),
 		protocol.SQLObjectTrace_GRANTS:         uint64(len(result.GetGrants())),
+		protocol.SQLObjectTrace_FACETS:         uint64(len(result.GetFacets())),
 	}
 	var want uint64
 	for _, count := range counts {

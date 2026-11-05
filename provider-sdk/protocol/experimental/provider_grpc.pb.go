@@ -94,6 +94,7 @@ const (
 	Provider_CloseStatement_FullMethodName            = "/ptah.provider.experimental.Provider/CloseStatement"
 	Provider_SplitMigration_FullMethodName            = "/ptah.provider.experimental.Provider/SplitMigration"
 	Provider_ReverseChanges_FullMethodName            = "/ptah.provider.experimental.Provider/ReverseChanges"
+	Provider_ReportValues_FullMethodName              = "/ptah.provider.experimental.Provider/ReportValues"
 	Provider_ScanSQL_FullMethodName                   = "/ptah.provider.experimental.Provider/ScanSQL"
 )
 
@@ -194,7 +195,9 @@ type ProviderClient interface {
 	SplitMigration(ctx context.Context, in *SplitMigrationRequest, opts ...grpc.CallOption) (*MigrationSplit, error)
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(ctx context.Context, in *ReverseChangesRequest, opts ...grpc.CallOption) (*ReversedChanges, error)
-	// Contract 25.26. A host calls it only for an engine that lists sql.scan.
+	// Contract 25.21. Used only when both sides list models.report-counts.
+	ReportValues(ctx context.Context, in *ReportValuesRequest, opts ...grpc.CallOption) (*ValueReports, error)
+	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
 	ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error)
 }
 
@@ -956,6 +959,16 @@ func (c *providerClient) ReverseChanges(ctx context.Context, in *ReverseChangesR
 	return out, nil
 }
 
+func (c *providerClient) ReportValues(ctx context.Context, in *ReportValuesRequest, opts ...grpc.CallOption) (*ValueReports, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ValueReports)
+	err := c.cc.Invoke(ctx, Provider_ReportValues_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) ScanSQL(ctx context.Context, in *ScanSQLRequest, opts ...grpc.CallOption) (*SQLScan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SQLScan)
@@ -1063,7 +1076,9 @@ type ProviderServer interface {
 	SplitMigration(context.Context, *SplitMigrationRequest) (*MigrationSplit, error)
 	// Contract 25.19. Used only when both sides list models.reverse.
 	ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error)
-	// Contract 25.26. A host calls it only for an engine that lists sql.scan.
+	// Contract 25.21. Used only when both sides list models.report-counts.
+	ReportValues(context.Context, *ReportValuesRequest) (*ValueReports, error)
+	// Contract 25.22. A host calls it only for an engine that lists sql.scan.
 	ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error)
 	mustEmbedUnimplementedProviderServer()
 }
@@ -1299,6 +1314,9 @@ func (UnimplementedProviderServer) SplitMigration(context.Context, *SplitMigrati
 }
 func (UnimplementedProviderServer) ReverseChanges(context.Context, *ReverseChangesRequest) (*ReversedChanges, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReverseChanges not implemented")
+}
+func (UnimplementedProviderServer) ReportValues(context.Context, *ReportValuesRequest) (*ValueReports, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportValues not implemented")
 }
 func (UnimplementedProviderServer) ScanSQL(context.Context, *ScanSQLRequest) (*SQLScan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScanSQL not implemented")
@@ -2674,6 +2692,24 @@ func _Provider_ReverseChanges_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ReportValues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportValuesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReportValues(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReportValues_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReportValues(ctx, req.(*ReportValuesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_ScanSQL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ScanSQLRequest)
 	if err := dec(in); err != nil {
@@ -2998,6 +3034,10 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReverseChanges",
 			Handler:    _Provider_ReverseChanges_Handler,
+		},
+		{
+			MethodName: "ReportValues",
+			Handler:    _Provider_ReportValues_Handler,
 		},
 		{
 			MethodName: "ScanSQL",

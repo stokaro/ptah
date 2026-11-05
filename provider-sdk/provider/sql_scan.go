@@ -12,7 +12,7 @@ import (
 // ScanSQLFeature enables ScanSQL, by which the owner returns the tokens of one
 // text of its engine's SQL. The provider and each engine that scans list it.
 // A host that does not know the RPC never calls it, so it is not a two-way
-// feature. Contract 25.26.
+// feature. Contract 25.22.
 const ScanSQLFeature = "sql.scan"
 
 // SQLScanner scans SQL text offline.
