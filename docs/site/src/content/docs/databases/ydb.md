@@ -1042,14 +1042,6 @@ CREATE RESOURCE POOL CLASSIFIER `etl_users` WITH (RESOURCE_POOL = 'batch', RANK 
 YAML spells the same settings under `resource_pools` and
 `resource_pool_classifiers`, each keyed by name.
 
-Since a pool and a classifier belong to the database, a run scoped to
-directories with `--schemas` reads and plans them as a run of the whole
-database does: `schema apply --schemas app` creates a pool its source
-declares, and keeps the database's pools when the source declares none.
-Through the YDB provider this needs a host that lists `schema.database-kinds`;
-with an older host, a run that selects only directories leaves both kinds
-uninspected, and selecting the root as well (`--schemas app,/`) reads them.
-
 YDB keeps both behind its `EnableResourcePools` feature flag, which is off by
 default on every line, so every YDB preset says `resource_pools` is false.
 Turn the flag on and name the cluster's monitoring endpoint in the URL, and
