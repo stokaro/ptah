@@ -930,11 +930,21 @@ provider compare models failed (InvalidArgument): streaming query capability was
 ```
 
 A lock outcome reads `provider lock outcome is BUSY`, followed by the
-provider's reason in the same way. Ptah never prints the rest of a provider's
-error: a driver's error can quote a connection address, a credential or a
-statement with its values, so only text the provider wrote as a reason
-reaches the output. The JSON documents carry the same sentence in their error
-message.
+provider's reason in the same way. So does a statement the engine refused,
+and a commit the provider rolled back, when the provider speaks contract 25.18
+or later:
+
+```text
+provider execution: NOT_APPLIED (0 units confirmed applied): <reason>
+provider transaction outcome is ROLLED_BACK: <reason>
+```
+
+Ptah never prints the rest of a provider's error, or the message of an
+execution or transaction result: a driver's error can quote a connection
+address, a credential or a statement with its values, so only text the
+provider wrote as a reason reaches the output. The JSON documents carry the
+same sentence in their error message, and the revision of a migration whose
+statement failed records it.
 
 Missing official providers include an engine ID, provider ID, repository URL,
 and setup URL in the error. JSON schema reports and migration setup failures
