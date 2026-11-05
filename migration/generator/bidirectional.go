@@ -314,7 +314,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	if err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}
-	reverseNodes = append(recoveryNotes(opts.Runtime, recovery), reverseNodes...)
+	reverseNodes = append(recoveryNotes(opts.Runtime, recovery, opts.Policy.Statements), reverseNodes...)
 
 	return &BidirectionalSchemaPlan{
 		PriorSchema:   prior,

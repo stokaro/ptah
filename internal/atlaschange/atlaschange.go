@@ -23,6 +23,10 @@
 // named after the forward `modify "v" view`. A table rebuild undoes nothing
 // statement by statement, so each of its steps keeps its own words.
 //
+// An operation of a built-in feature owner takes the same pattern, `create
+// "hstore" extension`, `drop "p" policy`, `create "posint" domain`, because the
+// community binary plans none of those objects either.
+//
 // An operation a provider plans is named from the object it is planned for
 // and the effect its plan step has on that object, in the wording of the same
 // object's statement: `create "orders" table` for a step that creates the
@@ -41,6 +45,8 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgtype"
 	"ptah.run/internal/planner/sqliterebuild"
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/tableref"
@@ -80,8 +86,7 @@ func For(dialect string) Words {
 // Forward returns the comment naming the change each node of plan makes, in
 // plan's order. The comment is empty for a node that makes no change Atlas
 // would name, such as a comment of the plan's own, raw SQL, or an owner
-// operation that is not a provider's planned operation on a table, view or
-// index.
+// operation that reports no object it changes.
 func (w Words) Forward(plan []ast.Node) []string {
 	steps := w.rebuildSteps(plan)
 	names := make([]string, len(plan))
@@ -311,6 +316,34 @@ func scopeOf(node ast.Node) scope {
 		if operation, ok := n.Payload.(nativeOperation); ok {
 			return nativeScope(operation.Subject())
 		}
+		return ownerScope(n.Payload)
+	}
+	return scope{}
+}
+
+// ownerScope is the scope of the object an operation of a built-in feature owner
+// changes: a type's schema, and a policy's table with its schema. An extension
+// is one object of the database, so it has no scope.
+func ownerScope(payload ast.ExtensionPayload) scope {
+	switch op := payload.(type) {
+	case *pgpolicy.PolicyOperation:
+		return scope{schema: strings.ToLower(op.Schema), table: strings.ToLower(op.Table)}
+	case *pgpolicy.PolicyCommentOperation:
+		return scope{schema: strings.ToLower(op.Schema), table: strings.ToLower(op.Table)}
+	case *pgtype.CreateDomain:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.AlterDomain:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.CreateComposite:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.AlterComposite:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.CreateRange:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.Drop:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
+	case *pgtype.Comment:
+		return scope{schema: strings.ToLower(op.Target.Schema)}
 	}
 	return scope{}
 }
@@ -569,6 +602,9 @@ func describe(node ast.Node) (change, bool) {
 	case *ast.CreateSchemaNode:
 		return change{verb: create, kind: kindSchema, name: n.Name}, true
 	case *ast.ExtensionStatement:
+		if c, ok := describeOwner(n.Payload); ok {
+			return c, true
+		}
 		return describeNative(n.Payload)
 	default:
 		return describeObject(node)

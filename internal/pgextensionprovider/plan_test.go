@@ -136,7 +136,7 @@ func TestPlanExtensions_ExactDropOmitsExistenceGuard(t *testing.T) {
 	planned := steps(c, result, "pg_trgm")
 	c.Assert(planned, qt.HasLen, 1)
 	c.Assert(planned[0].Payload, qt.DeepEquals, &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop})
-	c.Assert(planned[0].Notes, qt.Contains, "DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them")
+	c.Assert(planned[0].Notes, qt.HasLen, 0)
 }
 
 // TestPlanExtensions_NotesNameNoCascadeTheStatementLacks reads the notes against

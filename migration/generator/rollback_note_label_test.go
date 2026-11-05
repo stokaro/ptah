@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -44,4 +45,32 @@ func TestPlanBidirectionalSchemaDiff_RollbackNoteNamesTheOwnersModel(t *testing.
 	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)), qt.Equals,
 		`-- Rollback of "PostgreSQL extension pg_trgm": "keep the version the migration installed".`+"\n"+
 			`-- Recovery limit: "PostgreSQL updates an extension in one direction only: after the rollback, pg_trgm stays at version 1.6 rather than 1.5."`+"\n")
+}
+
+// TestPlanBidirectionalSchemaDiff_AnExactRollbackKeepsWhatItCannotUndo plans the
+// same rollback in the exact statement style. The line that only describes the
+// rollback is left out, and the line that says what it cannot undo stays, which
+// is all a file that runs no statement has to say.
+func TestPlanBidirectionalSchemaDiff_AnExactRollbackKeepsWhatItCannotUndo(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := &schemamodel.Database{
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.DesiredObject(pgextension.Ref("pg_trgm"),
+			pgextension.DesiredExtension{Schema: "public", Version: "1.6"})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Desired)),
+	}
+	current := &catalog.Database{
+		FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgextension.ObservedObject(pgextension.Ref("pg_trgm"),
+			pgextension.ObservedExtension{Schema: "public", Version: "1.5", Relocatable: true})))),
+		FeatureCoverage: must.Must(pgextension.CompleteCoverage(schemaext.Observed)),
+	}
+	diff := must.Must(schemadiff.CompareWithDialect(t.Context(), desired, current, platform.Postgres, runtime))
+
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), generator.BidirectionalSchemaPlanOptions{
+		Runtime: runtime, Diff: diff, DesiredSchema: desired, CurrentSchema: current, Dialect: platform.Postgres,
+		Policy: generator.BidirectionalPlanPolicy{Statements: planext.StatementStyleExact}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, plan.Reverse.Nodes...)), qt.Equals,
+		`-- Recovery limit: "PostgreSQL updates an extension in one direction only: after the rollback, pg_trgm stays at version 1.6 rather than 1.5."`+"\n")
 }
