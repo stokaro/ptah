@@ -1462,6 +1462,12 @@ still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;
 [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.
 
+A file names no dev database. On MySQL, MariaDB and ClickHouse a read of one
+database records that database on its views, routines and sequences, and the
+server prints a view's body with it in front of every relation. `migrate diff`
+takes the name off, so `DROP VIEW` and the `CREATE VIEW` of a rollback run on the
+database the file is for.
+
 ### A dev database from a named image
 
 `docker://<engine>/<tag>[/<database>]` starts an engine's own image:
