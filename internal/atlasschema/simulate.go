@@ -75,7 +75,8 @@ type SimulateOptions struct {
 	DesiredURLs []string
 	// Statements overrides the rehearsed statements; empty rehearses the
 	// prepared plan. `schema apply --edit` passes the edited statements so the
-	// simulation covers exactly what would be applied.
+	// simulation covers exactly what would be applied. A plan that holds a
+	// native operation or an approved input refuses an override.
 	Statements []string
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own, as
@@ -92,12 +93,23 @@ type SimulateOptions struct {
 // transaction mode as the target apply. Any failure surfaces as a
 // *SimulationError and the caller must refuse the target apply; the target
 // database has not been modified. Empty DevURL and empty plans are no-ops.
+//
+// A plan that holds a native operation, or a unit that reads an approved
+// input, executes through its owner, and a native operation is bound to the
+// database it was planned for. Such a plan is made again for the dev
+// database, from the same desired state, after the current schema is
+// recreated there; it must have the target plan's operations, in order, and
+// it executes through the same executor the apply uses. See
+// [nativeRehearsal].
 func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOptions) error {
 	if err := schemaext.RequireRuntime(ctx, p.runtime); err != nil {
 		return err
 	}
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
+	}
+	if p.hasNativeExecution() {
+		return p.simulateNativeOnDev(ctx, opts)
 	}
 	original, err := p.Statements()
 	if err != nil {

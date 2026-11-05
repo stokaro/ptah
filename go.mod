@@ -11,9 +11,9 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/ClickHouse/clickhouse-go/v2 v2.50.0
-	github.com/aws/aws-sdk-go-v2 v1.47.5
-	github.com/aws/aws-sdk-go-v2/config v1.33.13
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.2
+	github.com/aws/aws-sdk-go-v2 v1.47.6
+	github.com/aws/aws-sdk-go-v2/config v1.33.14
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.3
 	github.com/aws/smithy-go v1.28.8
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/frankban/quicktest v1.14.6
@@ -34,7 +34,7 @@ require (
 	github.com/sijms/go-ora/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stokaro/ptah/provider-sdk v0.17.1-0.20261105021058-7250a955d867
+	github.com/stokaro/ptah/provider-sdk v0.17.1-0.20261105030238-aef416549853
 	github.com/tursodatabase/libsql-client-go v0.0.0-20260528064733-9d5d30a29a60
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260810123728-f0c151ab31b9
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.5.3
@@ -74,23 +74,23 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/andybalholm/brotli v1.2.7 // indirect
+	github.com/andybalholm/brotli v1.2.8 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.13 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.12.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.39.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.14 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.9 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.12.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.7 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -132,7 +132,7 @@ require (
 	github.com/google/s2a-go v0.1.11 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/google/wire v0.7.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.24 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.25 // indirect
 	github.com/googleapis/gax-go/v2 v2.27.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
@@ -171,7 +171,7 @@ require (
 	github.com/skeema/knownhosts v1.3.3 // indirect
 	github.com/stokaro/teststyle v0.2.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xo/terminfo v1.3.0 // indirect
+	github.com/xo/terminfo v1.3.1 // indirect
 	github.com/yandex-cloud/go-genproto v0.135.0 // indirect
 	github.com/ydb-platform/ydb-go-yc v0.12.5 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
@@ -192,9 +192,9 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/vuln v1.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/api v0.310.0 // indirect
+	google.golang.org/api v0.311.0 // indirect
 	google.golang.org/genproto v0.0.0-20261026165753-2ffab32bce7e // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261104224025-d1e00e9f33ab // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.80.1 // indirect

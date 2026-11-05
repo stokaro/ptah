@@ -1088,6 +1088,19 @@ type CancellationRollback interface {
 	RolledBackByCancellation() bool
 }
 
+// CommitRollback reports evidence from the transaction's own lifetime, after
+// Commit has failed. A true result means the transaction's owner confirmed that
+// the commit ended the transaction by rolling it back, so nothing it executed
+// took effect: a provider answered the commit with ROLLED_BACK. A commit whose
+// outcome is unknown never reports true.
+//
+// Transactions without this interface provide no such evidence; callers must
+// then treat a failed commit by its error alone.
+type CommitRollback interface {
+	SchemaTransaction
+	RolledBackAtCommit() bool
+}
+
 // Function represents a custom function read from the database.
 type Function struct {
 	// Facets carries typed settings owned by feature providers.
@@ -1311,6 +1324,15 @@ type Role struct {
 	// on YDB is a user. Every other reader reports roles of one kind and
 	// leaves it false; omitempty keeps their serialization byte-identical.
 	Group bool `json:"group,omitempty"`
+
+	// AttributesUnknown marks a role the reader knows exists and whose
+	// attributes it did not read, so every other field but Name is a zero
+	// value rather than a fact. An executable provider names the roles outside
+	// its read's scope and describes none of their attributes, and only such a
+	// role, in [Database.RolesOutOfScope], carries it. A comparison plans no
+	// change to its attributes, since nothing says they differ. It is not
+	// part of the description and is never serialized.
+	AttributesUnknown bool `json:"-"`
 }
 
 // ObjectOwner is the owner of one schema object.

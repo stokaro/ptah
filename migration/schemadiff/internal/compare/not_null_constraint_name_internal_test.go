@@ -26,6 +26,7 @@ func TestNotNullConstraintNameChange_OnlyAnExplicitNameIsCompared(t *testing.T) 
 		name       string
 		desired    string
 		current    string
+		generated  string
 		wantChange bool
 		why        string
 	}{
@@ -58,13 +59,46 @@ func TestNotNullConstraintNameChange_OnlyAnExplicitNameIsCompared(t *testing.T) 
 			why: "the target reported no name; the constraint has to be established under " +
 				"the declared one, which the planner decides rather than the comparator",
 		},
+		{
+			name:       "the generated name beside no name is not a change",
+			desired:    "widget_a_not_null",
+			current:    "",
+			generated:  "widget_a_not_null",
+			wantChange: false,
+			why: "the current side left the name to the server, and the server gives it " +
+				"the desired one",
+		},
+		{
+			name:       "a numbered name beside no name is a change",
+			desired:    "widget_a_not_null1",
+			current:    "",
+			generated:  "widget_a_not_null",
+			wantChange: true,
+			why:        "the server numbers the name only when another constraint holds the plain one",
+		},
+		{
+			name:       "the generated name beside another name is a change",
+			desired:    "widget_a_not_null",
+			current:    "c_old",
+			generated:  "widget_a_not_null",
+			wantChange: true,
+			why:        "the current side named the constraint, so a rename is planned",
+		},
+		{
+			name:       "a name beside no name on a target that generates none is a change",
+			desired:    "widget_a_not_null",
+			current:    "",
+			generated:  "",
+			wantChange: true,
+			why:        "no server would give the constraint that name",
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			change := notNullConstraintNameChange(test.desired, test.current)
+			change := notNullConstraintNameChange(test.desired, test.current, test.generated)
 
 			c.Assert(change != nil, qt.Equals, test.wantChange, qt.Commentf("%s", test.why))
 		})
@@ -76,7 +110,7 @@ func TestNotNullConstraintNameChange_OnlyAnExplicitNameIsCompared(t *testing.T) 
 func TestNotNullConstraintNameChange_CarriesBothSides(t *testing.T) {
 	c := qt.New(t)
 
-	change := notNullConstraintNameChange("c_new", "c_old")
+	change := notNullConstraintNameChange("c_new", "c_old", "widget_a_not_null")
 
 	c.Assert(change, qt.IsNotNil)
 	c.Assert(change.Current, qt.Equals, "c_old")

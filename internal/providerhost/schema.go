@@ -93,6 +93,7 @@ func (t *target) registration() engine.Target {
 	}
 	if t.offers(provider.ObservedIndexesFeature) {
 		result.Comparison.Indexes = observedIndexRules{methods: t.offers(provider.IndexMethodsFeature)}
+		result.Lowering = uniqueIndexLowering{}
 	}
 	if t.supportsLint() {
 		result.Annotator = t

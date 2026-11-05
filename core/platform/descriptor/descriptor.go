@@ -189,8 +189,8 @@ type Dialect struct {
 	// unnamed. Empty keeps the name the rest of Ptah derives.
 	CheckNaming CheckNaming `json:"check_naming,omitempty"`
 	// ConstraintNaming is how the server names a CHECK, UNIQUE or FOREIGN
-	// KEY a schema file leaves unnamed. Empty keeps the name the rest of
-	// Ptah derives.
+	// KEY a schema file leaves unnamed, and a NOT NULL on a release that
+	// names one. Empty keeps the name the rest of Ptah derives.
 	ConstraintNaming ConstraintNaming `json:"constraint_naming,omitempty"`
 	// Columns states how the server reads a column definition.
 	Columns Columns `json:"columns,omitzero"`

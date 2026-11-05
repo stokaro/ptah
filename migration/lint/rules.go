@@ -1268,6 +1268,19 @@ var dropTargets = map[string]bool{
 	"SYSTEM":       true,
 }
 
+// droppedChangefeed reports YDB's `DROP CHANGEFEED name` at j, the word after
+// DROP: CHANGEFEED and the changefeed's name after it. A column named
+// changefeed that PostgreSQL or the MySQL family drops without the COLUMN
+// keyword has no name after it, only the clause's end, a comma or CASCADE or
+// RESTRICT, so it stays a column drop. YQL drops a column only with the
+// keyword.
+func droppedChangefeed(w []string, j int) bool {
+	if w[j] != "CHANGEFEED" || j+1 >= len(w) || w[j+1] == "CASCADE" || w[j+1] == "RESTRICT" {
+		return false
+	}
+	return lintkit.IdentLike(w[j+1])
+}
+
 // droppedColumnSubjects returns the columns an ALTER TABLE statement drops.
 // The COLUMN keyword is optional in PostgreSQL and the MySQL family, so a
 // clause-head DROP followed by an identifier counts unless the identifier is
@@ -1289,7 +1302,7 @@ func droppedColumnSubjects(w, sourceWords []string) []Subject {
 		if j >= len(w) {
 			continue
 		}
-		if !explicit && dropTargets[w[j]] {
+		if !explicit && (dropTargets[w[j]] || droppedChangefeed(w, j)) {
 			continue
 		}
 		if lintkit.IdentLike(w[j]) {

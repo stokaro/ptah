@@ -11,6 +11,8 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/deporder"
@@ -43,6 +45,7 @@ type commonObjectPlan struct {
 // cannot say.
 func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	var plan commonObjectPlan
+	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView)}
 	for _, grant := range diff.GrantsRemoved {
 		plan.before = append(plan.before, revokeNode(grant))
 	}
@@ -52,7 +55,7 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, membership := range diff.RoleMembershipsRemoved {
 		plan.before = append(plan.before, ast.NewRevokeRoleMembership(membership.Role, membership.Member))
 	}
-	plan.before = append(plan.before, droppedViews(diff)...)
+	plan.before = append(plan.before, views.dropped(diff)...)
 	for _, view := range diff.MaterializedViewsRemoved {
 		plan.before = append(plan.before, ast.NewDropMaterializedView(view.Name))
 	}
@@ -75,7 +78,7 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, change := range diff.SequencesModified {
 		plan.prepared = append(plan.prepared, alteredSequence(change))
 	}
-	plan.after = append(plan.after, createdViews(diff)...)
+	plan.after = append(plan.after, views.created(diff)...)
 	for _, view := range diff.MaterializedViewsAdded {
 		plan.after = append(plan.after, modelast.FromMaterializedView(view))
 	}
@@ -85,7 +88,7 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, membership := range diff.RoleMembershipsAdded {
 		plan.after = append(plan.after, ast.NewGrantRoleMembership(membership.Role, membership.Member))
 	}
-	for _, grant := range diff.GrantsAdded {
+	for _, grant := range slices.Concat(diff.GrantsAdded, views.regrants(diff, diff.EffectiveIdentifierSemantics(p.target))) {
 		plan.after = append(plan.after, grantNode(grant, grant.WithOption))
 	}
 	for _, grant := range diff.GrantOptionsAdded {
@@ -122,12 +125,25 @@ func bindGrantDatabasePath(nodes []ast.Node, database string) {
 	}
 }
 
-// droppedViews drops each view the plan removes, and each one whose query
-// changed under a name another view reads, dependents first.
-func droppedViews(diff *difftypes.SchemaDiff) []ast.Node {
-	objects := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved))
+// viewReplacement is how a target replaces a view whose query changed: in
+// place, on a target with [capability.CreateOrReplaceView], and otherwise by
+// dropping the view and creating it again.
+type viewReplacement struct {
+	inPlace bool
+}
+
+// dropped drops each view the plan removes, dependents first. On a target
+// that cannot replace a view in place it drops each view whose query changed
+// too, to create it again (created).
+func (r viewReplacement) dropped(diff *difftypes.SchemaDiff) []ast.Node {
+	objects := make([]deporder.ViewLike, 0, len(diff.ViewsRemoved)+len(diff.ViewsModified))
 	for _, view := range diff.ViewsRemoved {
 		objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
+	}
+	if !r.inPlace {
+		for _, change := range diff.ViewsModified {
+			objects = append(objects, deporder.ViewLike{Name: change.ViewName, Body: change.PreviousBody})
+		}
 	}
 	ordered := deporder.ViewLikesForCreate(objects)
 	slices.Reverse(ordered)
@@ -138,10 +154,11 @@ func droppedViews(diff *difftypes.SchemaDiff) []ast.Node {
 	return nodes
 }
 
-// createdViews creates each view the plan adds, and replaces each one whose
-// query changed, a view after the views it reads. How a replacement runs is
-// the provider's: its engine may replace in place or drop and create.
-func createdViews(diff *difftypes.SchemaDiff) []ast.Node {
+// created creates each view the plan adds and each one whose query changed, a
+// view after the views it reads. A target that replaces in place gets a
+// replacement, which the provider writes in the statement its engine has for
+// it. On any other target dropped dropped the view, and it is created again.
+func (r viewReplacement) created(diff *difftypes.SchemaDiff) []ast.Node {
 	views := make(map[string]*ast.CreateViewNode, len(diff.ViewsAdded)+len(diff.ViewsModified))
 	objects := make([]deporder.ViewLike, 0, len(views))
 	add := func(name string, node *ast.CreateViewNode, dependsOn []string) {
@@ -153,7 +170,9 @@ func createdViews(diff *difftypes.SchemaDiff) []ast.Node {
 	}
 	for _, change := range diff.ViewsModified {
 		node := modelast.FromView(change.Desired)
-		node.SetReplace()
+		if r.inPlace {
+			node.SetReplace()
+		}
 		add(change.Desired.Name, node, change.Desired.DependsOn)
 	}
 	nodes := make([]ast.Node, 0, len(objects))
@@ -161,6 +180,49 @@ func createdViews(diff *difftypes.SchemaDiff) []ast.Node {
 		nodes = append(nodes, views[object.Name])
 	}
 	return nodes
+}
+
+// regrants are the permission entries each view the plan drops to create
+// again held, which the plan grants again on the view that replaces it. An
+// engine keeps a view's entries in the view's own access list, so the drop
+// takes them with the view: measured on YDB 25.1.4.7 and 26.2.1.14, a view
+// created again holds no entry. A target that replaces in place keeps them,
+// and an entry the plan revokes or grants anyway is left out.
+func (r viewReplacement) regrants(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []difftypes.GrantRef {
+	if r.inPlace || len(diff.ViewsModified) == 0 {
+		return nil
+	}
+	recreated := make(map[string]bool, len(diff.ViewsModified))
+	for _, change := range diff.ViewsModified {
+		recreated[semantics.TableIdentityKey(change.ViewName)] = true
+	}
+	planned := make(map[string]bool, len(diff.GrantsRemoved)+len(diff.GrantsAdded))
+	for _, grant := range slices.Concat(diff.GrantsRemoved, diff.GrantsAdded) {
+		planned[grantIdentity(grant, semantics)] = true
+	}
+	var again []difftypes.GrantRef
+	for _, grant := range diff.CurrentGrants {
+		if relationGrant(grant) && recreated[semantics.TableIdentityKey(grant.ObjectName)] && !planned[grantIdentity(grant, semantics)] {
+			again = append(again, grant)
+		}
+	}
+	return again
+}
+
+// relationGrant reports a grant on a table or a view: an engine names a view
+// as either in its access model.
+func relationGrant(grant difftypes.GrantRef) bool {
+	return strings.EqualFold(grant.ObjectType, "TABLE") || strings.EqualFold(grant.ObjectType, "VIEW")
+}
+
+// grantIdentity is what makes two references one permission entry: the
+// role, the privilege, the object and the column it is limited to.
+func grantIdentity(grant difftypes.GrantRef, semantics identifier.Semantics) string {
+	object := grant.ObjectName
+	if relationGrant(grant) {
+		object = semantics.TableIdentityKey(object)
+	}
+	return strings.Join([]string{grant.Role, strings.ToLower(grant.Privilege), strings.ToUpper(grant.ObjectType), object, grant.Arguments, grant.Column}, "\x00")
 }
 
 // roleAttributes maps the comparison's name of a role attribute to its

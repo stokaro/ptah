@@ -1564,12 +1564,7 @@ func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) 
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-	if err := executeSQLOn(
-		recordCtx,
-		m.conn,
-		query,
-		m.migrationRevisionVersionArg(migration),
-	); err != nil {
+	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, query); err != nil {
 		return fmt.Errorf("discard rolled-back migration failure %d: %w", version, err)
 	}
 	return nil

@@ -824,9 +824,23 @@ func (m *Migration) downTimeoutsForDialect(dialect string) (migrationfile.Timeou
 // transaction its [Migration.UpTxMode] selects, and still refuses. That path
 // is for programmatic migrations, which carry no file directive to be
 // unreadable in the first place.
+//
+// The inputs a statement reads, such as a secret's value named by an
+// environment variable, are approved before the first statement runs, as a
+// migrate up approves them; each value is read when its statement is
+// dispatched. Without the approval a provider refuses every such statement,
+// because the references it discovers at dispatch differ from the none the
+// statement was approved with.
 func (m *Migration) UpForReplay(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	if m.upSQLFunc == nil {
 		return m.replayInExecutionMode(ctx, conn, m.upExecutionMode(), m.Up)
+	}
+	if conn != nil {
+		approved, _, err := prepareInputs(ctx, conn, []*Migration{m}, MigrationDirectionUp)
+		if err != nil {
+			return err
+		}
+		ctx = approved
 	}
 	txMode := m.parsedUpTxModeForDialect(databaseConnectionDialect(conn))
 	mode := migrationExecutionModeForFileTxMode(txMode.Mode)

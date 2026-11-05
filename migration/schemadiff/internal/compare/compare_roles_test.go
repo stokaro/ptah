@@ -221,6 +221,28 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 		c.Assert(diff.RolesModified[0].Changes["superuser"], qt.Equals, "false -> true")
 	})
 
+	t.Run("plans no alter for a role whose attributes the reader did not read", func(t *testing.T) {
+		c := qt.New(t)
+		// An executable provider names the roles out of its read's scope and
+		// describes none of their attributes. Their zero values are not a
+		// fact, so the role above it, read with the same zero values and no
+		// marker, is the control: comparing them plans an ALTER ROLE for
+		// every attribute the desired role sets.
+		desired := &schemamodel.Database{
+			Roles: []schemamodel.Role{{Name: "admin_user", Login: true, Superuser: true}},
+		}
+		database := &catalog.Database{
+			RolesOutOfScope: []catalog.Role{{Name: "admin_user", AttributesUnknown: true}},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Roles(desired, database, diff, compare.CoverageOf(desired, database))
+
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
+		c.Assert(diff.Matched.Roles, qt.Equals, 1)
+	})
+
 	t.Run("a described role is compared, and an unrelated out-of-scope name changes nothing", func(t *testing.T) {
 		c := qt.New(t)
 		desired := &schemamodel.Database{

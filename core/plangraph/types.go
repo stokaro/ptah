@@ -14,7 +14,9 @@ var (
 	ErrInvalid = errors.New("invalid plan graph")
 	// ErrConflict identifies competing emitters or unordered object effects.
 	ErrConflict = errors.New("conflicting plan effects")
-	// ErrCycle identifies a dependency cycle. No partial plan is returned.
+	// ErrCycle identifies a dependency cycle. No partial plan is returned. The
+	// error text names the steps of one cycle, each by owner, name and declared
+	// effects, starting and ending at its least step in owner and name order.
 	ErrCycle = errors.New("plan dependency cycle")
 )
 
