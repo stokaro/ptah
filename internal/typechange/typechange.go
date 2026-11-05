@@ -178,6 +178,11 @@ func normalizeName(raw string) string {
 
 // isSizedString reports whether a type carries a declared character width.
 //
+// SQL Server's nvarchar is here for the reason the Oracle spellings are: the
+// comparison strips a width before it compares two spellings, so a width change
+// on a type this function does not name is reported nowhere, and nvarchar(50)
+// against nvarchar(70) reads as synced.
+//
 // The Oracle spellings are here because Oracle is the one dialect whose
 // declared type and catalog type are never the same word: a declared
 // VARCHAR(200) is stored as VARCHAR2(200). Without them, parseSpec gave a
@@ -186,7 +191,7 @@ func normalizeName(raw string) string {
 // reported (stokaro/ptah#1875).
 func isSizedString(name string) bool {
 	return name == "varchar" || name == "char" || name == "character" ||
-		name == "varchar2" || name == "nvarchar2" || name == "nchar"
+		name == "varchar2" || name == "nvarchar2" || name == "nchar" || name == "nvarchar"
 }
 
 // isTextType reports whether a type is an unsized character type. CLOB and
