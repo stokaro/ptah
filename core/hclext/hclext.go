@@ -75,6 +75,17 @@ const (
 	// table. A block type the frontend reads itself inside a table is the
 	// frontend's, whatever an owner registers.
 	InTable Site = "in-table"
+	// TablePlatform is the frontend's own `platform` block inside a table,
+	// whose label is the [Block] Type or one of its [Block.Aliases]. Each
+	// `override` of the block is an attribute of the shape, named by the
+	// override's label, and every attribute is a [String]: the override's
+	// `value`. The Block has no naming. The frontend claims a table that
+	// writes such a block, with the table in [Claim.Table] and the Type as
+	// [Claim.Block]; the blocks of one table under the Type and its aliases
+	// are one claim. Its [Declaration] carries facets of the table. A table
+	// that writes no such block is not claimed, and the frontend keeps every
+	// other `platform` block among the table's overrides.
+	TablePlatform Site = "table-platform"
 )
 
 // Naming is how a block's labels name the object it declares.
@@ -229,6 +240,11 @@ type Block struct {
 	// block names a dialect. At most one shape of a block type sets it, and
 	// its exported blocks carry no dialect attribute.
 	Unscoped bool
+	// Aliases are other labels of a [TablePlatform] block, such as an
+	// engine's aliases. The frontend reads a block under any of them as the
+	// Type's, and the writer writes the Type. Only a TablePlatform block
+	// takes aliases.
+	Aliases []string
 	// GrantKind is the kind of object a `permission` or `revoke` block names
 	// an object of this block as, through `for = <type>.<schema>.<name>`,
 	// such as COORDINATION NODE, which the grant carries as
@@ -283,6 +299,9 @@ type Reference struct {
 
 // Claim is one block of a document an owner's shape matched.
 type Claim struct {
+	// Site is the site of the shape that matched, which [Set.Decode] and
+	// [Set.Coverage] fill from the shape.
+	Site Site
 	// Dialect is the normalized dialect used to select the shape, or empty
 	// when the declaration names none. It selects the model's meaning and
 	// does not narrow the declared object's target scope.
@@ -299,8 +318,8 @@ type Claim struct {
 	// Index is the index an [IndexAttributes] claim is about, whose name is
 	// Name, and nil for a claim at another site.
 	Index *Index
-	// Table identifies an [InTable] or [TableAttributes] claim, and is nil for a claim
-	// at another site.
+	// Table identifies an [InTable], [TableAttributes] or [TablePlatform]
+	// claim, and is nil for a claim at another site.
 	Table *Table
 	// Children are the blocks nested in the block whose type is one of the
 	// shape's Children, in the order the document writes them.
@@ -393,7 +412,8 @@ type Declaration struct {
 	// it does not model: names as written, and no default schema.
 	TableSettingDialect string
 	// Facets are settings of the claim's index, for an [IndexAttributes]
-	// claim, or of its table, for an [InTable] or [TableAttributes] claim. Each
+	// claim, or of its table, for an [InTable], [TableAttributes] or
+	// [TablePlatform] claim. Each
 	// facet has one of the extension's Kinds. RoutineAttributes and
 	// MaterializedViewAttributes attach facets to their declared object.
 	Facets schemaext.Facets
@@ -580,24 +600,9 @@ func NewSet(extensions ...Extension) (Set, error) {
 		if extension.Encoder != nil && len(extension.Kinds) == 0 {
 			return Set{}, fmt.Errorf("HCL extension of %s declares an encoder without a model to encode", extension.Owner)
 		}
-		blocks := make([]Block, 0, len(extension.Blocks))
-		for _, block := range extension.Blocks {
-			if err := validateBlock(extension.Owner, block); err != nil {
-				return Set{}, err
-			}
-			if kind := strings.ToUpper(block.GrantKind); kind != "" {
-				if other, taken := grantKinds[kind]; taken && other != block.Type {
-					return Set{}, fmt.Errorf("%w: HCL blocks %q and %q both name grant kind %q", schemaext.ErrDuplicate, other, block.Type, block.GrantKind)
-				}
-				grantKinds[kind] = block.Type
-			}
-			block.Attributes = slices.Clone(block.Attributes)
-			block.Children = cloneChildren(block.Children)
-			block.Dialects = slices.Clone(block.Dialects)
-			if err := set.claimBlock(index, extension.Owner, block); err != nil {
-				return Set{}, err
-			}
-			blocks = append(blocks, block)
+		blocks, err := set.claimBlocks(index, extension, grantKinds)
+		if err != nil {
+			return Set{}, err
 		}
 		extension.Kinds = slices.Clone(extension.Kinds)
 		extension.Header = slices.Clone(extension.Header)
@@ -606,6 +611,36 @@ func NewSet(extensions ...Extension) (Set, error) {
 		set.extensions = append(set.extensions, extension)
 	}
 	return set, nil
+}
+
+// claimBlocks validates the blocks of the extension at index, routes each
+// under its type and its aliases, and returns them copied, so a caller that
+// changes its shapes after NewSet does not change the set. grantKinds holds the
+// block type each grant kind of the set names so far.
+func (s *Set) claimBlocks(index int, extension Extension, grantKinds map[string]string) ([]Block, error) {
+	blocks := make([]Block, 0, len(extension.Blocks))
+	for _, block := range extension.Blocks {
+		if err := validateBlock(extension.Owner, block); err != nil {
+			return nil, err
+		}
+		if kind := strings.ToUpper(block.GrantKind); kind != "" {
+			if other, taken := grantKinds[kind]; taken && other != block.Type {
+				return nil, fmt.Errorf("%w: HCL blocks %q and %q both name grant kind %q", schemaext.ErrDuplicate, other, block.Type, block.GrantKind)
+			}
+			grantKinds[kind] = block.Type
+		}
+		block.Attributes = slices.Clone(block.Attributes)
+		block.Children = cloneChildren(block.Children)
+		block.Dialects = slices.Clone(block.Dialects)
+		block.Aliases = slices.Clone(block.Aliases)
+		for _, label := range append([]string{block.Type}, block.Aliases...) {
+			if err := s.claimBlock(index, extension.Owner, block, label); err != nil {
+				return nil, err
+			}
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks, nil
 }
 
 // cloneChildren copies children and the attributes of each, so a caller
@@ -629,6 +664,9 @@ func validateBlock(owner string, block Block) error {
 		return err
 	}
 	if err := validateNaming(owner, block); err != nil {
+		return err
+	}
+	if err := validateAliases(owner, block); err != nil {
 		return err
 	}
 	if block.GrantKind != "" && (block.Site != TopLevel || block.Naming != SchemaAndName) {
@@ -732,8 +770,26 @@ func validateNaming(owner string, block Block) error {
 		if block.Naming != "" {
 			return fmt.Errorf("HCL %s block %q of %s takes no naming", block.Site, block.Type, owner)
 		}
+	case TablePlatform:
+		if block.Naming != "" || slices.ContainsFunc(block.Attributes, func(attribute Attribute) bool { return attribute.Kind != String }) {
+			return fmt.Errorf("HCL %s block %q of %s takes no naming, and its overrides are strings", block.Site, block.Type, owner)
+		}
 	default:
 		return fmt.Errorf("HCL block %q of %s names unknown site %q", block.Type, owner, block.Site)
+	}
+	return nil
+}
+
+// validateAliases refuses an alias outside a [TablePlatform] block, an empty
+// one, one written twice and one that repeats the block's type.
+func validateAliases(owner string, block Block) error {
+	if len(block.Aliases) > 0 && block.Site != TablePlatform {
+		return fmt.Errorf("HCL %s block %q of %s has aliases, which only a %s block takes", block.Site, block.Type, owner, TablePlatform)
+	}
+	for i, alias := range block.Aliases {
+		if strings.TrimSpace(alias) == "" || alias == block.Type || slices.Contains(block.Aliases[:i], alias) {
+			return fmt.Errorf("HCL %s block %q of %s has an alias that is empty, written twice or its own type", block.Site, block.Type, owner)
+		}
 	}
 	return nil
 }
@@ -865,6 +921,7 @@ func (s Set) Decode(ctx context.Context, matches []Match) ([]Declaration, error)
 		for _, position := range positions[index] {
 			claim := matches[position].Claim
 			claim.Dialect = matches[position].Shape.dialect
+			claim.Site = matches[position].Shape.Block.Site
 			request.Claims = append(request.Claims, claim)
 		}
 		result, err := extension.Decoder.DecodeHCL(ctx, request)
@@ -950,7 +1007,7 @@ func (s Set) Coverage(document CoverageRequest) (schemaext.Coverage, error) {
 		for _, match := range document.Matches {
 			if match.Shape.extension == index && match.Shape.Block.Type != "" {
 				claim := match.Claim
-				claim.Dialect = match.Shape.dialect
+				claim.Dialect, claim.Site = match.Shape.dialect, match.Shape.Block.Site
 				request.Claims = append(request.Claims, claim)
 			}
 		}

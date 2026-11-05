@@ -34,6 +34,7 @@ sourceOfTruth:
   - "integration/providercli/provider_common_objects_e2e_test.go"
   - "integration/providercli/provider_entry_keys_e2e_test.go"
   - "integration/providercli/provider_hcl_claims_e2e_test.go"
+  - "integration/providercli/provider_hcl_platform_e2e_test.go"
   - "integration/providercli/provider_declarations_e2e_test.go"
 owns:
   - cli-ptah-providers-list
@@ -1157,6 +1158,21 @@ the objects it leaves out, so it claims nothing of the provider's models and a
 plan from it drops none of their objects. Ptah reads a captured
 `ptah:feature-coverage` header with the provider's model definitions; the
 provider takes no part in it.
+
+`source.hcl-platform` lets an engine claim a table's `platform` block whose
+label is the engine's ID or one of its aliases, such as `platform "ydb"`. Each
+`override` is a string attribute of the claim, and an `override` the claim
+does not list is refused at its block. Ptah sends the overrides of a table
+that writes the block, and keeps every other `platform` block for its own
+readers. The claim's models need not list HCL among their source formats; a
+table that writes no block states nothing about them, so its settings stay as
+the database holds them. When Ptah writes HCL, the provider writes the part of
+a value the block holds, and may report the rest as a loss of the same value,
+which Ptah reports as a loss at the table.
+
+The `ptah:feature-coverage` header of an HCL export leaves such a model out.
+The blocks the document writes are its whole account of the model, so a table
+whose block an edit removes keeps its settings too.
 
 With negotiated
 `source.limits`, claimed headers can narrow the model's or a subject's

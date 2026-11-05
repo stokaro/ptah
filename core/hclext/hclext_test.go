@@ -520,7 +520,7 @@ func TestSet_Coverage_HandsEachOwnerItsClaims(t *testing.T) {
 	_, err := set.Coverage(hclext.CoverageRequest{Matches: matches})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(first.Claims, qt.DeepEquals, []hclext.Claim{{Block: "gadget", Name: "g1"}, {Block: "gadget", Name: "g2"}})
-	c.Assert(second.Claims, qt.DeepEquals, []hclext.Claim{{Block: "widget", Name: "w1"}})
+	c.Assert(first.Claims, qt.DeepEquals, []hclext.Claim{{Site: hclext.TopLevel, Block: "gadget", Name: "g1"}, {Site: hclext.TopLevel, Block: "gadget", Name: "g2"}})
+	c.Assert(second.Claims, qt.DeepEquals, []hclext.Claim{{Site: hclext.TopLevel, Block: "widget", Name: "w1"}})
 	c.Assert(first.Matches, qt.IsNil)
 }

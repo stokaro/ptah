@@ -70,7 +70,13 @@ func (h *Host) hclExtensions() []hclext.Extension {
 	}
 	for _, engine := range engines {
 		for _, claim := range engine.GetHclSource().GetBlocks() {
-			extension.Blocks = append(extension.Blocks, hclBlock(claim))
+			block := hclBlock(claim)
+			if claim.GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM {
+				// The frontend reads the engine's group under its aliases
+				// too, as a built-in owner's platform group is read.
+				block.Aliases = slices.Clone(engine.GetAliases())
+			}
+			extension.Blocks = append(extension.Blocks, block)
 			for _, kind := range claim.GetModels() {
 				if !slices.Contains(extension.Kinds, schemaext.Kind(kind)) {
 					extension.Kinds = append(extension.Kinds, schemaext.Kind(kind))

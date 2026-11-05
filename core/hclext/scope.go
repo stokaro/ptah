@@ -47,8 +47,10 @@ func validateBlockScope(owner string, block Block) error {
 	return nil
 }
 
-func (s *Set) claimBlock(index int, owner string, block Block) error {
-	key := blockKey{site: block.Site, block: block.Type}
+// claimBlock routes the block's site and label to the extension at index: the
+// block's type, or one of a [TablePlatform] block's aliases.
+func (s *Set) claimBlock(index int, owner string, block Block, label string) error {
+	key := blockKey{site: block.Site, block: label}
 	routes, found := s.blocks[key]
 	if !found {
 		routes = &blockRoutes{shapes: make(map[int]Block), scopes: targetscope.New(), universal: -1}
@@ -60,7 +62,7 @@ func (s *Set) claimBlock(index int, owner string, block Block) error {
 		if previous < len(s.extensions) {
 			previousOwner = s.extensions[previous].Owner
 		}
-		return fmt.Errorf("%w: HCL %s block %q is read by %s and %s", schemaext.ErrDuplicate, block.Site, block.Type, previousOwner, owner)
+		return fmt.Errorf("%w: HCL %s block %q is read by %s and %s", schemaext.ErrDuplicate, block.Site, label, previousOwner, owner)
 	}
 	routes.shapes[index] = block
 	return nil

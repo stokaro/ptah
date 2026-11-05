@@ -2,6 +2,7 @@ package atlashclrender
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -63,11 +64,12 @@ var slotOwnNames = map[hclext.SlotKind][]string{
 }
 
 // ownerSlot is what the owners add to one of the writer's blocks: the
-// attributes by name and in the owners' order, and the losses in the owners'
-// order.
+// attributes by name and in the owners' order, a table's platform overrides
+// by label and key, and the losses in the owners' order.
 type ownerSlot struct {
 	attributes map[string]hclext.Value
 	ordered    []hclext.EncodedAttribute
+	overrides  map[string]map[string]string
 	losses     []string
 }
 
@@ -196,6 +198,15 @@ func collectSlots(written []hclext.SlotAttributes) (map[hclext.Slot]ownerSlot, e
 			slot.attributes[attribute.Name] = attribute.Value
 			slot.ordered = append(slot.ordered, attribute)
 		}
+		for _, override := range entry.Overrides {
+			if slot.overrides == nil {
+				slot.overrides = make(map[string]map[string]string)
+			}
+			if slot.overrides[override.Platform] == nil {
+				slot.overrides[override.Platform] = make(map[string]string)
+			}
+			slot.overrides[override.Platform][override.Key] = override.Value
+		}
 		slot.losses = append(slot.losses, entry.Losses...)
 		slots[entry.Slot] = slot
 	}
@@ -212,6 +223,50 @@ func (r *renderer) ownerSlot(slot hclext.Slot, facets schemaext.Facets) ownerSlo
 		return ownerSlot{}
 	}
 	return r.slots[slot]
+}
+
+// joinTableOverrides joins the platform overrides of each table an owner
+// writes some of with the table's own, by the table's block.
+func (r *renderer) joinTableOverrides() (map[hclext.Slot]map[string]map[string]string, error) {
+	joined := make(map[hclext.Slot]map[string]map[string]string)
+	for _, table := range r.layout.tables {
+		slot := hclext.Slot{Kind: hclext.SlotTable, Table: slotTable(table)}
+		owned := r.ownerSlot(slot, table.Facets)
+		if len(owned.overrides) == 0 {
+			continue
+		}
+		overrides, err := tableOverrides(table, owned)
+		if err != nil {
+			return nil, err
+		}
+		joined[slot] = overrides
+	}
+	return joined, nil
+}
+
+// tableOverrides joins a table's own platform overrides and those its owners
+// write, and refuses a label and key both hold: a document cannot write one
+// override twice.
+func tableOverrides(table schemamodel.Table, slot ownerSlot) (map[string]map[string]string, error) {
+	if len(slot.overrides) == 0 {
+		return table.Overrides, nil
+	}
+	joined := make(map[string]map[string]string, len(table.Overrides)+len(slot.overrides))
+	for platform, values := range table.Overrides {
+		joined[platform] = maps.Clone(values)
+	}
+	for platform, values := range slot.overrides {
+		if joined[platform] == nil {
+			joined[platform] = make(map[string]string, len(values))
+		}
+		for key, value := range values {
+			if _, held := joined[platform][key]; held {
+				return nil, fmt.Errorf("an HCL encoder wrote platform %q override %q of table %q, which the table holds already", platform, key, table.QualifiedName())
+			}
+			joined[platform][key] = value
+		}
+	}
+	return joined, nil
 }
 
 // placeSlotAttribute refuses an attribute a block has no place for, or

@@ -113,18 +113,24 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 // completeRead): the document describes the namespaces the read listed, and a
 // later plan applies it to the selection that plan names. Any other knowledge
 // is written as the document holds it.
+//
+// A model HCL states only at a table's platform group is left out, kind-wide
+// and for each subject: the groups the document writes are its whole account
+// of it. Written as a claim, it would make a table whose group an edit removes
+// lose what it holds, where a table that never wrote one keeps it.
 func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known schemaext.Coverage) ([]string, error) {
 	if known.IsZero() {
 		return nil, nil
 	}
-	kinds := known.KindRecords()
+	kinds := slices.DeleteFunc(known.KindRecords(), func(record schemaext.KindCoverage) bool { return o.platformOnly(record.Model.Kind) })
 	for i, record := range kinds {
 		if sources := record.Knowledge.Sources(); len(sources) == 1 && batch.completeRead(sources[0]) {
 			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})
 		}
 	}
-	written, err := schemaext.NewCoverage(known.Representation(), kinds, known.SubjectRecords())
-	if err != nil {
+	subjects := slices.DeleteFunc(known.SubjectRecords(), func(record schemaext.SubjectCoverage) bool { return o.platformOnly(record.Kind) })
+	written, err := schemaext.NewCoverage(known.Representation(), kinds, subjects)
+	if err != nil || written.IsZero() {
 		return nil, err
 	}
 	registry, err := o.codecs()
@@ -136,6 +142,13 @@ func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known
 		return nil, err
 	}
 	return []string{line}, nil
+}
+
+// platformOnly reports whether an engine of the extension states kind in HCL
+// only at a table's platform group (see Host.hclPlatformOnly).
+func (o *hclOwner) platformOnly(kind schemaext.Kind) bool {
+	contract := o.host.models[modelKey{kind: kind, representation: schemaext.Desired}]
+	return contract != nil && slices.ContainsFunc(o.engines, func(engine *protocol.Engine) bool { return o.host.hclPlatformOnly(engine.GetId(), contract) })
 }
 
 // parts retains value accounting for the writer's object identity and target
@@ -228,16 +241,24 @@ func (e *hclEncoding) loss(id, message string) {
 		Path: string(object.Ref.Kind) + "." + object.Ref.Name.Source, Losses: []string{message}, Unwritten: true, Object: object.Ref, Targets: slices.Clone(object.Targets)})
 }
 
+// slot is the entry of the writer's block slot in the result, added the first
+// time a fragment or a loss writes there: the writer takes one entry for each
+// of its blocks.
+func (e *hclEncoding) slot(slot hclext.Slot) *hclext.SlotAttributes {
+	index := slices.IndexFunc(e.result.Attributes, func(written hclext.SlotAttributes) bool { return written.Slot == slot })
+	if index < 0 {
+		e.result.Attributes = append(e.result.Attributes, hclext.SlotAttributes{Slot: slot})
+		index = len(e.result.Attributes) - 1
+	}
+	return &e.result.Attributes[index]
+}
+
 // finish joins the losses of the writer's blocks to the attributes written
 // there.
 func (e *hclEncoding) finish() hclext.EncodeResult {
 	for slot, losses := range e.losses {
-		index := slices.IndexFunc(e.result.Attributes, func(written hclext.SlotAttributes) bool { return written.Slot == slot })
-		if index < 0 {
-			e.result.Attributes = append(e.result.Attributes, hclext.SlotAttributes{Slot: slot})
-			index = len(e.result.Attributes) - 1
-		}
-		e.result.Attributes[index].Losses = append(e.result.Attributes[index].Losses, losses...)
+		written := e.slot(slot)
+		written.Losses = append(written.Losses, losses...)
 	}
 	slices.SortStableFunc(e.result.Attributes, func(a, b hclext.SlotAttributes) int { return strings.Compare(a.Slot.String(), b.Slot.String()) })
 	return e.result
@@ -274,7 +295,24 @@ func (e *hclEncoding) fragment(encoded *protocol.EncodedFragment) error {
 		if err != nil || !found {
 			return cmpErr(err, fmt.Errorf("%w: the provider wrote attributes of a block the document does not hand it", schemaext.ErrInvalidValue))
 		}
-		e.result.Attributes = append(e.result.Attributes, hclext.SlotAttributes{Slot: slot, Attributes: attributes})
+		written := e.slot(slot)
+		written.Attributes = append(written.Attributes, attributes...)
+		return nil
+	case protocol.HCLSourceBlock_TABLE_PLATFORM:
+		table, found := e.tables[fragment.GetBindingId()]
+		if !found {
+			return fmt.Errorf("%w: the provider wrote the platform group of a table the document does not hand it", schemaext.ErrInvalidValue)
+		}
+		overrides := make([]hclext.PlatformOverride, 0, len(fragment.GetValue().GetMapping().GetEntries()))
+		for _, entry := range fragment.GetValue().GetMapping().GetEntries() {
+			text, isText := entry.GetValue().GetValue().(*protocol.SourceValue_Text)
+			if !isText {
+				return fmt.Errorf("%w: the provider wrote platform %q override %q as no string", schemaext.ErrInvalidValue, claim.GetType(), entry.GetKey())
+			}
+			overrides = append(overrides, hclext.PlatformOverride{Platform: claim.GetType(), Key: entry.GetKey(), Value: text.Text})
+		}
+		written := e.slot(hclext.Slot{Kind: hclext.SlotTable, Table: table})
+		written.Overrides = append(written.Overrides, overrides...)
 		return nil
 	}
 	return fmt.Errorf("%w: the provider wrote HCL at site %s, which the host writes no provider value at", ptaherr.ErrUnsupportedFeature, claim.GetSite())

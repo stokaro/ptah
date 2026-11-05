@@ -3538,6 +3538,13 @@ attributes to the reader's own `index` block. `TableAttributes` does the same
 for a `table` block, with no `Naming`. A shape at the `InTable` site is
 a block inside a `table`, with no labels.
 
+A shape at the `TablePlatform` site reads a table's `platform` block whose
+label is its `Type` or one of its `Aliases`: each `override` is a `String`
+attribute named by the override's label. The reader claims a table that writes such a block, joins the blocks of
+one table under the type and its aliases into one claim, and keeps every other
+`platform` block among the table's overrides. `Claim.Site` names the site of
+the shape that matched.
+
 `MaterializedViewAttributes` adds
 attributes to a `materialized` block, also with no `Naming`. Its returned facets
 attach to the exact view, including equal names in different schemas.
@@ -3623,7 +3630,8 @@ shape. `schema inspect` writes its document for the inspected target.
   every table, including those without its attributes, with its schema, name
   and struct identity in `Claim.Table`. Returned facets attach to that exact
   table, so equal names in different schemas stay separate. An `InTable` claim carries its table
-  in `Claim.Table`, and its `Facets` go to that table. `Claim.At` says where a
+  in `Claim.Table`, and its `Facets` go to that table, as do a `TablePlatform`
+  claim's. `Claim.At` says where a
   block stands, for a refusal that names two blocks, and `Claim.Range` and
   `ClaimChild.Range` give the file, the first byte and the byte after the
   last, each with its line and column, for an owner that positions what it

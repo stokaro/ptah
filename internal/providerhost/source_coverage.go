@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/providersource"
 )
 
 // sourceCoverage converts the coverage a provider returned for a document of
@@ -29,7 +30,7 @@ func (h *Host) sourceCoverage(engine string, format protocol.SourceDocument_Form
 		if err != nil {
 			return schemaext.Coverage{}, err
 		}
-		if available := modelKnowledge(contract, format); available.State != schemaext.Complete {
+		if available := h.sourceModelKnowledge(engine, contract, format); available.State != schemaext.Complete {
 			knowledge = available
 		}
 		kinds = append(kinds, schemaext.KindCoverage{Model: schemaext.CodecIdentity{Owner: h.description.GetProviderId(), Kind: kind,
@@ -120,6 +121,31 @@ func sourceParts(source, normalized []string, label string) (objectidentity.Part
 		parts[i] = objectidentity.Part{Source: part, Normalized: normalized[i]}
 	}
 	return objectidentity.NewParts(parts...), nil
+}
+
+// sourceModelKnowledge is the kind-wide knowledge a document of format can
+// hold of a model. A table that writes no platform group states nothing about
+// a model HCL states only there (see hclPlatformOnly), so an HCL document
+// knows such a model only for the tables whose group the provider decoded,
+// which its subject records say.
+func (h *Host) sourceModelKnowledge(engine string, contract *modelContract, format protocol.SourceDocument_Format) schemaext.Knowledge {
+	if format == protocol.SourceDocument_HCL && h.hclPlatformOnly(engine, contract) {
+		return schemaext.Knowledge{State: schemaext.Uninspected, Reason: "HCL describes this model only for a table that writes a platform \"" + engine + "\" block"}
+	}
+	return modelKnowledge(contract, format)
+}
+
+// hclPlatformOnly reports whether engine states the model of contract in HCL
+// only at a table's platform group: the model lists no HCL source format, and
+// a platform claim of the engine names it. The groups a document writes are
+// its whole account of such a model, so neither the provider's account of a
+// document nor the coverage header an export writes holds it kind-wide. The
+// reader and the writer ask this one predicate: were they to disagree, an
+// exported document read back would claim what its groups do not say.
+func (h *Host) hclPlatformOnly(engine string, contract *modelContract) bool {
+	model, target := contract.engines[engine], h.targets[engine]
+	return model != nil && target != nil && !slices.Contains(model.GetSourceFormats(), protocol.SourceDocument_HCL) &&
+		providersource.HCLPlatformModel(target.engine, model.GetKind())
 }
 
 // Kind-wide coverage has no target scope in the shared schema. A model another

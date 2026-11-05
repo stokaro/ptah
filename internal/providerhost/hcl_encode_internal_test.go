@@ -194,3 +194,58 @@ func TestHCLEncodingBlock(t *testing.T) {
 		})
 	}
 }
+
+// platformFragment is a part of the table platform group of the fixture
+// engine, bound to binding, that writes the given values of the ttl override.
+func platformFragment(binding string, values ...*protocol.SourceValue) *protocol.EncodedFragment {
+	mapping := &protocol.SourceMapping{}
+	for _, value := range values {
+		mapping.Entries = append(mapping.Entries, &protocol.SourceEntry{Key: "ttl", Value: value})
+	}
+	return &protocol.EncodedFragment{Fragment: &protocol.SourceFragment{BindingId: binding,
+		HclBlock: &protocol.HCLSourceBlock{Site: protocol.HCLSourceBlock_TABLE_PLATFORM, Type: "fixture",
+			Attributes: []*protocol.HCLSourceAttribute{{Name: "ttl", Kind: protocol.HCLSourceAttribute_STRING}}},
+		Content: &protocol.SourceFragment_Value{Value: &protocol.SourceValue{Value: &protocol.SourceValue_Mapping{Mapping: mapping}}}}}
+}
+
+// TestHCLEncodingPlatformGroup writes a table platform part as overrides of
+// the table's block under the claim's type, and joins a loss of the value it
+// writes in part to the same block: the writer takes one entry for each of
+// its blocks.
+func TestHCLEncodingPlatformGroup(t *testing.T) {
+	c := qt.New(t)
+	table := hclext.Table{Schema: "app", Name: "items"}
+	slot := hclext.Slot{Kind: hclext.SlotTable, Table: table}
+	encoding := &hclEncoding{tables: map[string]hclext.Table{"table-0": table}, slots: map[string]hclext.Slot{"value-0": slot}, losses: make(map[hclext.Slot][]string)}
+
+	err := encoding.fragment(platformFragment("table-0", &protocol.SourceValue{Value: &protocol.SourceValue_Text{Text: "P1D"}}))
+	encoding.loss("value-0", "the partitioning is not represented in HCL")
+	result := encoding.finish()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Attributes, qt.DeepEquals, []hclext.SlotAttributes{{Slot: slot, Overrides: []hclext.PlatformOverride{{Platform: "fixture", Key: "ttl", Value: "P1D"}},
+		Losses: []string{"the partitioning is not represented in HCL"}}})
+}
+
+func TestHCLEncodingPlatformGroup_FailurePath(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		encoded *protocol.EncodedFragment
+		want    string
+	}{
+		{"a table the document does not hand it", platformFragment("table-1", &protocol.SourceValue{Value: &protocol.SourceValue_Text{Text: "P1D"}}),
+			`invalid feature value: the provider wrote the platform group of a table the document does not hand it`},
+		{"an override that is no string", platformFragment("table-0", &protocol.SourceValue{Value: &protocol.SourceValue_Boolean{Boolean: true}}),
+			`invalid feature value: the provider wrote platform "fixture" override "ttl" as no string`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			encoding := &hclEncoding{tables: map[string]hclext.Table{"table-0": {Name: "items"}}}
+
+			err := encoding.fragment(row.encoded)
+
+			c.Assert(err, qt.ErrorMatches, row.want)
+			c.Assert(encoding.result, qt.DeepEquals, hclext.EncodeResult{})
+		})
+	}
+}

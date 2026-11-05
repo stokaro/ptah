@@ -663,7 +663,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
-	overrides, err := p.parsePlatformOverrides(block, "table")
+	overrides, platforms, err := p.parseTablePlatforms(block)
 	if err != nil {
 		return err
 	}
@@ -734,6 +734,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 	p.db.Tables = append(p.db.Tables, table)
+	p.claimOwnerPlatforms(table, len(p.db.Tables)-1, platforms)
 	return p.claimOwnerTable(block, len(p.db.Tables)-1)
 }
 

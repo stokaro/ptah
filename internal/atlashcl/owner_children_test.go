@@ -62,7 +62,7 @@ func TestParseWithOptions_ReadsAnOwnersChildrenInTheirOrder(t *testing.T) {
 	_, err := atlashcl.ParseWithOptions(t.Context(), []byte(document), "schema.hcl", atlashcl.Options{HCL: shapeOwners(&requests)})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Block: "shape", Name: "s",
+	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{{Site: hclext.TopLevel, Block: "shape", Name: "s",
 		Attributes: map[string]hclext.Value{"note": {Kind: hclext.Text, Text: "n"}},
 		Children: []hclext.ClaimChild{
 			{Type: "member", Name: "zeta", At: "schema.hcl:3", Attributes: map[string]hclext.Value{
