@@ -53,7 +53,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import path from 'node:path/posix';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { BasePath, Origin } from '../src/lib/docs-origin.mjs';
 import {
@@ -810,16 +810,18 @@ function selftest() {
   console.log(`import-provider-docs.mjs --selftest: OK (${assertions} assertions)`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  if (process.argv.includes('--selftest')) {
-    selftest();
-  } else {
-    try {
-      run(process.argv.slice(2));
-    } catch (error) {
-      if (!(error instanceof ImportRefusal) && !(error instanceof ProviderDocsError)) throw error;
-      console.error(error.message);
-      process.exitCode = 1;
-    }
+// Unconditional, like every script here: a check that compares
+// import.meta.url with process.argv[1] skips its own body when the path it was
+// started by is a symbolic link, as /var is on macOS, and exits 0 having done
+// nothing.
+if (process.argv.includes('--selftest')) {
+  selftest();
+} else {
+  try {
+    run(process.argv.slice(2));
+  } catch (error) {
+    if (!(error instanceof ImportRefusal) && !(error instanceof ProviderDocsError)) throw error;
+    console.error(error.message);
+    process.exitCode = 1;
   }
 }

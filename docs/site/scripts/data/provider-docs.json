@@ -5,8 +5,8 @@
       "name": "YDB",
       "repository": "stokaro/ptah-ydb-plugin",
       "release": "v0.3.0",
-      "ref": "d569f67e3366f81696b2f872379577e13703c437",
-      "refReason": "v0.3.0 predates the provider's docs/ folder. The ref is stokaro/ptah-ydb-plugin#219, the first commit whose pages carry the site's frontmatter; drop ref and refReason when release moves to a release that carries the folder."
+      "ref": "f4a3f304728e2964334bdbe7867a5121afdd9cf4",
+      "refReason": "v0.3.0 predates the provider's docs/ folder. The ref is the merge of stokaro/ptah-ydb-plugin#219, the first commit whose pages carry the site's frontmatter; drop ref and refReason when release moves to a release that carries the folder."
     }
   ]
 }
