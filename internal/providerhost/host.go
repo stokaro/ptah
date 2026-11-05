@@ -157,6 +157,12 @@ var hostFeatures = []string{
 	// hands their changes to the table's owner; see reader.ReadSchemaContext
 	// and commonPlanner.indexChanges.
 	provider.ObservedIndexesFeature,
+	// Inspection reports a provider table's primary key in key order, which
+	// the catalog keeps as the table's PRIMARY KEY constraint, and the
+	// planner hands a change of it to the table's owner as an alteration of
+	// the table; see reader.tables and commonPlanner.keyChanges.
+	provider.ObservedPrimaryKeysFeature,
+	provider.PrimaryKeyChangesFeature,
 	// Table preparation states the kind of each declared index, and the
 	// index rules compare it with the held index's method; see
 	// observedIndexRules.

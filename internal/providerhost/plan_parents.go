@@ -74,6 +74,29 @@ func (p *planningParents) alterForIndexes(builder objectidentity.Builder, diff *
 	for _, rename := range diff.IndexesRenamed {
 		tables = append(tables, rename.TableName)
 	}
+	return p.alter(builder, tables, "an index change")
+}
+
+// alterForKeys gives the owner of a table whose primary key changes, and
+// whose table the plan otherwise leaves alone, an alter action on it. The
+// owner compares the declared key with the one the table holds, as it does
+// for any table it alters. A key of a table the plan neither creates,
+// prepares nor removes is refused.
+func (p *planningParents) alterForKeys(builder objectidentity.Builder, diff *difftypes.SchemaDiff) error {
+	var tables []string
+	for _, added := range diff.ConstraintsAdded {
+		tables = append(tables, added.TableName)
+	}
+	for _, removed := range diff.ConstraintsRemoved {
+		tables = append(tables, removed.TableName)
+	}
+	return p.alter(builder, tables, "a primary key change")
+}
+
+// alter gives each of the tables an alter action, unless the plan already
+// changes it. change says what names the table, for the refusal of a table
+// the plan does not hold.
+func (p *planningParents) alter(builder objectidentity.Builder, tables []string, change string) error {
 	for _, name := range tables {
 		key, err := tableKey(builder, name)
 		if err != nil {
@@ -84,7 +107,7 @@ func (p *planningParents) alterForIndexes(builder objectidentity.Builder, diff *
 		}
 		position, found := p.positions[key]
 		if !found {
-			return fmt.Errorf("%w: an index change names table %q, which the provider plan does not hold", schemaext.ErrInvalidValue, name)
+			return fmt.Errorf("%w: %s names table %q, which the provider plan does not hold", schemaext.ErrInvalidValue, change, name)
 		}
 		p.tables[position].Action = featureplan.AlterTable
 		p.changed[key] = true
