@@ -7,8 +7,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/annotation"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/goschema"
+	"ptah.run/core/planext"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
@@ -61,6 +64,48 @@ func TestExclusionOwner_ExistingTablePlan(t *testing.T) {
 			c.Assert(statements, qt.HasLen, test.common+1)
 		})
 	}
+}
+
+// parsedRooms is a rooms table with a field for each of columns, under the
+// annotations prefix adds to the struct.
+func parsedRooms(c *qt.C, annotations annotation.Set, prefix string, columns ...string) schemamodel.Database {
+	c.Helper()
+	var source strings.Builder
+	source.WriteString("package entities\n//ptah:schema:table name=\"rooms\"\n" + prefix + "type Room struct {\n")
+	for _, column := range columns {
+		source.WriteString(" //ptah:schema:field name=\"" + column + "\" type=\"INTEGER\"\n " + strings.ToUpper(column) + " int\n")
+	}
+	source.WriteString("}\n")
+	parsed, err := goschema.ParseSource(annotations, "schema.go", source.String())
+	c.Assert(err, qt.IsNil)
+	return parsed
+}
+
+// TestExclusionOwner_DropLeavesAheadOfTheColumnItCovers removes an exclusion
+// constraint with the column it covers and a table. The server drops the
+// constraint with that column, so the plan names the constraint first. The drop
+// takes no object a later statement names, so in the exact style none of them
+// gains a guard.
+func TestExclusionOwner_DropLeavesAheadOfTheColumnItCovers(t *testing.T) {
+	c := qt.New(t)
+	runtime := builtintest.Runtime()
+	held := parsedRooms(c, runtime.Annotations(), `//ptah:schema:exclude name="no_overlap" using="btree" elements="room WITH ="`+"\n", "id", "room")
+	current, err := goschematodb.ToDBSchema(t.Context(), &held, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	current.Tables = append(current.Tables, catalog.Table{Name: "gone", Schema: "public", Type: "BASE TABLE"})
+	desired := parsedRooms(c, runtime.Annotations(), "", "id")
+
+	diff, err := schemadiff.CompareWithDialect(t.Context(), &desired, current, "postgres", runtime)
+	c.Assert(err, qt.IsNil)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(t.Context(), runtime, diff, "postgres",
+		planext.Options{Capabilities: capability.ForDialect("postgres"), Statements: planext.StatementStyleExact})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(statements, qt.DeepEquals, []string{
+		`ALTER TABLE "rooms" DROP CONSTRAINT "no_overlap"`,
+		`ALTER TABLE "rooms" DROP COLUMN "room"`,
+		`DROP TABLE "public"."gone"`,
+	})
 }
 
 func TestExclusionOwner_PlannerRefusesUnsupportedTargets(t *testing.T) {

@@ -61,6 +61,34 @@ func TestExclusionPlanning_Transaction(t *testing.T) {
 	}
 }
 
+// TestExclusionPlanning_Phases pins the window each change asks for. A drop
+// asks for the dependent window, ahead of the host's removals: the server drops
+// the constraint with the last column it covers, so a drop that follows the
+// column answers that the constraint does not exist. A replacement stays one
+// step of the creation window, which also runs ahead of the removals.
+func TestExclusionPlanning_Phases(t *testing.T) {
+	observed := func() *pgtable.ObservedExclusion { return new(pgtable.ObservedExclusion(exclusionDefinition())) }
+	for _, test := range []struct {
+		name   string
+		change *pgtable.ExclusionChange
+		phase  featureplan.Phase
+	}{
+		{"create", &pgtable.ExclusionChange{After: &pgtable.DesiredExclusion{Exclusion: exclusionDefinition()}}, featureplan.PhaseDefault},
+		{"drop", &pgtable.ExclusionChange{Before: observed()}, featureplan.PhaseDependent},
+		{"replace", &pgtable.ExclusionChange{Before: observed(), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}}, featureplan.PhaseDefault},
+		{"comment", &pgtable.ExclusionChange{Before: observed(), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "room WITH =, during WITH &&", Comment: "Room schedule"}}, CommentOnly: true}, featureplan.PhaseDefault},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := exclusionPlan(test.change)
+			result, err := (pgtable.ExclusionService{}).PlanFeatures(t.Context(), request)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Err(request), qt.IsNil)
+			c.Assert(result.Contributions[0].Steps[0].Payload.Phase, qt.Equals, test.phase)
+		})
+	}
+}
+
 func TestExclusionPlanning_DependencyEffects(t *testing.T) {
 	c := qt.New(t)
 	after := &pgtable.DesiredExclusion{Exclusion: exclusionDefinition()}

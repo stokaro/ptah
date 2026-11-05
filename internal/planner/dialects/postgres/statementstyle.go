@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/tableref"
 )
@@ -175,7 +176,7 @@ func (g *guardState) init() {
 
 func (g *guardState) settle(node ast.Node) {
 	if ast.PlacementOf(node) != ast.NoExtension {
-		if isolatedPolicyDrop(node) {
+		if isolatedOwnerDrop(node) {
 			return
 		}
 		g.anything = true
@@ -210,10 +211,11 @@ func (g *guardState) settle(node ast.Node) {
 	}
 }
 
-// isolatedPolicyDrop is an owner statement whose only effect on object
-// existence is to remove its named policy. It cannot make a later view,
-// column or table drop need an existence guard.
-func isolatedPolicyDrop(node ast.Node) bool {
+// isolatedOwnerDrop is an owner statement whose only effect on object existence
+// is to remove the policy or the exclusion constraint it names, with the index
+// that enforces the constraint. No later statement drops either, so it cannot
+// make a later view, column or table drop need an existence guard.
+func isolatedOwnerDrop(node ast.Node) bool {
 	if ast.PlacementOf(node) != ast.IsolatedExtension {
 		return false
 	}
@@ -221,8 +223,14 @@ func isolatedPolicyDrop(node ast.Node) bool {
 	if len(operations) != 1 {
 		return false
 	}
-	policy, ok := operations[0].(*pgpolicy.PolicyOperation)
-	return ok && policy != nil && policy.Change.Before != nil && policy.Change.After == nil
+	switch operation := operations[0].(type) {
+	case *pgpolicy.PolicyOperation:
+		return operation != nil && operation.Change.Before != nil && operation.Change.After == nil
+	case *pgtable.AlterExclusion:
+		return operation != nil && operation.Change.Before != nil && operation.Change.After == nil
+	default:
+		return false
+	}
 }
 
 func (g *guardState) settleDropIndex(n *ast.DropIndexNode) {
