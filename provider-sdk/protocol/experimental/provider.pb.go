@@ -5854,8 +5854,12 @@ type IdentifierRules struct {
 	ColumnNames    IdentifierRules_Comparison     `protobuf:"varint,2,opt,name=column_names,json=columnNames,proto3,enum=ptah.provider.experimental.IdentifierRules_Comparison" json:"column_names,omitempty"`
 	IndexNames     IdentifierRules_Comparison     `protobuf:"varint,3,opt,name=index_names,json=indexNames,proto3,enum=ptah.provider.experimental.IdentifierRules_Comparison" json:"index_names,omitempty"`
 	IndexNamespace IdentifierRules_IndexNamespace `protobuf:"varint,4,opt,name=index_namespace,json=indexNamespace,proto3,enum=ptah.provider.experimental.IdentifierRules_IndexNamespace" json:"index_namespace,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The one character that separates nested schemas in a normalized schema
+	// spelling, or empty when schemas do not nest. No schema component contains
+	// it. Contract 25.22, under schema.subtree-coverage.
+	SchemaSeparator string `protobuf:"bytes,5,opt,name=schema_separator,json=schemaSeparator,proto3" json:"schema_separator,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *IdentifierRules) Reset() {
@@ -5914,6 +5918,13 @@ func (x *IdentifierRules) GetIndexNamespace() IdentifierRules_IndexNamespace {
 		return x.IndexNamespace
 	}
 	return IdentifierRules_INDEX_NAMESPACE_UNSPECIFIED
+}
+
+func (x *IdentifierRules) GetSchemaSeparator() string {
+	if x != nil {
+		return x.SchemaSeparator
+	}
+	return ""
 }
 
 // Reference keeps identity components separate. Display spelling does not
@@ -11695,11 +11706,15 @@ func (x *NamespaceComponent) GetNormalized() string {
 // A namespace is relative to the engine selected by the surrounding operation.
 // Path prefixes compare whole components, never delimiter-joined strings.
 type ModelNamespace struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Database      *NamespaceComponent    `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
-	Catalog       *NamespaceComponent    `protobuf:"bytes,2,opt,name=catalog,proto3" json:"catalog,omitempty"`
-	Schema        *NamespaceComponent    `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`
-	PathPrefix    []*NamespaceComponent  `protobuf:"bytes,4,rep,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Database   *NamespaceComponent    `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	Catalog    *NamespaceComponent    `protobuf:"bytes,2,opt,name=catalog,proto3" json:"catalog,omitempty"`
+	Schema     *NamespaceComponent    `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`
+	PathPrefix []*NamespaceComponent  `protobuf:"bytes,4,rep,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	// With a schema, the region also covers every schema nested below it under
+	// the engine's schema separator. Contract 25.22, under
+	// schema.subtree-coverage.
+	SchemaSubtree bool `protobuf:"varint,5,opt,name=schema_subtree,json=schemaSubtree,proto3" json:"schema_subtree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11760,6 +11775,13 @@ func (x *ModelNamespace) GetPathPrefix() []*NamespaceComponent {
 		return x.PathPrefix
 	}
 	return nil
+}
+
+func (x *ModelNamespace) GetSchemaSubtree() bool {
+	if x != nil {
+		return x.SchemaSubtree
+	}
+	return false
 }
 
 type ModelNamespaceKnowledge struct {
@@ -14011,15 +14033,19 @@ func (x *ComparisonIdentity) GetSignature() []*ComparisonPart {
 // selection. It differs from an owner's inspection namespace: common parents,
 // explicit subject kinds, exact empty paths, and source target limits remain.
 type ComparisonNamespace struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Targets       []string               `protobuf:"bytes,1,rep,name=targets,proto3" json:"targets,omitempty"`
-	SubjectKinds  []string               `protobuf:"bytes,2,rep,name=subject_kinds,json=subjectKinds,proto3" json:"subject_kinds,omitempty"`
-	Database      *ComparisonPart        `protobuf:"bytes,3,opt,name=database,proto3" json:"database,omitempty"`
-	Catalog       *ComparisonPart        `protobuf:"bytes,4,opt,name=catalog,proto3" json:"catalog,omitempty"`
-	Schema        *ComparisonPart        `protobuf:"bytes,5,opt,name=schema,proto3" json:"schema,omitempty"`
-	Parent        *ComparisonPart        `protobuf:"bytes,6,opt,name=parent,proto3" json:"parent,omitempty"`
-	PathPrefix    []*ComparisonPart      `protobuf:"bytes,7,rep,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
-	PathExact     bool                   `protobuf:"varint,8,opt,name=path_exact,json=pathExact,proto3" json:"path_exact,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Targets      []string               `protobuf:"bytes,1,rep,name=targets,proto3" json:"targets,omitempty"`
+	SubjectKinds []string               `protobuf:"bytes,2,rep,name=subject_kinds,json=subjectKinds,proto3" json:"subject_kinds,omitempty"`
+	Database     *ComparisonPart        `protobuf:"bytes,3,opt,name=database,proto3" json:"database,omitempty"`
+	Catalog      *ComparisonPart        `protobuf:"bytes,4,opt,name=catalog,proto3" json:"catalog,omitempty"`
+	Schema       *ComparisonPart        `protobuf:"bytes,5,opt,name=schema,proto3" json:"schema,omitempty"`
+	Parent       *ComparisonPart        `protobuf:"bytes,6,opt,name=parent,proto3" json:"parent,omitempty"`
+	PathPrefix   []*ComparisonPart      `protobuf:"bytes,7,rep,name=path_prefix,json=pathPrefix,proto3" json:"path_prefix,omitempty"`
+	PathExact    bool                   `protobuf:"varint,8,opt,name=path_exact,json=pathExact,proto3" json:"path_exact,omitempty"`
+	// With a schema, the region also covers every schema nested below it under
+	// the comparison's schema separator. Contract 25.22, under
+	// schema.subtree-coverage.
+	SchemaSubtree bool `protobuf:"varint,9,opt,name=schema_subtree,json=schemaSubtree,proto3" json:"schema_subtree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14106,6 +14132,13 @@ func (x *ComparisonNamespace) GetPathPrefix() []*ComparisonPart {
 func (x *ComparisonNamespace) GetPathExact() bool {
 	if x != nil {
 		return x.PathExact
+	}
+	return false
+}
+
+func (x *ComparisonNamespace) GetSchemaSubtree() bool {
+	if x != nil {
+		return x.SchemaSubtree
 	}
 	return false
 }
@@ -34129,14 +34162,15 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x05TABLE\x10\x02\x12\n" +
 	"\n" +
 	"\x06COLUMN\x10\x03\x12\t\n" +
-	"\x05INDEX\x10\x04\"\x9e\x04\n" +
+	"\x05INDEX\x10\x04\"\xc9\x04\n" +
 	"\x0fIdentifierRules\x12W\n" +
 	"\vtable_names\x18\x01 \x01(\x0e26.ptah.provider.experimental.IdentifierRules.ComparisonR\n" +
 	"tableNames\x12Y\n" +
 	"\fcolumn_names\x18\x02 \x01(\x0e26.ptah.provider.experimental.IdentifierRules.ComparisonR\vcolumnNames\x12W\n" +
 	"\vindex_names\x18\x03 \x01(\x0e26.ptah.provider.experimental.IdentifierRules.ComparisonR\n" +
 	"indexNames\x12c\n" +
-	"\x0findex_namespace\x18\x04 \x01(\x0e2:.ptah.provider.experimental.IdentifierRules.IndexNamespaceR\x0eindexNamespace\"O\n" +
+	"\x0findex_namespace\x18\x04 \x01(\x0e2:.ptah.provider.experimental.IdentifierRules.IndexNamespaceR\x0eindexNamespace\x12)\n" +
+	"\x10schema_separator\x18\x05 \x01(\tR\x0fschemaSeparator\"O\n" +
 	"\n" +
 	"Comparison\x12\x1a\n" +
 	"\x16COMPARISON_UNSPECIFIED\x10\x00\x12\t\n" +
@@ -34680,13 +34714,14 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1e\n" +
 	"\n" +
 	"normalized\x18\x02 \x01(\tR\n" +
-	"normalized\"\xbf\x02\n" +
+	"normalized\"\xe6\x02\n" +
 	"\x0eModelNamespace\x12J\n" +
 	"\bdatabase\x18\x01 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\bdatabase\x12H\n" +
 	"\acatalog\x18\x02 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\acatalog\x12F\n" +
 	"\x06schema\x18\x03 \x01(\v2..ptah.provider.experimental.NamespaceComponentR\x06schema\x12O\n" +
 	"\vpath_prefix\x18\x04 \x03(\v2..ptah.provider.experimental.NamespaceComponentR\n" +
-	"pathPrefix\"\xa5\x01\n" +
+	"pathPrefix\x12%\n" +
+	"\x0eschema_subtree\x18\x05 \x01(\bR\rschemaSubtree\"\xa5\x01\n" +
 	"\x17ModelNamespaceKnowledge\x12@\n" +
 	"\x05scope\x18\x01 \x01(\v2*.ptah.provider.experimental.ModelNamespaceR\x05scope\x12H\n" +
 	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\xea\x01\n" +
@@ -34923,7 +34958,7 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x04path\x18\x05 \x03(\v2*.ptah.provider.experimental.ComparisonPartR\x04path\x12B\n" +
 	"\x06parent\x18\x06 \x01(\v2*.ptah.provider.experimental.ComparisonPartR\x06parent\x12>\n" +
 	"\x04name\x18\a \x01(\v2*.ptah.provider.experimental.ComparisonPartR\x04name\x12H\n" +
-	"\tsignature\x18\b \x03(\v2*.ptah.provider.experimental.ComparisonPartR\tsignature\"\xd6\x03\n" +
+	"\tsignature\x18\b \x03(\v2*.ptah.provider.experimental.ComparisonPartR\tsignature\"\xfd\x03\n" +
 	"\x13ComparisonNamespace\x12\x18\n" +
 	"\atargets\x18\x01 \x03(\tR\atargets\x12#\n" +
 	"\rsubject_kinds\x18\x02 \x03(\tR\fsubjectKinds\x12F\n" +
@@ -34934,7 +34969,8 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\vpath_prefix\x18\a \x03(\v2*.ptah.provider.experimental.ComparisonPartR\n" +
 	"pathPrefix\x12\x1d\n" +
 	"\n" +
-	"path_exact\x18\b \x01(\bR\tpathExact\"\xa3\x01\n" +
+	"path_exact\x18\b \x01(\bR\tpathExact\x12%\n" +
+	"\x0eschema_subtree\x18\t \x01(\bR\rschemaSubtree\"\xa3\x01\n" +
 	"\x10ComparisonRegion\x12E\n" +
 	"\x05scope\x18\x01 \x01(\v2/.ptah.provider.experimental.ComparisonNamespaceR\x05scope\x12H\n" +
 	"\tknowledge\x18\x02 \x01(\v2*.ptah.provider.experimental.ModelKnowledgeR\tknowledge\"\xa9\x01\n" +

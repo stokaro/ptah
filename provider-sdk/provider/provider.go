@@ -185,14 +185,14 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateCommonObjectSupport, validateContextFeatures, validateViewFacetFeature, validateObservedColumnsFeature, validateObservedPrimaryKeysFeature, validateObservedIndexesFeature,
 		validateHCLSource, validateEncodeEngine, validateScopeSelections, validateModelDeclarations, validateSourceLimitsEngine, validatePlanningLifecycleEngine,
 		validateMigrationSplitEngine, validateIndexMethodsFeature, validateIndexRenamesFeature, validateModelReversals, validateDatabaseKinds, validateModelReports,
-		validateObservedIndexFacetsFeature,
+		validateObservedIndexFacetsFeature, validateSchemaSubtreeFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err
 		}
 	}
 	for _, feature := range []string{TextUnitsFeature, PlanningPolicyFeature, PlanningStatementStyleFeature, EntryKeysFeature, StatementsFeature, SensitiveInputsFeature,
-		ComparisonCountsFeature, UnreadTablesFeature} {
+		ComparisonCountsFeature, UnreadTablesFeature, SchemaSubtreeCoverageFeature} {
 		if slices.Contains(engine.GetFeatures(), feature) && !slices.Contains(description.GetFeatures(), feature) {
 			return fmt.Errorf("%w: engine %s requires the provider's", ErrProtocol, feature)
 		}
@@ -288,6 +288,9 @@ func ValidateIdentifierRules(rules *protocol.IdentifierRules) error {
 		default:
 			return fmt.Errorf("%w: unsupported identifier comparison", ErrProtocol)
 		}
+	}
+	if !validSchemaSeparator(rules.GetSchemaSeparator()) {
+		return fmt.Errorf("%w: a schema separator is one character that is not a letter, a digit or a space", ErrProtocol)
 	}
 	switch rules.GetIndexNamespace() {
 	case protocol.IdentifierRules_TABLE, protocol.IdentifierRules_SCHEMA:

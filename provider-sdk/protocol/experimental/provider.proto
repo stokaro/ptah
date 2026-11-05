@@ -437,6 +437,10 @@ message IdentifierRules {
   Comparison column_names = 2;
   Comparison index_names = 3;
   IndexNamespace index_namespace = 4;
+  // The one character that separates nested schemas in a normalized schema
+  // spelling, or empty when schemas do not nest. No schema component contains
+  // it. Contract 25.22, under schema.subtree-coverage.
+  string schema_separator = 5;
 }
 // Reference keeps identity components separate. Display spelling does not
 // replace normalized identity. No component is folded by the transport.
@@ -1220,6 +1224,10 @@ message ModelNamespace {
   NamespaceComponent catalog = 2;
   NamespaceComponent schema = 3;
   repeated NamespaceComponent path_prefix = 4;
+  // With a schema, the region also covers every schema nested below it under
+  // the engine's schema separator. Contract 25.22, under
+  // schema.subtree-coverage.
+  bool schema_subtree = 5;
 }
 message ModelNamespaceKnowledge {
   ModelNamespace scope = 1;
@@ -1542,6 +1550,10 @@ message ComparisonNamespace {
   ComparisonPart parent = 6;
   repeated ComparisonPart path_prefix = 7;
   bool path_exact = 8;
+  // With a schema, the region also covers every schema nested below it under
+  // the comparison's schema separator. Contract 25.22, under
+  // schema.subtree-coverage.
+  bool schema_subtree = 9;
 }
 message ComparisonRegion {
   ComparisonNamespace scope = 1;

@@ -49,7 +49,7 @@ func TwoWayFeatures() []string {
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
-		ObservedIndexFacetsFeature}
+		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -143,8 +143,9 @@ func ValidateHostFeatures(features []string) error {
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
 // scope selections unless it lists ScopeSelectionsFeature, the reversal
 // services unless it lists ReverseChangesFeature, the database kinds unless
-// it lists DatabaseKindsFeature, and the model reports unless it lists
-// ReportCountsFeature. Without
+// it lists DatabaseKindsFeature, the model reports unless it lists
+// ReportCountsFeature, and the schema separator of each engine's identifier
+// rules unless it lists SchemaSubtreeCoverageFeature. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -185,15 +186,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		if !slices.Contains(hostFeatures, SourceLimitsFeature) {
 			engine.GoHeaderKinds = nil
 		}
-		if !slices.Contains(hostFeatures, ReverseChangesFeature) {
-			engine.Reversals = nil
-		}
-		if !slices.Contains(hostFeatures, DatabaseKindsFeature) {
-			engine.DatabaseKinds = nil
-		}
-		if !slices.Contains(hostFeatures, ReportCountsFeature) {
-			engine.Reports = nil
-		}
+		negotiateLaterAdditions(engine, hostFeatures)
 		if len(engine.GetGoHeaderKinds())+len(engine.GetHclSource().GetHeaderKinds()) == 0 {
 			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == SourceLimitsFeature })
 		}
@@ -202,6 +195,24 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 	}
 	return negotiated
+}
+
+// negotiateLaterAdditions removes the engine fields of contracts 25.19 and
+// later whose features the host does not list: the reversal services, the
+// database kinds, the model reports and the schema separator.
+func negotiateLaterAdditions(engine *protocol.Engine, hostFeatures []string) {
+	if !slices.Contains(hostFeatures, ReverseChangesFeature) {
+		engine.Reversals = nil
+	}
+	if !slices.Contains(hostFeatures, DatabaseKindsFeature) {
+		engine.DatabaseKinds = nil
+	}
+	if !slices.Contains(hostFeatures, ReportCountsFeature) {
+		engine.Reports = nil
+	}
+	if !slices.Contains(hostFeatures, SchemaSubtreeCoverageFeature) && engine.GetIdentifiers() != nil {
+		engine.Identifiers.SchemaSeparator = ""
+	}
 }
 
 // withoutEntryKeys removes the source claims that need EntryKeysFeature, and
