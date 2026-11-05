@@ -19,6 +19,14 @@
 // replaced in place, such as a view the forward plan changed with CREATE OR
 // REPLACE VIEW and the rollback drops and creates; [Rollback] names both of its
 // statements after the forward `modify "v" view`.
+//
+// An operation a provider plans is named from the object it is planned for
+// and the effect its plan step has on that object, in the wording of the same
+// object's statement: `create "orders" table` for a step that creates the
+// table, `drop "orders" table` for one that drops it, and `modify "orders"
+// table` for any other step on it, such as one that adds an index or a
+// changefeed. An operation on an object of a kind of the provider's own, or
+// one that carries no effects, is not named.
 package atlaschange
 
 import (
@@ -27,12 +35,15 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/objectidentity"
+	"ptah.run/core/plangraph"
 	"ptah.run/internal/tableref"
 )
 
 // Of returns the comment naming the change node makes. It reports false for a
 // node that makes no change Atlas would name, such as a comment of the plan's
-// own, raw SQL, or an owner operation.
+// own, raw SQL, or an owner operation that is not a provider's planned
+// operation on a table, view or index.
 func Of(node ast.Node) (string, bool) {
 	c, ok := describe(node)
 	if !ok {
@@ -146,8 +157,22 @@ func scopeOf(node ast.Node) scope {
 		return tableScope(n.Table)
 	case *ast.DropPolicyNode:
 		return tableScope(n.Table)
+	case *ast.ExtensionStatement:
+		if operation, ok := n.Payload.(nativeOperation); ok {
+			return nativeScope(operation.Subject())
+		}
 	}
 	return scope{}
+}
+
+// nativeScope is the scope of subject: its schema and the directories below
+// it, and for an object named within its table, that table.
+func nativeScope(subject objectidentity.ID) scope {
+	path := []string{subject.Schema.Normalized}
+	for _, part := range subject.Namespace.Values() {
+		path = append(path, part.Normalized)
+	}
+	return scope{schema: strings.ToLower(strings.Join(path, "/")), table: strings.ToLower(subject.Parent.Normalized)}
 }
 
 // schemaScope is the scope of an object named name within a schema.
@@ -371,9 +396,71 @@ func describe(node ast.Node) (change, bool) {
 		return change{verb: create, kind: "type", name: bare(n.Name)}, true
 	case *ast.CreateSchemaNode:
 		return change{verb: create, kind: kindSchema, name: n.Name}, true
+	case *ast.ExtensionStatement:
+		return describeNative(n.Payload)
 	default:
 		return describeObject(node)
 	}
+}
+
+// nativeOperation is what an operation a provider planned reports: the object
+// it is planned for, and the effect of its plan step on each object the step
+// touches.
+type nativeOperation interface {
+	Subject() objectidentity.ID
+	Effects() []plangraph.Effect
+}
+
+// nativeKinds are the kinds of object an operation a provider planned is named
+// for, with the kind its wording uses. The provider's own kinds are left out:
+// the community binary names nothing of theirs.
+var nativeKinds = map[objectidentity.Kind]string{
+	objectidentity.KindTable:   kindTable,
+	objectidentity.KindView:    "view",
+	objectidentity.KindIndex:   kindIndex,
+	objectidentity.KindMatView: "materialized view",
+}
+
+// describeNative names an operation a provider planned by its subject. The
+// step's effect on the subject itself decides the verb: a creation creates it,
+// a removal drops it, and anything else, such as an alteration or a change to
+// an index or a changefeed of the subject, modifies it.
+func describeNative(payload ast.ExtensionPayload) (change, bool) {
+	operation, ok := payload.(nativeOperation)
+	if !ok {
+		return change{}, false
+	}
+	subject, effects := operation.Subject(), operation.Effects()
+	kind, ok := nativeKinds[subject.Kind]
+	if !ok || len(effects) == 0 {
+		return change{}, false
+	}
+	c := change{verb: modify, kind: kind, name: partName(subject.Name)}
+	if kind == kindIndex {
+		c.table = partName(subject.Parent)
+	}
+	key := subject.Key()
+	for _, effect := range effects {
+		if effect.Subject.Key() != key {
+			continue
+		}
+		switch effect.Action {
+		case plangraph.Create:
+			c.verb = create
+		case plangraph.Drop:
+			c.verb = drop
+		}
+	}
+	return c, true
+}
+
+// partName is the name of one component of an identity as its source spelled
+// it, without quotes.
+func partName(part objectidentity.Part) string {
+	if part.Source == "" {
+		return bare(part.Normalized)
+	}
+	return bare(part.Source)
 }
 
 // describeObject names the changes to the objects the community binary does
