@@ -94,12 +94,15 @@ func planExclusion(request featureplan.Request, record schemaext.ChangeRecord, i
 	if change.After != nil && change.After.Deferrable && !request.Capabilities.Has(capability.DeferrableKeys) {
 		return result, fmt.Errorf("%w: EXCLUDE constraint %s declares unsupported DEFERRABLE", ptaherr.ErrUnsupportedFeature, record.Subject)
 	}
-	action, transaction := plangraph.Alter, plangraph.TransactionAllowed
+	action, transaction, phase := plangraph.Alter, plangraph.TransactionAllowed, featureplan.PhaseDefault
 	switch {
 	case change.Before == nil:
 		action = plangraph.Create
 	case change.After == nil:
-		action = plangraph.Drop
+		// The constraint leaves ahead of the host's removals: the server drops
+		// it with the last column it covers, so a drop that follows that column
+		// answers that the constraint does not exist.
+		action, phase = plangraph.Drop, featureplan.PhaseDependent
 	case !change.CommentOnly:
 		transaction = plangraph.TransactionRequired
 	}
@@ -107,7 +110,7 @@ func planExclusion(request featureplan.Request, record schemaext.ChangeRecord, i
 	result.Owner = Owner
 	result.Steps = []plangraph.Step[featureplan.Operation]{{
 		ID:      plangraph.StepID{Owner: Owner, Name: fmt.Sprintf("exclusion/%06d", index)},
-		Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: parent, Payload: operation},
+		Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: parent, Payload: operation, Phase: phase},
 		Effects: exclusionEffects(record.Subject, parent, action, change), Transaction: transaction, Impact: change.Effect(),
 	}}
 	return result, nil
