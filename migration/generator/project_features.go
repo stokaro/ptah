@@ -45,29 +45,9 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 	for _, record := range constraintRecords {
 		owners[record.Subject.Key()] = true
 	}
-	var objects []schemaext.ObjectProjection
-	var facets []schemaext.FacetProjection
-	for _, result := range recovery {
-		if len(result.ForwardState) == 0 {
-			return schemacapture.TableObservation{}, fmt.Errorf("%w: table reversal requires captured state projections", schemaext.ErrInvalidValue)
-		}
-		for _, projected := range result.ForwardState {
-			switch projected.Placement {
-			case schemaext.ObjectPlacement:
-				if result.Change.Subject.Kind != objectidentity.Kind(projected.Kind) || !projectedChildOf(parent, result.Change.Subject) {
-					return schemacapture.TableObservation{}, fmt.Errorf("%w: projected object belongs to another table", schemaext.ErrInvalidValue)
-				}
-				objects = append(objects, schemaext.ObjectProjection{Subject: result.Change.Subject, Value: projected.Value})
-			case schemaext.FacetPlacement:
-				subject := result.Change.Subject
-				if !owners[subject.Key()] || subject.Key() != parent.Key() && !projectedChildOf(parent, subject) {
-					return schemacapture.TableObservation{}, fmt.Errorf("%w: projected facet belongs to another table", schemaext.ErrInvalidValue)
-				}
-				facets = append(facets, schemaext.FacetProjection{Subject: subject, Kind: projected.Kind, Value: projected.Value})
-			default:
-				return schemacapture.TableObservation{}, fmt.Errorf("%w: unknown table reversal projection placement", schemaext.ErrInvalidValue)
-			}
-		}
+	objects, facets, err := tableProjections(parent, owners, recovery)
+	if err != nil {
+		return schemacapture.TableObservation{}, err
 	}
 	state, err := codecs.ProjectObjects(ctx, schemaext.ObjectState{Objects: current.OwnedObjects, Coverage: current.FeatureCoverage}, objects)
 	if err != nil {
@@ -96,6 +76,37 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 		current.Constraints[i].Facets = projected[subject.Key()]
 	}
 	return current, nil
+}
+
+// tableProjections splits the forward states of a table's reversals into the
+// objects and the facets they predict, refusing a state that belongs to
+// another table or to no facet owner the capture holds.
+func tableProjections(parent objectidentity.ID, owners map[objectidentity.Key]bool, recovery []schemaext.Reversal) ([]schemaext.ObjectProjection, []schemaext.FacetProjection, error) {
+	var objects []schemaext.ObjectProjection
+	var facets []schemaext.FacetProjection
+	for _, result := range recovery {
+		if len(result.ForwardState) == 0 {
+			return nil, nil, fmt.Errorf("%w: table reversal requires captured state projections", schemaext.ErrInvalidValue)
+		}
+		for _, projected := range result.ForwardState {
+			switch projected.Placement {
+			case schemaext.ObjectPlacement:
+				if result.Change.Subject.Kind != objectidentity.Kind(projected.Kind) || !projectedChildOf(parent, result.Change.Subject) {
+					return nil, nil, fmt.Errorf("%w: projected object belongs to another table", schemaext.ErrInvalidValue)
+				}
+				objects = append(objects, schemaext.ObjectProjection{Subject: result.Change.Subject, Value: projected.Value})
+			case schemaext.FacetPlacement:
+				subject := result.Change.Subject
+				if !owners[subject.Key()] || subject.Key() != parent.Key() && !projectedChildOf(parent, subject) {
+					return nil, nil, fmt.Errorf("%w: projected facet belongs to another table", schemaext.ErrInvalidValue)
+				}
+				facets = append(facets, schemaext.FacetProjection{Subject: subject, Kind: projected.Kind, Value: projected.Value})
+			default:
+				return nil, nil, fmt.Errorf("%w: unknown table reversal projection placement", schemaext.ErrInvalidValue)
+			}
+		}
+	}
+	return objects, facets, nil
 }
 
 func projectedChildOf(parent, child objectidentity.ID) bool {
