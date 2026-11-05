@@ -31,7 +31,7 @@ const (
 func reversalFixture(c *qt.C) (modelReverser, schemaext.ReversalRequest) {
 	selected := yamlIdentityTarget()
 	selected.engine.Features = []string{provider.ReverseChangesFeature}
-	models := map[modelKey]*modelContract{}
+	models := make(map[modelKey]*modelContract)
 	for _, key := range []modelKey{{kind: reversedChange, representation: schemaext.Change}, {kind: reversedObject, representation: schemaext.Observed}} {
 		models[key] = &modelContract{key: key, signature: string(key.kind), engines: map[string]*protocol.ValueModel{"fixture": selected.engine.ValueModels[0]}}
 	}
