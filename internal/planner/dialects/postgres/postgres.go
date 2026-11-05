@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
+	"ptah.run/internal/viewoptions"
 	"ptah.run/migration/diffpolicy"
 )
 
@@ -2714,7 +2715,9 @@ func (p *Planner) addNewViewLikeObjects(
 //
 // A view on the drop path is rebuilt, with everything that depends on it; see
 // [viewRebuild]. This step replaces the views on the replace path that the
-// rebuild neither owns nor replaced before its drops, in creation order.
+// rebuild neither owns nor replaced before its drops, in creation order, and
+// then changes the options of the views and materialized views whose options
+// are all that changes; see [Planner.alterViewOptions].
 func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	owned, replaced := rebuild.owns(), rebuild.replaces()
@@ -2723,12 +2726,46 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 			result = appendNode(result, p.viewReplace(diff, object, semantics))
 		}
 	}
+	return p.alterViewOptions(result, diff, rebuild)
+}
+
+// alterViewOptions changes in place the options of each view whose options are
+// all its change changes, and of each materialized view whose change keeps it:
+// ALTER [MATERIALIZED] VIEW ... SET for each option declared and not held as
+// declared, and RESET for each option held and not declared. The view keeps
+// its definition, what depends on it and its privileges, and a materialized
+// view keeps its rows.
+//
+// An object the rebuild drops or replaces is left out: its CREATE or CREATE OR
+// REPLACE VIEW states the declared options, which sets them and clears the
+// others.
+func (p *Planner) alterViewOptions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+	owned, replaced := rebuild.owns(), rebuild.replaces()
+	alter := func(name string, materialized bool, previous, declared []string) {
+		object := deporder.ViewLike{Name: name, Materialized: materialized}
+		if owned.has(object) || replaced.has(object) {
+			return
+		}
+		set, reset := viewoptions.Changes(previous, declared)
+		result = append(result, ast.NewAlterViewOptions(name, materialized).SetOptions(set).ResetOptions(reset))
+	}
+	for _, viewDiff := range diff.ViewsModified {
+		if viewDiff.Desired.Name != "" && viewDiff.OptionsOnly() {
+			alter(viewDiff.Desired.Name, false, viewDiff.PreviousOptions, viewDiff.Desired.Options)
+		}
+	}
+	for _, viewDiff := range diff.MaterializedViewsModified {
+		if viewDiff.Desired.Name != "" && viewDiff.ChangesOptions() && !viewDiff.Replaces() {
+			alter(viewDiff.Desired.Name, true, viewDiff.PreviousOptions, viewDiff.Desired.Options)
+		}
+	}
 	return result
 }
 
 // viewPaths is the split [Planner.modifyExistingViews] makes of the modified
 // views: the ones the rebuild drops and creates again, and the ones this step
-// replaces in place.
+// replaces in place. A view whose options are all that changes is on neither
+// path; [Planner.alterViewOptions] changes it.
 type viewPaths struct {
 	dropped  []deporder.ViewLike
 	replaced []deporder.ViewLike
@@ -2740,7 +2777,7 @@ func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
 		// The view this change leaves behind travels WITH it, in the direction
 		// being planned (stokaro/ptah#2315).
 		view := &viewDiff.Desired
-		if view.Name == "" {
+		if view.Name == "" || viewDiff.OptionsOnly() {
 			continue
 		}
 		object := deporder.ViewLike{Name: view.Name, Body: view.Body}

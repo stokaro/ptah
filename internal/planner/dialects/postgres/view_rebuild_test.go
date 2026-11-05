@@ -48,8 +48,8 @@ type rebuildState struct {
 	triggers []rebuildTrigger
 	// roles are the roles the schema manages, on both sides.
 	roles []string
-	// options is, on the database side, the options a view or a materialized
-	// view is held with, by name.
+	// options is the options a view or a materialized view is held with on
+	// the database side, and declared with on the declaration side, by name.
 	options map[string][]string
 }
 
@@ -110,10 +110,12 @@ func declaredRebuild(declared rebuildState) *schemamodel.Database {
 	}
 	for _, object := range declared.objects {
 		if object.materialized {
-			desired.MaterializedViews = append(desired.MaterializedViews, schemamodel.MaterializedView{Name: object.declaredName(), Body: object.body})
+			desired.MaterializedViews = append(desired.MaterializedViews, schemamodel.MaterializedView{
+				Name: object.declaredName(), Body: object.body, Options: declared.options[object.name],
+			})
 			continue
 		}
-		desired.Views = append(desired.Views, schemamodel.View{Name: object.declaredName(), Body: object.body})
+		desired.Views = append(desired.Views, schemamodel.View{Name: object.declaredName(), Body: object.body, Options: declared.options[object.name]})
 	}
 	for _, routine := range declared.routines {
 		desired.Functions = append(desired.Functions, schemamodel.Function{
@@ -1001,14 +1003,13 @@ const (
 		"SELECT r.total * factor\n$$\nLANGUAGE sql STABLE"
 )
 
-// TestViewRebuild_KeepsTheOptionsTheDatabaseHeld_HappyPath pins the options a
-// view or a materialized view keeps through a plan that writes it again.
-// PostgreSQL's CREATE OR REPLACE VIEW sets the options it states and clears
-// the others, and a view created again starts with none, so a
-// security_invoker view would run with its owner's privileges. Ptah declares
-// no option, and every statement that writes a view the database holds
-// states the ones it holds.
-func TestViewRebuild_KeepsTheOptionsTheDatabaseHeld_HappyPath(t *testing.T) {
+// TestViewRebuild_WritesTheDeclaredOptions_HappyPath pins the options a view
+// or a materialized view gets from a plan that writes it again. PostgreSQL's
+// CREATE OR REPLACE VIEW sets the options it states and clears the others, and
+// a view created again starts with none, so each statement that writes a view
+// states the options its declaration holds: the ones the database holds when
+// the declaration states them too, and none of the ones it leaves out.
+func TestViewRebuild_WritesTheDeclaredOptions_HappyPath(t *testing.T) {
 	invoker := map[string][]string{"order_report": {"security_invoker=true", "security_barrier=on"}, "order_totals": {"fillfactor=70"}}
 	tests := []struct {
 		name           string
@@ -1018,29 +1019,62 @@ func TestViewRebuild_KeepsTheOptionsTheDatabaseHeld_HappyPath(t *testing.T) {
 		{
 			name:     "a view replaced in place",
 			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
-			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}},
-			want: []string{"CREATE OR REPLACE VIEW \"order_report\" WITH (security_invoker='true', security_barrier='on') AS\n" +
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}, options: invoker},
+			want: []string{"CREATE OR REPLACE VIEW \"order_report\" WITH (security_invoker=true, security_barrier=on) AS\n" +
 				"SELECT total, 1 AS one FROM order_totals"},
 		},
 		{
 			name:     "a view and a materialized view created again",
 			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
-			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, orderReport}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, orderReport}, options: invoker},
 			want: []string{
 				`DROP VIEW "order_report"`,
 				`DROP MATERIALIZED VIEW "order_totals"`,
-				"CREATE MATERIALIZED VIEW \"order_totals\" WITH (fillfactor='70') AS\nSELECT sum(amount) AS total, count(*) AS n FROM orders",
-				"CREATE VIEW \"order_report\" WITH (security_invoker='true', security_barrier='on') AS\nSELECT total FROM order_totals",
+				"CREATE MATERIALIZED VIEW \"order_totals\" WITH (fillfactor=70) AS\nSELECT sum(amount) AS total, count(*) AS n FROM orders",
+				"CREATE VIEW \"order_report\" WITH (security_invoker=true, security_barrier=on) AS\nSELECT total FROM order_totals",
 			},
 		},
 		{
-			name:     "a view replaced before the drops",
-			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, bigOrdersReading}, options: map[string][]string{"big_orders": {"security_invoker=true"}}},
-			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, bigOrdersPlain}},
+			name: "a view replaced before the drops",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, bigOrdersReading},
+				options: map[string][]string{"big_orders": {"security_invoker=true"}}},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, bigOrdersPlain},
+				options: map[string][]string{"big_orders": {"security_invoker=true"}}},
 			want: []string{
-				"CREATE OR REPLACE VIEW \"big_orders\" WITH (security_invoker='true') AS\nSELECT id, amount FROM orders WHERE amount > 100",
+				"CREATE OR REPLACE VIEW \"big_orders\" WITH (security_invoker=true) AS\nSELECT id, amount FROM orders WHERE amount > 100",
 				`DROP MATERIALIZED VIEW "order_totals"`,
 				createTotalsChanged,
+			},
+		},
+		{
+			name:     "options the declaration leaves out",
+			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReportWide}},
+			want: []string{
+				"CREATE OR REPLACE VIEW \"order_report\" AS\nSELECT total, 1 AS one FROM order_totals",
+				`ALTER MATERIALIZED VIEW "order_totals" RESET (fillfactor)`,
+			},
+		},
+		{
+			name: "options alone, changed in place",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+				options: map[string][]string{"order_report": {"security_barrier=false", "security_invoker=on"}, "order_totals": {"fillfactor=80"}}},
+			want: []string{
+				`ALTER VIEW "order_report" SET (security_barrier=false)`,
+				`ALTER MATERIALIZED VIEW "order_totals" SET (fillfactor=80)`,
+			},
+		},
+		{
+			name: "an option change on objects the rebuild creates again",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, options: invoker},
+			declared: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotalsChanged, orderReport},
+				options: map[string][]string{"order_report": {"security_barrier=true"}}},
+			want: []string{
+				`DROP VIEW "order_report"`,
+				`DROP MATERIALIZED VIEW "order_totals"`,
+				createTotalsChanged,
+				"CREATE VIEW \"order_report\" WITH (security_barrier=true) AS\nSELECT total FROM order_totals",
 			},
 		},
 	}
@@ -1054,6 +1088,23 @@ func TestViewRebuild_KeepsTheOptionsTheDatabaseHeld_HappyPath(t *testing.T) {
 			c.Assert(statements, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestViewRebuild_OptionsSpelledAnotherWay_HappyPath pins that a value the
+// server stored in another spelling of the declared one plans nothing:
+// PostgreSQL stores `security_invoker = on` and `fillfactor = '070'` as
+// written.
+func TestViewRebuild_OptionsSpelledAnotherWay_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	live := rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+		options: map[string][]string{"order_report": {"security_invoker=on", "security_barrier=1"}, "order_totals": {"fillfactor=070"}}}
+	declared := rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport},
+		options: map[string][]string{"order_report": {"security_barrier=true", "security_invoker=true"}, "order_totals": {"fillfactor=70"}}}
+
+	statements, err := planRebuild(c, planext.StatementStyleExact, live, declared)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 0)
 }
 
 // TestViewRebuild_FailurePath pins the rebuild the plan refuses rather than

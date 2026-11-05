@@ -140,7 +140,9 @@ func corpus() []Fixture {
 		{Name: "sequence", Schema: sequenceFixture()},
 		{Name: "view", Schema: viewFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
+		{Name: "view-options", Schema: viewOptionsFixture()},
 		{Name: "matview", Schema: matViewFixture()},
+		{Name: "matview-options", Schema: matViewOptionsFixture()},
 		{Name: "matview-refresh", Schema: matViewRefreshFixture()},
 		{Name: "matview-refresh-after", Schema: matViewRefreshAfterFixture()},
 		{Name: "table-row-policy", Schema: tableRowPolicyFixture()},
@@ -1187,6 +1189,30 @@ func viewAttributesFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Views = []schemamodel.View{{
 		StructName: "V", Name: "bound", Body: "SELECT id FROM t", Attributes: []string{"SCHEMABINDING"},
+	}}
+	return db
+}
+
+// viewOptionsFixture declares a view with PostgreSQL's options. It is apart
+// from viewFixture because the targets without them refuse the view, and a
+// refused pair would take the view's other fields out of the measurement there
+// too.
+func viewOptionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Views = []schemamodel.View{{
+		StructName: "V", Name: "guarded", Body: "SELECT id FROM t",
+		Options: []string{"security_invoker=true", "security_barrier=true"},
+	}}
+	return db
+}
+
+// matViewOptionsFixture declares a materialized view with a storage
+// parameter, apart from matViewFixture for the reason viewOptionsFixture
+// gives.
+func matViewOptionsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.MaterializedViews = []schemamodel.MaterializedView{{
+		StructName: "MV", Name: "packed", Body: "SELECT id FROM t", Options: []string{"fillfactor=70"},
 	}}
 	return db
 }

@@ -481,7 +481,7 @@ func replacedViews(diff *difftypes.SchemaDiff) []replacedView {
 	var views []replacedView
 	for _, viewDiff := range diff.ViewsModified {
 		view := viewDiff.Desired
-		if view.Name == "" || !viewReplaceKeepsDependents(viewDiff, view.Body) {
+		if view.Name == "" || viewDiff.OptionsOnly() || !viewReplaceKeepsDependents(viewDiff, view.Body) {
 			continue
 		}
 		previous := viewDiff.PreviousBody
@@ -689,14 +689,18 @@ func (r rebuiltRoutine) kind(rebuild *viewRebuild) *[]deporder.ViewLike {
 	}
 }
 
-// modifiedMaterializedViews is the materialized views the plan changes, with
+// modifiedMaterializedViews is the materialized views the plan replaces, with
 // the declarations the changes carry. A change carrying none names a view the
-// pre-change database did not hold, and there is nothing to rebuild.
+// pre-change database did not hold, and there is nothing to rebuild. A change
+// [difftypes.MaterializedViewDiff.Replaces] answers false for, such as one to
+// the storage parameters alone, keeps the view and its rows; see
+// [Planner.alterViewOptions].
 func modifiedMaterializedViews(diff *difftypes.SchemaDiff) []deporder.ViewLike {
 	modified := make([]deporder.ViewLike, 0, len(diff.MaterializedViewsModified))
 	for _, viewDiff := range diff.MaterializedViewsModified {
 		view := viewDiff.Desired
-		if view.Name == "" || slices.ContainsFunc(modified, func(seen deporder.ViewLike) bool { return seen.Name == view.Name }) {
+		if view.Name == "" || !viewDiff.Replaces() ||
+			slices.ContainsFunc(modified, func(seen deporder.ViewLike) bool { return seen.Name == view.Name }) {
 			continue
 		}
 		modified = append(modified, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
@@ -1166,48 +1170,30 @@ func sameObject(a, b string, semantics identifier.Semantics) bool {
 	return a == b || semantics.QualifiedTableIdentityKey(a) == semantics.QualifiedTableIdentityKey(b)
 }
 
-// heldViewOptions is the options the database holds the view or materialized
-// view object with, or nil.
-func heldViewOptions(diff *difftypes.SchemaDiff, object deporder.ViewLike, semantics identifier.Semantics) []string {
-	held := diff.CurrentViewOptions.Views
-	if object.Materialized {
-		held = diff.CurrentViewOptions.MaterializedViews
-	}
-	for name, options := range held {
-		if sameObject(name, object.Name, semantics) {
-			return slices.Clone(options)
-		}
-	}
-	return nil
-}
-
 // viewLikeCreate is the statement that creates object from its declaration,
-// with the options the database holds it with; nil when the declaration does
-// not hold it.
+// with the options the declaration states; nil when the declaration does not
+// hold it. The options are the whole of what the object holds: a view created
+// again starts with none, and the comparison has already planned the removal
+// of any the database holds and the declaration leaves out.
 func (p *Planner) viewLikeCreate(diff *difftypes.SchemaDiff, object deporder.ViewLike, semantics identifier.Semantics) ast.Node {
-	options := heldViewOptions(diff, object, semantics)
 	if object.Materialized {
 		view := objectlookup.MaterializedView(diff.DeclaredViewLikes.MaterializedViews, object.Name, semantics)
 		if view == nil {
 			return nil
 		}
-		node := modelast.FromMaterializedView(*view)
-		node.Options = options
-		return node
+		return modelast.FromMaterializedView(*view)
 	}
 	view := objectlookup.View(diff.DeclaredViewLikes.Views, object.Name, semantics)
 	if view == nil {
 		return nil
 	}
-	node := modelast.FromView(*view)
-	node.Options = options
-	return node
+	return modelast.FromView(*view)
 }
 
 // viewReplace is the CREATE OR REPLACE VIEW that gives the view object the
-// definition its declaration holds, with the options the database holds it
-// with: the replace sets the options it states and clears the others. It is
-// nil when the declaration holds no such view.
+// definition and the options its declaration holds: the replace sets the
+// options it states and clears the others. It is nil when the declaration
+// holds no such view.
 func (p *Planner) viewReplace(diff *difftypes.SchemaDiff, object deporder.ViewLike, semantics identifier.Semantics) ast.Node {
 	node, isView := p.viewLikeCreate(diff, object, semantics).(*ast.CreateViewNode)
 	if !isView {

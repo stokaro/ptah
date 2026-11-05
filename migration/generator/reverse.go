@@ -319,7 +319,6 @@ func reverseSchemaDiffWithPrior(
 	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
-	reversed.CurrentViewOptions = diff.CurrentViewOptions
 	return reversed
 }
 

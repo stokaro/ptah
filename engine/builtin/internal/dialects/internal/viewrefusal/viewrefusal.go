@@ -40,10 +40,10 @@ func Attributes(dialect, view string, attributes []string) error {
 // renderer has no clause for, wrapping [ptaherr.ErrUnsupportedFeature], or nil
 // when it carries none. kind is "view" or "materialized view".
 //
-// A planner sets them only for an object the database holds them on, which a
-// target other than PostgreSQL does not report, so a refusal here names a
-// node built by hand. Writing the object without them would drop a
-// security_invoker or a storage parameter in silence.
+// The options come from the declaration, and a declaration may reach a target
+// other than PostgreSQL. Writing the object without them would drop a
+// security_invoker or a storage parameter in silence, and the next comparison
+// would find it missing again.
 func Options(dialect, kind, name string, options []string) error {
 	if len(options) == 0 {
 		return nil

@@ -323,6 +323,24 @@ PostgreSQL drops or follows the object with the column, but the schema file
 keeps its text. Drop the object first, or declare the column under its final
 name.
 
+## Declare view options
+
+The `WITH` list before `AS` declares a PostgreSQL view's options and a
+materialized view's storage parameters, in the spellings `pg_dump` writes and
+the bare ones alike:
+
+```sql
+CREATE VIEW order_report WITH (security_invoker = 'true') AS
+  SELECT id, amount FROM orders;
+CREATE MATERIALIZED VIEW order_totals WITH (fillfactor = 70) AS
+  SELECT sum(amount) AS total FROM orders;
+```
+
+A view declared without the list is a view without options, so the plan
+removes an option the database holds and the file leaves out. [View options
+and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
+says how they are compared and changed, and which engines take them.
+
 ## Comments
 
 `COMMENT ON CONSTRAINT ... ON table` stays executable when parsed SQL is rendered.

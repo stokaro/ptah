@@ -93,6 +93,8 @@ func objectKindDeniedCaps(key capability.Capability) capability.Capabilities {
 	return capability.Postgres16().
 		With(key, false).
 		With(capability.MaterializedViews, false).
+		With(capability.ViewOptions, false).
+		With(capability.MaterializedViewOptions, false).
 		With(capability.ViewComments, false).
 		With(capability.FunctionComments, false).
 		With(capability.ProcedureComments, false).

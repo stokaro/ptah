@@ -296,6 +296,8 @@ func measuredLines() map[string]measuredLine {
 				capability.ConstraintComments:       constraintCommentCarried,
 				capability.IndexComments:            indexRoleCommentCarried,
 				capability.RoleComments:             indexRoleCommentCarried,
+				capability.ViewOptions:              viewOptionsCarried,
+				capability.MaterializedViewOptions:  viewOptionsCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -485,6 +487,8 @@ func measuredLines() map[string]measuredLine {
 				capability.ConstraintComments:       mysqlConstraintCommentCarried,
 				capability.IndexComments:            mysqlIndexRoleCommentCarried,
 				capability.RoleComments:             mysqlIndexRoleCommentCarried,
+				capability.ViewOptions:              viewOptionsCarried,
+				capability.MaterializedViewOptions:  viewOptionsCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -675,6 +679,8 @@ func measuredLines() map[string]measuredLine {
 				capability.ConstraintComments:       mysqlConstraintCommentCarried,
 				capability.IndexComments:            mysqlIndexRoleCommentCarried,
 				capability.RoleComments:             mysqlIndexRoleCommentCarried,
+				capability.ViewOptions:              viewOptionsCarried,
+				capability.MaterializedViewOptions:  viewOptionsCarried,
 				capability.UniqueNullsDistinctClause: "this run predates the key and sent no NULLS [NOT] " +
 					"DISTINCT clause. It was measured on 2026-09-03 against PostgreSQL 18.6, CockroachDB " +
 					"v26.3.1, YugabyteDB 2024.2 and 2025.2, SQLite, SQL Server 2022, Oracle 23 and " +
@@ -782,6 +788,13 @@ const invisibleIndexesCarried = "this run predates the key and sent no invisible
 	"on 2026-09-28 against MySQL 8.4.11, 9.7.2 and 26.7.0, which record `CREATE INDEX ... INVISIBLE` " +
 	"as IS_VISIBLE NO, MariaDB 11.8.9, which records `CREATE INDEX ... IGNORED` as IGNORED YES, and " +
 	"PostgreSQL 18.6, which answers a syntax error, and carried here from those runs (stokaro/ptah#3853)"
+
+// viewOptionsCarried is why the two view option keys are carried on every
+// measured line: the run named there predates them.
+const viewOptionsCarried = "this run predates the keys and sent no view or materialized view WITH clause. " +
+	"They were measured on 2026-11-05 against PostgreSQL 14.24, 15.19 and 18.6, YugabyteDB 2024.2.11 and " +
+	"2026.1.2, CockroachDB v25.4.20, v26.2.11 and v26.3.2 and the Spanner emulator behind PGAdapter 0.56.1, " +
+	"and carried here from those runs (stokaro/ptah#5017)"
 
 // objectCommentCarried is why the five object-comment keys are carried on every
 // measured line: the run named there predates them.

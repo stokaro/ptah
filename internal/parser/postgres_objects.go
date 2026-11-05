@@ -659,9 +659,10 @@ func (p *Parser) parseRevokeGrantOptionForPrefix() (bool, error) {
 }
 
 // parseCreateMaterializedView parses
-// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name AS <query>, and the owners'
-// clauses between the name and AS, such as ClickHouse's REFRESH schedule and
-// storage clause.
+// CREATE MATERIALIZED VIEW [IF NOT EXISTS] name [WITH (...)] AS <query>, and
+// the owners' clauses between the name and AS, such as ClickHouse's REFRESH
+// schedule and storage clause. The WITH list is PostgreSQL's storage
+// parameters; see [Parser.parseRelationOptions].
 func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "MATERIALIZED"); err != nil {
 		return nil, err
@@ -685,6 +686,9 @@ func (p *Parser) parseCreateMaterializedView() (*ast.CreateMaterializedViewNode,
 	node := ast.NewCreateMaterializedView(name)
 	node.IfNotExists = ifNotExists
 	p.claimOwnerViewClauses(node)
+	if node.Options, err = p.parseRelationOptions("materialized view"); err != nil {
+		return nil, err
+	}
 	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
 		return nil, fmt.Errorf("expected AS after materialized view name: %w", err)
 	}

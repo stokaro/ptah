@@ -1228,10 +1228,10 @@ type View struct {
 
 	// Options is the view's own options other than its check option, as the
 	// server holds them, `name=value`: PostgreSQL's security_invoker and
-	// security_barrier. Ptah declares and compares none of them. A planner
-	// that replaces the view or creates it again writes them back, because
-	// CREATE OR REPLACE VIEW clears the options it does not state and a new
-	// view has none.
+	// security_barrier. The value is the spelling the server stored, so
+	// `security_invoker = on` reads back as security_invoker=on; a comparison
+	// reads it through [ptah.run/core/schemamodel.View.Options]' rules rather
+	// than as text.
 	Options []string `json:"options,omitempty"`
 }
 
@@ -1252,8 +1252,8 @@ type MaterializedView struct {
 	Comment string           `json:"comment"` // Materialized view comment/description
 
 	// Options is the materialized view's storage parameters as the server
-	// holds them, `name=value`, such as fillfactor or an autovacuum setting.
-	// Ptah declares and compares none of them; see [View.Options].
+	// holds them, `name=value`, such as fillfactor or an autovacuum setting;
+	// see [View.Options].
 	Options []string `json:"options,omitempty"`
 
 	// Unpopulated reports that the server holds the view without rows, as

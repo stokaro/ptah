@@ -152,6 +152,14 @@ func TestCommonObjectChange_FailurePath(t *testing.T) {
 				`password would be written into the plan; use a provider release that lists the feature`},
 		{name: "a changed password for a provider that takes no password input", target: withoutPasswordInputs(commonObjectTarget(everyCommonKind...)),
 			node: alterRole, wantErr: `unsupported feature: role reader declares a password, .*`},
+		{name: "a view with PostgreSQL options", target: commonObjectTarget(everyCommonKind...),
+			node:    &ast.CreateViewNode{Name: "recent", Body: "SELECT 1", Options: []string{"security_invoker=true"}},
+			wantErr: `.*the options security_invoker=true of view "recent"`},
+		{name: "a materialized view with storage parameters", target: commonObjectTarget(everyCommonKind...),
+			node:    &ast.CreateMaterializedViewNode{Name: "totals", Body: "SELECT 2", Options: []string{"fillfactor=70"}},
+			wantErr: `.*the storage parameters fillfactor=70 of materialized view "totals"`},
+		{name: "a change of a view's options", target: commonObjectTarget(everyCommonKind...),
+			node: ast.NewAlterViewOptions("recent", false).SetOptions([]string{"security_invoker=true"}), wantErr: `.*changing the options of "recent"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -222,6 +230,12 @@ func TestDeclaredCommonObjects_FailurePath(t *testing.T) {
 			wantErr: `.*grants on the fixture engine, whose provider does not carry them`},
 		{name: "a role comment", kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_ROLE},
 			source: &schemamodel.Database{Roles: []schemamodel.Role{{Name: "reader", Comment: "reads"}}}, wantErr: `.*comments on the fixture engine, whose provider does not carry them`},
+		{name: "a view with PostgreSQL options", kinds: everyCommonKind,
+			source:  &schemamodel.Database{Views: []schemamodel.View{{Name: "recent", Body: "SELECT 1", Options: []string{"security_barrier=true"}}}},
+			wantErr: `.*the options security_barrier=true of view "recent"`},
+		{name: "a materialized view with storage parameters", kinds: everyCommonKind,
+			source:  &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "totals", Body: "SELECT 2", Options: []string{"fillfactor=70"}}}},
+			wantErr: `.*the storage parameters fillfactor=70 of materialized view "totals"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
