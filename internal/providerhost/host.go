@@ -93,6 +93,10 @@ var hostFeatures = []string{
 	// it, which the engine runtime dispatches as it dispatches a built-in
 	// owner's; see modelReverser.
 	provider.ReverseChangesFeature,
+	// A read's coverage region may cover a schema and every schema below it,
+	// under the separator the engine's identifier rules declare; see
+	// namespaceScopes and comparisonNamespace (ADR 0064).
+	provider.SchemaSubtreeCoverageFeature,
 	// A migration file, a printed diff and a rendered schema ask for SQL
 	// text units, and a provider refuses a change it can make only natively;
 	// see target.Render and rowWriter.RenderWrites.
@@ -233,7 +237,8 @@ func identifierRules(rules *protocol.IdentifierRules, defaultSchema string) (ide
 		protocol.IdentifierRules_SCHEMA: identifier.IndexNamespaceSchema,
 	}
 	return identifier.Semantics{DefaultSchema: defaultSchema, TableNames: comparisons[rules.GetTableNames()],
-		ColumnNames: comparisons[rules.GetColumnNames()], IndexNames: comparisons[rules.GetIndexNames()], IndexNamespace: namespaces[rules.GetIndexNamespace()]}, nil
+		ColumnNames: comparisons[rules.GetColumnNames()], IndexNames: comparisons[rules.GetIndexNames()], IndexNamespace: namespaces[rules.GetIndexNamespace()],
+		SchemaSeparator: rules.GetSchemaSeparator()}, nil
 }
 
 func (t *target) identity(session *protocol.Session) (catalog.ProviderIdentity, error) {

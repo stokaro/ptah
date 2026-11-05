@@ -772,7 +772,11 @@ the corresponding provider comparison, planning, and operation services.
 `schema inspect` accepts objects and facets when the provider binds every requested
 schema selector to explicit namespaces. Returned tables, subjects, and coverage
 regions must stay within those bounds. Unknown parent-table regions remain
-unknown after capture. Invalid or widened bindings cause refusal.
+unknown after capture. Invalid or widened bindings cause refusal. A read with
+no selector may claim a schema and every schema below it with one region when
+the provider declares how its schemas nest (`schema.subtree-coverage`), so a
+native object declared in a schema that does not exist yet is planned rather
+than left undecided.
 A failed or canceled read returns no partial catalog. Complete inspection of one
 session does not establish global absence across databases or engines; explicit
 subject facts are preserved.

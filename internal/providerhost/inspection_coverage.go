@@ -112,6 +112,16 @@ func namespaceScopes(selections *scopeSelections, semantics identifier.Semantics
 	}
 	native := schemaext.NamespaceScope{SubjectKinds: []objectidentity.Kind{objectidentity.Kind(kind)}, Targets: []string{engine},
 		Database: namespacePart(scope.GetDatabase()), Catalog: namespacePart(scope.GetCatalog()), Schema: namespacePart(scope.GetSchema()), PathPrefix: objectidentity.NewParts(path...)}
+	// A subtree region covers the schemas below its own under the engine's
+	// separator. Its common table and column scopes keep the exact schema:
+	// their subjects carry coverage of their own, and binding them names one
+	// schema.
+	if scope.GetSchemaSubtree() {
+		if semantics.SchemaSeparator == "" {
+			return nil, unsupported("schema subtree coverage without a schema separator")
+		}
+		native.SchemaSubtree, native.SchemaSeparator = true, semantics.SchemaSeparator
+	}
 	if selections.selects(objectidentity.Kind(kind)) {
 		native.Database = &objectidentity.Part{}
 		// A selection describes standalone objects, never table-owned facets.

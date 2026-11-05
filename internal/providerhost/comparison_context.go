@@ -40,9 +40,10 @@ func comparisonIdentifiers(rules identifier.Semantics) (*protocol.ComparisonIden
 	result := &protocol.ComparisonIdentifiers{DefaultSchema: rules.DefaultSchema,
 		CatalogCollation: rules.CatalogCollation,
 		Rules: &protocol.IdentifierRules{TableNames: comparisons[rules.TableNames],
-			ColumnNames:    comparisons[rules.ColumnNames],
-			IndexNames:     comparisons[rules.IndexNames],
-			IndexNamespace: namespaces[rules.IndexNamespace]}}
+			ColumnNames:     comparisons[rules.ColumnNames],
+			IndexNames:      comparisons[rules.IndexNames],
+			IndexNamespace:  namespaces[rules.IndexNamespace],
+			SchemaSeparator: rules.SchemaSeparator}}
 	if err := provider.ValidateIdentifierRules(result.Rules); err != nil {
 		return nil, err
 	}

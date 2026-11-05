@@ -16,6 +16,13 @@ import (
 type NamespaceScope struct {
 	// PathExact requires PathPrefix to name the entire namespace path.
 	PathExact bool `json:"path_exact,omitempty"`
+	// SchemaSubtree extends Schema to every schema nested below it: a subject
+	// whose normalized schema begins with Schema's followed by SchemaSeparator,
+	// and every schema when Schema is the empty root (ADR 0064). It requires
+	// Schema and a SchemaSeparator, the one character the target separates
+	// nested schemas with; a scope without it sets no separator.
+	SchemaSubtree   bool   `json:"schema_subtree,omitempty"`
+	SchemaSeparator string `json:"schema_separator,omitempty"`
 	// SubjectKinds limits subject types; an empty list accepts any kind.
 	SubjectKinds []objectidentity.Kind `json:"subject_kinds,omitempty"`
 	// Parent limits the owning object; nil accepts any parent.
@@ -76,12 +83,15 @@ func (s NamespaceScope) normalized() (NamespaceScope, error) {
 			return NamespaceScope{}, fmt.Errorf("%w: namespace path has an empty component", ErrInvalidValue)
 		}
 	}
+	if s.SchemaSubtree != (s.SchemaSeparator != "") || (s.SchemaSubtree && (s.Schema == nil || utf8.RuneCountInString(s.SchemaSeparator) != 1)) {
+		return NamespaceScope{}, fmt.Errorf("%w: a schema subtree needs a schema and one separator character", ErrInvalidValue)
+	}
 	return s, nil
 }
 
 func (s NamespaceScope) matches(subject objectidentity.ID) bool {
 	if (len(s.SubjectKinds) > 0 && !slices.Contains(s.SubjectKinds, subject.Kind)) || !matchesQualifier(s.Parent, subject.Parent) ||
-		!matchesQualifier(s.Database, subject.Database) || !matchesQualifier(s.Catalog, subject.Catalog) || !matchesQualifier(s.Schema, subject.Schema) {
+		!matchesQualifier(s.Database, subject.Database) || !matchesQualifier(s.Catalog, subject.Catalog) || !s.matchesSchema(subject.Schema) {
 		return false
 	}
 	prefix, path := s.PathPrefix.Values(), subject.Namespace.Values()
@@ -94,6 +104,18 @@ func (s NamespaceScope) matches(subject objectidentity.ID) bool {
 		}
 	}
 	return true
+}
+
+// matchesSchema matches the schema qualifier, or with SchemaSubtree the
+// qualifier's subtree. It is the rule of provider.SchemaWithin in the
+// provider SDK, which this package does not import; a test of the provider
+// host runs both over the same cases.
+func (s NamespaceScope) matchesSchema(subject objectidentity.Part) bool {
+	if !s.SchemaSubtree || s.Schema == nil {
+		return matchesQualifier(s.Schema, subject)
+	}
+	region := s.Schema.Normalized
+	return subject.Normalized == region || region == "" || strings.HasPrefix(subject.Normalized, region+s.SchemaSeparator)
 }
 
 func matchesQualifier(scope *objectidentity.Part, subject objectidentity.Part) bool {

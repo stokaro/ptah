@@ -44,14 +44,14 @@ func TestComparisonNamespaceRoundTripPreservesIndependentSources(t *testing.T) {
 	c.Assert(wire.GetParent(), qt.IsNotNil)
 	c.Assert(wire.GetCatalog(), qt.IsNil)
 	c.Assert(wire.GetDatabase(), qt.IsNotNil)
-	restored := boundNamespace(wire)
+	restored := boundNamespace(wire, "")
 	c.Assert(restored, qt.DeepEquals, scope)
 	wire.Schema.Source = "changed"
 	c.Assert(scope.Schema.Source, qt.Equals, "Main")
 	c.Assert(restored.Schema.Source, qt.Equals, "Main")
 	source := &protocol.ComparisonKnowledgeSource{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}
 	unknown := &protocol.ComparisonKnowledgeSource{Outside: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "Partial capture"}}
-	domain, err := boundKnowledgeDomain([]*protocol.ComparisonKnowledgeSource{source, unknown})
+	domain, err := boundKnowledgeDomain([]*protocol.ComparisonKnowledgeSource{source, unknown}, "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(domain.Sources(), qt.HasLen, 2)
 	subject := objectidentity.ID{Kind: objectidentity.KindColumn, Name: part, Parent: part}
@@ -142,4 +142,39 @@ func TestResolvedRequirementsRefusePendingDatabaseContext(t *testing.T) {
 	requirements, err = value.Requires()
 	c.Assert(err, qt.IsNil)
 	c.Assert(requirements, qt.HasLen, 0)
+}
+
+// A subtree region keeps its flag on the wire and takes the engine's
+// separator when it comes back from a comparison.
+func TestComparisonNamespaceRoundTripKeepsASubtree(t *testing.T) {
+	c := qt.New(t)
+	scope := schemaext.NamespaceScope{Targets: []string{"fixture"}, Schema: new(objectidentity.Part), SchemaSubtree: true, SchemaSeparator: "/"}
+
+	wire := comparisonNamespace(scope)
+
+	c.Assert(wire.GetSchemaSubtree(), qt.IsTrue)
+	c.Assert(boundNamespace(wire, "/"), qt.DeepEquals, scope)
+}
+
+// A read's subtree region becomes a native scope over the schemas below it,
+// under the session's separator, and its common table and column scopes keep
+// the exact schema. Without a separator the region is refused.
+func TestNamespaceScopesOfASubtreeRegion(t *testing.T) {
+	c := qt.New(t)
+	region := &protocol.ModelNamespace{Database: &protocol.NamespaceComponent{Source: "/local", Normalized: "/local"}, Catalog: &protocol.NamespaceComponent{},
+		Schema: &protocol.NamespaceComponent{}, SchemaSubtree: true}
+	semantics := identifier.Semantics{TableNames: identifier.ComparisonExact, ColumnNames: identifier.ComparisonExact, IndexNames: identifier.ComparisonExact,
+		IndexNamespace: identifier.IndexNamespaceTable, SchemaSeparator: "/"}
+
+	scopes, err := namespaceScopes(nil, semantics, "fixture", "example.org/fixture/secret", region)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(scopes, qt.HasLen, 2)
+	c.Assert(scopes[0].SchemaSubtree, qt.IsTrue)
+	c.Assert(scopes[0].SchemaSeparator, qt.Equals, "/")
+	c.Assert(scopes[1].SchemaSubtree, qt.IsFalse)
+	semantics.SchemaSeparator = ""
+	refused, err := namespaceScopes(nil, semantics, "fixture", "example.org/fixture/secret", region)
+	c.Assert(err, qt.ErrorMatches, `.*schema subtree coverage without a schema separator.*`)
+	c.Assert(refused, qt.IsNil)
 }
