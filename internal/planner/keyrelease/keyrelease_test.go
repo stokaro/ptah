@@ -465,6 +465,15 @@ func TestPrimaryKeysUnderColumnChanges_ReleasesNothing(t *testing.T) {
 			},
 		},
 		{
+			name: "the column also gives up AUTO_INCREMENT",
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{
+					{ColumnName: "x", Changes: map[string]string{"primary_key": "true -> false", "nullable": "false -> true", "auto_increment": "true -> false"}},
+				}}},
+				ConstraintsRemoved: removed("t", "t_pkey", "PRIMARY KEY"),
+			},
+		},
+		{
 			name: "a column outside the key allows NULL",
 			diff: &difftypes.SchemaDiff{
 				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsModified: []difftypes.ColumnDiff{

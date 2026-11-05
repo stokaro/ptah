@@ -141,8 +141,10 @@ func UnderAddedForeignKeys(diff *difftypes.SchemaDiff, dialect string) Releases 
 // the column changes. On PostgreSQL, measured on 18.6, `ALTER COLUMN id DROP NOT NULL`
 // answers `column "id" is in a primary key` while the key holds the column, and
 // `ADD COLUMN code bigint PRIMARY KEY` answers `multiple primary keys for table
-// "parent" are not allowed` while the table holds one. A primary key the plan adds
-// back is one of these too: its drop only moves ahead of the column changes.
+// "parent" are not allowed` while the table holds one. On MySQL and MariaDB the first
+// statement runs and the column stays NOT NULL, so the next comparison plans it again.
+// A primary key the plan adds back is one of these too: its drop only moves ahead of
+// the column changes.
 func PrimaryKeysUnderColumnChanges(diff *difftypes.SchemaDiff, dialect string) Releases {
 	if diff == nil {
 		return Releases{}
@@ -171,7 +173,10 @@ func columnChangesRequireNoPrimaryKey(table difftypes.TableDiff) bool {
 		return true
 	}
 	return slices.ContainsFunc(table.ColumnsModified, func(column difftypes.ColumnDiff) bool {
-		return strings.HasPrefix(column.Changes["nullable"], "false ->") && strings.HasPrefix(column.Changes["primary_key"], "true ->")
+		// MySQL refuses to drop the key under a column that still has AUTO_INCREMENT,
+		// so a column giving up both stays behind its own MODIFY COLUMN.
+		_, autoIncrement := column.Changes["auto_increment"]
+		return !autoIncrement && strings.HasPrefix(column.Changes["nullable"], "false ->") && strings.HasPrefix(column.Changes["primary_key"], "true ->")
 	})
 }
 

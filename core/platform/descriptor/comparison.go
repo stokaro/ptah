@@ -28,8 +28,8 @@ type Comparison struct {
 	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
 	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
 	// is compared as the table's key where the table holds another key or none:
-	// the planner has a statement for a change of the key and none for a column's
-	// primary_key flag.
+	// the planner has a statement for a change of the key, in both directions, and
+	// none that a column's primary_key flag can say on its own.
 	ColumnPrimaryKeyIsTheTablesKey bool `json:"column_primary_key_is_the_tables_key,omitempty"`
 	// InternalIndexPrefix begins the name of an index the engine builds for
 	// itself and no statement can name, such as SQLite's autoindexes.

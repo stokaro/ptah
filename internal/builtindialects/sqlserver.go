@@ -131,10 +131,11 @@ END`,
 		// A UNIQUE constraint and a unique index are separate objects, so
 		// neither backs the other.
 		Comparison: descriptor.Comparison{
-			UniqueIndexStandsAlone: true,
-			ExpressionProbes:       "sys-catalog",
-			DefaultGeneratedKind:   "PERSISTED",
-			AutoIncrementFlag:      true,
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			UniqueIndexStandsAlone:         true,
+			ExpressionProbes:               "sys-catalog",
+			DefaultGeneratedKind:           "PERSISTED",
+			AutoIncrementFlag:              true,
 			// An index renamed only in case is rebuilt under the declared spelling.
 			RespelledIndexReplaced: true,
 		},
