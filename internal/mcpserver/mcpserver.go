@@ -41,6 +41,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -48,6 +49,7 @@ import (
 	"ptah.run/internal/agentapi"
 	"ptah.run/internal/agentdiag"
 	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/rundiag"
 )
 
 // serverName is what a client sees in its tool list.
@@ -81,7 +83,10 @@ func New(cfg Config) (*mcp.Server, error) {
 	}, &mcp.ServerOptions{
 		Instructions: instructions(cfg),
 	})
-	server.AddReceivingMiddleware(diagnose)
+	// reportWarnings is outermost, so it adds a call's warnings to the
+	// result diagnose has finished annotating rather than having them
+	// replaced.
+	server.AddReceivingMiddleware(reportWarnings, diagnose)
 	register(server, cfg)
 	return server, nil
 }
@@ -410,6 +415,70 @@ func diagnose(next mcp.MethodHandler) mcp.MethodHandler {
 			agentdiag.CodeInvalidRequest, call.GetError()))
 		call.Meta = annotated.Meta
 		call.Content = annotated.Content
+		return call, err
+	}
+}
+
+// warningsKey is where a call's warnings ride in its result's _meta, beside
+// [diagnosticKey]. [rundiag.ListedInToolResult] names it to the agent.
+const warningsKey = "ptah.run/warnings"
+
+// callWarning is one warning a call raised, as its result's _meta carries it:
+// a category of the run report, how many objects it concerns, the warning,
+// and each object's own line.
+type callWarning struct {
+	Category string   `json:"category"`
+	Count    int      `json:"count"`
+	Message  string   `json:"message"`
+	Objects  []string `json:"objects"`
+}
+
+// reportWarnings gives every tool call a run report of its own and hands what
+// the call raised to the agent in the call's result.
+//
+// `ptah mcp` is one command, so without this every call shares the report
+// that lives for the whole session: what a call found reaches no result, the
+// objects are deduplicated across calls, and one summary reaches the server's
+// stderr when the session ends, where no agent reads it.
+//
+// The warnings reach the result twice, for the reason a diagnostic does (ADR
+// 0007): a text content item after the answer, one `warning:` line each, for a
+// model, which is handed the content blocks and nothing else; and the result's
+// _meta under [warningsKey], with the category, the count and every object,
+// for a client program. Neither is part of a response type, so the agent
+// contract version does not move: a client that ignores them is unaffected.
+//
+// A result that asks for input carries nothing: it can hold no content, and
+// the call that answers runs again and raises the warnings itself.
+func reportWarnings(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method != "tools/call" {
+			return next(ctx, method, req)
+		}
+		// The stream is what a loader with no writer of its own raises its
+		// warnings for, and it has to be there for the loader to raise them.
+		// Each raises through rundiag.Warn, which this report collects, so
+		// nothing is written to it.
+		report := rundiag.New(rundiag.Options{Stream: io.Discard, Listing: rundiag.ListedInToolResult})
+		result, err := next(rundiag.With(ctx, report), method, req)
+		warnings := report.Drain()
+		call, isCall := result.(*mcp.CallToolResult)
+		if !isCall || call == nil || len(warnings) == 0 || call.InputRequests != nil {
+			return result, err
+		}
+		carried := make([]callWarning, 0, len(warnings))
+		lines := make([]string, 0, len(warnings))
+		for _, warning := range warnings {
+			carried = append(carried, callWarning{
+				Category: warning.Category, Count: warning.Count, Message: warning.Message, Objects: warning.Objects,
+			})
+			lines = append(lines, "warning: "+warning.Message)
+		}
+		if call.Meta == nil {
+			call.Meta = mcp.Meta{}
+		}
+		call.Meta[warningsKey] = carried
+		call.Content = append(call.Content, &mcp.TextContent{Text: strings.Join(lines, "\n")})
 		return call, err
 	}
 }

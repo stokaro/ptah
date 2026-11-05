@@ -26,9 +26,9 @@ func TestFeatureLimitsRetainNamespaceAndSubjectInEveryReport(t *testing.T) {
 	c.Assert(entries, qt.HasLen, 2)
 	c.Assert(entries[0].Name, qt.Not(qt.Equals), entries[1].Name)
 	var output strings.Builder
-	undecidednote.Report(&output, limits, "--from", "--to")
-	c.Assert(output.String(), qt.Contains, `Warning: test/changefeed "audit.events" could not be compared`)
-	c.Assert(output.String(), qt.Contains, `Warning: test/changefeed audit.events could not be compared`)
+	undecidednote.Report(c.Context(), &output, limits, "--from", "--to")
+	c.Assert(output.String(), qt.Contains, `warning: test/changefeed "audit.events" could not be compared`)
+	c.Assert(output.String(), qt.Contains, `warning: test/changefeed audit.events could not be compared`)
 	c.Assert(output.String(), qt.Contains, "current children were not inspected")
 	c.Assert(output.String(), qt.Contains, "desired children were not described")
 	c.Assert(output.String(), qt.Contains, "between --from and --to")
@@ -54,13 +54,13 @@ func TestMixedKnowledgeLimitsCannotReadAsAgreement(t *testing.T) {
 		}},
 	}
 	var output strings.Builder
-	undecidednote.Report(&output, limits, "the database", "the declaration")
+	undecidednote.Report(c.Context(), &output, limits, "the database", "the declaration")
 	c.Assert(output.String(), qt.Contains, `extension "citext"`)
 	c.Assert(output.String(), qt.Contains, "test/namespace")
 	c.Assert(undecidednote.Findings(limits)[0].Count, qt.Equals, 2)
 	c.Assert(undecidednote.Summary(limits), qt.Equals, "2 comparison limits remain unresolved")
 	c.Assert(undecidednote.Summary(schemadiff.Diagnostics{Features: limits.Features}), qt.Equals, "1 comparison limit remains unresolved")
-	undecidednote.Report(nil, limits, "the database", "the declaration")
+	undecidednote.Report(c.Context(), nil, limits, "the database", "the declaration")
 }
 
 func TestStandaloneNamespaceLimitHasNoInventedObject(t *testing.T) {
@@ -69,7 +69,7 @@ func TestStandaloneNamespaceLimitHasNoInventedObject(t *testing.T) {
 	c.Assert(limits.Err(), qt.ErrorMatches, "schema comparison is incomplete: test/standalone namespace: namespace was not inspected")
 	c.Assert(undecidednote.Entries(limits, "database"), qt.DeepEquals, []undecidednote.Entry{{Kind: "test/standalone", Name: "namespace", Reason: "namespace was not inspected"}})
 	var output strings.Builder
-	undecidednote.Report(&output, limits, "database", "declaration")
+	undecidednote.Report(c.Context(), &output, limits, "database", "declaration")
 	c.Assert(output.String(), qt.Contains, "namespace was not inspected")
 	c.Assert(undecidednote.Summary(limits), qt.Equals, "1 comparison limit remains unresolved")
 }
@@ -88,20 +88,20 @@ func TestFeatureLimitsNameTheModelByItsLabel(t *testing.T) {
 		{name: "a labeled model", diagnostic: schemaext.UndecidedChange{Kind: "test/extension", Label: "PostgreSQL extension",
 			Subject: objectidentity.ID{Kind: "test/extension", Name: objectidentity.Part{Source: "citext", Normalized: "citext"}},
 			Reason:  "it was not read"},
-			want: "Warning: PostgreSQL extension citext could not be compared between --from and --to: it was not read.\n"},
+			want: "warning: PostgreSQL extension citext could not be compared between --from and --to: it was not read\n"},
 		{name: "a model without a label", diagnostic: schemaext.UndecidedChange{Kind: "test/changefeed",
 			Subject: builder.TableParts("audit", "events"), Reason: "it was not read"},
-			want: "Warning: test/changefeed audit.events could not be compared between --from and --to: it was not read.\n"},
+			want: "warning: test/changefeed audit.events could not be compared between --from and --to: it was not read\n"},
 		{name: "a dotted name", diagnostic: schemaext.UndecidedChange{Kind: "test/changefeed", Label: "changefeed",
 			Subject: builder.TableParts("", "audit.events"), Reason: "it was not read"},
-			want: "Warning: changefeed public.\"audit.events\" could not be compared between --from and --to: it was not read.\n"},
+			want: "warning: changefeed public.\"audit.events\" could not be compared between --from and --to: it was not read\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var output strings.Builder
 
-			undecidednote.Report(&output, schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{test.diagnostic}}, "--from", "--to")
+			undecidednote.Report(c.Context(), &output, schemadiff.Diagnostics{Features: []schemaext.UndecidedChange{test.diagnostic}}, "--from", "--to")
 
 			c.Assert(output.String(), qt.Equals, test.want)
 		})

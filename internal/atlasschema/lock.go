@@ -98,9 +98,10 @@ type ApplyLock struct {
 // pool is used only for the independent PostgreSQL exclusion witness. The
 // lock is released before the pinned session is discarded.
 //
-// use runs under [ApplyLock.Run]. Only a YDB lock, which a coordination
-// session of its own holds, reports a loss here: every other lock lives on the
-// pinned session use works on, so losing it fails the work itself.
+// use runs under [ApplyLock.Run]. Only a lock a session of its own holds, as
+// an executable provider's YDB lock is held on a coordination session,
+// reports a loss here: every other lock lives on the pinned session use works
+// on, so losing it fails the work itself.
 //
 // When use fails, its error and a secondary release error are returned
 // separately so callers can preserve the operation failure while reporting a

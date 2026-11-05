@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/servertarget"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -1891,12 +1892,22 @@ func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration
 		deferred.version = version
 		return declaration{deferred: deferred}, nil
 	}
-	if _, builtIn := lintdialect.Canonical(dialect); !builtIn && version == "" {
+	if _, builtIn := lintdialect.Canonical(dialect); !builtIn {
 		// An engine that is not a built-in lint dialect reached here through
 		// the run's runtime or its provider selection, which accepted it. This
 		// linter holds no capability ladder for it, so the target names the
 		// engine and leaves the capabilities to its owner, which judges the
-		// statements.
+		// statements. A version would have to select capabilities nothing
+		// here holds, so it is refused rather than dropped; a dev database's
+		// session states them.
+		if version != "" {
+			resolved, err := servertarget.Resolve(dialect, version)
+			if err != nil {
+				return declaration{}, fmt.Errorf("lint server-version: %w", err)
+			}
+			return declaration{resolved: lint.Target{Dialect: dialect, Version: version, Capabilities: resolved.Capabilities, Note: resolved.Note},
+				deferred: deferred}, nil
+		}
 		return declaration{resolved: lint.Target{Dialect: dialect}, deferred: deferred}, nil
 	}
 	target, err := lint.ResolveTarget(dialect, version)

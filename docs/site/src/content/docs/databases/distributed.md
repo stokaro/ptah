@@ -339,8 +339,8 @@ with the interval in the spelling Spanner stores.
 
 The `platform.spanner` properties apply to Spanner only, so the same schema
 renders for PostgreSQL without the policy. A YDB TTL is a different policy with
-its own properties, and nothing turns one into the other; see
-[YDB TTL](../ydb/#ttl). `schema inspect` writes the policy into HCL as a
+its own properties, which the YDB provider reads, and nothing turns one into the
+other; see [YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md). `schema inspect` writes the policy into HCL as a
 `platform "spanner"` block of the same properties, and a document read back
 declares it. HCL that names no policy keeps the table's policy rather than
 removing it.

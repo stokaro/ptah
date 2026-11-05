@@ -17,7 +17,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/dialect/ydb/ydbsecret" // names the prefix of a secret's value variable, which is not a boolean
 	// Importing the owners is what populates the registry the enumeration check
 	// reads back. A package left out here contributes no declarations, so its
 	// variables would look unclassified rather than boolean -- which is the
@@ -441,11 +440,15 @@ func namesOutsideBothClassifications(mentioned []string) []string {
 	return unclassified
 }
 
+// secretValuePrefix is the prefix every YDB secret's value variable carries;
+// the YDB provider reads the variable, and its value is not a boolean.
+const secretValuePrefix = "PTAH_SECRET_"
+
 // secretValueVariable reports a name under the prefix every YDB secret's value
 // variable carries. The operator chooses the rest of the name, so the prefix
 // classifies every one of them at once.
 func secretValueVariable(name string) bool {
-	return strings.HasPrefix(name, ydbsecret.ValuePrefix)
+	return strings.HasPrefix(name, secretValuePrefix)
 }
 
 // namesInBothClassifications returns the names claimed by both classifications.

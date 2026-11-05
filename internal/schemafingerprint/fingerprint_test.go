@@ -13,32 +13,46 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/ydb/ydbschema"
-	"ptah.run/dialect/ydb/ydbtopic"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/engine"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/schemafingerprint"
 )
+
+// policy is ClickHouse row policy name on table events, filtered by filter
+// and applied to roles.
+func policy(name, filter string, roles ...string) schemaext.Object {
+	return schemaext.Object{Ref: chschema.RowPolicyRef("", "events", name),
+		Value: &chschema.DesiredRowPolicy{Filter: new(filter), Roles: chschema.RoleSelection{Names: roles}}}
+}
+
+// observedPolicy is policy as a read reports it.
+func observedPolicy(name, filter string) schemaext.Object {
+	return schemaext.Object{Ref: chschema.RowPolicyRef("", "events", name),
+		Value: &chschema.ObservedRowPolicy{Filter: new(filter), Composition: chschema.Permissive, Roles: chschema.RoleSelection{All: true}}}
+}
 
 func TestDesiredFingerprintBindsObjectsAndCoverage(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
 	empty := &schemamodel.Database{}
 	unknown := must.Must(schemafingerprint.Desired(t.Context(), runtime, empty))
-	empty.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, nil))
+	empty.FeatureCoverage = must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	absent := must.Must(schemafingerprint.Desired(t.Context(), runtime, empty))
 	c.Assert(absent, qt.Not(qt.Equals), unknown)
-	a := ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "UPDATES", Format: "JSON", Consumers: []ydbtopic.ConsumerSpec{{Name: "audit"}, {Name: "worker"}}})
-	b := ydbschema.DesiredObject("", "events", ydbschema.ChangefeedSpec{Name: "b", Mode: "KEYS_ONLY", Format: "JSON"})
+	a := policy("a", "tenant = 1", "audit", "worker")
+	b := policy("b", "tenant = 2")
 	empty.FeatureObjects = must.Must(schemaext.NewObjects(a, b))
 	first := must.Must(schemafingerprint.Desired(t.Context(), runtime, empty))
-	slices.Reverse(a.Value.(*ydbschema.DesiredChangefeed).Spec.Consumers)
+	slices.Reverse(a.Value.(*chschema.DesiredRowPolicy).Roles.Names)
 	empty.FeatureObjects = must.Must(schemaext.NewObjects(b, a))
 	c.Assert(must.Must(schemafingerprint.Desired(t.Context(), runtime, empty)), qt.Equals, first)
-	a.Value.(*ydbschema.DesiredChangefeed).Spec.Mode = "NEW_IMAGE"
+	a.Value.(*chschema.DesiredRowPolicy).Filter = new("tenant = 3")
 	empty.FeatureObjects = must.Must(schemaext.NewObjects(a, b))
 	c.Assert(must.Must(schemafingerprint.Desired(t.Context(), runtime, empty)), qt.Not(qt.Equals), first)
-	empty.FeatureCoverage = must.Must(ydbschema.ChangefeedCoverage(schemaext.Desired, []schemaext.SubjectCoverage{{Kind: ydbschema.ChangefeedKind, Subject: a.Ref, Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "source cannot describe this stream"}}}))
+	empty.FeatureCoverage = must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete},
+		[]schemaext.SubjectCoverage{{Kind: chschema.RowPolicyKind, Subject: a.Ref,
+			Knowledge: schemaext.Knowledge{State: schemaext.Unrepresentable, Reason: "source cannot describe this policy"}}}))
 	c.Assert(must.Must(schemafingerprint.Desired(t.Context(), runtime, empty)), qt.Not(qt.Equals), first)
 }
 
@@ -153,9 +167,9 @@ func TestFingerprintRefusesMissingContextRuntimeAndCodecs(t *testing.T) {
 func TestObservedFingerprintBindsThePlanningContext(t *testing.T) {
 	c := qt.New(t)
 	runtime := must.Must(builtin.New())
-	a := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "UPDATES", Format: "JSON"})
-	b := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "b", Mode: "KEYS_ONLY", Format: "JSON"})
-	known := must.Must(ydbschema.ChangefeedCoverage(schemaext.Observed, nil))
+	a := observedPolicy("a", "tenant = 1")
+	b := observedPolicy("b", "tenant = 2")
+	known := must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	without := must.Must(schemafingerprint.Observed(t.Context(), runtime, &catalog.Database{}))
 	read := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(a, b)), PlanningContextCoverage: known}
 
@@ -171,7 +185,7 @@ func TestObservedFingerprintBindsThePlanningContext(t *testing.T) {
 	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, unknown)), qt.Not(qt.Equals), first)
 	features := &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(a, b)), FeatureCoverage: known}
 	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, features)), qt.Not(qt.Equals), first)
-	changed := ydbschema.ObservedObject("", "events", ydbschema.ChangefeedSpec{Name: "a", Mode: "NEW_IMAGE", Format: "JSON"})
+	changed := observedPolicy("a", "tenant = 3")
 	altered := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(changed, b)), PlanningContextCoverage: known}
 	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, altered)), qt.Not(qt.Equals), first)
 }

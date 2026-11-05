@@ -34,8 +34,8 @@ over that run's cell results.
 - Measured: 2026-11-02T04:21:29Z
 - Commit: `7b0d5c1ac4866628c7d130f5c7cf34166c082796`
 - Run: [41388005834](https://github.com/stokaro/ptah/actions/runs/41388005834)
-- Declared release lines: 39. Runnable cells: 32. Results received: 32.
-- 32 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Declared release lines: 33. Runnable cells: 30. Results received: 30.
+- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
@@ -69,15 +69,9 @@ over that run's cell results.
 | `yugabytedb-2024-2` | yugabytedb | 2024.2 | PASS |
 | `sqlite-3` | sqlite | 3 | PASS |
 | `spanner-0` | spanner | 0 | PASS |
-| `ydb-26-2` | ydb | 26.2 | PASS |
-| `ydb-25-1` | ydb | 25.1 | PASS |
 
 ## Declared lines this tier cannot run
 
 - `mysql-26-7` (mysql 26.7) — upstream support ended on 2026-10-20 (endoflife.date/mysql)
 - `clickhouse-26-7` (clickhouse 26.7) — upstream support ended on 2026-10-24 (endoflife.date/clickhouse)
 - `clickhouse-25-8` (clickhouse 25.8) — upstream support ended on 2026-08-29 (endoflife.date/clickhouse)
-- `ydb-26-1` (ydb 26.1) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
-- `ydb-25-4` (ydb 25.4) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
-- `ydb-25-3` (ydb 25.3) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date
-- `ydb-25-2` (ydb 25.2) — YDB publishes no support period for its open-source lines, and the matrix probes the current release and the one line with a published support date

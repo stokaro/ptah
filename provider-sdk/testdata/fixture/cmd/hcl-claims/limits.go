@@ -68,5 +68,10 @@ func encodeLimits(request *protocol.EncodeSourceRequest, result *protocol.Encode
 	if os.Getenv("FIXTURE_SOURCE_LIMITS_DROP") == "1" {
 		result.Limits = nil
 	}
+	// FIXTURE_SOURCE_LIMITS_EXTRA=1 adds a whole-model entry no knowledge of
+	// the request asks for.
+	if os.Getenv("FIXTURE_SOURCE_LIMITS_EXTRA") == "1" {
+		result.Limits = append(result.Limits, &protocol.SchemaCoverageLimit{Kind: "retention"})
+	}
 	return encodeGroups(result), nil
 }

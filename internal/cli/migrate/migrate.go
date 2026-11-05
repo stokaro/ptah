@@ -245,7 +245,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
-	undecidednote.Report(cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
+	undecidednote.Report(cmd.Context(), cmd.ErrOrStderr(), undecided, "the database", "the desired schema")
 	undescribed, err := schemascope.UndescribedRemovals(info, requested, result, diff)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)

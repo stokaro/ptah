@@ -2,7 +2,7 @@
 
 Status: Proposed
 
-Contract: 25.21
+Contract: 25.22
 
 Deciders: Ptah maintainers
 
@@ -52,19 +52,19 @@ covers the directories below it is a separate decision.
 
 `schema.subtree-coverage` is a two-way feature: the provider and each engine
 that sends such regions list it, and the host lists it in its host features.
-Contract 25.21 adds three fields:
+Contract 25.22 adds three fields:
 
 ```proto
 message IdentifierRules {
   // ...
   // The character that separates nested schemas in a normalized schema
-  // spelling, or empty when schemas do not nest. Contract 25.21.
+  // spelling, or empty when schemas do not nest. Contract 25.22.
   string schema_separator = 5;
 }
 message ModelNamespace {
   // ...
   // With a schema, the region also covers every schema nested below it.
-  // Contract 25.21, under schema.subtree-coverage.
+  // Contract 25.22, under schema.subtree-coverage.
   bool schema_subtree = 5;
 }
 message ComparisonNamespace {
@@ -93,9 +93,11 @@ read sends no subtree region: its regions must fit inside the namespaces its
 selectors bind, and a binding names one exact schema. Absence and requested
 defaults stay refused for every region, as before.
 
-The SDK exports the match as one function. The host's coverage lookup and a
-provider's comparison both call it, so the two cannot disagree about which
-subjects a region covers.
+The SDK exports the match as one function, `provider.SchemaWithin`, and a
+provider's comparison calls it. The host's coverage lookup lives in a package
+that does not import the SDK, so it states the same rule in its own code, and
+a host test runs both over the same cases, so the two cannot disagree about
+which subjects a region covers unnoticed.
 
 ### What the host does with a subtree region
 
@@ -143,9 +145,8 @@ inspection request instead of one in the region. Rejected.
 
 ## Consequences
 
-- Contract 25.21 adds two namespace fields, one identifier rule and a two-way
-  feature. It is numbered after contract 25.20, which ADR 0063 proposes for
-  the tables a read leaves out.
+- Contract 25.22 adds two namespace fields, one identifier rule and a two-way
+  feature. The same minor carries the additions of ADR 0069 to ADR 0072.
 - The SDK release comes first. The host and the providers adopt it in their
   own changes.
 - Without the feature nothing changes: the provider sends exact regions, and

@@ -3,6 +3,7 @@ package rundiag
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // The categories a run aggregates. Each is defined here, once, so a warning
@@ -63,4 +64,77 @@ var (
 			return fmt.Sprintf("%d schema file constructs are ignored and have no effect", len(records))
 		},
 	}
+
+	// HCLLosses is a detail of an inspected schema the HCL document cannot
+	// carry, such as the grantor of a permission, and leaves out.
+	HCLLosses = &Category{
+		Name: "hcl-loss",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d details of the inspected schema cannot be represented in HCL, and the document leaves them out", len(records))
+		},
+	}
+
+	// AtlasOmittedBlocks is a block the Atlas-compatible HCL rendering leaves
+	// out because the Atlas community CLI refuses a schema file that declares
+	// one. Its records carry the variable that keeps every block as the
+	// "variable" attribute.
+	AtlasOmittedBlocks = &Category{
+		Name: "atlas-omitted-block",
+		Summary: func(records []Record) string {
+			summary := fmt.Sprintf("%d blocks the Atlas community CLI refuses are omitted from the document", len(records))
+			if variable, ok := Shared(records, "variable"); ok {
+				summary += "; " + variable.String() + "=1 keeps every block Ptah models"
+			}
+			return summary
+		},
+	}
+
+	// AtlasKeptBlocks is a block the Atlas community CLI refuses that the
+	// Atlas-compatible HCL rendering keeps, because omitting it would lose
+	// what another object of the document needs. The community CLI cannot
+	// read such a document.
+	AtlasKeptBlocks = &Category{
+		Name: "atlas-kept-block",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d blocks the Atlas community CLI refuses are kept because other objects need them, "+
+				"so the community CLI cannot read the document", len(records))
+		},
+	}
+
+	// UndecidedObjects is an object a comparison could not decide, so it plans
+	// no change for it: a declared object of a kind the current side does not
+	// describe, or a provider's object it could not compare. Its records carry
+	// the object as the "object" attribute and why it was not decided as the
+	// "cause" attribute.
+	//
+	// Unlike the other categories, the summary names every object. Each is a
+	// change the plan leaves out, so the warning is written before the plan
+	// it concerns rather than when the run ends; see [Settle].
+	UndecidedObjects = &Category{
+		Name: "undecided-object",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d objects get no planned change because the comparison could not decide them: %s",
+				len(records), objectsByCause(records))
+		},
+	}
 )
+
+// objectsByCause names records' objects, those with one cause together and
+// followed by it, the causes in the order they were first raised.
+func objectsByCause(records []Record) string {
+	var causes []string
+	objects := make(map[string][]string)
+	for _, record := range records {
+		object, _ := attr(record, "object")
+		cause, _ := attr(record, "cause")
+		if _, seen := objects[cause.String()]; !seen {
+			causes = append(causes, cause.String())
+		}
+		objects[cause.String()] = append(objects[cause.String()], object.String())
+	}
+	groups := make([]string, 0, len(causes))
+	for _, cause := range causes {
+		groups = append(groups, strings.Join(objects[cause], ", ")+" ("+cause+")")
+	}
+	return strings.Join(groups, "; ")
+}

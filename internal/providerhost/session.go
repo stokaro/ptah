@@ -38,6 +38,9 @@ func (t *target) Open(ctx context.Context, request dbschema.NativeRequest) (dbsc
 		return nil, err
 	}
 	info, err := t.sessionInfo(remote)
+	if err == nil {
+		err = t.planWithSessionCapabilities(info.Capabilities)
+	}
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), providerruntime.CallTimeout)
 		defer cancel()

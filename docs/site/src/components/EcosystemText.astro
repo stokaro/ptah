@@ -1,0 +1,107 @@
+---
+/**
+ * The ecosystem as text, rendered from the declaration the map draws
+ * (src/ecosystem.mjs): the usage paths, the repository table, and the
+ * relationship table. They are the map's text equivalent, so they stay outside
+ * the figure and need no JavaScript.
+ */
+import { getCollection } from 'astro:content';
+import { docLinkResolver, ecosystemModel, inlineMarkup, relationshipSentence } from '../lib/ecosystem-map.mjs';
+
+interface Props {
+  view: 'paths' | 'repositories' | 'statuses' | 'relationships';
+}
+
+const { view } = Astro.props;
+const model = ecosystemModel();
+const resolveLink = docLinkResolver(await getCollection('docs'), Astro.url.pathname, import.meta.env.BASE_URL);
+const repository = (component) => component.links.find(({ label }) => label === 'Repository');
+const otherLinks = (component) => component.links.filter(({ label }) => label !== 'Repository');
+const relationshipById = new Map(model.relationships.map((relationship) => [relationship.id, relationship]));
+---
+
+{view === 'paths' && (
+  <div class="eco-paths">
+    {model.paths.map((path) => (
+      <section>
+        <p><strong>{path.label}.</strong> <span set:html={inlineMarkup(path.summary)} /></p>
+        <ul>
+          {path.relationships.map((id) => (
+            <li set:html={relationshipSentence(relationshipById.get(id), model)} />
+          ))}
+        </ul>
+        <p>
+          Read next:{' '}
+          {path.links.map((link, index) => (
+            <>{index > 0 && ', '}<a href={resolveLink(link)}>{link.label}</a></>
+          ))}.
+        </p>
+      </section>
+    ))}
+  </div>
+)}
+
+{view === 'repositories' && (
+  <div class="ptah-wide-table eco-table">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Repository</th>
+          <th scope="col">Status</th>
+          <th scope="col">Use it when</th>
+          <th scope="col">Read next</th>
+        </tr>
+      </thead>
+      {model.groups.map((group) => (
+        <tbody>
+          <tr class="eco-table__group"><th scope="rowgroup" colspan="4">{group.label}</th></tr>
+          {group.components.filter(({ kind }) => kind === 'repository').map((component) => (
+            <tr>
+              <td>
+                <a href={repository(component).href}><code>{component.name}</code></a><br />
+                {component.role}
+              </td>
+              <td>{model.statuses.get(component.status).label}</td>
+              <td set:html={inlineMarkup(component.whenNeeded)} />
+              <td>
+                {otherLinks(component).map((link, index) => (
+                  <>{index > 0 && <br />}<a href={resolveLink(link)}>{link.label}</a></>
+                ))}
+                {otherLinks(component).length === 0 && 'Nothing further'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      ))}
+    </table>
+  </div>
+)}
+
+{view === 'statuses' && (
+  <ul>
+    {[...model.statuses.values()].map((status) => (
+      <li><strong>{status.label}.</strong> {status.description}</li>
+    ))}
+  </ul>
+)}
+
+{view === 'relationships' && (
+  <div class="ptah-wide-table eco-table">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Relationship</th>
+          <th scope="col">Kind</th>
+        </tr>
+      </thead>
+      <tbody>
+        {model.relationships.map((relationship) => (
+          <tr>
+            <td set:html={relationshipSentence(relationship, model)} />
+            <td>{model.kinds.get(relationship.kind).label}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}

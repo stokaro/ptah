@@ -35,7 +35,7 @@ func TestBlockAttributes_HappyPath(t *testing.T) {
 // TestBlockAttributes_FailurePath pins the names that start a container from
 // a docker URL and have no atlas.hcl block, and the names that start nothing.
 func TestBlockAttributes_FailurePath(t *testing.T) {
-	for _, typ := range []string{"maria", "pgvector", "postgis", "ydb", "sqlite", "Postgres", ""} {
+	for _, typ := range []string{"maria", "pgvector", "postgis", "sqlite", "Postgres", ""} {
 		t.Run(typ, func(t *testing.T) {
 			c := qt.New(t)
 

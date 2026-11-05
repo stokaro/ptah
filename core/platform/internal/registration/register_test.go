@@ -101,8 +101,8 @@ func TestRegister_FailurePath(t *testing.T) {
 	}{
 		{name: "an alias a built-in owns", dialects: []descriptor.Dialect{described("refused-first", ""), described("refused-second", "", "pgx")},
 			wantIs: descriptor.ErrConflict, wantErr: `register dialects: conflicting dialect descriptor: dialect "refused-second" claims "pgx", which dialect "postgres" already owns`},
-		{name: "a built-in described differently", dialects: []descriptor.Dialect{described("refused-first", ""), described(platform.YDB, "")},
-			wantIs: descriptor.ErrConflict, wantErr: `register dialects: conflicting dialect descriptor: dialect "ydb" is already described differently`},
+		{name: "a built-in described differently", dialects: []descriptor.Dialect{described("refused-first", ""), described(platform.Oracle, "")},
+			wantIs: descriptor.ErrConflict, wantErr: `register dialects: conflicting dialect descriptor: dialect "oracle" is already described differently`},
 		{name: "a malformed descriptor", dialects: []descriptor.Dialect{described("refused-first", ""), malformed},
 			wantIs: descriptor.ErrInvalidDescriptor, wantErr: `register dialects: invalid dialect descriptor: dialect "malformed": placeholder "" is not one of .*`},
 		{name: "a family no registered dialect heads", dialects: []descriptor.Dialect{described("refused-first", "nobody")},

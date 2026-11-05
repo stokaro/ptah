@@ -87,13 +87,14 @@ func hclLimitRoundTrip(c *qt.C, runtime *engine.Runtime) (before, after schemaex
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Diagnostics, qt.HasLen, 0)
 	written := string(result.Data)
-	c.Assert(written, qt.Contains, "// ptah:not-described retention reason=not-inspected provenance=observed")
+	c.Assert(written, qt.Contains, "// ptah:feature-coverage {")
+	c.Assert(written, qt.Not(qt.Contains), "ptah:not-described")
 	again, err := atlashcl.ParseWithOptions(c.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
 	after = again.FeatureCoverage
 	control, err := atlashcl.ParseWithOptions(c.Context(), []byte(strings.Replace(source, "// ptah:not-described retention reason=not-inspected provenance=observed\n", "", 1)), "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
-	c.Assert(control.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Complete)
+	c.Assert(control.FeatureCoverage.KindRecords(), qt.HasLen, 0)
 	return before, after
 }
 
@@ -119,6 +120,9 @@ func TestProviderSourceLimits_UnknownHeadersRefused(t *testing.T) {
 	}
 }
 
+// TestProviderSourceLimits_LostHeadersRefuseExport has a provider drop the
+// ptah:not-described entries a Go export needs: the export refuses rather than
+// write a source whose silence claims more than the declaration knew.
 func TestProviderSourceLimits_LostHeadersRefuseExport(t *testing.T) {
 	c := qt.New(t)
 	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_LIMITS_DROP=1"})
@@ -129,7 +133,24 @@ func TestProviderSourceLimits_LostHeadersRefuseExport(t *testing.T) {
 		PackageName: "models", SingleFile: true, Dialect: "fixture"})
 	c.Assert(err, qt.ErrorMatches, `provider encode source failed \(Internal\)`)
 	c.Assert(files, qt.IsNil)
+}
+
+// TestProviderSourceLimits_HCLExportKeepsWhatTheProviderDrops writes the same
+// declaration as HCL with the same provider. The host writes the document's
+// account itself and asks the provider for no entry, so the export keeps the
+// knowledge the provider would drop.
+func TestProviderSourceLimits_HCLExportKeepsWhatTheProviderDrops(t *testing.T) {
+	c := qt.New(t)
+	_, runtime := yamlProviderEnvironment(c, "hcl-claims", []string{"FIXTURE_SOURCE_LIMITS=1", "FIXTURE_SOURCE_LIMITS_DROP=1"})
+	source := strings.Replace(hclExportSource, "package models", "package models\n\n//ptah:schema:notdescribed kind=\"retention\" provenance=\"observed\"\ntype _ struct{}", 1)
+	db, err := goschema.ParseSource(runtime.Annotations(), "records.go", source)
+	c.Assert(err, qt.IsNil)
+
 	result, err := atlashclrender.Render(&db, atlashclrender.Options{HCL: runtime.HCL(), Target: "fixture"})
-	c.Assert(err, qt.ErrorMatches, `provider encode source failed \(Internal\)`)
-	c.Assert(result.Data, qt.IsNil)
+
+	c.Assert(err, qt.IsNil)
+	again, err := atlashcl.ParseWithOptions(c.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
+	c.Assert(err, qt.IsNil)
+	c.Assert(again.FeatureCoverage.KindRecords(), qt.DeepEquals, db.FeatureCoverage.KindRecords())
+	c.Assert(again.FeatureCoverage.KindRecords()[0].Knowledge.Unscoped().State, qt.Equals, schemaext.Uninspected)
 }

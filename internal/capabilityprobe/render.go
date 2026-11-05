@@ -83,9 +83,6 @@ func writeHeader(w io.Writer, r *Report) {
 	if r.Namespace != "" {
 		fmt.Fprintf(w, "  namespace    %s\n", r.Namespace)
 	}
-	if r.StatementPrefix != "" {
-		fmt.Fprintf(w, "  prefix       every statement below was sent after %s\n", r.StatementPrefix)
-	}
 	if r.Control.Statement == "" {
 		fmt.Fprintf(w, "  control      NOT RUN — nothing was executed against this server\n")
 		return
@@ -101,8 +98,7 @@ func presetOrNone(cell Cell) string {
 }
 
 // writeConnectionDeltas names the keys the connection changed from the version
-// resolution: TimescaleDB's keys where the extension is installed, and on YDB
-// the keys the cluster's feature flags decide differently from the preset.
+// resolution: TimescaleDB's keys where the extension is installed.
 func writeConnectionDeltas(w io.Writer, r *Report) {
 	if len(r.ConnectionDeltas) == 0 {
 		fmt.Fprintf(w, "  connection   preset unchanged by what the connection read\n")

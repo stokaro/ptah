@@ -10,7 +10,10 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/servertarget"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
 )
@@ -59,6 +62,9 @@ type Policy struct {
 	families []string
 	// online is the online mode, selected by the policy's `online` key.
 	online bool
+	// transactionOwner is who opens the transaction each file runs in, as
+	// the apply runs the files.
+	transactionOwner lintext.TransactionOwner
 }
 
 // ServerVersionNote is what the policy's declared server version resolved to
@@ -91,7 +97,8 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	// nothing about the analysis. So the comparison is lintdialect's, shared
 	// with the standalone lint command's --dev-url check so the two commands
 	// accept exactly the same policy files (stokaro/ptah#270).
-	if !lintdialect.Compatible(cfg.Dialect, databaseDialect) {
+	served, _ := runtime.(schemaext.TargetResolver)
+	if !lintdialect.CompatibleIn(cfg.Dialect, databaseDialect, served) {
 		return Policy{}, fmt.Errorf(
 			"lint dialect %q does not match database dialect %q",
 			cfg.Dialect,
@@ -103,7 +110,7 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	// validates neither, so an alias here would run clean while selecting the
 	// wrong scanner. A dialect this package cannot resolve is passed through
 	// rather than blanked, because blanking would turn every rule back on.
-	if canonical, ok := lintdialect.Canonical(databaseDialect); ok {
+	if canonical, ok := lintdialect.CanonicalIn(databaseDialect, served); ok {
 		databaseDialect = canonical
 	}
 	families := cfg.GateFamilies()
@@ -220,13 +227,23 @@ func (p Policy) gatesOn(rule string) bool {
 
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
-		Dialect:       p.dialect,
-		Target:        p.target,
-		Disabled:      p.disabled,
-		PathPrefix:    pathPrefix,
-		RuleConfigs:   p.rules,
-		RequireOnline: p.online,
+		Dialect:          p.dialect,
+		Target:           p.target,
+		Disabled:         p.disabled,
+		PathPrefix:       pathPrefix,
+		RuleConfigs:      p.rules,
+		RequireOnline:    p.online,
+		TransactionOwner: p.transactionOwner,
 	}
+}
+
+// WithTransactionOwner returns the policy judging transaction control for
+// files that run in transactions owner opens, as the apply runs them: a gate
+// that judged a golang-migrate file for a migrator that wraps it would refuse
+// the transaction control the apply runs as written.
+func (p Policy) WithTransactionOwner(owner lintext.TransactionOwner) Policy {
+	p.transactionOwner = owner
+	return p
 }
 
 // RequiresOnline reports whether the policy selected the online mode.
@@ -258,10 +275,19 @@ func validateOnlineDialect(cfg *lint.Config, databaseDialect string) error {
 }
 
 // policyTarget resolves the server the apply-time gate plans against, or
-// leaves it unresolved on an engine the linter has no rules for.
+// leaves it unresolved on an engine the linter has no rules for. An engine an
+// executable provider serves resolves a version to a release line its
+// provider declares facts for.
 func policyTarget(databaseDialect, serverVersion string) (lint.Target, error) {
 	if _, ok := lintdialect.Canonical(databaseDialect); ok {
 		return lint.ResolveTarget(databaseDialect, serverVersion)
+	}
+	if _, declared := capability.ProvidedReleaseLine(databaseDialect, serverVersion); declared && serverVersion != "" {
+		resolved, err := servertarget.Resolve(databaseDialect, serverVersion)
+		if err != nil {
+			return lint.Target{}, fmt.Errorf("lint server-version: %w", err)
+		}
+		return lint.Target{Dialect: databaseDialect, Version: serverVersion, Capabilities: resolved.Capabilities}, nil
 	}
 	if serverVersion != "" {
 		return lint.Target{}, fmt.Errorf(

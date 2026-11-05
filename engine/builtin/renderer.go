@@ -60,9 +60,6 @@ import (
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/postgres/pgtable"
-	"ptah.run/dialect/ydb/ydbrender"
-	"ptah.run/dialect/ydb/ydbreplication"
-	"ptah.run/dialect/ydb/ydbschema"
 	"ptah.run/engine/builtin/internal/dialects/clickhouse"
 	"ptah.run/engine/builtin/internal/dialects/mariadb"
 	"ptah.run/engine/builtin/internal/dialects/mssql"
@@ -71,7 +68,6 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/oracle"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
 	"ptah.run/engine/builtin/internal/dialects/sqlite"
-	"ptah.run/engine/builtin/internal/dialects/ydb"
 	"ptah.run/internal/accessscope"
 	"ptah.run/internal/builtinlowering"
 	"ptah.run/internal/clickhouserbac"
@@ -88,9 +84,6 @@ import (
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
-	"ptah.run/internal/ydbacl"
-	"ptah.run/internal/ydbfamily"
-	"ptah.run/internal/ydbindex"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
@@ -106,7 +99,7 @@ func SupportedDialects() []string {
 	// docs/feature-inventory.json derives its dialect rows from this list
 	// folded through platform.NormalizeDialect, so editing it is a
 	// documented-surface change.
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle", "ydb"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -161,8 +154,6 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		raw = mssql.NewWithCapabilities(caps)
 	case platform.Oracle:
 		raw = oracle.NewWithCapabilities(caps)
-	case platform.YDB:
-		raw = ydb.NewWithCapabilities(caps)
 	default:
 		return nil, &ptaherr.RenderError{
 			Dialect: dialect,
@@ -482,7 +473,7 @@ func fragmentCarrier(fragment ast.Node) (ast.Node, bool) {
 }
 
 // refuseAccessNode refuses a group, or a grant or revoke on the database
-// itself or on a scheme object such as a YDB topic, on a target without the
+// itself or on a scheme object such as a topic, on a target without the
 // key that holds it, and returns nil for every other role or grant node. The
 // declaration gate refuses the same in a schema; this is the half that sees a
 // node built by hand.
@@ -494,7 +485,7 @@ func refuseAccessNode(dialect string, caps capability.Capabilities, node ast.Nod
 	switch typed := node.(type) {
 	case *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		target := privilegeTargetOf(typed)
-		objectKey, owned := ydbacl.ObjectCapability(target.objectType)
+		objectKey, owned := accessscope.ObjectCapability(target.objectType)
 		switch {
 		case owned:
 			key, subject = objectKey, target.verb+" on "+strings.ToLower(strings.TrimSpace(target.objectType))+" "+
@@ -573,11 +564,6 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 			Message: "index node is nil",
 		}
 	}
-	if ydbschema.HasVectorIndex(node.Facets) {
-		if err := refuseVectorIndex(dialect, caps, node.Name); err != nil {
-			return nil, err
-		}
-	}
 	if err := validateIndexBlockSize(dialect, node.Name, indexBlockSize(node.Facets)); err != nil {
 		return nil, err
 	}
@@ -601,11 +587,6 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	}
 	if err := refuseInvisibleIndexNode(dialect, caps, node); err != nil {
 		return nil, err
-	}
-	if slices.Contains(node.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
-		if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", node.Name)); err != nil {
-			return nil, err
-		}
 	}
 	cloned := *node
 	cloned.Facets = facets
@@ -688,70 +669,7 @@ func prepareCreateTableNode(
 	if err := requirePrimaryKey(dialect, caps, &cloned); err != nil {
 		return nil, err
 	}
-	if slices.Contains(node.Facets.Kinds(), ydbschema.ColumnStoreKind) && !caps.Has(capability.ColumnStoreTables) {
-		return nil, &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
-	}
 	return &cloned, nil
-}
-
-// refuseDeclaredColumnFamilies refuses the first declared table whose YDB
-// column families the target cannot carry: a family beyond a default one
-// stating nothing needs capability.ColumnFamilies, and a cache mode
-// capability.ColumnFamilyCacheMode (see [ydbfamily.Requirements]). Another
-// target refuses the families as a facet no owner of it registers.
-func refuseDeclaredColumnFamilies(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
-	if platform.NormalizeDialect(dialect) != platform.YDB {
-		return nil
-	}
-	for _, table := range tables {
-		declared, found, err := schemaext.FacetAs[*ydbschema.DesiredColumnFamilies](table.Facets, ydbschema.ColumnFamiliesKind)
-		if err != nil {
-			return err
-		}
-		if !found {
-			continue
-		}
-		for _, requirement := range ydbfamily.Requirements(declared.Families) {
-			if caps.Has(requirement.Key) {
-				continue
-			}
-			return &ptaherr.CapabilityError{
-				Dialect: platform.YDB,
-				Feature: string(requirement.Key),
-				Err:     ptaherr.ErrUnsupportedFeature,
-				Message: fmt.Sprintf("table %q declares %s, which requires target capability %s, unavailable on this %s target",
-					table.QualifiedName(), requirement.Settings, requirement.Key, platform.YDB),
-			}
-		}
-	}
-	return nil
-}
-
-// validateDeclaredPartitioning refuses the first declared table whose
-// column-oriented storage, or whose YDB partitioning, read replicas or key
-// bloom filter, the target cannot carry (see
-// [ydbrender.RefuseTablePartitioning]). Another target refuses the settings
-// as a facet no owner of it registers.
-func validateDeclaredPartitioning(dialect string, caps capability.Capabilities, tables []schemamodel.Table) error {
-	for _, table := range tables {
-		if slices.Contains(table.Facets.Kinds(), ydbschema.ColumnStoreKind) && !caps.Has(capability.ColumnStoreTables) {
-			return &ptaherr.RenderError{Dialect: dialect, Err: ptaherr.ErrUnsupportedFeature, Message: "column-oriented table requires column_store_tables"}
-		}
-		if platform.NormalizeDialect(dialect) != platform.YDB {
-			continue
-		}
-		declared, found, err := schemaext.FacetAs[*ydbschema.DesiredTablePartitioning](table.Facets, ydbschema.TablePartitioningKind)
-		if err != nil {
-			return err
-		}
-		if !found {
-			continue
-		}
-		if err := ydbrender.RefuseTablePartitioning(caps, fmt.Sprintf("table %q", table.QualifiedName()), &declared.TablePartitioning); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // requirePrimaryKey refuses a keyless table on a target that refuses one
@@ -955,112 +873,14 @@ func validateIndexOperation(dialect string, caps capability.Capabilities, operat
 	return nil
 }
 
-// refuseIndexPartitioning refuses subject, an index's partitioning, which only
-// YDB's global indexes carry, on a target without
-// [capability.IndexPartitioning]. Built without it, the index would split as
-// the server's defaults say rather than as declared, and nothing would report
-// the difference.
-func refuseIndexPartitioning(dialect string, caps capability.Capabilities, subject string) error {
-	if caps.Has(capability.IndexPartitioning) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.IndexPartitioning),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("%s, which requires target capability %s, unavailable on this %s target",
-			subject, capability.IndexPartitioning, normalized),
-	}
-}
-
-// refuseVectorIndex refuses the vector settings of index name, which only
-// YDB's vector index carries, on a target without
-// [capability.VectorIndexes]. Rendered without them, the index would be a
-// plain one over the vector column, which answers no nearest-neighbour search,
-// and nothing would report the difference.
-func refuseVectorIndex(dialect string, caps capability.Capabilities, name string) error {
-	if caps.Has(capability.VectorIndexes) {
-		return nil
-	}
-	normalized := platform.NormalizeDialect(dialect)
-	return &ptaherr.CapabilityError{
-		Dialect: normalized,
-		Feature: string(capability.VectorIndexes),
-		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf("index %q declares vector settings, which requires target capability %s, unavailable on this %s target",
-			name, capability.VectorIndexes, normalized),
-	}
-}
-
-// validateDeclaredYDBObjects refuses the YDB table settings a declaration
-// holds that the target cannot write: a table's row deletion policy and
-// changefeeds. A secret, a topic and an external object are feature objects
-// their owner validates.
-func validateDeclaredYDBObjects(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	return validateDeclaredTableSettings(dialect, caps, database)
-}
-
-// validateDeclaredReplications refuses a declared table at a target of a
-// declared async replication, before any statement is emitted: YDB creates
-// each replica table itself, and a replication whose target a table already
-// holds is accepted and then fails (measured: `Create dst error:
-// StatusSchemeError, Empty replication config`). The replication's own
-// checks are its owner's.
-func validateDeclaredReplications(dialect string, database *schemamodel.Database) error {
-	all, err := database.FeatureObjects.All()
-	if err != nil {
-		return err
-	}
-	for _, object := range all {
-		replication, ok := object.Value.(*ydbreplication.DesiredReplication)
-		if !ok {
-			continue
-		}
-		name := ydbreplication.Reference(object.Ref.Schema.Source, object.Ref.Name.Source)
-		targets := ydbreplication.Targets(replication.Spec)
-		for _, table := range database.Tables {
-			if ydbreplication.UnderTarget(ydbreplication.TablePath(table.Schema, table.Name), targets) {
-				return &ptaherr.RenderError{
-					Dialect: platform.NormalizeDialect(dialect),
-					Err:     ptaherr.ErrUnsupportedFeature,
-					Message: fmt.Sprintf("table %s lies at a target of async replication %s, which creates its "+
-						"replica tables itself; declare the replication without the table", table.QualifiedName(), name),
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// validateDeclaredTableSettings refuses a declared table's column families,
-// changefeeds, or YDB partitioning, read replicas or key bloom filter, on a
-// target that cannot write them. An owned table facet, such as a row deletion
-// policy, is its owner's to refuse.
-func validateDeclaredTableSettings(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	if err := refuseDeclaredColumnFamilies(dialect, caps, database.Tables); err != nil {
-		return err
-	}
-	if err := validateDeclaredFeatures(dialect, caps, database); err != nil {
-		return err
-	}
-	return validateDeclaredPartitioning(dialect, caps, database.Tables)
-}
-
 func validateDeclaredFeatures(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	if err := validateDeclaredRowSecurity(dialect, database); err != nil {
 		return err
 	}
-	// A vector index is refused by the key it needs, and a block-size hint
-	// by the target's support for it, before the facet is refused as one the
-	// target's owners do not register, so every target without the feature
-	// gives the same answer.
+	// A block-size hint is refused by the target's support for it before the
+	// facet is refused as one the target's owners do not register, so every
+	// target without the feature gives the same answer.
 	for _, index := range database.Indexes {
-		if ydbschema.HasVectorIndex(index.Facets) {
-			if err := refuseVectorIndex(dialect, caps, index.Name); err != nil {
-				return err
-			}
-		}
 		if err := validateIndexBlockSize(dialect, index.Name, indexBlockSize(index.Facets)); err != nil {
 			return err
 		}
@@ -1075,75 +895,6 @@ func validateDeclaredFeatures(dialect string, caps capability.Capabilities, data
 		return err
 	}
 	return schemaprep.ValidateFeatureParents(database, dialect)
-}
-
-// The kinds of common object YDB keeps at a path of its scheme tree, as a
-// refusal names them.
-const (
-	pathTable = "table"
-	pathView  = "view"
-)
-
-// declaredPaths maps the qualified name of every declared table and view to
-// the kinds declared under it, in that order. It is the one answer to which
-// declared common objects share a path, for [validateDeclaredSchemePaths]: on
-// YDB a path names one object, so a name that carries two kinds is a
-// declaration the server cannot hold. A view's name is parsed as the YDB
-// renderer reads it, so `app.v` is the view v in the directory app. A feature
-// object -- a topic, a secret, a coordination node -- refuses a path another
-// object holds through its owner's plan effects.
-func declaredPaths(database *schemamodel.Database) map[string][]string {
-	paths := make(map[string][]string)
-	add := func(name, kind string) {
-		name = declaredSchemePath(name)
-		paths[name] = append(paths[name], kind)
-	}
-	for _, table := range database.Tables {
-		add(table.QualifiedName(), pathTable)
-	}
-	for _, view := range database.Views {
-		add(view.Name, pathView)
-	}
-	return paths
-}
-
-// A slash inside the final name still names a directory in YDB. Use the path
-// the renderer writes, while keeping a literal dot distinct from a qualifier.
-func declaredSchemePath(name string) string {
-	ref, ok := tableref.Parse(name)
-	if !ok {
-		return name
-	}
-	full := ref.Name
-	if strings.TrimSpace(ref.Schema) != "" {
-		full = strings.TrimRight(ref.Schema, "/") + "/" + full
-	}
-	if slash := strings.LastIndex(full, "/"); slash >= 0 {
-		return tableref.Canonical(full[:slash], full[slash+1:])
-	}
-	return tableref.Canonical("", full)
-}
-
-// validateDeclaredSchemePaths refuses declarations that assign multiple kinds
-// to one scheme path. CoordinationNodes denotes YDB's scheme objects; other
-// dialects use their own namespace rules. Check every path even when no
-// coordination node is declared, since tables and views also share it.
-func validateDeclaredSchemePaths(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
-	if !caps.Has(capability.CoordinationNodes) {
-		return nil
-	}
-	paths := declaredPaths(database)
-	for _, name := range slices.Sorted(maps.Keys(paths)) {
-		kinds := slices.Compact(paths[name])
-		if len(kinds) < 2 {
-			continue
-		}
-		return &ptaherr.RenderError{
-			Dialect: platform.NormalizeDialect(dialect), Err: ptaherr.ErrUnsupportedFeature,
-			Message: fmt.Sprintf("%s %s has the path of a declared %s, and YDB keeps one object at a path (`unexpected path type`)", kinds[len(kinds)-1], name, kinds[0]),
-		}
-	}
-	return nil
 }
 
 // refuseInvisibleIndexNode refuses index when the optimizer is not to use it
@@ -1192,7 +943,7 @@ func refuseUniqueIndexMethod(dialect, name, method string) error {
 }
 
 // validateDeclaredIndexOptions checks index uniqueness against the access
-// method, visibility and partitioning over a whole declaration, before the
+// method and visibility over a whole declaration, before the
 // first statement is rendered, for the reason validateDeclaredNullsDistinct
 // gives. A block-size hint is checked with the features; see
 // validateDeclaredFeatures.
@@ -1204,11 +955,6 @@ func validateDeclaredIndexOptions(
 	for _, index := range database.Indexes {
 		if index.Unique {
 			if err := refuseUniqueIndexMethod(dialect, index.Name, index.Type); err != nil {
-				return err
-			}
-		}
-		if slices.Contains(index.Facets.Kinds(), ydbschema.IndexPartitioningKind) {
-			if err := refuseIndexPartitioning(dialect, caps, fmt.Sprintf("index %q declares its partitioning", index.Name)); err != nil {
 				return err
 			}
 		}
@@ -1989,16 +1735,13 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredRoleNames(dialect, caps, database); err != nil {
 		return err
 	}
-	if err := validateDeclaredSchemePaths(dialect, caps, database); err != nil {
-		return err
-	}
 	if err := validateDeclaredAccess(dialect, caps, database); err != nil {
 		return err
 	}
-	// A row deletion policy, a changefeed and a YDB table's other settings are
+	// Feature objects and the facets no owner of the target registers are
 	// refused here because a target without them must refuse before the first
 	// statement, not at the CREATE TABLE that carries one.
-	if err := validateDeclaredYDBObjects(dialect, caps, database); err != nil {
+	if err := validateDeclaredFeatures(dialect, caps, database); err != nil {
 		return err
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
@@ -2008,9 +1751,6 @@ func validateDatabaseDeclarations(
 		return err
 	}
 	if err := validateDeclaredKeysAndConstraints(dialect, caps, database); err != nil {
-		return err
-	}
-	if err := validateDeclaredReplications(dialect, database); err != nil {
 		return err
 	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
@@ -2112,8 +1852,7 @@ func validateDeclaredAccess(
 		}
 	}
 	// A group, a membership of one role in another and a grant on the
-	// database are refused where the target cannot hold them, and on YDB
-	// whatever its users, groups and permissions cannot carry: before any
+	// database are refused where the target cannot hold them: before any
 	// statement, because a skipped principal leaves the grants that name it
 	// without one.
 	if err := accessscope.ValidateDeclared(dialect, caps, database); err != nil {
@@ -2736,7 +2475,7 @@ func validateIndexInclude(
 	}
 
 	method := strings.ToUpper(trimmedIndexType)
-	allowed, supportedMethods := indexIncludeAccessMethod(normalizedDialect, method, trimmedIndexType, caps)
+	allowed, supportedMethods := indexIncludeAccessMethod(normalizedDialect, method, caps)
 	if allowed {
 		return nil
 	}
@@ -2756,10 +2495,9 @@ func validateIndexInclude(
 
 // indexIncludeAccessMethod answers whether dialect takes an INCLUDE payload on
 // an index of access method, upper-cased, and names the methods it does take
-// for the refusal. indexType is the declared spelling, which YDB reads as an
-// index kind rather than an access method.
+// for the refusal.
 func indexIncludeAccessMethod(
-	dialect, method, indexType string,
+	dialect, method string,
 	caps capability.Capabilities,
 ) (allowed bool, supportedMethods string) {
 	switch dialect {
@@ -2794,12 +2532,6 @@ func indexIncludeAccessMethod(
 		// and no declaration renders one.
 		allowed = method == "" || method == "BTREE"
 		supportedMethods = "the default or BTREE access method"
-	case platform.YDB:
-		// COVER is a clause of a global index, synchronous or asynchronous,
-		// and of nothing else a YDB row table has.
-		_, err := ydbindex.KindOf(indexType)
-		allowed = err == nil
-		supportedMethods = "a global index, synchronous or asynchronous"
 	default:
 		// A target whose capability set carries the key and has no arm here
 		// is refused rather than waved through: which access methods take a

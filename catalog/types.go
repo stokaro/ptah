@@ -160,6 +160,18 @@ type Database struct {
 	// the database, and a description that carried it would not be portable.
 	UnregisteredVirtualTables []VirtualTable `json:"-"`
 
+	// UnreadTables lists the tables this read found and does not describe,
+	// each with the reader's reason, such as a YDB replica table no
+	// replication writes any more. A table named here is one the database
+	// holds, so a comparison refuses a declaration at it rather than plan a
+	// CREATE TABLE the database would reject.
+	//
+	// It is a fact about the read, not part of the description, so it is never
+	// serialized: a document made from this read names nothing about these
+	// tables, and a filter keeps them, since narrowing the description cannot
+	// make the database lose a table.
+	UnreadTables []UnreadTable `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER

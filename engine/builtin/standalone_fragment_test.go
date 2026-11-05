@@ -15,8 +15,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
-	"ptah.run/dialect/ydb/ydbast"
-	"ptah.run/dialect/ydb/ydbschema"
+	"ptah.run/dialect/clickhouse/chast"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/astrouteguard"
 )
@@ -36,8 +35,8 @@ const carrierName = "standalone_carrier"
 // the same sentinels and the same reason, without the name the statement gives
 // its object. Only where the statement renders does the fragment alone say it
 // needs the statement that carries it; saying that of a fragment the target
-// refuses anyway, such as a changefeed on PostgreSQL or an enum value on YDB,
-// sends the caller to a wrapper that cannot help.
+// refuses anyway, such as a skipping index on PostgreSQL or an enum value on
+// Oracle, sends the caller to a wrapper that cannot help.
 //
 // The matrix is derived on every side: the fragments are every type in
 // core/ast carrying one of the markers, and the targets are every dialect the
@@ -95,22 +94,10 @@ func TestStandaloneFragment_ReadsWithoutAName(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "a changefeed on PostgreSQL",
+			name:     "a skipping index on PostgreSQL",
 			dialect:  platform.Postgres,
-			fragment: &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}}},
-			want:     `target "postgres" does not support extension "ptah.run/ydb/add-changefeed" in role "alter-table"`,
-		},
-		{
-			name:     "an enum on YDB",
-			dialect:  platform.YDB,
-			fragment: ast.NewEnumTypeDef("active", "inactive"),
-			want:     `a type, which requires target capability enum_custom_type, unavailable on this ydb target`,
-		},
-		{
-			name:     "an enum value on YDB",
-			dialect:  platform.YDB,
-			fragment: ast.NewAddEnumValueOperation("archived"),
-			want:     `ALTER TYPE, which requires target capability enum_custom_type, unavailable on this ydb target`,
+			fragment: &ast.ExtensionAlterOperation{Payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}},
+			want:     `target "postgres" does not support extension "ptah.run/clickhouse/add-skipping-index" in role "alter-table"`,
 		},
 		{
 			name:     "an enum value on Oracle",
@@ -164,9 +151,15 @@ func TestStandaloneFragmentFixtures_CoverEveryFragment(t *testing.T) {
 // control. Each one is built with the fields its handlers read, so that a
 // refusal the matrix compares is about the fragment and the target. A fixture
 // every target refuses would compare one broken fragment with itself and pass.
+// A fragment only an engine's provider renders, listed in
+// providerRenderedFragments, has no built-in target to render on.
 func TestStandaloneFragmentFixtures_RenderOnSomeTarget(t *testing.T) {
 	for _, family := range fragmentFamilies() {
-		for _, kind := range slices.Sorted(maps.Keys(family.fixtures)) {
+		kinds := slices.DeleteFunc(slices.Sorted(maps.Keys(family.fixtures)), func(kind string) bool {
+			_, provider := providerRenderedFragments[kind]
+			return provider
+		})
+		for _, kind := range kinds {
 			t.Run(kind, func(t *testing.T) {
 				c := qt.New(t)
 
@@ -180,6 +173,13 @@ func TestStandaloneFragmentFixtures_RenderOnSomeTarget(t *testing.T) {
 			})
 		}
 	}
+}
+
+// providerRenderedFragments are the fragments no built-in target renders,
+// with the reason. The shared SQL reader still reads each into the model.
+var providerRenderedFragments = map[string]string{
+	"AddIndexOperation": "ALTER TABLE ... ADD INDEX is YDB's spelling of an index on an existing table, " +
+		"which the YDB provider renders",
 }
 
 // fragmentFamily is one kind of fragment: the marker core/ast gives it, a
@@ -244,10 +244,9 @@ func fragmentFixture(c *qt.C, family fragmentFamily, kind string) ast.Node {
 // report as rendered an operation they refuse for a missing capability once
 // they have one.
 func alterOperationFixtures() map[string]func() ast.Node {
-	changefeed := ydbschema.ChangefeedSpec{Name: "cf", Mode: "UPDATES", Format: "JSON"}
 	return map[string]func() ast.Node{
 		"ExtensionAlterOperation": func() ast.Node {
-			return &ast.ExtensionAlterOperation{Payload: &ydbast.AddChangefeed{Changefeed: changefeed}}
+			return &ast.ExtensionAlterOperation{Payload: &chast.AddSkippingIndex{Name: "idx_c", Expression: "c"}}
 		},
 		"AddColumnOperation": func() ast.Node {
 			return &ast.AddColumnOperation{Column: ast.NewColumn("c", "INTEGER")}

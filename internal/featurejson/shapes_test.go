@@ -14,7 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chdiff"
-	"ptah.run/dialect/ydb/ydbcoordination"
+	"ptah.run/dialect/clickhouse/chschema"
 	"ptah.run/internal/featurejson"
 )
 
@@ -36,9 +36,10 @@ type pointed struct {
 func TestMarshal_RoundTripsFeatureValuesBehindPointers(t *testing.T) {
 	c := qt.New(t)
 	table := must.Must(schemaext.NewFacets(ttlChange().Value.(*chdiff.Table).After))
-	object := ydbcoordination.DesiredObject("", "locks", "", ydbcoordination.Spec{ReadConsistencyMode: "strict"})
+	object := schemaext.Object{Ref: chschema.RowPolicyRef("", "events", "tenant"),
+		Value: &chschema.DesiredRowPolicy{Filter: new("tenant = 1"), Roles: chschema.RoleSelection{All: true}}}
 	objects := must.Must(schemaext.NewObjects(object))
-	coverage := must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
+	coverage := must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))
 	record := ttlChange()
 	document := pointed{Facets: &table, Changes: []*schemaext.ChangeRecord{&record, nil}, Object: object, Objects: &objects, Coverage: &coverage}
 
@@ -56,7 +57,7 @@ func TestMarshal_RoundTripsFeatureValuesBehindPointers(t *testing.T) {
 	c.Assert(read.Object.Value.Equal(object.Value), qt.IsTrue)
 	c.Assert(read.NoObject.Value, qt.IsNil)
 	c.Assert(read.Objects.Len(), qt.Equals, 1)
-	c.Assert(read.Coverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", "locks")).State, qt.Equals, schemaext.Complete)
+	c.Assert(read.Coverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "events", "tenant")).State, qt.Equals, schemaext.Complete)
 	c.Assert(string(data), qt.Contains, `"no_object":null`)
 }
 
@@ -248,13 +249,13 @@ func TestUnmarshal_ReadsChangeEnvelopesStrictly_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(document, qt.Contains, test.find)
-			target := changesDocument{FeatureChanges: []schemaext.ChangeRecord{coordinationChange()}}
+			target := changesDocument{FeatureChanges: []schemaext.ChangeRecord{policyChange()}}
 
 			err := featurejson.Unmarshal(t.Context(), codecs(), schemaext.Desired, []byte(strings.Replace(document, test.find, test.replace, 1)), &target)
 
 			c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 			c.Assert(err, qt.ErrorMatches, test.want)
-			c.Assert(target.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{coordinationChange()})
+			c.Assert(target.FeatureChanges, qt.DeepEquals, []schemaext.ChangeRecord{policyChange()})
 		})
 	}
 }
@@ -264,7 +265,7 @@ func TestUnmarshal_ReadsChangeEnvelopesStrictly_FailurePath(t *testing.T) {
 func TestUnmarshal_ReadsSchemaEnvelopesStrictly_FailurePath(t *testing.T) {
 	document := string(must.Must(featurejson.Marshal(t.Context(), codecs(), schemaext.Desired, &schemamodel.Database{
 		Tables:          []schemamodel.Table{{Name: "events", Facets: must.Must(schemaext.NewFacets(ttlChange().Value.(*chdiff.Table).After))}},
-		FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
+		FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil)),
 	})))
 	for _, test := range []envelopeCorruption{
 		{"an unknown field in a facet envelope", `"facets":[{"kind":`, `"facets":[{"extra":true,"kind":`, `.*unknown field "extra".*`},
@@ -303,14 +304,14 @@ func TestUnmarshal_AcceptsUnknownKeysOutsideFeatureData(t *testing.T) {
 // claim knowledge of the wrong side.
 func TestUnmarshal_RefusesCoverageOfTheOtherRepresentation_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	observed := &catalog.Database{FeatureCoverage: must.Must(ydbcoordination.Coverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))}
+	observed := &catalog.Database{FeatureCoverage: must.Must(chschema.RowPolicyCoverage(schemaext.Observed, schemaext.Knowledge{State: schemaext.Complete}, nil))}
 	data := must.Must(featurejson.Marshal(t.Context(), codecs(), schemaext.Observed, observed))
 	var asObserved, asDesired catalog.Database
 
 	c.Assert(featurejson.Unmarshal(t.Context(), codecs(), schemaext.Observed, data, &asObserved), qt.IsNil)
 	err := featurejson.Unmarshal(t.Context(), codecs(), schemaext.Desired, data, &asDesired)
 
-	c.Assert(asObserved.FeatureCoverage.Lookup(ydbcoordination.Kind, ydbcoordination.Ref("", "locks")).State, qt.Equals, schemaext.Complete)
+	c.Assert(asObserved.FeatureCoverage.Lookup(chschema.RowPolicyKind, chschema.RowPolicyRef("", "events", "tenant")).State, qt.Equals, schemaext.Complete)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
 	c.Assert(err, qt.ErrorMatches, `.*coverage is recorded as "observed", and the document is read as "desired"`)
 	c.Assert(asDesired.FeatureCoverage.IsZero(), qt.IsTrue)

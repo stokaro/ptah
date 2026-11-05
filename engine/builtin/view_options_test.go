@@ -101,8 +101,6 @@ func TestRenderSQL_ViewOptions_FailurePath(t *testing.T) {
 			message: `unsupported feature: oracle: view v carries the PostgreSQL options security_invoker=true, which this target has no clause for`},
 		{name: "oracle materialized view", dialect: "oracle", node: materialized(), want: ptaherr.ErrUnsupportedFeature,
 			message: `unsupported feature: oracle: materialized view m carries the PostgreSQL options fillfactor=70, which this target has no clause for`},
-		{name: "ydb", dialect: "ydb", node: view(), want: ptaherr.ErrUnsupportedFeature,
-			message: `(?s).*WITH \(security_invoker=true\) on view v.*the options are PostgreSQL's.*`},
 		{name: "postgres option without a value", dialect: "postgres",
 			node: &ast.CreateViewNode{Name: "v", Body: "SELECT 1", Options: []string{"security_invoker"}}, want: ptaherr.ErrInvalidSchemaDiff,
 			message: `invalid schema diff: postgres: view v carries the option "security_invoker", which is not name=value`},

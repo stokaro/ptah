@@ -2,7 +2,7 @@ package atlasschema
 
 // White-box testing required: the rehearsal applies omitRealmRootGrants to the
 // rebuild it derives from a live target, and its public entry point requires a
-// live database connection; the live YDB tests drive it on both lines.
+// live database connection; the YDB provider's live tests drive it.
 
 import (
 	"testing"
@@ -10,13 +10,16 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 )
 
 // TestOmitRealmRootGrants pins which permissions a baseline leaves out: those
 // on the database root, on both sides, and only when the dev connection names
-// a dev realm under the database root of an engine that has one, as its root
-// reader reads the URL. A permission on a directory or a table is kept.
+// a dev realm under the database root, as the session's database context
+// says of an engine an executable provider serves: the database it works in
+// is not the root its authored references are read against. A permission on
+// a directory or a table is kept.
 func TestOmitRealmRootGrants(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -26,15 +29,17 @@ func TestOmitRealmRootGrants(t *testing.T) {
 		wantDev     []catalog.Grant
 	}{
 		{
-			name:        "a YDB dev realm",
-			info:        catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local?dev_realm=abc"},
+			name: "a dev realm of a provider's engine",
+			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local?dev_realm=abc",
+				DatabaseContext: schemaext.DatabaseContext{Database: "/local/.ptah_realms/abc", SourceDatabase: "/local"}},
 			wantTarget:  []schemamodel.Grant{{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"}},
 			wantRevoked: make([]schemamodel.Grant, 0),
 			wantDev:     []catalog.Grant{{Role: "reader", Privilege: "ydb.generic.read", ObjectType: "TABLE", ObjectName: "items"}},
 		},
 		{
-			name: "a YDB database without a realm",
-			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local"},
+			name: "a provider's database without a realm",
+			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local",
+				DatabaseContext: schemaext.DatabaseContext{Database: "/local", SourceDatabase: "/local"}},
 			wantTarget: []schemamodel.Grant{
 				{Role: "ACCESS-ADMINS", Privileges: []string{"ydb.access.grant"}, OnDatabase: true},
 				{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"},
@@ -46,8 +51,8 @@ func TestOmitRealmRootGrants(t *testing.T) {
 			},
 		},
 		{
-			name: "a YDB URL whose realm cannot be read",
-			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb:///local?dev_realm=abc"},
+			name: "a provider's session that states no database context",
+			info: catalog.ServerInfo{Dialect: "ydb", URL: "ydb://localhost:2136/local?dev_realm=abc"},
 			wantTarget: []schemamodel.Grant{
 				{Role: "ACCESS-ADMINS", Privileges: []string{"ydb.access.grant"}, OnDatabase: true},
 				{Role: "reader", Privileges: []string{"ydb.generic.read"}, OnSchema: "shop"},
