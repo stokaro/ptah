@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/pathguard"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/safety"
 	"ptah.run/migration/shadow"
@@ -40,6 +41,13 @@ func verifyPlannedShadowMigration(
 	if opts.ShadowGenerated != nil {
 		desired = opts.ShadowGenerated
 	}
+	// The candidate names each declared password by its variable, and the
+	// shadow applies it with the password the desired schema declares.
+	passwords, err := rolepassword.Declared(desired)
+	if err != nil {
+		return err
+	}
+	ctx = rolepassword.With(ctx, passwords)
 	return shadow.VerifyMigration(ctx, shadow.MigrationVerifyOptions{
 		Runtime:           opts.Runtime,
 		ShadowDatabaseURL: opts.ShadowDatabaseURL,

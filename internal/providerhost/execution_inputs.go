@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
@@ -13,6 +12,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/rolepassword"
 )
 
 type preparedExecution struct {
@@ -98,7 +98,9 @@ func (s *session) approvedInputs(ctx context.Context, fragments []renderer.Fragm
 }
 
 // bindExecutionInputs checks the exact batch against approved references before
-// reading any value. Neither discovery nor preflight reads the environment.
+// reading any value. Neither discovery nor preflight reads the environment. A
+// value is read through [rolepassword.Lookup]: a password the run declared,
+// and otherwise the environment variable the reference names.
 func (s *session) bindExecutionInputs(ctx context.Context, request *protocol.ExecuteRequest, expected []*protocol.ExecutionInput) error {
 	if !slices.Contains(s.target.host.description.GetFeatures(), provider.SensitiveInputsFeature) {
 		return nil
@@ -111,11 +113,12 @@ func (s *session) bindExecutionInputs(ctx context.Context, request *protocol.Exe
 	if err := provider.CheckExecutionInputs(expected, actual); err != nil {
 		return err
 	}
+	lookup := rolepassword.Lookup(ctx)
 	for _, input := range expected {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		value, present := os.LookupEnv(input.GetName())
+		value, present := lookup(input.GetName())
 		if !present {
 			return fmt.Errorf("provider execution input environment variable %q is not set", input.GetName())
 		}

@@ -1049,6 +1049,42 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+### Role passwords
+
+A role's `password` may be a password or a hash PostgreSQL takes as one, such
+as a `SCRAM-SHA-256$...` string. Ptah never prints either. A statement that
+sets it names an environment variable where the password would stand:
+`PTAH_SECRET_PASSWORD_` followed by the role's name in upper case, with every
+character other than a letter or a digit written as an underscore.
+
+```sql
+CREATE ROLE "app" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;
+```
+
+That is what `schema render`, `schema plan`, `schema compare`, `schema apply`
+and its `--dry-run` and `--json` output, a saved plan, `migrations plan` and a
+generated migration file show, and what an error quotes. Ptah writes the
+password in only when it sends the statement:
+
+- `schema apply` that plans from the schema and applies in one run sends the
+  declared password and needs no variable;
+- `schema apply --plan`, `migrations up` and a replay read the variable the
+  statement names, so export it on the machine that runs them. A variable that
+  is not set refuses the statement before anything is sent.
+
+PostgreSQL refuses the statement as written, so a migration file run without
+Ptah sets no other password. Ptah writes a value only after `PASSWORD` in
+`CREATE ROLE` or `ALTER ROLE`, and refuses a statement that names such a
+variable anywhere else. Two roles whose names give one variable, such as `App`
+and `app`, are refused.
+
+A `password` written as a reference, `$PTAH_SECRET_` and a name in upper case
+such as `$PTAH_SECRET_APP_PASSWORD`, names that variable instead of holding a
+value. The statements name it, and every run reads it from the environment,
+so the schema holds no password at all. A SQL schema read from a migration
+file Ptah generated keeps the reference it holds. The same rules hold on
+[YDB](../ydb/), where a user's password is named the same way.
+
 A plan that removes a table revokes the privileges of the roles the schema
 manages and leaves the others to `DROP TABLE`. The rollback of that plan
 creates the table again and grants every privilege the database held on it,

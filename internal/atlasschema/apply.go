@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/protectedtable"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -249,6 +250,11 @@ type ApplyRuntimePlan struct {
 	// rehearsal is what a rehearsal of a plan that holds a native operation
 	// plans again on its dev database; see [ApplyRuntimePlan.SimulateOnDev].
 	rehearsal nativeRehearsal
+	// passwords are the passwords the desired schema declares, by the
+	// variables the plan's statements name in their place. The plan's
+	// executions read them before the environment; no output holds them.
+	// See [ptah.run/internal/rolepassword].
+	passwords map[string]string
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -998,7 +1004,12 @@ func PrepareApply(
 	if err := refuseOnlineAlterInOneTransaction(opts.Policy, opts.TxMode, conn.Info().Dialect); err != nil {
 		return ApplyRuntimePlan{}, err
 	}
+	passwords, err := rolepassword.Declared(computation.desired)
+	if err != nil {
+		return ApplyRuntimePlan{}, err
+	}
 	return ApplyRuntimePlan{
+		passwords: passwords,
 		runtime:   opts.Runtime,
 		plan:      computation.executionPlan(),
 		dryRun:    opts.DryRun,
@@ -1112,6 +1123,7 @@ func (p ApplyRuntimePlan) Preflight(ctx context.Context) error {
 // Execute applies the prepared operations under the captured transaction mode.
 // Dry runs validate the whole batch without changing the database.
 func (p ApplyRuntimePlan) Execute(ctx context.Context) error {
+	ctx = rolepassword.With(ctx, p.passwords)
 	if err := p.Preflight(ctx); err != nil {
 		return err
 	}

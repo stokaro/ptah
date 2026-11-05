@@ -1092,7 +1092,7 @@ Declares a database role.
 | `login` | No | Creates the role with LOGIN. `true`/`false`. |
 | `member_of` | No | Comma-separated groups the role is a member of. YDB only. |
 | `name` | No | Role name. |
-| `password` | No | Role password. |
+| `password` | No | Role password, a password hash, or `$PTAH_SECRET_<NAME>` to read it from that variable. Ptah never prints it; statements name the variable it is read from. See [Role passwords](../../databases/postgresql/#role-passwords). |
 | `replication` | No | Allows replication. `true`/`false`. |
 | `superuser` | No | Creates the role as SUPERUSER. `true`/`false`. |
 
