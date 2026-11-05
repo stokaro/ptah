@@ -250,3 +250,39 @@ func TestComparisonSubtreeRegion_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// subtreePlanning is a planning request whose captured objects carry a
+// complete subtree region over the root, under identifiers with separator.
+func subtreePlanning(separator string) (*protocol.Description, *protocol.PlanFeaturesRequest) {
+	description, request, _ := planningObjectsExchange()
+	withSubtrees(description)
+	request.Identifiers.Rules.SchemaSeparator = separator
+	request.CurrentObjects.Coverage.Kinds[0].Sources[0].Regions = []*protocol.ComparisonRegion{{
+		Scope:     &protocol.ComparisonNamespace{Targets: []string{"fixture"}, Schema: &protocol.ComparisonPart{}, SchemaSubtree: true},
+		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE},
+	}}
+	return description, request
+}
+
+// A planning request's captured objects are checked under the request's own
+// identifiers, so a subtree region a read claimed reaches the planner where
+// they carry the separator.
+func TestPlanningCarriesASubtreeRegion_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	description, request := subtreePlanning("/")
+
+	err := provider.ValidatePlanningRequest(description, request)
+
+	c.Assert(err, qt.IsNil)
+}
+
+// Where the identifiers carry no separator, the subtree region is refused.
+func TestPlanningCarriesASubtreeRegion_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	description, request := subtreePlanning("")
+
+	err := provider.ValidatePlanningRequest(description, request)
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, `.*a subtree region needs schema.subtree-coverage`)
+}

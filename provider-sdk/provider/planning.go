@@ -148,8 +148,11 @@ func validatePlanningChanges(description *protocol.Description, request *protoco
 	return validateComparisonValues(description, planningValueContext(request), protocol.ValueInput_CHANGE, values)
 }
 
+// planningValueContext is the comparison context the captured state of a
+// planning request is checked in. It carries the request's identifiers, whose
+// schema separator decides a subtree region of that state.
 func planningValueContext(request *protocol.PlanFeaturesRequest) *protocol.CompareModelsRequest {
-	return &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures()}
+	return &protocol.CompareModelsRequest{Engine: request.GetEngine(), TargetFeatures: request.GetTargetFeatures(), Identifiers: request.GetIdentifiers()}
 }
 
 // ValidatePlannedFeatures refuses incomplete replies, unowned operations, missing
