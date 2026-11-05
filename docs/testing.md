@@ -213,7 +213,10 @@ A run in which nothing says `parallel` is unaffected: an explicit URL keeps its
 documented behavior of one shared database for every case.
 
 Where a dialect has no way to give a case its own database, a parallel case is
-**refused** before anything runs rather than quietly sharing one.
+**refused** before anything runs rather than quietly sharing one. On an engine
+an executable provider serves, a case gets a realm the provider creates inside
+the database the URL names, when the engine declares `database.dev-realms`; a
+URL the provider creates no realm in is refused the same way.
 
 A disposable database provisioned by `--dev-url docker://...` is released when
 the command returns, including the return an interrupt causes, because the

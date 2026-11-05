@@ -113,11 +113,11 @@ func parallelSlots(limit int) int {
 // create two databases and apply a schema to each -- and it is a refusal rather
 // than a downgrade to sharing, because a suite that passes when two cases
 // happen not to collide is worse than one that declines.
-func refuseParallelWithoutIsolation(cases []Case, baseURL string) error {
+func refuseParallelWithoutIsolation(ctx context.Context, cases []Case, baseURL string) error {
 	if !anyParallel(cases) {
 		return nil
 	}
-	if err := scratchdb.CanIsolate(baseURL); err != nil {
+	if err := scratchdb.CanIsolate(ctx, baseURL); err != nil {
 		return fmt.Errorf("%w: %w", ErrParallelNeedsIsolation, err)
 	}
 	return nil

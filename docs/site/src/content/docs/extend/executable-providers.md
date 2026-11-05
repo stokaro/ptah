@@ -246,7 +246,9 @@ request is unsupported or its runtime is unavailable. The host releases the leas
 when it is done, and the provider removes the leases it still holds when its
 process ends. An engine that also declares `database.dev-realms` gets a realm of
 the run's own inside the database a `--dev-url` names, created and removed by
-the provider, for a database the operator cannot create.
+the provider, for a database the operator cannot create. A `parallel` case of
+`ptah migrations test` or `ptah schema test` gets a realm of its own the same
+way, removed when the case ends.
 
 A provider's dev database is cleaned and guarded by the provider, so
 `schema apply --dev-url` rehearses a plan on it, `migrations lint --dev-url`

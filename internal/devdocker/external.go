@@ -27,7 +27,9 @@ type ExternalRealms interface {
 	RealmSchemes() []string
 	// EnterRealm creates a realm in the database rawURL names. It returns the
 	// realm's address and a release that removes the realm and is safe to
-	// call more than once.
+	// call more than once. A URL it creates no realm in, such as one whose
+	// database is the dev database itself, comes back as it was given, with
+	// a release that does nothing.
 	EnterRealm(ctx context.Context, rawURL string) (realmURL string, release func(), err error)
 }
 
@@ -101,9 +103,11 @@ func resolveExternal(ctx context.Context, owner External, rawURL string) (string
 	}), nil
 }
 
-// externalRealmFor returns the owner that creates realms for the engine
-// rawURL's scheme names, or nil.
-func externalRealmFor(ctx context.Context, rawURL string) ExternalRealms {
+// RealmOwner returns the owner in ctx that creates realms for the engine
+// rawURL's scheme names, or nil. [Resolve] enters a dev realm through it, and
+// so does anything else that needs a database of its own inside one the
+// operator names, such as a parallel test case.
+func RealmOwner(ctx context.Context, rawURL string) ExternalRealms {
 	owners, _ := ctx.Value(externalKey{}).([]External)
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Scheme == "" {
