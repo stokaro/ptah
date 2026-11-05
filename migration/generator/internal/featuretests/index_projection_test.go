@@ -4,14 +4,17 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/generator"
@@ -45,6 +48,61 @@ func indexProjectionOptions(c *qt.C) generator.BidirectionalSchemaPlanOptions {
 		{Name: "fresh", StructName: "Item", Fields: []string{"category", "label"}},
 	}
 	return options(c, runtime, platform.Postgres, before, after)
+}
+
+// TestGeneratorProjectsAcceptedIndexLifecycleWithFeatureChanges plans, on
+// PostgreSQL, table items gaining index fresh and losing gone while its
+// row-security policy changes. The rollback's capture of the table holds the
+// indexes the forward plan leaves, kept and then fresh, beside the policy the
+// owner predicts, and shares no index state with the forward diff or the
+// catalog.
+func TestGeneratorProjectsAcceptedIndexLifecycleWithFeatureChanges(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	policy := pgpolicy.PolicyRef("", "items", "p_items")
+	table := func(using string, indexes ...schemamodel.Index) *schemamodel.Database {
+		return &schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "items", StructName: "Item"}},
+			Fields: []schemamodel.Field{
+				{Name: "id", StructName: "Item", Type: "BIGINT", Primary: true},
+				{StructName: "Item", Name: "label", Type: "TEXT", Nullable: true},
+				{StructName: "Item", Name: "category", Type: "TEXT", Nullable: true},
+			},
+			Indexes: indexes,
+			FeatureObjects: must.Must(schemaext.NewObjects(must.Must(pgpolicy.DesiredPolicyObject(policy,
+				pgpolicy.DesiredPolicy{Command: pgpolicy.CommandSelect, Using: new(using)})))),
+			FeatureCoverage: must.Must(pgpolicy.CompleteCoverage(schemaext.Desired)),
+		}
+	}
+	kept := schemamodel.Index{Name: "kept", StructName: "Item", Fields: []string{"label"}}
+	before := table("(label IS NOT NULL)", kept, schemamodel.Index{Name: "gone", StructName: "Item", Fields: []string{"category"}})
+	after := table("(category IS NOT NULL)", kept, schemamodel.Index{Name: "fresh", StructName: "Item", Fields: []string{"category", "label"}})
+	opts := options(c, runtime, platform.Postgres, before, after)
+	c.Assert(opts.Diff.IndexesAdded.Refs(), qt.DeepEquals, []difftypes.IndexRef{{Name: "fresh", TableName: "items"}})
+	c.Assert(opts.Diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{{Name: "gone", TableName: "items"}})
+	c.Assert(opts.Diff.TablesModified, qt.HasLen, 1)
+	c.Assert(opts.Diff.TablesModified[0].FeatureChanges, qt.HasLen, 1)
+
+	plan, err := generator.PlanBidirectionalSchemaDiff(t.Context(), opts)
+
+	c.Assert(err, qt.IsNil)
+	reverse := plan.Reverse.Diff.TablesModified[0]
+	c.Assert(reverse.FeatureChanges, qt.HasLen, 1)
+	indexes := reverse.Current.Indexes
+	c.Assert(indexes, qt.HasLen, 2)
+	c.Assert(indexes[0].Name, qt.Equals, "kept")
+	c.Assert(indexes[1].Name, qt.Equals, "fresh")
+	c.Assert(indexes[1].Columns, qt.DeepEquals, []string{"category", "label"})
+	c.Assert(indexes[1].QualifiedTableName(), qt.Equals, "items")
+	object, found, err := reverse.Current.OwnedObjects.Get(policy)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*object.Value.(*pgpolicy.ObservedPolicy).Using, qt.Equals, "(category IS NOT NULL)")
+	c.Assert(opts.Diff.TablesModified[0].Current.Indexes[1].Name, qt.Equals, "gone")
+	indexes[0].Columns[0], indexes[1].Columns[0] = "mutated", "mutated"
+	c.Assert(opts.CurrentSchema.Indexes[0].Columns, qt.DeepEquals, []string{"label"})
+	c.Assert(opts.Diff.TablesModified[0].Current.Indexes[0].Columns, qt.DeepEquals, []string{"label"})
+	c.Assert(opts.Diff.IndexesAdded[0].Index.Fields, qt.DeepEquals, []string{"category", "label"})
 }
 
 func TestGeneratorPreservesSkippedIndexAndItsComment(t *testing.T) {
