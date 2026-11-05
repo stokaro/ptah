@@ -755,10 +755,10 @@ func ValidatePlannedChanges(
 //
 // and the down file beside it was
 //
-//	CREATE TABLE "__ptah_rebuild_docs_content" (...);
-//	INSERT INTO "__ptah_rebuild_docs_content" (...) SELECT ... FROM "docs_content";
+//	CREATE TABLE "new_docs_content" (...);
+//	INSERT INTO "new_docs_content" (...) SELECT ... FROM "docs_content";
 //	DROP TABLE "docs_content";
-//	ALTER TABLE "__ptah_rebuild_docs_content" RENAME TO "docs_content";
+//	ALTER TABLE "new_docs_content" RENAME TO "docs_content";
 //
 // written at exit 0 with no refusal. Restoring the pre-exemption gate refused
 // the same run at the comparison, which is where the gap came from: the

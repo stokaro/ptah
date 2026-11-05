@@ -74,7 +74,7 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
-			c.Assert(plan, qt.Contains, "__ptah_rebuild_notes", qt.Commentf("plan:\n%s", plan))
+			c.Assert(plan, qt.Contains, "new_notes", qt.Commentf("plan:\n%s", plan))
 		})
 	}
 }

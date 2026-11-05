@@ -96,7 +96,7 @@ func TestSchemaApplySQLiteRowidAliasDeclaredTwiceIsSynced(t *testing.T) {
 			}, tt.extra(atlastest.FreshDevURL(c))...)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr=%q", stderr))
-			c.Assert(stdout, qt.Not(qt.Contains), "__ptah_rebuild_widgets")
+			c.Assert(stdout, qt.Not(qt.Contains), "new_widgets")
 			c.Assert(stdout, qt.Contains, "Schema is synced")
 		})
 	}
@@ -118,5 +118,5 @@ func TestSchemaDiffSQLiteTextKeyNullabilityStillRebuilds(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%q", stderr))
 	c.Assert(stdout, qt.Contains, `"id" TEXT NOT NULL PRIMARY KEY`)
-	c.Assert(stdout, qt.Contains, "__ptah_rebuild_widgets")
+	c.Assert(stdout, qt.Contains, "new_widgets")
 }

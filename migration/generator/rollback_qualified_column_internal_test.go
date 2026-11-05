@@ -51,7 +51,7 @@ func TestGenerateDownMigrationSQL_RestoresAColumnTheComparisonMatchedByIdentity(
 			dialect:     platform.SQLite,
 			tableSchema: "main",
 			column:      "sku",
-			want:        `INSERT INTO "__ptah_rebuild_items" ("id", "sku") SELECT "id", "sku" FROM "items";`,
+			want:        `INSERT INTO "new_items" ("id", "sku") SELECT "id", "sku" FROM "items";`,
 		},
 		{
 			name:    "MySQL column named in another case",

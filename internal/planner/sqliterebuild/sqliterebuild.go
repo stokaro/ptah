@@ -23,9 +23,11 @@ package sqliterebuild
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/tableref"
 )
 
 // NeedsTableRebuild reports whether this table diff has to be converged by
@@ -82,4 +84,112 @@ func IsTableRebuildChange(record schemaext.ChangeRecord) bool {
 // but a comment.
 func changesMoreThanTheComment(column difftypes.ColumnDiff) bool {
 	return column.CommentChange == nil || len(column.Changes) > 0 || column.NotNullConstraintNameChange != nil
+}
+
+// CopyStatement names the two tables of a rebuild's copy step. Both names are
+// as the plan spells them, qualified where the table is.
+type CopyStatement struct {
+	// New is the table the rows are copied to, which the rebuild renames over
+	// Old.
+	New string
+	// Old is the table being rebuilt.
+	Old string
+}
+
+// CopyRows writes the statement that copies the rows of Old to New. columns is
+// New's column list and selectList what is read from Old for it, both already
+// written as SQL. [ReadCopyStatement] reads the tables back.
+func (s CopyStatement) CopyRows(columns, selectList string) string {
+	return "INSERT INTO " + quotedTable(s.New) + " (" + columns + ") SELECT " + selectList + " FROM " + quotedTable(s.Old) + ";"
+}
+
+// Rename writes the statement that renames New over Old. It names the new name
+// without its schema, as SQLite's ALTER TABLE requires.
+func (s CopyStatement) Rename() string {
+	name := s.Old
+	if ref, ok := tableref.Parse(name); ok {
+		name = ref.Name
+	}
+	return "ALTER TABLE " + quotedTable(s.New) + " RENAME TO " + quotedName(name) + ";"
+}
+
+// ReadCopyStatement reads the tables back from a statement
+// [CopyStatement.CopyRows] wrote, and reports false for any other statement. It
+// reads the table names at the two ends of the statement. What lies between
+// them is the planner's column list and select list. The last FROM that a whole
+// table name follows ends the select list, whatever a name before it holds.
+func ReadCopyStatement(statement string) (CopyStatement, bool) {
+	rest, ok := strings.CutPrefix(statement, "INSERT INTO ")
+	if !ok {
+		return CopyStatement{}, false
+	}
+	rest, ok = strings.CutSuffix(rest, ";")
+	if !ok {
+		return CopyStatement{}, false
+	}
+	to, rest, ok := readQuotedTable(rest)
+	if !ok || !strings.HasPrefix(rest, " (") {
+		return CopyStatement{}, false
+	}
+	for at := strings.LastIndex(rest, " FROM "); at >= 0; at = strings.LastIndex(rest[:at], " FROM ") {
+		if from, tail, ok := readQuotedTable(rest[at+len(" FROM "):]); ok && tail == "" {
+			return CopyStatement{New: to, Old: from}, true
+		}
+	}
+	return CopyStatement{}, false
+}
+
+// quotedTable is name, qualified where it is, in SQLite's identifier quotes.
+func quotedTable(name string) string {
+	ref, ok := tableref.Parse(name)
+	if !ok || !ref.Qualified {
+		if ok {
+			name = ref.Name
+		}
+		return quotedName(name)
+	}
+	return quotedName(ref.Schema) + "." + quotedName(ref.Name)
+}
+
+func quotedName(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// readQuotedTable reads the table name text starts with, as [quotedTable]
+// writes it, and returns it as the plan spells it with what follows it.
+func readQuotedTable(text string) (name, rest string, ok bool) {
+	first, rest, ok := readQuotedName(text)
+	if !ok {
+		return "", "", false
+	}
+	after, found := strings.CutPrefix(rest, ".")
+	if !found {
+		return first, rest, true
+	}
+	second, rest, ok := readQuotedName(after)
+	if !ok {
+		return "", "", false
+	}
+	return first + "." + second, rest, true
+}
+
+// readQuotedName reads the identifier in double quotes text starts with.
+func readQuotedName(text string) (name, rest string, ok bool) {
+	if !strings.HasPrefix(text, `"`) {
+		return "", "", false
+	}
+	var read strings.Builder
+	for i := 1; i < len(text); i++ {
+		if text[i] != '"' {
+			read.WriteByte(text[i])
+			continue
+		}
+		if i+1 < len(text) && text[i+1] == '"' {
+			read.WriteByte('"')
+			i++
+			continue
+		}
+		return read.String(), text[i+1:], true
+	}
+	return "", "", false
 }

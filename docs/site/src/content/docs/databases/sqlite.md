@@ -120,9 +120,9 @@ cannot, each refused before any SQL runs and each naming what to do instead.
 | An `EXCLUDE` constraint | SQLite has no such constraint | Express the rule as a `UNIQUE` index when it compares whole values for equality, or as a `CHECK` constraint or trigger when it does not |
 | A constraint change the comparison cannot attribute to a table | The rebuild does not know which table to rebuild | Declare the constraint on its table |
 
-A table already holding `__ptah_rebuild_<name>` is **not** refused. That name is
+A table already holding `new_<name>` is **not** refused. That name is
 an ordinary identifier and a schema is allowed to use it, so the rebuild's
-scratch table steps aside to `__ptah_rebuild_<name>_1` and upward until it finds
+scratch table steps aside to `new_<name>_1` and upward until it finds
 a name nothing declares and nothing is dropping.
 
 Triggers on a rebuilt table are recreated, not refused; only the nested-body
@@ -366,7 +366,7 @@ are:
 - Adding a `NOT NULL` column without a default as part of a rebuild: the copy
   step leaves the column out of the `INSERT`, so the first row would violate it.
 - Rebuilding a table whose retained triggers use syntax Ptah cannot round-trip,
-  or whose rebuild scaffolding name `__ptah_rebuild_<table>` is already taken.
+  or whose rebuild scaffolding name `new_<table>` is already taken.
 - A constraint change the diff cannot attribute to a table, so there is no
   table to rebuild.
 

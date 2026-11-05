@@ -10,7 +10,6 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/schemaext"
-	"ptah.run/internal/atlaschange"
 )
 
 // plannedOperation is an operation a provider planned, as the namer meets it
@@ -104,11 +103,11 @@ func TestOfAndUndoneOfAProviderOperation_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			of, ok := atlaschange.Of(test.node)
+			of, ok := nameOf(test.node)
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(of, qt.Equals, test.of)
-			undone, ok := atlaschange.Undone(test.node)
+			undone, ok := nameUndone(test.node)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(undone, qt.Equals, test.undone)
 		})
@@ -135,11 +134,11 @@ func TestOfAndUndoneOfAProviderOperation_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			of, ok := atlaschange.Of(test.node)
+			of, ok := nameOf(test.node)
 
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(of, qt.Equals, "")
-			undone, ok := atlaschange.Undone(test.node)
+			undone, ok := nameUndone(test.node)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(undone, qt.Equals, "")
 		})
@@ -165,7 +164,7 @@ func TestRollbackOfAProviderOperation_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := atlaschange.Rollback(forward)(test.node)
+			got, ok := nameRollback(forward, test.node)
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)

@@ -467,8 +467,7 @@ func TestPlanningReplyBindsOperationsAndGraphMetadata(t *testing.T) {
 			cloned, err := service.target.host.models[key].codec().Clone(step.Payload.Payload)
 			c.Assert(err, qt.IsNil)
 			c.Assert(cloned.(*resolvedOperation).Effects(), qt.DeepEquals, step.Effects)
-			named, ok := atlaschange.Of(&ast.ExtensionStatement{Payload: step.Payload.Payload})
-			c.Assert(ok, qt.IsTrue)
+			named := atlaschange.Words{}.Forward([]ast.Node{&ast.ExtensionStatement{Payload: step.Payload.Payload}})[0]
 			c.Assert(named, qt.Equals, `modify "records" table`)
 			c.Assert(result.Parents[0].Action, qt.Equals, featureplan.AlterTable)
 			c.Assert(result.Rewrites[0].Sources, qt.DeepEquals, []plangraph.StepID{{Owner: source.Owner, Name: source.Name}})

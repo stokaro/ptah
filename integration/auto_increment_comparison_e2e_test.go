@@ -82,13 +82,13 @@ func TestAutoIncrementComparisonE2E_HappyPath(t *testing.T) {
 			name: "SQLite gains it", engine: "sqlite",
 			from:     "CREATE TABLE t (id INTEGER PRIMARY KEY, a INT);",
 			to:       "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, a INT);",
-			wantPlan: "CREATE TABLE \"__ptah_rebuild_t\" (\n  \"id\" INTEGER PRIMARY KEY AUTOINCREMENT,\n",
+			wantPlan: "CREATE TABLE \"new_t\" (\n  \"id\" INTEGER PRIMARY KEY AUTOINCREMENT,\n",
 		},
 		{
 			name: "SQLite loses it", engine: "sqlite",
 			from:     "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, a INT);",
 			to:       "CREATE TABLE t (id INTEGER PRIMARY KEY, a INT);",
-			wantPlan: "CREATE TABLE \"__ptah_rebuild_t\" (\n  \"id\" INTEGER PRIMARY KEY,\n",
+			wantPlan: "CREATE TABLE \"new_t\" (\n  \"id\" INTEGER PRIMARY KEY,\n",
 		},
 		{
 			// A key column whose type changes is the other change the

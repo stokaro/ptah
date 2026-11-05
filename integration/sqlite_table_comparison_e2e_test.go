@@ -142,7 +142,7 @@ func TestSchemaApplyLeavesASQLiteTableAloneForAColumnCommentE2E(t *testing.T) {
 
 	for _, comment := range []string{"first", "second"} {
 		applied := applySQLiteDocument(c, url, sqliteComparisonTable+";\nCOMMENT ON COLUMN t.a IS '"+comment+"';\n")
-		c.Assert(applied, qt.Not(qt.Contains), "__ptah_rebuild_t")
+		c.Assert(applied, qt.Not(qt.Contains), "new_t")
 	}
 	after, rows := sqliteStored(c, url, "t")
 	c.Assert(after, qt.Equals, before)

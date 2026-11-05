@@ -218,3 +218,87 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		))
 	}
 }
+
+// TestCopyStatement_ReadsBackWhatItWrites_HappyPath pins the statements a
+// rebuild writes and the names [sqliterebuild.ReadCopyStatement] reads back,
+// including a qualified table and a name that carries the words and quotes the
+// reader looks for.
+func TestCopyStatement_ReadsBackWhatItWrites_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		statement  sqliterebuild.CopyStatement
+		wantCopy   string
+		wantRename string
+	}{
+		{
+			name:       "a plain table",
+			statement:  sqliterebuild.CopyStatement{New: "new_t", Old: "t"},
+			wantCopy:   `INSERT INTO "new_t" ("id") SELECT "id" FROM "t";`,
+			wantRename: `ALTER TABLE "new_t" RENAME TO "t";`,
+		},
+		{
+			name:       "a table in a schema",
+			statement:  sqliterebuild.CopyStatement{New: "aux.new_t", Old: "aux.t"},
+			wantCopy:   `INSERT INTO "aux"."new_t" ("id") SELECT "id" FROM "aux"."t";`,
+			wantRename: `ALTER TABLE "aux"."new_t" RENAME TO "t";`,
+		},
+		{
+			name:       "a name holding a quote and the keyword",
+			statement:  sqliterebuild.CopyStatement{New: `new_a FROM "b"`, Old: `a FROM "b"`},
+			wantCopy:   `INSERT INTO "new_a FROM ""b""" ("id") SELECT "id" FROM "a FROM ""b""";`,
+			wantRename: `ALTER TABLE "new_a FROM ""b""" RENAME TO "a FROM ""b""";`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			written := test.statement.CopyRows(`"id"`, `"id"`)
+			read, ok := sqliterebuild.ReadCopyStatement(written)
+
+			c.Assert(written, qt.Equals, test.wantCopy)
+			c.Assert(test.statement.Rename(), qt.Equals, test.wantRename)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(read, qt.Equals, test.statement)
+		})
+	}
+}
+
+// TestReadCopyStatement_ReadsPastTheSelectList_HappyPath is a copy whose select
+// list holds the keyword the reader looks for: a default a rebuild backfills, or
+// a column of that name.
+func TestReadCopyStatement_ReadsPastTheSelectList_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	want := sqliterebuild.CopyStatement{New: "new_t", Old: "t"}
+
+	read, ok := sqliterebuild.ReadCopyStatement(want.CopyRows(`"a FROM b"`, `COALESCE("a FROM b", ' FROM "x"')`))
+
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(read, qt.Equals, want)
+}
+
+// TestReadCopyStatement_FailurePath is every statement that is not a copy a
+// rebuild writes.
+func TestReadCopyStatement_FailurePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+	}{
+		{name: "another statement", statement: `DELETE FROM "t";`},
+		{name: "no terminator", statement: `INSERT INTO "new_t" ("id") SELECT "id" FROM "t"`},
+		{name: "an unquoted table", statement: `INSERT INTO new_t ("id") SELECT "id" FROM "t";`},
+		{name: "values rather than a copy", statement: `INSERT INTO "new_t" ("id") VALUES (1);`},
+		{name: "a copy from more than a table", statement: `INSERT INTO "new_t" ("id") SELECT "id" FROM "t" WHERE "id" > 0;`},
+		{name: "an open quote", statement: `INSERT INTO "new_t ("id") SELECT "id" FROM "t;`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			read, ok := sqliterebuild.ReadCopyStatement(test.statement)
+
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(read, qt.Equals, sqliterebuild.CopyStatement{})
+		})
+	}
+}

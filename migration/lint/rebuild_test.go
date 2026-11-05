@@ -19,10 +19,10 @@ const (
 
 	sqliteRebuild = "PRAGMA foreign_keys = off;\n" +
 		"-- SQLite table rebuild for changes ALTER TABLE cannot express on items\n" +
-		"CREATE TABLE \"__ptah_rebuild_items\" (\n  \"id\" INTEGER PRIMARY KEY,\n  \"n\" TEXT NOT NULL,\n  \"label\" TEXT\n);\n" +
-		"INSERT INTO \"__ptah_rebuild_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
+		"CREATE TABLE \"new_items\" (\n  \"id\" INTEGER PRIMARY KEY,\n  \"n\" TEXT NOT NULL,\n  \"label\" TEXT\n);\n" +
+		"INSERT INTO \"new_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
 		"DROP TABLE \"items\";\n" +
-		"ALTER TABLE \"__ptah_rebuild_items\" RENAME TO \"items\";\n" +
+		"ALTER TABLE \"new_items\" RENAME TO \"items\";\n" +
 		"PRAGMA foreign_keys = on;\n"
 )
 
@@ -119,14 +119,14 @@ func TestTableRebuild_ReportsWhatIsNotARebuild(t *testing.T) {
 		{
 			rebuildCase: rebuildCase{name: "a copy into another table than the one just created", dialect: "sqlite",
 				first:  sqliteItems + "CREATE TABLE archive (id INTEGER PRIMARY KEY, n TEXT, label TEXT);\n",
-				second: strings.Replace(sqliteRebuild, `INSERT INTO "__ptah_rebuild_items"`, `INSERT INTO "archive"`, 1)},
+				second: strings.Replace(sqliteRebuild, `INSERT INTO "new_items"`, `INSERT INTO "archive"`, 1)},
 			want: []string{"0000000002_change.up.sql:9:BC103", "0000000002_change.up.sql:9:DS101"},
 		},
 		{
 			rebuildCase: rebuildCase{name: "a copy into a table the file did not just create", dialect: "sqlite",
-				first: sqliteItems + "CREATE TABLE \"__ptah_rebuild_items\" (id INTEGER PRIMARY KEY, n TEXT, label TEXT);\n",
-				second: "INSERT INTO \"__ptah_rebuild_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
-					"DROP TABLE \"items\";\nALTER TABLE \"__ptah_rebuild_items\" RENAME TO \"items\";\n"},
+				first: sqliteItems + "CREATE TABLE \"new_items\" (id INTEGER PRIMARY KEY, n TEXT, label TEXT);\n",
+				second: "INSERT INTO \"new_items\" (\"id\", \"n\", \"label\") SELECT \"id\", \"n\", \"label\" FROM \"items\";\n" +
+					"DROP TABLE \"items\";\nALTER TABLE \"new_items\" RENAME TO \"items\";\n"},
 			want: []string{
 				"0000000002_change.up.sql:2:BC103", "0000000002_change.up.sql:2:DS101", "0000000002_change.up.sql:3:BC101",
 			},

@@ -6,8 +6,11 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlaschange"
+	"ptah.run/internal/planner/sqliterebuild"
+	"ptah.run/internal/sqliteforeignkeys"
 )
 
 // The rows name a statement the way the pinned community binary v1.3.0 names
@@ -164,10 +167,10 @@ func TestOfAndUndone_HappyPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			of, ok := atlaschange.Of(tt.node)
+			of, ok := nameOf(tt.node)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(of, qt.Equals, tt.of)
-			undone, ok := atlaschange.Undone(tt.node)
+			undone, ok := nameUndone(tt.node)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(undone, qt.Equals, tt.undone)
 		})
@@ -187,10 +190,10 @@ func TestOfAndUndone_FailurePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			of, ok := atlaschange.Of(tt.node)
+			of, ok := nameOf(tt.node)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(of, qt.Equals, "")
-			undone, ok := atlaschange.Undone(tt.node)
+			undone, ok := nameUndone(tt.node)
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(undone, qt.Equals, "")
 		})
@@ -231,10 +234,156 @@ func TestRollback_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := atlaschange.Rollback(test.forward)(test.node)
+			got, ok := nameRollback(test.forward, test.node)
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
+}
+
+// nameOf is the comment the PostgreSQL wording writes above node in a forward
+// plan, and whether it writes one.
+func nameOf(node ast.Node) (string, bool) {
+	name := atlaschange.Words{}.Forward([]ast.Node{node})[0]
+	return name, name != ""
+}
+
+// nameUndone is the comment of the forward change node undoes in a rollback
+// planned against nothing, and whether it names one.
+func nameUndone(node ast.Node) (string, bool) {
+	name := atlaschange.Words{}.Rollback(nil, []ast.Node{node})[0]
+	return name, name != ""
+}
+
+// nameRollback is the comment of the forward change node undoes in a rollback
+// planned against forward, and whether it names one.
+func nameRollback(forward []ast.Node, node ast.Node) (string, bool) {
+	name := atlaschange.Words{}.Rollback(forward, []ast.Node{node})[0]
+	return name, name != ""
+}
+
+// rebuildPlan is the plan the SQLite planner writes for one table it rebuilds:
+// the statements between the two pragmas are the rebuild's own.
+func rebuildPlan() []ast.Node {
+	rebuild := sqliterebuild.CopyStatement{New: "new_t", Old: "t"}
+	return []ast.Node{
+		ast.NewRawSQL(sqliteforeignkeys.DisableStatement),
+		ast.NewCreateTable("new_t"),
+		ast.NewRawSQL(rebuild.CopyRows(`"id"`, `"id"`)),
+		ast.NewDropTable("t"),
+		ast.NewRawSQL(rebuild.Rename()),
+		ast.NewIndex("i", "t", "a"),
+		ast.NewDropTable("gone"),
+		ast.NewRawSQL(sqliteforeignkeys.EnableStatement),
+	}
+}
+
+// TestForward_NamesAnEnginesChangesInItsWords_HappyPath pins the wording that
+// differs per engine. The rows are what the pinned community binary v1.3.0
+// writes on each engine it has a driver for; `integration/atlasreference`
+// compares these words with the binary's own.
+func TestForward_NamesAnEnginesChangesInItsWords_HappyPath(t *testing.T) {
+	added := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("c", "INT")}}}
+	tests := []struct {
+		name    string
+		dialect string
+		node    ast.Node
+		want    string
+	}{
+		{name: "a new schema on PostgreSQL", dialect: platform.Postgres, node: ast.NewCreateSchema("s"), want: `Add new schema named "s"`},
+		{name: "a new schema on MySQL", dialect: platform.MySQL, node: ast.NewCreateSchema("s"), want: `add new schema named "s"`},
+		{name: "a new schema on MariaDB", dialect: platform.MariaDB, node: ast.NewCreateSchema("s"), want: `add new schema named "s"`},
+		{name: "a dropped database on MySQL", dialect: platform.MySQL, node: ast.NewRawSQL("DROP DATABASE `s`"), want: `drop schema named "s"`},
+		{name: "an added column on SQLite", dialect: platform.SQLite, node: added, want: `add column "c" to table: "t"`},
+		{name: "an added column on libSQL", dialect: "libsql", node: added, want: `add column "c" to table: "t"`},
+		{name: "an added column on PostgreSQL", dialect: platform.Postgres, node: added, want: `modify "t" table`},
+		{name: "an added column on MySQL", dialect: platform.MySQL, node: added, want: `modify "t" table`},
+		{name: "an added column on an engine the binary has no driver for", dialect: platform.SQLServer, node: added, want: `modify "t" table`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := atlaschange.For(test.dialect).Forward([]ast.Node{test.node})
+
+			c.Assert(got, qt.DeepEquals, []string{test.want})
+		})
+	}
+}
+
+// A statement that is the same text on another engine, or that has the shape of
+// a rebuild's step without the copy that says a table is being rebuilt, is not
+// named as one.
+func TestForward_DoesNotNameAnotherEnginesStatement_FailurePath(t *testing.T) {
+	copyRows := sqliterebuild.CopyStatement{New: "new_t", Old: "t"}.CopyRows(`"id"`, `"id"`)
+	tests := []struct {
+		name    string
+		dialect string
+		node    ast.Node
+	}{
+		{name: "a dropped database on PostgreSQL", dialect: platform.Postgres, node: ast.NewRawSQL("DROP DATABASE `s`")},
+		{name: "a dropped database in other quotes", dialect: platform.MySQL, node: ast.NewRawSQL(`DROP DATABASE "s"`)},
+		{name: "a pragma on PostgreSQL", dialect: platform.Postgres, node: ast.NewRawSQL(sqliteforeignkeys.DisableStatement)},
+		{name: "a copy on MySQL", dialect: platform.MySQL, node: ast.NewRawSQL(copyRows)},
+		{name: "another statement on SQLite", dialect: platform.SQLite, node: ast.NewRawSQL("DELETE FROM t;")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := atlaschange.For(test.dialect).Forward([]ast.Node{test.node})
+
+			c.Assert(got, qt.DeepEquals, []string{""})
+		})
+	}
+}
+
+// TestForward_NamesEachStepOfATableRebuild_HappyPath pins the comments around
+// a SQLite table rebuild: the steps the copy of the rows identifies carry the
+// rebuild's words, and a drop of another table keeps its own.
+func TestForward_NamesEachStepOfATableRebuild_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	got := atlaschange.For(platform.SQLite).Forward(rebuildPlan())
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"disable the enforcement of foreign-keys constraints",
+		`create "new_t" table`,
+		`copy rows from old table "t" to new temporary table "new_t"`,
+		`drop "t" table after copying rows`,
+		`rename temporary table "new_t" to "t"`,
+		`create index "i" to table: "t"`,
+		`drop "gone" table`,
+		"enable back the enforcement of foreign-keys constraints",
+	})
+}
+
+// TestRollback_ARebuildKeepsItsWords_HappyPath pins a rollback that rebuilds a
+// table. A rebuild undoes no statement of the forward plan one by one, so its
+// steps keep their words, and a statement outside it still reads the change it
+// undoes. On SQLite an added column's rollback undoes `add column`, and a column
+// the forward plan dropped comes back undoing the drop.
+func TestRollback_ARebuildKeepsItsWords_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	forward := []ast.Node{&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("c", "INT")}}}}
+	plan := append(rebuildPlan(),
+		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: "c"}}},
+		&ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: ast.NewColumn("d", "INT")}}},
+	)
+
+	got := atlaschange.For(platform.SQLite).Rollback(forward, plan)
+
+	c.Assert(got, qt.DeepEquals, []string{
+		"disable the enforcement of foreign-keys constraints",
+		`create "new_t" table`,
+		`copy rows from old table "t" to new temporary table "new_t"`,
+		`drop "t" table after copying rows`,
+		`rename temporary table "new_t" to "t"`,
+		`drop index "i" from table: "t"`,
+		`create "gone" table`,
+		"enable back the enforcement of foreign-keys constraints",
+		`add column "c" to table: "t"`,
+		`drop column "d" from table: "t"`,
+	})
 }

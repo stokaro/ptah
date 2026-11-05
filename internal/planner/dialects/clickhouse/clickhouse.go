@@ -33,6 +33,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/featureplan"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
@@ -46,6 +47,19 @@ import (
 // Planner implements the migration planner interface for ClickHouse.
 type Planner struct {
 	caps capability.Capabilities
+	// statements is the statement style. This planner reads it for one
+	// decision: whether a dropped table carries the line comment that only
+	// describes it, which the renderer writes and a descriptive comment node
+	// cannot stand in for.
+	statements planext.StatementStyle
+}
+
+// WithStatementStyle returns a copy of the planner that spells its statements
+// in style. The receiver is not modified.
+func (p *Planner) WithStatementStyle(style planext.StatementStyle) *Planner {
+	cp := *p
+	cp.statements = style
+	return &cp
 }
 
 // New returns a ClickHouse planner using the default ClickHouse 24 preset.
@@ -319,7 +333,11 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *difftypes.SchemaDiff) [
 
 func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, name := range diff.TablesRemoved.Names() {
-		result = append(result, ast.NewDropTable(name).SetIfExists().SetComment("WARNING: dropping table will delete all data"))
+		drop := ast.NewDropTable(name).SetIfExists()
+		if p.statements != planext.StatementStyleExact {
+			drop.SetComment("WARNING: dropping table will delete all data")
+		}
+		result = append(result, drop)
 	}
 	return result
 }

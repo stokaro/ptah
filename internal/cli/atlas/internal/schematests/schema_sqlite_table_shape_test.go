@@ -41,7 +41,7 @@ import (
 // What treating every SQLite table as nullable-key cost, measured on 2026-08-08
 // with `ptah-compat` built from this branch's previous head 90a39945: a second
 // `schema apply` of the identical fixture planned a full table rebuild
-// (CREATE __ptah_rebuild_users / INSERT / DROP / RENAME) for the WITHOUT ROWID
+// (CREATE new_users / INSERT / DROP / RENAME) for the WITHOUT ROWID
 // and STRICT rows and never reached a fixed point, and a second `migrate diff`
 // against the identical desired file wrote a second migration containing that
 // rebuild. Both are permanent: the catalog answers NOT NULL, the desired model

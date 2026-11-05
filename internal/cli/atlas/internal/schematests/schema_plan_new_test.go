@@ -294,9 +294,7 @@ func TestSchemaPlanNewRejectsPositionalArguments(t *testing.T) {
 
 // TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim covers the branch that
 // cost the parent a defect: an editor session that changes nothing must produce
-// the same document, comments included, because on a destructive plan the
-// generated warning comment is the only in-artifact signal that the plan
-// destroys data.
+// the same document.
 func TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim(t *testing.T) {
 	c := qt.New(t)
 	dir := chdirToScratchC(c)
@@ -324,5 +322,5 @@ func TestSchemaPlanNewEditRoundTripsTheStatementsVerbatim(t *testing.T) {
 	edited, readErr := os.ReadFile(withEdit)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(edited), qt.Equals, string(plain))
-	c.Assert(string(edited), qt.Contains, "-- WARNING: This will delete all data!")
+	c.Assert(string(edited), qt.Contains, "DROP TABLE")
 }

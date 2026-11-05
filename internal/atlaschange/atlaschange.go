@@ -3,22 +3,25 @@
 // `create "users" table`, `modify "users" table`, `drop index "i" from table:
 // "t"`.
 //
-// The community binary's PostgreSQL planner is the source of the wording for
-// tables, columns, indexes, enum types, schemas and comments, and it is used on
-// every engine; the binary words a few changes differently on SQLite and
-// MySQL (stokaro/ptah#4960). The objects it does not plan, such as views,
-// routines, triggers, sequences and roles, take the same pattern:
-// `create "v" view`, `modify "v" view` for an in-place replace, and
+// The community binary's planners are the source of the wording, and it differs
+// per engine. [For] selects it: the PostgreSQL planner's words are the default,
+// the MySQL family writes its schema changes in lower case, `add new schema
+// named "s"`, and SQLite names a column it adds, `add column "c" to table: "t"`,
+// and each step of a table rebuild. The community binary has no driver for the
+// other engines, so they take the PostgreSQL words. The objects it does not
+// plan, such as views, routines, triggers, sequences and roles, take the same
+// pattern: `create "v" view`, `modify "v" view` for an in-place replace, and
 // `drop "v" view`.
 //
 // A rollback file writes each statement under `reverse: ` and the change it
 // undoes, which is the forward change's comment. A rollback here is planned on
-// its own rather than by inverting the forward plan, so [Undone] reads that
-// comment off the rollback statement itself: a DROP TABLE undoes
+// its own rather than by inverting the forward plan, so [Words.Rollback] reads
+// that comment off the rollback statement itself: a DROP TABLE undoes
 // `create "users" table`. A rollback may rebuild an object the forward plan
 // replaced in place, such as a view the forward plan changed with CREATE OR
-// REPLACE VIEW and the rollback drops and creates; [Rollback] names both of its
-// statements after the forward `modify "v" view`.
+// REPLACE VIEW and the rollback drops and creates; both of its statements are
+// named after the forward `modify "v" view`. A table rebuild undoes nothing
+// statement by statement, so each of its steps keeps its own words.
 //
 // An operation a provider plans is named from the object it is planned for
 // and the effect its plan step has on that object, in the wording of the same
@@ -37,40 +40,74 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/plangraph"
+	"ptah.run/core/platform"
+	"ptah.run/internal/planner/sqliterebuild"
+	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/tableref"
 )
 
-// Of returns the comment naming the change node makes. It reports false for a
-// node that makes no change Atlas would name, such as a comment of the plan's
-// own, raw SQL, or an owner operation that is not a provider's planned
-// operation on a table, view or index.
-func Of(node ast.Node) (string, bool) {
-	c, ok := describe(node)
-	if !ok {
-		return "", false
-	}
-	return c.String(), true
+// Words names the changes of a plan in one engine's wording. The zero value is
+// the PostgreSQL planner's.
+type Words struct {
+	family wordFamily
 }
 
-// Undone returns the comment of the forward change that node, a statement of a
-// rollback, undoes. It reports false where [Of] does.
-func Undone(node ast.Node) (string, bool) {
-	c, ok := describe(node)
+// wordFamily is the set of words one engine's changes are named in.
+type wordFamily int
+
+const (
+	postgresWords wordFamily = iota
+	mysqlWords
+	sqliteWords
+)
+
+// For returns the wording of dialect.
+func For(dialect string) Words {
+	target, ok := platform.Lookup(dialect)
 	if !ok {
-		return "", false
+		return Words{}
 	}
-	return c.inverse().String(), true
+	switch {
+	case target.Family == platform.MySQL:
+		return Words{family: mysqlWords}
+	case target.Name == platform.SQLite:
+		return Words{family: sqliteWords}
+	default:
+		return Words{}
+	}
 }
 
-// Rollback returns the namer for the statements of a rollback planned against
-// forward: [Undone], except that a statement that drops or creates an object
-// forward only modifies undoes that modification.
+// Forward returns the comment naming the change each node of plan makes, in
+// plan's order. The comment is empty for a node that makes no change Atlas
+// would name, such as a comment of the plan's own, raw SQL, or an owner
+// operation that is not a provider's planned operation on a table, view or
+// index.
+func (w Words) Forward(plan []ast.Node) []string {
+	steps := w.rebuildSteps(plan)
+	names := make([]string, len(plan))
+	for i, node := range plan {
+		if step, ok := steps[i]; ok {
+			names[i] = step
+			continue
+		}
+		if c, ok := w.describe(node); ok {
+			names[i] = c.String()
+		}
+	}
+	return names
+}
+
+// Rollback returns the comment of the forward change each node of plan, the
+// statements of a rollback planned against forward, undoes: the inverse of the
+// node's own change, except that a statement that drops or creates an object
+// forward only modifies undoes that modification, and a step of a table rebuild
+// keeps its own words.
 //
 // Objects compare by kind and name without case, and by the schema, or for an
 // object named within its table, by the table, where both statements name
 // one, so a view of one schema is not taken for a view of the same name in
 // another.
-func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
+func (w Words) Rollback(forward, plan []ast.Node) []string {
 	type object struct{ kind, name string }
 	type seen struct {
 		change change
@@ -79,7 +116,7 @@ func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
 	modified := make(map[object][]seen)
 	rebuilt := make(map[object][]scope)
 	for _, node := range forward {
-		c, ok := describe(node)
+		c, ok := w.describe(node)
 		if !ok {
 			continue
 		}
@@ -91,26 +128,139 @@ func Rollback(forward []ast.Node) func(ast.Node) (string, bool) {
 			rebuilt[key] = append(rebuilt[key], scopeOf(node))
 		}
 	}
-	return func(node ast.Node) (string, bool) {
-		c, ok := describe(node)
+	undone := func(node ast.Node) string {
+		c, ok := w.describe(node)
 		if !ok {
-			return "", false
+			return ""
 		}
 		if c.verb != create && c.verb != drop {
-			return c.inverse().String(), true
+			return c.inverse().String()
 		}
 		key := object{c.kind, strings.ToLower(c.name)}
 		at := scopeOf(node)
 		if slices.ContainsFunc(rebuilt[key], at.overlaps) {
-			return c.inverse().String(), true
+			return c.inverse().String()
 		}
 		for _, forward := range modified[key] {
 			if forward.scope.overlaps(at) {
-				return forward.change.String(), true
+				return forward.change.String()
 			}
 		}
-		return c.inverse().String(), true
+		return c.inverse().String()
 	}
+	steps := w.rebuildSteps(plan)
+	names := make([]string, len(plan))
+	for i, node := range plan {
+		if step, ok := steps[i]; ok {
+			names[i] = step
+			continue
+		}
+		names[i] = undone(node)
+	}
+	return names
+}
+
+// rebuildSteps names the statements of the table rebuilds a SQLite plan makes,
+// by their index in plan: the pair of pragmas around them, and for each table
+// the new table, the copy of its rows, the drop of the old table and the rename.
+// The copy is what says a table is being rebuilt, so the statements around it
+// are read from it rather than from their own shape: DROP TABLE is the drop of
+// an old table only here.
+func (w Words) rebuildSteps(plan []ast.Node) map[int]string {
+	if w.family != sqliteWords {
+		return nil
+	}
+	steps := make(map[int]string)
+	for i, node := range plan {
+		raw, ok := node.(*ast.RawSQLNode)
+		if !ok {
+			continue
+		}
+		switch raw.SQL {
+		case sqliteforeignkeys.DisableStatement:
+			steps[i] = "disable the enforcement of foreign-keys constraints"
+		case sqliteforeignkeys.EnableStatement:
+			steps[i] = "enable back the enforcement of foreign-keys constraints"
+		default:
+			if copied, ok := sqliterebuild.ReadCopyStatement(raw.SQL); ok {
+				steps[i] = fmt.Sprintf("copy rows from old table %q to new temporary table %q", bare(copied.Old), bare(copied.New))
+				nameRebuildNeighbors(steps, plan, i, copied)
+			}
+		}
+	}
+	return steps
+}
+
+// nameRebuildNeighbors names the statements a rebuild writes around the copy of
+// its rows at position at: the new table before it, the old table's drop and the
+// rename after it.
+func nameRebuildNeighbors(steps map[int]string, plan []ast.Node, at int, copied sqliterebuild.CopyStatement) {
+	if at > 0 {
+		if table, ok := plan[at-1].(*ast.CreateTableNode); ok && table.Name == copied.New {
+			steps[at-1] = fmt.Sprintf("create %q table", bare(copied.New))
+		}
+	}
+	if at+1 < len(plan) {
+		if dropped, ok := plan[at+1].(*ast.DropTableNode); ok && slices.Equal(dropped.TableNames(), []string{copied.Old}) {
+			steps[at+1] = fmt.Sprintf("drop %q table after copying rows", bare(copied.Old))
+		}
+	}
+	if at+2 < len(plan) {
+		if raw, ok := plan[at+2].(*ast.RawSQLNode); ok && raw.SQL == copied.Rename() {
+			steps[at+2] = fmt.Sprintf("rename temporary table %q to %q", bare(copied.New), bare(copied.Old))
+		}
+	}
+}
+
+// describe names the change node makes in this wording.
+func (w Words) describe(node ast.Node) (change, bool) {
+	if w.family == sqliteWords {
+		if c, ok := describeSQLiteColumn(node); ok {
+			return c, true
+		}
+	}
+	if raw, ok := node.(*ast.RawSQLNode); ok && w.family == mysqlWords {
+		if name, ok := droppedDatabase(raw.SQL); ok {
+			return change{verb: drop, kind: kindSchema, name: name, words: w.family}, true
+		}
+	}
+	c, ok := describe(node)
+	c.words = w.family
+	return c, ok
+}
+
+// describeSQLiteColumn names the one column an ALTER TABLE adds or drops, which
+// is what SQLite's ALTER TABLE changes at a time.
+func describeSQLiteColumn(node ast.Node) (change, bool) {
+	alter, ok := node.(*ast.AlterTableNode)
+	if !ok || len(alter.Operations) != 1 {
+		return change{}, false
+	}
+	switch op := alter.Operations[0].(type) {
+	case *ast.AddColumnOperation:
+		return change{verb: addColumn, kind: kindColumn, name: op.Column.Name, table: bare(alter.Name)}, true
+	case *ast.DropColumnOperation:
+		return change{verb: dropColumn, kind: kindColumn, name: op.ColumnName, table: bare(alter.Name)}, true
+	}
+	return change{}, false
+}
+
+// droppedDatabase is the database a MySQL-family plan's DROP DATABASE names. The
+// planner writes it as raw SQL with no other form to read.
+func droppedDatabase(statement string) (string, bool) {
+	quoted, ok := strings.CutPrefix(statement, "DROP DATABASE ")
+	if !ok {
+		return "", false
+	}
+	name, ok := strings.CutPrefix(quoted, "`")
+	if !ok {
+		return "", false
+	}
+	name, ok = strings.CutSuffix(name, "`")
+	if !ok {
+		return "", false
+	}
+	return strings.ReplaceAll(name, "``", "`"), true
 }
 
 // scope is what qualifies the name of an object a statement changes: the
@@ -208,6 +358,8 @@ const (
 	refresh
 	grant
 	revoke
+	addColumn
+	dropColumn
 )
 
 // object kinds whose wording differs from the default pattern.
@@ -225,6 +377,8 @@ type change struct {
 	verb verb
 	kind string
 	name string
+	// words is the wording the change is named in.
+	words wordFamily
 	// table is the table an index or a commented column belongs to.
 	table string
 	// from and to are the two names of a rename; to is also the grantee of a
@@ -247,6 +401,10 @@ func (c change) inverse() change {
 		c.verb = revoke
 	case revoke:
 		c.verb = grant
+	case addColumn:
+		c.verb = dropColumn
+	case dropColumn:
+		c.verb = addColumn
 	}
 	return c
 }
@@ -266,10 +424,7 @@ func (c change) String() string {
 	case kindTable:
 		return c.tableWording()
 	case kindColumn:
-		if c.verb == rename {
-			return fmt.Sprintf("rename a column from %q to %q", c.from, c.to)
-		}
-		return fmt.Sprintf("set comment to column: %q on table: %q", c.name, c.table)
+		return c.columnWording()
 	case kindIndex:
 		return c.indexWording()
 	case kindEnum:
@@ -294,6 +449,19 @@ func (c change) String() string {
 		return fmt.Sprintf("revoke %s from %q", c.name, c.to)
 	default:
 		return fmt.Sprintf("modify %q %s", c.name, c.kind)
+	}
+}
+
+func (c change) columnWording() string {
+	switch c.verb {
+	case rename:
+		return fmt.Sprintf("rename a column from %q to %q", c.from, c.to)
+	case addColumn:
+		return fmt.Sprintf("add column %q to table: %q", c.name, c.table)
+	case dropColumn:
+		return fmt.Sprintf("drop column %q from table: %q", c.name, c.table)
+	default:
+		return fmt.Sprintf("set comment to column: %q on table: %q", c.name, c.table)
 	}
 }
 
@@ -345,11 +513,15 @@ func (c change) enumWording() string {
 }
 
 func (c change) schemaWording() string {
+	add, remove := "Add new schema named %q", "Drop schema named %q"
+	if c.words == mysqlWords {
+		add, remove = "add new schema named %q", "drop schema named %q"
+	}
 	switch c.verb {
 	case create:
-		return fmt.Sprintf("Add new schema named %q", c.name)
+		return fmt.Sprintf(add, c.name)
 	case drop:
-		return fmt.Sprintf("Drop schema named %q", c.name)
+		return fmt.Sprintf(remove, c.name)
 	default:
 		return fmt.Sprintf("set comment to schema: %q", c.name)
 	}

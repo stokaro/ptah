@@ -123,7 +123,7 @@ func TestGenerateSchemaDiffSQLStatements_SQLiteRebuildsTheTableOnce(t *testing.T
 
 	rebuilds := 0
 	for _, statement := range statements {
-		rebuilds += strings.Count(statement, `CREATE TABLE "__ptah_rebuild_widget"`)
+		rebuilds += strings.Count(statement, `CREATE TABLE "new_widget"`)
 	}
 	c.Assert(rebuilds, qt.Equals, 1, qt.Commentf("%v", statements))
 }

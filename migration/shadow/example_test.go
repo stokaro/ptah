@@ -223,6 +223,5 @@ func ExamplePlanDynamicRollback() {
 	}
 
 	// Output:
-	// -- WARNING: This will delete all data!
 	// DROP TABLE IF EXISTS "posts"
 }
