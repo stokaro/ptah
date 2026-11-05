@@ -244,6 +244,7 @@ func compareReportingUndecidedAdditions(
 
 	// Compare common table constraints (CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY).
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
+	compare.ForeignKeyBackingIndexesLeaving(desired, database, diff, rules.ForeignKeyIndexes, opts.Dialect, identifierSemantics)
 	compare.ConstraintComments(desired, database, diff, opts, caps, identifierSemantics)
 
 	// The declaration of every table those constraints name, for a target that
