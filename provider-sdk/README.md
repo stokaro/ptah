@@ -998,9 +998,10 @@ An empty namespace list means an empty selection, not global authority. Bindings
 never grant coverage. Every returned table has a `normalized_identity`, even
 without facets. Tables, coverage subjects, and whole coverage regions must fit
 inside the bound namespaces, except the objects of a negotiated
-[database kind](#database-kinds), which are named at the database. Filtered replies cannot claim global completeness
-or include dispositions without normalized identities. Requests and bindings
-are limited to 4,096 entries, with at most 4,096 namespaces across all bindings.
+[database kind](#database-kinds), which are named at the database. Filtered
+replies cannot claim global completeness or include dispositions without
+normalized identities. Requests and bindings are limited to 4,096 entries, with
+at most 4,096 namespaces across all bindings.
 
 `Schema.reserved_objects` records positively identified provider-owned history,
 lock, log, or tag storage. Providers validate native ownership and layout before
@@ -1028,8 +1029,8 @@ Desired and observed models may declare a plural `display_name` for omission
 reports. It must be trimmed single-line text and agree across engines that share
 a model representation. The host freezes this label in the contract and reports
 captured values locally, without interpreting payloads. An engine declares a
-model's count metrics only under [report counts](#report-counts). An absent label does not get
-a host-invented substitute.
+model's count metrics only under [report counts](#report-counts). An absent
+label does not get a host-invented substitute.
 
 Native `schema inspect --format json` returns common schema data and warns about
 omitted objects and facets using these labels. It is not a lossless model export.
