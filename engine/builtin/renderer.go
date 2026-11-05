@@ -3684,19 +3684,35 @@ func referencedTable(tables []schemamodel.Table, owner schemamodel.Table, refere
 }
 
 func tableHasUniqueKey(database schemamodel.Database, dialect string, table schemamodel.Table, columns []string) bool {
-	return tablePrimaryKeyEquals(table, columns) ||
-		tableFieldsHaveUniqueKey(allDatabaseFields(database), table, columns) ||
-		tableConstraintsHaveUniqueKey(database, table, columns) ||
-		tableIndexesHaveUniqueKey(database, dialect, table, columns)
+	same := referencedKeyMatcher(dialect)
+	return tablePrimaryKeyEquals(table, columns, same) ||
+		tableFieldsHaveUniqueKey(allDatabaseFields(database), table, columns, same) ||
+		tableConstraintsHaveUniqueKey(database, table, columns, same) ||
+		tableIndexesHaveUniqueKey(database, dialect, table, columns, same)
 }
 
-func tablePrimaryKeyEquals(table schemamodel.Table, columns []string) bool {
-	return slices.Equal(table.PrimaryKey, columns) ||
+// referencedKeyMatcher answers whether a key's columns are the ones a foreign key
+// references on dialect: in the same order, or in any order on a server that takes
+// that; see [ptah.run/core/platform/descriptor.Comparison.ForeignKeyMatchesKeyInAnyOrder].
+func referencedKeyMatcher(dialect string) func(key, referenced []string) bool {
+	described, found := platform.Lookup(dialect)
+	if !found || !described.Comparison.ForeignKeyMatchesKeyInAnyOrder {
+		return func(key, referenced []string) bool { return slices.Equal(key, referenced) }
+	}
+	return func(key, referenced []string) bool {
+		return len(key) == len(referenced) && !slices.ContainsFunc(referenced, func(column string) bool {
+			return !slices.Contains(key, column)
+		})
+	}
+}
+
+func tablePrimaryKeyEquals(table schemamodel.Table, columns []string, same func(key, referenced []string) bool) bool {
+	return same(table.PrimaryKey, columns) ||
 		(primaryKeyPartsAreFullColumns(table.PrimaryKeyParts) &&
-			slices.Equal(primaryKeyPartNames(table.PrimaryKeyParts), columns))
+			same(primaryKeyPartNames(table.PrimaryKeyParts), columns))
 }
 
-func tableFieldsHaveUniqueKey(fields []schemamodel.Field, table schemamodel.Table, columns []string) bool {
+func tableFieldsHaveUniqueKey(fields []schemamodel.Field, table schemamodel.Table, columns []string, same func(key, referenced []string) bool) bool {
 	var primaryFields []string
 	for _, field := range fields {
 		if field.StructName != table.StructName {
@@ -3709,19 +3725,20 @@ func tableFieldsHaveUniqueKey(fields []schemamodel.Field, table schemamodel.Tabl
 			return true
 		}
 	}
-	return slices.Equal(primaryFields, columns)
+	return same(primaryFields, columns)
 }
 
 func tableConstraintsHaveUniqueKey(
 	database schemamodel.Database,
 	table schemamodel.Table,
 	columns []string,
+	same func(key, referenced []string) bool,
 ) bool {
 	for _, constraint := range database.Constraints {
 		owner := constraintOwnerTable(database.Tables, constraint)
 		if owner != nil && owner.QualifiedName() == table.QualifiedName() &&
 			(strings.EqualFold(constraint.Type, "PRIMARY KEY") || strings.EqualFold(constraint.Type, "UNIQUE")) &&
-			slices.Equal(constraint.Columns, columns) {
+			same(constraint.Columns, columns) {
 			return true
 		}
 	}
@@ -3733,6 +3750,7 @@ func tableIndexesHaveUniqueKey(
 	dialect string,
 	table schemamodel.Table,
 	columns []string,
+	same func(key, referenced []string) bool,
 ) bool {
 	// SQLite's IR does not preserve per-index-part collation. Accepting a
 	// standalone unique index could therefore produce a deferred
@@ -3744,7 +3762,7 @@ func tableIndexesHaveUniqueKey(
 	for i, index := range database.Indexes {
 		indexColumns, valid := fullIndexColumnNames(index)
 		if index.Unique && valid && strings.TrimSpace(index.Condition) == "" &&
-			indexOwners[i] == table.QualifiedName() && slices.Equal(indexColumns, columns) {
+			indexOwners[i] == table.QualifiedName() && same(indexColumns, columns) {
 			return true
 		}
 	}

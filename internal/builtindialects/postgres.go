@@ -150,7 +150,9 @@ func postgres() descriptor.Dialect {
 			// on it answers `cannot drop constraint parent_pkey on table
 			// parent because other objects depend on it`, measured on 18.6.
 			// The rest of the family has not been measured.
-			ForeignKeyHoldsItsKey: true,
+			// Measured on 18.6. The rest of the family has not been measured.
+			ForeignKeyMatchesKeyInAnyOrder: true,
+			ForeignKeyHoldsItsKey:          true,
 			// Without this `code bigint PRIMARY KEY` on a table that holds
 			// another key, or none, plans no key and reads as synced, measured
 			// on 18.6. The rest of the family has not been measured.

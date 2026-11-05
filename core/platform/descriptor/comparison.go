@@ -32,6 +32,11 @@ type Comparison struct {
 	// exists. A plan that removes the key drops the foreign key first and adds
 	// it back once a key is there to reference.
 	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
+	// ForeignKeyMatchesKeyInAnyOrder reports that a foreign key may reference a
+	// unique key's columns in another order than the key lists them. PostgreSQL and
+	// CockroachDB take REFERENCES parent (a, b) over PRIMARY KEY (b, a), while MySQL
+	// answers with Error 6125 and MariaDB with errno 150.
+	ForeignKeyMatchesKeyInAnyOrder bool `json:"foreign_key_matches_key_in_any_order,omitempty"`
 	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
 	// is compared as the table's key where the table holds another key or none:
 	// the planner has a statement for a change of the key, in both directions, and
