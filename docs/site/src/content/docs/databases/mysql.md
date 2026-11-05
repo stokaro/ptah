@@ -287,6 +287,10 @@ SQL:
   name. An index the author declared never gives way. So a file that drops a
   key, or adds a `UNIQUE` over a key's column, compares equal to the database
   it built.
+- A foreign key that moves to another column under its name takes that name for
+  its new index, so a plan drops the key, then the old index, then adds the key.
+  With the old index in place `ADD CONSTRAINT` answers `ERROR 1061: Duplicate key
+  name`. The same order serves a new key named after an index that leaves.
 - MariaDB 12.1 and later name an unnamed key `<n>` rather than
   `<table>_ibfk_<n>`, and the name belongs to the table rather than to the
   database. A schema file does not say which line it is for, so Ptah reads the
