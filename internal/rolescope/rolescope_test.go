@@ -145,6 +145,55 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 	}
 }
 
+// TestReportUndescribedNamesTheReadersReason pins the cause a reader states
+// for the roles it left out. A provider's dialect has no descriptor in the
+// host, so without the reader's words the note falls back to the referenced
+// rule, which is false of a YDB read: its roles are left out because the
+// cluster made them. A read with no reason keeps the dialect's cause.
+func TestReportUndescribedNamesTheReadersReason(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		reason  string
+		want    string
+	}{
+		{
+			name:    "the reader's reason",
+			dialect: "ydb",
+			reason:  "the cluster made them or they own the database",
+			want: "note: 9 roles Ptah manages on this server are not described, because the cluster made them or" +
+				" they own the database; comparison still treats them as present, so none of them is planned as a CREATE ROLE.\n",
+		},
+		{
+			name:    "the reason keeps the dialect's remedy",
+			dialect: platform.Postgres,
+			reason:  "the reader says so",
+			want: "note: 9 roles Ptah manages on this server are not described, because the reader says so; comparison" +
+				" still treats them as present, so none of them is planned as a CREATE ROLE. Set" +
+				" PTAH_POSTGRES_INSPECT_ALL_ROLES=1 to describe every role Ptah manages.\n",
+		},
+		{
+			name:    "no reason keeps the dialect's cause",
+			dialect: "ydb",
+			want: "note: 9 roles Ptah manages on this server are not described, because nothing in the inspected" +
+				" schemas refers to them; comparison still treats them as present, so none of them is planned as a CREATE ROLE.\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+			omitted := []catalog.Role{{Name: "ADMINS"}, {Name: "DATABASE-ADMINS"}, {Name: "ACCESS-ADMINS"}, {Name: "DDL-ADMINS"},
+				{Name: "DATA-WRITERS"}, {Name: "DATA-READERS"}, {Name: "METADATA-READERS"}, {Name: "USERS"}, {Name: "root"}}
+
+			rolescope.ReportUndescribed(&out, test.dialect, &catalog.Database{RolesOutOfScope: omitted, RolesOutOfScopeReason: test.reason})
+
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestReportUndescribedNeverPrintsARoleName is the other half of the note's
 // contract, and it is a security property rather than a style one.
 //

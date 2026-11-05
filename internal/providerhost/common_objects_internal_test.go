@@ -320,7 +320,8 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 		Roles: []*protocol.ObservedRole{{Name: "reader", Login: true, MemberOf: []string{"readers"}, Password: protocol.ObservedRole_PASSWORD_SET}},
 		Grants: []*protocol.ObservedGrant{{Role: "reader", Privilege: "SELECT", Target: ref("table", "", "items"), Columns: []string{"id", "name"},
 			WithGrantOption: true}},
-		RolesOutOfScope: []string{"admin"},
+		RolesOutOfScope:       []string{"admin"},
+		RolesOutOfScopeReason: "the cluster made them",
 		Comments: []*protocol.ObjectComment{
 			{Object: ref("table", "", "items"), Text: "the items"},
 			{Object: ref("column", "", "id", "items"), Text: "the key"},
@@ -342,6 +343,7 @@ func TestCommonObjectRead_HappyPath(t *testing.T) {
 	c.Assert(result.Roles, qt.DeepEquals, []catalog.Role{{Name: "reader", Login: true, PasswordState: catalog.RolePasswordPresent, Comment: "reads"}})
 	c.Assert(result.RoleMemberships, qt.DeepEquals, []catalog.RoleMembership{{Role: "readers", Member: "reader"}})
 	c.Assert(result.RolesOutOfScope, qt.DeepEquals, []catalog.Role{{Name: "admin", AttributesUnknown: true}})
+	c.Assert(result.RolesOutOfScopeReason, qt.Equals, "the cluster made them")
 	c.Assert(result.Grants, qt.DeepEquals, []catalog.Grant{
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "id", WithOption: true},
 		{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "items", Column: "name", WithOption: true},
