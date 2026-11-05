@@ -179,7 +179,7 @@ func TestHCL_SendsAnIndexBlockOfAClaimedTypeWhole(t *testing.T) {
 	c := qt.New(t)
 	claims := []hclext.Claim{
 		{Block: "index", Name: "by_ab", Range: hclRange(0, 40), Attributes: map[string]hclext.Value{"fanout": {Kind: hclext.Text, Text: "4"}},
-			Index: &hclext.Index{Table: "app.items", Type: "Tree", Owned: true, Columns: []string{"a", "b"}, Include: []string{"c"}, Unique: true}},
+			Index: &hclext.Index{Table: "app.items", Type: "Tree", Owned: &hclext.OwnedIndex{Columns: []string{"a", "b"}, Include: []string{"c"}, Unique: true}}},
 		{Block: "index", Name: "plain", Range: hclRange(50, 60), Index: &hclext.Index{Table: "app.items", Type: "btree"}},
 	}
 

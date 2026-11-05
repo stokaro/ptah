@@ -230,7 +230,7 @@ func ReadIndexDeclaration(fragment *protocol.SourceFragment) (IndexDeclaration, 
 // HCLIndexKind is the engine's index-kind claim of an HCL claim: an index
 // block the frontend claimed whole for the type the claim names, or nil.
 func HCLIndexKind(engine *protocol.Engine, claim hclext.Claim) *protocol.SourceIndexKind {
-	if claim.Index == nil || !claim.Index.Owned {
+	if claim.Index == nil || claim.Index.Owned == nil {
 		return nil
 	}
 	return provider.IndexKindClaim(engine, claim.Index.Type)
@@ -263,8 +263,9 @@ func hclIndexKindFragment(engine *protocol.Engine, claim hclext.Claim, bind func
 	if !valid {
 		return nil, fmt.Errorf("index %q names no table", claim.Name)
 	}
-	declaration := IndexDeclaration{Name: claim.Name, Type: claim.Index.Type, Columns: claim.Index.Columns, Include: claim.Index.Include,
-		Unique: claim.Index.Unique, Comment: claim.Index.Comment, Ops: claim.Index.Operator}
+	owned := claim.Index.Owned
+	declaration := IndexDeclaration{Name: claim.Name, Type: claim.Index.Type, Columns: owned.Columns, Include: owned.Include, Unique: owned.Unique,
+		Comment: owned.Comment, Ops: claim.Index.Operator}
 	return indexKindFragment(engine.GetId(), kind, &protocol.Reference{Schema: table.Schema, Name: table.Name}, bind(table.Schema, table.Name), declaration,
 		content, span), nil
 }

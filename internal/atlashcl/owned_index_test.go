@@ -65,8 +65,8 @@ func TestParseWithOptions_HandsAnOwnedIndexToItsOwner(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.DeepEquals, []hclext.Request{{Claims: []hclext.Claim{
 		{Site: hclext.IndexAttributes, Block: "index", Name: "by_a", Attributes: map[string]hclext.Value{"tune": {Kind: hclext.Text, Text: "fast"}},
-			Index: &hclext.Index{Table: "t", Type: "tree", Operator: "int_ops", Owned: true, Columns: []string{"a", "b"}, Include: []string{"b"}, Unique: true,
-				Comment: "a first"}, At: "schema.hcl:8"},
+			Index: &hclext.Index{Table: "t", Type: "tree", Operator: "int_ops", Owned: &hclext.OwnedIndex{Columns: []string{"a", "b"}, Include: []string{"b"},
+				Unique: true, Comment: "a first"}}, At: "schema.hcl:8"},
 		{Site: hclext.IndexAttributes, Block: "index", Name: "plain", Attributes: make(map[string]hclext.Value), Index: &hclext.Index{Table: "t"}, At: "schema.hcl:17"},
 	}}})
 	c.Assert(db.Indexes, qt.HasLen, 1)

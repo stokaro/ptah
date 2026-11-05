@@ -3567,7 +3567,7 @@ An owner may read the `index` blocks of some types in place of the reader:
 `Extension.ReadsIndex` reports whether it reads a written type, and needs a
 `Decoder`. The reader builds no index of such a block and claims it with
 `Set.IndexShape`, the owner's `IndexAttributes` shape or one that adds no
-attribute, and an `Index` with `Owned` set and the columns, covered columns,
+attribute, and an `Index` whose `Owned` holds the columns, covered columns,
 uniqueness and comment it read. The returned facets belong to the table. An
 encoder writes such an index back as an `EncodedIndex` in
 `EncodeResult.Indexes`, which the writer writes among the table's index

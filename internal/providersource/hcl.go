@@ -193,7 +193,7 @@ func HCLBlockClaim(engine *protocol.Engine, claim hclext.Claim) *protocol.HCLSou
 }
 
 func hclFragment(engine *protocol.Engine, claim hclext.Claim, bind func(schema, name string) string) (*protocol.SourceFragment, error) {
-	if claim.Index != nil && claim.Index.Owned {
+	if claim.Index != nil && claim.Index.Owned != nil {
 		return hclIndexKindFragment(engine, claim, bind)
 	}
 	shape := HCLBlockClaim(engine, claim)

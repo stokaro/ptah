@@ -363,8 +363,8 @@ func (p *parser) claimOwnedIndex(block *hclsyntax.Block, index schemamodel.Index
 	}
 	p.ownerClaims = append(p.ownerClaims, ownerClaim{block: block, index: -1, table: position, references: references,
 		match: hclext.Match{Shape: shape, Claim: hclext.Claim{Block: block.Type, Name: index.Name, Attributes: values, At: blockAt(block), Range: blockRange(block),
-			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator, Owned: true, Columns: slices.Clone(index.Fields),
-				Include: slices.Clone(index.IncludeColumns), Unique: index.Unique, Comment: index.Comment}}}})
+			Index: &hclext.Index{Table: index.TableName, Type: index.Type, Operator: index.Operator, Owned: &hclext.OwnedIndex{Columns: slices.Clone(index.Fields),
+				Include: slices.Clone(index.IncludeColumns), Unique: index.Unique, Comment: index.Comment}}}}})
 	return nil
 }
 

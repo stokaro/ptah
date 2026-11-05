@@ -127,7 +127,7 @@ type hclOwner struct {
 // engineOf is the engine that claims the block a claim matched: for an index
 // block the frontend claimed whole, the engine that claims its type.
 func (o *hclOwner) engineOf(claim hclext.Claim) (*protocol.Engine, error) {
-	if claim.Index != nil && claim.Index.Owned {
+	if claim.Index != nil && claim.Index.Owned != nil {
 		if engine := indexKindEngine(o.engines, claim.Index.Type); engine != nil {
 			return engine, nil
 		}

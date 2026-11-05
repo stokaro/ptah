@@ -384,17 +384,21 @@ type Index struct {
 	Type string
 	// Operator is the operator class the index names, as written.
 	Operator string
-	// Owned reports an index whose type the owner reads in place of the
-	// frontend (see [Extension.ReadsIndex]): the frontend built no index of
-	// the block, and Columns, Include, Unique and Comment carry what it read
-	// of it.
-	Owned bool
-	// Columns are an owned index's key columns, in order, and Include the
-	// columns it covers.
+	// Owned is what the frontend read of the block of an index whose type
+	// the owner reads in place of the frontend (see [Extension.ReadsIndex]),
+	// which the frontend built no index of. It is nil for any other index.
+	Owned *OwnedIndex
+}
+
+// OwnedIndex is what the frontend read of an index block an owner reads in
+// place of the frontend, beside the index's table, type and operator class.
+type OwnedIndex struct {
+	// Columns are the key columns, in order, and Include the columns the
+	// index covers.
 	Columns, Include []string
-	// Unique marks an owned unique index.
+	// Unique marks a unique index.
 	Unique bool
-	// Comment is an owned index's comment.
+	// Comment is the index's comment.
 	Comment string
 }
 
