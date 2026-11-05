@@ -931,7 +931,9 @@ invalid service setup and execution failures remain errors.
 dependency order before rendering. Steps carry typed payloads, structured object
 effects, transaction requirements, and conservative safety assessments. It refuses
 missing steps, cycles, competing writers, unordered reads and writes, and
-inconsistent declared lifecycles. Cancellation returns no partial plan.
+inconsistent declared lifecycles. A cycle's error names the steps of one cycle,
+starting at its least step in owner and name order, so the text does not depend
+on contribution order. Cancellation returns no partial plan.
 Ordering preserves unknown effects and transaction requirements as unknown.
 The scheduler copies metadata slices; payload ownership stays with the caller.
 A step's `Placement` is a preference, never a dependency: among the steps ready
