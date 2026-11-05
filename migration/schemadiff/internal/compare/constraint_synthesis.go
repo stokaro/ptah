@@ -146,8 +146,7 @@ func synthesizeTablePrimaryKeyConstraints(
 		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		columns := tablePrimaryKeyColumns(table)
 		if len(columns) == 0 && (liveKeyDefers(database, identity, semantics) ||
-			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics) ||
-			declaresKeyName(table, dialect)) {
+			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics)) {
 			columns = columnPrimaryKey(table, desired.Fields)
 		}
 		if len(columns) == 0 {
