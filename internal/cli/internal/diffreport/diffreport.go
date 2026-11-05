@@ -12,7 +12,9 @@ package diffreport
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 
 	"ptah.run/core/difftypes"
@@ -37,6 +39,11 @@ type Category struct {
 	// Objects names the changed objects, in the order the comparator recorded
 	// them (the comparator sorts every category for deterministic output).
 	Objects []string
+
+	// Values says what moved inside those objects, one line for each column whose
+	// old and new values the comparison recorded. Only tables_modified has any: it
+	// names the tables, and a table's name does not say what changed in it.
+	Values []string
 }
 
 // Count returns how many objects the category carries.
@@ -70,6 +77,7 @@ func Categories(diff *difftypes.SchemaDiff) []Category {
 		categories = append(categories, Category{
 			Name:    categoryName(field),
 			Objects: describeAll(list),
+			Values:  columnValues(list),
 		})
 	}
 	return categories
@@ -146,6 +154,43 @@ func categoryName(field reflect.StructField) string {
 		return field.Name
 	}
 	return name
+}
+
+// columnValues lists the old and new values of the columns a list of modified
+// tables changes. A table with only added or removed columns has no such line: the
+// statements say all there is about those.
+func columnValues(list reflect.Value) []string {
+	tables, ok := reflect.TypeAssert[[]difftypes.TableDiff](list)
+	if !ok {
+		return nil
+	}
+	var lines []string
+	for _, table := range tables {
+		for _, column := range table.ColumnsModified {
+			if changes := columnTransitions(column); len(changes) > 0 {
+				lines = append(lines, table.TableName+"."+column.ColumnName+": "+strings.Join(changes, ", "))
+			}
+		}
+	}
+	return lines
+}
+
+// columnTransitions writes each change of column as `kind: old -> new`, in the order
+// of the kinds' names so a report does not depend on a map's order. A comment and a
+// constraint name are fields of their own on the diff, and an empty value is not the
+// absence of one, so those two are quoted.
+func columnTransitions(column difftypes.ColumnDiff) []string {
+	changes := make([]string, 0, len(column.Changes)+2)
+	for _, kind := range slices.Sorted(maps.Keys(column.Changes)) {
+		changes = append(changes, kind+": "+column.Changes[kind])
+	}
+	if change := column.CommentChange; change != nil {
+		changes = append(changes, fmt.Sprintf("comment: %q -> %q", change.Current, change.Desired))
+	}
+	if change := column.NotNullConstraintNameChange; change != nil {
+		changes = append(changes, fmt.Sprintf("not_null_constraint_name: %q -> %q", change.Current, change.Desired))
+	}
+	return changes
 }
 
 func describeAll(list reflect.Value) []string {

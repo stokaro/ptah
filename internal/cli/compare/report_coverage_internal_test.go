@@ -180,6 +180,31 @@ ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;
 	c.Assert(stderr.String(), qt.Equals, "")
 }
 
+// The old and new values of a column go under the category that names its table, and
+// the statements stay as the planner wrote them.
+func TestWriteComparison_WritesAColumnsValuesUnderItsTable(t *testing.T) {
+	c := qt.New(t)
+	var stdout, stderr bytes.Buffer
+	diff := &difftypes.SchemaDiff{
+		TablesAdded: difftypes.TableChanges{{Name: "fresh"}},
+		TablesModified: []difftypes.TableDiff{{
+			TableName:       "t",
+			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "k", Changes: map[string]string{"type": "int8 -> int4"}}},
+		}},
+	}
+
+	writeComparison(c.Context(), &stdout, &stderr, diff, schemadiff.Diagnostics{}, "ALTER TABLE \"t\" ALTER COLUMN \"k\" TYPE int4;\n", "postgres")
+
+	c.Assert(stdout.String(), qt.Equals, `Differences detected (2 categories):
+  tables_added (1): fresh
+  tables_modified (1): t
+    t.k: type: int8 -> int4
+
+Reconciling SQL:
+ALTER TABLE "t" ALTER COLUMN "k" TYPE int4;
+`)
+}
+
 // diffCategoryFields returns the SchemaDiff fields that carry changes, asking
 // the predicate the report itself applies rather than deciding again here. A
 // guard with its own copy of the rule agrees with itself while the report

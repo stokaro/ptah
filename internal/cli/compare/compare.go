@@ -307,11 +307,17 @@ func writeComparison(
 }
 
 // writeDifferences lists the change categories and then the planner's SQL for
-// them, warning when the dialect's planner produced none.
+// them, warning when the dialect's planner produced none. Under a category of
+// modified tables it writes the old and new value of each changed column. That
+// is the report's to say: the statements are the ones a migration would run, and
+// they hold the new value only.
 func writeDifferences(out, errOut io.Writer, categories []diffreport.Category, sql, dialect string) {
 	fmt.Fprintf(out, "Differences detected (%d %s):\n", len(categories), pluralize("category", "categories", len(categories)))
 	for _, category := range categories {
 		fmt.Fprintf(out, "  %s (%d): %s\n", category.Name, category.Count(), strings.Join(category.Objects, ", "))
+		for _, values := range category.Values {
+			fmt.Fprintf(out, "    %s\n", values)
+		}
 	}
 	fmt.Fprintln(out)
 
