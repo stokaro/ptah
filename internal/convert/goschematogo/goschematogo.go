@@ -415,6 +415,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
 			attr{name: "with_check", value: strconv.FormatBool(view.WithCheck), set: view.WithCheck},
+			attr{name: "options", value: strings.Join(view.Options, ","), set: len(view.Options) > 0},
 			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
 			dialectsAttr(view.Dialects),
 		))
@@ -425,6 +426,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		attrs := append([]attr{
 			{name: "name", value: view.Name, set: true},
 			{name: "body", value: view.Body, set: true},
+			{name: "options", value: strings.Join(view.Options, ","), set: len(view.Options) > 0},
 			{name: "comment", value: view.Comment, set: view.Comment != ""},
 		}, ctx.ownerAttrs(annotationext.Slot{Directive: matviewDirective, Name: view.Name}, annotationext.WithOwnAttributes)...)
 		w.writeComment(annotation("ptah:schema:matview", append(attrs, dialectsAttr(view.Dialects))...))
