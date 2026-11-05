@@ -97,9 +97,10 @@ region to the session's database as it binds any other.
 ### What the host does
 
 The host lists the feature and reads the objects and their coverage as it
-reads those of an unfiltered read: the comparison compares them, the plan
-creates, changes or keeps them, and an export writes them. A run scoped to a
-directory then manages the database's pools as the built-in engine does.
+reads those of an unfiltered read: the comparison compares them, and the plan
+creates, changes or keeps them. A run scoped to a directory then manages the
+database's pools as the built-in engine does. An export of the read writes
+them under the same rules as an export of an unfiltered read.
 
 ### What the YDB provider sends
 
@@ -134,8 +135,18 @@ answer today, and it takes the root's tables into the run. Rejected.
   own changes.
 - Without the feature nothing changes: a filtered read leaves the database's
   pools uninspected, and a run must select the root to manage them.
-- With it, `ptah introspect --schemas app` writes the pools, and `schema
-  apply --schemas app` plans a declared pool, as through the built-in engine.
+- With it, `schema apply --schemas app` plans a declared pool, as through the
+  built-in engine.
+- An export through the YDB provider fails before it writes
+  (`provider encode source failed (Internal)`) whenever the read knows every
+  native kind completely, whether the read is filtered or not: the SDK asks
+  for a source limit whenever a kind of the encoding request is narrowed, and
+  the provider's table facet kinds stay narrowed with no limit a Go or HCL
+  source can write. Measured with Ptah master 51812210f on an unfiltered
+  `ptah introspect` with `EnableResourcePools` on. Without this contract a
+  filtered export did not meet it, because the uninspected pools gave it a
+  limit to write. The defect is outside this decision and is tracked on its
+  own (gap G116 of #4204).
 
 ## Acceptance evidence
 
@@ -148,7 +159,6 @@ answer today, and it takes the root's tables into the run. Rejected.
   and a planning context kind.
 - Through the SDK fixture provider, a filtered read that holds no table reports
   a database object at the root, and the host keeps it with its coverage.
-- Through the YDB provider on 25.1.4.7 and 26.2.1.14, `ptah introspect
-  --schemas` the directory writes the default pool, and `schema apply
-  --schemas` the directory creates a declared pool and then reads it as
-  synced.
+- Through the YDB provider on 25.1.4.7 and 26.2.1.14, `schema apply
+  --schemas` the directory creates a declared pool, reads it as synced, keeps
+  it once the source leaves it out, and changes it in place.
