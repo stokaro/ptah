@@ -140,7 +140,9 @@ func TestIndexKindDeclarations_FailurePath(t *testing.T) {
 
 func TestIndexKindFragments_FailurePath(t *testing.T) {
 	fragment := func(r *protocol.DecodeSourceRequest) *protocol.SourceFragment { return r.Documents[0].Fragments[0] }
-	inherited := func(r *protocol.DecodeSourceRequest) []*protocol.SourceEntry { return fragment(r).InheritedAttributes.Entries }
+	inherited := func(r *protocol.DecodeSourceRequest) []*protocol.SourceEntry {
+		return fragment(r).InheritedAttributes.Entries
+	}
 	for _, test := range []struct {
 		name   string
 		want   string
@@ -241,7 +243,9 @@ func TestIndexKindFragmentsOfAGoDocument(t *testing.T) {
 }
 
 func TestIndexKindValues_FailurePath(t *testing.T) {
-	value := func(r *protocol.DecodedSource) *protocol.SourceModelValue { return r.Documents[0].Fragments[0].Values[0] }
+	value := func(r *protocol.DecodedSource) *protocol.SourceModelValue {
+		return r.Documents[0].Fragments[0].Values[0]
+	}
 	for _, test := range []struct {
 		name   string
 		want   string
@@ -325,22 +329,22 @@ func indexKindEncodeExchange() (*protocol.Description, *protocol.EncodeSourceReq
 // carries none.
 func withoutSpans(fragment *protocol.SourceFragment) {
 	fragment.Span = nil
-	var clear func(*protocol.SourceValue)
-	clear = func(value *protocol.SourceValue) {
+	var strip func(*protocol.SourceValue)
+	strip = func(value *protocol.SourceValue) {
 		value.Span = nil
 		for _, item := range value.GetSequence().GetValues() {
-			clear(item)
+			strip(item)
 		}
 		for _, entry := range value.GetMapping().GetEntries() {
 			entry.KeySpan = nil
-			clear(entry.Value)
+			strip(entry.Value)
 		}
 	}
 	for _, entry := range fragment.GetInheritedAttributes().GetEntries() {
 		entry.KeySpan = nil
-		clear(entry.Value)
+		strip(entry.Value)
 	}
-	clear(fragment.GetValue())
+	strip(fragment.GetValue())
 }
 
 // An index-kind part writes a facet of its table, and a loss may name the
