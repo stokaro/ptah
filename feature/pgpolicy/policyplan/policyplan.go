@@ -260,7 +260,9 @@ func planPolicy(roles objectidentity.Builder, name string, subject objectidentit
 	if err := pgpolicy.ValidatePolicyRef(subject); err != nil {
 		return planned{}, err
 	}
-	if change.Rebuild {
+	// A rollback of a removed policy creates it, with nothing to drop ahead of the
+	// column changes: its own step in the dependent phase already follows them.
+	if change.Rebuild && change.Before != nil {
 		return planRebuild(roles, name, subject, change)
 	}
 	table := pgpolicy.Table(subject)
