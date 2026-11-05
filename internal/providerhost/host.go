@@ -159,6 +159,10 @@ var hostFeatures = []string{
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,
+	// A filtered read reports the objects of the kinds an engine names
+	// database kinds, such as resource pools, beside its scope, and the
+	// comparison reads them as it reads an unfiltered read's.
+	provider.DatabaseKindsFeature,
 	// A SQL schema reading carries the facets of its tables, columns and
 	// indexes, which the host places where a YAML source places them; see
 	// target.sqlFacets.

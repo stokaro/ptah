@@ -740,6 +740,15 @@ as `--exclude`, keeps the entry, since narrowing a read cannot make the
 database lose a table. Without the feature, the provider leaves the table out
 silently, and a declared table there fails when its creation runs.
 
+Some objects belong to a database rather than to a namespace of it, such as
+YDB's resource pools. An engine that lists `schema.database-kinds` names their
+kinds, and a read filtered with `--schemas` reports them beside the selected
+namespaces, named at the database. The comparison reads them as it reads an
+unfiltered read's, so a run scoped to one schema plans the database's objects
+its source declares. Everything else a filtered read reports stays inside the
+selected namespaces. Without the feature, such a read leaves those kinds
+uninspected.
+
 ## Plan and apply
 
 Create `schema.yaml` for the fixture's common table grammar. The fixture accepts
