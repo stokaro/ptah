@@ -1311,6 +1311,15 @@ type Role struct {
 	// on YDB is a user. Every other reader reports roles of one kind and
 	// leaves it false; omitempty keeps their serialization byte-identical.
 	Group bool `json:"group,omitempty"`
+
+	// AttributesUnknown marks a role the reader knows exists and whose
+	// attributes it did not read, so every other field but Name is a zero
+	// value rather than a fact. An executable provider names the roles outside
+	// its read's scope and describes none of their attributes, and only such a
+	// role, in [Database.RolesOutOfScope], carries it. A comparison plans no
+	// change to its attributes, since nothing says they differ. It is not
+	// part of the description and is never serialized.
+	AttributesUnknown bool `json:"-"`
 }
 
 // ObjectOwner is the owner of one schema object.

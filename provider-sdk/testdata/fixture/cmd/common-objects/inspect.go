@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"slices"
 	"strings"
 
@@ -37,6 +38,14 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 		for _, role := range held.Roles {
 			observed.Roles = append(observed.Roles, &protocol.ObservedRole{Name: role.Name, Login: role.Login, Group: role.Group,
 				MemberOf: slices.Clone(role.MemberOf), Password: protocol.ObservedRole_PASSWORD_NONE})
+		}
+		// FIXTURE_ROLES_OUT_OF_SCOPE names roles the server holds outside
+		// the read's scope, as a YDB realm holds the database's users: the
+		// wire names them and carries none of their attributes.
+		for name := range strings.SplitSeq(os.Getenv("FIXTURE_ROLES_OUT_OF_SCOPE"), ",") {
+			if name != "" {
+				observed.RolesOutOfScope = append(observed.RolesOutOfScope, name)
+			}
 		}
 		for _, grant := range held.Grants {
 			observed.Grants = append(observed.Grants, &protocol.ObservedGrant{Role: grant.Role, Privilege: grant.Privilege,
