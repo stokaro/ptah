@@ -292,7 +292,8 @@ whole file is refused, with the statement named, when it:
 
 This holds for PostgreSQL only, and only where Ptah replays an existing
 migration directory. Elsewhere in a replay each of these statements is refused
-on its own. In a golang-migrate directory, replay runs a file the way
+on its own. In a golang-migrate directory, and in one that `--runner
+golang-migrate` or `migration.runner` names, replay runs a file the way
 `ptah-compat migrate apply` runs it, which is how golang-migrate's default mode
 runs it: a file that opens its own transaction runs in the transactions the
 file sent as one query runs in, and a file of one statement runs without one.

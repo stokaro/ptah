@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
+	"ptah.run/core/lintext"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/cliobs"
@@ -81,6 +82,7 @@ type options struct {
 	atlasEnv             string
 	execOrder            string
 	txMode               string
+	runner               string
 	migrationLockTimeout string
 	lockTimeout          string
 	statementTimeout     string
@@ -118,6 +120,9 @@ type parsedMigrationSettings struct {
 	txMode               migrator.MigrationTxMode
 	migrationLockTimeout time.Duration
 	connectTimeout       time.Duration
+	// runner is the tool the directory is written for; under golang-migrate
+	// each file runs the transactions it opens itself.
+	runner migrateflags.Runner
 }
 
 type deploymentReportPublication struct {
@@ -211,6 +216,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
+	flags.StringVar(&opts.runner, migrateflags.RunnerFlag, string(migrateflags.RunnerPtah), migrateflags.RunnerUsage)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
@@ -281,35 +287,34 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
-func parseMigrationSettings(
-	dirFormatValue,
-	revisionFormatValue,
-	execOrderValue,
-	txModeValue,
-	migrationLockTimeoutValue,
-	connectTimeoutValue string,
-) (parsedMigrationSettings, error) {
-	dirFormat, err := migrationfile.ParseDirFormat(dirFormatValue)
+// parseMigrationSettings reads the settings opts carries, resolved against the
+// project config, into the migrator's types.
+func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
+	dirFormat, err := migrationfile.ParseDirFormat(opts.dirFormat)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	execOrder, err := migrateflags.ParseExecOrder(execOrderValue)
+	execOrder, err := migrateflags.ParseExecOrder(opts.execOrder)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	txMode, err := migrateflags.ParseMigrationTxMode(txModeValue)
+	txMode, err := migrateflags.ParseMigrationTxMode(opts.txMode)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(migrationLockTimeoutValue)
+	migrationLockTimeout, err := migrateflags.ParseMigrationLockTimeout(opts.migrationLockTimeout)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
-	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	runner, err := migrateflags.ParseRunner(opts.runner)
 	if err != nil {
 		return parsedMigrationSettings{}, err
 	}
@@ -320,6 +325,7 @@ func parseMigrationSettings(
 		txMode:               txMode,
 		migrationLockTimeout: migrationLockTimeout,
 		connectTimeout:       connectTimeout,
+		runner:               runner,
 	}, nil
 }
 
@@ -356,6 +362,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.atlasEnv = effectiveString(atlasEnvFlag, opts.atlasEnv, projectconfig.StringEnvName)
 	opts.execOrder = effectiveString(execOrderFlag, opts.execOrder, projectconfig.StringMigrationExecOrder)
 	opts.txMode = effectiveString(txModeFlag, opts.txMode, projectconfig.StringMigrationTxMode)
+	opts.runner = effectiveString(migrateflags.RunnerFlag, opts.runner, projectconfig.StringMigrationRunner)
 	opts.migrationLockTimeout = effectiveString(
 		migrationLockTimeoutFlag,
 		opts.migrationLockTimeout,
@@ -445,17 +452,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	}
 	dbURL := resolvedOpts.dbURL
 	migrationsDir := resolvedOpts.migrationsDir
-	dirFormatValue := resolvedOpts.dirFormat
 	atlasEnv := resolvedOpts.atlasEnv
-	execOrderValue := resolvedOpts.execOrder
-	txModeValue := resolvedOpts.txMode
-	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
 	lockTimeout := resolvedOpts.lockTimeout
 	statementTimeout := resolvedOpts.statementTimeout
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
-	revisionFormatValue := resolvedOpts.revisionTableFormat
-	connectTimeoutValue := resolvedOpts.connectTimeout
 
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
@@ -492,14 +493,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 		return fmt.Errorf("migrations directory is required")
 	}
 	requestedMigrationsDir := migrationsDir
-	settings, err := parseMigrationSettings(
-		dirFormatValue,
-		revisionFormatValue,
-		execOrderValue,
-		txModeValue,
-		migrationLockTimeoutValue,
-		connectTimeoutValue,
-	)
+	settings, err := parseMigrationSettings(resolvedOpts)
 	if err != nil {
 		return err
 	}
@@ -553,6 +547,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
+	// The gate judges transaction control the way the run applies the files.
+	lintPolicy = lintPolicy.WithTransactionOwner(settings.runner.TransactionOwner())
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)
@@ -1022,13 +1018,15 @@ type upMigratorOptions struct {
 // the command resolved arrives here, and a list that grows inside the command
 // makes the command longer without making it say more.
 func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
-	mig, err := migrator.NewFSMigrator(
-		in.conn,
-		in.migrationsFS,
+	options := []migrator.FSProviderOption{
 		migrator.WithStatementInterceptor(in.interceptor),
 		migrator.WithMigrationDirFormat(in.settings.dirFormat),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: in.atlasEnv}),
-	)
+	}
+	if in.settings.runner.TransactionOwner() == lintext.TransactionOwnerFile {
+		options = append(options, migrator.WithOwnTransactions())
+	}
+	mig, err := migrator.NewFSMigrator(in.conn, in.migrationsFS, options...)
 	if err != nil {
 		return nil, fmt.Errorf("error registering migrations: %w", err)
 	}

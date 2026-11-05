@@ -184,6 +184,10 @@ passes over a file of one statement, which runs without a transaction;
 has the measurement. Every other layout is judged as one whose tool wraps each
 file.
 
+`ptah migrations lint --runner golang-migrate`, or `migration.runner:
+golang-migrate` in `ptah.yaml`, judges a directory in Ptah's or Atlas's layout
+the same way, for a team that applies it with golang-migrate.
+
 <!-- BEGIN GENERATED LINT RULES -->
 ## Identifier families
 
