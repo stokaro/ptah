@@ -122,15 +122,15 @@ func TestSchemaApplyIdentityColumnE2E_TheSequenceMovesPastTheRows(t *testing.T) 
 // whose serial column reads back as unique_rowid() rather than a sequence.
 func TestSchemaApplyIdentityColumnE2E_CockroachDB(t *testing.T) {
 	tests := []struct{ name, built, desired, want string }{
-		{name: "identity against a plain type", built: identityColumnByDefault, desired: identityColumnPlain, want: " | NULL | NO"},
-		{name: "a plain type against identity", built: identityColumnPlain, desired: identityColumnByDefault, want: "BY DEFAULT | NULL | NO"},
+		{name: "identity against a plain type", built: identityColumnByDefault, desired: identityColumnPlain, want: " |  | NO"},
+		{name: "a plain type against identity", built: identityColumnPlain, desired: identityColumnByDefault, want: "BY DEFAULT |  | NO"},
 		{
 			name:    "a nullable column against identity",
 			built:   "CREATE TABLE parent (id bigint PRIMARY KEY, n bigint);\n",
 			desired: identityColumnByDefault,
-			want:    "BY DEFAULT | NULL | NO",
+			want:    "BY DEFAULT |  | NO",
 		},
-		{name: "by default against always", built: identityColumnByDefault, desired: identityColumnAlways, want: "ALWAYS | NULL | NO"},
+		{name: "by default against always", built: identityColumnByDefault, desired: identityColumnAlways, want: "ALWAYS |  | NO"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -140,6 +140,7 @@ func TestSchemaApplyIdentityColumnE2E_CockroachDB(t *testing.T) {
 			run := keyedApply(c, target, test.desired)
 
 			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			c.Assert(columnKeyString(c, target, identityColumnRead), qt.Equals, test.want)
 			again := keyedApply(c, target, test.desired)
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
 		})
