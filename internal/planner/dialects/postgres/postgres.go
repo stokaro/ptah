@@ -873,6 +873,7 @@ func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	vocabulary difftypes.UserTypeVocabulary,
+	removedSequences []schemamodel.Sequence,
 ) []ast.Node {
 	for _, colDiff := range tableDiff.ColumnsModified {
 		if isGeneratedColumnChange(colDiff) {
@@ -903,6 +904,9 @@ func (p *Planner) modifyExistingTableColumns(
 		// definition for.
 		changed := columnchange.Properties(colDiff)
 		changed.Default = changed.Default || restatesDefault(colDiff)
+		// The identity left ahead of the sequence that takes its name; see
+		// [identitiesLeavingForSequences].
+		changed.Identity = changed.Identity && colDiff.SerialSequence == ""
 		_, uniqueChanged := colDiff.Changes["unique"]
 		if (changed.Any() || uniqueChanged) && colDiff.Desired.Name == "" {
 			result = append(result, missingColumnDefinition(tableDiff.TableName, colDiff))
@@ -926,6 +930,7 @@ func (p *Planner) modifyExistingTableColumns(
 					HasPreviousNullable: colDiff.Changes["nullable"] != "",
 					PreviousIdentity:    previousColumnType(colDiff.Changes["identity"]),
 					SeedsSequence:       serialSequencePath(tableDiff.TableName, colDiff.SerialSequence),
+					DropsSequence:       sequenceGivingWayToIdentity(tableDiff.TableName, colDiff, removedSequences),
 					Changed:             changed,
 					HasChanged:          true,
 				}},
@@ -933,6 +938,51 @@ func (p *Planner) modifyExistingTableColumns(
 		}
 		if node := addedColumnUnique(tableDiff, colDiff); node != nil {
 			result = append(result, node)
+		}
+	}
+	return result
+}
+
+// sequenceGivingWayToIdentity names the removed sequence a column owns where the plan
+// gives the column an identity, and is empty otherwise. Left until the removals, it
+// holds the name the identity's sequence takes, and pg_get_serial_sequence answers
+// with it rather than with the one that fills the column.
+func sequenceGivingWayToIdentity(table string, colDiff difftypes.ColumnDiff, removed []schemamodel.Sequence) string {
+	if _, changed := colDiff.Changes["identity"]; !changed || colDiff.Desired.IdentityGeneration == "" {
+		return ""
+	}
+	bare := table
+	if ref, ok := tableref.Parse(table); ok {
+		bare = ref.Name
+	}
+	for _, sequence := range removed {
+		parts := strings.Split(sequence.OwnedBy, ".")
+		if len(parts) >= 2 && parts[len(parts)-2] == bare && parts[len(parts)-1] == colDiff.ColumnName {
+			return sequence.QualifiedName()
+		}
+	}
+	return ""
+}
+
+// identitiesLeavingForSequences drops the identity of each column the plan makes serial,
+// ahead of the sequences it creates. The identity's own sequence holds the name the new
+// one takes, and CREATE SEQUENCE answers that the relation exists.
+func identitiesLeavingForSequences(result []ast.Node, diff *difftypes.SchemaDiff, vocabulary difftypes.UserTypeVocabulary) []ast.Node {
+	for _, tableDiff := range diff.TablesModified {
+		for _, colDiff := range tableDiff.ColumnsModified {
+			if _, changed := colDiff.Changes["identity"]; !changed || colDiff.SerialSequence == "" {
+				continue
+			}
+			column, ok := columnNodeFor(colDiff, vocabulary)
+			if !ok {
+				continue
+			}
+			result = append(result, &ast.AlterTableNode{
+				Name: tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+					Column: column, Changed: ast.ColumnProperties{Identity: true}, HasChanged: true,
+				}},
+			})
 		}
 	}
 	return result
@@ -1380,7 +1430,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)
+			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, diff.SequencesRemoved)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -1960,6 +2010,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
+	result = identitiesLeavingForSequences(result, diff, diff.DeclaredUserTypes)
 	result = p.addNewSequences(result, diff)
 
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
@@ -2711,7 +2762,16 @@ func (p *Planner) alterKeptSequenceOwners(
 // target schema. It runs after table removal so a table that draws a column
 // default from the sequence is gone first.
 func (p *Planner) removeSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	gone := make(map[string]bool)
+	for _, tableDiff := range diff.TablesModified {
+		for _, colDiff := range tableDiff.ColumnsModified {
+			gone[sequenceGivingWayToIdentity(tableDiff.TableName, colDiff, diff.SequencesRemoved)] = true
+		}
+	}
 	for _, sequence := range diff.SequencesRemoved {
+		if gone[sequence.QualifiedName()] {
+			continue
+		}
 		schemaName, sequenceName := splitQualifiedSequenceName(sequence.QualifiedName())
 		dropSequence := ast.NewDropSequence(sequenceName).
 			SetIfExists()

@@ -112,6 +112,11 @@ type ModifyColumnOperation struct {
 	// operation restates the column: a renderer that alters one property per
 	// clause writes a clause for every property it can alter.
 	HasChanged bool
+	// DropsSequence names the sequence the column's default draws from, where an
+	// identity takes its place. The PostgreSQL family drops it between the default
+	// and the identity, so the identity's sequence takes the name and is the only
+	// one the column owns.
+	DropsSequence string
 	// SeedsSequence names the sequence a plain column takes as its default, which
 	// the PostgreSQL family moves past the values the column holds.
 	SeedsSequence string
