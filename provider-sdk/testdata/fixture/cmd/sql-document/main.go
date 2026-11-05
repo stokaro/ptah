@@ -57,6 +57,18 @@ func (p *documentProvider) NormalizeValues(ctx context.Context, request *protoco
 	return result, nil
 }
 
+// tuneViews gives a view named `tuned` a desired facet collection in
+// SQLView.features, which only a host that negotiated schema.common-view-facets
+// receives. The field is set here rather than in the backend, which builds
+// against the contract 25.0 SDK.
+func tuneViews(result *protocol.SQLSchema) {
+	for _, view := range result.GetViews() {
+		if backend.NormalizeCommonIdentifier(view.GetName()) == "tuned" {
+			view.Features = &protocol.CapturedFeatures{Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED}}
+		}
+	}
+}
+
 func (p *documentProvider) ConvertValues(ctx context.Context, request *protocol.ConvertValuesRequest) (*protocol.NormalizedValues, error) {
 	return backend.ConvertValues(ctx, request, p)
 }

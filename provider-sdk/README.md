@@ -770,6 +770,7 @@ refused by name:
 | Grants, revoked grants | `grants` (`revoked` flag) |
 | Feature objects owned by the provider | `native_objects` |
 | Facets of a table, a column or an index, owned by the provider | `facets` (contract 25.21) |
+| Facets of a view or a materialized view | None while the host does not negotiate `schema.common-view-facets`, which `views[].features` needs. The provider reports `UNSUPPORTED` and names the construct. |
 | What the header says is not described | `coverage` |
 | Functions, row-level security policies and enabled tables, managed data, embedded fields | None. The provider reports `UNSUPPORTED` and names the construct. |
 

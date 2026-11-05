@@ -176,6 +176,32 @@ func TestSQLSchemaRefusesWhatTheModelCannotHold(t *testing.T) {
 	}
 }
 
+// TestSQLSchemaRefusesTheSettingsOfAView names the view whose desired facets
+// the reading carries, and its kind, rather than read the view without them.
+// A provider cannot reach this refusal while the host does not negotiate
+// schema.common-view-facets, because the SDK refuses the reply first, so only
+// the mapping itself can show it.
+func TestSQLSchemaRefusesTheSettingsOfAView(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		view int
+		want string
+	}{
+		{"view", 0, `.*does not support settings of view "app.visible" in a SQL schema reading`},
+		{"materialized view", 1, `.*does not support settings of materialized view "app.counted" in a SQL schema reading`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reply := fullSQLSchemaReply()
+			reply.Views[test.view].Features = &protocol.CapturedFeatures{Facets: &protocol.ComparisonState{Representation: protocol.ValueInput_DESIRED}}
+			database, err := sqlSchemaCommon(reply)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
+		})
+	}
+}
+
 // sqlFacetSemantics are case-insensitive rules, so a facet's owner and its
 // declaration may spell one name two ways, with app the default schema.
 func sqlFacetSemantics() identifier.Semantics {
