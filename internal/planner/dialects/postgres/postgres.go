@@ -1955,6 +1955,10 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
 	result = p.releaseRemovedSequenceOwners(result, diff)
 
+	// Feature operations that stand in the way of a column change join the plan
+	// here.
+	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
+
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
 

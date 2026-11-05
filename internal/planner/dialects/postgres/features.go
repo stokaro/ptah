@@ -43,6 +43,10 @@ const commonOwner = "ptah.run/postgres"
 // plan that combines one of them with removing the policy fails at that
 // statement.
 //
+// The lifecycle span is the point just ahead of the column changes, for an object
+// that stands in the way of one of them and that nothing else needs, such as an
+// exclusion constraint a changed column type cannot serve.
+//
 // The prerequisite creation window is after the schema preconditions and the
 // extensions the plan installs, before every other creation, and the
 // prerequisite removal window is after the last removal.
@@ -110,7 +114,7 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 		return nil, err
 	}
 	request.CommonSteps = graph.CommonSteps()
-	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite, featureplan.PhaseType)
+	features, err := featurehost.Plan(ctx, runtime, request, names, featureplan.PhaseDependent, featureplan.PhasePrerequisite, featureplan.PhaseType, featureplan.PhaseLifecycle)
 	if err != nil {
 		return nil, err
 	}

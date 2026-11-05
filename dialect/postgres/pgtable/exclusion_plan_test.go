@@ -38,7 +38,6 @@ func TestExclusionPlanning_Transaction(t *testing.T) {
 	}{
 		{"create", &pgtable.ExclusionChange{After: &pgtable.DesiredExclusion{Exclusion: exclusionDefinition()}}, plangraph.Create, plangraph.TransactionAllowed},
 		{"drop", &pgtable.ExclusionChange{Before: new(pgtable.ObservedExclusion(exclusionDefinition()))}, plangraph.Drop, plangraph.TransactionAllowed},
-		{"replace", &pgtable.ExclusionChange{Before: new(pgtable.ObservedExclusion(exclusionDefinition())), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}}, plangraph.Alter, plangraph.TransactionRequired},
 		{"comment", &pgtable.ExclusionChange{Before: new(pgtable.ObservedExclusion(exclusionDefinition())), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "room WITH =, during WITH &&", Comment: "Room schedule"}}, CommentOnly: true}, plangraph.Alter, plangraph.TransactionAllowed},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -74,8 +73,7 @@ func TestExclusionPlanning_Phases(t *testing.T) {
 		phase  featureplan.Phase
 	}{
 		{"create", &pgtable.ExclusionChange{After: &pgtable.DesiredExclusion{Exclusion: exclusionDefinition()}}, featureplan.PhaseDefault},
-		{"drop", &pgtable.ExclusionChange{Before: observed()}, featureplan.PhaseDependent},
-		{"replace", &pgtable.ExclusionChange{Before: observed(), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}}, featureplan.PhaseDefault},
+		{"drop", &pgtable.ExclusionChange{Before: observed()}, featureplan.PhaseLifecycle},
 		{"comment", &pgtable.ExclusionChange{Before: observed(), After: &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "room WITH =, during WITH &&", Comment: "Room schedule"}}, CommentOnly: true}, featureplan.PhaseDefault},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -87,6 +85,36 @@ func TestExclusionPlanning_Phases(t *testing.T) {
 			c.Assert(result.Contributions[0].Steps[0].Payload.Phase, qt.Equals, test.phase)
 		})
 	}
+}
+
+// TestExclusionPlanning_Replacement drops the old definition ahead of the host's
+// column changes, which the server would rebuild it under, and adds the new one
+// after them, since it may read a column they add.
+func TestExclusionPlanning_Replacement(t *testing.T) {
+	c := qt.New(t)
+	before := new(pgtable.ObservedExclusion(exclusionDefinition()))
+	after := &pgtable.DesiredExclusion{Exclusion: pgtable.Exclusion{UsingMethod: "gist", Elements: "during WITH &&"}}
+	request := exclusionPlan(&pgtable.ExclusionChange{Before: before, After: after})
+
+	result, err := (pgtable.ExclusionService{}).PlanFeatures(t.Context(), request)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Err(request), qt.IsNil)
+	c.Assert(result.Contributions, qt.HasLen, 1)
+	steps := result.Contributions[0].Steps
+	c.Assert(steps, qt.HasLen, 2)
+	c.Assert(result.Changes[0].Steps, qt.DeepEquals, []plangraph.StepID{steps[0].ID, steps[1].ID})
+	c.Assert(result.Contributions[0].Dependencies, qt.DeepEquals, []plangraph.Dependency{{Before: steps[0].ID, After: steps[1].ID}})
+
+	c.Assert(steps[0].Payload.Phase, qt.Equals, featureplan.PhaseLifecycle)
+	c.Assert(steps[0].Transaction, qt.Equals, plangraph.TransactionRequired)
+	c.Assert(steps[0].Effects[1], qt.DeepEquals, plangraph.Effect{Subject: exclusionSubject(), Action: plangraph.Drop})
+	c.Assert(steps[0].Payload.Payload.(*pgtable.AlterExclusion).Change.Copy(), qt.DeepEquals, &pgtable.ExclusionChange{Before: before})
+
+	c.Assert(steps[1].Payload.Phase, qt.Equals, featureplan.PhaseDefault)
+	c.Assert(steps[1].Transaction, qt.Equals, plangraph.TransactionRequired)
+	c.Assert(steps[1].Effects[1], qt.DeepEquals, plangraph.Effect{Subject: exclusionSubject(), Action: plangraph.Create})
+	c.Assert(steps[1].Payload.Payload.(*pgtable.AlterExclusion).Change.Copy(), qt.DeepEquals, &pgtable.ExclusionChange{After: after})
 }
 
 func TestExclusionPlanning_DependencyEffects(t *testing.T) {

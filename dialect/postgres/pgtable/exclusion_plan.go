@@ -37,8 +37,12 @@ func (ExclusionService) PlanFeatures(ctx context.Context, request featureplan.Re
 		if err != nil {
 			return completedExclusionPlan(ctx, exclusionRefusal(err, new(i), nil))
 		}
+		steps := make([]plangraph.StepID, 0, len(contribution.Steps))
+		for _, step := range contribution.Steps {
+			steps = append(steps, step.ID)
+		}
 		result.Contributions = append(result.Contributions, contribution)
-		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: record.Subject, Kind: ExclusionChangeKind, Strategy: exclusionStrategy(record.Value.(*ExclusionChange)), Steps: []plangraph.StepID{contribution.Steps[0].ID}})
+		result.Changes = append(result.Changes, featureplan.ChangePlan{Subject: record.Subject, Kind: ExclusionChangeKind, Strategy: exclusionStrategy(record.Value.(*ExclusionChange)), Steps: steps})
 	}
 	if len(request.ParentKinds) > 0 {
 		for i, table := range request.Tables {
@@ -94,25 +98,37 @@ func planExclusion(request featureplan.Request, record schemaext.ChangeRecord, i
 	if change.After != nil && change.After.Deferrable && !request.Capabilities.Has(capability.DeferrableKeys) {
 		return result, fmt.Errorf("%w: EXCLUDE constraint %s declares unsupported DEFERRABLE", ptaherr.ErrUnsupportedFeature, record.Subject)
 	}
-	action, transaction, phase := plangraph.Alter, plangraph.TransactionAllowed, featureplan.PhaseDefault
+	result.Owner = Owner
+	step := func(suffix string, half *ExclusionChange, action plangraph.Action, transaction plangraph.Transaction, phase featureplan.Phase) plangraph.Step[featureplan.Operation] {
+		operation := &AlterExclusion{Name: record.Subject.Name.Source, Change: *half.Copy()}
+		return plangraph.Step[featureplan.Operation]{
+			ID:      plangraph.StepID{Owner: Owner, Name: fmt.Sprintf("exclusion/%06d%s", index, suffix)},
+			Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: parent, Payload: operation, Phase: phase},
+			Effects: exclusionEffects(record.Subject, parent, action, half), Transaction: transaction, Impact: half.Effect(),
+		}
+	}
 	switch {
 	case change.Before == nil:
-		action = plangraph.Create
+		result.Steps = append(result.Steps, step("", change, plangraph.Create, plangraph.TransactionAllowed, featureplan.PhaseDefault))
 	case change.After == nil:
-		// The constraint leaves ahead of the host's removals: the server drops
-		// it with the last column it covers, so a drop that follows that column
-		// answers that the constraint does not exist.
-		action, phase = plangraph.Drop, featureplan.PhaseDependent
-	case !change.CommentOnly:
-		transaction = plangraph.TransactionRequired
+		// The constraint leaves ahead of the host's column changes. The server
+		// rebuilds it under ALTER COLUMN TYPE, and answers a type its index
+		// method cannot take with `data type text has no default operator class
+		// for access method "gist"`. It also drops the constraint with the last
+		// column it covers, so a drop that follows that column answers that the
+		// constraint does not exist.
+		result.Steps = append(result.Steps, step("", change, plangraph.Drop, plangraph.TransactionAllowed, featureplan.PhaseLifecycle))
+	case change.CommentOnly:
+		result.Steps = append(result.Steps, step("", change, plangraph.Alter, plangraph.TransactionAllowed, featureplan.PhaseDefault))
+	default:
+		// The old definition leaves for the same reason, and the new one may read
+		// a column the host's column changes add, so they run on either side of
+		// those changes.
+		drop := step("", &ExclusionChange{Before: change.Before}, plangraph.Drop, plangraph.TransactionRequired, featureplan.PhaseLifecycle)
+		create := step("/create", &ExclusionChange{After: change.After}, plangraph.Create, plangraph.TransactionRequired, featureplan.PhaseDefault)
+		result.Steps = append(result.Steps, drop, create)
+		result.Dependencies = append(result.Dependencies, plangraph.Dependency{Before: drop.ID, After: create.ID})
 	}
-	operation := &AlterExclusion{Name: record.Subject.Name.Source, Change: *change.Copy()}
-	result.Owner = Owner
-	result.Steps = []plangraph.Step[featureplan.Operation]{{
-		ID:      plangraph.StepID{Owner: Owner, Name: fmt.Sprintf("exclusion/%06d", index)},
-		Payload: featureplan.Operation{Role: ast.AlterExtension, Parent: parent, Payload: operation, Phase: phase},
-		Effects: exclusionEffects(record.Subject, parent, action, change), Transaction: transaction, Impact: change.Effect(),
-	}}
 	return result, nil
 }
 
