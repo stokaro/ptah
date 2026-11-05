@@ -173,19 +173,20 @@ func planChange(target, name string, subject objectidentity.ID, change *pgextens
 			Schema: change.After.Schema, Version: change.After.Version, IfNotExists: change.After.IfNotExists}, change.Effect()))
 	case change.After == nil:
 		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop, IfExists: style != featureplan.StatementStyleExact}, change.Effect(),
-			fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extension),
-			"Consider reviewing all database objects that use this extension before proceeding",
-			"DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them",
-			fmt.Sprintf("Remove extension '%s' as it's no longer required by the schema", extension)))
+			descriptive(style,
+				fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extension),
+				"Consider reviewing all database objects that use this extension before proceeding",
+				"DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them",
+				fmt.Sprintf("Remove extension '%s' as it's no longer required by the schema", extension))...))
 	default:
 		if change.UpdatesVersion() {
 			to := strings.TrimSpace(change.After.Version)
 			result.add(step("update", plangraph.Alter, &pgextension.Operation{Name: extension, Action: pgextension.UpdateVersion, Version: to}, behavioral,
-				fmt.Sprintf("Update extension %s from %s to %s", extension, change.Before.Version, to)))
+				descriptive(style, fmt.Sprintf("Update extension %s from %s to %s", extension, change.Before.Version, to))...))
 		}
 		if change.Schema != "" {
 			result.add(step("move", plangraph.Alter, &pgextension.Operation{Name: extension, Action: pgextension.SetSchema, Schema: change.Schema}, behavioral,
-				fmt.Sprintf("Move extension %s from schema %s to %s", extension, change.Before.Schema, change.Schema)))
+				descriptive(style, fmt.Sprintf("Move extension %s from schema %s to %s", extension, change.Before.Schema, change.Schema))...))
 		}
 	}
 	if change.After != nil && (change.Comment || change.Before == nil && change.After.Comment != "") {
@@ -193,6 +194,14 @@ func planChange(target, name string, subject objectidentity.ID, change *pgextens
 			schemaext.Effect{Impact: schemaext.Additive, Reason: "changes only the comment of an extension"}))
 	}
 	return result, nil, nil
+}
+
+// descriptive is notes that only describe a step: an exact plan leaves them out.
+func descriptive(style featureplan.StatementStyle, notes ...string) []string {
+	if style == featureplan.StatementStyleExact {
+		return nil
+	}
+	return notes
 }
 
 // refuse returns the refusal of a change the server would refuse, or nil.

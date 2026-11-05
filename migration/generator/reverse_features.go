@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
@@ -117,16 +118,19 @@ type modelLabeler interface {
 // undo. A subject is named as every other report names an owner's object:
 // the owner's label, or the kind where the owner declares none, then
 // [objectidentity.ID.Path]. A runtime that cannot answer for labels names
-// every subject by its kind.
-func recoveryNotes(runtime Runtime, recovery []schemaext.Reversal) []ast.Node {
+// every subject by its kind. An exact plan leaves out the line that only
+// describes the rollback and keeps what it cannot undo.
+func recoveryNotes(runtime Runtime, recovery []schemaext.Reversal, style planext.StatementStyle) []ast.Node {
 	labeler, _ := runtime.(modelLabeler)
 	var notes []ast.Node
 	for _, result := range recovery {
 		// Quote every external string: even a multiline subject must stay on
 		// one SQL comment line on renderers that write CommentNode verbatim.
 		subject := result.Change.Subject
-		notes = append(notes, ast.NewComment("Rollback of "+strconv.Quote(modelName(labeler, subject.Kind)+" "+subject.Path())+": "+
-			strconv.Quote(result.Strategy)+"."))
+		if style != planext.StatementStyleExact {
+			notes = append(notes, ast.NewDescriptiveComment("Rollback of "+strconv.Quote(modelName(labeler, subject.Kind)+" "+subject.Path())+": "+
+				strconv.Quote(result.Strategy)+"."))
+		}
 		for _, limitation := range result.Limitations {
 			notes = append(notes, ast.NewComment("Recovery limit: "+strconv.Quote(limitation)))
 		}

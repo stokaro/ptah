@@ -1377,13 +1377,16 @@ change after it. It ends its line, so a `--format` template that writes the
 statements on one line, such as `{{ range .Changes }}{{ .Cmd }}; {{ end }}`,
 does not turn the statement after it into part of the comment.
 
-Views, routines, triggers, sequences and roles, which the community binary does
-not plan, follow the same pattern: `create "v" view`, `modify "v" view` for
-`CREATE OR REPLACE VIEW`, and `drop "v" view`. The comments that only describe
-Ptah's plan, such as `-- Add/modify columns for table: owners` and the
-warnings above a drop, are left out. A comment that reports what the plan left
-out or cannot do stays, such as a change a `diff` policy skips or a step a
-person has to take.
+Views, routines, triggers, sequences, roles and the objects of a feature owner,
+which the community binary does not plan, follow the same pattern: `create "v"
+view`, `modify "v" view` for `CREATE OR REPLACE VIEW`, `drop "v" view`, `create
+"hstore" extension`, `drop "p" policy`, `create "posint" domain`, `modify "wrap"
+composite type` and `set comment to domain: "posint"`. The comments that only
+describe Ptah's plan, such as `-- Add/modify columns for table: owners`, the
+warnings above a drop and the `Rollback of` lines of a rollback, are left out. A
+comment that reports what the plan left out or cannot do stays, such as a change
+a `diff` policy skips, a step a person has to take, or a `Recovery limit` line
+that says what a rollback cannot undo.
 
 A statement an executable provider plans is named from the object the
 provider plans it for and from what the provider says the step does to that

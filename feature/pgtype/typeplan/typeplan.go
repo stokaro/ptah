@@ -458,7 +458,7 @@ func planChanges(changes []*change, places placement, types featureplan.TypeCont
 	// they are ordered by what the current definitions name.
 	for _, planned := range dropOrder(changes, types.Current) {
 		plan.creation.add(planned, step(planned, "drop", plangraph.Drop, featureplan.PhaseType, &pgtype.Drop{Target: pgtype.TargetOf(planned.subject), IfExists: !exact},
-			"Recreate modified "+pgtype.Label(planned.subject)+"; drop is non-CASCADE and fails if the "+rebuildNoun(planned)+" is in use"))
+			describing(style, "Recreate modified "+pgtype.Label(planned.subject)+"; drop is non-CASCADE and fails if the "+rebuildNoun(planned)+" is in use")...))
 	}
 	creations := slices.Concat(byKind(changes, func(c *change) bool { return !c.before }, pgtype.DomainKind, pgtype.RangeKind, pgtype.CompositeKind),
 		byKind(changes, func(c *change) bool { return c.rebuilt }, pgtype.DomainKind, pgtype.CompositeKind, pgtype.RangeKind))
@@ -476,7 +476,7 @@ func planChanges(changes []*change, places placement, types featureplan.TypeCont
 		}
 		window.add(planned, step(planned, "drop", plangraph.Drop, phase,
 			&pgtype.Drop{Target: pgtype.TargetOf(planned.subject), IfExists: !exact, Cascade: !exact},
-			"WARNING: Make sure no columns use this "+pgtype.Label(planned.subject)+"!"))
+			describing(style, "WARNING: Make sure no columns use this "+pgtype.Label(planned.subject)+"!")...))
 	}
 	for _, planned := range byKind(changes, func(c *change) bool { return c.survives() && c.commented && !c.rebuilt },
 		pgtype.CompositeKind, pgtype.DomainKind, pgtype.RangeKind) {
@@ -486,6 +486,14 @@ func planChanges(changes []*change, places placement, types featureplan.TypeCont
 			&pgtype.Comment{Target: pgtype.TargetOf(planned.subject), Comment: strings.TrimSpace(planned.comment)}))
 	}
 	return plan
+}
+
+// describing is a note that only describes a step: an exact plan leaves it out.
+func describing(style featureplan.StatementStyle, note string) []string {
+	if style == featureplan.StatementStyleExact {
+		return nil
+	}
+	return []string{note}
 }
 
 // planDeclarations orders the creation steps of declared types.

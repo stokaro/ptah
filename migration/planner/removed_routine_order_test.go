@@ -196,7 +196,7 @@ func TestRemovedRoutineOrder_ADomainHoldsTheFunctionsItsRoutineCalls(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{
-		"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN \"public\".\"d\"",
+		`DROP DOMAIN "public"."d"`,
 		`DROP FUNCTION IF EXISTS "public"."b_fn"(n integer)`,
 		`DROP FUNCTION IF EXISTS "public"."a_fn"(n integer)`,
 	})

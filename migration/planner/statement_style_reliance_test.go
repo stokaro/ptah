@@ -565,19 +565,19 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		// exact style (stokaro/ptah#5000).
 		{name: "a column dropped beside a domain the plan removes", change: droppedColumnBesideRemovedDomain(), want: []string{
 			`ALTER TABLE "owners" DROP COLUMN "email"`,
-			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN \"public\".\"positive_int\"",
+			"DROP DOMAIN \"public\".\"positive_int\"",
 		}},
 		{name: "a column dropped beside a composite type that names its table's row type",
 			change: droppedColumnBesideComposite(),
 			want: []string{
 				`ALTER TABLE "owners" DROP COLUMN "email"`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				"DROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a table removed beside a composite type that names another type",
 			change: removedTableBesideComposite("text"),
 			want: []string{
 				`DROP TABLE "public"."archive"`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				"DROP TYPE \"public\".\"wrap\"",
 			}},
 		// The type goes ahead of the table whose row type it names, so the
 		// table's drop needs no CASCADE; the drop after an owner operation
@@ -585,7 +585,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a table removed beside a composite type that names its row type",
 			change: removedTableBesideComposite("archive"),
 			want: []string{
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				"DROP TYPE \"public\".\"wrap\"",
 				`DROP TABLE IF EXISTS "public"."archive"`,
 			}},
 		// A removed table whose column is the type is dropped after the
@@ -597,7 +597,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			want: []string{
 				`DROP TABLE "public"."archive" CASCADE`,
 				`DROP TABLE IF EXISTS "public"."ledger"`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				"DROP TYPE \"public\".\"wrap\"",
 			}},
 		// A removed routine that takes the type is dropped after the tables,
 		// so the type stays after it, as it does for a removed table's column.
@@ -606,7 +606,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 			want: []string{
 				`DROP TABLE "public"."archive" CASCADE`,
 				`DROP FUNCTION IF EXISTS "public"."wrap_n"(w wrap)`,
-				"-- WARNING: Make sure no columns use this composite type!\nDROP TYPE \"public\".\"wrap\"",
+				"DROP TYPE \"public\".\"wrap\"",
 			}},
 		{name: "a column dropped under a trigger the declaration removes", change: droppedColumnUnderTrigger(), want: []string{
 			`DROP TRIGGER "owners_email_audit" ON "public"."owners"`,
@@ -654,7 +654,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a column that leaves a domain over an enum", change: domainColumnBecomesText(), want: []string{
 			`ALTER TABLE "tickets" ALTER COLUMN "s" TYPE text`,
 			`ALTER TABLE "tickets" ALTER COLUMN "s" SET DEFAULT 'a'`,
-			"-- WARNING: Make sure no columns use this domain!\nDROP DOMAIN \"public\".\"dstatus\"",
+			"DROP DOMAIN \"public\".\"dstatus\"",
 			`DROP TYPE IF EXISTS "public"."status"`,
 		}},
 		{name: "a column retyped between built-in types", change: integerColumnBecomesBigint(), want: []string{
