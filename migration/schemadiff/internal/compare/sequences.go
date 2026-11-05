@@ -191,6 +191,43 @@ func sequenceOwnedBy(sequence catalog.Sequence, table catalog.Table, column stri
 	return semantics.QualifiedTableIdentityKey(owner) == semantics.QualifiedTableIdentityKey(table.QualifiedName())
 }
 
+// ColumnSequencesLeaving adds to the removed sequences each one a column owns as
+// part of itself, where the comparison takes the column's default away: a serial
+// column the declaration writes as a plain type. With its default gone the reader
+// reports such a sequence as one of its own, so a plan that left it would drop it
+// on the next run. It runs after the sequences are compared.
+func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
+	if database == nil {
+		return
+	}
+	for _, tableDiff := range diff.TablesModified {
+		table := objectlookup.Qualified(database.Tables, tableDiff.TableName, semantics)
+		if table == nil {
+			continue
+		}
+		for _, columnDiff := range tableDiff.ColumnsModified {
+			for _, column := range table.Columns {
+				if semantics.ColumnIdentityKey(column.Name) == semantics.ColumnIdentityKey(columnDiff.ColumnName) &&
+					column.OwnedSequence != "" && column.IsAutoIncrement && defaultLeaves(columnDiff) {
+					diff.SequencesRemoved = append(diff.SequencesRemoved, schemamodel.Sequence{
+						Name: column.OwnedSequence, Schema: table.Schema, OwnedBy: table.Name + "." + column.Name,
+					})
+				}
+			}
+		}
+	}
+}
+
+// defaultLeaves reports whether change takes the column's default away.
+func defaultLeaves(change difftypes.ColumnDiff) bool {
+	for _, key := range []string{"default", "default_expr"} {
+		if transition, changed := change.Changes[key]; changed && strings.HasSuffix(transition, " -> ") {
+			return true
+		}
+	}
+	return false
+}
+
 // sequenceChanges records the option-by-option transitions between a declared
 // sequence and its introspected counterpart. Unset (nil) target options are
 // skipped so that only explicitly declared options are managed.
