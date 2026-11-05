@@ -38,6 +38,12 @@ type Scope struct {
 	// server the operator named as a whole, and nothing beyond them: a role,
 	// a user, a privilege and a stored body stay refused.
 	Databases bool
+	// SchemaStateReturned reports that a plan rehearsal runs the statement on a
+	// dev database whose every reset returns a schema it keeps to the owner,
+	// access list and comment the claim recorded, and drops the rest. A schema's
+	// own comment and privileges then stay in the dev database and end with the
+	// run.
+	SchemaStateReturned bool
 }
 
 // Guard refuses a statement whose effects cannot be confined to a scope. It

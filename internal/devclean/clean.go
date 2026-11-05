@@ -260,6 +260,15 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 	return baseline, nil
 }
 
+// ReturnsSchemaState reports whether every reset of the run returns the schemas
+// it keeps to the owner, access list and comment the claim recorded, and drops
+// the others. A realm cleanup does, on an engine whose claim read them. A
+// cleanup of the one schema a URL pinned does not read the states, and leaves
+// the other schemas as it finds them.
+func (b Baseline) ReturnsSchemaState() bool {
+	return b.realm && len(b.schemaStates) > 0
+}
+
 // recordSchemas records what b keeps of the database's schemas, through a
 // writer that reads them: the state of the ones a realm cleanup keeps, unless
 // the database returns to a starting point instead, and the other schemas when

@@ -22,11 +22,13 @@ const ownedServerRemedy = `; if nothing else uses this server, declare it dispos
 // statement a baseline holds when the target holds the object: on a dev
 // server the run does not own, each is refused as a migration replay refuses
 // it, in the baseline's own words. A routine or a trigger body can write
-// outside the dev database when it runs, a comment on an extension or a schema
-// is not restored by the cleanup, and a role, a user, a grant and a resource
-// pool or classifier of the whole database outlive it. Owning the server lifts
-// each, so each refusal names the remedy; for a comment, the server has to be
-// one the run provisions.
+// outside the dev database when it runs, a comment on an extension is not
+// restored by the cleanup, and a role, a user, a grant and a resource pool or
+// classifier of the whole database outlive it. A comment on a schema and a
+// privilege on one are refused here too, for a dev database whose reset does not
+// return them; see [TestBaselineGuard_SchemaStateReturned_HappyPath]. Owning the
+// server lifts each, so each refusal names the remedy; for a comment, the server
+// has to be one the run provisions.
 func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 	postgres := catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@shared-dev:5432/ptah_dev"}
 	mysql := catalog.ServerInfo{Dialect: platform.MySQL, Schema: "ptah_dev", URL: "mysql://dev@shared-dev:3306/ptah_dev"}
@@ -162,4 +164,97 @@ func TestBaselineGuard_OwnedServerKeepsOtherComments(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// sharedPostgresDev is a PostgreSQL dev database on a server the run does not
+// own.
+var sharedPostgresDev = catalog.ServerInfo{Dialect: platform.Postgres, URL: "postgres://dev@shared-dev:5432/ptah_dev"}
+
+// TestBaselineGuard_SchemaStateReturned_HappyPath pins what a reset that returns
+// a schema's state lets a baseline write on a server the run does not own: the
+// schema's own comment and the privileges on it, in each spelling a plan renders,
+// whichever schema they name. A reset returns public and the URL's schema to
+// their claimed state and drops the others.
+func TestBaselineGuard_SchemaStateReturned_HappyPath(t *testing.T) {
+	tests := []struct{ name, statement string }{
+		{"a comment on public", `COMMENT ON SCHEMA "public" IS 'our app'`},
+		{"a comment on another schema", `COMMENT ON SCHEMA "app" IS 'application'`},
+		{"a removed comment", `COMMENT ON SCHEMA "app" IS NULL`},
+		{"a privilege for every role", `GRANT USAGE ON SCHEMA "public" TO PUBLIC`},
+		{"a privilege for a role", `GRANT CREATE ON SCHEMA "public" TO "app_rw"`},
+		{"a privilege with its grant option", `GRANT USAGE ON SCHEMA "app" TO "app_rw" WITH GRANT OPTION`},
+		{"every privilege", `GRANT ALL ON SCHEMA "app" TO "app_rw"`},
+		{"every privilege, spelled out", `GRANT ALL PRIVILEGES ON SCHEMA "app" TO "app_rw"`},
+		{"two schemas", `GRANT USAGE ON SCHEMA "app", "public" TO "app_rw"`},
+		{"a revoked privilege", `REVOKE USAGE ON SCHEMA "public" FROM PUBLIC`},
+		{"a revoked grant option", `REVOKE GRANT OPTION FOR USAGE ON SCHEMA "app" FROM "app_rw"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewBaselineGuard(sharedPostgresDev).WithSchemaStateReturned(true)
+			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
+		})
+	}
+}
+
+// TestBaselineGuard_SchemaStateReturned_FailurePath pins the limits of that
+// answer. Without a reset that returns the state, each statement the test above
+// accepts is refused. With one, what no reset reads stays refused, whatever is
+// next to it: a comment on an extension or a database, a security label, a
+// privilege on the database or a language, role membership, and anything that
+// names a protected namespace.
+func TestBaselineGuard_SchemaStateReturned_FailurePath(t *testing.T) {
+	const refused = ` because its effects cannot be confined to the dev database realm`
+	tests := []struct {
+		name      string
+		returned  bool
+		statement string
+		wantErr   string
+	}{
+		{"a schema comment, not returned", false, `COMMENT ON SCHEMA "public" IS 'our app'`,
+			`postgres rehearsal baseline refuses COMMENT ON global metadata` + refused + provisionedServerRemedy},
+		{"a schema privilege, not returned", false, `GRANT USAGE ON SCHEMA "public" TO PUBLIC`,
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+		{"a revoked schema privilege, not returned", false, `REVOKE USAGE ON SCHEMA "public" FROM PUBLIC`,
+			`postgres rehearsal baseline refuses REVOKE database or global privilege` + refused + ownedServerRemedy},
+		{"a comment on an extension", true, `COMMENT ON EXTENSION pgcrypto IS 'hashing'`,
+			`postgres rehearsal baseline refuses COMMENT ON global metadata` + refused + provisionedServerRemedy},
+		{"a comment on a database", true, `COMMENT ON DATABASE ptah_dev IS 'dev'`,
+			`postgres rehearsal baseline refuses COMMENT ON global metadata` + refused + `.*`},
+		{"a security label on a schema", true, `SECURITY LABEL ON SCHEMA "app" IS 'secret'`,
+			`postgres rehearsal baseline refuses SECURITY ON global metadata` + refused + `.*`},
+		{"a privilege on the database", true, `GRANT CONNECT ON DATABASE ptah_dev TO "app_rw"`,
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+		{"a privilege on a language", true, `GRANT USAGE ON LANGUAGE plpgsql TO "app_rw"`,
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+		{"role membership", true, `GRANT "admin" TO "app_rw"`,
+			`postgres rehearsal baseline refuses GRANT role membership` + refused + ownedServerRemedy},
+		{"a comment on a protected namespace", true, `COMMENT ON SCHEMA pg_catalog IS 'x'`,
+			`postgres rehearsal baseline refuses protected namespace "pg_catalog" mutation` + refused},
+		{"a privilege on a protected namespace", true, `GRANT USAGE ON SCHEMA pg_catalog TO PUBLIC`,
+			`postgres rehearsal baseline refuses protected namespace "pg_catalog" mutation` + refused},
+		{"a protected namespace beside another schema", true, `GRANT USAGE ON SCHEMA "app", pg_catalog TO PUBLIC`,
+			`postgres rehearsal baseline refuses protected namespace "pg_catalog" mutation` + refused},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewBaselineGuard(sharedPostgresDev).WithSchemaStateReturned(test.returned)
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestReplayGuard_SchemaStateReturned pins that the answer reaches a rehearsed
+// plan only when the rehearsal asks: a migration replay, which builds its guard
+// without it, refuses the same statements.
+func TestReplayGuard_SchemaStateReturned(t *testing.T) {
+	const statement = `COMMENT ON SCHEMA "public" IS 'our app'`
+	c := qt.New(t)
+	replay := devclean.NewDevReplayGuard(sharedPostgresDev)
+
+	c.Assert(replay.WithSchemaStateReturned(true).ValidateStatement(statement), qt.IsNil)
+	c.Assert(replay.ValidateStatement(statement), qt.ErrorMatches,
+		`postgres migration replay rejects COMMENT ON global metadata because .*`)
 }

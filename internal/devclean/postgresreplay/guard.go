@@ -36,7 +36,8 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
 		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
-	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" {
+	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" &&
+		(!scope.SchemaStateReturned || !postgresSchemaStateStatement(tokens)) {
 		return replay.Refuse(dialect, operation)
 	}
 	if operation := postgresRoleOrAuthorizationChange(tokens); operation != "" {
@@ -573,6 +574,22 @@ func postgresGlobalPrivilegeOperation(tokens []lexer.Token) string {
 		return first + " server privilege"
 	}
 	return ""
+}
+
+// postgresSchemaStateStatement reports a comment on a schema, or a privilege
+// granted or revoked on one: what a reset that returns a schema's state undoes;
+// see [replay.Scope.SchemaStateReturned]. A security label is not one, because
+// no reset reads it.
+func postgresSchemaStateStatement(tokens []lexer.Token) bool {
+	onIndex := findPostgresKeyword(tokens, "ON", 1)
+	if onIndex == replay.MutationTargetNotFound || replay.NormalizedIdentifier(replay.TokenAt(tokens, onIndex+1)) != "SCHEMA" {
+		return false
+	}
+	switch replay.NormalizedIdentifier(tokens[0]) {
+	case "COMMENT", "GRANT", "REVOKE":
+		return true
+	}
+	return false
 }
 
 func postgresGlobalMetadataOperation(tokens []lexer.Token) string {

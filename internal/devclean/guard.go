@@ -27,6 +27,9 @@ type ReplayGuard struct {
 	// baseline words a refusal as the rehearsal baseline's; see
 	// [BaselineGuard].
 	baseline bool
+	// schemaStateReturned is [replay.Scope.SchemaStateReturned]; see
+	// [ReplayGuard.WithSchemaStateReturned].
+	schemaStateReturned bool
 	// session is set only by a caller that discards its pinned replay session.
 	session bool
 	// ownTransactions is set only by a caller that replays an existing history
@@ -240,6 +243,16 @@ func (g *ReplayGuard) ValidateStatement(stmt string) error {
 	return g.withRemedy(stmt, err)
 }
 
+// WithSchemaStateReturned returns a copy of the guard for a plan rehearsal, or
+// the baseline under it, on a dev database whose every reset returns the schemas
+// it keeps to what the claim recorded; see
+// [BaselineGuard.WithSchemaStateReturned].
+func (g *ReplayGuard) WithSchemaStateReturned(returned bool) *ReplayGuard {
+	guard := *g
+	guard.schemaStateReturned = returned
+	return &guard
+}
+
 // withRemedy ends err, the refusal of stmt, with the guard's remedy when the
 // server realm would have accepted stmt, and with
 // [devdocker.ProvisionedServerRemedy] when only a provisioned server would.
@@ -267,6 +280,7 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 	}
 	scope := realm.scope(g.info.Schema)
 	scope.Session = g.session
+	scope.SchemaStateReturned = g.schemaStateReturned
 	return g.guard.Validate(stmt, scope)
 }
 
