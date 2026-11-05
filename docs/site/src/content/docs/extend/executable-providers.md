@@ -151,11 +151,18 @@ also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
 Missing receipts and refusals discard the plan.
 
-Common-object support carries table, column and index comments. A provider that owns the table lifecycle and
-lists the `COMMENT` kind receives the comment of a table it creates, of a
-column it adds and of an index it creates as a comment step after its own
-creation, and a changed index comment as one comment step with the comment the
-index ends with. A comment step reads its table and changes the comment alone.
+Common-object support carries table, column and index comments. A provider that
+owns the table lifecycle and lists the `COMMENT` kind receives the comment of a
+table it creates, of a column it adds and of an index it creates as a comment
+step after its own creation, and a changed index comment as one comment step
+with the comment the index ends with. The comment of a column it drops from a
+table the plan keeps is removed with a comment step before the removal, as the
+comment of an index it drops is removed: an engine that keeps comments apart
+from the object would otherwise keep it. A comment step reads its table and
+changes the comment alone, so a service that orders comments after its own
+steps of the table leaves out a step that only reads and drops; the host places
+the removals after the comments.
+
 A provider that lists the `GRANT` kind receives a grant or revocation on a
 table it creates or alters as a step after its own change, and the step reads
 the table and changes the table's access alone. These services do not grant
@@ -918,6 +925,14 @@ desired schema again for the dev database, and runs that plan through the
 provider, as the apply runs the target's. A plan whose operations are not the
 target's, one by one, refuses the apply: the rehearsal would pass on changes
 the apply does not make. `ptah-compat schema apply` rehearses the same way.
+
+`ptah migrations generate` writes the reverse migration of a provider's change
+from the provider's own reversal of it. A provider that lists `models.reverse`
+undoes each change its comparison returned, predicts what the forward change
+leaves, and says how the reverse restores the prior definition and what it
+cannot recover; the down file carries both as comments. Without the feature, a
+plan that holds such a change writes no migration, and the error names the
+change kind that has no reversal.
 
 With `units.sensitive-inputs`, the provider declares environment variable names
 for exact execution units before approval. Native and compatibility schema
