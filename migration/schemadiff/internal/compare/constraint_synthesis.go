@@ -146,7 +146,8 @@ func synthesizeTablePrimaryKeyConstraints(
 		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		columns := tablePrimaryKeyColumns(table)
 		if len(columns) == 0 && (liveKeyDefers(database, identity, semantics) ||
-			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics)) {
+			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics) ||
+			declaresKeyName(table, dialect)) {
 			columns = columnPrimaryKey(table, desired.Fields)
 		}
 		if len(columns) == 0 {
@@ -351,6 +352,9 @@ func tablePrimaryKeyConstraintName(
 	dialect string,
 	semantics identifier.Semantics,
 ) string {
+	if declaresKeyName(table, dialect) {
+		return table.PrimaryKeyName
+	}
 	wanted := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 	if name, found := livePrimaryKeyName(dbConstraints, wanted, semantics); found {
 		return name
@@ -363,6 +367,13 @@ func tablePrimaryKeyConstraintName(
 		return table.PrimaryKeyName
 	}
 	return table.Name + "_pkey"
+}
+
+// declaresKeyName reports a primary key name the table declares, on a dialect that
+// compares it with the live key's name. Without it a declared name over the columns
+// the key holds reads as synced, and the two names stay apart for good.
+func declaresKeyName(table schemamodel.Table, dialect string) bool {
+	return table.PrimaryKeyName != "" && comparisonOf(dialect).PrimaryKeyRenames
 }
 
 // addedPrimaryKeyNamed gives a primary key that replaces the live one the name
