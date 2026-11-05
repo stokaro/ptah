@@ -145,6 +145,10 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A read names the tables it found and does not describe, and the
+	// comparison refuses a declaration at one in the provider's words; see
+	// reader.unreadTables.
+	provider.UnreadTablesFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

@@ -1313,6 +1313,13 @@ REPLICATION ... SET (STATE = 'DONE', FAILOVER_MODE = 'FORCE')`, which makes its
 tables ordinary, and plan again. A failed-over replication is dropped without
 `CASCADE`, and its tables are compared as the ordinary tables they are.
 
+A replica table left behind that way is in the database and in no read: a
+schema that leaves it out plans nothing for it, and one that declares a table
+at its path is refused at planning, since YDB takes no table there. Drop the
+replica by hand with `DROP TABLE`, which YDB accepts. Through the YDB provider,
+`db read` and `schema inspect` also name the table in a note, `note: 1 table
+this read does not describe: dir.rep: ...`, with the reason the refusal gives.
+
 Failing over is one way: YDB answers `Cannot switch state` to any later state
 change. Lint rule `YD115` reports a `DROP ASYNC REPLICATION` without `CASCADE`
 for a replication the migration did not fail over, and `DS107` a `DROP ...
