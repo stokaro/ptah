@@ -16,11 +16,21 @@ import (
 func projectTableFeatures(ctx context.Context, current schemacapture.TableObservation, recovery []schemaext.Reversal, semantics identifier.Semantics, codecs schemaext.Registry) (schemacapture.TableObservation, error) {
 	builder := objectidentity.NewBuilder(semantics)
 	parent := builder.TableParts(current.Table.Schema, current.Table.Name)
-	// The table, each captured index and each named constraint own a facet record.
-	// An index facet is projected onto the index it names, never onto the
-	// table or a new record, and a key's onto the key.
+	// The table, each captured column, each captured index and each named
+	// constraint own a facet record. A column facet is projected onto the
+	// column it names, an index facet onto the index, and a key's onto the
+	// key, never onto the table or a new record. Without the column records an
+	// owner that keeps a column's placement as a column facet cannot reverse a
+	// change of it, since the reverse plan would read the column as the
+	// forward plan found it.
 	records := []schemaext.FacetRecord{{Subject: parent, Values: current.Table.Facets}}
 	owners := map[objectidentity.Key]bool{parent.Key(): true}
+	columns := make([]objectidentity.ID, len(current.Table.Columns))
+	for i, column := range current.Table.Columns {
+		columns[i] = builder.ColumnParts(current.Table.Schema, current.Table.Name, column.Name)
+		records = append(records, schemaext.FacetRecord{Subject: columns[i], Values: column.Facets})
+		owners[columns[i].Key()] = true
+	}
 	indexes := make([]objectidentity.ID, len(current.Indexes))
 	for i, index := range current.Indexes {
 		indexes[i] = builder.IndexParts(index.Schema, index.TableName, index.Name)
@@ -73,6 +83,10 @@ func projectTableFeatures(ctx context.Context, current schemacapture.TableObserv
 	}
 	current.OwnedObjects, current.FeatureCoverage = state.Objects, attached.Coverage
 	current.Table.Facets = projected[parent.Key()]
+	current.Table.Columns = slices.Clone(current.Table.Columns)
+	for i, subject := range columns {
+		current.Table.Columns[i].Facets = projected[subject.Key()]
+	}
 	current.Indexes = slices.Clone(current.Indexes)
 	for i, subject := range indexes {
 		current.Indexes[i].Facets = projected[subject.Key()]
