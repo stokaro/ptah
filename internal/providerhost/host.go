@@ -89,6 +89,10 @@ var hostFeatures = []string{
 	// scope, which the planner receives as context and nothing compares; see
 	// reader.planningContext.
 	provider.PlanningContextInventoryFeature,
+	// The reverse plan of a provider's change is the provider's reversal of
+	// it, which the engine runtime dispatches as it dispatches a built-in
+	// owner's; see modelReverser.
+	provider.ReverseChangesFeature,
 	// A migration file, a printed diff and a rendered schema ask for SQL
 	// text units, and a provider refuses a change it can make only natively;
 	// see target.Render and rowWriter.RenderWrites.

@@ -45,6 +45,7 @@ func (h *Host) Provider() engine.Provider {
 		result.Targets = append(result.Targets, selected.registration())
 		selected.registerComparisons(&result)
 		selected.registerPlanning(&result)
+		selected.registerReversals(&result)
 		selected.registerDeclarations(&result)
 		selected.registerContextBindings(&result)
 		if selected.supportsLint() {
