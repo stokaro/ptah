@@ -186,7 +186,11 @@ func compareReportingUndecidedAdditions(
 		caps,
 	)
 
-	if err := attachFeatureChanges(diff, desired, database, comparisonChanges(featureResult), opts.Dialect, identifierSemantics); err != nil {
+	featureChanges, err := withColumnDependentsRebuilt(comparisonChanges(featureResult), diff, identifierSemantics)
+	if err != nil {
+		return nil, Diagnostics{}, err
+	}
+	if err := attachFeatureChanges(diff, desired, database, featureChanges, opts.Dialect, identifierSemantics); err != nil {
 		return nil, Diagnostics{}, err
 	}
 	diff.SkippedFeatures = featureResult.Skipped

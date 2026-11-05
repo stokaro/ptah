@@ -42,3 +42,27 @@ func ReadsRelationIn(reader RelationReader, relation string, semantics identifie
 	}
 	return reader.ReadsRelation(relation)
 }
+
+// ColumnTypeDependent is implemented by a captured value whose definition stands in
+// the way of a change to the type of a column it names, as a row-security policy does:
+// the server refuses the change while the definition stands. A host asks it whether a
+// plan's column changes reach it, and has it dropped and created around them.
+type ColumnTypeDependent interface {
+	RelationReader
+	// NamesColumn reports whether the definition names column. The test is
+	// syntactic, so it may answer true for a name of something else; that errs on
+	// the side of a rebuild the server did not need.
+	NamesColumn(column string) bool
+	// RebuildChange returns the change that drops the value ahead of the column
+	// changes and creates desired after them.
+	RebuildChange(desired Value) (ChangeValue, error)
+}
+
+// ColumnTypeRebuild is implemented by a change value that can be planned around the
+// column changes of its plan rather than where its kind goes by default.
+type ColumnTypeRebuild interface {
+	ChangeValue
+	// AroundColumnChanges returns a copy that drops the old definition ahead of the
+	// column changes, and creates the new one after them where there is one.
+	AroundColumnChanges() ChangeValue
+}
