@@ -55,12 +55,14 @@ type hclEncoding struct {
 }
 
 // EncodeHCL has the provider write the document's values of its models: its
-// objects, and the facets of tables and indexes. The provider answers with the
-// blocks and attributes its HCL claims read, which the host turns into the
-// writer's blocks and the attributes of its own; a value it cannot write is a
-// loss reported where the writer writes the value's block. A facet of a column,
-// a key, a routine or a materialized view has no place in an encoding request
-// and is a loss too.
+// objects, and the facets of tables, columns and indexes. The provider answers
+// with the blocks and attributes its HCL claims read, which the host turns
+// into the writer's blocks and the attributes of its own; a value it cannot
+// write is a loss reported where the writer writes the value's block. A
+// column's facet goes to the provider bound to the column's table, as a Go or
+// YAML export sends it, so the provider can say that a facet the column holds
+// by holding nothing is no loss. A facet of a key, a routine or a materialized
+// view has no place in an encoding request and is a loss.
 //
 // The host writes the document's account of the provider's models itself, as
 // the captured feature coverage header coverageHeader returns, and sends the
@@ -177,9 +179,9 @@ func (e *hclEncoding) parts(result *protocol.EncodedSource) []*protocol.EncodedF
 }
 
 // capture adds the document's values to the batch: objects as native objects,
-// table and index facets bound to their table, and the facets the request has
-// no place for as losses at their block. The document's coverage stays out of
-// the batch; EncodeHCL writes it.
+// table, column and index facets bound to their table, and the facets the
+// request has no place for as losses at their block. The document's coverage
+// stays out of the batch; EncodeHCL writes it.
 func (e *hclEncoding) capture(request hclext.EncodeRequest) error {
 	for _, object := range request.Objects {
 		id, err := e.batch.add(protocol.SourceModelValue_NATIVE_OBJECT, "", object.Value)
@@ -203,7 +205,12 @@ func (e *hclEncoding) capture(request hclext.EncodeRequest) error {
 			return err
 		}
 	}
-	for _, slots := range [][]hclext.SlotFacets{request.Columns, request.Keys, request.Routines, request.MaterializedViews} {
+	for _, column := range request.Columns {
+		if err := e.facets(column.Slot, e.batch.bind(column.Slot.Table.Schema, column.Slot.Table.Name), column.Facets); err != nil {
+			return err
+		}
+	}
+	for _, slots := range [][]hclext.SlotFacets{request.Keys, request.Routines, request.MaterializedViews} {
 		for _, slot := range slots {
 			for _, kind := range slot.Facets.Kinds() {
 				e.losses[slot.Slot] = append(e.losses[slot.Slot], fmt.Sprintf("%s of %s has no HCL spelling a provider writes", kind, slot.Slot))
