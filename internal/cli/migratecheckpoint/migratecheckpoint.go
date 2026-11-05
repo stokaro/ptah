@@ -173,7 +173,7 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		return cmdutil.Fail(cmd, fmt.Errorf("capture migration directory: %w", err))
 	}
 	if _, err := migrationintegrity.GateWithPolicy(
-		cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+		cmd.Context(), cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
 	); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

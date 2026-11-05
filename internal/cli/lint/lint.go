@@ -213,6 +213,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	// deliberate on both surfaces: linting a directory nobody has hashed is how
 	// you inspect one before adopting it, and the gate keeps that.
 	if _, err := migrationintegrity.GateWithPolicy(
+		cmd.Context(),
 		cmd.ErrOrStderr(),
 		reportOpts.FS,
 		migrationfile.DirFormat(reportOpts.DirFormat),

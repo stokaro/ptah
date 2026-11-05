@@ -109,7 +109,7 @@ func (o *Options) Resolve(ctx context.Context, notice io.Writer) (Directory, err
 	// the gate asserts that the files about to be printed are the ones a
 	// recorded sum covers, and zero files are covered by every sum equally.
 	if o.VerifySum && len(files) > 0 {
-		if err := verify(notice, source, source.DirFormat); err != nil {
+		if err := verify(ctx, notice, source, source.DirFormat); err != nil {
 			return Directory{}, err
 		}
 	}
@@ -129,6 +129,7 @@ func (o *Options) Resolve(ctx context.Context, notice io.Writer) (Directory, err
 // going to check anything has no configuration to refuse. These verbs run a
 // single gate, so there is no second one that could observe a different value.
 func verify(
+	ctx context.Context,
 	notice io.Writer,
 	source migrationsource.Source,
 	format migrationfile.DirFormat,
@@ -138,6 +139,7 @@ func verify(
 		return err
 	}
 	verified, err := migrationintegrity.GateWithPolicy(
+		ctx,
 		notice,
 		source.FileSystem,
 		format,

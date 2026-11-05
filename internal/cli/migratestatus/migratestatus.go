@@ -308,11 +308,17 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 			return err
 		}
 		if err := migrationsource.Verify(
-			cmd.ErrOrStderr(), integrityEmitter(cmd, runtime, opts), runtime, source, dirFormat, integrityPolicy,
+			cmd.Context(), cmd.ErrOrStderr(), integrityEmitter(cmd, runtime, opts), runtime, source, dirFormat, integrityPolicy,
 			migrationsource.VerifyOptions{RequireSum: true, Verbose: opts.verbose},
 		); err != nil {
 			return err
 		}
+	} else {
+		// The gate reports the files atlas.sum leaves out of the run when it
+		// runs. Without it, status still counts the directory as a run would
+		// read it, so it names what that count leaves out, as `migrate
+		// status` does on the compatibility surface.
+		migrationintegrity.ReportUncoveredIn(cmd.Context(), cmd.ErrOrStderr(), source.FileSystem, dirFormat)
 	}
 
 	revisionFormat, err := migrateflags.ParseRevisionTableFormat(revisionFormatValue)

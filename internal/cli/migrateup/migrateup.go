@@ -513,7 +513,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *runDocument) 
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
 
-	if err := runIntegrityGate(cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, integrityPolicy, opts); err != nil {
+	if err := runIntegrityGate(cmd.Context(), cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, integrityPolicy, opts); err != nil {
 		return err
 	}
 
@@ -1159,6 +1159,7 @@ func lintPathPrefixForSource(requested string, source migrationsource.Source) st
 // first is what let five other verbs execute directories `up` refused, and a
 // private copy of the second would have the same shape.
 func runIntegrityGate(
+	ctx context.Context,
 	notice io.Writer,
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
@@ -1167,7 +1168,7 @@ func runIntegrityGate(
 	integrityPolicy migrationintegrity.Policy,
 	opts *options,
 ) error {
-	return migrationsource.Verify(notice, emit, runtime, source, format, integrityPolicy, migrationsource.VerifyOptions{
+	return migrationsource.Verify(ctx, notice, emit, runtime, source, format, integrityPolicy, migrationsource.VerifyOptions{
 		RequireSum: opts.verifySum,
 		Verbose:    opts.verbose,
 	})

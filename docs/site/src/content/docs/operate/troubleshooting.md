@@ -355,8 +355,7 @@ warnings:
 - schema-file constructs that are accepted and dropped;
 - details of an inspected schema that `schema inspect` cannot write as HCL,
   such as the grantor of a permission;
-- on `ptah-compat`, SQL files in an Atlas migration directory that `atlas.sum`
-  does not cover;
+- SQL files in an Atlas migration directory that `atlas.sum` does not cover;
 - on `ptah-compat`, the blocks `schema inspect` omits, or keeps, although the
   Atlas community CLI refuses them.
 

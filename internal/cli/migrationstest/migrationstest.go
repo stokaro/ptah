@@ -145,7 +145,7 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return fmt.Errorf("capture migration directory: %w", err)
 	}
 	if _, err := migrationintegrity.GateWithPolicy(
-		notice, migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+		ctx, notice, migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
 	); err != nil {
 		return err
 	}
