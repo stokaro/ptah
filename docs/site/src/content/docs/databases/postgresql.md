@@ -1182,6 +1182,12 @@ items_id_seq TO app`: Ptah reads it back, plans it only when the database lacks
 it, and revokes it from a role the schema manages when the declaration leaves
 it out.
 
+A plan refuses a grant on a table, a view or a materialized view it removes,
+with `--schemas` as without it: declare the object, or leave the grant out.
+`--schemas` compares the grants on every relation in a selected schema, including
+one Ptah does not read, such as a foreign table or the revision table. So a run
+with the flag grants and revokes there as a run without it does.
+
 ### Role passwords
 
 A role's `password` may be a password or a hash PostgreSQL takes as one, such

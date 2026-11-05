@@ -33,7 +33,7 @@ func TestSchemaDiffPairsAFileWithAMySQLDatabaseItNamesE2E(t *testing.T) {
 			diff := runPtahIn(c, "schema", "diff", "--from", "file://"+file, "--to", database)
 
 			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diff.Stdout, diff.Stderr))
-			c.Assert(diff.Stdout, qt.Contains, "DROP TABLE IF EXISTS `"+name+"`.`t2`;")
+			c.Assert(diff.Stdout, qt.Contains, "DROP TABLE `"+name+"`.`t2`;")
 			c.Assert(diff.Stdout, qt.Contains, "CREATE TABLE `t3`")
 			c.Assert(diff.Stdout, qt.Not(qt.Contains), "`t1`")
 			c.Assert(scratch.tablesOf(c, name), qt.Equals, "t1,t3")

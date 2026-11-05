@@ -60,3 +60,50 @@ func TestScopeKeepsTheGrantsOfAKeptView(t *testing.T) {
 		})
 	}
 }
+
+// A grant on a relation one side holds no record of stays on both sides when
+// --schema names the relation's schema and no include selector narrows the
+// selection, so the plan answers for it as on an unscoped run. A source grants on
+// a view it stopped declaring (stokaro/ptah#5371), and a read reports a grant on a
+// relation it does not read, such as a foreign table. Kept on one side alone, the
+// grant is planned on every run. Outside the selection it goes from both.
+func TestScopeKeepsAGrantOnAnUnrecordedRelation(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		scope   atlasfilter.Scope
+		tables  []schemamodel.Table
+		live    []catalog.Table
+		onTable string
+		schema  string
+		object  string
+		kept    int
+	}{
+		{name: "in a selected schema", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}},
+			onTable: "shop.recent", schema: "shop", object: "recent", kept: 1},
+		{name: "named without its schema, which is selected", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"main"}, DefaultSchema: "main"},
+			onTable: "recent", object: "recent", kept: 1},
+		{name: "in a schema the selection leaves out", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"public"}},
+			onTable: "shop.recent", schema: "shop", object: "recent", kept: 0},
+		{name: "named without its schema, which is left out", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}, DefaultSchema: "main"},
+			onTable: "recent", object: "recent", kept: 0},
+		{name: "outside an include selector", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}, Include: []string{"shop.items"}},
+			tables: []schemamodel.Table{{Schema: "shop", Name: "items"}}, live: []catalog.Table{{Schema: "shop", Name: "items"}},
+			onTable: "shop.recent", schema: "shop", object: "recent", kept: 0},
+		{name: "excluded by name", scope: atlasfilter.Scope{Selections: ownerSelections(), Schemas: []string{"shop"}, Exclude: []string{"shop.recent"}},
+			onTable: "shop.recent", schema: "shop", object: "recent", kept: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Tables: test.tables, Grants: []schemamodel.Grant{{Role: "app", OnTable: test.onTable, Privileges: []string{"SELECT"}}}}
+			live := &catalog.Database{Tables: test.live, Grants: []catalog.Grant{{Role: "app", ObjectType: "TABLE", Schema: test.schema, ObjectName: test.object, Privilege: "SELECT"}}}
+
+			got, err := atlasfilter.ScopeGenerated(desired, test.scope)
+			c.Assert(err, qt.IsNil)
+			read, err := atlasfilter.ScopeDatabase(live, test.scope)
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(got.Grants, qt.HasLen, test.kept)
+			c.Assert(read.Grants, qt.HasLen, test.kept)
+		})
+	}
+}

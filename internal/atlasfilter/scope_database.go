@@ -145,7 +145,8 @@ func (s *scopeSelection) databaseGrantSelected(
 	case s.vocabulary.selections.OwnsGrantType(grant.ObjectType):
 		return s.vocabulary.objectGrantKept(out.FeatureObjects, grant.ObjectType, grant.QualifiedTarget())
 	default:
-		return s.tableKept(keptTables, grant.Schema, grant.ObjectName) || s.viewKept(out, grant.Schema, grant.ObjectName)
+		return s.tableKept(keptTables, grant.Schema, grant.ObjectName) || s.viewKept(out, grant.Schema, grant.ObjectName) ||
+			s.grantedRelationSchemaSelected(grant.Schema)
 	}
 }
 

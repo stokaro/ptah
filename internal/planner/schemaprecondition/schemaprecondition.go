@@ -91,6 +91,17 @@ func RefuseServerSchemas(dialect string, diff *difftypes.SchemaDiff) error {
 		ptaherr.ErrUnsupportedFeature, dialect)
 }
 
+// RefuseDatabaseChanges refuses a diff that changes a database's character set or
+// collation, for a planner that creates and drops schemas and has no such
+// statement. Planning nothing would report the two sides equal.
+func RefuseDatabaseChanges(dialect string, diff *difftypes.SchemaDiff) error {
+	if diff == nil || len(diff.SchemasModified) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: the diff changes a database, which only a MySQL or MariaDB plan of a whole server does; the %s planner plans none",
+		ptaherr.ErrUnsupportedFeature, dialect)
+}
+
 // RefuseIndexChangesInPlace refuses a diff that renames an index or writes an
 // index's comment in place, for a planner of dialect that plans neither. The
 // comparison records a rename only on a target with capability.IndexRename,

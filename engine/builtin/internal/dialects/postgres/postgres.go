@@ -1777,6 +1777,23 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 	}
 }
 
+// serialStorageType is the integer type a serial column stores its values in, and
+// any other type as it stands. A serial is a shorthand of CREATE TABLE and ADD COLUMN
+// and no type of its own: `ALTER COLUMN c TYPE bigserial` answers `type "bigserial"
+// does not exist`. The column keeps the sequence it has.
+func serialStorageType(typeName string) string {
+	switch strings.ToLower(strings.TrimSpace(typeName)) {
+	case "smallserial", "serial2":
+		return "smallint"
+	case "serial", "serial4":
+		return "integer"
+	case "bigserial", "serial8":
+		return "bigint"
+	default:
+		return typeName
+	}
+}
+
 // generatesItsOwnValues reports whether this renderer wrote something that
 // makes the server assign the column's value.
 //
@@ -2095,6 +2112,7 @@ func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNod
 		// Type was transformed (e.g., enum handling), use the processed type
 		targetType = columnType
 	}
+	targetType = serialStorageType(targetType)
 	if column.EnumType {
 		// Through text: no cast reaches an enum from another enum, and every
 		// type a column can leave casts to text. An array goes through text[].

@@ -83,7 +83,7 @@ func TestGenerateSchemaDiffSQLStatements_PlansTheDatabasesOfAWholeServer_HappyPa
 // meets it only in a diff built by hand, and planning nothing would report the
 // two sides equal.
 func TestGenerateSchemaDiffSQLStatements_PlansTheDatabasesOfAWholeServer_FailurePath(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.SQLite, platform.ClickHouse, platform.SQLServer, platform.Oracle} {
+	for _, dialect := range []string{platform.SQLite, platform.ClickHouse, platform.SQLServer, platform.Oracle} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 

@@ -1103,6 +1103,28 @@ instead, in `schema apply`, `schema diff` and `migrate diff`. Under
 `PTAH_ATLAS_STRICT_COMPAT=1` a database that holds a view is refused before any
 plan: `does not support inspected schema views`.
 
+### A schema with nothing in it
+
+On PostgreSQL, CockroachDB, YugabyteDB and Spanner, a schema the document declares
+and the database lacks is created, whether or not anything is in it. Measured on
+the pinned community binary v1.3.0 and PostgreSQL 18, with `schema apply`:
+
+| The document and the database | Community binary | `ptah-compat` |
+| --- | --- | --- |
+| Declares `app`, and the database lacks it | `CREATE SCHEMA "app"` | `CREATE SCHEMA IF NOT EXISTS "app"` |
+| Declares `app` with a comment | also `COMMENT ON SCHEMA` | also `COMMENT ON SCHEMA` |
+| Declares `app`, and the database holds it | synced | synced |
+| Declares only `app`, with a URL pinned to `public` | `mismatched HCL and database schemas` | the same refusal |
+| Does not mention `app`, and the database holds it | `DROP SCHEMA "app" CASCADE` | synced, and the schema stays |
+
+`ptah-compat` differs on the last row, deliberately. It drops no schema a document
+does not mention, because the drop takes everything in it. Tables the document
+leaves out are planned for removal one by one.
+
+The schema the connection resolved is never created. A schema the document records
+with `ptah:not-described schema` is left alone, whatever it holds, and is not
+created.
+
 ### A whole MySQL or MariaDB server
 
 A `--url` that names no MySQL or MariaDB database is the whole server, as on

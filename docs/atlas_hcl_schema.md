@@ -215,6 +215,11 @@ Ptah's generated HCL uses that spelling. CockroachDB likewise refuses its exact
 `crdb_internal` namespace. Quoted lookalikes such as `schema "PG_CATALOG" {}`
 or `schema "CRDB_INTERNAL" {}` remain user schemas.
 
+A `schema` block with nothing in it declares the schema, so a plan on PostgreSQL,
+CockroachDB, YugabyteDB or Spanner creates it when the database lacks it. A plan
+never creates the schema the connection resolved, and never drops a schema the
+document does not mention.
+
 Spanner refuses the schema names its server refuses to create: `spanner_sys`,
 `spanner`, `default`, every name that starts with `spanner_` in lower case, and
 any spelling in another case of `public`, `information_schema`, `pg_catalog`,

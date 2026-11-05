@@ -54,6 +54,12 @@ CREATE SCHEMA IF NOT EXISTS "extensions";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions" VERSION '1.3';
 ```
 
+On PostgreSQL, CockroachDB, YugabyteDB and Spanner, a plan creates a schema the
+file declares and the database lacks, whether or not anything is in it, and a
+rollback drops it. A plan never drops a schema the file does not mention. [Atlas
+schema commands](../../atlas/schema-commands/#a-schema-with-nothing-in-it) has the
+measured table.
+
 A column type may name its schema, quoted or not, the way `pg_dump` writes a
 type outside the search path: `m app.mood`, `m "app"."Mood"[]`,
 `g public.geometry(Point, 4326)`. A comparison matches it to the type the

@@ -53,3 +53,41 @@ func TestFilterScopesViewGrantsOnBothSidesTheSameWay(t *testing.T) {
 	c.Assert(generated.RevokedGrants, qt.DeepEquals, desired.RevokedGrants[:1])
 	c.Assert(read.Grants, qt.DeepEquals, database.Grants[:2])
 }
+
+// A grant on a relation one side holds no record of stays when its schema is
+// selected, on both sides, so the plan answers for it as on an unscoped run. A
+// source grants on a view it stopped declaring: left out, the plan drops the
+// view, says nothing about the grant, and the next run reports the schema synced
+// (stokaro/ptah#5371). A read reports a grant on a relation it does not read:
+// left out, a declared grant on it is planned on every run. A grant in a schema
+// the selection leaves out goes from both.
+func TestFilterKeepsAGrantOnAnUnrecordedRelationInASelectedSchema(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Grants: []schemamodel.Grant{
+			{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "gone"},
+			{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "public.gone"},
+			{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "other.gone"},
+		},
+		RevokedGrants: []schemamodel.Grant{
+			{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "public.gone"},
+			{Role: "reader", Privileges: []string{"INSERT"}, OnTable: "other.gone"},
+		},
+	}
+	database := &catalog.Database{
+		Grants: []catalog.Grant{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "unread"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "unread"},
+			{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "other", ObjectName: "unread"},
+		},
+	}
+
+	generated, err := schemascope.FilterGeneratedWithDefaultSchema(t.Context(), selectext.None(), desired, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
+	read, err := schemascope.FilterDatabaseWithDefaultSchema(t.Context(), selectext.None(), database, []string{"public"}, "public")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(generated.Grants, qt.DeepEquals, desired.Grants[:2])
+	c.Assert(generated.RevokedGrants, qt.DeepEquals, desired.RevokedGrants[:1])
+	c.Assert(read.Grants, qt.DeepEquals, database.Grants[:2])
+}

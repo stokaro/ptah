@@ -14,22 +14,31 @@ import (
 // PostgreSQL 18.6, Atlas CE v1.3.0 drops the key and adds the column's under
 // the server's name: `x` on MySQL and MariaDB, `c_x_key` on PostgreSQL
 // (stokaro/ptah#3723). Where another key the plan drops holds that name, it
-// drops that key first. want are the statements each engine is planned.
+// drops that key first. diff are the statements `migrate diff` plans on each
+// engine, which writes a column as a read of the catalog prints it; apply are
+// the statements native `schema apply` plans, which keeps the planner's
+// spelling. Neither guards a drop with IF EXISTS.
 var columnKeyUnderAnotherName = []struct {
 	name      string
 	engines   []uniqueEngine
 	migration string
 	schema    string
-	want      map[string][]string
+	diff      map[string][]string
+	apply     map[string][]string
 }{
 	{
 		name:      "a name of the author's",
 		engines:   uniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT c_x_uq UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":      {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_uq`"},
+			"MariaDB":    {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_uq`"},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "c_x_uq"`},
+		},
+		apply: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_uq`"},
-			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `c_x_uq`"},
+			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_uq`"},
 			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "c_x_uq"`},
 		},
 	},
@@ -38,9 +47,13 @@ var columnKeyUnderAnotherName = []struct {
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT c_x_key UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":   {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_key`"},
+			"MariaDB": {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_key`"},
+		},
+		apply: map[string][]string{
 			"MySQL":   {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_key`"},
-			"MariaDB": {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `c_x_key`"},
+			"MariaDB": {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_key`"},
 		},
 	},
 	{
@@ -48,7 +61,10 @@ var columnKeyUnderAnotherName = []struct {
 		engines:   []uniqueEngine{postgresUniqueEngine},
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT x UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "x"`},
+		},
+		apply: map[string][]string{
 			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "x"`},
 		},
 	},
@@ -58,9 +74,14 @@ var columnKeyUnderAnotherName = []struct {
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int);
 CREATE UNIQUE INDEX ux ON c (x);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":      {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `ux`"},
+			"MariaDB":    {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `ux`"},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "ux"`},
+		},
+		apply: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `ux`"},
-			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `ux`"},
+			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `ux`"},
 			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "ux"`},
 		},
 	},
@@ -69,9 +90,13 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, y int, CONSTRAINT x UNIQUE (y), CONSTRAINT c_x_uq UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE, y int);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":   {"DROP INDEX `x`", "MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_uq`"},
+			"MariaDB": {"DROP INDEX `x`", "MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `c_x_uq`"},
+		},
+		apply: map[string][]string{
 			"MySQL":   {"DROP INDEX `x`", "MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_uq`"},
-			"MariaDB": {"DROP INDEX IF EXISTS `x`", "MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `c_x_uq`"},
+			"MariaDB": {"DROP INDEX `x`", "MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_uq`"},
 		},
 	},
 	{
@@ -79,9 +104,13 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, y int, KEY x (y), CONSTRAINT c_x_uq UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE, y int);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":   {"DROP INDEX `x` ON `c`", "MODIFY COLUMN `x` int NULL UNIQUE"},
+			"MariaDB": {"DROP INDEX `x` ON `c`", "MODIFY COLUMN `x` int NULL UNIQUE"},
+		},
+		apply: map[string][]string{
 			"MySQL":   {"DROP INDEX `x` ON `c`", "MODIFY COLUMN `x` int UNIQUE"},
-			"MariaDB": {"DROP INDEX IF EXISTS `x` ON `c`", "MODIFY COLUMN `x` int UNIQUE"},
+			"MariaDB": {"DROP INDEX `x` ON `c`", "MODIFY COLUMN `x` int UNIQUE"},
 		},
 	},
 	{
@@ -89,7 +118,10 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		engines:   []uniqueEngine{postgresUniqueEngine},
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, y int, CONSTRAINT c_x_uq UNIQUE (x), CONSTRAINT c_x_key UNIQUE (y));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE, y int);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD CONSTRAINT "c_x_key" UNIQUE ("x")`},
+		},
+		apply: map[string][]string{
 			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD CONSTRAINT "c_x_key" UNIQUE ("x")`},
 		},
 	},
@@ -98,9 +130,13 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, y int, CONSTRAINT x UNIQUE (y));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, y int, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"MySQL":   {"DROP INDEX `x`", "ADD COLUMN `x` int NULL UNIQUE"},
+			"MariaDB": {"DROP INDEX `x`", "ADD COLUMN `x` int NULL UNIQUE"},
+		},
+		apply: map[string][]string{
 			"MySQL":   {"DROP INDEX `x`", "ADD COLUMN `x` int UNIQUE"},
-			"MariaDB": {"DROP INDEX IF EXISTS `x`", "ADD COLUMN `x` int UNIQUE"},
+			"MariaDB": {"DROP INDEX `x`", "ADD COLUMN `x` int UNIQUE"},
 		},
 	},
 	{
@@ -108,7 +144,10 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		engines:   []uniqueEngine{postgresUniqueEngine},
 		migration: `CREATE TABLE c (id int PRIMARY KEY, y int, CONSTRAINT c_x_key UNIQUE (y));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, y int, x int UNIQUE);`,
-		want: map[string][]string{
+		diff: map[string][]string{
+			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD COLUMN "x" integer UNIQUE NULL`},
+		},
+		apply: map[string][]string{
 			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD COLUMN "x" int UNIQUE`},
 		},
 	},
@@ -137,7 +176,7 @@ func TestMigrateDiffRenamesAColumnKeyUnderAnotherNameE2E(t *testing.T) {
 					"--to", "file://"+schema, "--dev-url", engine.emptyDB(c), "--dry-run")
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
-				for _, statement := range test.want[engine.name] {
+				for _, statement := range test.diff[engine.name] {
 					c.Assert(plan, qt.Contains, statement)
 				}
 				c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
@@ -160,7 +199,7 @@ func TestSchemaApplyRenamesAColumnKeyUnderAnotherNameE2E(t *testing.T) {
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 				again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-				for _, statement := range test.want[engine.name] {
+				for _, statement := range test.apply[engine.name] {
 					c.Assert(applied, qt.Contains, statement)
 				}
 				c.Assert(again, qt.Contains, "Schema is synced")

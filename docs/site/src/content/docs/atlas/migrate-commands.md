@@ -1415,11 +1415,17 @@ too.
 
 The plan drops the views, materialized views and triggers the declaration
 removes before the columns and tables they read, and a generated column before
-the columns it reads. A routine the plan removes that takes or returns the row
-type of a removed view or table, such as `RETURNS SETOF v`, or reads it in a
-SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is dropped right
-ahead of it. CockroachDB also records what a body in quotes reads, so there
-such a routine goes ahead of the table too. A partition and a table that
+the columns it reads.
+
+A routine the plan removes that takes or returns the row type of a removed view
+or table, such as `RETURNS SETOF v`, or reads it or a dropped column in a
+SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is dropped right ahead
+of the first of them. CockroachDB also records what a body in quotes reads, so
+there such a routine goes ahead of the table too. What calls such a routine goes
+before it: another routine the plan removes, and a removed view, table or column
+whose definition calls it.
+
+A partition and a table that
 inherits another go ahead of their parent. In the exact style, the plan also
 drops a removed table's policies before views and columns they read. A removed
 table a policy of
@@ -1430,30 +1436,29 @@ and two removed tables whose policies read each other are dropped in one
 A removed domain, composite type or range type that names the row type of a
 removed table, such as `CREATE TYPE wrap AS (r t, n int)`, is dropped before
 the tables. The plan relies on `CASCADE` only where it removes a dependent
-after the drop:
-
-- a view or table whose row type a removed routine names, when another object
-  the plan removes calls the routine or the routine names more than one
-  relation the plan drops; the routine is then removed after every table and
-  view. A view the plan drops and creates again is not one of them: the plan
-  drops every routine that uses its row type before it;
-- a column a routine the plan removes reads in a SQL-standard body when
-  another dependency prevents dropping the routine before that column;
-- a table whose row type a type the plan removes names, when a table or a
-  routine the plan drops after the tables still uses the type, so the type is
-  dropped after them. Any other removed domain, composite type or range type,
-  a removed extension and a removed default privilege hold no drop back. An
-  object a feature owner removes and cannot describe holds back every column
-  and table drop.
+after the drop: a table whose row type a type the plan removes names, when a
+table or a routine the plan drops after the tables still uses the type, so the
+type is dropped after them. Any other removed domain, composite type or range
+type, a removed extension and a removed default privilege hold no drop back. An
+object a feature owner removes and cannot describe holds back every column and
+table drop.
 
 Such a `CASCADE` also drops a reader the declaration does not hold, such as a
 view in a schema the run leaves out, and the file applies without an error.
+
+A plan is refused before the server changes when something that calls such a
+routine cannot leave before what the routine depends on, and the error names
+all three: a removed table whose default, `CHECK` or index calls a routine that
+reads the same table or a removed view, and a removed domain that calls a
+routine that reads a removed table, since types leave after the tables. Change
+the caller in one migration and remove the rest in the next.
 
 A guard stays where an earlier statement of the same file may already have
 removed the object: a view a `CASCADE` above it may have taken, or an index on a
 view the file drops before it. A constraint of a kept table is dropped before the
 columns, so it needs none. `CREATE SCHEMA IF NOT EXISTS` stays for a schema the
-read of the dev database did not find, because a read limited to the connection's
+read of the dev database did not find, whether an added object names it or the
+desired state declares it, because a read limited to the connection's
 schema cannot say that one is absent. A schema the read found gets no statement,
 and neither does the schema the connection resolves unqualified names to, usually
 `public`: it exists, so `public.users` gets no more of a precondition than `users`

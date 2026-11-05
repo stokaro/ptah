@@ -86,9 +86,8 @@ func TestCompareWithDatabaseInfo_ComparesTheDatabasesOfAWholeServer_HappyPath(t 
 }
 
 // TestCompareWithDatabaseInfo_ComparesNoDatabasesWithoutAWholeServer is the
-// control: a connection to one database, a PostgreSQL connection, and a
-// server described without a connection plan no database, whatever the two
-// sides declare.
+// control: a connection to one database and a server described without a
+// connection plan no database, whatever the two sides declare.
 func TestCompareWithDatabaseInfo_ComparesNoDatabasesWithoutAWholeServer(t *testing.T) {
 	tests := []struct {
 		name string
@@ -96,7 +95,6 @@ func TestCompareWithDatabaseInfo_ComparesNoDatabasesWithoutAWholeServer(t *testi
 	}{
 		{name: "a connection to one MySQL database", info: catalog.ServerInfo{Dialect: platform.MySQL, Schema: "r1"}},
 		{name: "a MySQL server described without a connection", info: catalog.ServerInfo{Dialect: platform.MySQL}},
-		{name: "a PostgreSQL connection", info: catalog.ServerInfo{Dialect: platform.Postgres, WholeServer: true}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

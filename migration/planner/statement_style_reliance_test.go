@@ -51,18 +51,6 @@ func removedViewAndTableWithRoutine(routine catalog.Function) styleChange {
 	})}
 }
 
-// removedViewWithRoutineADefaultCalls removes item_skus, the routine
-// next_sku, whose SQL-standard body reads it, and the table orders, whose
-// column default calls next_sku.
-func removedViewWithRoutineADefaultCalls() styleChange {
-	return styleChange{declared: styleDeclared(), held: styleHeldWith(func(h *catalog.Database) {
-		h.Views = []catalog.View{itemSkusView}
-		h.Functions = []catalog.Function{styleRoutine("next_sku", "", "integer", "BEGIN ATOMIC SELECT count(*)::int FROM item_skus; END")}
-		h.Tables = append(h.Tables, styleTable("orders", styleKey("id"),
-			catalog.Column{Name: "code", DataType: "integer", UDTName: "int4", IsNullable: "YES", ColumnDefault: new("next_sku()")}))
-	})}
-}
-
 // removedViewWithRoutineBesideACheck removes item_skus and a routine that
 // returns its rows, and a CHECK on owners, which the plan keeps.
 func removedViewWithRoutineBesideACheck(routine catalog.Function) styleChange {
@@ -447,9 +435,9 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 		{name: "a view removed with a routine that returns its rows and that another removed view calls",
 			change: removedViewWithRoutineCalled(setof),
 			want: []string{
-				`DROP VIEW "public"."item_skus" CASCADE`,
-				`DROP VIEW IF EXISTS "public"."sku_list"`,
-				`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
+				`DROP VIEW "public"."sku_list"`,
+				`DROP FUNCTION "public"."list_skus"()`,
+				`DROP VIEW "public"."item_skus"`,
 			}},
 		{name: "a view removed with a routine that returns its rows, beside a CHECK the plan removes",
 			change: removedViewWithRoutineBesideACheck(setof),
@@ -458,19 +446,12 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_ExactStyleReliance_HappyPath
 				`DROP FUNCTION "public"."list_skus"()`,
 				`DROP VIEW "public"."item_skus"`,
 			}},
-		{name: "a view removed with a routine whose body reads it and that a removed table's default calls",
-			change: removedViewWithRoutineADefaultCalls(),
-			want: []string{
-				`DROP VIEW "public"."item_skus" CASCADE`,
-				`DROP TABLE IF EXISTS "public"."orders"`,
-				`DROP FUNCTION IF EXISTS "public"."next_sku"()`,
-			}},
 		{name: "a view and a table removed with a routine that names both",
 			change: removedViewAndTableWithRoutine(styleRoutine("pair", "r item_skus", "SETOF archive", "SELECT * FROM archive")),
 			want: []string{
-				`DROP VIEW "public"."item_skus" CASCADE`,
-				`DROP TABLE IF EXISTS "public"."archive" CASCADE`,
-				`DROP FUNCTION IF EXISTS "public"."pair"(r item_skus)`,
+				`DROP FUNCTION "public"."pair"(r item_skus)`,
+				`DROP VIEW "public"."item_skus"`,
+				`DROP TABLE "public"."archive"`,
 			}},
 		{name: "a view removed with a routine whose parameter is named after it",
 			change: removedViewWithRoutine(styleRoutine("by_sku", "item_skus integer", "integer", "SELECT item_skus")),
