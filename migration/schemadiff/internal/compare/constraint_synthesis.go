@@ -1,6 +1,8 @@
 package compare
 
 import (
+	"slices"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
@@ -142,7 +144,8 @@ func synthesizeTablePrimaryKeyConstraints(
 	for _, table := range desired.Tables {
 		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
 		columns := tablePrimaryKeyColumns(table)
-		if len(columns) == 0 && liveKeyDefers(database, identity, semantics) {
+		if len(columns) == 0 && (liveKeyDefers(database, identity, semantics) ||
+			columnKeyDiffersFromLive(table, desired.Fields, database, identity, dialect, semantics)) {
 			columns = columnPrimaryKey(table, desired.Fields)
 		}
 		if len(columns) == 0 {
@@ -207,6 +210,41 @@ func liveKeyDefers(database *catalog.Database, identity tableIdentity, semantics
 		}
 	}
 	return false
+}
+
+// columnKeyDiffersFromLive reports a column's own primary key that is not the key
+// the live table holds, on a dialect whose plan has no statement for the column's
+// flag; see [ptah.run/core/platform/descriptor.Comparison.ColumnPrimaryKeyIsTheTablesKey].
+// A key the table already holds stays a flag on its column, where the comparison
+// has nothing to do. A column the plan adds takes its key in its own ADD COLUMN.
+func columnKeyDiffersFromLive(
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	database *catalog.Database,
+	identity tableIdentity,
+	dialect string,
+	semantics identifier.Semantics,
+) bool {
+	if !comparisonOf(dialect).ColumnPrimaryKeyIsTheTablesKey {
+		return false
+	}
+	declared := columnPrimaryKey(table, fields)
+	return len(declared) > 0 && liveTableHoldsColumns(database, identity, declared, semantics) &&
+		!columnSetsMatch(declared, livePrimaryKeyColumns(database, identity, semantics), semantics)
+}
+
+// liveTableHoldsColumns reports whether the live table has every column of columns.
+func liveTableHoldsColumns(database *catalog.Database, identity tableIdentity, columns []string, semantics identifier.Semantics) bool {
+	held := make(map[string]bool)
+	for _, table := range database.Tables {
+		if newQualifiedTableIdentity(table.QualifiedName(), semantics) != identity {
+			continue
+		}
+		for _, column := range table.Columns {
+			held[semantics.ColumnIdentityKey(column.Name)] = true
+		}
+	}
+	return !slices.ContainsFunc(columns, func(column string) bool { return !held[semantics.ColumnIdentityKey(column)] })
 }
 
 // columnPrimaryKey names the columns of table that declare themselves its

@@ -33,14 +33,15 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 	}
 	want := map[string]descriptor.Comparison{
 		"postgres": {
-			ForeignKeysOutside:      true,
-			ForeignKeyHoldsItsKey:   true,
-			ExpressionProbes:        "pg-catalog",
-			RolePasswords:           true,
-			RoutineTypeAliases:      "pg-aliases",
-			QualifiedTypeNames:      true,
-			DefaultGeneratedKind:    "STORED",
-			ProbesSQLStandardBodies: true,
+			ForeignKeysOutside:             true,
+			ForeignKeyHoldsItsKey:          true,
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			ExpressionProbes:               "pg-catalog",
+			RolePasswords:                  true,
+			RoutineTypeAliases:             "pg-aliases",
+			QualifiedTypeNames:             true,
+			DefaultGeneratedKind:           "STORED",
+			ProbesSQLStandardBodies:        true,
 		},
 		"cockroachdb": {
 			ForeignKeysOutside:      true,
