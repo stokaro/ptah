@@ -318,7 +318,53 @@ func TestPlanningCarriesTheContextOutsideTheScope(t *testing.T) {
 	request := featureplan.Request{Target: "custom", Objects: featureplan.ObjectContext{Context: comparisonRequest(c).Desired}}
 	result, err := mustRuntime(c, p).PlanFeatures(t.Context(), request)
 	c.Assert(err, qt.IsNil)
-	c.Assert(received.Objects.Context.Objects.Len(), qt.Equals, 2)
+	c.Assert(received.Objects.Context.Objects.Refs(), qt.DeepEquals, []objectidentity.ID{comparedRef(conversionFirst, "first")})
 	c.Assert(received.Objects.Subjects(received.ContextKinds), qt.HasLen, 0)
 	c.Assert(result.Objects, qt.HasLen, 0)
+}
+
+// Two services that assess context share one planning context, and each
+// receives only the records and coverage of the kinds it assesses. The other
+// service's records are no context of its own, and a provider refuses them.
+func TestPlanningContextReachesOnlyTheServiceThatAssessesItsKinds(t *testing.T) {
+	c := qt.New(t)
+	received := make(map[string]featureplan.Request)
+	recording := func(name string) featureplan.Service {
+		return planningFunc(func(ctx context.Context, request featureplan.Request) (featureplan.Result, error) {
+			received[name] = request
+			return plannedObjects(ctx, request)
+		})
+	}
+	p := objectPlanningProvider(recording("first"))
+	p.Planning = append(p.Planning, engine.Planning{Target: "custom", ContextKinds: []schemaext.Kind{conversionSecond}, Service: recording("second")})
+	runtime := mustRuntime(c, p)
+	var records []schemaext.KindCoverage
+	for _, model := range runtime.Codecs().Definitions() {
+		if (model.Kind == conversionFirst || model.Kind == conversionSecond) && model.Representation == schemaext.Observed {
+			records = append(records, schemaext.KindCoverage{Model: model, Knowledge: schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})})
+		}
+	}
+	c.Assert(records, qt.HasLen, 2)
+	coverage, err := schemaext.NewCoverage(schemaext.Observed, records, nil)
+	c.Assert(err, qt.IsNil)
+	inventory := comparisonRequest(c).Desired
+	inventory.Coverage = coverage
+	_, err = runtime.PlanFeatures(t.Context(), featureplan.Request{Target: "custom", Objects: featureplan.ObjectContext{Context: inventory}})
+	c.Assert(err, qt.IsNil)
+	for _, test := range []struct {
+		service string
+		kind    schemaext.Kind
+		name    string
+	}{
+		{"first", conversionFirst, "first"},
+		{"second", conversionSecond, "second"},
+	} {
+		t.Run(test.service, func(t *testing.T) {
+			c := qt.New(t)
+			got := received[test.service].Objects.Context
+			c.Assert(got.Objects.Refs(), qt.DeepEquals, []objectidentity.ID{comparedRef(test.kind, test.name)})
+			c.Assert(got.Coverage.KindRecords(), qt.HasLen, 1)
+			c.Assert(got.Coverage.KindRecords()[0].Model.Kind, qt.Equals, test.kind)
+		})
+	}
 }
