@@ -908,6 +908,12 @@ var notEnforcedClauses = map[bool]string{true: " NOT ENFORCED", false: ""}
 // writeAddConstraint writes one ALTER TABLE ... ADD CONSTRAINT and the comment
 // that belongs to it.
 func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNode) error {
+	return r.writeAddConstraintAfter(table, "", constraint)
+}
+
+// writeAddConstraintAfter is [Renderer.writeAddConstraint] with the clauses ahead
+// of ADD in the same statement.
+func (r *Renderer) writeAddConstraintAfter(table, ahead string, constraint *ast.ConstraintNode) error {
 	constraintLine, err := r.renderConstraint(constraint)
 	if err != nil {
 		return fmt.Errorf("error rendering add constraint: %w", err)
@@ -918,8 +924,8 @@ func (r *Renderer) writeAddConstraint(table string, constraint *ast.ConstraintNo
 	}
 	// Remove the leading spaces from constraint rendering for ALTER
 	constraintLine = strings.TrimPrefix(constraintLine, "  ")
-	r.w.WriteLinef("ALTER TABLE %s ADD %s%s;",
-		r.escapeQualifiedIdentifier(table), constraintLine, r.notValidClause(constraint))
+	r.w.WriteLinef("ALTER TABLE %s %sADD %s%s;",
+		r.escapeQualifiedIdentifier(table), ahead, constraintLine, r.notValidClause(constraint))
 	// The comment is a separate statement here for the same reason it is after
 	// CREATE TABLE, and it has to be written on BOTH paths. Measured on
 	// PostgreSQL 18: `schema apply` reaches an existing table through ALTER
@@ -958,8 +964,29 @@ func addColumnClause(op *ast.AddColumnOperation) string {
 	return "ADD COLUMN"
 }
 
+// primaryKeyReplacement is the two operations of a node that replaces a primary
+// key in one statement: a constraint's drop and the key's addition. Every other node
+// writes a statement for each operation. CockroachDB takes a key's drop only in the
+// statement that adds the next one.
+func primaryKeyReplacement(node *ast.AlterTableNode) (*ast.DropConstraintOperation, *ast.AddConstraintOperation, bool) {
+	if len(node.Operations) != 2 {
+		return nil, nil, false
+	}
+	drop, drops := node.Operations[0].(*ast.DropConstraintOperation)
+	add, adds := node.Operations[1].(*ast.AddConstraintOperation)
+	return drop, add, drops && adds && add.Constraint != nil && add.Constraint.Type == ast.PrimaryKeyConstraint
+}
+
 // renderAlterTable renders PostgreSQL-specific ALTER TABLE statements
 func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
+	if drop, add, replaces := primaryKeyReplacement(node); replaces {
+		return r.writeAddConstraintAfter(node.Name, fmt.Sprintf("DROP CONSTRAINT %s, ", r.escapeIdentifier(drop.ConstraintName)), add.Constraint)
+	}
+	return r.renderAlterTableOperations(node)
+}
+
+// renderAlterTableOperations writes a statement for each operation of node.
+func (r *Renderer) renderAlterTableOperations(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:

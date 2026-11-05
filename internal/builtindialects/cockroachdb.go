@@ -145,6 +145,9 @@ func cockroachDB() descriptor.Dialect {
 			ForeignKeysOutside: true,
 			// Measured on v26.3.5.
 			ForeignKeyMatchesKeyInAnyOrder: true,
+			// Without this `code INT8 PRIMARY KEY` on a table that holds another
+			// key plans only the old key's drop, measured on v26.3.5.
+			ColumnPrimaryKeyIsTheTablesKey: true,
 			ExpressionProbes:               "pg-catalog",
 			ProbeViewsInSchema:             true,
 			RewritesRoutineBodies:          true,
