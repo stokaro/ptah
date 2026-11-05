@@ -254,6 +254,11 @@ fact is unknown offline, and a provider that refuses to plan against an
 unknown fact refuses the command. A command that connects plans with the facts
 the session states.
 
+For a provider that states no offline facts, the facts of the first session
+that states any stand in for them for the rest of the command. The conversion
+of a source after the connection and the routing of a provider statement in
+`migrations generate` then read the server's answers.
+
 `sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
 without parsing it in many places: the lineage of view bodies, the indentation
 of the `sql` template function of `ptah-compat`, placeholder rewriting,
