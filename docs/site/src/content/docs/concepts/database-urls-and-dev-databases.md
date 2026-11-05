@@ -330,9 +330,9 @@ reaches past the dev database:
   `ALTER DEFAULT PRIVILEGES FOR ALL ROLES` without `IN SCHEMA`, `DROP OWNED`,
   `REASSIGN OWNED`, and `COMMENT ON` a role, a database, or an extension or
   schema of the dev database. A server declared disposable lifts all of these
-  except the comment on an extension or a schema: that server outlives the
-  run, and its reset keeps the extensions and schemas it found, so the next run
-  would read the comment.
+  except the comment on an extension or a schema, because that server outlives
+  the run. A [rehearsal](#the-baseline-a-rehearsal-writes) allows a schema's own
+  comment and privileges where its reset returns them.
 - MySQL and MariaDB routines, triggers, `CALL`, `GRANT`, `REVOKE`, `CREATE`
   and `DROP` of a user, role or database, and writes to another database.
 - YDB writes anywhere in the server, `PRAGMA TablePathPrefix`, actions, users,
@@ -416,9 +416,19 @@ names the baseline statement and these two remedies.
 Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
 EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
-target gave an extension itself, or a comment on a schema, is written only on a
-server Ptah provisions from a docker URL, because the cleanup does not restore
-it and a server declared disposable keeps it for the next run.
+target gave an extension itself is written only on a server Ptah provisions
+from a docker URL, because the cleanup does not restore it and a server declared
+disposable keeps it for the next run.
+
+A schema's own comment and the privileges on it are written on any server,
+because they end with the run. A target often holds them, on `public` or on a
+schema of its own, and a dev database whose `public` was dropped and created
+again has neither. On PostgreSQL, CockroachDB and YugabyteDB, the claim records
+the owner, access list and comment of the schemas a reset keeps, and every reset
+returns those schemas to them and drops the others. A dev URL that pins one schema
+with `search_path` is the exception: its cleanup leaves that schema as it finds
+it, so they are refused there, with the remedies above. A privilege for a role the
+dev server does not hold fails on that server, as it does on a table.
 
 The plan is held to the same rules, before the first statement of the
 baseline or the plan runs. The plan comes from the desired schema, so a role,

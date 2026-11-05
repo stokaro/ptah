@@ -455,7 +455,8 @@ func rehearseStatementsOnDev(
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
-	if err := guardPlanRehearsal(statements, devclean.NewDevReplayGuardFor(devConn), devConn.Info()); err != nil {
+	guard := devclean.NewDevReplayGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
+	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
 	// The dev database executes these statements for real, and they came from
@@ -575,7 +576,8 @@ func recreateCurrentSchema(
 		if err != nil {
 			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 		}
-		if err := guardRehearsalBaseline(statements, devclean.NewBaselineGuardFor(devConn), info.Dialect); err != nil {
+		guard := devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
+		if err := guardRehearsalBaseline(statements, guard, info.Dialect); err != nil {
 			return err
 		}
 		if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {

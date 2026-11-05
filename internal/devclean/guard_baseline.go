@@ -14,9 +14,9 @@ import (
 // can write outside the dev database when it runs, a comment on an extension
 // is not restored by the cleanup, and a role or a grant outlives it. So every
 // refusal of [NewDevReplayGuard] holds, and a server the run owns lifts the
-// same refusals it lifts for a replay. The two differ only in a refusal's
-// words. A YDB baseline holds no permission on the database root at all; see
-// the rehearsal's own omission of them.
+// same refusals it lifts for a replay. The two differ in a refusal's words and
+// in [BaselineGuard.WithSchemaStateReturned]. A YDB baseline holds no permission
+// on the database root at all; see the rehearsal's own omission of them.
 type BaselineGuard struct {
 	replay *ReplayGuard
 }
@@ -37,6 +37,22 @@ func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
 	replay := *guard
 	replay.baseline = true
 	return &BaselineGuard{replay: &replay}
+}
+
+// WithSchemaStateReturned returns a copy of the guard for a dev database whose
+// every reset returns the schemas it keeps to what the claim recorded, as
+// [Baseline.ReturnsSchemaState] answers.
+//
+// The copy accepts a comment on a schema and a privilege on a schema. A target
+// holds them often, on public or on its own schemas, and the rehearsal needs
+// them on the dev database: a native plan is made again there, and refused if
+// it is not the target's. Written there, they end with the run. A schema the
+// reset keeps goes back to its claimed comment and access list, and any other
+// schema is dropped. A migration replay stays refused, because its statements
+// are not Ptah's own, and so does a dev database whose reset does not return
+// them.
+func (g *BaselineGuard) WithSchemaStateReturned(returned bool) *BaselineGuard {
+	return &BaselineGuard{replay: g.replay.WithSchemaStateReturned(returned)}
 }
 
 // ValidateStatement refuses a baseline statement whose effects cannot be
