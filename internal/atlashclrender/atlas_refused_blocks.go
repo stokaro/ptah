@@ -216,7 +216,10 @@ func (r *renderer) notDescribed() coverage.Set {
 func documentedLimits(set coverage.Set, vocabulary coverage.Vocabulary) (coverage.Set, error) {
 	var documented coverage.Set
 	for _, object := range set.Objects {
-		if vocabulary.InProcess(object.Kind) {
+		// The reader makes a materialized view's record itself, for every
+		// block it reads. Written into the header too, the record would change
+		// the bytes of a document rendered from its own parse.
+		if vocabulary.InProcess(object.Kind) || object.Kind == coverage.MaterializedViewOptions {
 			continue
 		}
 		if _, err := vocabulary.ParseKind(string(object.Kind)); err != nil {

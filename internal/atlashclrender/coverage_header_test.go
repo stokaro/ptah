@@ -106,10 +106,17 @@ func TestCompatibilityRenderDeclaresNoCommonLimitsOnSQLite(t *testing.T) {
 	c.Assert(coverageHeaderLines(string(result.Data)), qt.HasLen, 0)
 }
 
+// storageUndescribed is the record the HCL reader makes for each materialized
+// view it reads, whose storage parameters the block has no attribute for.
+func storageUndescribed(view string) coverage.Object {
+	return coverage.Object{Kind: coverage.MaterializedViewOptions, Name: view, Reason: coverage.Unsupported, Provenance: coverage.Declared}
+}
+
 // TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser is the
 // serialization half. A record the renderer keeps only in its own Result is
 // worth nothing to `schema apply --to file://...`, which is a new process
-// reading bytes.
+// reading bytes. The reader adds the one record no header carries: the
+// storage parameters of the materialized view, which the format cannot state.
 func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T) {
 	c := qt.New(t)
 
@@ -121,12 +128,13 @@ func TestCompatibilityDocumentCarriesItsLimitsBackThroughTheParser(t *testing.T)
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.NotDescribed, qt.DeepEquals, result.NotDescribed)
+	c.Assert(parsed.NotDescribed, qt.DeepEquals, result.NotDescribed.With(storageUndescribed("public.account_counts")))
 }
 
 // TestNativeDocumentCarriesNoLimitsBackThroughTheParser is that round trip's
-// control: a document with no header parses to full authority, which is what
-// every hand-written schema file is.
+// control: a document with no header parses to full authority over
+// everything it can state, which is what every hand-written schema file is.
+// What it cannot state is a materialized view's storage parameters.
 func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 	c := qt.New(t)
 
@@ -136,7 +144,7 @@ func TestNativeDocumentCarriesNoLimitsBackThroughTheParser(t *testing.T) {
 	parsed, err := atlashcl.ParseWithOptions(t.Context(), result.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(parsed.NotDescribed.IsZero(), qt.IsTrue)
+	c.Assert(parsed.NotDescribed, qt.DeepEquals, coverage.Set{}.With(storageUndescribed("public.account_counts")))
 }
 
 // coverageBareDatabase is a database holding none of the block types the

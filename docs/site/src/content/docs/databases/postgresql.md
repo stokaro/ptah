@@ -958,8 +958,23 @@ OPTION` is a view without a check option. To keep an option, declare it. The
 Go annotations and YAML state them in `options`
 ([Go annotations](../../reference/go-annotations/#ptahschemaview),
 [YAML](../../reference/yaml-schema/#view-options-and-storage-parameters)). HCL
-has no attribute for them yet (stokaro/ptah#5017), so a view declared in HCL is
-a view without options.
+states a view's options in the `security` block Atlas documents for them:
+
+```hcl
+view "order_report" {
+  schema = schema.public
+  as     = "SELECT id, amount FROM orders"
+  security {
+    invoker = true
+    barrier = true
+  }
+}
+```
+
+An HCL `materialized` block has no attribute for storage parameters, as
+Atlas's has none. So an HCL schema states nothing about them: the comparison
+keeps the ones the database holds, and a materialized view the plan creates
+again gets them back. To change them, declare the view in SQL, Go or YAML.
 
 A value is compared by what it means, not by how it is spelled. The server
 stores a value as written, so a database that holds `security_invoker=on` or

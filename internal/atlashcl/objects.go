@@ -15,6 +15,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -286,6 +287,10 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	options, err := p.viewSecurity(block, name)
+	if err != nil {
+		return err
+	}
 	dependsOn := p.objectRefListAttr(block, "depends_on")
 	p.db.Views = append(p.db.Views, schemamodel.View{
 		Name:       tableref.Canonical(schema, name),
@@ -293,9 +298,69 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 		WithCheck:  block.Body.Attributes["check_option"] != nil,
 		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 		Attributes: attributes,
+		Options:    options,
 		DependsOn:  dependsOn,
 	})
 	return nil
+}
+
+// viewSecurityBlock is the block a view states PostgreSQL's security_invoker
+// and security_barrier in.
+const viewSecurityBlock = "security"
+
+// viewSecurity reads a view's security block into the options it states: the
+// spelling Atlas documents for a PostgreSQL view, one block without a label
+// holding an invoker and a barrier bool, at least one of them set.
+//
+//	security {
+//	  invoker = true
+//	  barrier = true
+//	}
+//
+// invoker is security_invoker and barrier is security_barrier. A view without
+// the block states no options. A second block, a label, a value that is not a
+// bool and a block that sets neither are refused rather than read as no
+// options, because each is a declaration the view would not carry.
+func (p *parser) viewSecurity(block *hclsyntax.Block, name string) ([]string, error) {
+	var security *hclsyntax.Block
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != viewSecurityBlock {
+			continue
+		}
+		if security != nil {
+			return nil, p.blockError(nested, "view %q declares more than one security block", name)
+		}
+		security = nested
+	}
+	if security == nil {
+		return nil, nil
+	}
+	if len(security.Labels) > 0 {
+		return nil, p.blockError(security, "view %q security block takes no label", name)
+	}
+	if err := p.rejectNestedBlocks(security, "view security"); err != nil {
+		return nil, err
+	}
+	if err := p.rejectUnsupportedAttrs(security, map[string]bool{"invoker": true, "barrier": true}, "view security"); err != nil {
+		return nil, err
+	}
+	var options []string
+	for _, option := range []struct{ attribute, name string }{
+		{attribute: "invoker", name: "security_invoker"},
+		{attribute: "barrier", name: "security_barrier"},
+	} {
+		value, err := p.optionalBoolPtr(security, option.attribute, "view security")
+		if err != nil {
+			return nil, err
+		}
+		if value != nil {
+			options = append(options, option.name+"="+strconv.FormatBool(*value))
+		}
+	}
+	if len(options) == 0 {
+		return nil, p.blockError(security, "view %q security block sets neither invoker nor barrier", name)
+	}
+	return options, nil
 }
 
 // objectRefListAttr reads a list of object references into the names they point
@@ -422,6 +487,13 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 		Body:      body,
 		Comment:   p.optionalString(block.Body.Attributes["comment"]),
 		DependsOn: p.objectRefListAttr(block, "depends_on"),
+	})
+	// The block has no attribute for the view's storage parameters, so the
+	// document states nothing about them, and the comparison keeps the ones
+	// the database holds.
+	p.storageUndescribed = append(p.storageUndescribed, coverage.Object{
+		Kind: coverage.MaterializedViewOptions, Name: tableref.Canonical(schema, name),
+		Reason: coverage.Unsupported, Provenance: coverage.Declared,
 	})
 	return p.claimOwnerMaterializedView(block, len(p.db.MaterializedViews)-1)
 }
@@ -954,7 +1026,7 @@ func (p *parser) rejectUnsupportedRoutineArgAttrs(block *hclsyntax.Block, blockT
 }
 
 func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocksExcept(block, "view", viewColumnBlock); err != nil {
+	if err := p.rejectNestedBlocksExcept(block, "view", viewColumnBlock, viewSecurityBlock); err != nil {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
