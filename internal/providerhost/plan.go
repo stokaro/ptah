@@ -36,7 +36,12 @@ type commonPlanner struct {
 	indexes bool
 	// renames plans an index the comparison pairs with one declared under
 	// another name as one step the owner claims, which keeps the index.
-	renames    bool
+	renames bool
+	// observedKeys reads the primary key a provider table holds, in key
+	// order, so the comparison reports a change of it.
+	observedKeys bool
+	// keys hands such a change to the table's owner, which plans it.
+	keys       bool
 	selections *scopeSelections
 }
 
@@ -160,6 +165,14 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 			// wire; see indexCommentNodes.
 			fields = append(fields, "IndexCommentsChanged")
 		}
+	}
+	if p.observedKeys {
+		// A changed primary key reaches the table's owner as an alteration
+		// of the table; see keyChanges. Any other constraint stays refused.
+		if err := p.keyChanges(diff); err != nil {
+			return commonObjectPlan{}, err
+		}
+		fields = append(fields, "ConstraintsAdded", "ConstraintsRemoved")
 	}
 	if err := onlyFields(*diff, fields...); err != nil {
 		return commonObjectPlan{}, err

@@ -95,6 +95,9 @@ func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, rema
 			remaining = remaining[len(column.GetFacets()):]
 		}
 		result.Tables = append(result.Tables, captured)
+		if key := r.primaryKey(table); key != nil {
+			result.Constraints = append(result.Constraints, *key)
+		}
 		indexes, err := r.indexes(table)
 		if err != nil {
 			return err
@@ -129,6 +132,25 @@ func (r reader) indexes(value *protocol.Table) ([]catalog.Index, error) {
 		result = append(result, observed)
 	}
 	return result, nil
+}
+
+// primaryKey reads the primary key a table holds, in key order, as the
+// catalog's PRIMARY KEY constraint, when the session negotiated ordered keys.
+// The SDK has checked the record against the table's columns. Without the
+// feature a table reports no key but its columns' membership, which states no
+// order, and nil is returned.
+func (r reader) primaryKey(value *protocol.Table) *catalog.Constraint {
+	key := value.GetPrimaryKey()
+	if !slices.Contains(r.session.remote.GetFeatures(), provider.ObservedPrimaryKeysFeature) || key == nil {
+		return nil
+	}
+	return &catalog.Constraint{
+		Name: key.GetName(), TableName: key.GetTableName(), Schema: key.GetSchema(), Type: "PRIMARY KEY",
+		// The singular name is the first member, as the catalog readers write it.
+		ColumnName: key.GetColumnNames()[0], ColumnNames: slices.Clone(key.GetColumnNames()), IncludeColumns: slices.Clone(key.GetIncludeColumns()),
+		Deferrable: key.GetDeferrable(), Initially: key.GetInitially(), NotEnforced: key.GetNotEnforced(), UsingMethod: copyPlanningPointer(key.UsingMethod),
+		Comment: key.GetComment(), HashShardBuckets: int(key.GetHashShardBuckets()),
+	}
 }
 
 // features reads the snapshot's feature objects, which lead values, their
