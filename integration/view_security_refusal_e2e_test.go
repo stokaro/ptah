@@ -27,17 +27,16 @@ import (
 type viewSecurityEngine struct {
 	name   string
 	engine dbtarget.Engine
-	// policy is the row-level security condition, spelled as the engine reads
-	// it back, so that the view is the only difference a plan finds.
-	// CockroachDB reads current_user back as current_user(), and PostgreSQL
-	// has no such call.
-	policy string
 }
 
+// viewSecurityPolicy is the row-level security condition that shows each role
+// its own row.
+const viewSecurityPolicy = "owner_name = current_user"
+
 var viewSecurityEngines = []viewSecurityEngine{
-	{name: "postgresql", engine: dbtarget.PostgreSQL, policy: "owner_name = current_user"},
-	{name: "cockroachdb", engine: dbtarget.CockroachDB, policy: "owner_name = current_user()"},
-	{name: "yugabytedb", engine: dbtarget.YugabyteDB, policy: "owner_name = current_user"},
+	{name: "postgresql", engine: dbtarget.PostgreSQL},
+	{name: "cockroachdb", engine: dbtarget.CockroachDB},
+	{name: "yugabytedb", engine: dbtarget.YugabyteDB},
 }
 
 const (
@@ -81,7 +80,6 @@ var viewSecurityPaths = []viewSecurityPath{
 // policy that shows each role its own row, and the view my_docs, which a role
 // with no other rights reads.
 type viewSecurityTarget struct {
-	engine viewSecurityEngine
 	url    string
 	reader string
 	db     *sql.DB
@@ -106,14 +104,14 @@ func newViewSecurityTarget(c *qt.C, engine viewSecurityEngine, options string) v
 	createE2EDatabase(c, c.Context(), admin, name)
 	c.Cleanup(func() { dropPostgresFamilyE2EDatabase(c, admin, name) })
 
-	target := viewSecurityTarget{engine: engine, url: replaceDatabaseName(c, adminURL, name), reader: reader}
+	target := viewSecurityTarget{url: replaceDatabaseName(c, adminURL, name), reader: reader}
 	// One statement each: YugabyteDB answered a conflict to the whole fixture
 	// sent as one call and kept part of it.
 	for _, statement := range []string{
 		"CREATE TABLE docs (id integer PRIMARY KEY, owner_name text NOT NULL)",
 		fmt.Sprintf("INSERT INTO docs VALUES (1, '%s'), (2, 'someone_else')", reader),
 		"ALTER TABLE docs ENABLE ROW LEVEL SECURITY",
-		"CREATE POLICY docs_owner ON docs USING (" + engine.policy + ")",
+		"CREATE POLICY docs_owner ON docs USING (" + viewSecurityPolicy + ")",
 		"GRANT SELECT ON docs TO " + reader,
 		"CREATE VIEW my_docs" + withList(options) + " AS " + viewSecurityBody,
 		"GRANT SELECT ON my_docs TO " + reader,
@@ -133,7 +131,7 @@ func (t viewSecurityTarget) schemaFile(c *qt.C, body, options string) string {
 	path := filepath.Join(c.TempDir(), "schema.sql")
 	schema := "CREATE TABLE docs (id integer PRIMARY KEY, owner_name text NOT NULL);\n" +
 		"ALTER TABLE docs ENABLE ROW LEVEL SECURITY;\n" +
-		"CREATE POLICY docs_owner ON docs USING (" + t.engine.policy + ");\n" +
+		"CREATE POLICY docs_owner ON docs USING (" + viewSecurityPolicy + ");\n" +
 		"CREATE VIEW my_docs" + withList(options) + " AS " + body + ";\n"
 	c.Assert(os.WriteFile(path, []byte(schema), 0o600), qt.IsNil)
 	return path
@@ -524,7 +522,7 @@ func TestCompatMigrateDiffRollbackRemovesAViewSecurityOptionItAddedE2E(t *testin
 	createE2EDatabase(c, c.Context(), admin, devName)
 	c.Cleanup(func() { dropPostgresFamilyE2EDatabase(c, admin, devName) })
 	dev := replaceDatabaseName(c, adminURL, devName)
-	schema := viewSecurityTarget{engine: engine}
+	schema := viewSecurityTarget{}
 	dir := filepath.ToSlash(c.TempDir())
 	diff := func(name, options string) clirun.Result {
 		return clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, "migrate", "diff", name,
