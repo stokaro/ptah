@@ -9,9 +9,13 @@ import (
 // ErrorReasonsFeature lets a provider say why a call failed. A failed call's
 // gRPC status carries one ProviderDiagnostic in its details, and a lock
 // receipt whose outcome is not the one its operation asked for carries one in
-// LockResult.diagnostic. It is a two-way feature of the provider alone: a
-// provider lists it, the host lists it in its host features, and a host shows
-// a reason only when the negotiated description lists it. Contract 25.16.
+// LockResult.diagnostic. Contract 25.16. An execution result that is not
+// APPLIED carries one in Execution.diagnostic, and a transaction result whose
+// outcome is not the one its action asked for carries one in
+// TransactionResult.diagnostic. Contract 25.18. It is a two-way feature of
+// the provider alone: a provider lists it, the host lists it in its host
+// features, and a host shows a reason only when the negotiated description
+// lists it.
 //
 // Listing the feature is the provider's promise about the text. The provider
 // writes each reason itself: it names what failed and why, and it never
@@ -19,7 +23,8 @@ import (
 // host prints it. A reason is never an error's text passed on, since a
 // driver's error can quote any of those. The SDK checks the shape of a
 // reason, with ValidateDiagnostic; only the provider can keep its content
-// clean. The status message is never shown, whatever the feature.
+// clean. The status message and the message of an execution or transaction
+// result are never shown, whatever the feature.
 const ErrorReasonsFeature = "errors.reasons"
 
 // ValidateDiagnostic refuses a diagnostic that is missing or whose reason is

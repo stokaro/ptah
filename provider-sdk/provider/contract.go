@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 17
+const ContractMinor uint32 = 18
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its

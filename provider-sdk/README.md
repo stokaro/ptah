@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.17. `provider-sdk/v0.15.0` speaks 25.16.
+speaks contract 25.18. `provider-sdk/v0.16.0` speaks 25.17.
+`provider-sdk/v0.15.0` speaks 25.16.
 `provider-sdk/v0.14.0` speaks 25.15.
 `provider-sdk/v0.13.0` speaks 25.14.
 `provider-sdk/v0.12.0` speaks 25.12.
@@ -104,6 +105,7 @@ returns to 0.
   Contract 25.15 adds [typed statement arguments](#typed-arguments).
   Contract 25.16 adds [error reasons](#error-reasons).
   Contract 25.17 adds [index renames](#index-renames).
+  Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -434,6 +436,18 @@ one in `LockResult.diagnostic`, and `provider.LockError` reads
 from `TryLock` or `CheckLock`, or `RELEASED` or `NOT_ACQUIRED` from
 `ReleaseLock`.
 
+From contract 25.18
+([ADR 0061](../docs/adr/0061-a-failed-execution-says-why-in-text-the-provider-wrote.md)),
+an execution result other than `APPLIED` carries one in
+`Execution.diagnostic`, and a transaction result whose outcome is not the one
+its action asked for carries one in `TransactionResult.diagnostic`: never
+`COMMITTED` in answer to a commit, or `ROLLED_BACK` or `NOT_STARTED` in answer
+to a rollback. `provider.ExecutionError` and `provider.TransactionError` gain
+`Reason`, and read
+`provider execution: NOT_APPLIED (0 units confirmed applied): <reason>` and
+`provider transaction outcome is ROLLED_BACK: <reason>`. The `message` of
+either result keeps its meaning and is never shown.
+
 Listing the feature is the provider's promise about the text. The provider
 writes each reason itself. It names what failed and why, and never quotes
 statement text, a value, an address or a credential, so a reason is never the
@@ -443,16 +457,24 @@ checks the shape, with `provider.ValidateDiagnostic`: one line of at most 512
 bytes of valid UTF-8, with no control character, no line or paragraph
 separator and no white space around it.
 
-Both transport boundaries enforce the negotiation and the shape alone. The SDK
-server removes every diagnostic from a call's error unless both sides list the
-feature, so a provider sets one without reading `HostFeatures`, and sends `the
-provider's reason is malformed and not shown` in place of a reason the check
-refuses or of more than one. It removes a lock receipt's diagnostic the same
-way, and refuses a receipt whose diagnostic is malformed or accompanies a
-success. The client shows a reason only under the negotiated feature, and
-writes the same sentence for a malformed one. A cancellation and a deadline
-stay the context's errors. Without the feature on both sides, the host's error
-is the operation and the code.
+Both transport boundaries enforce the negotiation and the shape, each alone:
+
+- The SDK server removes every diagnostic from a call's error unless both
+  sides list the feature, so a provider sets one without reading
+  `HostFeatures`, and sends `the provider's reason is malformed and not shown`
+  in place of a reason the check refuses or of more than one.
+- It removes a lock receipt's diagnostic the same way, and refuses a receipt
+  whose diagnostic is malformed or accompanies a success.
+- It removes an execution or transaction result's diagnostic the same way,
+  and one that accompanies a success. It puts the same sentence in place of a
+  malformed one and keeps the result: a refused result would turn a confirmed
+  outcome into an unknown one.
+- The client shows a reason only under the negotiated feature, and writes the
+  same sentence for a malformed one. A result it finds malformed in another
+  way is an unknown outcome and has no reason.
+
+A cancellation and a deadline stay the context's errors. Without the feature on
+both sides, the host's error is the operation and the code.
 
 ## Trust and process lifetime
 
