@@ -151,10 +151,12 @@ type Options struct {
 	// nobody expected. A target without the grammar is planned as it would be
 	// without this.
 	OnlineAlter bool
-	// SkipChangeKinds lists destructive change kinds the planner must omit from
-	// the plan (emitting a clearly-marked comment in their place) instead of
-	// deferring to the coarse destructive gate. Currently honored by the
-	// PostgreSQL-family planner.
+	// SkipChangeKinds lists destructive change kinds the plan omits, with one
+	// clearly-marked comment in place of each omitted change, instead of
+	// deferring to the coarse destructive gate. The planning functions of
+	// ptah.run/migration/planner apply it for every target before the target's
+	// planner is built, and hand that planner options with this field empty, so
+	// a [Factory] never needs to read it.
 	SkipChangeKinds []ChangeKind
 	// OmitNullBackfill plans a column made NOT NULL without first filling its
 	// NULL rows from the column's declared default, so SET NOT NULL fails on a

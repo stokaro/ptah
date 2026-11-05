@@ -274,7 +274,7 @@ func MarshalPlanFileHCL(plan PlanFile) ([]byte, error) {
 	for _, statement := range plan.Statements {
 		text := strings.TrimSuffix(strings.TrimSpace(statement.SQL), ";")
 		text += sqlscript.Terminator(text)
-		text = atlasreport.ChangeLine(statement.Change) + text
+		text = atlasreport.NameStatement(statement.Change, text)
 		for line := range strings.Lines(text + "\n") {
 			// Only the line separator is removed here: a carriage return must
 			// still reach the validator, which refuses it instead of letting

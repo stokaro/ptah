@@ -2298,9 +2298,9 @@ table "old_users" {
 `), 0o600), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"schema", "diff",
 		"--env", "local",
@@ -2311,6 +2311,7 @@ table "old_users" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(errOut.String(), qt.Equals, "SKIP: DROP TABLE of old_users omitted by diff policy (skip: drop_table)\n")
 }
 
 func TestCompatCommand_SchemaDiffUsesConfigPathAndVariableOverride(t *testing.T) {
@@ -2444,9 +2445,9 @@ table "old_users" {
 `), 0o600), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"schema", "diff",
 		"--from", "file://" + from,
@@ -2458,6 +2459,7 @@ table "old_users" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(errOut.String(), qt.Equals, "SKIP: DROP TABLE of old_users omitted by diff policy (skip: drop_table)\n")
 }
 
 // TestCompatCommand_SchemaDiffAcceptsConcurrentIndexDropPolicy pins that
@@ -3654,9 +3656,9 @@ CREATE TABLE old_users (
 `), 0o600), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "diff",
 		"--env", "local",
@@ -3667,6 +3669,7 @@ CREATE TABLE old_users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(errOut.String(), qt.Equals, "SKIP: DROP TABLE of old_users omitted by diff policy (skip: drop_table)\n")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
@@ -3704,9 +3707,9 @@ CREATE TABLE old_users (
 `), 0o600), qt.IsNil)
 
 	cmd := NewCompatCommand("atlas")
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate", "diff",
 		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
@@ -3719,6 +3722,7 @@ CREATE TABLE old_users (
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(errOut.String(), qt.Equals, "SKIP: DROP TABLE of old_users omitted by diff policy (skip: drop_table)\n")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 

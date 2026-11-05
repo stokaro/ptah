@@ -245,10 +245,11 @@ names and ignores the rest. The names Ptah does support are still type-checked
 there: `format { migrate { apply = { k = "v" } } }` fails with
 `atlas.hcl "apply" at atlas.hcl:5 must be a string`.
 
-`diff.skip.drop_table = true` removes table drops from supported local
-declarative diff/apply plans and also removes index or constraint drops owned by
-those dropped tables. `drop_column` and `drop_index` behave the same way for
-column and standalone index removals. Those three are the names Ptah's own diff policy models. The rest of the Atlas
+`diff.skip.drop_table = true` removes table drops from `schema apply`,
+`schema diff`, `schema plan` and `migrate diff` plans and also removes index or
+constraint drops owned by those dropped tables. `drop_column` and `drop_index`
+behave the same way for column and standalone index removals, through the filter
+`ptah migrations generate` applies for `ptah.yaml`. Those three are the names Ptah's own diff policy models. The rest of the Atlas
 set is type-checked and reported as having no effect, because a policy Ptah
 cannot apply has to be visible rather than silently accepted.
 

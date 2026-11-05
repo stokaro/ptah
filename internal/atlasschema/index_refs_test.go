@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/internal/atlasschema"
 )
 
@@ -17,7 +18,7 @@ func TestApplyDiffPolicy_PreservesSameNamedIndexOnKeptTable(t *testing.T) {
 		{Name: "idx_shared", TableName: "orders"},
 	})
 
-	got := atlasschema.ApplyDiffPolicy(diff, atlasschema.DiffPolicy{SkipDropTable: true})
+	got, _ := atlasschema.ApplyDiffPolicy(diff, skipping(planext.DropTable), "")
 
 	c.Assert(got.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "orders"},

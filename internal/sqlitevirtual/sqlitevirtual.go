@@ -278,12 +278,11 @@ type Policy struct {
 	// `diff { skip { drop_table = true } }` in an Atlas project file.
 	//
 	// It carries the dependent removals with it, which is what makes the whole
-	// table safe to discount rather than only its DROP TABLE: both
-	// implementations of this policy also drop the index, constraint, trigger,
-	// RLS and grant removals belonging to a table they keep
-	// ([ptah.run/migration/diffpolicy.Apply] and
-	// [ptah.run/internal/atlasschema.ApplyDiffPolicy]). A table that is
-	// not dropped and whose dependent removals are gone is not rebuilt either.
+	// table safe to discount rather than only its DROP TABLE: the policy's
+	// filter, [ptah.run/migration/diffpolicy.Apply], which every command that
+	// reads `diff.skip` calls, also drops the index, constraint, trigger, RLS
+	// and grant removals belonging to a table it keeps. A table that is not
+	// dropped and whose dependent removals are gone is not rebuilt either.
 	//
 	// It does NOT cover a rebuild. `skip drop_table` filters removals, not
 	// modifications, so a table both sides name and describe differently is
@@ -293,7 +292,8 @@ type Policy struct {
 	SkipDropTable bool
 
 	// SkipDropColumn reports that the caller removes every column drop from the
-	// diff before planning it -- `diff.skip: [drop_column]` in ptah.yaml.
+	// diff before planning it -- `diff.skip: [drop_column]` in ptah.yaml, and
+	// `diff { skip { drop_column = true } }` in an Atlas project file.
 	//
 	// A column removal is one of the shapes SQLite has no ALTER for, so
 	// [sqliterebuild.NeedsTableRebuild] reports a rebuild for any table diff
@@ -310,12 +310,12 @@ type Policy struct {
 
 	// SkipDropIndex reports that the caller removes every standalone index drop
 	// from the diff before planning it -- `diff.skip: [drop_index]` in
-	// ptah.yaml.
+	// ptah.yaml, and `diff { skip { drop_index = true } }` in an Atlas project
+	// file.
 	//
 	// It is standalone drops only. An index REPLACEMENT -- dropped and
-	// recreated under the same name -- is kept by both implementations of this
-	// policy, so it is kept here too, and the table it is aimed at stays
-	// counted.
+	// recreated under the same name -- is kept by the policy's filter, so it is
+	// kept here too, and the table it is aimed at stays counted.
 	SkipDropIndex bool
 }
 

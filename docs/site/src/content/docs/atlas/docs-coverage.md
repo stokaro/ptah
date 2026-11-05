@@ -258,7 +258,7 @@ outside the supported compatibility subset.
 
 **Ptah documentation.** [Configuration](../../reference/configuration/), site [Atlas project config reference](../project-config/)
 
-**Implementation status.** Partial. The parser reads the env, schema, migration, lint, format and diff blocks the compatibility surface acts on. `diff.skip` acts on `drop_table` and `drop_schema` and type-checks the other thirteen CE names without acting on them; [`stokaro/ptah#3111`](https://github.com/stokaro/ptah/issues/3111) owns that and the neighboring variable-validation and `object()` gaps.
+**Implementation status.** Partial. The parser reads the env, schema, migration, lint, format and diff blocks the compatibility surface acts on. `diff.skip` acts on `drop_table`, `drop_column` and `drop_index` in every command that reads it, accepts `drop_schema` with nothing to omit, and type-checks the other eleven CE names without acting on them. Variable `validation` blocks and `object(...)` type constraints are refused by name.
 
 Ptah reads a documented subset into project config IR, including local env
 settings, `schema.src`, `schema.mode`, output formats, supported diff and lint
@@ -357,7 +357,7 @@ registry-approved down planning stays out of scope.
 
 **Ptah documentation.** [Generate migrations](../../versioned/generate/), [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Partial. Native Ptah generates migrations from schema differences, and `ptah-compat migrate diff` reads a `docker://` dev database and the `atlas.hcl` `diff.concurrent_index` policy. The `diff.skip` policy is read for two of its fifteen CE names; [`stokaro/ptah#3111`](https://github.com/stokaro/ptah/issues/3111) owns it.
+**Implementation status.** Partial. Native Ptah generates migrations from schema differences, and `ptah-compat migrate diff` reads a `docker://` dev database and the `atlas.hcl` `diff.concurrent_index` policy. It honors `diff.skip` for `drop_table`, `drop_column` and `drop_index` and reports the rest of the fifteen CE names as having no effect.
 
 `ptah-compat migrate diff` now validates an existing `atlas.sum`, replays a
 local Atlas migration directory on a directly connectable dev database, and

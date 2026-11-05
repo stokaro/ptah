@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/lintext"
@@ -376,7 +375,12 @@ func generateDiff(
 			if err != nil {
 				return err
 			}
-			diff = atlasschema.ApplyDiffPolicy(diff, opts.Policy)
+			// The file carries no comment for a change the policy left out:
+			// the pinned community binary writes the same file without the
+			// change and without a word about it, and the file is what
+			// atlas.sum hashes. The notice goes beside the result instead.
+			diff, omitted := atlasschema.ApplyDiffPolicy(diff, opts.Policy, replayConn.Info().Dialect)
+			atlasschema.ReportOmitted(opts.Diagnostics, omitted)
 			if !diff.HasChanges() {
 				synced = true
 				return nil
@@ -752,7 +756,7 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 // returns. The comparison needs it because the SQLite virtual-table guard runs
 // inside it and refuses on the statements it predicts: a migration directory
 // that creates an fts5 index has no way to be declared by --to, so the drop
-// this guard refuses is planned -- unless the project skips `drop_table`, in
+// this guard refuses is planned -- unless the project skips that drop, in
 // which case it is deleted again and the refusal is for nothing
 // (stokaro/ptah#1028).
 func compareReplayedState(
@@ -810,8 +814,7 @@ func compareReplayedState(
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
 		return nil, nil, err
 	}
-	compareOpts := config.DefaultCompareOptions()
-	compareOpts.SkipTableDrops = policy.SkipDropTable
+	compareOpts := policy.CompareOptions()
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx, replayConn, desired, replayed, compareOpts, selected,
 	)

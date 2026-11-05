@@ -811,7 +811,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 		{
 			// A dropped table's dependent removals go with it, so a constraint
 			// whose host is being dropped is not an ALTER on a kept table --
-			// both implementations of the policy delete it. Counting the host
+			// the policy's filter deletes it. Counting the host
 			// would refuse the same emptied plan by another route.
 			name:     "a constraint on a table the policy keeps from dropping is not counted",
 			dialect:  "sqlite",

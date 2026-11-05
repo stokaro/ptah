@@ -65,8 +65,10 @@ func (p commonPlanner) GenerateMigrationAST(ctx context.Context, runtime feature
 	// The common statements below carry no comment, existence guard or
 	// CASCADE, so the statement style changes nothing here. Owner operations
 	// receive the style in their planning request and control their own
-	// spelling. Skipped change kinds are not a request a provider can honor,
-	// so they stay refused.
+	// spelling. Skipped change kinds are not a request a provider can honor:
+	// the planning entry in migration/planner removes those changes before
+	// this planner is built and passes no kinds, so options that still carry
+	// them are refused.
 	if err := onlyFields(p.options, "TableRebuildRequest", "Capabilities", "Statements", "AllowTableRebuild", "OnlineAlter",
 		"ConcurrentIndexes", "ConcurrentIndexRefs", "ConcurrentIndexDrops", "ConcurrentIndexDropRefs", "OmitNullBackfill"); err != nil {
 		return nil, err

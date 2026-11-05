@@ -772,7 +772,7 @@ func (p PlanFile) SQL() string {
 func (p PlanFile) NamedSQL() string {
 	named := make([]string, 0, len(p.Statements))
 	for _, statement := range p.Statements {
-		named = append(named, atlasreport.ChangeLine(statement.Change)+statement.SQL)
+		named = append(named, atlasreport.NameStatement(statement.Change, statement.SQL))
 	}
 	return annotatedSQL(named, p.Annotations)
 }
