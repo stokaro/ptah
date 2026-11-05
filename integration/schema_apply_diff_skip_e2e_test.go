@@ -95,12 +95,13 @@ const sqliteSkippedPlan = "Planned schema changes:\n" +
 	"Schema apply completed successfully.\n"
 
 // sqliteCompatSkippedPlan is what ptah-compat prints for the same plan: the
-// community binary's comment naming the change, directly above its statement.
+// community binary's comment naming the change, directly above its statement,
+// and the column as a read of the catalog prints it.
 const sqliteCompatSkippedPlan = "Planned schema changes:\n" +
 	"-- " + skippedColumnB + "\n" +
 	"-- " + skippedIndexTA + "\n" +
 	"-- Add column \"c\" to table: \"t\"\n" +
-	"ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT;\n" +
+	"ALTER TABLE \"t\" ADD COLUMN \"c\" text NULL;\n" +
 	"Auto-approval enabled; applying schema changes.\n" +
 	"Schema apply completed successfully.\n"
 

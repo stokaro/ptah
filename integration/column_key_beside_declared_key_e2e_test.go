@@ -25,20 +25,24 @@ var (
 // Atlas CE plans `ADD CONSTRAINT c_a_key` there (stokaro/ptah#3812); one
 // CREATE TABLE that declares both builds the named key alone, which
 // [TestMigrateDiffFindsAColumnUniqueBesideANamedUniqueSyncedOnPostgresE2E]
-// covers. want is the statement each engine is planned.
+// covers. diff is the statement `migrate diff` plans on each engine, which
+// writes a column as a read of the catalog prints it; apply is the statement
+// native `schema apply` plans, which keeps the planner's spelling.
 var columnKeyBesideDeclaredKey = []struct {
 	name      string
 	engines   []uniqueEngine
 	migration string
 	schema    string
-	want      map[string]string
+	diff      map[string]string
+	apply     map[string]string
 }{
 	{
 		name:      "a named UNIQUE",
 		engines:   mysqlFamilyUniqueEngines,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, CONSTRAINT uq_a UNIQUE (a));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, CONSTRAINT uq_a UNIQUE (a));`,
-		want:      map[string]string{"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE"},
+		diff:      map[string]string{"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE"},
+		apply:     map[string]string{"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE"},
 	},
 	{
 		name:    "a unique index",
@@ -47,7 +51,11 @@ var columnKeyBesideDeclaredKey = []struct {
 CREATE UNIQUE INDEX ux ON c (a);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
 CREATE UNIQUE INDEX ux ON c (a);`,
-		want: map[string]string{
+		diff: map[string]string{
+			"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE",
+			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
+		},
+		apply: map[string]string{
 			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
 			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
 		},
@@ -59,7 +67,11 @@ CREATE UNIQUE INDEX ux ON c (a);`,
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE);
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
-		want: map[string]string{
+		diff: map[string]string{
+			"MySQL": "MODIFY COLUMN `a` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `a` int NULL UNIQUE",
+			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
+		},
+		apply: map[string]string{
 			"MySQL": "MODIFY COLUMN `a` int UNIQUE", "MariaDB": "MODIFY COLUMN `a` int UNIQUE",
 			"PostgreSQL": `ADD CONSTRAINT "c_a_key" UNIQUE ("a")`,
 		},
@@ -71,7 +83,8 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a);`,
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE);
 ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
-		want: map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
+		diff:  map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
+		apply: map[string]string{"PostgreSQL": `ADD CONSTRAINT "c_b_key" UNIQUE ("b")`},
 	},
 	{
 		name:      "two columns, each beside a named UNIQUE",
@@ -79,7 +92,8 @@ ALTER TABLE c ADD CONSTRAINT uq_a UNIQUE (a), ADD CONSTRAINT uq_b UNIQUE (b);`,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, a int, b int, CONSTRAINT uq_a UNIQUE (a), CONSTRAINT uq_b UNIQUE (b));`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, a int UNIQUE, b int UNIQUE,
   CONSTRAINT uq_a UNIQUE (a), CONSTRAINT uq_b UNIQUE (b));`,
-		want: map[string]string{"MySQL": "MODIFY COLUMN `b` int UNIQUE", "MariaDB": "MODIFY COLUMN `b` int UNIQUE"},
+		diff:  map[string]string{"MySQL": "MODIFY COLUMN `b` int NULL UNIQUE", "MariaDB": "MODIFY COLUMN `b` int NULL UNIQUE"},
+		apply: map[string]string{"MySQL": "MODIFY COLUMN `b` int UNIQUE", "MariaDB": "MODIFY COLUMN `b` int UNIQUE"},
 	},
 }
 
@@ -106,7 +120,7 @@ func TestMigrateDiffAddsAColumnKeyBesideADeclaredKeyE2E(t *testing.T) {
 					"--to", "file://"+schema, "--dev-url", engine.emptyDB(c), "--dry-run")
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
-				c.Assert(plan, qt.Contains, test.want[engine.name])
+				c.Assert(plan, qt.Contains, test.diff[engine.name])
 				c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
 			})
 		}
@@ -127,7 +141,7 @@ func TestSchemaApplyAddsAColumnKeyBesideADeclaredKeyE2E(t *testing.T) {
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 				again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-				c.Assert(applied, qt.Contains, test.want[engine.name])
+				c.Assert(applied, qt.Contains, test.apply[engine.name])
 				c.Assert(again, qt.Contains, "Schema is synced")
 			})
 		}

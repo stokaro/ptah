@@ -17,34 +17,41 @@ import (
 // or default changes, planned with the clause, ends with a second key, `x_2`,
 // which the next comparison drops. Atlas CE v1.3.0 restates the column without
 // the clause and its next comparison is synced (stokaro/ptah#3857). A column
-// that gains its UNIQUE is the control: the clause is what adds its key. want is the statement each engine is planned;
-// keys are the keys of c other than the primary key once the plan is applied.
+// that gains its UNIQUE is the control: the clause is what adds its key. diff
+// is the statement `migrate diff` plans, which writes the column as a read of
+// the catalog prints it; apply is the statement native `schema apply` plans,
+// which keeps the planner's spelling. keys are the keys of c other than the
+// primary key once the plan is applied.
 var columnUniqueModified = []struct {
 	name      string
 	migration string
 	schema    string
-	want      string
+	diff      string
+	apply     string
 	keys      string
 }{
 	{
 		name:      "the type of a UNIQUE column changes",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x bigint UNIQUE);`,
-		want:      "MODIFY COLUMN `x` bigint;",
+		diff:      "MODIFY COLUMN `x` bigint NULL;",
+		apply:     "MODIFY COLUMN `x` bigint;",
 		keys:      "x(x)",
 	},
 	{
 		name:      "a UNIQUE column becomes NOT NULL",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int NOT NULL UNIQUE);`,
-		want:      "MODIFY COLUMN `x` int NOT NULL;",
+		diff:      "MODIFY COLUMN `x` int NOT NULL;",
+		apply:     "MODIFY COLUMN `x` int NOT NULL;",
 		keys:      "x(x)",
 	},
 	{
 		name:      "a UNIQUE column gains a default",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int DEFAULT 5 UNIQUE);`,
-		want:      "MODIFY COLUMN `x` int DEFAULT 5;",
+		diff:      "MODIFY COLUMN `x` int NULL DEFAULT 5;",
+		apply:     "MODIFY COLUMN `x` int DEFAULT 5;",
 		keys:      "x(x)",
 	},
 	{
@@ -53,14 +60,16 @@ var columnUniqueModified = []struct {
 ALTER TABLE c ADD COLUMN x int UNIQUE;`,
 		schema: `CREATE TABLE c (id int PRIMARY KEY, y int, KEY x (y));
 ALTER TABLE c ADD COLUMN x bigint UNIQUE;`,
-		want: "MODIFY COLUMN `x` bigint;",
-		keys: "x(y) x_2(x)",
+		diff:  "MODIFY COLUMN `x` bigint NULL;",
+		apply: "MODIFY COLUMN `x` bigint;",
+		keys:  "x(y) x_2(x)",
 	},
 	{
 		name:      "a column gains its UNIQUE as its type changes",
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int);`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x bigint UNIQUE);`,
-		want:      "MODIFY COLUMN `x` bigint UNIQUE;",
+		diff:      "MODIFY COLUMN `x` bigint NULL UNIQUE;",
+		apply:     "MODIFY COLUMN `x` bigint UNIQUE;",
 		keys:      "x(x)",
 	},
 }
@@ -108,7 +117,7 @@ func TestMigrateDiffModifiesAUniqueColumnWithOneKeyE2E(t *testing.T) {
 					"--to", "file://"+schema, "--dev-url", engine.emptyDB(c), "--dry-run")
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
-				c.Assert(plan, qt.Contains, test.want)
+				c.Assert(plan, qt.Contains, test.diff)
 				c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
 				c.Assert(keysOfC(c, target), qt.Equals, test.keys)
 			})
@@ -130,7 +139,7 @@ func TestSchemaApplyModifiesAUniqueColumnWithOneKeyE2E(t *testing.T) {
 				applied := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 				again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-				c.Assert(applied, qt.Contains, test.want)
+				c.Assert(applied, qt.Contains, test.apply)
 				c.Assert(again, qt.Contains, "Schema is synced")
 				c.Assert(keysOfC(c, target), qt.Equals, test.keys)
 			})
