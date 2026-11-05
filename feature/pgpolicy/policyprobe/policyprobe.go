@@ -42,13 +42,14 @@ import (
 // resolves, and pg_temp goes last in the search path, so every other name
 // resolves as it does for the real policy.
 //
-// A probe the server refuses leaves its declaration without an answer and is
-// not an error: a read-only transaction refuses the temporary table, a role
-// without SELECT on the table refuses the column copy, a role the plan has not
-// created yet refuses the policy, and a comparison then compares the declared
-// text. Only policies the database holds and whose clauses or roles the server
-// rewrites are probed; one being created carries its declaration into the
-// CREATE statement unchanged.
+// A probe the server refuses is not an error: a read-only transaction refuses
+// the temporary table, a role without SELECT on the table refuses the column
+// copy, and a role the plan has not created yet refuses the policy. The
+// declaration then takes the database's spelling of each clause that means the
+// same, and is otherwise compared as declared; see [observedSpelling]. Only
+// policies the database holds and whose clauses or roles the server rewrites are
+// probed; one being created carries its declaration into the CREATE statement
+// unchanged.
 type Service struct{}
 
 type probe struct {
@@ -57,9 +58,10 @@ type probe struct {
 }
 
 // NormalizeObjects returns every declared policy, with Normalized attached to
-// those the server answered for. A session that could not open an isolated
-// transaction answers nothing, and the declarations come back unchanged, as
-// does a declaration whose answer the model cannot hold.
+// those the server answered for, and to those whose clause means what the
+// database's clause means where the server could not be asked, as for a session
+// that could not open an isolated transaction. A declaration whose answer the
+// model cannot hold comes back unchanged.
 func (Service) NormalizeObjects(ctx context.Context, request schemaext.NormalizationRequest) (schemaext.NormalizationResult, error) {
 	if ctx == nil {
 		return schemaext.NormalizationResult{}, fmt.Errorf("%w: normalization requires a context", schemaext.ErrInvalidValue)
@@ -96,15 +98,16 @@ func (Service) NormalizeObjects(ctx context.Context, request schemaext.Normaliza
 	if err != nil {
 		return schemaext.NormalizationResult{}, err
 	}
-	if !ran {
-		return result, nil
-	}
 	for i, probe := range probes {
-		if answers[i] == nil {
+		answer := answers[i]
+		if !ran || answer == nil {
+			answer = observedSpelling(request, probe)
+		}
+		if answer == nil {
 			continue
 		}
 		value := probe.value.Copy()
-		value.Normalized = answers[i]
+		value.Normalized = answer
 		// An answer the model cannot hold is a server this probe does not
 		// understand, which is unanswered rather than a failed comparison.
 		if pgpolicy.ValidateDesiredPolicy(value) != nil {

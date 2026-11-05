@@ -2783,8 +2783,9 @@ switch on a table the plan creates or drops belongs to the table's lifecycle.
 transaction it copies the policy's table into `pg_temp` with `LIKE`, creates
 the declared policy on the copy and reads `pg_policy` back. A probe the server
 refuses, in a read-only transaction, for a role without SELECT on the table or
-for a role that does not exist yet, leaves the declaration unanswered and is
-not an error.
+for a role that does not exist yet, is not an error, and neither is CockroachDB
+refusing every such probe. The declaration then takes the database's spelling of
+each clause that means the same, and is otherwise compared as declared.
 
 `feature/pgpolicy/policyplan` plans the changes of surviving tables and the
 policies of a table the plan creates. Every operation asks for the dependent
