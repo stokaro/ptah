@@ -25,9 +25,9 @@ func TestType(t *testing.T) {
 		// TEXT variations
 		{"text lowercase", "text", "text"},
 		{"text uppercase", "TEXT", "text"},
-		{"longtext mysql", "LONGTEXT", "text"},
-		{"mediumtext mysql", "MEDIUMTEXT", "text"},
-		{"tinytext mysql", "TINYTEXT", "text"},
+		{"longtext mysql", "LONGTEXT", "longtext"},
+		{"mediumtext mysql", "MEDIUMTEXT", "mediumtext"},
+		{"tinytext mysql", "TINYTEXT", "tinytext"},
 
 		// Integer variations
 		{"int lowercase", "int", "integer"},
@@ -52,7 +52,7 @@ func TestType(t *testing.T) {
 		// Timestamp variations
 		{"timestamp lowercase", "timestamp", "timestamp"},
 		{"timestamp uppercase", "TIMESTAMP", "timestamp"},
-		{"timestamp with timezone", "TIMESTAMP WITH TIME ZONE", "timestamp"},
+		{"timestamp with timezone", "TIMESTAMP WITH TIME ZONE", "timestamptz"},
 		{"timestamp without timezone", "TIMESTAMP WITHOUT TIME ZONE", "timestamp"},
 
 		// Decimal variations
@@ -72,8 +72,8 @@ func TestType(t *testing.T) {
 		{"real as written", "REAL", "real"},
 		// An array is not its element type. Folding these would make a live
 		// scalar equal to a desired array -- a change reported as none.
-		{"float8 array", "float8[]", "float8[]"},
-		{"float4 array", "float4[]", "float4[]"},
+		{"float8 array", "float8[]", "double precision[]"},
+		{"float4 array", "float4[]", "real[]"},
 		// A range over float8 is not a float8, and PostgreSQL has both. A
 		// substring rule would fold this one and compare a range column equal
 		// to a double column.
@@ -103,11 +103,11 @@ func TestType(t *testing.T) {
 		// for both would report a change between them as no change.
 		{"the two time types do not fold together", "time", "time"},
 		// An array is not its element type.
-		{"a char array", "bpchar(8)[]", "bpchar(8)[]"},
-		{"a bit array", "varbit(8)[]", "varbit(8)[]"},
+		{"a char array", "bpchar(8)[]", "char(8)[]"},
+		{"a bit array", "varbit(8)[]", "bit varying(8)[]"},
 		// A timestamp is not a time: the timestamp arm still wins.
 		{"timestamp without time zone", "timestamp without time zone", "timestamp"},
-		{"timestamp with time zone", "TIMESTAMP WITH TIME ZONE", "timestamp"},
+		{"timestamp with time zone", "TIMESTAMP WITH TIME ZONE", "timestamptz"},
 
 		// Unrecognized types (should return as-is, lowercased)
 		{"enum type", "ENUM('a','b','c')", "enum('a','b','c')"},
@@ -118,8 +118,35 @@ func TestType(t *testing.T) {
 		// Edge cases
 		{"empty string", "", ""},
 		{"mixed case complex", "VarChar(255)", "varchar"},
-		{"multiple keywords", "UNSIGNED BIGINT", "integer"},
-		{"partial match", "varchar_custom", "varchar"},
+		{"multiple keywords", "UNSIGNED BIGINT", "integer unsigned"},
+		{"the width of an unsigned integer", "int(10) unsigned", "integer unsigned"},
+		{"zerofill implies unsigned", "int(10) unsigned zerofill", "integer unsigned"},
+		{"an unsigned decimal", "decimal(10,2) unsigned", "decimal unsigned"},
+		{"timestamptz as PostgreSQL spells it", "timestamptz", "timestamptz"},
+		{"a zone behind a precision", "TIMESTAMP(6) WITH TIME ZONE", "timestamptz"},
+		{"a local zone reads as the wall clock", "TIMESTAMP WITH LOCAL TIME ZONE", "timestamp"},
+		{"a precision", "timestamp(3)", "timestamp"},
+		{"an interval is no integer", "interval", "interval"},
+		{"an interval with a precision", "interval(3)", "interval"},
+		{"a point is no integer", "point", "point"},
+		{"a range is not its bound", "int4range", "int4range"},
+		{"citext is no text", "citext", "citext"},
+		{"a name holding a type's name", "paint_kind", "paint_kind"},
+		{"an int array", "int[]", "integer[]"},
+		{"the catalog's spelling of it", "integer[]", "integer[]"},
+		{"its element name", "int4[]", "integer[]"},
+		{"a bound is not kept", "int[3]", "integer[]"},
+		{"nor are dimensions", "int[][]", "integer[]"},
+		{"the standard's spelling", "INT ARRAY", "integer[]"},
+		{"the standard's spelling with a bound", "int ARRAY[4]", "integer[]"},
+		{"a text array", "text[]", "text[]"},
+		{"a boolean array", "boolean[]", "boolean[]"},
+		{"a timestamp array", "timestamp[]", "timestamp[]"},
+		{"a timestamptz array", "timestamp with time zone[]", "timestamptz[]"},
+		{"a decimal array", "numeric(7,2)[]", "decimal[]"},
+		{"a varchar array", "character varying(10)[]", "varchar[]"},
+		{"an enum array", "status[]", "status[]"},
+		{"partial match", "varchar_custom", "varchar_custom"},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +204,7 @@ func TestDefaultValue(t *testing.T) {
 		{"decimal leading zeros", "00123.4500", "decimal", "123.45"},
 		{"negative decimal trailing zeros", "-00123.4500", "decimal", "-123.45"},
 		{"timestamp current timestamp lowercase", "current_timestamp()", "timestamp", "CURRENT_TIMESTAMP"},
+		{"a zoned timestamp's current timestamp", "current_timestamp()", "timestamptz", "CURRENT_TIMESTAMP"},
 		{"timestamp current timestamp uppercase", "CURRENT_TIMESTAMP", "timestamp", "CURRENT_TIMESTAMP"},
 		{"timestamp current timestamp without type", "CURRENT_TIMESTAMP()", "", "CURRENT_TIMESTAMP"},
 

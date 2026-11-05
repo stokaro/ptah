@@ -839,10 +839,18 @@ func columnTypeChange(
 	switch {
 	case genType != dbType:
 		return typeChangeText(dbRawType, genCol.Type, dbType, genType, dialect)
-	case shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect):
+	case shouldReportSizedTypeChange(arrayElementOf(dbRawType), arrayElementOf(genCol.Type), dialect):
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 	return ""
+}
+
+// arrayElementOf is the element of an array type, whose width is the array's, and
+// any other type as it stands. Both sides of a width comparison are arrays or
+// neither is, since normalize.Type told the two apart already.
+func arrayElementOf(typeName string) string {
+	element, _ := normalize.ArrayElement(typeName)
+	return element
 }
 
 // sameQualifiedTypeName reports whether a declared type written with a schema
