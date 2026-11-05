@@ -139,13 +139,20 @@ the capability, a renamed index is a drop and a create.
 A service that declares parent assessment
 also receives changes to existing columns in the complete table capture. It
 must return a parent receipt, including when its own rules find no change.
-Missing receipts and refusals discard the plan. Common-object support carries
-table, column and index comments. A provider that owns the table lifecycle and
-lists the `COMMENT` kind receives the comment of a table it creates, of a
-column it adds and of an index it creates as a comment step after its own
-creation, and a changed index comment as one comment step with the comment the
-index ends with. A comment step reads its table and changes the comment alone.
-These services do not grant common SQL rendering.
+Missing receipts and refusals discard the plan.
+
+Common-object support carries table, column and index comments. A provider that
+owns the table lifecycle and lists the `COMMENT` kind receives the comment of a
+table it creates, of a column it adds and of an index it creates as a comment
+step after its own creation, and a changed index comment as one comment step
+with the comment the index ends with. The comment of a column it drops from a
+table the plan keeps is removed with a comment step before the removal, as the
+comment of an index it drops is removed: an engine that keeps comments apart
+from the object would otherwise keep it. A comment step reads its table and
+changes the comment alone, so a service that orders comments after its own
+steps of the table leaves out a step that only reads and drops; the host places
+the removals after the comments. These services do not grant common SQL
+rendering.
 
 The common steps of a planning request include ordering markers beside the steps
 that change a table. A marker has no parent, no effects and no added column. It

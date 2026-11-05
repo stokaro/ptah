@@ -110,3 +110,32 @@ func TestProviderOwnedLifecycleWithoutTheCommentWire_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*does not support SchemaDiff\.IndexCommentsChanged`)
 	c.Assert(statements, qt.IsNil)
 }
+
+// ownedColumnRemovals keeps main.users and drops two of its columns, one of
+// which held a comment.
+func ownedColumnRemovals() *difftypes.SchemaDiff {
+	rules := comparisonRules()
+	table := schemamodel.Table{Name: "users", Schema: "main"}
+	return &difftypes.SchemaDiff{IdentifierSemantics: &rules, TablesModified: []difftypes.TableDiff{{
+		TableName: "main.users",
+		Desired:   schemacapture.TableDeclaration{Table: table, Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", Primary: true}}},
+		Current:   schemacapture.TableObservation{Table: catalog.Table{Name: "users", Schema: "main"}},
+		ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy", Type: "TEXT", Nullable: true, Comment: "Going away"},
+			{Name: "spare", Type: "TEXT", Nullable: true}},
+	}}}
+}
+
+// The comment of a column the plan drops from a kept table is removed with a
+// step of its own, before the provider's removal: an engine that keeps
+// comments apart from the column, as YDB keeps them in the table's
+// attributes, would otherwise keep it once the column is gone.
+func TestProviderOwnedLifecycleRemovesADroppedColumnsComment_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	statements, err := renderedPlan(c, "owned-comments", ownedColumnRemovals())
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.DeepEquals, []string{
+		`COMMENT ON COLUMN "users"."legacy" IS NULL;`,
+		`ALTER TABLE "users" DROP COLUMN "legacy";`,
+		`ALTER TABLE "users" DROP COLUMN "spare";`,
+	})
+}
