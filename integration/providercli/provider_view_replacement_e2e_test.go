@@ -109,3 +109,100 @@ func TestProviderDropsObjectsHoldingGrants_HappyPath(t *testing.T) {
 	c.Assert(kept["grants"], qt.IsNil)
 	c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
 }
+
+// totalsWithAccess declares the table items, a materialized view totals over
+// it with body and a role reader, followed by grants.
+func totalsWithAccess(body, grants string) string {
+	return "tables:\n  items:\n    columns:\n      id: {type: INTEGER, not_null: true}\nmatviews:\n  totals:\n    body: \"" + body + "\"\n" +
+		"roles:\n  reader:\n    login: true\n" + grants
+}
+
+// readerTotals grants the role reader SELECT on the materialized view totals.
+const readerTotals = "grants:\n  reader_totals:\n    role: reader\n    privileges: [select]\n    on_table: totals\n"
+
+// materializedViews is the environment that makes the common-objects
+// fixture carry materialized views.
+var materializedViews = []string{"FIXTURE_MATERIALIZED_VIEWS=true"}
+
+// A materialized view the plan drops takes its grants with it, as a view
+// does. Removed, it is dropped and the grant on it is not revoked. Changed, it
+// is dropped and created again, and the grant it held is given again, unless
+// the same change removes the grant. Either way the next plan has nothing to
+// change.
+func TestProviderDropsAMaterializedViewWithItsGrants_HappyPath(t *testing.T) {
+	changed := `FIXTURE {"op":"create_materialized_view","name":"totals","body":"SELECT id FROM items WHERE id \u003e 0"};`
+	for _, test := range []struct {
+		name     string
+		schema   string
+		planned  []string
+		held     any
+		matviews any
+	}{
+		{name: "removed", schema: droppedObjects, planned: []string{`FIXTURE {"op":"drop_materialized_view","name":"totals"};`}},
+		{name: "changed", schema: totalsWithAccess("SELECT id FROM items WHERE id > 0", readerTotals), planned: []string{
+			`FIXTURE {"op":"drop_materialized_view","name":"totals"};`, changed,
+			`FIXTURE {"op":"grant","kind":"table","name":"totals","member":"reader","privileges":["SELECT"]};`,
+		}, held: []any{map[string]any{"role": "reader", "privilege": "SELECT", "kind": "table", "name": "totals"}},
+			matviews: []any{map[string]any{"name": "totals", "body": "SELECT id FROM items WHERE id > 0"}}},
+		{name: "changed with its grant removed", schema: totalsWithAccess("SELECT id FROM items WHERE id > 0", ""), planned: []string{
+			`FIXTURE {"op":"drop_materialized_view","name":"totals"};`, changed,
+		}, matviews: []any{map[string]any{"name": "totals", "body": "SELECT id FROM items WHERE id > 0"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			spec := fixtureReleaseSpec(c, "common-objects", testutils.FixtureRelease{})
+			spec.Environment = append(spec.Environment, materializedViews...)
+			f := newProviderCLI(c, spec)
+			c.Assert(os.WriteFile(f.schemaPath, []byte(totalsWithAccess("SELECT id FROM items", readerTotals)), 0o600), qt.IsNil)
+			f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
+			granted, _ := f.keptCommonObjects(c)
+			c.Assert(os.WriteFile(f.schemaPath, []byte(test.schema), 0o600), qt.IsNil)
+
+			planned := f.success(c, "plan", "--schema-file", f.schemaPath, "--output", f.planPath)
+			f.success(c, "apply", "--plan", f.planPath, "--tx-mode", "none", "--auto-approve")
+
+			c.Assert(granted["grants"], qt.HasLen, 1)
+			c.Assert(fixtureStatements.FindAllString(planned, -1), qt.DeepEquals, test.planned)
+			kept, _ := f.keptCommonObjects(c)
+			c.Assert(kept["grants"], qt.DeepEquals, test.held)
+			c.Assert(kept["matviews"], qt.DeepEquals, test.matviews)
+			c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
+		})
+	}
+}
+
+// A grant declared on a view or a materialized view the plan removes would
+// run after the drop and name an object that is gone, so the plan is refused
+// before anything runs: the object stands as it was applied, and a plan of
+// that schema has nothing to change.
+func TestProviderRefusesAGrantOnARemovedView_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []string
+		applied     string
+		schema      string
+		want        string
+	}{
+		{name: "a view", applied: viewWithAccess("SELECT id FROM items", ""), schema: droppedObjects + readerRecent,
+			want: "granting SELECT on view recent to reader: the plan drops the view; declare it, or leave the grant out"},
+		{name: "a materialized view", environment: materializedViews, applied: totalsWithAccess("SELECT id FROM items", ""), schema: droppedObjects + readerTotals,
+			want: "granting SELECT on materialized view totals to reader: the plan drops the materialized view; declare it, or leave the grant out"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			spec := fixtureReleaseSpec(c, "common-objects", testutils.FixtureRelease{})
+			spec.Environment = append(spec.Environment, test.environment...)
+			f := newProviderCLI(c, spec)
+			c.Assert(os.WriteFile(f.schemaPath, []byte(test.applied), 0o600), qt.IsNil)
+			f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
+			c.Assert(os.WriteFile(f.schemaPath, []byte(test.schema), 0o600), qt.IsNil)
+
+			_, refused, code := f.run(c, c.Context(), "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
+
+			c.Assert(code, qt.Not(qt.Equals), 0)
+			c.Assert(refused, qt.Contains, test.want)
+			c.Assert(os.WriteFile(f.schemaPath, []byte(test.applied), 0o600), qt.IsNil)
+			c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
+		})
+	}
+}

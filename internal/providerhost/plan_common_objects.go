@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/tableref"
@@ -26,9 +27,9 @@ import (
 // its engine spells each.
 type commonObjectPlan struct {
 	// before runs ahead of every table change: revocations, removed
-	// memberships, and the views the plan drops or replaces by a drop. An
-	// entry on a table or view the plan drops is not revoked; see
-	// droppedRelations.
+	// memberships, and the views and materialized views the plan drops or
+	// replaces by a drop. An entry on a table, a view or a materialized view
+	// the plan drops is not revoked; see droppedRelations.
 	before []ast.Node
 	// prepared runs before the tables: new and changed roles and sequences,
 	// which a table or a grant may name.
@@ -49,6 +50,9 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	var plan commonObjectPlan
 	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView)}
 	semantics := diff.EffectiveIdentifierSemantics(p.target)
+	if err := refuseGrantsOnRemovedViews(diff, semantics, p.target); err != nil {
+		return commonObjectPlan{}, err
+	}
 	plan.before = droppedRelations(diff, views, semantics).revocations(diff, semantics)
 	for _, membership := range diff.RoleMembershipsRemoved {
 		plan.before = append(plan.before, ast.NewRevokeRoleMembership(membership.Role, membership.Member))
@@ -180,19 +184,26 @@ func (r viewReplacement) created(diff *difftypes.SchemaDiff) []ast.Node {
 	return nodes
 }
 
-// regrants are the permission entries each view the plan drops to create
-// again held, which the plan grants again on the view that replaces it. An
-// engine keeps a view's entries in the view's own access list, so the drop
-// takes them with the view: measured on YDB 25.1.4.7 and 26.2.1.14, a view
-// created again holds no entry. A target that replaces in place keeps them,
-// and an entry the plan revokes or grants anyway is left out.
+// regrants are the permission entries each view and each materialized view
+// the plan drops to create again held, which the plan grants again on the
+// object that replaces it. An engine keeps a view's entries in the view's own
+// access list, so the drop takes them with the view: measured on YDB 25.1.4.7
+// and 26.2.1.14, a view created again holds no entry. A target that replaces
+// a view in place keeps them; a materialized view is always dropped and
+// created again (planCommonObjects). An entry the plan revokes or grants
+// anyway is left out.
 func (r viewReplacement) regrants(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []difftypes.GrantRef {
-	if r.inPlace || len(diff.ViewsModified) == 0 {
-		return nil
+	recreated := make(map[string]bool, len(diff.ViewsModified)+len(diff.MaterializedViewsModified))
+	if !r.inPlace {
+		for _, change := range diff.ViewsModified {
+			recreated[semantics.TableIdentityKey(change.ViewName)] = true
+		}
 	}
-	recreated := make(map[string]bool, len(diff.ViewsModified))
-	for _, change := range diff.ViewsModified {
+	for _, change := range diff.MaterializedViewsModified {
 		recreated[semantics.TableIdentityKey(change.ViewName)] = true
+	}
+	if len(recreated) == 0 {
+		return nil
 	}
 	planned := make(map[string]bool, len(diff.GrantsRemoved)+len(diff.GrantsAdded))
 	for _, grant := range slices.Concat(diff.GrantsRemoved, diff.GrantsAdded) {
@@ -207,22 +218,27 @@ func (r viewReplacement) regrants(diff *difftypes.SchemaDiff, semantics identifi
 	return again
 }
 
-// relationDrops are the identity keys of the tables and views whose drop the
-// plan carries.
+// relationDrops are the identity keys of the tables, views and materialized
+// views whose drop the plan carries.
 type relationDrops map[string]bool
 
 // droppedRelations collects the relationDrops of diff: the tables it removes,
-// the views it removes, and the views it drops to create again on a target
-// that cannot replace one in place. A drop takes the object's access list
-// with it, so a REVOKE of an entry there only changes an object the next step
-// removes. Measured on YDB 25.1 and 26.2, a REVOKE ahead of the DROP VIEW, or
-// of a table's drop, applies, and the drop alone leaves the same state: no
-// entry, and nothing to plan next. A view replaced in place keeps its
-// entries, and a REVOKE there is the only step that removes one.
+// the views and materialized views it removes, the materialized views it
+// changes, which it drops to create again, and the views it drops to create
+// again on a target that cannot replace one in place. A drop takes the
+// object's access list with it, so a REVOKE of an entry there only changes an
+// object the next step removes. Measured on YDB 25.1 and 26.2, a REVOKE ahead
+// of the DROP VIEW, or of a table's drop, applies, and the drop alone leaves
+// the same state: no entry, and nothing to plan next. A view replaced in place
+// keeps its entries, and a REVOKE there is the only step that removes one.
 func droppedRelations(diff *difftypes.SchemaDiff, views viewReplacement, semantics identifier.Semantics) relationDrops {
-	dropped := make(relationDrops, len(diff.TablesRemoved)+len(diff.ViewsRemoved)+len(diff.ViewsModified))
-	for _, name := range slices.Concat(diff.TablesRemoved.Names(), diff.ViewsRemoved.Names()) {
+	dropped := make(relationDrops, len(diff.TablesRemoved)+len(diff.ViewsRemoved)+len(diff.ViewsModified)+
+		len(diff.MaterializedViewsRemoved)+len(diff.MaterializedViewsModified))
+	for _, name := range slices.Concat(diff.TablesRemoved.Names(), diff.ViewsRemoved.Names(), diff.MaterializedViewsRemoved.Names()) {
 		dropped[semantics.QualifiedTableIdentityKey(name)] = true
+	}
+	for _, change := range diff.MaterializedViewsModified {
+		dropped[semantics.QualifiedTableIdentityKey(change.ViewName)] = true
 	}
 	if !views.inPlace {
 		for _, change := range diff.ViewsModified {
@@ -230,6 +246,34 @@ func droppedRelations(diff *difftypes.SchemaDiff, views viewReplacement, semanti
 		}
 	}
 	return dropped
+}
+
+// refuseGrantsOnRemovedViews refuses a grant the comparison adds on a view or
+// a materialized view the plan removes. The drop runs before every GRANT, so
+// the GRANT would name an object that is gone: measured on YDB 26.2.1.14, the
+// DROP VIEW applies and the GRANT then fails with SCHEME_ERROR. A view the
+// plan drops to create again is granted after its creation and is not
+// refused.
+func refuseGrantsOnRemovedViews(diff *difftypes.SchemaDiff, semantics identifier.Semantics, target string) error {
+	removed := make(map[string]string, len(diff.ViewsRemoved)+len(diff.MaterializedViewsRemoved))
+	for _, name := range diff.ViewsRemoved.Names() {
+		removed[semantics.QualifiedTableIdentityKey(name)] = "view"
+	}
+	for _, name := range diff.MaterializedViewsRemoved.Names() {
+		removed[semantics.QualifiedTableIdentityKey(name)] = "materialized view"
+	}
+	for _, grant := range diff.GrantsAdded {
+		kind, dropped := removed[semantics.QualifiedTableIdentityKey(grant.ObjectName)]
+		if !relationGrant(grant) || !dropped {
+			continue
+		}
+		subject := fmt.Sprintf("granting %s on %s %s to %s", grant.Privilege, kind, grant.ObjectName, grant.Role)
+		return schemavalidation.Result{Complete: true, Diagnostics: []schemavalidation.Diagnostic{{
+			Code: schemavalidation.UnsupportedFeature, Kind: "schema", Feature: subject,
+			Message: fmt.Sprintf("%s: the plan drops the %s; declare it, or leave the grant out", subject, kind),
+		}}}.Err(target)
+	}
+	return nil
 }
 
 // holds reports whether grant is an entry on a table or view the plan drops.

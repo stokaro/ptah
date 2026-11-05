@@ -1,13 +1,15 @@
 // Package main serves the fixture with the common-object wire of contract
-// 25.3: views, roles and groups, grants and comments.
+// 25.3: views, roles and groups, grants and comments, and with
+// FIXTURE_MATERIALIZED_VIEWS=true materialized views.
 //
-// SQLite has views and nothing else of the four, so the program keeps roles,
-// grants and comments in a file of its own beside the database, which its
-// reads report and its executor writes. Each change renders as one statement
-// its own executor reads: `FIXTURE {...};`, the change as JSON. A view is a
-// real SQLite view; the executor creates it with CREATE VIEW. Dropping a table
-// or a view takes the grants on it, as an engine that keeps them in the
-// object's own access list does.
+// SQLite has views and nothing else of these, so the program keeps roles,
+// grants, comments and materialized views in a file of its own beside the
+// database, which its reads report and its executor writes. Each change
+// renders as one statement its own executor reads: `FIXTURE {...};`, the
+// change as JSON. A view is a real SQLite view; the executor creates it with
+// CREATE VIEW. Dropping a table, a view or a materialized view takes the
+// grants on it, as an engine that keeps them in the object's own access list
+// does.
 package main
 
 import (
@@ -22,10 +24,22 @@ import (
 	"github.com/stokaro/ptah/provider-sdk/runtime"
 )
 
-// commonKinds are the kinds the program carries.
-var commonKinds = []protocol.CommonObjectSupport_Kind{
-	protocol.CommonObjectSupport_VIEW, protocol.CommonObjectSupport_ROLE, protocol.CommonObjectSupport_GRANT, protocol.CommonObjectSupport_COMMENT,
+// commonKinds are the kinds the program carries: materialized views too where
+// materializedViews says so.
+func commonKinds() []protocol.CommonObjectSupport_Kind {
+	kinds := []protocol.CommonObjectSupport_Kind{
+		protocol.CommonObjectSupport_VIEW, protocol.CommonObjectSupport_ROLE, protocol.CommonObjectSupport_GRANT, protocol.CommonObjectSupport_COMMENT,
+	}
+	if materializedViews() {
+		kinds = append(kinds, protocol.CommonObjectSupport_MATERIALIZED_VIEW)
+	}
+	return kinds
 }
+
+// materializedViews reports FIXTURE_MATERIALIZED_VIEWS=true, which makes the
+// program carry materialized views. Without it the program refuses one, as a
+// provider whose engine has none does.
+func materializedViews() bool { return os.Getenv("FIXTURE_MATERIALIZED_VIEWS") == "true" }
 
 func main() {
 	if path := os.Getenv("PTAH_FIXTURE_PID_FILE"); path != "" {
@@ -40,7 +54,7 @@ func main() {
 	description.Features = append(description.Features, added...)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, added...)
-	engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: commonKinds}
+	engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: commonKinds()}
 	owner := &commonObjects{Provider: &backend.Provider{ViewsElsewhere: true}}
 	if err := runtime.Serve(runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Locks: owner, SQLAnalyzer: owner,
@@ -71,5 +85,8 @@ func (p *commonObjects) Open(ctx context.Context, request *protocol.OpenRequest)
 	// view in place, keeping its grants; without it a changed view is
 	// dropped and created again, as on an engine that has no such statement.
 	session.Capabilities["create_or_replace_view"] = os.Getenv("FIXTURE_CREATE_OR_REPLACE_VIEW") == "true"
+	if materializedViews() {
+		session.Capabilities["materialized_views"] = true
+	}
 	return session, nil
 }

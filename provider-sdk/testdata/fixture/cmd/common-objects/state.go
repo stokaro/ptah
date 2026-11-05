@@ -8,12 +8,19 @@ import (
 	"slices"
 )
 
-// state is what the program keeps beside a database: the roles, the grants
-// and the comments SQLite has no place for.
+// state is what the program keeps beside a database: the roles, the grants,
+// the comments and the materialized views SQLite has no place for.
 type state struct {
 	Roles    []stateRole    `json:"roles,omitempty"`
 	Grants   []stateGrant   `json:"grants,omitempty"`
 	Comments []stateComment `json:"comments,omitempty"`
+	MatViews []stateView    `json:"matviews,omitempty"`
+}
+
+// stateView is one materialized view: its name and the query it holds.
+type stateView struct {
+	Name string `json:"name"`
+	Body string `json:"body"`
 }
 
 type stateRole struct {
@@ -23,7 +30,8 @@ type stateRole struct {
 	MemberOf []string `json:"member_of,omitempty"`
 }
 
-// stateGrant is one privilege a role holds on one table or view.
+// stateGrant is one privilege a role holds on one table, view or materialized
+// view.
 type stateGrant struct {
 	Role       string   `json:"role"`
 	Privilege  string   `json:"privilege"`
@@ -34,7 +42,7 @@ type stateGrant struct {
 }
 
 // stateComment is the comment of one object: a table, a column of one, a
-// view, or a role.
+// view, a materialized view, or a role.
 type stateComment struct {
 	Kind  string `json:"kind"`
 	Table string `json:"table,omitempty"`
@@ -66,6 +74,10 @@ func saveState(database string, saved state) error {
 
 func (s *state) role(name string) int {
 	return slices.IndexFunc(s.Roles, func(role stateRole) bool { return role.Name == name })
+}
+
+func (s *state) matView(name string) int {
+	return slices.IndexFunc(s.MatViews, func(view stateView) bool { return view.Name == name })
 }
 
 // setComment replaces the comment of an object, and removes it for empty
