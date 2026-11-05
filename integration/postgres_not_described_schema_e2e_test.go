@@ -63,7 +63,7 @@ const (
 	notDescribedApplied  = "Schema is synced, no changes to be made.\n"
 	notDescribedNoChange = "no migration files generated"
 	notDescribedAnyCRM   = `"crm"`
-	notDescribedDropCRM  = `DROP TABLE IF EXISTS "crm"."customers" CASCADE;`
+	notDescribedDropCRM  = `DROP TABLE "crm"."customers";`
 )
 
 // notDescribedSource is one desired schema describing public alone.

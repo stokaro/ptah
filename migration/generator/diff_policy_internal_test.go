@@ -46,7 +46,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 1)
-	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), `DROP TABLE "legacy"`)
 	c.Assert(specs[0].UpSQL, qt.Contains, "skip: drop_table")
 	c.Assert(specs[0].UpSQL, qt.Contains, "CREATE INDEX")
 	// A skipped drop never reaches the plan, so the destructive gate sees nothing.
@@ -93,7 +93,7 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	c.Assert(specs, qt.HasLen, 1)
 	// Up keeps the table.
-	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), `DROP TABLE "legacy"`)
 	// Down must not recreate a table the up migration never dropped.
 	c.Assert(specs[0].DownSQL, qt.Not(qt.Contains), "CREATE TABLE", qt.Commentf("down:\n%s", specs[0].DownSQL))
 }

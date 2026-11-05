@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -31,7 +30,7 @@ var columnKeyUnderAnotherName = []struct {
 		want: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `c_x_uq`"},
 			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `c_x_uq`"},
-			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT IF EXISTS "c_x_uq"`},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "c_x_uq"`},
 		},
 	},
 	{
@@ -50,7 +49,7 @@ var columnKeyUnderAnotherName = []struct {
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, CONSTRAINT x UNIQUE (x));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE);`,
 		want: map[string][]string{
-			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT IF EXISTS "x"`},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP CONSTRAINT "x"`},
 		},
 	},
 	{
@@ -62,7 +61,7 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		want: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `ux`"},
 			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX IF EXISTS `ux`"},
-			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX IF EXISTS "ux"`},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "ux"`},
 		},
 	},
 	{
@@ -91,7 +90,7 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, x int, y int, CONSTRAINT c_x_uq UNIQUE (x), CONSTRAINT c_x_key UNIQUE (y));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, x int UNIQUE, y int);`,
 		want: map[string][]string{
-			"PostgreSQL": {`DROP CONSTRAINT IF EXISTS "c_x_key"`, `ADD CONSTRAINT "c_x_key" UNIQUE ("x")`},
+			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD CONSTRAINT "c_x_key" UNIQUE ("x")`},
 		},
 	},
 	{
@@ -110,19 +109,9 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		migration: `CREATE TABLE c (id int PRIMARY KEY, y int, CONSTRAINT c_x_key UNIQUE (y));`,
 		schema:    `CREATE TABLE c (id int PRIMARY KEY, y int, x int UNIQUE);`,
 		want: map[string][]string{
-			"PostgreSQL": {`DROP CONSTRAINT IF EXISTS "c_x_key"`, `ADD COLUMN "x" int UNIQUE`},
+			"PostgreSQL": {`DROP CONSTRAINT "c_x_key"`, `ADD COLUMN "x" int UNIQUE`},
 		},
 	},
-}
-
-// migrateDiffSpelling rewrites a statement `schema apply` writes as `migrate
-// diff` writes it. The diff follows the community binary's statement style,
-// which drops a PostgreSQL constraint or index without IF EXISTS; on MySQL and
-// MariaDB both commands write the same statement.
-var migrateDiffSpelling = map[string]*strings.Replacer{
-	"MySQL":      strings.NewReplacer(),
-	"MariaDB":    strings.NewReplacer(),
-	"PostgreSQL": strings.NewReplacer(" IF EXISTS ", " "),
 }
 
 // TestMigrateDiffRenamesAColumnKeyUnderAnotherNameE2E plans the directory
@@ -149,7 +138,7 @@ func TestMigrateDiffRenamesAColumnKeyUnderAnotherNameE2E(t *testing.T) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", again))
 
 				for _, statement := range test.want[engine.name] {
-					c.Assert(plan, qt.Contains, migrateDiffSpelling[engine.name].Replace(statement))
+					c.Assert(plan, qt.Contains, statement)
 				}
 				c.Assert(again, qt.Contains, "The migration directory is synced with the desired state")
 			})

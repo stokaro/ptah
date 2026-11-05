@@ -117,8 +117,8 @@ func TestSchemaCompareReportsACockroachIntegerWidthChangeE2E(t *testing.T) {
 		"--schema-file", schema, "--exit-code")
 
 	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stdout, qt.Contains, "-- Modify column t.k: type: int8 -> int4\n")
-	c.Assert(got.Stdout, qt.Contains, "-- Modify column t.n: type: int8 -> int4\n")
-	c.Assert(got.Stdout, qt.Not(qt.Contains), "Modify column t.m")
-	c.Assert(got.Stdout, qt.Not(qt.Contains), "Modify column t.s8")
+	c.Assert(got.Stdout, qt.Contains, `ALTER TABLE "t" ALTER COLUMN "k" TYPE int;`)
+	c.Assert(got.Stdout, qt.Contains, `ALTER TABLE "t" ALTER COLUMN "n" TYPE integer;`)
+	c.Assert(got.Stdout, qt.Not(qt.Contains), `ALTER COLUMN "m"`)
+	c.Assert(got.Stdout, qt.Not(qt.Contains), `ALTER COLUMN "s8"`)
 }

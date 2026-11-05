@@ -21,8 +21,7 @@ import (
 // The rows whose ON DELETE changes are the controls: their definitions differ
 // as well, so they are planned whatever decides the pairing.
 //
-// dropped is the key the plan drops. `migrate diff` writes it in the community
-// binary's statement style, without IF EXISTS; `schema apply` writes IF EXISTS.
+// dropped is the key the plan drops.
 var foreignKeyRenames = []struct {
 	name      string
 	migration string
@@ -162,7 +161,7 @@ func TestSchemaApplyReplacesAForeignKeyTheSchemaNamesOtherwiseE2E(t *testing.T) 
 			runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 			again := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-			c.Assert(plan, qt.Contains, `DROP CONSTRAINT IF EXISTS "`+test.dropped+`"`)
+			c.Assert(plan, qt.Contains, `DROP CONSTRAINT "`+test.dropped+`"`)
 			c.Assert(plan, qt.Contains, test.wantAdd)
 			c.Assert(readForeignKeys(c, target), qt.Equals, test.want)
 			c.Assert(again, qt.Contains, "Schema is synced")

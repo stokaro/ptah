@@ -32,7 +32,7 @@ CREATE TABLE reporting.b (id integer PRIMARY KEY, note text);
 
 const (
 	readScopeAddNote  = `ALTER TABLE "reporting"."b" ADD COLUMN "note" text;`
-	readScopeDropC    = `DROP TABLE IF EXISTS "extra"."c" CASCADE;`
+	readScopeDropC    = `DROP TABLE "extra"."c";`
 	readScopeCreateB  = `CREATE TABLE "reporting"."b"`
 	readScopeSynced   = "No schema differences detected.\n"
 	readScopeNoDrift  = "No schema drift detected.\n"

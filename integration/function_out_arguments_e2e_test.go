@@ -73,5 +73,6 @@ func TestSchemaApplyPlansAFunctionWhoseImpliedReturnDiffersE2E(t *testing.T) {
 
 	out := runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run")
 
-	c.Assert(out, qt.Contains, "-- Modify function listed: returns")
+	c.Assert(out, qt.Contains, `DROP FUNCTION "listed"(a integer, OUT b text);`)
+	c.Assert(out, qt.Contains, `CREATE OR REPLACE FUNCTION "listed"(a integer, out b text)`)
 }

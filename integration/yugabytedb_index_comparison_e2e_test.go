@@ -38,19 +38,19 @@ func TestYugabyteDBIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "uniqueness",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE UNIQUE INDEX t_i ON t (a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE UNIQUE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\");\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE UNIQUE INDEX \"t_i\" ON \"t\" (\"a\");\n",
 		},
 		{
 			name:     "the order of the keys",
 			from:     "CREATE INDEX t_i ON t (a, b);",
 			to:       "CREATE INDEX t_i ON t (b, a);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\", \"a\");\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\", \"a\");\n",
 		},
 		{
 			name:     "a key's direction",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE INDEX t_i ON t (a DESC);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\" DESC);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"a\" DESC);\n",
 		},
 		{
 			// The leading key is ASC rather than HASH only because the plan
@@ -58,19 +58,19 @@ func TestYugabyteDBIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "a key's NULLS ordering",
 			from:     "CREATE INDEX t_i ON t (b);",
 			to:       "CREATE INDEX t_i ON t (b ASC NULLS FIRST);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"b\" ASC NULLS FIRST);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"b\" ASC NULLS FIRST);\n",
 		},
 		{
 			name:     "a key's expression",
 			from:     "CREATE INDEX t_i ON t (lower(a));",
 			to:       "CREATE INDEX t_i ON t (upper(a));",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" ((upper(a)));\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" ((upper(a)));\n",
 		},
 		{
 			name:     "a key's operator class",
 			from:     "CREATE INDEX t_i ON t (a);",
 			to:       "CREATE INDEX t_i ON t (a text_pattern_ops);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" (\"a\" text_pattern_ops);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" (\"a\" text_pattern_ops);\n",
 		},
 		{
 			// No column type takes both lsm and ybgin on 2026.1.2: lsm refuses
@@ -79,7 +79,7 @@ func TestYugabyteDBIndexComparisonE2E_HappyPath(t *testing.T) {
 			name:     "a GIN key's operator class",
 			from:     "CREATE INDEX t_i ON t USING GIN (j);",
 			to:       "CREATE INDEX t_i ON t USING GIN (j jsonb_path_ops);",
-			wantPlan: "DROP INDEX IF EXISTS \"t_i\";\nCREATE INDEX IF NOT EXISTS \"t_i\" ON \"t\" USING GIN (\"j\" jsonb_path_ops);\n",
+			wantPlan: "DROP INDEX \"t_i\";\nCREATE INDEX \"t_i\" ON \"t\" USING GIN (\"j\" jsonb_path_ops);\n",
 		},
 	}
 	for _, test := range tests {

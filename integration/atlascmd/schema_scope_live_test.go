@@ -254,7 +254,7 @@ func TestSchemaApplyNonExtensionScopeDoesNotDropUnmentionedExtensionLivePostgres
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, `DROP TABLE IF EXISTS "app"."users" CASCADE`)
+	c.Assert(out.String(), qt.Contains, `DROP TABLE "app"."users"`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "DROP EXTENSION")
 }
 
@@ -342,7 +342,7 @@ func TestSchemaApplyWritesAnExtensionCommentOnAProvisionedDevServerLivePostgres(
 	out, err := extensionCommentApply(c, "docker://postgres/18/dev")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `DROP TABLE IF EXISTS "app"."users" CASCADE`)
+	c.Assert(out, qt.Contains, `DROP TABLE "app"."users"`)
 	c.Assert(out, qt.Not(qt.Contains), "DROP EXTENSION")
 }
 

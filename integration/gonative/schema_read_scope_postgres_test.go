@@ -23,8 +23,7 @@
 //	  CREATE SCHEMA IF NOT EXISTS extra;
 //	  CREATE TABLE "extra"."b" ( "id" integer PRIMARY KEY NOT NULL );
 //	schema diff --from file://<document> --to <plain URL>
-//	  ALTER TABLE "extra"."b" DROP CONSTRAINT IF EXISTS "b_pkey";
-//	  DROP TABLE IF EXISTS "extra"."b" CASCADE;
+//	  DROP TABLE "extra"."b";
 //
 // The pinned Atlas community binary v1.3.0 answers `Schemas are synced, no
 // changes to be made.` to both, at exit 0.
@@ -135,10 +134,10 @@ func TestPostgreSQLDiffAgainstADescribedScopeStillRemovesWhatItOmitsIntegration(
 	c.Assert(
 		readScopePlan(c, devURL, []string{sourceURL}, []string{documentURL}),
 		qt.DeepEquals,
-		// The removed table's primary key goes with DROP TABLE ... CASCADE
+		// The removed table's primary key goes with DROP TABLE
 		// (stokaro/ptah#4359), so no ALTER TABLE drops it first.
 		[]string{
-			`DROP TABLE IF EXISTS "extra"."b" CASCADE`,
+			`DROP TABLE "extra"."b"`,
 		},
 	)
 }

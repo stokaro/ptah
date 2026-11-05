@@ -87,11 +87,11 @@ func TestGenerateMigration_PartitionedParentAvoidsConcurrentIndexWithRealPostgre
 
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_events_tenant" ON "events" ("tenant");`)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX "idx_events_tenant" ON "events" ("tenant");`)
 	c.Assert(string(upSQL), qt.Not(qt.Contains), "CONCURRENTLY")
 	downSQL, err := os.ReadFile(files.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(downSQL), qt.Contains, `DROP INDEX IF EXISTS "idx_events_tenant";`)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX "idx_events_tenant";`)
 	c.Assert(string(downSQL), qt.Not(qt.Contains), "CONCURRENTLY")
 
 	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
@@ -173,10 +173,10 @@ func TestGenerateMigration_UnknownRowStatisticsBuildConcurrentlyWithRealPostgres
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_members_email" ON "members" ("email");`)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY "idx_members_email" ON "members" ("email");`)
 	downSQL, err := os.ReadFile(files.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY IF EXISTS "idx_members_email";`)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX CONCURRENTLY "idx_members_email";`)
 
 	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
 	c.Assert(err, qt.IsNil)
@@ -277,12 +277,12 @@ func TestGenerateMigration_EmptyNeverAnalyzedTableStaysTransactionalWithRealPost
 
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_members_email" ON "members" ("email");`)
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX "idx_members_email" ON "members" ("email");`)
 	c.Assert(string(upSQL), qt.Not(qt.Contains), "CONCURRENTLY")
 	c.Assert(string(upSQL), qt.Not(qt.Contains), "no_transaction")
 	downSQL, err := os.ReadFile(files.Files[0].DownFile)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(downSQL), qt.Contains, `DROP INDEX IF EXISTS "idx_members_email";`)
+	c.Assert(string(downSQL), qt.Contains, `DROP INDEX "idx_members_email";`)
 	c.Assert(string(downSQL), qt.Not(qt.Contains), "CONCURRENTLY")
 
 	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
