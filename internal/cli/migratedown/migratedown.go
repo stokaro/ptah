@@ -949,9 +949,14 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 
 // applyDerivedRollback runs the derived statements and moves the revision
 // boundary, so the caller has one error to record the attempt against.
+//
+// The statements go through the connection's schema writer, as every other
+// schema statement of a migration does. A connection an executable provider
+// serves exposes no database/sql operations, so a statement sent through
+// ExecContext is refused there before it reaches the provider.
 func applyDerivedRollback(cmd *cobra.Command, r rollbackExecution, statements []string) error {
 	for _, statement := range statements {
-		if _, err := r.conn.ExecContext(cmd.Context(), statement); err != nil {
+		if err := r.conn.Writer().ExecuteSQL(cmd.Context(), statement); err != nil {
 			return fmt.Errorf("apply derived rollback statement %q: %w", statement, err)
 		}
 	}
