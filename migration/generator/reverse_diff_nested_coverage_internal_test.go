@@ -35,6 +35,12 @@ var nestedCoverageExempt = map[string]string{
 	// only feeds InDependencyOrder(). This one waits for #2583 to decide who
 	// owns the emission and how a composite key is represented.
 	"TableCreation.SelfReferencingForeignKeys": "already emitted twice on the forward path; stokaro/ptah#2583",
+
+	// The down direction adds the removed index back ahead of removing this
+	// addition, so the addition is standing when its removal runs and nothing
+	// has to happen in one statement. TestMigrationsKeptForeignKeyIndexE2E
+	// reads the rollback back on the server.
+	"IndexChange.Replaces": "a rollback adds the removed index ahead of this removal, so no statement has to carry both",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the
