@@ -29,8 +29,8 @@ var fixtureStatements = regexp.MustCompile(`(?m)^FIXTURE .*;$`)
 // whose engine cannot replace a view in place gets the view dropped, created
 // again and its grant given again, which the drop took with the view. One
 // that replaces in place gets one replacement, which keeps the grant. A grant
-// the same change removes is revoked and not given again. Either way the next
-// plan has nothing to change.
+// the same change removes goes with the dropped view: it is neither revoked
+// nor given again. Either way the next plan has nothing to change.
 func TestProviderReplacesAChangedView_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name        string
@@ -48,7 +48,6 @@ func TestProviderReplacesAChangedView_HappyPath(t *testing.T) {
 			`FIXTURE {"op":"replace_view","name":"recent","body":"SELECT id FROM items WHERE id \u003e 0"};`,
 		}, held: []any{map[string]any{"role": "reader", "privilege": "SELECT", "kind": "table", "name": "recent"}}},
 		{name: "a grant the change removes", planned: []string{
-			`FIXTURE {"op":"revoke","kind":"table","name":"recent","member":"reader","privileges":["SELECT"]};`,
 			`FIXTURE {"op":"drop_view","name":"recent"};`,
 			`FIXTURE {"op":"create_view","name":"recent","body":"SELECT id FROM items WHERE id \u003e 0"};`,
 		}},
@@ -72,4 +71,41 @@ func TestProviderReplacesAChangedView_HappyPath(t *testing.T) {
 			c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
 		})
 	}
+}
+
+// heldObjects declares the table items, the table archive, a view recent
+// over items, the role reader and its grants on recent and archive.
+const heldObjects = "tables:\n  items:\n    columns:\n      id: {type: INTEGER, not_null: true}\n" +
+	"  archive:\n    columns:\n      id: {type: INTEGER, not_null: true}\n" +
+	"views:\n  recent:\n    body: \"SELECT id FROM items\"\n" +
+	"roles:\n  reader:\n    login: true\n" + readerRecent +
+	"  reader_archive:\n    role: reader\n    privileges: [select]\n    on_table: archive\n"
+
+// droppedObjects declares the table items and the role reader alone.
+const droppedObjects = "tables:\n  items:\n    columns:\n      id: {type: INTEGER, not_null: true}\nroles:\n  reader:\n    login: true\n"
+
+// droppedStatements are the statements a plan's text lists that change the
+// fixture's objects, in order.
+var droppedStatements = regexp.MustCompile(`(?m)^(FIXTURE |DROP TABLE ).*;$`)
+
+// A table and a view the plan drops take their grants with them: the plan
+// drops both and revokes neither grant, the fixture holds no grant once the
+// plan applies, and the next plan has nothing to change.
+func TestProviderDropsObjectsHoldingGrants_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := newProviderCLI(c, fixtureReleaseSpec(c, "common-objects", testutils.FixtureRelease{}))
+	c.Assert(os.WriteFile(f.schemaPath, []byte(heldObjects), 0o600), qt.IsNil)
+	f.success(c, "apply", "--schema-file", f.schemaPath, "--tx-mode", "none", "--auto-approve")
+	held, _ := f.keptCommonObjects(c)
+	c.Assert(os.WriteFile(f.schemaPath, []byte(droppedObjects), 0o600), qt.IsNil)
+
+	drops := f.success(c, "plan", "--schema-file", f.schemaPath, "--output", f.planPath)
+	f.success(c, "apply", "--plan", f.planPath, "--tx-mode", "none", "--auto-approve")
+
+	c.Assert(held["grants"], qt.HasLen, 2)
+	c.Assert(droppedStatements.FindAllString(drops, -1), qt.DeepEquals, []string{`FIXTURE {"op":"drop_view","name":"recent"};`, `DROP TABLE "archive";`})
+	kept, views := f.keptCommonObjects(c)
+	c.Assert(views, qt.HasLen, 0)
+	c.Assert(kept["grants"], qt.IsNil)
+	c.Assert(f.plan(c), qt.Contains, `"outcome": "no-changes"`)
 }

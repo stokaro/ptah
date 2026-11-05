@@ -5,7 +5,9 @@
 // grants and comments in a file of its own beside the database, which its
 // reads report and its executor writes. Each change renders as one statement
 // its own executor reads: `FIXTURE {...};`, the change as JSON. A view is a
-// real SQLite view; the executor creates it with CREATE VIEW.
+// real SQLite view; the executor creates it with CREATE VIEW. Dropping a table
+// or a view takes the grants on it, as an engine that keeps them in the
+// object's own access list does.
 package main
 
 import (
