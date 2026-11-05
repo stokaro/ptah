@@ -78,10 +78,8 @@ func TestSQLLintReadsTheProvidersStatementFacts(t *testing.T) {
 
 // TestSQLLintComparesTheProvidersRequirementsWithTheServerVersion names the
 // ydb dialect, which the fixture serves under the official provider's
-// identity, so the host resolves a server version to the capabilities of that
-// YDB release line. YDB 25.1 has no parameterized DECIMAL and 26.2 has one.
-// The primary key finding carries the provider path's wording, not the
-// built-in YQL reading's, which names YDB's refusal.
+// identity, and the host resolves a server version through the release lines
+// the fixture declares. YDB 25.1 has no parameterized DECIMAL and 26.2 has one.
 func TestSQLLintComparesTheProvidersRequirementsWithTheServerVersion(t *testing.T) {
 	c := qt.New(t)
 	f := newLintProvider(c, "lint-facts", ydbProviderID, "ydb", "FIXTURE_LINT_ENGINE=ydb")
