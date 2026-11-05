@@ -247,8 +247,8 @@ func TestBaselineGuard_SchemaStateReturned_FailurePath(t *testing.T) {
 }
 
 // TestReplayGuard_SchemaStateReturned pins that the answer reaches a rehearsed
-// plan only when the rehearsal asks: a migration replay, which builds its guard
-// without it, refuses the same statements.
+// plan only when the rehearsal asks: a guard built without it refuses the same
+// statements.
 func TestReplayGuard_SchemaStateReturned(t *testing.T) {
 	const statement = `COMMENT ON SCHEMA "public" IS 'our app'`
 	c := qt.New(t)
@@ -257,4 +257,73 @@ func TestReplayGuard_SchemaStateReturned(t *testing.T) {
 	c.Assert(replay.WithSchemaStateReturned(true).ValidateStatement(statement), qt.IsNil)
 	c.Assert(replay.ValidateStatement(statement), qt.ErrorMatches,
 		`postgres migration replay rejects COMMENT ON global metadata because .*`)
+}
+
+// reset answers a [devclean.ReplayGuard.WithSchemaCommentReturned] question.
+func reset(returned bool) func() bool {
+	return func() bool { return returned }
+}
+
+// TestReplayGuard_SchemaCommentReturned_HappyPath pins what a migration replay
+// takes on a dev database whose reset returns a schema's state: a comment on any
+// schema a reset either returns or drops, whoever wrote it.
+func TestReplayGuard_SchemaCommentReturned_HappyPath(t *testing.T) {
+	tests := []struct{ name, statement string }{
+		{"a comment on public", `COMMENT ON SCHEMA public IS 'our app'`},
+		{"a comment on a schema the file created", `COMMENT ON SCHEMA "app" IS 'application'`},
+		{"a removed comment", `COMMENT ON SCHEMA "app" IS NULL`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewDevReplayGuard(sharedPostgresDev).WithSchemaCommentReturned(reset(true))
+
+			c.Assert(guard.ValidateStatement(test.statement), qt.IsNil)
+		})
+	}
+}
+
+// TestReplayGuard_SchemaCommentReturned_FailurePath pins the limits. A reset that
+// does not return the state leaves the comment behind. A privilege depends on the
+// server's roles, so it stays refused whatever the reset does. A protected
+// namespace is not the run's, and a comment on the database or on a role outlives
+// any reset.
+func TestReplayGuard_SchemaCommentReturned_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, statement, wantErr string
+		returned                 bool
+	}{
+		{
+			name: "a reset that does not return it", statement: `COMMENT ON SCHEMA public IS 'our app'`,
+			wantErr: `postgres migration replay rejects COMMENT ON global metadata because .*`,
+		},
+		{
+			name: "a privilege on public", statement: `GRANT USAGE ON SCHEMA public TO PUBLIC`, returned: true,
+			wantErr: `postgres migration replay rejects GRANT database or global privilege because .*`,
+		},
+		{
+			name: "a revoked privilege", statement: `REVOKE USAGE ON SCHEMA "app" FROM PUBLIC`, returned: true,
+			wantErr: `postgres migration replay rejects REVOKE database or global privilege because .*`,
+		},
+		{
+			name: "a protected namespace", statement: `COMMENT ON SCHEMA pg_catalog IS 'x'`, returned: true,
+			wantErr: `postgres migration replay rejects protected namespace "pg_catalog" mutation because .*`,
+		},
+		{
+			name: "the database", statement: `COMMENT ON DATABASE ptah_dev IS 'x'`, returned: true,
+			wantErr: `postgres migration replay rejects COMMENT ON global metadata because .*`,
+		},
+		{
+			name: "a role", statement: `COMMENT ON ROLE app_rw IS 'x'`, returned: true,
+			wantErr: `postgres migration replay rejects COMMENT ON global metadata because .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			guard := devclean.NewDevReplayGuard(sharedPostgresDev).WithSchemaCommentReturned(reset(test.returned))
+
+			c.Assert(guard.ValidateStatement(test.statement), qt.ErrorMatches, test.wantErr)
+		})
+	}
 }
