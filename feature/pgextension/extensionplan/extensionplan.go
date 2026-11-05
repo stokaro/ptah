@@ -175,7 +175,7 @@ func planChange(target, name string, subject objectidentity.ID, change *pgextens
 		result.add(step("drop", plangraph.Drop, &pgextension.Operation{Name: extension, Action: pgextension.Drop, IfExists: style != featureplan.StatementStyleExact}, change.Effect(),
 			fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extension),
 			"Consider reviewing all database objects that use this extension before proceeding",
-			"Extension removal may cascade to dependent objects - review carefully",
+			"DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them",
 			fmt.Sprintf("Remove extension '%s' as it's no longer required by the schema", extension)))
 	default:
 		if change.UpdatesVersion() {

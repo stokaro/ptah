@@ -1,6 +1,7 @@
 package pgextensionprovider_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -84,7 +85,7 @@ func TestPlanExtensions_HappyPath(t *testing.T) {
 			want: []planned{{Payload: &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop, IfExists: true}, Phase: prerequisite, Effect: plangraph.Drop, Notes: []string{
 				"WARNING: Removing extension 'pg_trgm' may break existing functionality that depends on it",
 				"Consider reviewing all database objects that use this extension before proceeding",
-				"Extension removal may cascade to dependent objects - review carefully",
+				"DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them",
 				"Remove extension 'pg_trgm' as it's no longer required by the schema",
 			}}},
 		},
@@ -135,6 +136,35 @@ func TestPlanExtensions_ExactDropOmitsExistenceGuard(t *testing.T) {
 	planned := steps(c, result, "pg_trgm")
 	c.Assert(planned, qt.HasLen, 1)
 	c.Assert(planned[0].Payload, qt.DeepEquals, &pgextension.Operation{Name: "pg_trgm", Action: pgextension.Drop})
+	c.Assert(planned[0].Notes, qt.Contains, "DROP EXTENSION removes the objects the extension owns, and the server refuses it while another object depends on them")
+}
+
+// TestPlanExtensions_NotesNameNoCascadeTheStatementLacks reads the notes against
+// the statement in both styles: no owner drop carries CASCADE, so no note may
+// promise that one reaches a dependent.
+func TestPlanExtensions_NotesNameNoCascadeTheStatementLacks(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		style featureplan.StatementStyle
+	}{
+		{name: "annotated", style: featureplan.StatementStyleAnnotated},
+		{name: "exact", style: featureplan.StatementStyleExact},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := planning("postgres", change("pg_trgm", &pgextension.Change{Before: installedTrgm()}))
+			request.Policy.Statements = test.style
+
+			result, err := newRuntime(c).PlanFeatures(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Err(request), qt.IsNil)
+			planned := steps(c, result, "pg_trgm")
+			c.Assert(planned, qt.HasLen, 1)
+			c.Assert(planned[0].Payload.(*pgextension.Operation).Cascade, qt.IsFalse)
+			c.Assert(strings.ToLower(strings.Join(planned[0].Notes, "\n")), qt.Not(qt.Contains), "cascade")
+		})
+	}
 }
 
 // TestPlanExtensions_RefusesWhatTheServerRefuses pins each refusal and the
