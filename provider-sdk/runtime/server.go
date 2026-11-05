@@ -24,8 +24,16 @@ import (
 )
 
 const (
-	// MaxMessageBytes bounds each request and response in both directions.
+	// MaxMessageBytes bounds each request and response in both directions
+	// between a host and a provider that do not both list
+	// provider.LargeMessagesFeature.
 	MaxMessageBytes = 4 << 20
+	// LargeMessageBytes bounds each request and response in both directions
+	// between a host and a provider that both list
+	// provider.LargeMessagesFeature. The server receives and sends up to it
+	// with every host; a host that does not list the feature sends no more
+	// than MaxMessageBytes and receives no more either.
+	LargeMessageBytes = 64 << 20
 	// CallTimeout bounds calls whose caller supplied no earlier deadline.
 	CallTimeout = 30 * time.Second
 	// ProvisionTimeout bounds a dev database call that has no earlier deadline:
@@ -172,11 +180,13 @@ func Serve(server Server) error {
 }
 
 // grpcServer returns the factory go-plugin builds the provider's gRPC server
-// with: messages bounded in both directions, and the reasons check on every
-// call's error, so no service can send a reason the host did not negotiate.
+// with: messages bounded in both directions by LargeMessageBytes, model
+// references resolved and
+// sent where the host negotiated them, and the reasons check on every call's
+// error, so no service can send a reason the host did not negotiate.
 func grpcServer(adapter *serverAdapter) func([]grpc.ServerOption) *grpc.Server {
 	return func(options []grpc.ServerOption) *grpc.Server {
-		options = append(options, grpc.MaxRecvMsgSize(MaxMessageBytes), grpc.MaxSendMsgSize(MaxMessageBytes), grpc.ChainUnaryInterceptor(adapter.reasons))
+		options = append(options, grpc.MaxRecvMsgSize(LargeMessageBytes), grpc.MaxSendMsgSize(LargeMessageBytes), grpc.ChainUnaryInterceptor(adapter.references, adapter.reasons))
 		return grpc.NewServer(options...)
 	}
 }

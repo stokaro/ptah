@@ -11,7 +11,7 @@ import (
 // CompareColumns obtains complete offline owner receipts for captured pairs.
 // Cancellation, transport failures and invalid replies expose no result prefix.
 func (c *Client) CompareColumns(ctx context.Context, request *protocol.CompareColumnsRequest) (*protocol.ComparedColumns, error) {
-	return callOffline(ctx, c.description, proto.CloneOf(request), "compare columns", provider.ValidateColumnsRequest, provider.ValidateComparedColumns, c.rpc.CompareColumns)
+	return callOffline(ctx, c.description, provider.CloneSharingModels(request), "compare columns", provider.ValidateColumnsRequest, provider.ValidateComparedColumns, c.rpc.CompareColumns)
 }
 
 // ReadColumnDefaults obtains typed defaults for the exact observed inventory.
