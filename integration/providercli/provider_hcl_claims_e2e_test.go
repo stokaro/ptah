@@ -164,8 +164,9 @@ type Record struct {
 // TestProviderHCLExport_HappyPath writes a provider's values through
 // EncodeSource: the table's retention as the provider's block in the table,
 // and the index's as the provider's attribute of the index block. The
-// column's has no place in an HCL encoding and is reported as a loss.
-// Reading the document back gives the table and index values again.
+// column's goes to the provider too, which has no HCL spelling for it and
+// reports it as a loss. Reading the document back gives the table and index
+// values again.
 func TestProviderHCLExport_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	f := newProviderCLI(c, fixtureReleaseSpec(c, "hcl-claims", testutils.FixtureRelease{}))
@@ -181,7 +182,7 @@ func TestProviderHCLExport_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(written), qt.Contains, "  retention {\n    seconds = \"5\"\n  }\n")
 	c.Assert(string(written), qt.Contains, "retention_seconds = \"9\"")
-	c.Assert(stderr, qt.Contains, `warning: column.Record.body: example.org/fixture/retention of column "body" of table "records" has no HCL spelling a provider writes`)
+	c.Assert(stderr, qt.Contains, `warning: column.Record.body: the retention of column "body" has no HCL spelling`)
 	runtime := hclClaimsProvider(c)
 	db, err := atlashcl.ParseWithOptions(c.Context(), written, "schema.hcl", atlashcl.Options{HCL: runtime.HCL()})
 	c.Assert(err, qt.IsNil)
