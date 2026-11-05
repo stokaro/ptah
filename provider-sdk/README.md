@@ -111,8 +111,9 @@ returns to 0.
   Contract 25.19 adds [change reversal](#change-reversal).
   Contract 25.20 adds [unread tables](#unread-tables).
   Contract 25.21 adds [database kinds](#database-kinds),
-  [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading)
-  and [report counts](#report-counts).
+  [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
+  [report counts](#report-counts) and
+  [index facets on inspected indexes](#index-facets-on-inspected-indexes).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -144,7 +145,8 @@ does not oblige a peer to use it.
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
-  `schema.sql-facets` and `models.report-counts`. The embedding store's calls,
+  `schema.sql-facets`, `models.report-counts` and
+  `schema.observed-index-facets`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too,
@@ -1981,6 +1983,29 @@ provider that owns the table.
 The host compares an index's uniqueness, key columns and covered columns with
 the held index. Without [prepared index kinds](#prepared-index-kinds) it
 compares no kind, so a change of kind alone plans nothing.
+
+## Index facets on inspected indexes
+
+`schema.observed-index-facets` lets inspection report the settings of a common
+index a table holds as facets of that index, in `ObservedIndex.facets`. A
+source states the same settings as a facet of the index its index directive
+or entry declares, so the host compares one owner's facet on both sides, as it
+compares a table's or a column's. Each facet is owned by its index:
+`provider.IndexReference` builds the owner from the table's identity, with
+kind `index`, the table as the only path component and the index's name. The
+SDK places the facets of a table's indexes after its columns' facets in the
+values the host normalizes, in the order the indexes are listed.
+
+The provider and the engine both declare this two-way feature, which requires
+`schema.observed-indexes` on the engine. A read carries index facets only when
+its `target_features` list the feature, and a peer refuses one owned by
+another index, by the table or by a column. With the feature negotiated, the
+host treats every facet such an index carries as one an
+[index rename](#index-renames) keeps: the rename is the owner's step, and the
+host compares a renamed index's facets under the name the declaration gives
+it.
+[ADR 0068](../docs/adr/0068-an-inspected-index-carries-its-own-facets.md)
+records the decision.
 
 ## Prepared index kinds
 
