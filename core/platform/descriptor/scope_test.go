@@ -13,7 +13,7 @@ import (
 func scoped() descriptor.Dialect {
 	described := head("alpha")
 	described.DefaultSchema = "main"
-	described.Schemas = descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle, Implicit: true}
+	described.Schemas = descriptor.Schemas{Selection: descriptor.SchemaSelectionSingle, Implicit: true, ConnectedDatabaseOnly: true}
 	described.Roles = descriptor.Roles{OutOfScope: descriptor.RoleScopeUserMade, Widenable: true}
 	described.URLValuedParameters = []string{"monitoring", "metrics"}
 	return described
@@ -50,6 +50,11 @@ func TestNewRegistry_ScopeFailurePath(t *testing.T) {
 			name:    "a single schema with no default schema",
 			edit:    withScope(func(d *descriptor.Dialect) { d.Schemas.Implicit = false; d.DefaultSchema = "" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": an implicit or single schema needs a default schema`,
+		},
+		{
+			name:    "the connected database alone, where a URL can name a whole server",
+			edit:    withScope(func(d *descriptor.Dialect) { d.Schemas.Selection = descriptor.SchemaSelectionDatabase }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": a URL that selects a database can name a whole server, .*`,
 		},
 		{
 			name:    "an undeclared role scope",

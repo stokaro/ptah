@@ -45,6 +45,9 @@ func clickHouse() descriptor.Dialect {
 		// How a connection reaches the server.
 		Driver: "clickhouse",
 
+		// A read reaches the database the URL names, and no URL names more.
+		Schemas: descriptor.Schemas{ConnectedDatabaseOnly: true},
+
 		// ClickHouse runs DELETE, but a plain UPDATE answers `Lightweight
 		// updates are not supported. Lightweight updates are supported only
 		// for tables with materialized _block_number column`, a per-table

@@ -17,6 +17,9 @@ type readingFacts struct {
 	indexNaming descriptor.IndexNaming
 	checkNaming descriptor.CheckNaming
 	selection   descriptor.SchemaSelection
+	// databaseIsSchema reports that a database of the server is what the model
+	// calls a schema, so CREATE DATABASE declares one.
+	databaseIsSchema bool
 	// defaultSchema is the schema an unqualified name means offline.
 	defaultSchema    string
 	constraintNaming descriptor.ConstraintNaming
@@ -59,6 +62,9 @@ func factsOf(sourcePlatform string) readingFacts {
 		indexNaming: described.IndexNaming,
 		checkNaming: described.CheckNaming,
 		selection:   described.Schemas.Selection,
+
+		databaseIsSchema: described.Schemas.Selection == descriptor.SchemaSelectionDatabase ||
+			described.Schemas.ConnectedDatabaseOnly,
 
 		defaultSchema:       described.DefaultSchema,
 		constraintNaming:    described.ConstraintNaming,

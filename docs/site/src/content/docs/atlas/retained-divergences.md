@@ -1006,10 +1006,12 @@ exits `0`, never the reverse.
 
 **Type.** Deliberate divergence
 
-**Current boundary.** A MySQL or MariaDB URL that names one database limits
-`schema apply` and `schema diff` to it. A document that declares another
-database, or puts a table, view, routine, sequence or trigger in one, is
-refused by name before anything is planned.
+**Current boundary.** A MySQL, MariaDB or ClickHouse URL that names one database
+limits `schema apply` and `schema diff` to it, and on the native surface `ptah
+schema compare`, `ptah schema drift`, `ptah migrations generate` and `ptah
+migrations plan` too. A document that declares another database, or puts a table,
+view, routine, sequence or trigger in one, is refused by name before anything is
+planned.
 
 Measured on 2026-09-28 against MySQL 8.4.11, with the URL naming `app`:
 
