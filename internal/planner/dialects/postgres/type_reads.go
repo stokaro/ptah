@@ -25,23 +25,26 @@ import (
 // removal in diff: the columns of a removed table, and the arguments and the
 // result of a removed routine. A routine drop the removals do not explain
 // reads the argument types it spells.
-//
-// A drop ahead of the feature removal window holds no type back: every window a
-// removed type can leave in comes after it.
-func typeReads(diff *difftypes.SchemaDiff, node ast.Node, types featureplan.TypeContext, aheadOfRemovals bool) []plangraph.Effect {
+func typeReads(diff *difftypes.SchemaDiff, node ast.Node, types featureplan.TypeContext) []plangraph.Effect {
 	switch typed := node.(type) {
 	case *ast.DropTableNode:
-		if aheadOfRemovals {
-			return nil
-		}
 		return typeorder.Reads(removedTableTypes(diff, typed.TableNames()), types.Current)
 	case *ast.DropFunctionNode:
-		if aheadOfRemovals {
-			return nil
-		}
 		return typeorder.Reads(removedRoutineTypes(diff, typed), types.Current)
 	default:
 		return pgeffects.TypeReads(node, types.Desired)
+	}
+}
+
+// dropsAnObjectWithTypes reports a statement that drops a table or a routine. Ahead of
+// the feature removal window it holds no type back, since every window a removed type
+// can leave in comes after it.
+func dropsAnObjectWithTypes(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.DropTableNode, *ast.DropFunctionNode:
+		return true
+	default:
+		return false
 	}
 }
 

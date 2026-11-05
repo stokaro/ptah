@@ -104,8 +104,8 @@ func (p *Planner) scheduleFeatures(ctx context.Context, runtime featureplan.Runt
 	for i, effects := range pgeffects.Sequence(builder, nodes) {
 		// A statement whose own footprint is unknown stays unknown: a read
 		// beside it would claim to describe it.
-		if effects != nil {
-			effects = append(effects, typeReads(diff, nodes[i], request.Types, i < windows.Removal)...)
+		if effects != nil && (i >= windows.Removal || !dropsAnObjectWithTypes(nodes[i])) {
+			effects = append(effects, typeReads(diff, nodes[i], request.Types)...)
 		}
 		metadata[i].Effects = effects
 	}
