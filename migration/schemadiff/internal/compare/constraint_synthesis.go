@@ -2,6 +2,7 @@ package compare
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
@@ -332,7 +333,8 @@ func columnSetsMatch(declared, live []string, semantics identifier.Semantics) bo
 
 // tablePrimaryKeyConstraintName adopts the name the database already uses for
 // this table's primary key, so the synthesized constraint compares equal to it
-// instead of being reported as a rename.
+// instead of being reported as a rename. A table the database holds no key on
+// takes the name it declares.
 //
 // The lookup normalizes both sides for the same reason the keys around it do:
 // the database reports the schema as empty wherever the engine treats it as
@@ -357,7 +359,34 @@ func tablePrimaryKeyConstraintName(
 	if name := comparisonOf(dialect).PrimaryKeyName; name != "" {
 		return name
 	}
+	if table.PrimaryKeyName != "" {
+		return table.PrimaryKeyName
+	}
 	return table.Name + "_pkey"
+}
+
+// addedPrimaryKeyNamed gives a primary key that replaces the live one the name
+// its table declares. The comparison pairs the two under the live key's name, and
+// the replacement is the one statement that can write the declared name. A
+// dialect whose server names every primary key itself has nothing to write, and
+// a table that declares no name keeps the live one.
+func addedPrimaryKeyNamed(
+	constraint schemamodel.Constraint,
+	desired *schemamodel.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) schemamodel.Constraint {
+	if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") || comparisonOf(dialect).PrimaryKeyName != "" {
+		return constraint
+	}
+	identity := newQualifiedTableIdentity(constraint.Table, semantics)
+	for _, table := range desired.Tables {
+		if table.PrimaryKeyName != "" && newQualifiedTableIdentity(table.QualifiedName(), semantics) == identity {
+			constraint.Name = table.PrimaryKeyName
+			break
+		}
+	}
+	return constraint
 }
 
 // livePrimaryKeyName answers the name of the primary key the database holds on

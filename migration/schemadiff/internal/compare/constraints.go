@@ -124,7 +124,7 @@ func ConstraintsWithSemantics(
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = appendConstraintRemoval(diff.ConstraintsRemoved, dbConstraint, semantics)
 				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
-				diff.ConstraintsAdded = appendConstraintAddition(diff.ConstraintsAdded, genConstraint, semantics)
+				diff.ConstraintsAdded = appendConstraintAddition(diff.ConstraintsAdded, addedPrimaryKeyNamed(genConstraint, desired, dialect, semantics), semantics)
 				continue
 			}
 			diff.Matched.Constraints++

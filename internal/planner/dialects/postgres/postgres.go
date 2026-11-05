@@ -3321,6 +3321,11 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if replaced, found := state.replacedPrimaryKeys[state.semantics.QualifiedTableIdentityKey(add.TableName)]; found {
 			result = p.appendScopedDrop(result, replaced.TableName, replaced.Name, replaced.Identity, state)
 		}
+		// A UNIQUE the key takes its name from is a modification like any other:
+		// the plan's removals leave it to this step.
+		if _, modified := state.removalByTableName[add.Identity]; modified {
+			result = p.emitModifyDrop(result, add, state)
+		}
 		// The payload rides with the key, exactly as it does for a covering
 		// UNIQUE. Without it the re-ADD builds a plain key and the INCLUDE the
 		// DROP just removed never comes back (stokaro/ptah#2199).
