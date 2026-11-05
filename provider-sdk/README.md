@@ -55,7 +55,8 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.22. `provider-sdk/v0.18.0` speaks 25.19.
+speaks contract 25.22. `provider-sdk/v0.19.0` speaks 25.21.
+`provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
@@ -149,14 +150,14 @@ does not oblige a peer to use it.
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
-  `schema.sql-facets`, `models.report-counts`,
-  `schema.observed-index-facets` and `schema.subtree-coverage`. The embedding
-  store's calls,
+  `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
+  `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`
+  and `engine.default-capabilities`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
-  any of them. `SplitMigration` is new too,
-  and comes with the abort flags of `Execution` and `TransactionResult`, so a
-  host lists `units.migration-split` to call it.
+  any of them. `SplitMigration` is new too, and comes with the abort flags of
+  `Execution` and `TransactionResult`, so a host lists `units.migration-split`
+  to call it.
 - Both transport boundaries validate with the description negotiated this way,
   `provider.NegotiatedDescription`, so neither side sends an addition the other
   did not ask for. A service reads what the host listed with
@@ -265,6 +266,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
 | `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
+| `ScanSQL` | Offline: the tokens of one text of the engine's SQL, in order, covering the text with no gap and no overlap. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
