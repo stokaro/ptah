@@ -283,6 +283,46 @@ func TestUseLogger_KeepsTheStrictListing(t *testing.T) {
 	c.Assert(stream.String(), qt.Equals, "warning: ww widgets; PTAH_LOG_LEVEL=debug lists them when PTAH_ATLAS_STRICT_COMPAT is off\n")
 }
 
+// Drain hands each category's warning to the caller instead of writing it:
+// the message a line would carry, how many objects, and each object's line,
+// the categories in the order they were raised. It empties the report, so the
+// end of the run writes nothing, and it logs the objects at debug level as the
+// end of the run does.
+func TestDrain_ReturnsTheWarningsInsteadOfWritingThem(t *testing.T) {
+	c := qt.New(t)
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	c.Cleanup(func() { slog.SetDefault(previous) })
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedInToolResult})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+	gadgets := &rundiag.Category{Name: "gadget", Summary: func(records []rundiag.Record) string { return "gadgets" }}
+
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, rundiag.Record{Key: "g", Line: "gadget g"}), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, widgets, record("b")), qt.IsNil)
+	warnings := report.Drain()
+	report.Flush()
+
+	c.Assert(warnings, qt.DeepEquals, []rundiag.Warning{
+		{Category: "gadget", Count: 1, Message: "gadget g", Objects: []string{"gadget g"}},
+		{
+			Category: "widget", Count: 2, Message: "ww widgets; the result's _meta lists them under ptah.run/warnings",
+			Objects: []string{"widget a", "widget b"},
+		},
+	})
+	c.Assert(out.String(), qt.Equals, "")
+	c.Assert(strings.Count(logged.String(), "level=DEBUG"), qt.Equals, 3)
+}
+
+// A report nothing was raised in drains to no warning.
+func TestDrain_ReturnsNothingForAnEmptyReport(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(rundiag.New(rundiag.Options{}).Drain(), qt.HasLen, 0)
+}
+
 // jsonRecords is the JSON lines of written, without their time.
 func jsonRecords(c *qt.C, written string) []map[string]any {
 	c.Helper()
