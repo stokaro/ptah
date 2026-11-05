@@ -386,6 +386,10 @@ the engine. The work is split this way:
 - A view whose query changed is replaced in place when the session reports
   `create_or_replace_view`. Otherwise Ptah drops the view, creates it again and
   grants again each permission the view held, which the drop took with it.
+- A table or a view the plan drops takes its permissions with it, so Ptah
+  revokes none of them first, including one the declaration leaves out of a
+  view it drops to create again. A view replaced in place keeps its
+  permissions, and Ptah revokes one the declaration leaves out.
 - On an engine with `schema.common-table-identity.v1`, the comment of a table
   Ptah creates is a step of its own after the table. A declaration is validated
   by rendering it, so the provider refuses there an object it cannot hold, and
