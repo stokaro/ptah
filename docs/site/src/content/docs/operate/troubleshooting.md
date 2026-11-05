@@ -391,7 +391,9 @@ default profile reads the same objects and lists them.
 
 Nothing is wrong when the objects are expected, such as the long names an ORM
 writes. Otherwise, act on the listed objects as each warning's own section
-describes.
+describes. For cut names, `ptah sql lint` reports each one as `DDL003` at the
+line and column where it is written, and `ptah migrations lint` reports each
+one as `PG401P` in a migration directory, without a database.
 
 **Verify**
 

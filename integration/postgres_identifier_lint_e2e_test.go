@@ -23,7 +23,7 @@ import (
 func sqlLintFindings(c *qt.C, sql, rule string) []sqllint.Finding {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "schema.sql")
-	c.Assert(os.WriteFile(path, []byte(sql), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(sql), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
 	_, stdout, stderr := runAsOneRun(c, nativeTree, "sql", "lint", "--dialect", "postgres", "--format", "json", path)
 	var report struct {
 		Findings []sqllint.Finding `json:"findings"`
