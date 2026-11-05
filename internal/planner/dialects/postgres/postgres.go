@@ -2424,22 +2424,22 @@ const (
 )
 
 func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild, ahead routinesAhead, phase routineRemovalPhase) []ast.Node {
-	for _, routine := range diff.FunctionsRemoved {
-		if !ahead.moves(routine) && !rebuild.ownsRoutine(routine.Name) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
-			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindFunction))
+	for _, group := range p.removedRoutineGroups(diff, rebuild, ahead) {
+		if group.afterTypes != (phase == routinesAfterTypes) {
+			continue
 		}
-	}
-	for _, routine := range diff.ProceduresRemoved {
-		if !ahead.moves(routine) && !rebuild.ownsRoutine(routine.Name) && removedDomainCallsRoutine(diff, routine) == (phase == routinesAfterTypes) {
-			result = append(result, p.dropRoutineNode(routine, schemamodel.FunctionKindProcedure))
+		node := p.dropRoutineNode(group.routines[0], group.kind)
+		for _, other := range group.routines[1:] {
+			node.Others = append(node.Others, ast.DropFunctionTarget{Name: other.Name, Parameters: other.Signature})
 		}
+		result = append(result, node)
 	}
 	return result
 }
 
 // dropRoutineNode is the statement that drops a removed routine of kind, a
 // function or a procedure; the list the removal came from says which.
-func (p *Planner) dropRoutineNode(routine difftypes.RoutineChange, kind string) ast.Node {
+func (p *Planner) dropRoutineNode(routine difftypes.RoutineChange, kind string) *ast.DropFunctionNode {
 	// The signature is what makes the statement addressable. A name alone is
 	// refused with `function name "f" is not unique` on any schema that
 	// overloads, and IF EXISTS does not help because the refusal is about

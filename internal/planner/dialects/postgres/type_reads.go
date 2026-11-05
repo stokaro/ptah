@@ -69,22 +69,24 @@ func removedTableTypes(diff *difftypes.SchemaDiff, names []string) []string {
 // its arguments and its result.
 func removedRoutineTypes(diff *difftypes.SchemaDiff, drop *ast.DropFunctionNode) []string {
 	var spellings []string
-	matched := false
 	removed := diff.FunctionsRemoved
 	if drop.IsProcedure() {
 		removed = diff.ProceduresRemoved
 	}
-	for _, routine := range removed {
-		if routine.Name != drop.Name || (routine.Signature == nil) != (drop.Parameters == nil) ||
-			(routine.Signature != nil && *routine.Signature != *drop.Parameters) {
-			continue
+	for _, target := range drop.Targets() {
+		matched := false
+		for _, routine := range removed {
+			if routine.Name != target.Name || (routine.Signature == nil) != (target.Parameters == nil) ||
+				(routine.Signature != nil && *routine.Signature != *target.Parameters) {
+				continue
+			}
+			matched = true
+			spellings = append(spellings, routineargs.ArgumentTypes(routine.Parameters)...)
+			spellings = append(spellings, routineargs.ResultTypes(routine.Returns)...)
 		}
-		matched = true
-		spellings = append(spellings, routineargs.ArgumentTypes(routine.Parameters)...)
-		spellings = append(spellings, routineargs.ResultTypes(routine.Returns)...)
-	}
-	if !matched && drop.Parameters != nil {
-		spellings = routineargs.ArgumentTypes(*drop.Parameters)
+		if !matched && target.Parameters != nil {
+			spellings = append(spellings, routineargs.ArgumentTypes(*target.Parameters)...)
+		}
 	}
 	return spellings
 }

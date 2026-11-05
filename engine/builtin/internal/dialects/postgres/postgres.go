@@ -2468,11 +2468,15 @@ func (r *Renderer) renderDropFunction(node *ast.DropFunctionNode) error {
 	// overloaded; the bare name is refused there with `function name "f" is not
 	// unique`, and IF EXISTS does not help, because the refusal is about
 	// ambiguity rather than existence.
-	if node.Parameters == nil {
-		parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
-	} else {
-		parts = append(parts, r.escapeFunctionSignature(node.Name, *node.Parameters))
+	targets := make([]string, 0, len(node.Others)+1)
+	for _, target := range node.Targets() {
+		if target.Parameters == nil {
+			targets = append(targets, r.escapeQualifiedIdentifier(target.Name))
+		} else {
+			targets = append(targets, r.escapeFunctionSignature(target.Name, *target.Parameters))
+		}
 	}
+	parts = append(parts, strings.Join(targets, ", "))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")

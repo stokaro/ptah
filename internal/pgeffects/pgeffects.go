@@ -80,10 +80,14 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 		}
 		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, typed.Parameters), Action: action}}
 	case *ast.DropFunctionNode:
-		if typed.Parameters == nil {
-			return nil
+		var effects []plangraph.Effect
+		for _, target := range typed.Targets() {
+			if target.Parameters == nil {
+				return nil
+			}
+			effects = append(effects, plangraph.Effect{Subject: routine(builder, typed, target.Name, *target.Parameters), Action: plangraph.Drop})
 		}
-		return []plangraph.Effect{{Subject: routine(builder, typed, typed.Name, *typed.Parameters), Action: plangraph.Drop}}
+		return effects
 	case *ast.CreateRoleNode:
 		return []plangraph.Effect{{Subject: builder.Role(typed.Name), Action: plangraph.Create}}
 	case *ast.AlterRoleNode:

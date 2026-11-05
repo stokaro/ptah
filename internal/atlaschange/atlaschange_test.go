@@ -152,6 +152,12 @@ func TestOfAndUndone_HappyPath(t *testing.T) {
 			undone: `create "archive" procedure`,
 		},
 		{
+			name:   "two functions one statement drops",
+			node:   &ast.DropFunctionNode{Name: "a_fn", Others: []ast.DropFunctionTarget{{Name: "b_fn"}}},
+			of:     `drop "a_fn" function, drop "b_fn" function`,
+			undone: `create "a_fn" function, create "b_fn" function`,
+		},
+		{
 			name:   "a dropped trigger",
 			node:   ast.NewDropTrigger("touch", "items"),
 			of:     `drop "touch" trigger`,

@@ -2506,12 +2506,29 @@ type DropFunctionNode struct {
 	// the name is overloaded. So a routine that takes no arguments is dropped
 	// with an empty list, and a node that knows no list is dropped by name.
 	Parameters *string
+	// Others are further routines of the same kind the one statement drops, for
+	// PostgreSQL, which drops the routines one statement names together. Each is
+	// addressed as Name and Parameters are.
+	Others []DropFunctionTarget
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
 	// Cascade indicates whether to use CASCADE option (removes dependent objects)
 	Cascade bool
 	// Comment is an optional comment for the drop operation
 	Comment string
+}
+
+// DropFunctionTarget is one routine a [DropFunctionNode] names: its name and the
+// argument list that addresses it, which [DropFunctionNode.Parameters] describes.
+type DropFunctionTarget struct {
+	Name       string
+	Parameters *string
+}
+
+// Targets returns every routine the statement drops, Name and Parameters first.
+// The slice is independent of the node.
+func (n *DropFunctionNode) Targets() []DropFunctionTarget {
+	return append([]DropFunctionTarget{{Name: n.Name, Parameters: n.Parameters}}, n.Others...)
 }
 
 // NewDropFunction creates a new DROP FUNCTION node with the specified name.
