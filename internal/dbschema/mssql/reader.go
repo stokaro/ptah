@@ -89,6 +89,12 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{}
 
+	schemas, err := r.readSchemas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read schemas: %w", err)
+	}
+	schema.Schemas = schemas
+
 	tables, err := r.readTables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read tables: %w", err)
@@ -203,6 +209,35 @@ func (r *Reader) recordFunctions(ctx context.Context, schema *catalog.Database) 
 		return fmt.Errorf("sqlserver: record routine principals: %w", err)
 	}
 	return nil
+}
+
+// readSchemas reads the schemas of the read's scope that the database holds, each
+// spelled as the catalog spells it. The comparison reads a declared schema missing
+// from them as one the database lacks, so an empty schema has to appear here.
+func (r *Reader) readSchemas(ctx context.Context) ([]catalog.Schema, error) {
+	query := `
+		SELECT s.name
+		FROM sys.schemas AS s
+		WHERE (` + schemaPredicatePlaceholder + `)
+		ORDER BY s.name`
+	rows, err := r.db.QueryContext(ctx, r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schemas []catalog.Schema
+	for rows.Next() {
+		var schema catalog.Schema
+		if err := rows.Scan(&schema.Name); err != nil {
+			return nil, err
+		}
+		schemas = append(schemas, schema)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return schemas, nil
 }
 
 func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {

@@ -40,7 +40,7 @@ func TestCleanCheck_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"sqlite": {check: descriptor.CleanCheck{
 			Adoption: true, AdoptionCounts: true, Dev: true, CatalogOrder: true,
 		}, tables: true, refused: true},
-		"sqlserver":  {check: descriptor.CleanCheck{Dev: true}, tables: true, refused: true},
+		"sqlserver":  {check: descriptor.CleanCheck{Dev: true, ResetsEverySchema: true}, tables: true, refused: true},
 		"clickhouse": {check: descriptor.CleanCheck{Dev: true}, tables: true, refused: true},
 		"oracle":     {check: descriptor.CleanCheck{Dev: true}, tables: true},
 	}

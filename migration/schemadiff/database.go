@@ -995,6 +995,9 @@ func appendGeneratedIdentifierNames(
 	for _, field := range desired.Fields {
 		names = append(names, field.Name)
 	}
+	for _, schema := range desired.Schemas {
+		names = append(names, schema.Name)
+	}
 	for _, table := range desired.Tables {
 		names = append(names, table.Schema, table.Name)
 		for _, field := range generatedschema.FieldsForTable(desired, table) {
@@ -1019,6 +1022,9 @@ func appendDatabaseIdentifierNames(
 ) []string {
 	if database == nil {
 		return names
+	}
+	for _, schema := range database.Schemas {
+		names = append(names, schema.Name)
 	}
 	for _, table := range database.Tables {
 		names = append(names, table.Schema, table.Name)
