@@ -81,6 +81,11 @@ type IndexGuard interface {
 	// ConditionalCreates returns the indexes the CREATE INDEX ... IF NOT
 	// EXISTS statements of sqlText name, in order and without duplicates.
 	ConditionalCreates(sqlText string) []IndexRef
+	// UnconditionalBuilds returns the indexes sqlText builds without IF NOT
+	// EXISTS in a way whose failure leaves an unusable index under the name.
+	// Running such a statement again stops with the server's error, so only
+	// recording it without running it can go wrong.
+	UnconditionalBuilds(sqlText string) []IndexRef
 	// Drops returns the indexes the DROP INDEX statements of sqlText name.
 	Drops(sqlText string) []IndexRef
 	// Attachments returns the indexes statement attaches to a constraint.
@@ -101,6 +106,9 @@ type IndexGuard interface {
 	ResolveDropped(ctx context.Context, q RowsQueryer, ref IndexRef) (IndexName, bool, error)
 	// Usable reports whether state is an acceptable index on its target.
 	Usable(state IndexState) bool
+	// Unusable reports whether state is an index on its target that a failed
+	// build left unusable. A name nothing holds is neither Usable nor Unusable.
+	Unusable(state IndexState) bool
 	// SameDefinition reports whether the usable index state names has the
 	// definition the CREATE INDEX statement declares.
 	SameDefinition(ctx context.Context, q RowsQueryer, statement string, state IndexState) (bool, error)

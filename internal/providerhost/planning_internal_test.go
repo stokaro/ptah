@@ -28,6 +28,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/engine"
+	"ptah.run/internal/atlaschange"
 )
 
 func planningFixture(c *qt.C) (modelPlanner, *resolvedModel) {
@@ -82,6 +83,7 @@ func TestPlanningStatementStyleNeedsOwnerNegotiation(t *testing.T) {
 	exact.Statements = featureplan.StatementStyleExact
 	wire, err = service.target.planningPolicy(exact)
 	c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidValue)
+	c.Assert(err, qt.ErrorMatches, `.*does not list `+provider.PlanningStatementStyleFeature+`; upgrade the provider`)
 	c.Assert(wire, qt.IsNil)
 
 	service.target.host.description.Features = append(service.target.host.description.Features, provider.PlanningStatementStyleFeature)
@@ -458,6 +460,16 @@ func TestPlanningReplyBindsOperationsAndGraphMetadata(t *testing.T) {
 			c.Assert(step.Payload.Phase, qt.Equals, test.phase)
 			c.Assert(step.Payload.Parent, qt.DeepEquals, planningParent())
 			c.Assert(step.Payload.Payload.(*resolvedOperation).model.wire.Features, qt.DeepEquals, []string{"captured"})
+			// The operation keeps its step's effects, through either copy, so
+			// a migration file names the change it makes from the operation
+			// alone: the step alters a table other than the operation's own.
+			c.Assert(step.Payload.Payload.CloneExtension().(*resolvedOperation).Effects(), qt.DeepEquals, step.Effects)
+			cloned, err := service.target.host.models[key].codec().Clone(step.Payload.Payload)
+			c.Assert(err, qt.IsNil)
+			c.Assert(cloned.(*resolvedOperation).Effects(), qt.DeepEquals, step.Effects)
+			named, ok := atlaschange.Of(&ast.ExtensionStatement{Payload: step.Payload.Payload})
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(named, qt.Equals, `modify "records" table`)
 			c.Assert(result.Parents[0].Action, qt.Equals, featureplan.AlterTable)
 			c.Assert(result.Rewrites[0].Sources, qt.DeepEquals, []plangraph.StepID{{Owner: source.Owner, Name: source.Name}})
 			c.Assert(result.Contributions[0].Dependencies[0].Before, qt.DeepEquals, result.Rewrites[0].Sources[0])

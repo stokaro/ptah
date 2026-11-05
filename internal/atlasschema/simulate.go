@@ -23,6 +23,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -105,6 +106,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	if err := schemaext.RequireRuntime(ctx, p.runtime); err != nil {
 		return err
 	}
+	ctx = rolepassword.With(ctx, p.passwords)
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}

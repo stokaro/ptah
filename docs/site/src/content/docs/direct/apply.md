@@ -199,6 +199,24 @@ Planned schema changes:
 ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMP;
 ```
 
+The plan is written for the database the command read a moment ago. On a
+PostgreSQL-family database its statements carry no `IF EXISTS` or `IF NOT
+EXISTS` unless an earlier statement of the plan may already have removed the
+object, and a drop carries `CASCADE` only where the plan relies on it to remove
+a dependent it does not drop itself. An object the schema does not declare that
+depends on a dropped one, such as a view in a schema the run leaves out, stops
+the apply at the drop with exit code `2`, and the plan's transaction leaves the
+database as it was:
+
+```text illustration
+error: apply schema changes: failed to execute SQL statement: SQL execution failed: ERROR: cannot drop column b of table t because other objects depend on it (SQLSTATE 2BP01)
+SQL: ALTER TABLE "t" DROP COLUMN "b"
+```
+
+Change or drop the dependent, or declare it, and run the command again. No
+setting selects another spelling. The MySQL-family, SQLite, SQL Server, Oracle
+and ClickHouse planners keep the guards they write.
+
 ## Apply with approval
 
 Without `--dry-run`, the command shows the same plan and asks for confirmation
@@ -539,7 +557,8 @@ components preserve catalog, schema, parent, and name separately, so a dot in a
 name cannot become a qualification boundary.
 
 The report omits `undecided` when neither collection has a limit. Standard
-error explains every limit. The field is independent of the outcome: next to
+error names every limit and why, before the plan: one limit is its own line,
+and several are one warning that names each. The field is independent of the outcome: next to
 `changes` or `applied` it names state the comparison could not establish, and
 next to `no-changes` it means the database is not shown to match.
 A caller that decides "in sync" from the outcome reads `undecided` too. A plan

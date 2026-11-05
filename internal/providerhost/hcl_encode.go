@@ -60,8 +60,16 @@ type hclEncoding struct {
 // writer's blocks and the attributes of its own; a value it cannot write is a
 // loss reported where the writer writes the value's block. A facet of a column,
 // a key, a routine or a materialized view has no place in an encoding request
-// and is a loss too. The provider's ptah:not-described entries become header
-// lines.
+// and is a loss too.
+//
+// The host writes the document's account of the provider's models itself, as
+// the captured feature coverage header coverageHeader returns, and sends the
+// provider no coverage: read back, the header is the document's exact claim.
+// An HCL document without a header the provider reads claims nothing of its
+// models (see coverage), so an export that wrote nothing would lose the claim
+// of a read, and the provider's ptah:not-described entries can only say less
+// than complete. A provider that answers with such entries anyway is refused:
+// read back beside the header, the document would hold two accounts.
 func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {
 	selected, err := o.encodingEngine(request.Target)
 	if err != nil {
@@ -72,12 +80,19 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	if err := encoding.capture(request); err != nil {
 		return hclext.EncodeResult{}, err
 	}
-	if len(encoding.batch.request.GetValues()) == 0 && encoding.batch.request.GetCoverage() == nil {
+	if encoding.result.Header, err = o.coverageHeader(ctx, encoding.batch, request.Coverage); err != nil {
+		return hclext.EncodeResult{}, err
+	}
+	if len(encoding.batch.request.GetValues()) == 0 {
 		return encoding.finish(), nil
 	}
 	encoded, err := o.host.client.EncodeSource(ctx, encoding.batch.request)
 	if err != nil {
 		return hclext.EncodeResult{}, err
+	}
+	if len(encoded.GetLimits()) != 0 {
+		return hclext.EncodeResult{}, fmt.Errorf("%w: provider %s wrote %s entries in an HCL document, whose account of the provider's models the host writes as its %s header",
+			schemaext.ErrInvalidValue, o.host.description.GetProviderId(), coverage.DirectiveMarker, schemaext.CoverageHeaderMarker)
 	}
 	for _, part := range encoding.parts(encoded) {
 		if err := encoding.fragment(part); err != nil {
@@ -87,11 +102,40 @@ func (o *hclOwner) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) 
 	for _, loss := range encoded.GetLosses() {
 		encoding.loss(loss.GetValueId(), loss.GetMessage())
 	}
-	for _, limit := range encoded.GetLimits() {
-		encoding.result.Header = append(encoding.result.Header, coverage.Object{Kind: coverage.Kind(limit.GetKind()), Name: limit.GetName(),
-			Reason: coverage.Reason(limit.GetReason()), Provenance: coverage.Provenance(limit.GetProvenance())}.Directive())
-	}
 	return encoding.finish(), ctx.Err()
+}
+
+// coverageHeader is the captured feature coverage header line that states
+// what the document knows of the provider's models, written with the
+// provider's desired codecs, or none for a document that knows nothing of
+// them. A kind a read knows completely in every region it reports is written
+// as complete, as the encoding request of every other format sends it (see
+// completeRead): the document describes the namespaces the read listed, and a
+// later plan applies it to the selection that plan names. Any other knowledge
+// is written as the document holds it.
+func (o *hclOwner) coverageHeader(ctx context.Context, batch *encodeBatch, known schemaext.Coverage) ([]string, error) {
+	if known.IsZero() {
+		return nil, nil
+	}
+	kinds := known.KindRecords()
+	for i, record := range kinds {
+		if sources := record.Knowledge.Sources(); len(sources) == 1 && batch.completeRead(sources[0]) {
+			kinds[i].Knowledge = schemaext.GlobalKnowledge(schemaext.Knowledge{State: schemaext.Complete})
+		}
+	}
+	written, err := schemaext.NewCoverage(known.Representation(), kinds, known.SubjectRecords())
+	if err != nil {
+		return nil, err
+	}
+	registry, err := o.codecs()
+	if err != nil {
+		return nil, err
+	}
+	line, err := registry.EncodeCoverageHeader(ctx, schemaext.Desired, written)
+	if err != nil {
+		return nil, err
+	}
+	return []string{line}, nil
 }
 
 // parts retains value accounting for the writer's object identity and target
@@ -121,7 +165,8 @@ func (e *hclEncoding) parts(result *protocol.EncodedSource) []*protocol.EncodedF
 
 // capture adds the document's values to the batch: objects as native objects,
 // table and index facets bound to their table, and the facets the request has
-// no place for as losses at their block.
+// no place for as losses at their block. The document's coverage stays out of
+// the batch; EncodeHCL writes it.
 func (e *hclEncoding) capture(request hclext.EncodeRequest) error {
 	for _, object := range request.Objects {
 		id, err := e.batch.add(protocol.SourceModelValue_NATIVE_OBJECT, "", object.Value)
@@ -152,7 +197,7 @@ func (e *hclEncoding) capture(request hclext.EncodeRequest) error {
 			}
 		}
 	}
-	return e.batch.coverage(request.Coverage)
+	return nil
 }
 
 func (e *hclEncoding) facets(slot hclext.Slot, binding string, facets schemaext.Facets) error {
@@ -318,13 +363,18 @@ func hclEncodedAttributes(shapes []*protocol.HCLSourceAttribute, mapping *protoc
 }
 
 // hclEncodedValue is the value the writer writes for an attribute the claim
-// reads as kind: text as a quoted string, SQL in an sql() call, a bool bare,
-// and references as references.
+// reads as kind: text as a quoted string, a whole number for a text attribute
+// bare, SQL in an sql() call, a bool bare, and references as references. The
+// reader reads a bare number back as its text.
 func hclEncodedValue(kind hclext.Kind, value *protocol.SourceValue) (hclext.Value, error) {
 	switch content := value.GetValue().(type) {
 	case *protocol.SourceValue_Text:
 		if kind == hclext.String || kind == hclext.Text || kind == hclext.TypeName {
 			return hclext.Value{Kind: hclext.String, Text: content.Text}, nil
+		}
+	case *protocol.SourceValue_Number:
+		if kind == hclext.Text && content.Number != "" && strings.Trim(content.Number, "0123456789") == "" {
+			return hclext.Value{Kind: hclext.Number, Text: content.Number}, nil
 		}
 	case *protocol.SourceValue_Sql:
 		if kind == hclext.SQL {

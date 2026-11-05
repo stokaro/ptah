@@ -151,6 +151,37 @@ func TestPostgresConditionalCreatedIndexNames(t *testing.T) {
 	}})
 }
 
+// TestPostgresUnconditionalConcurrentIndexNames pins what repair has to look
+// for beyond the conditional creates: only a concurrent build leaves an index
+// behind when it fails, and a guarded one is the conditional check's.
+func TestPostgresUnconditionalConcurrentIndexNames(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []migratorext.IndexRef
+	}{
+		{
+			name: "the build a generated migration writes",
+			sql:  "-- +ptah no_transaction\n" + `CREATE UNIQUE INDEX CONCURRENTLY "idx_members_email" ON "members" ("email");`,
+			want: []migratorext.IndexRef{{Table: "members", Name: "idx_members_email"}},
+		},
+		{
+			name: "a guarded build is left to the conditional check",
+			sql:  `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "idx_members_email" ON "members" ("email");`,
+		},
+		{
+			name: "a plain build leaves nothing behind",
+			sql:  `CREATE UNIQUE INDEX "idx_members_email" ON "members" ("email");`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(postgresUnconditionalConcurrentIndexNames(tt.sql), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
 func TestPostgresDroppedIndexNames(t *testing.T) {
 	tests := []struct {
 		name string

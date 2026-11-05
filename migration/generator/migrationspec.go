@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/planner"
@@ -172,6 +173,7 @@ func bidirectionalPlanPolicy(policy DiffPolicy) BidirectionalPlanPolicy {
 	}
 	return BidirectionalPlanPolicy{
 		Create: createMode, Drop: dropMode, OnlineAlter: policy.OnlineAlter, AllowTableRebuild: policy.AllowTableRebuild,
+		Statements: planstyle.Statements,
 	}
 }
 

@@ -453,23 +453,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 22,
 	}, {
-		name: "mysql owes fifty fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, coordination_nodes, the three workload keys, comment_attributes, the twelve object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction and the routine replacement key name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes fifty-one fewer: role_management, row_level_ttl, row_deletion_policy and its epoch column, named_not_null_constraints, schema_comments, index_rename, the two serial sequence keys, the four access keys only YDB plans, coordination_nodes, the three workload keys, comment_attributes, the twelve object-comment keys, the two TimescaleDB keys, the seven catalog keys, the three user-type kinds, the four runtime properties, the sequence grammar restriction and the routine replacement key name surfaces no MySQL path reads or no statement decides, and materialized_view_options has no materialized view to ask about",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 50,
+		want: registered - 51,
 	}, {
-		name: "mariadb owes fifty fewer: COMMENT ON SCHEMA and the twelve object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes fifty-one fewer: COMMENT ON SCHEMA and the twelve object-comment forms are not statements it has, the three user-type kinds have no MariaDB spelling, the four runtime properties are not statements, neither pg_class nor pg_default_acl nor pg_get_triggerdef nor the Oracle vector catalog column is something it has, the sequence grammar restriction has no control statement here, row_deletion_policy and its epoch column are Spanner and YDB clauses it has no spelling of, named_not_null_constraints is a PostgreSQL 18 catalog behavior, index_rename, the two serial sequence keys, the four access keys only YDB plans and coordination_nodes and the three workload keys and comment_attributes and the routine replacement key name what Ptah's planner plans, sequences is asked now that Ptah renders, reads and plans one, and materialized_view_options has no materialized view to ask about",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 50,
+		want: registered - 51,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the twenty-two its plan declares undecidable and the domain comment row, whose domain prerequisite is absent",
 		cell: Cell{

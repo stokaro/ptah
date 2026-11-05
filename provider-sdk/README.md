@@ -55,7 +55,9 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.21. `provider-sdk/v0.18.0` speaks 25.19.
+speaks contract 25.23. `provider-sdk/v0.20.0` speaks 25.22.
+`provider-sdk/v0.19.0` speaks 25.21.
+`provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
@@ -114,6 +116,11 @@ returns to 0.
   [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
   [report counts](#report-counts) and
   [index facets on inspected indexes](#index-facets-on-inspected-indexes).
+  Contract 25.22 adds [subtree coverage](#subtree-coverage),
+  [SQL scanning](#sql-scanning), [offline capabilities](#offline-capabilities),
+  [password inputs](#password-inputs) and
+  [HCL platform groups](#hcl-platform-groups).
+  Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -145,13 +152,14 @@ does not oblige a peer to use it.
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
-  `schema.sql-facets`, `models.report-counts` and
-  `schema.observed-index-facets`. The embedding store's calls,
+  `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
+  `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
+  `engine.default-capabilities` and `lint.transaction-owner`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
-  any of them. `SplitMigration` is new too,
-  and comes with the abort flags of `Execution` and `TransactionResult`, so a
-  host lists `units.migration-split` to call it.
+  any of them. `SplitMigration` is new too, and comes with the abort flags of
+  `Execution` and `TransactionResult`, so a host lists `units.migration-split`
+  to call it.
 - Both transport boundaries validate with the description negotiated this way,
   `provider.NegotiatedDescription`, so neither side sends an addition the other
   did not ask for. A service reads what the host listed with
@@ -260,6 +268,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
 | `ReportValues` | Offline: one count for each metric of a value's model report, for every value of the request, in order. |
+| `ScanSQL` | Offline: the tokens of one text of the engine's SQL, in order, covering the text with no gap and no overlap. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -952,9 +961,11 @@ refuses a claim on any other Ptah directive.
 
 The host HCL adapter captures
 declared blocks and attributes with their bindings, inherited values, and
-header limits. HCL and Go export send the provider's values through
-`EncodeSource`; HCL reports unrepresentable values as losses, while Go refuses
-losses and coverage limits. Official-engine source parity remains part of
+header limits. It takes an HCL document's coverage from the provider only
+when the document's header holds an entry of one of the engine's HCL header
+kinds; a document without one claims nothing of the provider's models. HCL and
+Go export send the provider's values through `EncodeSource`; HCL reports
+unrepresentable values as losses, while Go refuses losses and coverage limits. Official-engine source parity remains part of
 #4204; the fixtures do not establish YDB source support.
 
 ## Observed model coverage
@@ -984,7 +995,8 @@ to the operation's selected engine. An uninspected or unrepresentable region
 requires a reason and overrides overlapping completeness. Explicit subject
 records take precedence. Duplicate normalized regions, invalid components, and
 namespace-wide absence or defaults are refused. A model can carry at most
-4,096 regions.
+4,096 regions. Under [subtree coverage](#subtree-coverage), a region may also
+cover every schema nested below its schema.
 
 The host requires the exact session database on bindings and coverage regions.
 It retains native coordinates and maps common table and column regions to shared
@@ -1351,6 +1363,27 @@ to their fact alone, and a statement with two kinds is refused. An engine offers
 these facts with `lint.statement-facts`, beside `lint.migrations`, and a split
 or an annotation uses them only when the host lists the same feature.
 
+## Transaction owner of a lint check
+
+`CheckLintRequest.transaction_owner` says who opens the transaction each file
+of a lint run runs in, so a rule about transaction control can tell a `BEGIN`
+that would nest inside a migrator's transaction from a file's only transaction.
+
+- `LINT_TRANSACTION_OWNER_MIGRATOR`, the zero value, is a migrator that wraps
+  each file unless the file opts out (`LintFile.no_transaction`). It is what a
+  host that does not know the tool sends, and what a request from an earlier
+  minor means.
+- `LINT_TRANSACTION_OWNER_FILE` is a tool that opens no transaction around a
+  file, such as golang-migrate.
+
+The provider lists `lint.transaction-owner` beside `lint.migrations`, and so
+does each engine whose rules read the field. Both transport boundaries refuse
+an owner the contract does not name, and `LINT_TRANSACTION_OWNER_FILE` for an
+engine or a host that does not list the feature. Such an engine judges every
+file as one its migrator wraps.
+[ADR 0073](../docs/adr/0073-a-lint-check-says-who-opens-each-files-transaction.md)
+records why the owner is negotiated.
+
 ## Embedding store
 
 [ADR 0032](../docs/adr/0032-the-embedding-store-is-a-provider-service-and-the-host-keeps-the-lifecycle.md)
@@ -1590,7 +1623,9 @@ a two-way feature an engine lists beside planning or comparison:
   engine. `ANNOTATED` is the zero value; `EXACT` asks a feature owner to omit
   guards and cascading drops where its operation does not rely on them. An
   exact request is refused unless both sides advertise the feature, so an
-  older owner cannot silently ignore the field. Unknown enum values are
+  older owner cannot silently ignore the field. Every Ptah command that plans a
+  change asks for `EXACT`, so a provider that plans lists this feature, or those
+  commands refuse it before anything runs. Unknown enum values are
   refused. [ADR 0050](../docs/adr/0050-statement-style-reaches-feature-owners.md)
   defines the owner behavior and safety boundary.
 - `RequestedChange.written` carries an object as the operator wrote it, such as
@@ -1625,6 +1660,35 @@ carries an HCL document's header entries of the declared kinds. An engine that
 declares no HCL claim keeps accepting HCL fragments without one, as earlier
 minors do. Both features are two-way and need `source.decode`.
 
+## HCL platform groups
+
+[ADR 0072](../docs/adr/0072-a-provider-claims-the-platform-group-of-a-table.md)
+decides this claim. `source.hcl-platform` adds the `TABLE_PLATFORM` site to
+`HCLSourceBlock`: the `platform` block of a `table` whose label is the claim's
+`type`, which is the engine's ID. Each `override` label of the group is an
+attribute of the claim, and every attribute is a `STRING`. The claim takes no
+naming, children, declared type, grant kind or inherited attribute. Its
+fragment is bound to the table, has no subject, and carries the overrides as a
+mapping.
+
+A platform claim's models need not list HCL among their source formats, and it
+brings them into an HCL document's scope anyway. A model that lists HCL needs a
+claim at another site too, because a table that writes no group states nothing
+about what the group carries. A host reads the kind-wide knowledge of a model
+that lists no HCL as uninspected and keeps the subject knowledge a decoding
+states for each table whose group it read.
+
+A group spells part of a facet. In an HCL reply under the feature, a loss may
+name a value a `TABLE_PLATFORM` part writes, once: the value is written in part,
+and the line says what the document does not hold of it. Every other written
+value takes no loss. Under `source.limits`, an encoding request that knows a
+model less needs a limit only when the model lists the request's format, so a
+read of selected directories writes a platform claim's model without one.
+
+The provider and each engine that declares such a claim list the feature,
+beside `source.hcl`. Without it negotiated, the description the host receives
+holds no `TABLE_PLATFORM` claim and the same models.
+
 ## Source encoding
 
 [ADR 0037](../docs/adr/0037-a-provider-encodes-the-source-it-decodes.md)
@@ -1645,7 +1709,10 @@ without that database, a read's table or column or an object of a
 scope-selected kind, names it too, as the read's values do.
 
 The request's coverage is what the document knows of the provider's models.
-A document the host read describes what the read listed. A kind the read knows
+An HCL request carries none: the host writes an HCL document's account itself,
+as a captured `ptah:feature-coverage` header it reads back with the provider's
+model definitions, and refuses a reply with limits. A document the host read
+describes what the read listed. A kind the read knows
 completely in every namespace region it reports is sent as complete, with no
 regions: the document is complete for the selection a later plan applies it
 to, as an embedded engine's writer writes a read that `--schemas` narrowed.
@@ -1680,7 +1747,10 @@ and the document has claimed headers. Every header must be valid; the returned
 model inventory stays exact. The provider interprets which of its models and
 subjects a header limits. The SDK validates these ownership and knowledge
 boundaries, not opaque header semantics. A missing feature or a document without
-headers retains complete authored scope. Round-trip tests must prove that the
+headers retains complete authored scope. The host reads that scope from a Go
+document; an HCL document without a claimed header is an Atlas file, which
+names none of the objects it leaves out, so the host takes no coverage from
+its reply. Round-trip tests must prove that the
 host preserves the owner's narrowed knowledge instead of inventing absence.
 
 `source.encode` is a provider service, listed by the provider and each
@@ -1755,6 +1825,36 @@ never fall back to inherited process environment values.
 statement that needs inputs uses `Execute` units. A query or result-bearing
 statement that needs such inputs refuses; it cannot borrow process environment
 values or silently discard its result contract.
+
+## Password inputs
+
+`schema.password-inputs` lets a declared role password travel as an
+execution input instead of as a value. The provider and each engine that
+takes such inputs list it, beside `schema.common-objects` and
+`units.sensitive-inputs`, and the host lists it. With it negotiated, a
+`RoleCreation` or a `RoleAlteration` that sets a password carries
+`password_input`, an `ExecutionInput` the host names, and `password` stays
+empty. That holds for a password and for a password hash alike, because the
+host cannot tell an engine's hash form from a password. Without the feature,
+`password` carries the value, as contract 25.3 sends it, and no input is
+named.
+
+The provider renders a unit that names the input and never a value, and
+`DescribeExecutionInputs` reports it for that unit, so a plan, a migration file
+and a saved plan hold the reference. The value reaches the provider only as an
+execution binding, under the rules of
+[sensitive execution inputs](#sensitive-execution-inputs). Where the engine
+takes a password hash in another clause, the provider chooses the clause from
+the bound value.
+
+Both transport boundaries refuse, in a render request and in a planning step,
+an input the session did not negotiate, a value once it did, a change that
+carries both, an input with an unknown source or a name the environment
+grammar refuses, an input for a role that declares no password, and an input
+for an alteration that does not change the password. Their messages never
+repeat a value.
+[ADR 0071](../docs/adr/0071-a-declared-password-travels-as-an-execution-input.md)
+records why a value on the wire is not kept.
 
 ## Operator statements
 
@@ -2130,6 +2230,39 @@ note naming each unread table and its reason.
 [ADR 0063](../docs/adr/0063-a-read-names-the-tables-it-leaves-out.md)
 records why none of the existing channels of a read carries this.
 
+## Subtree coverage
+
+`schema.subtree-coverage` lets a coverage region cover a schema and every
+schema nested below it: `ModelNamespace.schema_subtree` in a read's coverage
+and `ComparisonNamespace.schema_subtree` in a comparison's. An engine whose
+schemas nest declares the character that separates them in
+`IdentifierRules.schema_separator`, such as `/` for a YDB directory path,
+which is one schema. A subtree region covers a subject whose normalized schema
+is the region's, or begins with the region's followed by the separator; the
+empty root schema covers every schema. `provider.SchemaWithin` is that rule,
+and the host's coverage lookup and a provider's comparison both follow it.
+
+A region names one exact schema without the flag, so an unfiltered read that
+walks every directory can claim only the directories it listed, and a native
+object declared in a directory that does not exist yet has an unknown current
+state. With the feature, the read claims the root subtree complete and sends
+an unknown subtree region for each schema it leaves out; unknown knowledge in a
+matching region still overrides complete knowledge.
+
+The provider and each engine that sends such regions list the feature, and
+the host lists it. An engine that lists it declares a separator, and one that
+declares a separator lists it; a separator is one character that is not a
+letter, a digit or a space. A host that does not list the feature receives
+neither the feature nor the separator. Both transport boundaries refuse a
+subtree region in a read's coverage or a comparison's when the feature was not
+negotiated, or, for a comparison, when its identifier rules carry no
+separator, and a subtree region that names no schema. A filtered read sends
+none: its regions fit inside the namespaces its selectors bind, which each
+name one exact schema. A schema's subtree and the schema alone are different
+regions.
+[ADR 0064](../docs/adr/0064-a-read-covers-a-directory-and-everything-below-it.md)
+records why a region with no schema does not serve.
+
 ## Report counts
 
 `models.report-counts` lets an engine declare the object-count metrics each
@@ -2323,3 +2456,56 @@ a reason beside a `read_only` verdict, or none without one; and either abort
 flag on another outcome or without the feature. A client that receives a
 misused abort flag returns no reply and reports an unknown outcome, so no
 caller reads the flag and tries again.
+
+## SQL scanning
+
+[ADR 0069](../docs/adr/0069-a-provider-scans-the-sql-text-of-its-engine.md)
+defines `sql.scan`. The provider and each engine that scans its SQL list it. It
+adds an RPC and nothing to an existing message, so it is one-way: a host that
+does not know `ScanSQL` never calls it.
+
+`ScanSQL` returns the tokens of one text of the engine's SQL. It reads the text
+alone: the request names the engine and carries the text, and no session,
+server version or database. `head` is set when the text begins where the server
+reads settings ahead of a query, and cleared for a range that starts inside a
+text. The tokens are the token types of the host's lexer: `UNKNOWN` for text
+the server reads that is no other kind, `STRING`, `COMMENT`, `SEMICOLON`,
+`WHITESPACE`, `IDENTIFIER` for a name, a keyword or a number, and `OPERATOR`.
+They cover the text with no gap and no overlap, so each token carries only the
+byte offset at which it ends. A `STRING` carries the text the literal stands
+for, and an `IDENTIFIER` the name with its quoting undone, where the scanner
+reads one.
+
+The host uses the tokens wherever it reads the engine's text without parsing
+it: view lineage, the indentation of the `sql` template function, placeholder
+rewriting, statement splitting and the other scans of migration bodies.
+
+Both transport boundaries refuse a request for an engine that does not list
+the feature, or whose text is not UTF-8; and a reply whose tokens do not reach
+the end of the text, with an empty token, a token that ends past the text or
+inside a UTF-8 sequence, a token of no known kind, or a value on a token that
+is neither a string nor an identifier. `Server.Validate` refuses the feature
+without `Server.SQLScanner`, and the scanner without the feature.
+
+## Offline capabilities
+
+[ADR 0070](../docs/adr/0070-a-provider-states-the-capabilities-its-engine-is-planned-with-offline.md)
+defines `engine.default-capabilities`. The provider and each engine that
+states its facts list it, and so does the host. It adds a field to an existing
+message, so it is two-way: negotiation removes `Engine.default_capabilities`
+for a host that does not list the feature.
+
+`Engine.default_capabilities` holds the capability facts the host plans the
+engine with when no session states the server's: an offline render, a
+generation without a database, an export. They are the facts of the release
+line a command assumes without a server. `ReleaseLine.capabilities` holds each
+line's, which the host plans with for a `--server-version` that names the
+line: one equal to `line`, or the longest line it starts with followed by a
+dot. A present false is an established answer, and an absent key is unknown,
+as in `Session.capabilities`. A command that connects plans with the session's
+facts.
+
+`ValidateDescription` refuses the fields on an engine that does not list the
+feature, the feature on an engine with no default facts, on one with a
+release line that has none, or without the provider's feature, and a name a
+session could not state.

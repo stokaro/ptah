@@ -24,10 +24,13 @@ type modelKey struct {
 
 type modelContract struct {
 	displayName string
-	key         modelKey
-	engines     map[string]*protocol.ValueModel
-	definition  json.RawMessage
-	signature   string
+	// metrics are the count metrics the engines report for the model; every
+	// engine that declares the model reports the same ones.
+	metrics    []*protocol.ModelMetric
+	key        modelKey
+	engines    map[string]*protocol.ValueModel
+	definition json.RawMessage
+	signature  string
 }
 
 // resolvedModel contains only values validated by an explicit owner batch. It
@@ -65,11 +68,14 @@ func (h *Host) initializeModels() error {
 			}
 			contract := h.models[key]
 			if contract == nil {
-				contract = &modelContract{key: key, displayName: model.GetDisplayName(), engines: make(map[string]*protocol.ValueModel)}
+				contract = &modelContract{key: key, displayName: model.GetDisplayName(), metrics: reportedMetrics(engine, model), engines: make(map[string]*protocol.ValueModel)}
 				h.models[key] = contract
 			}
 			if contract.displayName != model.GetDisplayName() {
 				return fmt.Errorf("%w: model display name differs across engines", provider.ErrProtocol)
+			}
+			if !slices.EqualFunc(contract.metrics, reportedMetrics(engine, model), func(a, b *protocol.ModelMetric) bool { return proto.Equal(a, b) }) {
+				return fmt.Errorf("%w: model metrics differ across engines", provider.ErrProtocol)
 			}
 			contract.engines[engine.GetId()] = model
 		}
@@ -107,6 +113,11 @@ func (m *modelContract) codec() schemaext.Codec {
 			value, err := m.value(payload)
 			if err != nil {
 				return nil, err
+			}
+			if operation, ok := payload.(*resolvedOperation); ok {
+				// The model does not hold the footprint of the operation's
+				// plan step, so a copy takes it from the operation.
+				return &resolvedOperation{model: value.cloneModel(), effects: slices.Clone(operation.effects)}, nil
 			}
 			return m.payload(value.cloneModel()), nil
 		},

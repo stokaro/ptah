@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
-	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,7 +13,7 @@ import (
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/migratevalidate"
 	"ptah.run/internal/migratesum"
-	"ptah.run/internal/rundiag"
+	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -299,58 +297,11 @@ func checkNativeAtlasDirChecksum(cmd *cobra.Command, fsys fs.FS) error {
 // the operator the directory is not runnable, and appending a note about which
 // files would not have run is noise on top of it.
 //
-// The declined set is derived by subtracting the covered set from every *.sql
-// the tree holds, and the covered set comes from
-// [atlasmigrateimport.SumFileNames] — the same function `migrate hash` writes
-// from and `migrate validate` verifies against. Restating the top-level,
-// case-sensitive rule locally would recreate exactly the drift between two
-// views of one directory that #976 was.
+// The detection is the shared gate's, [migrationintegrity.ReportUncovered], so
+// the native verbs that read an Atlas directory name the same files in the
+// same words.
 func warnDeclinedAtlasFiles(cmd *cobra.Command, fsys fs.FS) {
-	declined, err := declinedAtlasFiles(fsys)
-	if err != nil || len(declined) == 0 {
-		// A directory that cannot be walked has nothing trustworthy to report,
-		// and the verbs sharing this gate all read it again immediately.
-		return
-	}
-	out := cmd.ErrOrStderr()
-	for _, name := range declined {
-		line := name + " is not covered by atlas.sum and will not run; Atlas migrations are top-level files named *.sql"
-		_ = rundiag.Warn(cmd.Context(), out, rundiag.UncoveredMigrationFiles,
-			rundiag.Record{Key: name, Line: line, Attrs: []slog.Attr{slog.String("file", name)}})
-	}
-}
-
-// declinedAtlasFiles returns, in walk order, the SQL files fsys holds that the
-// Atlas file selection leaves out: anything below the top level, and any
-// top-level name whose extension is spelled other than ".sql".
-func declinedAtlasFiles(fsys fs.FS) ([]string, error) {
-	names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatAtlas)
-	if err != nil {
-		return nil, err
-	}
-	covered := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		covered[name] = struct{}{}
-	}
-
-	var declined []string
-	err = fs.WalkDir(fsys, ".", func(p string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || !strings.EqualFold(path.Ext(p), ".sql") {
-			return nil
-		}
-		if _, ok := covered[p]; ok {
-			return nil
-		}
-		declined = append(declined, p)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return declined, nil
+	migrationintegrity.ReportUncovered(cmd.Context(), cmd.ErrOrStderr(), fsys)
 }
 
 // failUnhashedAtlasDir refuses a NATIVE Atlas directory that carries no

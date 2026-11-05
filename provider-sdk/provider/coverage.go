@@ -39,7 +39,7 @@ func ValidateModelCoverage(description *protocol.Description, engine string, cov
 		if err := validateNamespaceKnowledge(coverage.GetRepresentation(), record.GetKnowledge()); err != nil {
 			return err
 		}
-		if err := validateCoverageRegions(coverage.GetRepresentation(), record.GetRegions()); err != nil {
+		if err := validateCoverageRegions(coverage.GetRepresentation(), record.GetRegions(), subtreeRefusal(description, engine)); err != nil {
 			return err
 		}
 		kinds[model.GetKind()] = true

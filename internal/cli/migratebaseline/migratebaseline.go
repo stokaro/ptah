@@ -156,7 +156,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return fmt.Errorf("capture migration directory: %w", err)
 	}
 	if _, err := migrationintegrity.GateWithPolicy(
-		cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
+		cmd.Context(), cmd.ErrOrStderr(), migrationsFS, dirFormat, integrityPolicy, migrationintegrity.Options{},
 	); err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 	if err != nil {
 		return err
 	}
-	undecidednote.Report(opts.diagnostics, result.Undecided, "the database", "the entities")
+	undecidednote.Report(ctx, opts.diagnostics, result.Undecided, "the database", "the entities")
 	handler.kind = "drift"
 	return handler.handle(entityDriftError(result))
 }

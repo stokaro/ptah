@@ -70,11 +70,15 @@ func appendTrigger(database *schemamodel.Database, document *Document, node *ast
 
 // appendCreateView records the view node declares, in the place of the one it
 // replaces.
-func appendCreateView(database *schemamodel.Database, document *Document, node *ast.CreateViewNode, sourcePlatform string) {
-	view := toView(node, sourcePlatform)
+func appendCreateView(database *schemamodel.Database, document *Document, node *ast.CreateViewNode, sourcePlatform string) error {
+	view, err := toView(node, sourcePlatform)
+	if err != nil {
+		return err
+	}
 	if !node.Replace || !replaceView(declaredIn(database, document), view, sourcePlatform) {
 		database.Views = append(database.Views, view)
 	}
+	return nil
 }
 
 // declaredIn is the models an earlier declaration may sit in: this read's,

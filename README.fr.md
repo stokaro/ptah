@@ -186,6 +186,8 @@ Les guides suivants sont en anglais :
 
 - [Choisir une approche](https://docs.ptah.run/edge/start/choose-a-workflow/)
   en comparant migrations versionnées et modifications directes du schéma.
+- [Découvrir l’écosystème Ptah](https://docs.ptah.run/edge/start/ecosystem/)
+  pour savoir quels dépôts publics une approche nécessite.
 - [Inspecter une base existante](https://docs.ptah.run/edge/direct/inspect/)
   ou [comparer les schémas et détecter les dérives](https://docs.ptah.run/edge/direct/compare-and-drift/).
 - [Vérifier l’intégrité des migrations](https://docs.ptah.run/edge/versioned/integrity-and-safety/)

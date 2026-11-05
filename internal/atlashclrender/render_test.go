@@ -438,13 +438,17 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
+		`roles["app_user"].password`,
 		`triggers["users"]["bad_event"]`,
 		"grants.app_user",
 	})
 	parsed, err := atlashcl.ParseWithOptions(t.Context(), rendered.Data, "schema.hcl", atlashcl.Options{HCL: builtintest.Runtime().HCL()})
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 	c.Assert(parsed.Roles, qt.HasLen, 1)
-	c.Assert(parsed.Roles[0].Password, qt.Equals, "secret")
+	// The password is written as the variable it is read from, never the
+	// value (ADR 0071), and reads back as that reference.
+	c.Assert(parsed.Roles[0].Password, qt.Equals, "$PTAH_SECRET_PASSWORD_APP_USER")
+	c.Assert(string(rendered.Data), qt.Not(qt.Contains), `"secret"`)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(parsed.Functions[0].Parameters, qt.Equals, "out tenant_id text")
 }

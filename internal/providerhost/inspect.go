@@ -48,6 +48,10 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 	if err != nil {
 		return nil, err
 	}
+	result.UnreadTables, err = r.unreadTables(snapshot, result.ReservedNames)
+	if err != nil {
+		return nil, err
+	}
 	if err := r.features(ctx, result, request, snapshot, values); err != nil {
 		return nil, err
 	}
@@ -64,8 +68,8 @@ func (r reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error
 }
 
 // tables reads the snapshot's tables into result, each with its facets, its
-// columns' facets and its indexes. remaining holds the facet values in the
-// order the tables and their columns list them.
+// columns' facets and its indexes with theirs. remaining holds the facet values
+// in the order the tables, their columns and their indexes list them.
 func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, remaining []observedValue) error {
 	seen := make(map[objectidentity.Key]bool)
 	for _, table := range snapshot.GetTables() {
@@ -94,6 +98,15 @@ func (r reader) tables(result *catalog.Database, snapshot *protocol.Schema, rema
 		indexes, err := r.indexes(table)
 		if err != nil {
 			return err
+		}
+		// The SDK accepts index facets only with observed indexes negotiated,
+		// so an index the read lists is one r.indexes returned.
+		for i, index := range table.GetIndexes() {
+			indexes[i].Facets, err = observedFacets(remaining[:len(index.GetFacets())], snapshot.GetEngine())
+			if err != nil {
+				return err
+			}
+			remaining = remaining[len(index.GetFacets()):]
 		}
 		result.Indexes = append(result.Indexes, indexes...)
 	}

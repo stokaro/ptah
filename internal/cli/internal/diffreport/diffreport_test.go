@@ -51,6 +51,13 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 			},
 		},
 		{
+			name: "a role is named by its name alone, its password left out",
+			diff: &difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app", Password: "pw-SENTINEL", Login: true}}},
+			want: []diffreport.Category{
+				{Name: "roles_added", Objects: []string{"app"}},
+			},
+		},
+		{
 			name: "categories are reported in diff field order",
 			diff: &difftypes.SchemaDiff{
 				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "uq_products_sku"}},

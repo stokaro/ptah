@@ -188,6 +188,12 @@ func (p *commonObjects) Execute(ctx context.Context, request *protocol.ExecuteRe
 			if err != nil || execution.GetOutcome() != protocol.Execution_APPLIED {
 				return &protocol.Execution{Outcome: outcomeAfter(applied), AppliedCount: applied, DiagnosticCode: execution.GetDiagnosticCode()}, err
 			}
+			if table, dropped := droppedTable(unit.GetSql()); dropped {
+				err = p.WithSession(ctx, request.GetSessionId(), request.GetTransactionId(), func(access backend.Access) error { return dropTableGrants(access, table) })
+				if err != nil {
+					return &protocol.Execution{Outcome: protocol.Execution_PARTIAL, AppliedCount: applied + 1, DiagnosticCode: "fixture.common-object"}, nil
+				}
+			}
 			applied++
 			continue
 		}
@@ -198,6 +204,29 @@ func (p *commonObjects) Execute(ctx context.Context, request *protocol.ExecuteRe
 		applied++
 	}
 	return &protocol.Execution{Outcome: protocol.Execution_APPLIED, AppliedCount: applied}, nil
+}
+
+// droppedTable is the table a DROP TABLE the base fixture wrote names, and
+// reports whether sql is one.
+func droppedTable(sql string) (string, bool) {
+	quoted, dropped := strings.CutPrefix(strings.TrimSpace(sql), "DROP TABLE ")
+	quoted, terminated := strings.CutSuffix(quoted, ";")
+	if !dropped || !terminated || len(quoted) < 2 || quoted[0] != '"' || quoted[len(quoted)-1] != '"' {
+		return "", false
+	}
+	return strings.ReplaceAll(quoted[1:len(quoted)-1], `""`, `"`), true
+}
+
+// dropTableGrants removes the grants on a table the database dropped: the
+// fixture keeps a table's grants as an engine that holds them in the table's
+// own access list does, so they go with the table, as a view's do.
+func dropTableGrants(access backend.Access, table string) error {
+	held, err := loadState(access.Path)
+	if err != nil {
+		return err
+	}
+	held.Grants = slices.DeleteFunc(held.Grants, func(grant stateGrant) bool { return grant.Kind == "table" && grant.Name == table })
+	return saveState(access.Path, held)
 }
 
 func outcomeAfter(applied uint32) protocol.Execution_Outcome {

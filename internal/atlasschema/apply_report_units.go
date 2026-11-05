@@ -19,6 +19,9 @@ type ApplyUnitReport struct {
 
 // NativeUnitReport describes the owner and effects without publishing opaque
 // provider payloads. A missing effect remains unknown in the safety assessment.
+// Text is the statement the owner writes the operation as, which a migration
+// file holds, where the owner has a text form for it; execution still
+// dispatches the native operation.
 type NativeUnitReport struct {
 	Kind         schemaext.Kind   `json:"kind"`
 	Subject      string           `json:"subject,omitempty"`
@@ -26,6 +29,7 @@ type NativeUnitReport struct {
 	Reason       string           `json:"reason"`
 	Access       schemaext.Access `json:"access,omitempty"`
 	AccessReason string           `json:"access_reason,omitempty"`
+	Text         string           `json:"text,omitempty"`
 }
 
 // SQLApplyUnitReports preserves statement order in the apply report contract.
@@ -41,7 +45,9 @@ func SQLApplyUnitReports(statements []string) []ApplyUnitReport {
 }
 
 // ReportUnits describes the captured batch without rendering it again. It
-// records no native bytes that a reader could mistake for an executable plan.
+// records no native bytes that a reader could mistake for an executable plan:
+// a native unit carries the owner's text form of it, captured with the plan,
+// where the owner has one.
 func (p ApplyRuntimePlan) ReportUnits(ctx context.Context, runtime safety.Runtime) ([]ApplyUnitReport, error) {
 	assessments, err := p.Assessments(ctx, runtime)
 	if err != nil {
@@ -58,6 +64,9 @@ func (p ApplyRuntimePlan) ReportUnits(ctx context.Context, runtime safety.Runtim
 		if unit.Native != nil {
 			assessment := assessments[i]
 			report[i].Native = &NativeUnitReport{Kind: unit.Native.Kind(), Subject: assessment.Subject, Severity: assessment.Severity, Reason: assessment.Reason, Access: assessment.Access, AccessReason: assessment.AccessReason}
+			if i < len(p.plan.texts) {
+				report[i].Native.Text = p.plan.texts[i]
+			}
 		}
 	}
 	return report, nil

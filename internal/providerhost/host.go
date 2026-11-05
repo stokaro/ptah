@@ -106,6 +106,10 @@ var hostFeatures = []string{
 	// target.commonObjectChange.
 	provider.CommonObjectsFeature,
 	provider.CommonAccessFeature,
+	// A declared role password reaches a provider as an execution input it
+	// renders a reference to, and its value only as an execution binding; see
+	// target.passwordInput and session.bindExecutionInputs.
+	provider.PasswordInputsFeature,
 	// A provider's YAML keys of column and index entries, and the common
 	// keys and attributes of an entry its claim reads with its own; see
 	// Host.yamlExtension and claimedExtension.
@@ -152,9 +156,28 @@ var hostFeatures = []string{
 	// reaches the table's owner as one rename step; see
 	// commonPlanner.indexChanges.
 	provider.IndexRenamesFeature,
+	// A read names the tables it found and does not describe, and the
+	// comparison refuses a declaration at one in the provider's words; see
+	// reader.unreadTables.
+	provider.UnreadTablesFeature,
 	// An offline command plans an engine with the capabilities its provider
 	// states for it; see registerDefaultCapabilities.
 	provider.DefaultCapabilitiesFeature,
+	// Inspection reads the facets of a provider table's indexes, which the
+	// comparison compares with the facets a source declares on the index;
+	// see reader.tables and observedIndexRules.
+	provider.ObservedIndexFacetsFeature,
+	// A filtered read reports the objects of the kinds an engine names
+	// database kinds, such as resource pools, beside its scope, and the
+	// comparison reads them as it reads an unfiltered read's.
+	provider.DatabaseKindsFeature,
+	// A SQL schema reading carries the facets of its tables, columns and
+	// indexes, which the host places where a YAML source places them; see
+	// target.sqlFacets.
+	provider.SQLFacetsFeature,
+	// A provider model's count metrics join the reporting runtime, and the
+	// provider counts the model's values; see modelReporter.
+	provider.ReportCountsFeature,
 }
 
 // Start verifies the selected artifact and negotiates experimental services.

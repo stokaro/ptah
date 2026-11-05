@@ -304,9 +304,10 @@ reconciling revision metadata that no longer matches reality.
 ### Repair over a half-built concurrent index
 
 On PostgreSQL, a `CREATE INDEX CONCURRENTLY` that fails partway leaves an
-**invalid** index behind. The leftover keeps the name, so the generated
-`IF NOT EXISTS` form of the same statement is skipped rather than retried and
-reports no error. Repair refuses to record such a migration (exit `2`):
+**invalid** index behind. The leftover keeps the name, so running the generated
+statement again stops with `relation ... already exists`, and an `IF NOT
+EXISTS` form of it is skipped rather than retried and reports no error. Repair
+refuses to record such a migration (exit `2`):
 
 ```text
 error: migration 5 cannot be repaired: PostgreSQL reports index "public"."idx_members_email" (indisvalid=false, indisready=false) unusable, so recording the migration applied would report a constraint that is not enforced; run REINDEX INDEX CONCURRENTLY "public"."idx_members_email", or drop the index and rerun the migration, then repair again
@@ -320,11 +321,13 @@ rerun the migration — and repair again.
 
 `--force` does not bypass this. It relaxes a precondition about the revision
 row; the index being unusable is a fact about the database, and the fix for it
-is `REINDEX`. Only indexes named by conditional creates in the selected
-direction are checked, so an unrelated invalid index elsewhere never blocks a
-repair and an unconditional create retains PostgreSQL's normal error semantics.
-Other dialects have no concurrent index build to leave half-finished and are
-unaffected.
+is `REINDEX`. Only the indexes the selected direction creates are checked, so an
+unrelated invalid index elsewhere never blocks a repair. A conditional create
+needs a usable index under its name. A `CREATE INDEX CONCURRENTLY` without the
+guard, which is what `generate` writes, blocks only while an unusable index
+holds the name, and any other unconditional create keeps PostgreSQL's normal
+error semantics. Other dialects have no concurrent index build to leave
+half-finished and are unaffected.
 
 When the migration attaches the index with
 `ALTER TABLE ... ADD CONSTRAINT name UNIQUE USING INDEX index` or

@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	protocol "github.com/stokaro/ptah/provider-sdk/protocol/experimental"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -29,6 +31,9 @@ func (t *target) sqlSchemaResult(ctx context.Context, request sqlext.GrammarRequ
 	}
 	database.FeatureObjects, err = t.sqlNativeObjects(ctx, reply.GetNativeObjects())
 	if err != nil {
+		return sqlext.GrammarResult{}, err
+	}
+	if err := t.sqlFacets(ctx, &database, reply.GetFacets()); err != nil {
 		return sqlext.GrammarResult{}, err
 	}
 	claim, err := t.sqlCoverage(reply.GetCoverage())
@@ -93,7 +98,7 @@ func sqlSchemaCommon(reply *protocol.SQLSchema) (schemamodel.Database, error) {
 // alone, as the shared reader keys a table's children.
 func addSQLTable(database *schemamodel.Database, declared *protocol.DeclaredTable) error {
 	if proto.Size(declared.GetFeatures()) != 0 {
-		return unsupported(fmt.Sprintf("facets or owned objects of table %q in a SQL schema reading", declared.GetName()))
+		return unsupported(fmt.Sprintf("captured features of table %q in a SQL schema reading, which carries a table's facets in its facets collection", declared.GetName()))
 	}
 	qualified := schemamodel.QualifyTableName(declared.GetSchema(), declared.GetName())
 	table := schemamodel.Table{StructName: qualified, Name: declared.GetName(), Schema: declared.GetSchema(), Engine: declared.GetEngine(), Collate: declared.GetCollation(),
@@ -309,6 +314,84 @@ func (t *target) sqlNativeObjects(ctx context.Context, envelopes []*protocol.Env
 		}
 	}
 	return objects, nil
+}
+
+// sqlFacets normalizes the facets of a reading with their owner and places
+// each where a YAML source places it: on its table, or on a column or an
+// index of that table, with the engine as its target. The SDK has checked
+// that each owner is a declared table, column or index under the engine's
+// identifier rules; the host finds it under the same rules.
+func (t *target) sqlFacets(ctx context.Context, database *schemamodel.Database, envelopes []*protocol.Envelope) error {
+	if len(envelopes) == 0 {
+		return nil
+	}
+	semantics, err := identifierRules(t.engine.GetIdentifiers(), t.engine.GetDefaultSchema())
+	if err != nil {
+		return err
+	}
+	features := featureSet(t.engine.GetFeatures())
+	request := &protocol.NormalizeValuesRequest{Engine: t.engine.GetId(), TargetFeatures: features}
+	for i, envelope := range envelopes {
+		request.Values = append(request.Values, &protocol.ValueInput{Id: strconv.Itoa(i), Representation: protocol.ValueInput_DESIRED, Value: proto.CloneOf(envelope)})
+	}
+	normalized, err := t.host.client.NormalizeValues(ctx, request)
+	if err != nil {
+		return err
+	}
+	for _, value := range normalized.GetValues() {
+		decoded, err := t.host.decodedValue(t.engine.GetId(), &protocol.SourceModelValue{Placement: protocol.SourceModelValue_FACET, Value: value})
+		if err != nil {
+			return err
+		}
+		slot, err := sqlFacetSlot(database, semantics, value.GetValue().GetOwner())
+		if err != nil {
+			return err
+		}
+		facets, err := slot.With(decoded.value)
+		if err != nil {
+			return err
+		}
+		if *slot, err = facets.WithTargetScope(decoded.kind, t.engine.GetId()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sqlFacetSlot returns the facets of the table, column or index a facet's
+// owner names.
+func sqlFacetSlot(database *schemamodel.Database, semantics identifier.Semantics, owner *protocol.Reference) (*schemaext.Facets, error) {
+	tableName := owner.GetName()
+	if owner.GetKind() != "table" {
+		tableName = owner.GetPath()[0]
+	}
+	sameSchema := func(schema string) bool {
+		return semantics.TableIdentityKey(orDefault(schema, semantics.DefaultSchema)) == semantics.TableIdentityKey(orDefault(owner.GetSchema(), semantics.DefaultSchema))
+	}
+	table := slices.IndexFunc(database.Tables, func(table schemamodel.Table) bool {
+		return sameSchema(table.Schema) && semantics.TableIdentityKey(table.Name) == semantics.TableIdentityKey(tableName)
+	})
+	if table < 0 {
+		return nil, fmt.Errorf("%w: a SQL schema facet names no declared table", provider.ErrProtocol)
+	}
+	parent := database.Tables[table].StructName
+	switch owner.GetKind() {
+	case "table":
+		return &database.Tables[table].Facets, nil
+	case "column":
+		if i := slices.IndexFunc(database.Fields, func(field schemamodel.Field) bool {
+			return field.StructName == parent && semantics.ColumnIdentityKey(field.Name) == semantics.ColumnIdentityKey(owner.GetName())
+		}); i >= 0 {
+			return &database.Fields[i].Facets, nil
+		}
+	case "index":
+		if i := slices.IndexFunc(database.Indexes, func(index schemamodel.Index) bool {
+			return index.StructName == parent && semantics.IndexIdentityKey(index.Name) == semantics.IndexIdentityKey(owner.GetName())
+		}); i >= 0 {
+			return &database.Indexes[i].Facets, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: a SQL schema facet names no declared %s of table %q", provider.ErrProtocol, owner.GetKind(), parent)
 }
 
 // sqlCoverage is the claim a reading makes about the provider's models. It

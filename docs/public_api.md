@@ -2990,7 +2990,8 @@ domain whose only differences are its CHECK, default or NOT NULL changes in
 place, and so does a composite type with an attribute delta
 (`AttributeDelta`); everything else is a non-CASCADE drop and a creation, and
 so is a changed type that names a rebuilt one. A type nothing declares is
-dropped with CASCADE in that phase's removal window, and the comment of a type
+dropped in that phase's removal window, with `IF EXISTS` and CASCADE only in
+the annotated statement style, and the comment of a type
 that survives joins `featureplan.PhaseDependent`. A type the target cannot
 create is refused with the scope advice the common refusal gives.
 
@@ -4962,7 +4963,7 @@ the path too, and `Clone` copies it.
 `core/platform/capability.ForDialect` answers the default preset a dialect's
 descriptor names, which an offline command plans with. An engine no descriptor
 describes has none. When an executable provider states the facts its engine is
-planned with offline (`Engine.default_capabilities`, contract 25.27), the host
+planned with offline (`Engine.default_capabilities`, contract 25.22), the host
 records them with `capability.RegisterDefaults` while the provider is selected,
 and `ForDialect` answers them under the engine's names. The facts of each
 release line it declares (`ReleaseLine.capabilities`) are recorded with

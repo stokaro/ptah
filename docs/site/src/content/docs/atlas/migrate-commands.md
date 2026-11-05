@@ -1374,6 +1374,15 @@ warnings above a drop, are left out. A comment that reports what the plan left
 out or cannot do stays, such as a change a `diff` policy skips or a step a
 person has to take.
 
+A statement an executable provider plans is named from the object the
+provider plans it for and from what the provider says the step does to that
+object. A step that creates the table `orders` writes `create "orders" table`,
+a step that drops it writes `drop "orders" table`, and any other change to it,
+a new column, index or changefeed included, writes `modify "orders" table`.
+Tables, views, materialized views and indexes are named this way. A statement
+for an object of a kind the provider defines itself, a YDB topic for example,
+has no change comment, because the community binary has no words for it.
+
 On a PostgreSQL-family dev database the statements carry no `IF EXISTS` or
 `IF NOT EXISTS`, and a drop carries `CASCADE` only where the plan relies on it.
 A file run against a database in another state than the one it was planned
@@ -1395,8 +1404,11 @@ removes before the columns and tables they read, and a generated column before
 the columns it reads. A routine the plan removes that takes or returns the row
 type of a removed view or table, such as `RETURNS SETOF v`, or reads it in a
 SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is dropped right
-ahead of it. In the exact style, the plan also drops a removed table's
-policies before views and columns they read. A removed table a policy of
+ahead of it. CockroachDB also records what a body in quotes reads, so there
+such a routine goes ahead of the table too. A partition and a table that
+inherits another go ahead of their parent. In the exact style, the plan also
+drops a removed table's policies before views and columns they read. A removed
+table a policy of
 another removed table reads is dropped after the table that holds the policy,
 and two removed tables whose policies read each other are dropped in one
 `DROP TABLE`.
@@ -1437,12 +1449,15 @@ In the exact style, the PostgreSQL type and extension owners omit `IF EXISTS`
 from drops, and type drops omit `CASCADE`. PostgreSQL refuses a domain or
 composite type drop while an undeclared column still uses the type. A provider
 that cannot honor the exact statement style is refused before an executable
-plan is returned. A drop after another owner operation may keep its guard
-when that operation can remove objects the common planner cannot name.
+plan is returned, on the native commands too. A drop after another owner
+operation may keep its guard when that operation can remove objects the common
+planner cannot name.
 
 The MySQL-family planner leaves out its descriptive comments and keeps its
-guards. The SQLite, SQL Server and ClickHouse planners keep both. Native `ptah
-migrations generate` keeps Ptah's own comments, guards and `CASCADE`. The files
+guards. The SQLite, SQL Server and ClickHouse planners keep both. Every other
+Ptah command that plans a change uses the same statement style, without the
+change comments: `schema apply`, `schema plan` and `schema diff` here, and
+native `ptah migrations generate` and `ptah schema apply`. The files
 still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;
 [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.
@@ -1456,7 +1471,7 @@ matches it, so `POSTGRES` is refused. A `postgis` dev database is created empty;
 the image's extensions are created by a migration that needs them.
 
 `docker://ydb` asks the YDB provider to start a YDB server for the run (see
-[YDB](../../databases/ydb/#dev-shadow-and-scratch-databases)). It is a Ptah
+[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#dev-shadow-and-scratch-databases)). It is a Ptah
 extension here, and strict compatibility refuses it as Atlas CE does, with
 `unsupported docker image "ydb"`.
 

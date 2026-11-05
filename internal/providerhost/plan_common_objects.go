@@ -26,7 +26,9 @@ import (
 // its engine spells each.
 type commonObjectPlan struct {
 	// before runs ahead of every table change: revocations, removed
-	// memberships, and the views the plan drops or replaces by a drop.
+	// memberships, and the views the plan drops or replaces by a drop. An
+	// entry on a table or view the plan drops is not revoked; see
+	// droppedRelations.
 	before []ast.Node
 	// prepared runs before the tables: new and changed roles and sequences,
 	// which a table or a grant may name.
@@ -46,12 +48,8 @@ type commonObjectPlan struct {
 func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	var plan commonObjectPlan
 	views := viewReplacement{inPlace: p.options.Capabilities.Has(capability.CreateOrReplaceView)}
-	for _, grant := range diff.GrantsRemoved {
-		plan.before = append(plan.before, revokeNode(grant))
-	}
-	for _, grant := range diff.GrantOptionsRevoked {
-		plan.before = append(plan.before, revokeNode(grant).SetGrantOptionFor(true))
-	}
+	semantics := diff.EffectiveIdentifierSemantics(p.target)
+	plan.before = droppedRelations(diff, views, semantics).revocations(diff, semantics)
 	for _, membership := range diff.RoleMembershipsRemoved {
 		plan.before = append(plan.before, ast.NewRevokeRoleMembership(membership.Role, membership.Member))
 	}
@@ -88,7 +86,7 @@ func (p commonPlanner) planCommonObjects(diff *difftypes.SchemaDiff) (commonObje
 	for _, membership := range diff.RoleMembershipsAdded {
 		plan.after = append(plan.after, ast.NewGrantRoleMembership(membership.Role, membership.Member))
 	}
-	for _, grant := range slices.Concat(diff.GrantsAdded, views.regrants(diff, diff.EffectiveIdentifierSemantics(p.target))) {
+	for _, grant := range slices.Concat(diff.GrantsAdded, views.regrants(diff, semantics)) {
 		plan.after = append(plan.after, grantNode(grant, grant.WithOption))
 	}
 	for _, grant := range diff.GrantOptionsAdded {
@@ -207,6 +205,53 @@ func (r viewReplacement) regrants(diff *difftypes.SchemaDiff, semantics identifi
 		}
 	}
 	return again
+}
+
+// relationDrops are the identity keys of the tables and views whose drop the
+// plan carries.
+type relationDrops map[string]bool
+
+// droppedRelations collects the relationDrops of diff: the tables it removes,
+// the views it removes, and the views it drops to create again on a target
+// that cannot replace one in place. A drop takes the object's access list
+// with it, so a REVOKE of an entry there only changes an object the next step
+// removes. Measured on YDB 25.1 and 26.2, a REVOKE ahead of the DROP VIEW, or
+// of a table's drop, applies, and the drop alone leaves the same state: no
+// entry, and nothing to plan next. A view replaced in place keeps its
+// entries, and a REVOKE there is the only step that removes one.
+func droppedRelations(diff *difftypes.SchemaDiff, views viewReplacement, semantics identifier.Semantics) relationDrops {
+	dropped := make(relationDrops, len(diff.TablesRemoved)+len(diff.ViewsRemoved)+len(diff.ViewsModified))
+	for _, name := range slices.Concat(diff.TablesRemoved.Names(), diff.ViewsRemoved.Names()) {
+		dropped[semantics.QualifiedTableIdentityKey(name)] = true
+	}
+	if !views.inPlace {
+		for _, change := range diff.ViewsModified {
+			dropped[semantics.QualifiedTableIdentityKey(change.ViewName)] = true
+		}
+	}
+	return dropped
+}
+
+// holds reports whether grant is an entry on a table or view the plan drops.
+func (d relationDrops) holds(grant difftypes.GrantRef, semantics identifier.Semantics) bool {
+	return relationGrant(grant) && d[semantics.QualifiedTableIdentityKey(grant.ObjectName)]
+}
+
+// revocations revokes each entry the comparison removes and each grant
+// option it takes back, other than those on an object the plan drops.
+func (d relationDrops) revocations(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []ast.Node {
+	var nodes []ast.Node
+	for _, grant := range diff.GrantsRemoved {
+		if !d.holds(grant, semantics) {
+			nodes = append(nodes, revokeNode(grant))
+		}
+	}
+	for _, grant := range diff.GrantOptionsRevoked {
+		if !d.holds(grant, semantics) {
+			nodes = append(nodes, revokeNode(grant).SetGrantOptionFor(true))
+		}
+	}
+	return nodes
 }
 
 // relationGrant reports a grant on a table or a view: an engine names a view

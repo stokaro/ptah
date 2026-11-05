@@ -86,6 +86,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderDropMaterializedView(n)
 	case *ast.RefreshMaterializedViewNode:
 		return r.renderRefreshMaterializedView(n)
+	case *ast.AlterViewOptionsNode:
+		return nodedispatch.RefuseViewOptions(r.dialect, n)
 
 	// Routines and triggers.
 	case *ast.CreateFunctionNode:

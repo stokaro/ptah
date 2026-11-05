@@ -202,8 +202,8 @@ ALTER ROLE service_user CREATEDB;
 -- Change login capability
 ALTER ROLE api_user NOLOGIN;
 
--- Update password
-ALTER ROLE app_user PASSWORD 'new_encrypted_password';
+-- Update password: the statement names the variable it is read from
+ALTER ROLE app_user PASSWORD $PTAH_SECRET_PASSWORD_APP_USER;
 ```
 
 ### GRANT and REVOKE Statements
@@ -274,11 +274,13 @@ Always include meaningful comments:
 
 ### 4. Password Management
 
-Avoid hardcoding passwords in annotations. Use environment variables or external secret management:
+Avoid hardcoding passwords in annotations. Name the environment variable the
+password is read from instead, or leave the password out and set it outside
+Ptah:
 
 ```go
-// Don't include actual passwords in code
-//ptah:schema:role name="app_user" login="true" comment="Application user - password set externally"
+// The password comes from PTAH_SECRET_APP_USER_PASSWORD when the statement runs
+//ptah:schema:role name="app_user" login="true" password="$PTAH_SECRET_APP_USER_PASSWORD"
 ```
 
 ## Cross-Database Compatibility
@@ -322,35 +324,22 @@ Ptah automatically handles dependencies between roles and other database objects
 
 ## Password Security
 
-**Important**: Passwords in role definitions should be properly encrypted/hashed before being stored in your schema files. Ptah does not automatically encrypt passwords - this should be done at the application level or using PostgreSQL's built-in password encryption.
+Ptah never prints a declared password or password hash. Every statement that
+sets one names an environment variable where the password would stand:
+`PTAH_SECRET_PASSWORD_` followed by the role's name in upper case, or the
+`$PTAH_SECRET_...` variable a `password` attribute names itself. A plan, a saved
+plan, a generated migration file and an error show the variable:
 
-### Password Best Practices
+```sql
+CREATE ROLE "app_user" WITH LOGIN PASSWORD $PTAH_SECRET_PASSWORD_APP_USER NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;
+```
 
-1. **Never use plaintext passwords** in your schema definitions
-2. **Use PostgreSQL's password encryption** when creating roles:
-   ```sql
-   -- Good: Use encrypted password
-   CREATE ROLE app_user WITH LOGIN PASSWORD 'md5a1b2c3d4e5f6789012345678901234';
-
-   -- Bad: Plaintext password (security risk)
-   CREATE ROLE app_user WITH LOGIN PASSWORD 'mypassword123';
-   ```
-
-3. **Use environment variables** for sensitive passwords in development:
-   ```go
-   // Use environment variables for passwords
-   password := os.Getenv("APP_USER_PASSWORD_HASH")
-   ```
-
-4. **Password Detection**: Ptah includes heuristic checks to detect potential plaintext passwords and will add warning comments to generated SQL when suspicious passwords are detected.
-
-### Supported Password Formats
-
-Ptah recognizes these encrypted password formats:
-- MD5 hashes: `md5a1b2c3d4e5f6789012345678901234`
-- SCRAM-SHA-256: `SCRAM-SHA-256$4096:salt$hash:signature`
-- bcrypt: `$2a$10$...`, `$2b$10$...`, `$2y$10$...`
-- SHA-256/SHA-512: `$5$...`, `$6$...`
+`ptah schema apply` that plans from the schema and applies in one run sends
+the declared password. `ptah schema apply --plan` and `ptah migrations up` read
+the variable, so export it on the machine that runs them. PostgreSQL takes a
+password hash, such as `SCRAM-SHA-256$4096:salt$hash:signature`, in the same
+clause, and a hash is handled the same way. See
+[Role passwords](site/src/content/docs/databases/postgresql.md#role-passwords).
 
 ## Testing
 

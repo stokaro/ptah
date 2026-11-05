@@ -124,3 +124,55 @@ func TestProviderTextUnits_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// applyPreview runs schema apply --dry-run against the fixture and returns
+// what it printed and its exit code.
+func (f providerCLI) applyPreview(c *qt.C, extra ...string) (preview string, code int) {
+	c.Helper()
+	args := append([]string{"schema", "apply", "--provider-config", f.manifestPath, "--db-url", f.address, "--schema-file", f.schemaPath,
+		"--tx-mode", "none", "--dry-run"}, extra...)
+	out, diagnostics, code := executeProviderCLI(c.Context(), args)
+	f.assertStopped(c)
+	return out + diagnostics, code
+}
+
+// TestProviderSchemaApplyShowsTheTextForm_HappyPath previews a plan whose new
+// column a provider performs as a native operation and writes as text: the
+// preview shows the provider's statement, as a migration file holds it and as
+// a built-in engine's plan is shown, rather than the operation's kind.
+func TestProviderSchemaApplyShowsTheTextForm_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f := textUnitsFixture(c, "native-text", addedColumnSchema)
+
+	preview, code := f.applyPreview(c)
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", preview))
+	c.Assert(preview, qt.Contains, "Planned changes:\n"+`ALTER TABLE "items" ADD COLUMN "added" REAL;`+"\n")
+	c.Assert(preview, qt.Not(qt.Contains), "Native operation:")
+}
+
+// TestProviderSchemaApplyShowsTheTextForm_FailurePath previews plans that have
+// no text form: a provider that renders no text units, and a change a provider
+// that renders them performs only natively. The preview shows each native
+// operation by kind, subject and assessment, as before.
+func TestProviderSchemaApplyShowsTheTextForm_FailurePath(t *testing.T) {
+	rebuild := "tables:\n  items:\n    columns:\n      id: {type: INTEGER, primary: true, not_null: true}\n      flag: {type: INTEGER, not_null: true}\n"
+	tests := []struct {
+		name, mode, schema string
+		extra              []string
+	}{
+		{name: "a provider without text units", mode: "native-cli", schema: addedColumnSchema},
+		{name: "a change without a text form", mode: "policy", schema: rebuild, extra: []string{"--allow-table-rebuild"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			f := textUnitsFixture(c, test.mode, test.schema)
+
+			preview, code := f.applyPreview(c, test.extra...)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", preview))
+			c.Assert(preview, qt.Contains, "Native operation: example.org/fixture/table-operation\n")
+		})
+	}
+}

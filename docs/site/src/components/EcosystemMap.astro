@@ -1,0 +1,455 @@
+---
+/**
+ * The interactive ecosystem map on start/ecosystem.mdx.
+ *
+ * Everything here is rendered from src/ecosystem.mjs at build time: the drawn
+ * map (src/lib/ecosystem-map.mjs), the narrow layout, the legend, and one
+ * details section per component and per usage path. The client script adds
+ * behavior only. It turns each component into a toggle button, shows the
+ * details section that belongs to the selection, and marks what the selection
+ * touches. The only text it writes is the status message and the note on a
+ * narrow-layout card naming a relationship that arrives at it.
+ *
+ * Without JavaScript the map is a static drawing (or, on a narrow screen, the
+ * grouped list with its relationships written out), the toolbar and the details
+ * panel stay hidden, and the tables after the figure carry every fact.
+ *
+ * The figure reuses ProductPreview's bar and caption classes
+ * (src/styles/ptah/figures.css), so its full-size, download and source actions
+ * look and behave like every other figure: GraphicPreview opens the full-size
+ * SVG inside the page. `data-product-preview` is what GraphicPreview reads to
+ * find the caption. The rest of the styles are in
+ * src/styles/ptah/ecosystem.css.
+ */
+import { getCollection } from 'astro:content';
+import definitionSource from '../ecosystem.mjs?url&no-inline';
+import {
+  docLinkResolver,
+  ecosystemModel,
+  inlineMarkup,
+  labelText,
+  LINE_PATTERNS,
+  nodeDescription,
+  relationshipSentence,
+  renderEcosystemSvg,
+} from '../lib/ecosystem-map.mjs';
+
+const model = ecosystemModel();
+const resolveLink = docLinkResolver(await getCollection('docs'), Astro.url.pathname, import.meta.env.BASE_URL);
+const fullSize = {
+  light: `${resolveLink.prefix}diagrams/ptah-ecosystem-light.svg`,
+  dark: `${resolveLink.prefix}diagrams/ptah-ecosystem-dark.svg`,
+};
+
+const clientModel = {
+  names: Object.fromEntries(model.components.map(({ id, name }) => [id, name])),
+  relationships: model.relationships.map((relationship) => ({
+    id: relationship.id,
+    from: relationship.from,
+    to: relationship.to,
+    text: labelText(relationship, model),
+  })),
+  paths: Object.fromEntries(model.paths.map(({ id, label, relationships }) => [id, { label, relationships }])),
+};
+
+const statusLabel = (component) => {
+  if (component.kind === 'entry') return 'Entry point, not a repository';
+  if (component.kind === 'infrastructure') return 'Infrastructure, not a repository';
+  return model.statuses.get(component.status).label;
+};
+
+const outgoing = (id) => model.relationships.filter(({ from }) => from === id);
+const relationshipById = new Map(model.relationships.map((relationship) => [relationship.id, relationship]));
+---
+
+<ptah-ecosystem-map class="ptah-wide-content not-content" id="ptah-ecosystem-map" data-model={JSON.stringify(clientModel)}>
+  <figure
+    class="ptah-product-preview ptah-ecosystem"
+    data-product-preview
+    data-visual-id="ptah-ecosystem"
+    data-light-src={fullSize.light}
+    data-dark-src={fullSize.dark}
+    data-pagefind-ignore
+  >
+    <div class="ptah-product-preview__bar">
+      <span class="ptah-product-preview__label">Ecosystem map</span>
+      <nav class="ptah-product-preview__actions" aria-label="Ecosystem map actions">
+        <a href={fullSize.light} data-preview-action="full-size" data-eco-themed>Full size</a>
+        <a href={fullSize.light} download="ptah-ecosystem.svg" data-preview-action="download" data-eco-themed>Download</a>
+        <a href={definitionSource} data-preview-action="source">Source</a>
+      </nav>
+    </div>
+
+    <div class="eco-toolbar" data-eco-toolbar hidden>
+      <span class="eco-toolbar__label" id="ptah-ecosystem-paths">Highlight a path</span>
+      <div class="eco-toolbar__paths" role="group" aria-labelledby="ptah-ecosystem-paths">
+        {model.paths.map((path) => (
+          <button type="button" class="eco-chip" data-eco-path={path.id} aria-pressed="false">
+            {path.label}
+          </button>
+        ))}
+      </div>
+      <button type="button" class="eco-reset" data-eco-reset disabled>Show all</button>
+    </div>
+
+    <div class="eco-body">
+      <div class="eco-map">
+        <div class="eco-drawing" set:html={renderEcosystemSvg({ theme: 'site' })} />
+
+        <div class="eco-cards" data-eco-cards>
+          {model.groups.map((group) => (
+            <section class="eco-cards__group" aria-label={group.label}>
+              <p class="eco-cards__label">{group.label}</p>
+              <ul class="eco-cards__list">
+                {group.components.map((component) => (
+                  <li>
+                    <div class="eco-card" data-eco-node={component.id} data-eco-description={nodeDescription(component, model)} data-kind={component.kind}>
+                      <span class="eco-card__head">
+                        <span class="eco-card__name">{component.name}</span>
+                        {component.badge && <span class="eco-card__badge">{component.badge}</span>}
+                      </span>
+                      <span class="eco-card__role">{component.role}</span>
+                      {outgoing(component.id).map((relationship) => (
+                        <span class="eco-card__line" data-eco-line={relationship.id}>
+                          → {model.byId.get(relationship.to).name}: {labelText(relationship, model)}
+                        </span>
+                      ))}
+                      <span class="eco-card__note" data-eco-note hidden />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <div class="eco-details" data-eco-details hidden>
+        <div class="eco-detail" data-eco-intro>
+          <p class="eco-detail__kicker">Details</p>
+          <p>
+            Select a component to read what it does, when you need it, its status and its links. Select a path to
+            follow one way of using Ptah from start to finish.
+          </p>
+          <p class="eco-detail__hint">Escape or Show all clears the selection.</p>
+        </div>
+
+        {model.components.map((component) => (
+          <section class="eco-detail" data-eco-detail={component.id} aria-labelledby={`ptah-ecosystem-detail-${component.id}`} hidden>
+            <p class="eco-detail__kicker">{statusLabel(component)}{component.badge === 'Optional' && ' · Optional'}</p>
+            <h3 class="eco-detail__title" id={`ptah-ecosystem-detail-${component.id}`} tabindex="-1">{component.name}</h3>
+            <p class="eco-detail__role">{component.role}</p>
+            <p set:html={inlineMarkup(component.purpose)} />
+            <p><strong>When you need it.</strong> <span set:html={inlineMarkup(component.whenNeeded)} /></p>
+            {component.statusNote && (
+              <p><strong>Status.</strong> <span set:html={inlineMarkup(component.statusNote)} /></p>
+            )}
+            <p class="eco-detail__label">Relationships</p>
+            <ul class="eco-detail__relations">
+              {model.touching(component.id).map((relationship) => {
+                const other = relationship.from === component.id ? relationship.to : relationship.from;
+                return (
+                  <li>
+                    <span set:html={relationshipSentence(relationship, model)} />{' '}
+                    <button type="button" class="eco-link-button" data-eco-select={other}>
+                      Select {model.byId.get(other).name}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p class="eco-detail__label">Links</p>
+            <ul class="eco-detail__links">
+              {component.links.map((link) => (
+                <li><a href={resolveLink(link)}>{link.label}</a></li>
+              ))}
+            </ul>
+            <a class="eco-detail__back" href="#ptah-ecosystem-map">Back to the map</a>
+          </section>
+        ))}
+
+        {model.paths.map((path) => (
+          <section class="eco-detail" data-eco-path-detail={path.id} aria-labelledby={`ptah-ecosystem-path-${path.id}`} hidden>
+            <p class="eco-detail__kicker">Usage path</p>
+            <h3 class="eco-detail__title" id={`ptah-ecosystem-path-${path.id}`} tabindex="-1">{path.label}</h3>
+            <p set:html={inlineMarkup(path.summary)} />
+            <ul class="eco-detail__relations">
+              {path.relationships.map((id) => (
+                <li set:html={relationshipSentence(relationshipById.get(id), model)} />
+              ))}
+            </ul>
+            <p class="eco-detail__label">Links</p>
+            <ul class="eco-detail__links">
+              {path.links.map((link) => (
+                <li><a href={resolveLink(link)}>{link.label}</a></li>
+              ))}
+            </ul>
+            <a class="eco-detail__back" href="#ptah-ecosystem-map">Back to the map</a>
+          </section>
+        ))}
+      </div>
+    </div>
+
+    <div class="eco-legend">
+      <p class="eco-legend__title">Legend</p>
+      <ul class="eco-legend__list">
+        {[...model.kinds.values()].map((kind) => (
+          <li>
+            <svg class="eco-legend__sample" viewBox="0 0 40 10" width="40" height="10" aria-hidden="true">
+              <line
+                x1="1"
+                y1="5"
+                x2="32"
+                y2="5"
+                stroke-width={LINE_PATTERNS[kind.id].width}
+                stroke-dasharray={LINE_PATTERNS[kind.id].dash}
+                stroke-linecap={LINE_PATTERNS[kind.id].cap}
+              />
+              <polygon points="39,5 32,1.5 32,8.5" />
+            </svg>
+            {kind.label}
+          </li>
+        ))}
+        <li>
+          <svg class="eco-legend__sample eco-legend__sample--open" viewBox="0 0 40 10" width="40" height="10" aria-hidden="true">
+            <line x1="1" y1="5" x2="32" y2="5" stroke-width={LINE_PATTERNS.runs.width} />
+            <polygon points="39,5 32,1.5 32,8.5" />
+          </svg>
+          Hollow arrowhead: experimental
+        </li>
+        <li>
+          <svg class="eco-legend__sample eco-legend__sample--open" viewBox="0 0 40 10" width="40" height="10" aria-hidden="true">
+            <line
+              x1="1"
+              y1="5"
+              x2="32"
+              y2="5"
+              stroke-width={LINE_PATTERNS['not-implemented'].width}
+              stroke-dasharray={LINE_PATTERNS['not-implemented'].dash}
+            />
+            <polygon points="39,5 32,1.5 32,8.5" />
+          </svg>
+          Sparse dashes: not implemented
+        </li>
+        <li>
+          <svg class="eco-legend__sample eco-legend__sample--box" viewBox="0 0 40 14" width="40" height="14" aria-hidden="true">
+            <rect x="1" y="1" width="38" height="12" rx="2" stroke-dasharray="4 3" />
+          </svg>
+          Dashed outline: not a repository
+        </li>
+      </ul>
+    </div>
+
+    <figcaption>
+      <p class="ptah-product-preview__caption">The public Ptah repositories, grouped by role, with ptah at the center.</p>
+      <p class="ptah-product-preview__notice">
+        <strong>What to notice:</strong> the direct path from the CLI to <code>ptah</code> needs nothing else. The
+        Kubernetes workflow and the console are optional. So are the external providers, which only an engine Ptah does
+        not build in needs.
+      </p>
+    </figcaption>
+
+    <p class="sr-only" role="status" data-eco-status></p>
+  </figure>
+</ptah-ecosystem-map>
+
+<script>
+  type Relationship = { id: string; from: string; to: string; text: string };
+  type Model = {
+    names: Record<string, string>;
+    relationships: Relationship[];
+    paths: Record<string, { label: string; relationships: string[] }>;
+  };
+  type Selection = { kind: 'node' | 'path'; id: string } | null;
+  type Node = HTMLElement | SVGElement;
+
+  class PtahEcosystemMap extends HTMLElement {
+    model!: Model;
+    selection: Selection = null;
+    lastNode = '';
+
+    get nodes() {
+      return [...this.querySelectorAll<Node>('[data-eco-node]')];
+    }
+
+    get details() {
+      return this.querySelector<HTMLElement>('[data-eco-details]')!;
+    }
+
+    // The node with this id in the layout that is showing: the drawing and the
+    // cards each carry one, and only one of the two has a box.
+    visibleNode(id: string) {
+      return this.nodes.find((node) => node.dataset.ecoNode === id && node.getClientRects().length > 0);
+    }
+
+    connectedCallback() {
+      if (this.model) return;
+      this.model = JSON.parse(this.dataset.model || '{}');
+
+      // The drawing is one image until it holds controls; a role of img would
+      // hide those controls from assistive technology.
+      const svg = this.querySelector('svg.eco-svg');
+      svg?.setAttribute('role', 'group');
+      svg?.setAttribute('aria-label', 'Ptah ecosystem map. Each component is a button.');
+      svg?.removeAttribute('aria-labelledby');
+
+      for (const node of this.nodes) {
+        node.setAttribute('role', 'button');
+        node.setAttribute('tabindex', '0');
+        node.setAttribute('aria-pressed', 'false');
+        // The text on the node is its name, so what is not on it is a description.
+        node.setAttribute('aria-description', node.dataset.ecoDescription ?? '');
+        const id = node.dataset.ecoNode!;
+        node.addEventListener('click', () => this.toggle('node', id, true));
+        node.addEventListener('keydown', (event) => {
+          const { key } = event as KeyboardEvent;
+          if (key === 'Enter' || key === ' ') {
+            event.preventDefault();
+            this.toggle('node', id, false);
+          }
+        });
+      }
+      for (const button of this.querySelectorAll<HTMLElement>('[data-eco-path]')) {
+        button.addEventListener('click', () => this.toggle('path', button.dataset.ecoPath!, false));
+      }
+      for (const button of this.querySelectorAll<HTMLElement>('[data-eco-select]')) {
+        button.addEventListener('click', () => {
+          this.select({ kind: 'node', id: button.dataset.ecoSelect! }, false);
+          // The button that was pressed is now hidden with its section,
+          // so focus moves to the section that replaced it.
+          this.details.querySelector<HTMLElement>('.eco-detail:not([hidden]) .eco-detail__title')?.focus();
+        });
+      }
+      this.querySelector('[data-eco-reset]')?.addEventListener('click', () => this.select(null, false));
+      this.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && this.selection) {
+          event.preventDefault();
+          this.select(null, false);
+        }
+      });
+
+      this.querySelector<HTMLElement>('[data-eco-toolbar]')!.hidden = false;
+      this.details.hidden = false;
+      this.dataset.enhanced = '';
+
+      this.syncThemedLinks();
+      new MutationObserver(() => this.syncThemedLinks()).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+    }
+
+    // Full size and Download follow the site's theme, the way ProductPreview's
+    // themed diagrams do.
+    syncThemedLinks() {
+      const figure = this.querySelector<HTMLElement>('figure')!;
+      const href = document.documentElement.dataset.theme === 'dark' ? figure.dataset.darkSrc : figure.dataset.lightSrc;
+      if (!href) return;
+      for (const link of this.querySelectorAll<HTMLAnchorElement>('a[data-eco-themed]')) link.href = href;
+    }
+
+    toggle(kind: 'node' | 'path', id: string, fromPointer: boolean) {
+      const same = this.selection?.kind === kind && this.selection.id === id;
+      this.select(same ? null : { kind, id }, fromPointer);
+    }
+
+    select(selection: Selection, fromPointer: boolean) {
+      const { relationships, names, paths } = this.model;
+      const reset = this.querySelector<HTMLButtonElement>('[data-eco-reset]')!;
+      // Clearing hides the section focus may be in and disables Show all. Focus
+      // returns to the component it was about rather than falling to the page.
+      const focusFalls =
+        !selection && (this.details.contains(document.activeElement) || document.activeElement === reset);
+      if (this.selection?.kind === 'node') this.lastNode = this.selection.id;
+      this.selection = selection;
+
+      const active = new Set<string>();
+      if (selection?.kind === 'node') {
+        for (const { id, from, to } of relationships) {
+          if (from === selection.id || to === selection.id) active.add(id);
+        }
+      } else if (selection?.kind === 'path') {
+        for (const id of paths[selection.id].relationships) active.add(id);
+      }
+      const touched = new Set<string>();
+      for (const { id, from, to } of relationships) {
+        if (active.has(id)) touched.add(from).add(to);
+      }
+
+      if (selection) this.dataset.selection = selection.kind;
+      else delete this.dataset.selection;
+
+      for (const node of this.nodes) {
+        const id = node.dataset.ecoNode!;
+        const pressed = selection?.kind === 'node' && selection.id === id;
+        node.setAttribute('aria-pressed', String(pressed));
+        node.classList.toggle('is-related', touched.has(id) && !pressed);
+      }
+      for (const edge of this.querySelectorAll<SVGElement>('[data-eco-edge]')) {
+        const on = active.has(edge.dataset.ecoEdge!);
+        edge.classList.toggle('is-active', on);
+        // Painted last, so no dimmed line crosses over a highlighted one.
+        if (on) edge.parentNode?.appendChild(edge);
+      }
+      for (const label of this.querySelectorAll<SVGElement>('[data-eco-edge-label]')) {
+        label.classList.toggle('is-active', active.has(label.dataset.ecoEdgeLabel!));
+      }
+
+      // A card prints what leaves it, so what arrives at it is the part a
+      // reader cannot see from the card alone.
+      for (const line of this.querySelectorAll<HTMLElement>('[data-eco-line]')) {
+        line.classList.toggle('is-active', active.has(line.dataset.ecoLine!));
+      }
+      for (const card of this.querySelectorAll<HTMLElement>('.eco-card')) {
+        const id = card.dataset.ecoNode!;
+        const note = card.querySelector<HTMLElement>('[data-eco-note]')!;
+        const arriving =
+          selection?.kind === 'node' && selection.id === id
+            ? []
+            : relationships.filter((relationship) => active.has(relationship.id) && relationship.to === id);
+        note.textContent = arriving.map(({ from, text }) => `← ${names[from]}: ${text}`).join('\n');
+        note.hidden = arriving.length === 0;
+      }
+
+      for (const button of this.querySelectorAll<HTMLElement>('[data-eco-path]')) {
+        button.setAttribute('aria-pressed', String(selection?.kind === 'path' && selection.id === button.dataset.ecoPath));
+      }
+      reset.disabled = !selection;
+
+      for (const section of this.details.querySelectorAll<HTMLElement>('.eco-detail')) {
+        section.hidden = !(
+          (!selection && section.hasAttribute('data-eco-intro')) ||
+          (selection?.kind === 'node' && section.dataset.ecoDetail === selection.id) ||
+          (selection?.kind === 'path' && section.dataset.ecoPathDetail === selection.id)
+        );
+      }
+
+      if (focusFalls) {
+        (this.visibleNode(this.lastNode) ?? this.querySelector<HTMLElement>('[data-eco-path]'))?.focus();
+      }
+
+      const status = this.querySelector<HTMLElement>('[data-eco-status]')!;
+      if (!selection) {
+        status.textContent = 'Selection cleared. The whole map is shown.';
+      } else if (selection.kind === 'node') {
+        const count = active.size === 1 ? '1 relationship' : `${active.size} relationships`;
+        status.textContent = `${names[selection.id]} selected. ${count} highlighted. The details follow the map.`;
+      } else {
+        status.textContent = `Path ${paths[selection.id].label} highlighted. The details follow the map.`;
+      }
+
+      // On a narrow screen the details sit below a long list, so a tap brings
+      // them into view. Keyboard focus stays on the card, and the status message
+      // says where the details are.
+      const narrow = this.querySelector('[data-eco-cards]')?.getClientRects().length;
+      if (selection && fromPointer && narrow && this.details.getBoundingClientRect().top > window.innerHeight) {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.details.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+      }
+    }
+  }
+
+  if (!customElements.get('ptah-ecosystem-map')) {
+    customElements.define('ptah-ecosystem-map', PtahEcosystemMap);
+  }
+</script>

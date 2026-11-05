@@ -28,6 +28,18 @@ func documentClient(c *qt.C) *transport.Client {
 	return start(c, transport.Options{Executable: binary, SHA256: hex.EncodeToString(checksum[:]), ProviderID: "example.org/fixture", RequiredFeatures: []string{provider.ReadSQLSchemaFeature}})
 }
 
+// facetDocumentClient starts the SQL document fixture for a host that lists
+// the given features.
+func facetDocumentClient(c *qt.C, hostFeatures ...string) *transport.Client {
+	c.Helper()
+	binary := buildFixture(c, "sql-document")
+	data, err := os.ReadFile(binary)
+	c.Assert(err, qt.IsNil)
+	checksum := sha256.Sum256(data)
+	return start(c, transport.Options{Executable: binary, SHA256: hex.EncodeToString(checksum[:]), ProviderID: "example.org/fixture",
+		RequiredFeatures: []string{provider.ReadSQLSchemaFeature}, HostFeatures: hostFeatures})
+}
+
 // documentRequest is a load of the fixture engine, one document per text.
 func documentRequest(client *transport.Client, texts ...string) *protocol.ReadSQLSchemaRequest {
 	engine := client.Description().GetEngines()[0]
@@ -89,6 +101,45 @@ func TestIndependentProviderReadsSQLDocumentsWhole(t *testing.T) {
 	again, err := client.ReadSQLSchema(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(proto.Equal(result, again), qt.IsTrue)
+}
+
+// TestIndependentProviderReadsTheFacetsOfItsTables reads a table's and a
+// column's retention through a process for a host that lists
+// schema.sql-facets, and the same load is refused by name for a host that
+// does not, whose session the provider cannot hand a facet.
+func TestIndependentProviderReadsTheFacetsOfItsTables(t *testing.T) {
+	const text = "CREATE TABLE items (id INTEGER PRIMARY KEY, label TEXT);\nALTER TABLE items SET RETENTION 3600;\nALTER TABLE items ALTER label SET RETENTION 60;\n"
+	t.Run("a host that lists the feature", func(t *testing.T) {
+		c := qt.New(t)
+		client := facetDocumentClient(c, provider.SQLFacetsFeature)
+		c.Assert(client.Description().GetEngines()[0].GetFeatures(), qt.Contains, provider.SQLFacetsFeature)
+
+		result, err := client.ReadSQLSchema(c.Context(), documentRequest(client, text))
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(result.GetComplete(), qt.IsTrue)
+		c.Assert(result.GetFacets(), qt.HasLen, 2)
+		table, column := result.GetFacets()[0], result.GetFacets()[1]
+		c.Assert(proto.Equal(table.GetOwner(), &protocol.Reference{Engine: "fixture", Kind: "table", Name: "items"}), qt.IsTrue)
+		c.Assert(string(table.GetPayload()), qt.Equals, `{"seconds":3600}`)
+		c.Assert(proto.Equal(column.GetOwner(), &protocol.Reference{Engine: "fixture", Kind: "column", Path: []string{"items"}, Name: "label"}), qt.IsTrue)
+		c.Assert(string(column.GetPayload()), qt.Equals, `{"seconds":60}`)
+		c.Assert(result.GetTraces()[1].GetCollection(), qt.Equals, protocol.SQLObjectTrace_FACETS)
+		c.Assert(result.GetTraces()[1].GetSource().GetSpan().GetStart().GetLine(), qt.Equals, uint32(2))
+	})
+	t.Run("a host that does not list it", func(t *testing.T) {
+		c := qt.New(t)
+		client := facetDocumentClient(c)
+		c.Assert(client.Description().GetEngines()[0].GetFeatures(), qt.Not(qt.Contains), provider.SQLFacetsFeature)
+
+		result, err := client.ReadSQLSchema(c.Context(), documentRequest(client, text))
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(result.GetComplete(), qt.IsFalse)
+		c.Assert(result.GetFacets(), qt.HasLen, 0)
+		c.Assert(result.GetDiagnostics()[0].GetCode(), qt.Equals, protocol.SQLDiagnostic_UNSUPPORTED)
+		c.Assert(result.GetDiagnostics()[0].GetMessage(), qt.Equals, "a retention of a table needs "+provider.SQLFacetsFeature)
+	})
 }
 
 func TestIndependentProviderReadsSQLDocumentsInLoadOrder(t *testing.T) {

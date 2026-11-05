@@ -403,6 +403,7 @@ var registry = []Entry{
 	{Field: "schemamodel.MaterializedView.DependsOn", Disposition: Planning, Reason: "the same ordering edge, on a materialized view"},
 	{Field: "schemamodel.MaterializedView.Dialects", Disposition: DDL},
 	{Field: "schemamodel.MaterializedView.Name", Disposition: DDL},
+	{Field: "schemamodel.MaterializedView.Options", Disposition: DDL},
 	{Field: "schemamodel.MaterializedView.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.PrimaryKeyPart.Desc", Disposition: DDL},
 	{Field: "schemamodel.PrimaryKeyPart.Name", Disposition: DDL},
@@ -500,6 +501,7 @@ var registry = []Entry{
 	{Field: "schemamodel.View.DependsOn", Disposition: Planning, Reason: "an ordering edge the author declares because the view's body does not reveal it; the CREATE VIEW it orders does not mention it"},
 	{Field: "schemamodel.View.Dialects", Disposition: DDL},
 	{Field: "schemamodel.View.Name", Disposition: DDL},
+	{Field: "schemamodel.View.Options", Disposition: DDL},
 	{Field: "schemamodel.View.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.View.WithCheck", Disposition: DDL},
 }

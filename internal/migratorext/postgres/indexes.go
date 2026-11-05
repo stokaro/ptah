@@ -20,12 +20,18 @@ import (
 // the name, re-issuing CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS is
 // skipped with a notice instead of retried, so nothing errors and a revision
 // row would be written as applied over a constraint the database is not
-// enforcing. The guard reads what a migration's conditional creates name, asks
-// the catalog what holds each name, and words the refusals.
+// enforcing. A build without IF NOT EXISTS stops with the server's error when
+// it runs again, and a repair that records it without running it reaches the
+// same row. The guard reads what a migration's creates name, asks the catalog
+// what holds each name, and words the refusals.
 type indexGuard struct{}
 
 func (indexGuard) ConditionalCreates(sqlText string) []migratorext.IndexRef {
 	return postgresConditionalCreatedIndexNames(sqlText)
+}
+
+func (indexGuard) UnconditionalBuilds(sqlText string) []migratorext.IndexRef {
+	return postgresUnconditionalConcurrentIndexNames(sqlText)
 }
 
 func (indexGuard) Drops(sqlText string) []migratorext.IndexRef {
@@ -72,6 +78,10 @@ func (indexGuard) ResolveDropped(
 
 func (indexGuard) Usable(state migratorext.IndexState) bool {
 	return isUsableForTarget(state)
+}
+
+func (indexGuard) Unusable(state migratorext.IndexState) bool {
+	return isUnusableTargetIndex(state)
 }
 
 func (indexGuard) ApplyError(version int64, unsafe []migratorext.IndexState) error {
@@ -146,6 +156,7 @@ func matchesAnyKeyword(token lexer.Token, keywords ...string) bool {
 type createIndexPrefix struct {
 	tokens      []lexer.Token
 	ifNotExists bool
+	concurrent  bool
 }
 
 // postgresDroppedIndexNames returns the explicitly named indexes removed by
@@ -220,10 +231,29 @@ func parseQualifiedIndexName(tokens []lexer.Token) (migratorext.IndexRef, int, b
 // idx_members_email folds to lower case exactly as PostgreSQL folds it when
 // storing the catalog entry.
 func postgresCreatedIndexNames(sqlText string) []migratorext.IndexRef {
+	created := postgresCreatedIndexes(sqlText)
+	refs := make([]migratorext.IndexRef, 0, len(created))
+	for _, index := range created {
+		refs = append(refs, index.ref)
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
+}
+
+// createdIndex is one index a CREATE INDEX statement names, and whether the
+// statement builds it concurrently.
+type createdIndex struct {
+	ref        migratorext.IndexRef
+	concurrent bool
+}
+
+func postgresCreatedIndexes(sqlText string) []createdIndex {
 	tokens := significantTokens(sqlText)
 	var (
-		refs []migratorext.IndexRef
-		seen = make(map[migratorext.IndexRef]struct{})
+		created []createdIndex
+		seen    = make(map[migratorext.IndexRef]struct{})
 	)
 	for i, token := range tokens {
 		// CREATE must open a statement. Anywhere else the word is part of some
@@ -234,7 +264,7 @@ func postgresCreatedIndexNames(sqlText string) []migratorext.IndexRef {
 		if !token.MatchIdentifierValue("CREATE") {
 			continue
 		}
-		ref, ok := parseCreateIndexName(tokens[i+1:])
+		ref, concurrent, ok := parseCreateIndexName(tokens[i+1:])
 		if !ok {
 			continue
 		}
@@ -242,9 +272,9 @@ func postgresCreatedIndexNames(sqlText string) []migratorext.IndexRef {
 			continue
 		}
 		seen[ref] = struct{}{}
-		refs = append(refs, ref)
+		created = append(created, createdIndex{ref: ref, concurrent: concurrent})
 	}
-	return refs
+	return created
 }
 
 func postgresConditionalCreatedIndexNames(sqlText string) []migratorext.IndexRef {
@@ -258,6 +288,20 @@ func postgresConditionalCreatedIndexNames(sqlText string) []migratorext.IndexRef
 	return conditional
 }
 
+// postgresUnconditionalConcurrentIndexNames returns the indexes sqlText builds
+// with CREATE INDEX CONCURRENTLY and no IF NOT EXISTS, which is how a generated
+// migration spells the build. Only a concurrent build leaves an index behind
+// when it fails: a plain CREATE INDEX that fails leaves nothing under the name.
+func postgresUnconditionalConcurrentIndexNames(sqlText string) []migratorext.IndexRef {
+	var refs []migratorext.IndexRef
+	for _, index := range postgresCreatedIndexes(sqlText) {
+		if index.concurrent && !index.ref.IfNotExists {
+			refs = append(refs, index.ref)
+		}
+	}
+	return refs
+}
+
 // parseCreateIndexName reads the index name and target-table schema out of the
 // tail of a CREATE statement, given the tokens that follow the CREATE keyword.
 // It follows the
@@ -267,14 +311,14 @@ func postgresConditionalCreatedIndexNames(sqlText string) []migratorext.IndexRef
 //
 // and reports false for any other CREATE, including the name-less
 // CREATE INDEX ON table (...) form where PostgreSQL derives the name itself.
-func parseCreateIndexName(tokens []lexer.Token) (migratorext.IndexRef, bool) {
+func parseCreateIndexName(tokens []lexer.Token) (ref migratorext.IndexRef, concurrent, ok bool) {
 	prefix, ok := consumeCreateIndexPrefix(tokens)
 	if !ok {
-		return migratorext.IndexRef{}, false
+		return migratorext.IndexRef{}, false, false
 	}
-	ref, ok := parseIndexNameTokens(prefix.tokens)
+	ref, ok = parseIndexNameTokens(prefix.tokens)
 	ref.IfNotExists = prefix.ifNotExists
-	return ref, ok
+	return ref, prefix.concurrent, ok
 }
 
 // consumeCreateIndexPrefix consumes the keywords that stand between CREATE and
@@ -287,7 +331,9 @@ func consumeCreateIndexPrefix(tokens []lexer.Token) (createIndexPrefix, bool) {
 	if len(tokens) == 0 || !tokens[0].MatchIdentifierValue("INDEX") {
 		return createIndexPrefix{}, false
 	}
-	tokens = skipKeywordToken(tokens[1:], "CONCURRENTLY")
+	tokens = tokens[1:]
+	concurrent := len(tokens) > 0 && tokens[0].MatchIdentifierValue("CONCURRENTLY")
+	tokens = skipKeywordToken(tokens, "CONCURRENTLY")
 	ifNotExists := false
 	if len(tokens) > 0 && tokens[0].MatchIdentifierValue("IF") {
 		if len(tokens) < 3 || !tokens[1].MatchIdentifierValue("NOT") || !tokens[2].MatchIdentifierValue("EXISTS") {
@@ -296,7 +342,7 @@ func consumeCreateIndexPrefix(tokens []lexer.Token) (createIndexPrefix, bool) {
 		tokens = tokens[3:]
 		ifNotExists = true
 	}
-	return createIndexPrefix{tokens: tokens, ifNotExists: ifNotExists}, len(tokens) > 0
+	return createIndexPrefix{tokens: tokens, ifNotExists: ifNotExists, concurrent: concurrent}, len(tokens) > 0
 }
 
 // skipKeywordToken drops a leading optional keyword when it is present.

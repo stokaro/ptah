@@ -35,6 +35,7 @@ func TestHCLEncodedValue_HappyPath(t *testing.T) {
 		want  hclext.Value
 	}{
 		{"text as a string", hclext.Text, text("5"), hclext.Value{Kind: hclext.String, Text: "5"}},
+		{"a whole number as a bare number", hclext.Text, &protocol.SourceValue{Value: &protocol.SourceValue_Number{Number: "2048"}}, hclext.Value{Kind: hclext.Number, Text: "2048"}},
 		{"a type name as a string", hclext.TypeName, text("uint64"), hclext.Value{Kind: hclext.String, Text: "uint64"}},
 		{"sql", hclext.SQL, &protocol.SourceValue{Value: &protocol.SourceValue_Sql{Sql: "x > 0"}}, hclext.Value{Kind: hclext.SQL, Text: "x > 0"}},
 		{"a bool", hclext.Bool, &protocol.SourceValue{Value: &protocol.SourceValue_Boolean{Boolean: true}}, hclext.Value{Kind: hclext.Bool, Bool: true}},
@@ -124,7 +125,9 @@ func TestHCLEncodedValue_FailurePath(t *testing.T) {
 		value *protocol.SourceValue
 	}{
 		{"text for a bool", hclext.Bool, &protocol.SourceValue{Value: &protocol.SourceValue_Text{Text: "true"}}},
-		{"a number", hclext.Text, &protocol.SourceValue{Value: &protocol.SourceValue_Number{Number: "5"}}},
+		{"a number for a string", hclext.String, &protocol.SourceValue{Value: &protocol.SourceValue_Number{Number: "5"}}},
+		{"a fraction for text", hclext.Text, &protocol.SourceValue{Value: &protocol.SourceValue_Number{Number: "0.5"}}},
+		{"a negative number for text", hclext.Text, &protocol.SourceValue{Value: &protocol.SourceValue_Number{Number: "-1"}}},
 		{"a reference in a text list", hclext.TextList, &protocol.SourceValue{Value: &protocol.SourceValue_Sequence{Sequence: &protocol.SourceSequence{
 			Values: []*protocol.SourceValue{{Value: &protocol.SourceValue_Reference{Reference: &protocol.Reference{Name: "x"}}}}}}}},
 	} {

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/genexprprobe"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
@@ -247,13 +248,14 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		diff, info.Dialect, planext.Options{
 			Capabilities:      info.Capabilities,
 			AllowTableRebuild: rebuild,
+			Statements:        planstyle.Statements,
 		},
 	)
 
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
+	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, output, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff, undecided)
@@ -278,12 +280,13 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 // "No schema differences detected." about a database the comparison could not
 // check (stokaro/ptah#3834).
 func writeComparison(
+	ctx context.Context,
 	out, errOut io.Writer,
 	diff *difftypes.SchemaDiff,
 	undecided schemadiff.Diagnostics,
 	sql, dialect string,
 ) {
-	undecidednote.Report(errOut, undecided, "the database", "the desired schema")
+	undecidednote.Report(ctx, errOut, undecided, "the database", "the desired schema")
 	reportSkipped(errOut, diff)
 	categories := diffreport.Categories(diff)
 	if len(categories) == 0 && !undecided.Empty() {

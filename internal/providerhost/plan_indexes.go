@@ -24,17 +24,24 @@ import (
 // the declared index's Type, and the two spellings are compared exactly, so
 // a change of kind alone drops the index and builds it again. Without
 // methods no kind is compared, and such a change plans nothing. The build
-// settings are not compared. An index that carries a facet is not renamed in
-// place, because the host cannot say the rename keeps it.
+// settings are not compared.
+//
+// With facets (schema.observed-index-facets) the engine reports the settings
+// of the indexes it holds as facets of each index, and its own rename step
+// keeps them: the comparison then pairs an index that carries facets, and
+// compares them under the name the declaration gives it. Without facets an
+// index that carries a facet is not renamed in place, because the host cannot
+// say the rename keeps it.
 type observedIndexRules struct {
 	methods bool
+	facets  bool
 }
 
 func (r observedIndexRules) OptionsEqual(desired schemamodel.Index, current catalog.Index) bool {
 	return !r.methods || desired.Type == current.Method
 }
 
-func (observedIndexRules) RenameCarries(schemaext.Kind) bool { return false }
+func (r observedIndexRules) RenameCarries(schemaext.Kind) bool { return r.facets }
 
 // ownsColumns reports whether the provider owns the lifecycle of its tables,
 // and so the columns it adds and drops: it assesses each altered table whole

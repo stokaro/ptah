@@ -80,3 +80,18 @@ func TestCompatProviderTextUnits_HappyPath(t *testing.T) {
 	c.Assert(out, qt.Contains, `ALTER TABLE "items" ADD COLUMN "added" REAL;`)
 	f.assertStopped(c)
 }
+
+// TestCompatProviderTextUnitsInApply_HappyPath previews, through a provider
+// that plans the new column as a native operation and writes it as text, the
+// provider's statement, as the built-in engines' plans are shown.
+func TestCompatProviderTextUnitsInApply_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	f, desired := compatOperationsFixture(c, "native-text", `CREATE TABLE "items" ("id" INTEGER NOT NULL PRIMARY KEY, "added" REAL)`)
+
+	out, stderr, code := f.run(f.withManifest(), "schema", "apply", "--url", f.address, "--to", desired, "--tx-mode", "none", "--dry-run")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Contains, `ALTER TABLE "items" ADD COLUMN "added" REAL;`+"\n")
+	c.Assert(out, qt.Not(qt.Contains), "Native operation:")
+	f.assertStopped(c)
+}

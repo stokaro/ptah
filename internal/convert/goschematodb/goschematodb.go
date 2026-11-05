@@ -751,6 +751,7 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			// Without it, a view declaring SCHEMABINDING compared with its
 			// own conversion was replaced on every run.
 			Attributes: slices.Clone(view.Attributes),
+			Options:    slices.Clone(view.Options),
 		})
 	}
 	return out
@@ -766,6 +767,7 @@ func toDBMaterializedViews(views []schemamodel.MaterializedView) []catalog.Mater
 			Schema:  schema,
 			Body:    view.Body,
 			Comment: view.Comment,
+			Options: slices.Clone(view.Options),
 		})
 	}
 	return out

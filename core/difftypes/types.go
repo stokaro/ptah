@@ -1142,22 +1142,6 @@ type SchemaDiff struct {
 	// A reversal runs against the same database and carries the same grants.
 	CurrentGrants []GrantRef `json:"-"`
 
-	// CurrentViewOptions is the options the read reported on the views and
-	// materialized views that have any, carried off the wire: a view's
-	// security_invoker or security_barrier, a materialized view's storage
-	// parameters.
-	//
-	// Ptah declares none of them, so a comparison ignores them. A planner that
-	// writes CREATE OR REPLACE VIEW for a view the database holds, or drops
-	// one and creates it again, writes them back. PostgreSQL's replace sets
-	// the options the statement states and clears the others, and a view
-	// created again starts with none, so a security_invoker view would start
-	// running with its owner's privileges.
-	//
-	// A reversal runs against the same database and carries the same
-	// options.
-	CurrentViewOptions ViewLikeOptions `json:"-"`
-
 	// Features is every named feature object on each side, changed or not,
 	// carried once for the whole diff and off the wire. A planner reads it
 	// where a rule about one object depends on objects the change set does
@@ -2139,16 +2123,39 @@ type ViewDiff struct {
 	//
 	// Reverse plan builders set it; a forward comparison leaves it false.
 	Rollback bool `json:"rollback,omitempty"`
+
+	// PreviousOptions is the options the view holds before this change runs:
+	// the database side of a forward comparison, and the options the forward
+	// change leaves in a reversed one. A change whose only entry is
+	// [OptionsChange] is planned in place, and the statement that makes it
+	// resets each option held here that Desired does not state.
+	//
+	// It stays off the wire, as Desired does.
+	PreviousOptions []string `json:"-"`
+}
+
+// OptionsChange is the key a view's or a materialized view's Changes carries
+// when the options the declaration states differ from the ones the database
+// holds. It is the one change either kind takes in place, without touching
+// the definition: ALTER VIEW and ALTER MATERIALIZED VIEW set and reset
+// options, and a materialized view keeps its rows.
+const OptionsChange = "options"
+
+// OptionsOnly reports whether the options are all this change changes, so
+// the view keeps its definition and a planner changes the options in place.
+func (d ViewDiff) OptionsOnly() bool {
+	_, changed := d.Changes[OptionsChange]
+	return changed && len(d.Changes) == 1
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
 //
-// Changes holds the common definition's changes, and any of them replaces the
-// view. FeatureChanges holds owner-defined changes to settings attached to the
-// view; a view whose only changes are attached settings keeps its rows unless
-// one of those changes reports [schemaext.OwnerReplacement], in which case it
-// is replaced like any other modified view. [MaterializedViewDiff.Replaces]
-// answers which.
+// Changes holds the common definition's changes, and any of them but
+// [OptionsChange] replaces the view. FeatureChanges holds owner-defined
+// changes to settings attached to the view; a view whose only changes are its
+// options and attached settings keeps its rows unless one of those settings'
+// changes reports [schemaext.OwnerReplacement], in which case it is replaced
+// like any other modified view. [MaterializedViewDiff.Replaces] answers which.
 type MaterializedViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
@@ -2183,18 +2190,37 @@ type MaterializedViewDiff struct {
 	// An empty value means not known, and a planner orders the drop by
 	// Desired's body instead. It stays off the wire, as Desired does.
 	PreviousBody string `json:"-"`
+
+	// PreviousOptions is the storage parameters the view holds before this
+	// change runs, on the terms of [ViewDiff.PreviousOptions]. It stays off
+	// the wire, as Desired does.
+	PreviousOptions []string `json:"-"`
 }
 
 // Replaces reports whether planning this change drops and recreates the view.
-// Every modification does, except one whose only changes are attached settings
-// their owner applies in place.
+// Every modification does, except one whose only changes are its options,
+// which ALTER MATERIALIZED VIEW sets and resets, and attached settings their
+// owner applies in place.
 func (d MaterializedViewDiff) Replaces() bool {
-	if len(d.Changes) > 0 || len(d.FeatureChanges) == 0 {
-		return true
+	for key := range d.Changes {
+		if key != OptionsChange {
+			return true
+		}
+	}
+	if len(d.FeatureChanges) == 0 {
+		return len(d.Changes) == 0
 	}
 	return slices.ContainsFunc(d.FeatureChanges, func(change schemaext.ChangeRecord) bool {
 		return schemaext.ReplacesOwner(change.Value)
 	})
+}
+
+// ChangesOptions reports whether this change sets or resets the view's
+// options, which a planner does in place unless the change
+// [MaterializedViewDiff.Replaces] the view.
+func (d MaterializedViewDiff) ChangesOptions() bool {
+	_, changed := d.Changes[OptionsChange]
+	return changed
 }
 
 // TriggerRef identifies a trigger by table and trigger name.
@@ -2881,35 +2907,6 @@ func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges {
 		declarations = append(declarations, IndexChange{Index: index.Clone(), TableName: owners[position]})
 	}
 	return declarations
-}
-
-// ViewLikeOptions is the options a read of PostgreSQL reported on views and
-// materialized views, each `name=value` as pg_class.reloptions holds it, keyed
-// by the name the read gives the object: bare in the schema it reads, and
-// qualified elsewhere. A view's check option is not among them, because the
-// comparison models it. An object with no options has no entry.
-type ViewLikeOptions struct {
-	// Views holds each view's options: security_invoker, security_barrier.
-	Views map[string][]string
-	// MaterializedViews holds each materialized view's storage parameters,
-	// such as fillfactor.
-	MaterializedViews map[string][]string
-}
-
-// Clone returns options that share no map or list with o.
-func (o ViewLikeOptions) Clone() ViewLikeOptions {
-	return ViewLikeOptions{Views: cloneOptionMap(o.Views), MaterializedViews: cloneOptionMap(o.MaterializedViews)}
-}
-
-func cloneOptionMap(options map[string][]string) map[string][]string {
-	if options == nil {
-		return nil
-	}
-	clone := make(map[string][]string, len(options))
-	for name, values := range options {
-		clone[name] = slices.Clone(values)
-	}
-	return clone
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

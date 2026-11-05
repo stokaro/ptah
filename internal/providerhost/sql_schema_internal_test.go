@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -197,6 +198,67 @@ func TestSQLSchemaRefusesTheSettingsOfAView(t *testing.T) {
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)
 			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
+		})
+	}
+}
+
+// sqlFacetSemantics are case-insensitive rules, so a facet's owner and its
+// declaration may spell one name two ways, with app the default schema.
+func sqlFacetSemantics() identifier.Semantics {
+	return identifier.Semantics{DefaultSchema: "app", TableNames: identifier.ComparisonASCIIInsensitive, ColumnNames: identifier.ComparisonASCIIInsensitive,
+		IndexNames: identifier.ComparisonASCIIInsensitive, IndexNamespace: identifier.IndexNamespaceTable}
+}
+
+// TestSQLSchemaFacetSlot_HappyPath finds the facets of the table, column or
+// index a facet's owner names, under the engine's rules, with an empty
+// schema read as the default one.
+func TestSQLSchemaFacetSlot_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		owner *protocol.Reference
+		want  string
+	}{
+		{"a table", &protocol.Reference{Kind: "table", Schema: "app", Name: "ITEMS"}, "table items"},
+		{"a table of the default schema", &protocol.Reference{Kind: "table", Name: "items"}, "table items"},
+		{"a column", &protocol.Reference{Kind: "column", Schema: "app", Path: []string{"items"}, Name: "STATE"}, "column state"},
+		{"an index", &protocol.Reference{Kind: "index", Schema: "app", Path: []string{"Items"}, Name: "by_state"}, "index by_state"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, err := sqlSchemaCommon(fullSQLSchemaReply())
+			c.Assert(err, qt.IsNil)
+			slots := map[string]*schemaext.Facets{"table items": &database.Tables[0].Facets, "column state": &database.Fields[1].Facets,
+				"index by_state": &database.Indexes[0].Facets}
+			slot, err := sqlFacetSlot(&database, sqlFacetSemantics(), test.owner)
+			c.Assert(err, qt.IsNil)
+			c.Assert(slot, qt.Equals, slots[test.want])
+		})
+	}
+}
+
+// The SDK refuses such an owner before the host sees it; the host refuses it
+// again rather than drop the facet, should the two rules ever disagree.
+func TestSQLSchemaFacetSlot_FailurePath(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		owner   *protocol.Reference
+		wantErr string
+	}{
+		{"an undeclared table", &protocol.Reference{Kind: "table", Schema: "app", Name: "other"}, `.*a SQL schema facet names no declared table`},
+		{"a table of another schema", &protocol.Reference{Kind: "table", Schema: "audit", Name: "items"}, `.*a SQL schema facet names no declared table`},
+		{"an undeclared column", &protocol.Reference{Kind: "column", Schema: "app", Path: []string{"items"}, Name: "other"},
+			`.*a SQL schema facet names no declared column of table "app\.items"`},
+		{"an undeclared index", &protocol.Reference{Kind: "index", Schema: "app", Path: []string{"items"}, Name: "other"},
+			`.*a SQL schema facet names no declared index of table "app\.items"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, err := sqlSchemaCommon(fullSQLSchemaReply())
+			c.Assert(err, qt.IsNil)
+			slot, err := sqlFacetSlot(&database, sqlFacetSemantics(), test.owner)
+			c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(slot, qt.IsNil)
 		})
 	}
 }

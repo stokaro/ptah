@@ -611,6 +611,52 @@ func TestSurfaceColumnMatchesWhatEachProfileReports(t *testing.T) {
 	}
 	c.Assert(nativeOnly, qt.Contains, "BC101=native only")
 	c.Assert(nativeOnly, qt.Contains, "DS101=both")
+	c.Assert(nativeOnly, qt.Contains, "PG401P=native only")
+	c.Assert(nativeOnly, qt.Contains, "PG402P=native only")
+}
+
+// TestIdentifierRulesAreNativeOnly measures the native-only claim for PG401P
+// and PG402P on a directory whose second index PostgreSQL cuts to the name of
+// the first: native lint reports both, and the compatibility profile, whose
+// `migrate lint` keeps the community binary's findings and exit code, reports
+// neither.
+func TestIdentifierRulesAreNativeOnly(t *testing.T) {
+	c := qt.New(t)
+	long := strings.Repeat("k", 63)
+	files := map[string]string{
+		"0000000001_index.up.sql": "CREATE TABLE t (a int, b int);\nCREATE INDEX \"" + long + "_alpha\" ON t (a);\n" +
+			"CREATE INDEX \"" + long + "_beta\" ON t (b);\n",
+		"0000000001_index.down.sql": "DROP TABLE t;\n",
+	}
+
+	native := postgresFindingCodes(c, files, lint.CompatibilityProfileNative)
+	compat := postgresFindingCodes(c, files, lint.CompatibilityProfileAtlas)
+
+	c.Assert(native, qt.Contains, "PG401P")
+	c.Assert(native, qt.Contains, "PG402P")
+	c.Assert(compat, qt.Not(qt.Contains), "PG401P")
+	c.Assert(compat, qt.Not(qt.Contains), "PG402P")
+}
+
+// postgresFindingCodes is [findingCodes] for a PostgreSQL run, which the
+// PostgreSQL owner's rules need to be sent at all.
+func postgresFindingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityProfile) []string {
+	c.Helper()
+	fsys := fstest.MapFS{}
+	for name, content := range files {
+		fsys[name] = &fstest.MapFile{Data: []byte(content)}
+	}
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
+		DirFormat:     migrationfile.DirFormatPtah,
+		Compatibility: profile,
+		Dialect:       "postgres",
+	})
+	c.Assert(err, qt.IsNil)
+	var codes []string
+	for _, finding := range analysis.Findings() {
+		codes = append(codes, finding.Rule)
+	}
+	return codes
 }
 
 // TestAtlasCatalogNamesEveryRowThatIsNotCovered pins the non-covered rows by

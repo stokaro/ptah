@@ -88,6 +88,7 @@ import (
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/viewoptions"
 	"ptah.run/internal/yamlvalue"
 )
 
@@ -348,7 +349,9 @@ type viewSpec struct {
 	Name       stringScalar `yaml:"name"`
 	Body       stringScalar `yaml:"body"`
 	WithCheck  bool         `yaml:"with_check"`
-	Comment    stringScalar `yaml:"comment"`
+	// Options are the view's PostgreSQL options, each `name=value`.
+	Options []stringScalar `yaml:"options"`
+	Comment stringScalar   `yaml:"comment"`
 }
 
 type matViewSpec struct {
@@ -361,9 +364,12 @@ type matViewSpec struct {
 	// nothing about why a correctly spelled key stopped working
 	// (stokaro/ptah#1625). It is a yaml.Node so that `refresh_strategy:` with
 	// no value, and an empty string, are refused as well as a real value.
-	RefreshStrategy yaml.Node            `yaml:"refresh_strategy"`
-	Comment         stringScalar         `yaml:"comment"`
-	Owned           map[string]yaml.Node `yaml:",inline"`
+	RefreshStrategy yaml.Node `yaml:"refresh_strategy"`
+	// Options are the materialized view's PostgreSQL storage parameters, each
+	// `name=value`.
+	Options []stringScalar       `yaml:"options"`
+	Comment stringScalar         `yaml:"comment"`
+	Owned   map[string]yaml.Node `yaml:",inline"`
 }
 
 type triggerSpec struct {
@@ -983,11 +989,24 @@ func (d document) addFunctions(db *schemamodel.Database, owners yamlext.Set) err
 	return nil
 }
 
+// scalarStrings is values as strings, nil for none.
+func scalarStrings(values []stringScalar) []string {
+	var out []string
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
+}
+
 func (d document) addViews(db *schemamodel.Database) error {
 	for _, key := range sortedKeys(d.Views) {
 		spec := d.Views[key]
 		if string(spec.Body) == "" {
 			return fmt.Errorf("view %q requires body", key)
+		}
+		options, err := viewoptions.Normalize(scalarStrings(spec.Options))
+		if err != nil {
+			return fmt.Errorf("view %q: %w", key, err)
 		}
 		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
@@ -995,6 +1014,7 @@ func (d document) addViews(db *schemamodel.Database) error {
 			Body:       string(spec.Body),
 			WithCheck:  spec.WithCheck,
 			Comment:    string(spec.Comment),
+			Options:    options,
 		})
 	}
 	return nil
@@ -1018,12 +1038,17 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 		if err != nil {
 			return fmt.Errorf("materialized view %q: %w", key, err)
 		}
+		options, err := viewoptions.Normalize(scalarStrings(spec.Options))
+		if err != nil {
+			return fmt.Errorf("materialized view %q: %w", key, err)
+		}
 		db.MaterializedViews = append(db.MaterializedViews, schemamodel.MaterializedView{
 			Facets:     facets,
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
 			Body:       string(spec.Body),
 			Comment:    string(spec.Comment),
+			Options:    options,
 		})
 	}
 	return nil

@@ -323,6 +323,24 @@ PostgreSQL drops or follows the object with the column, but the schema file
 keeps its text. Drop the object first, or declare the column under its final
 name.
 
+## Declare view options
+
+The `WITH` list before `AS` declares a PostgreSQL view's options and a
+materialized view's storage parameters, in the spellings `pg_dump` writes and
+the bare ones alike:
+
+```sql
+CREATE VIEW order_report WITH (security_invoker = 'true') AS
+  SELECT id, amount FROM orders;
+CREATE MATERIALIZED VIEW order_totals WITH (fillfactor = 70) AS
+  SELECT sum(amount) AS total FROM orders;
+```
+
+A view declared without the list is a view without options, so the plan
+removes an option the database holds and the file leaves out. [View options
+and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
+says how they are compared and changed, and which engines take them.
+
 ## Comments
 
 `COMMENT ON CONSTRAINT ... ON table` stays executable when parsed SQL is rendered.
@@ -517,6 +535,17 @@ name they share. It holds under `IF NOT EXISTS` and `OR REPLACE` too, where the
 server skips the second statement or lets it replace the first: the file names
 two objects, and the server would keep one of them without an error. Ptah is
 stricter than the server here.
+
+Lint reports the same names without a database. `ptah sql lint` reports each
+cut name as `DDL003`, a warning, and each cut name the server refuses as already
+in use as `DDL004`, an error, at the line and column where the name is written.
+`ptah migrations lint` reports them as `PG401P` and `PG402P` at the line of the
+statement, and follows the names across the directory in the order its
+versions apply. A guarded statement whose cut name lands on a name in use is
+reported as `DDL003` or `PG401P`, with a note that the server keeps one of the
+two objects, because the server accepts the statement. Both commands read
+`.ptah-lint.yaml`, so a project can promote `DDL003` to an error or disable it
+like any other rule; see [Lint rules](../../reference/lint-rules/).
 
 The same namespaces decide a name written twice. A table created again without
 `IF NOT EXISTS`, a second index of one name, an index, view or sequence named

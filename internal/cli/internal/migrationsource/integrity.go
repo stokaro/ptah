@@ -1,6 +1,7 @@
 package migrationsource
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -39,8 +40,9 @@ type VerifyOptions struct {
 // again. Both halves are therefore stated once, here, beside the [Source] type
 // that carries the provenance bits the sentence is built from.
 //
-// notice receives the override announcement from the gate; pass the command's
-// standard error. emit receives the operator-facing warning and the verbose
+// notice receives the override announcement from the gate, and the SQL files
+// atlas.sum leaves out of the run, raised for the run ctx carries; pass the
+// command's standard error. emit receives the operator-facing warning and the verbose
 // confirmation. runtime records the same warning as structured output, so a run
 // whose provenance was qualified is visible to a log collector and not only to
 // whoever was watching the terminal.
@@ -51,6 +53,7 @@ type VerifyOptions struct {
 // fill a field would silently lose [migrationintegrity.AllowUnverifiedEnvVar]
 // instead of failing to compile.
 func Verify(
+	ctx context.Context,
 	notice io.Writer,
 	emit cliobs.Emitter,
 	runtime *cliobs.Runtime,
@@ -60,6 +63,7 @@ func Verify(
 	opts VerifyOptions,
 ) error {
 	verifiedSumFile, err := migrationintegrity.GateWithPolicy(
+		ctx,
 		notice,
 		source.FileSystem,
 		format,

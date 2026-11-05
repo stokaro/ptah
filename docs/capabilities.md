@@ -173,6 +173,7 @@ so typos fail fast. Current registry:
 | `local_min_max_indexes` | Ptah declares, reads and plans YDB column-table local min-max indexes |
 | `local_ngram_indexes` | Ptah declares, reads and plans YDB column-table local n-gram Bloom indexes |
 | `materialized_view_comments` | COMMENT ON MATERIALIZED VIEW, stored where obj_description reads it back |
+| `materialized_view_options` | a materialized view's storage parameters: CREATE MATERIALIZED VIEW ... WITH (fillfactor, ...), ALTER MATERIALIZED VIEW ... SET and RESET, read back from pg_class.reloptions |
 | `materialized_views` | CREATE MATERIALIZED VIEW: a view whose query result is stored |
 | `migration_lock_timeout` | a migration can be bounded by a lock timeout, which limits how long a statement waits for a lock |
 | `migration_statement_timeout` | a migration can be bounded by a statement timeout, which limits how long each statement runs |
@@ -232,6 +233,7 @@ so typos fail fast. Current registry:
 | `vector_index_maintained_on_write` | a vector index takes in the rows written after its build, so inference may write into an indexed generation (YDB 25.3 and later) |
 | `vector_indexes` | Ptah declares, reads, plans and builds for inference a YDB vector index, GLOBAL USING vector_kmeans_tree (behind a flag on YDB 25.1) |
 | `view_comments` | COMMENT ON VIEW, stored where Ptah's reader reads it back: obj_description, or a YDB view's attribute |
+| `view_options` | a view's PostgreSQL options: CREATE VIEW ... WITH (security_invoker, security_barrier), ALTER VIEW ... SET and RESET, read back from pg_class.reloptions |
 | `views` | standalone CREATE VIEW ... AS <query> objects |
 | `wide_date_time_types` | YDB's 64-bit date and time types Date32, Datetime64, Timestamp64 and Interval64 (YDB 25.2 and later) |
 | `xml_type` | PostgreSQL XML column type |
@@ -397,6 +399,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `local_min_max_indexes` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `local_ngram_indexes` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `materialized_view_comments` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `materialized_view_options` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | `migration_lock_timeout` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `migration_statement_timeout` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -456,6 +459,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `vector_index_maintained_on_write` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `vector_indexes` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `view_comments` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `view_options` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `wide_date_time_types` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ |
@@ -513,7 +517,7 @@ raw-SQL view/trigger rendering, `XML` columns, standalone sequences, and
 row-level security in the shape T-SQL has a form for. Drift-safe normalization
 for SQL Server-specific view, trigger, and index metadata is outside it.
 
-YDB has no preset here. The [YDB provider](site/src/content/docs/databases/ydb.md)
+YDB has no preset here. The [YDB provider](site/src/content/docs/extend/providers/ydb.md)
 declares its own release lines and reports each session's capabilities,
 including the keys a cluster's feature flags decide.
 

@@ -2,12 +2,14 @@ package atlashclrender
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/hclext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -123,11 +125,34 @@ func (r *renderer) renderRoles() {
 		if role.Replication {
 			r.trueAttr(1, "replication")
 		}
-		r.stringAttr(1, "password", role.Password)
+		r.rolePassword(role)
 		r.stringAttr(1, "comment", role.Comment)
 		r.line("}")
 		r.line("")
 	}
+}
+
+// rolePassword writes a role's password the way every statement names it:
+// the variable it is read from, never the password or the hash (ADR 0071; see
+// [rolepassword.Statement]). Read back, the reference names that variable, so
+// the document holds no credential. A password that was a value is reported:
+// the value is in no document now, and whoever applies one exports the
+// variable, which is also why a cleanup of the source annotations refuses it.
+func (r *renderer) rolePassword(role schemamodel.Role) {
+	if role.Password == "" {
+		return
+	}
+	reference := rolepassword.Statement(role.Name, role.Password)
+	r.stringAttr(1, "password", reference)
+	if _, named := rolepassword.Named(role.Password); named {
+		return
+	}
+	r.diagnostics = append(r.diagnostics, Diagnostic{
+		Severity: SeverityWarning,
+		Path:     fmt.Sprintf("roles[%q].password", role.Name),
+		Message: fmt.Sprintf("role %s: the password is written as %s, the variable it is read from when the schema is applied; "+
+			"the value is not in this document", role.Name, reference),
+	})
 }
 
 func (r *renderer) renderRowSecurity(rlsEnabled *schemamodel.RLSEnabledTable) {

@@ -20,6 +20,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/integrationfixture"
+	"ptah.run/internal/planstyle"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/testsummary"
 	"ptah.run/migration/generator"
@@ -581,6 +582,7 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 		ctx, vem.runtime,
 		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities,
+			Statements:   planstyle.Statements,
 		},
 	)
 
@@ -591,6 +593,7 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, con
 		ctx, vem.runtime,
 		diff, info.Dialect, planext.Options{
 			Capabilities: info.Capabilities,
+			Statements:   planstyle.Statements,
 		},
 	)
 

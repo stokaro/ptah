@@ -1,7 +1,8 @@
 // Package main serves the fixture engine in the DOCUMENT mode: the provider
 // reads every SQL schema document of the engine whole, in the fixture's narrow
-// dialect, and the host does not parse the text. It is transport evidence for
-// ReadSQLSchema, not an engine grammar.
+// dialect, and the host does not parse the text. Its retention statements give
+// a table or a column a facet the reply carries under schema.sql-facets. It is
+// transport evidence for ReadSQLSchema, not an engine grammar.
 package main
 
 import (
@@ -24,7 +25,7 @@ func main() {
 		}
 	}
 	owner := &documentProvider{Provider: &backend.Provider{}}
-	description := backend.SQLDocumentDescription()
+	description := facetDescription()
 	description.Features = append(description.Features, provider.LocksFeature)
 	description.Engines[0].Features = append(description.Engines[0].Features, provider.LocksFeature)
 	err := runtime.Serve(runtime.Server{Description: description, Locks: owner, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner,

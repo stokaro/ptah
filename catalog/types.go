@@ -160,6 +160,18 @@ type Database struct {
 	// the database, and a description that carried it would not be portable.
 	UnregisteredVirtualTables []VirtualTable `json:"-"`
 
+	// UnreadTables lists the tables this read found and does not describe,
+	// each with the reader's reason, such as a YDB replica table no
+	// replication writes any more. A table named here is one the database
+	// holds, so a comparison refuses a declaration at it rather than plan a
+	// CREATE TABLE the database would reject.
+	//
+	// It is a fact about the read, not part of the description, so it is never
+	// serialized: a document made from this read names nothing about these
+	// tables, and a filter keeps them, since narrowing the description cannot
+	// make the database lose a table.
+	UnreadTables []UnreadTable `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER
@@ -221,6 +233,12 @@ type Schema struct {
 // Type cannot carry it, and the distinction decides which statements are legal:
 // PostgreSQL rejects CREATE INDEX CONCURRENTLY and DROP INDEX CONCURRENTLY on
 // a partitioned relation with SQLSTATE 0A000.
+//
+// Parents names the tables this one is a partition of or inherits from, each
+// as [QualifyTableName] spells it. A plan that removes both drops this table
+// first: a DROP TABLE of a partitioned parent takes its partitions, so a later
+// drop of one finds nothing, and a parent of plain inheritance cannot be dropped
+// while a child holds it. A reader that does not ask leaves it empty.
 type Table struct {
 	// Facets carries typed settings owned by feature providers.
 	Facets  schemaext.Facets `json:"facets,omitzero"`
@@ -237,6 +255,7 @@ type Table struct {
 	EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
 	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
 	Partitioned     bool     `json:"partitioned,omitempty"`       // PostgreSQL declaratively partitioned parent (pg_class.relkind = 'p')
+	Parents         []string `json:"parents,omitempty"`           // Tables this one is a partition of or inherits from; see the type's comment
 	RLSEnabled      bool     `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
 	// RLSForced reports pg_class.relforcerowsecurity: the table's policies
 	// apply to its owner as well. It is independent of RLSEnabled, which
@@ -1209,10 +1228,10 @@ type View struct {
 
 	// Options is the view's own options other than its check option, as the
 	// server holds them, `name=value`: PostgreSQL's security_invoker and
-	// security_barrier. Ptah declares and compares none of them. A planner
-	// that replaces the view or creates it again writes them back, because
-	// CREATE OR REPLACE VIEW clears the options it does not state and a new
-	// view has none.
+	// security_barrier. The value is the spelling the server stored, so
+	// `security_invoker = on` reads back as security_invoker=on; a comparison
+	// reads it through [ptah.run/core/schemamodel.View.Options]' rules rather
+	// than as text.
 	Options []string `json:"options,omitempty"`
 }
 
@@ -1233,8 +1252,8 @@ type MaterializedView struct {
 	Comment string           `json:"comment"` // Materialized view comment/description
 
 	// Options is the materialized view's storage parameters as the server
-	// holds them, `name=value`, such as fillfactor or an autovacuum setting.
-	// Ptah declares and compares none of them; see [View.Options].
+	// holds them, `name=value`, such as fillfactor or an autovacuum setting;
+	// see [View.Options].
 	Options []string `json:"options,omitempty"`
 
 	// Unpopulated reports that the server holds the view without rows, as

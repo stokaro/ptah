@@ -38,6 +38,36 @@ func (t *target) commonKinds() map[protocol.CommonObjectSupport_Kind]bool {
 	return kinds
 }
 
+// declaredViews is the views and materialized views of source on the wire.
+// The common view carries no settings and no PostgreSQL options, so a view
+// that declares either is refused by name rather than sent without them.
+func declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
+	var views []*protocol.SQLView
+	for _, view := range source.Views {
+		if !view.Facets.IsZero() {
+			return nil, unsupported(fmt.Sprintf("settings of view %q", view.Name))
+		}
+		if len(view.Options) > 0 {
+			return nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(view.Options, ", "), view.Name))
+		}
+		schema, name := splitQualified(view.Name)
+		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, Comment: view.Comment,
+			Attributes: slices.Clone(view.Attributes), DependsOn: slices.Clone(view.DependsOn)})
+	}
+	for _, view := range source.MaterializedViews {
+		if !view.Facets.IsZero() {
+			return nil, unsupported(fmt.Sprintf("settings of materialized view %q", view.Name))
+		}
+		if len(view.Options) > 0 {
+			return nil, unsupported(fmt.Sprintf("the storage parameters %s of materialized view %q", strings.Join(view.Options, ", "), view.Name))
+		}
+		schema, name := splitQualified(view.Name)
+		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, Materialized: true, Comment: view.Comment,
+			DependsOn: slices.Clone(view.DependsOn)})
+	}
+	return views, nil
+}
+
 // declaredCommonObjects is the declaration of the common objects beyond
 // tables in source, on the wire, refusing by name a kind the engine does not
 // carry before anything is sent. A comment travels in the field of the object
@@ -66,23 +96,11 @@ func (t *target) declaredCommonObjects(source *schemamodel.Database) (*protocol.
 			return nil, check
 		}
 	}
-	declared := &protocol.DeclaredCommonObjects{}
-	for _, view := range source.Views {
-		if !view.Facets.IsZero() {
-			return nil, unsupported(fmt.Sprintf("settings of view %q", view.Name))
-		}
-		schema, name := splitQualified(view.Name)
-		declared.Views = append(declared.Views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, WithCheck: view.WithCheck, Comment: view.Comment,
-			Attributes: slices.Clone(view.Attributes), DependsOn: slices.Clone(view.DependsOn)})
+	views, err := declaredViews(source)
+	if err != nil {
+		return nil, err
 	}
-	for _, view := range source.MaterializedViews {
-		if !view.Facets.IsZero() {
-			return nil, unsupported(fmt.Sprintf("settings of materialized view %q", view.Name))
-		}
-		schema, name := splitQualified(view.Name)
-		declared.Views = append(declared.Views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, Materialized: true, Comment: view.Comment,
-			DependsOn: slices.Clone(view.DependsOn)})
-	}
+	declared := &protocol.DeclaredCommonObjects{Views: views}
 	for _, sequence := range source.Sequences {
 		if !sequence.Facets.IsZero() || sequence.IfNotExists {
 			return nil, unsupported(fmt.Sprintf("settings or IF NOT EXISTS of sequence %q", sequence.Name))

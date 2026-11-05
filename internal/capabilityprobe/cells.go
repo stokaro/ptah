@@ -735,7 +735,7 @@ var Cells = []Cell{
 	// or an end-to-end suite; see stokaro/ptah#1719.
 	{
 		Dialect: platform.Spanner, Line: "0",
-		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1",
+		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2",
 		Emulated:    true,
 		Versionless: true,
 		Preset:      capability.SpannerPostgres, PresetName: "SpannerPostgres",

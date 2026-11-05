@@ -73,6 +73,34 @@ func TestLintServerPreservesEvidenceAndCancellation(t *testing.T) {
 	c.Assert(owner.calls, qt.Equals, 1)
 }
 
+// A host that does not list lint.transaction-owner cannot name an owner, on
+// either side of the transport: the owner it did not negotiate would reach a
+// rule whose peer never agreed to it.
+func TestLintBoundariesRefuseAnUnnegotiatedTransactionOwner(t *testing.T) {
+	c := qt.New(t)
+	description, request, valid := runtimeLintExchange()
+	description.Features = append(description.Features, provider.LintTransactionOwnerFeature)
+	description.Engines[0].Features = append(description.Engines[0].Features, provider.LintTransactionOwnerFeature)
+	request.TransactionOwner = protocol.LintTransactionOwner_LINT_TRANSACTION_OWNER_FILE
+	owner := &mutatingLinter{}
+	server := &serverAdapter{server: Server{Description: description, Linter: owner}}
+
+	refused, err := server.CheckLintMigrations(c.Context(), request)
+
+	c.Assert(status.Code(err), qt.Equals, codes.InvalidArgument)
+	c.Assert(refused, qt.IsNil)
+	c.Assert(owner.calls, qt.Equals, 0)
+
+	peer := &lintPeer{result: valid}
+	client := &Client{description: provider.NegotiatedDescription(description, nil), rpc: peer}
+
+	refused, err = client.CheckLintMigrations(c.Context(), request)
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(refused, qt.IsNil)
+	c.Assert(peer.calls, qt.Equals, 0)
+}
+
 func TestLintServerIsUnimplementedWithoutAnOwner(t *testing.T) {
 	c := qt.New(t)
 	description, request, _ := runtimeLintExchange()

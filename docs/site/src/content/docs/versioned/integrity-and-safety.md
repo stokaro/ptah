@@ -373,10 +373,15 @@ executing them. The warning above names every affected file on each run.
 
 Native `ptah migrations` commands apply the same selection under
 `--dir-format atlas`, which writes an `atlas.sum` and so is bound by the same
-coverage. Auto mode without an `atlas.sum` keeps reading subdirectories and
-stays self-consistent, because `ptah.sum` is computed from the same discovery
-and covers every file it finds. The declined-file warning is currently printed
-by the `ptah-compat` verbs only.
+coverage, and in auto mode on a directory that holds an `atlas.sum`. Auto mode
+without an `atlas.sum` keeps reading subdirectories and stays self-consistent,
+because `ptah.sum` is computed from the same discovery and covers every file it
+finds. These native verbs name what the selection declined, with the same
+warning: `up`, `down`, `status`, `test`, `lint`, `generate`, `baseline`,
+`checkpoint` and `repair --resume-from`, and `ls` and `show` under
+`--verify-sum`. `validate` does not, as `ptah-compat migrate validate` does
+not. Several declined files are one warning with their number; see
+[Warnings about many objects](../../operate/troubleshooting/#warnings-about-many-objects).
 
 **`migrate lint` is deliberately not gated**, on either tool: inspecting a
 directory that has drifted is the point of linting it. That exemption covers a

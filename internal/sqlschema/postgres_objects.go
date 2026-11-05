@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/triggerdef"
+	"ptah.run/internal/viewoptions"
 )
 
 // This file converts the schema objects beyond tables, indexes and enums that
@@ -70,35 +71,52 @@ func toRole(node *ast.CreateRoleNode, sourcePlatform string) schemamodel.Role {
 	}
 }
 
-func appendView(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) bool {
+func appendView(database *schemamodel.Database, document *Document, statement ast.Node, sourcePlatform string) (bool, error) {
 	switch node := statement.(type) {
 	case *ast.CreateViewNode:
-		appendCreateView(database, document, node, sourcePlatform)
+		return true, appendCreateView(database, document, node, sourcePlatform)
 	case *ast.CreateMaterializedViewNode:
-		database.MaterializedViews = append(database.MaterializedViews, toMaterializedView(node, sourcePlatform))
+		view, err := toMaterializedView(node, sourcePlatform)
+		if err != nil {
+			return true, err
+		}
+		database.MaterializedViews = append(database.MaterializedViews, view)
+		return true, nil
 	default:
-		return false
+		return false, nil
 	}
-	return true
 }
 
-func toView(node *ast.CreateViewNode, sourcePlatform string) schemamodel.View {
+// toView is the view node declares. Its WITH options are held as
+// [viewoptions.Normalize] spells them, and refused where it refuses them.
+func toView(node *ast.CreateViewNode, sourcePlatform string) (schemamodel.View, error) {
+	options, err := viewoptions.Normalize(node.Options)
+	if err != nil {
+		return schemamodel.View{}, fmt.Errorf("view %s: %w", node.Name, err)
+	}
 	return schemamodel.View{
 		Name:      normalizeSQLTableReference(sourcePlatform, node.Name),
 		Body:      strings.TrimSpace(node.Body),
 		WithCheck: node.WithCheck,
 		Comment:   node.Comment,
-	}
+		Options:   options,
+	}, nil
 }
 
-func toMaterializedView(node *ast.CreateMaterializedViewNode, sourcePlatform string) schemamodel.MaterializedView {
-	view := schemamodel.MaterializedView{
+// toMaterializedView is the materialized view node declares, with its storage
+// parameters held as [toView] holds a view's options.
+func toMaterializedView(node *ast.CreateMaterializedViewNode, sourcePlatform string) (schemamodel.MaterializedView, error) {
+	options, err := viewoptions.Normalize(node.Options)
+	if err != nil {
+		return schemamodel.MaterializedView{}, fmt.Errorf("materialized view %s: %w", node.Name, err)
+	}
+	return schemamodel.MaterializedView{
 		Facets:  node.Facets,
 		Name:    normalizeSQLTableReference(sourcePlatform, node.Name),
 		Body:    strings.TrimSpace(node.Body),
 		Comment: node.Comment,
-	}
-	return view
+		Options: options,
+	}, nil
 }
 
 func toFunction(node *ast.CreateFunctionNode, sourcePlatform string) schemamodel.Function {

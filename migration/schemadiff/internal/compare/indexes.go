@@ -902,11 +902,33 @@ func indexDefinitionsChanged(
 // change, so the plan writes the index and refuses it with the renderer's own
 // message, as a render of the same schema does. The read side is left out
 // there: a payload Ptah cannot render is never one a plan could restore.
+//
+// An engine an executable provider serves is not one of those targets unless
+// its facts say so. The provider renders and reads the payload, and a provider
+// that states no answer for the key leaves it unknown; read as absent, the
+// key would plan an index whose payload the database holds as it is declared
+// as a change on every run, dropping it and creating it again. So an unknown
+// answer on an engine no descriptor describes compares the two lists, and
+// the provider refuses a payload it cannot write when it renders.
 func indexPayloadChanged(desired, database []string, dialect string, semantics identifier.Semantics) bool {
-	if !capability.ForDialect(dialect).Has(capability.IndexCoveringColumns) {
+	caps := capability.ForDialect(dialect)
+	if !caps.Has(capability.IndexCoveringColumns) && !providerAnswersPayload(dialect, caps) {
 		return len(desired) > 0
 	}
 	return coveredColumnsChanged(desired, database, semantics)
+}
+
+// providerAnswersPayload reports whether dialect is an engine no descriptor
+// describes and whose capabilities leave index_covering_columns unknown: the
+// provider that serves it decides the payload, so its lists are compared.
+func providerAnswersPayload(dialect string, caps capability.Capabilities) bool {
+	if dialect == "" {
+		return false
+	}
+	if _, described := platform.Lookup(dialect); described {
+		return false
+	}
+	return !caps.Established(capability.IndexCoveringColumns)
 }
 
 // namedKeyPartsContradict answers the only question a partly-read key

@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgschemastate"
 	"ptah.run/internal/pgsystemschema"
+	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/serverobjects"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlrunner"
@@ -192,7 +193,9 @@ func NewPostgreSQLWriterForRunnerWithCapabilities(
 // must be passed via args and referenced through `$N` placeholders; the SQL
 // string itself should never be assembled with fmt.Sprintf for value
 // interpolation. Identifiers (table/column names) cannot be parameterized
-// and must be escaped via quoteIdent before being substituted in.
+// and must be escaped via quoteIdent before being substituted in. A role's
+// password variable the statement names is written in first, and kept out of
+// the error; see [expandPasswords].
 func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
@@ -202,9 +205,12 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 		return fmt.Errorf("no database connection")
 	}
 
-	_, err := w.db.ExecContext(ctx, sqlExpr, args...)
+	expanded, err := expandPasswords(sqlExpr, rolepassword.Lookup(ctx))
 	if err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
+		return err
+	}
+	if _, err := w.db.ExecContext(ctx, expanded.text, args...); err != nil {
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", expanded.redact(err), sqlExpr)
 	}
 	return nil
 }
@@ -238,9 +244,12 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 	if w.tx == nil {
 		return fmt.Errorf("transaction is closed")
 	}
-	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
+	expanded, err := expandPasswords(sqlExpr, rolepassword.Lookup(ctx))
 	if err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
+		return err
+	}
+	if _, err := w.tx.ExecContext(ctx, expanded.text, args...); err != nil {
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", expanded.redact(err), sqlExpr)
 	}
 	return nil
 }

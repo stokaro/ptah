@@ -184,6 +184,39 @@ func TestOperations_NameTheirCapabilityAndObject(t *testing.T) {
 	}
 }
 
+// TestDrop_EffectNamesWhatTheDropTakes pins the reason a safety report gives
+// for a removed type. The impact is the same either way; the reason says what
+// the statement in front of the reader does, and a drop with no CASCADE takes
+// no column.
+func TestDrop_EffectNamesWhatTheDropTakes(t *testing.T) {
+	tests := []struct {
+		name   string
+		drop   *pgtype.Drop
+		reason string
+	}{
+		{
+			name:   "without CASCADE",
+			drop:   &pgtype.Drop{Target: target(pgtype.DomainKind, "", "qty")},
+			reason: "DROP removes the type, and the server refuses it while a column or another object uses the type",
+		},
+		{
+			name:   "with CASCADE",
+			drop:   &pgtype.Drop{Target: target(pgtype.DomainKind, "", "qty"), Cascade: true},
+			reason: "DROP removes the type, and with CASCADE the columns and objects that use it",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			effect := test.drop.Effect()
+
+			c.Assert(effect.Impact, qt.Equals, schemaext.Destructive)
+			c.Assert(effect.Reason, qt.Equals, test.reason)
+		})
+	}
+}
+
 // TestOperations_ReportTheirEffectAndChange pins what a safety check and a
 // schema-change report read: a drop and a dropped attribute destroy, a
 // creation adds, and each names the type it is about.

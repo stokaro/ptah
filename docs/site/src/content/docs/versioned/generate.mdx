@@ -196,6 +196,17 @@ up file:
 DROP TABLE IF EXISTS "users";
 ```
 
+A generated file assumes the database is in the state `generate` read. On a
+PostgreSQL-family database its statements carry no comment that only describes
+them and no `IF EXISTS` or `IF NOT EXISTS`, unless an earlier statement of the
+file may already have removed the object, and a drop carries `CASCADE` only
+where the file relies on it. That file then stops at the first statement that
+does not fit the database it runs on: a drop of a table that is gone, an index
+whose name is taken, or a drop an object the schema does not declare holds back.
+`migrations up` runs it in one transaction there unless the file opts out, so
+nothing of it stays applied. The MySQL family leaves out the comment and keeps
+its guards, and the SQLite planner above keeps both.
+
 On MySQL and MariaDB, `migrations up` runs a file inside a transaction unless
 the file opts out, and refuses one whose statements it cannot tie to that
 transaction: a trigger, view or routine definition, `LOCK TABLES`, or a

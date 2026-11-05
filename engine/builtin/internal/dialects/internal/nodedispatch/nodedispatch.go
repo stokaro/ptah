@@ -51,3 +51,24 @@ func RefuseSerialSequence(dialect string, node *ast.AlterSerialSequenceNode) err
 			"capability %s, unavailable on this %s target", node.Column, node.Table, capability.SerialSequenceOptions, dialect),
 	}
 }
+
+// RefuseViewOptions refuses node, an in-place change of the PostgreSQL options
+// of a view or a materialized view, on dialect, a target without
+// [capability.ViewOptions] or [capability.MaterializedViewOptions].
+//
+// The answer is the same on every such target: none of them keeps the options
+// a PostgreSQL view does, so the change has no object to apply to, and a plan
+// that left it out would report the options changed while nothing changed.
+func RefuseViewOptions(dialect string, node *ast.AlterViewOptionsNode) error {
+	kind, key := "view", capability.ViewOptions
+	if node.Materialized {
+		kind, key = "materialized view", capability.MaterializedViewOptions
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("changing the options of %s %q, which requires target capability %s, unavailable on this %s target",
+			kind, node.Name, key, dialect),
+	}
+}

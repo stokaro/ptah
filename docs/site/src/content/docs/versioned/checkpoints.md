@@ -109,7 +109,7 @@ On YDB the provider writes every value in its column's type as the replayed
 table has it, `Decimal('1.5', 22, 9)` or `Timestamp('2026-01-02T03:04:05Z')`, because YQL
 does not convert a literal to the column's type. The shadow database is a dev
 realm in the database the URL names; see
-[YDB](../../databases/ydb/#dev-shadow-and-scratch-databases).
+[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#dev-shadow-and-scratch-databases).
 
 A table that does not exist at the checkpoint's version is refused, and so is a
 table with no primary key: rows with no identity are not rows this mechanism can

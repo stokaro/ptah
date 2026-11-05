@@ -72,7 +72,26 @@ type Diagnostic struct {
 	Severity Severity
 	Path     string
 	Message  string
+	// AtlasBlock says what an Atlas-compatible rendering did with a block the
+	// Atlas community CLI refuses; see [RenderInspectedForAtlasCLI]. It is
+	// empty for every other diagnostic, each of which is a detail the
+	// document leaves out.
+	AtlasBlock AtlasBlockFate
 }
+
+// AtlasBlockFate is what an Atlas-compatible rendering did with a block the
+// Atlas community CLI refuses.
+type AtlasBlockFate string
+
+const (
+	// AtlasBlockOmitted is a block the rendering leaves out, so the community
+	// CLI can read the document.
+	AtlasBlockOmitted AtlasBlockFate = "omitted"
+	// AtlasBlockKept is a block the rendering keeps because omitting it would
+	// lose what another object needs, so the community CLI cannot read the
+	// document.
+	AtlasBlockKept AtlasBlockFate = "kept"
+)
 
 // TriggerDiagnosticPath returns an unambiguous diagnostic identity for a
 // trigger, whose schema identity is the pair of target table and trigger name.
