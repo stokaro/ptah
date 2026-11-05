@@ -1815,8 +1815,9 @@ definition once per table. Where both sides list the feature, the SDK replaces
 each `ValueModel` outside `Describe` that equals a model of the negotiated
 description with `provider.ModelReference`: the `kind`, `representation`,
 `schema_version` and `definition_sha256` alone. A model the description does
-not declare, or declares differently in two engines, travels whole. The
-receiving SDK replaces each reference with the described model before a
+not declare, or declares differently in two engines, travels whole.
+
+The receiving SDK replaces each reference with the described model before a
 service or a validator reads the message, so neither a host adapter nor a
 provider service sees one. A server answers a reference it cannot resolve
 with `InvalidArgument`; a client reports such a reply as malformed. Without
