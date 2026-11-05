@@ -1457,7 +1457,8 @@ A guard stays where an earlier statement of the same file may already have
 removed the object: a view a `CASCADE` above it may have taken, or an index on a
 view the file drops before it. A constraint of a kept table is dropped before the
 columns, so it needs none. `CREATE SCHEMA IF NOT EXISTS` stays for a schema the
-read of the dev database did not find, because a read limited to the connection's
+read of the dev database did not find, whether an added object names it or the
+desired state declares it, because a read limited to the connection's
 schema cannot say that one is absent. A schema the read found gets no statement,
 and neither does the schema the connection resolves unqualified names to, usually
 `public`: it exists, so `public.users` gets no more of a precondition than `users`

@@ -98,6 +98,13 @@ source is `--root-dir`. That includes the two documentation targets, so
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
+A `schema` block with nothing in it is still a declaration. On PostgreSQL,
+CockroachDB, YugabyteDB and Spanner, `ptah schema apply` and `ptah migrations
+generate` create it when the database lacks it, and report it as synced when the
+database holds it. A plan never drops a schema the file does not mention. [Atlas
+schema commands](../../atlas/schema-commands/#a-schema-with-nothing-in-it) has the
+measured table.
+
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
 

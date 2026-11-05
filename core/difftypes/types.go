@@ -721,18 +721,22 @@ type SchemaDiff struct {
 	// conservative offline defaults.
 	IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
 
-	// SchemasAdded are the schemas a whole-server comparison creates: on
-	// MySQL and MariaDB, the databases the desired state declares, or puts a
-	// table or a sequence in, and the server does not hold, each with the
-	// character set and collation the declaration gives it. Only a comparison
-	// of a whole MySQL-family server fills it; a comparison scoped to one
-	// database or one schema never does.
+	// SchemasAdded are the schemas a comparison creates, whether or not anything
+	// is in them. On MySQL and MariaDB, a whole-server comparison adds the
+	// databases the desired state declares, or puts a table or a sequence in, and
+	// the server does not hold, each with the character set and collation the
+	// declaration gives it; a comparison scoped to one database never does. On an
+	// engine whose schemas are namespaces, a comparison adds the schemas the
+	// desired state declares and the read does not hold. A schema an object only
+	// names is not one of them: its creation comes with the object.
 	SchemasAdded []schemamodel.Schema `json:"schemas_added,omitempty"`
 
-	// SchemasRemoved are the schemas, by name, that a whole-server comparison
-	// drops: on MySQL and MariaDB, the user databases the server holds and
-	// the desired state neither declares nor puts a table or a sequence in.
-	// Dropping one drops every object in it.
+	// SchemasRemoved are the schemas, by name, that a plan drops. On MySQL and
+	// MariaDB, a whole-server comparison removes the user databases the server
+	// holds and the desired state neither declares nor puts a table or a sequence
+	// in, and dropping one drops every object in it. No other comparison fills
+	// it: there it comes only from reversing [SchemaDiff.SchemasAdded], and the
+	// drop fails on a schema that holds anything.
 	SchemasRemoved []string `json:"schemas_removed,omitempty"`
 
 	// SchemasModified are the schemas both sides hold whose character set or

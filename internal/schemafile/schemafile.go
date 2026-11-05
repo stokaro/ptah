@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/hclext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlext"
@@ -277,9 +278,23 @@ func gateSchemaScope(ctx context.Context, opts Options, load func(Options) (*sch
 // it keeps working. What follows is Ptah going past it: that binary names
 // neither the file nor the blocks, which leaves an operator holding a generated
 // document with nothing to grep for.
+//
+// A document declaring one schema that is not the one the URL names is refused
+// as the community binary refuses it, where a URL names a schema inside a
+// database: the run cannot reach that schema, and a plan would create it. A URL
+// naming a database answers through its own refusal, which says more.
 func (o Options) checkSchemaScope(blocks []atlashcl.SchemaBlock) error {
-	if o.SchemaScope == "" || len(blocks) <= 1 {
+	if o.SchemaScope == "" || len(blocks) == 0 {
 		return nil
+	}
+	if len(blocks) == 1 {
+		block := blocks[0]
+		described, _ := platform.Lookup(o.Dialect)
+		if block.Name == o.SchemaScope || described.Schemas.Selection != descriptor.SchemaSelectionSearchPath {
+			return nil
+		}
+		return fmt.Errorf("mismatched HCL and database schemas: %q <> %q: %s is limited to schema %q, and %s:%d declares %q",
+			o.SchemaScope, block.Name, o.SchemaScopeFlag, o.SchemaScope, block.Filename, block.Line, block.Name)
 	}
 	declared := make([]string, 0, len(blocks))
 	for _, block := range blocks {

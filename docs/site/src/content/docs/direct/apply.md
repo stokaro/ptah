@@ -629,7 +629,8 @@ there.
 gives the rules, which both surfaces share.
 
 `schema compare` and `schema drift` read the same server and report the changes
-the plan makes, a database to create under `schemas_added`. The versioned verbs
+the plan makes, a database to create under `schemas_added`, as they do for a
+declared schema on PostgreSQL, CockroachDB, YugabyteDB and Spanner. The versioned verbs
 (`migrations plan`, `generate`, `up` and `status`) read one database and
 refuse a URL that names none.
 

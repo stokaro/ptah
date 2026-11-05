@@ -44,5 +44,5 @@ func TestCompareWithDatabaseInfoKeepsAQuotedSystemSchemaLookalike(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff, qt.IsNotNil)
-	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(diff.SchemasAdded, qt.DeepEquals, []schemamodel.Schema{{Name: "PG_CATALOG"}})
 }
