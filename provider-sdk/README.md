@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.19. `provider-sdk/v0.17.0` speaks 25.18.
+speaks contract 25.24. `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
 `provider-sdk/v0.14.0` speaks 25.15.
@@ -108,6 +108,7 @@ returns to 0.
   Contract 25.17 adds [index renames](#index-renames).
   Contract 25.18 adds [the reasons of execution and transaction results](#error-reasons).
   Contract 25.19 adds [change reversal](#change-reversal).
+  Contract 25.24 adds [report counts](#report-counts).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -137,10 +138,11 @@ does not oblige a peer to use it.
   `schema.observed-primary-keys`, `schema.observed-indexes`,
   `planning.object-context`, `planning.context-inventory`,
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
-  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames` and
-  `models.reverse`. The embedding store's calls, `PrepareCommonObjects` and
-  `ReverseChanges` are new, and each comes with an addition to `Engine`, so a
-  host lists the feature to receive any of them. `SplitMigration` is new too,
+  `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
+  `models.reverse` and `models.report-counts`. The embedding store's calls,
+  `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
+  comes with an addition to `Engine` or `ValueModel`, so a host lists the
+  feature to receive any of them. `SplitMigration` is new too,
   and comes with the abort flags of `Execution` and `TransactionResult`, so a
   host lists `units.migration-split` to call it.
 - Both transport boundaries validate with the description negotiated this way,
@@ -250,6 +252,7 @@ this SDK, and a host of this SDK against a provider of contract 25.0.
 | `ReadStatementRows` | The next bounded page of an open result, or an error and no rows. |
 | `CloseStatement` | Release of an open result. A result already released succeeds. |
 | `SplitMigration` | Offline: the units one migration body runs as, in run order, each with the text to execute, its own source and a placement, or a refusal of the whole body; and a read-only verdict for each check assertion. |
+| `ReportValues` | Offline: one count for each metric a value's model declares, for every value of the request, in order. |
 
 Session capabilities preserve presence: an explicit `false` is an established
 answer, while an absent key remains unknown. The SDK validates names and the host
@@ -983,8 +986,9 @@ The official YDB provider still needs native reservation classification under
 Desired and observed models may declare a plural `display_name` for omission
 reports. It must be trimmed single-line text and agree across engines that share
 a model representation. The host freezes this label in the contract and reports
-captured values locally, without interpreting payloads or declaring count metrics.
-An absent label does not get a host-invented substitute.
+captured values locally, without interpreting payloads. A model declares count
+metrics only under [report counts](#report-counts). An absent label does not get
+a host-invented substitute.
 
 Native `schema inspect --format json` returns common schema data and warns about
 omitted objects and facets using these labels. It is not a lossless model export.
@@ -2029,6 +2033,38 @@ object of another kind than its subject, or named twice.
 [ADR 0062](../docs/adr/0062-a-provider-reverses-the-changes-its-comparison-returned.md)
 records why the owner reverses its changes rather than the host comparing
 again.
+
+## Report counts
+
+`models.report-counts` lets a model declare the object-count metrics its
+values contribute to, in `ValueModel.metrics`, and lets the owner count
+captured values with `ReportValues`. It is the host's reporting service carried
+across the boundary: `ptah schema stats` writes one gauge per metric, and the
+host cannot count a provider's values itself, because only the owner reads a
+payload. A YDB topic value, for example, counts one topic and the number of its
+consumers.
+
+A metric has a `name`, lowercase ASCII letters, digits and underscores that
+start with a letter, and a one-line `help`. Only a desired or observed model
+with a `display_name` declares metrics, each name once and at most 64. Models
+of one representation that declare one name give it one help text, and engines
+that share a model declare the same metrics for it. A name the host counts
+itself, such as `tables`, makes `schema stats` refuse.
+
+`ReportValues` is offline: no session, no database. The host sends the values
+of one engine and one representation, each of a model that declares metrics,
+and the provider answers each value under its ID, in request order, with one
+count for each of its model's metrics in the declared order. A count is at most
+the largest signed 64-bit integer.
+
+The provider and each engine whose models declare metrics list the feature,
+and the host lists it to receive the metrics and to call the service; without
+it the negotiated description carries no metric. Both transport boundaries
+refuse an unnegotiated call, a value of a model without metrics, values of two
+representations, and a reply that is incomplete, answers in another order, or
+counts a metric the model does not declare, twice, or not at all.
+[ADR 0067](../docs/adr/0067-a-provider-counts-what-its-values-hold.md)
+records why the owner counts, and why the counts are not part of a read.
 
 ## Comparison counts
 

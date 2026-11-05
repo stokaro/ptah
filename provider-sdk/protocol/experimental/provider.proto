@@ -97,6 +97,8 @@ service Provider {
   rpc SplitMigration(SplitMigrationRequest) returns (MigrationSplit);
   // Contract 25.19. Used only when both sides list models.reverse.
   rpc ReverseChanges(ReverseChangesRequest) returns (ReversedChanges);
+  // Contract 25.24. Used only when both sides list models.report-counts.
+  rpc ReportValues(ReportValuesRequest) returns (ValueReports);
 }
 
 message Empty {}
@@ -1124,9 +1126,48 @@ message ValueModel {
   // Full owner definition, canonicalized with modeljson.Canonical. Its exact
   // SHA-256 must match definition_sha256. It is a nonempty JSON object.
   bytes definition_json = 8;
-  // Optional plural label for omission reports. This declares no count metrics.
-  // Only desired and observed models may supply a trimmed, single-line label.
+  // Optional plural label for omission reports. Only desired and observed
+  // models may supply a trimmed, single-line label.
   string display_name = 9;
+  // The count metrics a value of this model contributes to, in the order a
+  // report lists them. Only a desired or observed model with a display name
+  // declares them. Contract 25.24, under models.report-counts.
+  repeated ModelMetric metrics = 10;
+}
+// ModelMetric is one object-count metric: name is a lowercase ASCII suffix of
+// letters, digits and underscores that starts with a letter, and help is one
+// line. Models of one representation that declare one name give it one help.
+// Contract 25.24, under models.report-counts.
+message ModelMetric {
+  string name = 1;
+  string help = 2;
+}
+// ReportValuesRequest asks the owner for the counts of captured values of one
+// engine and one representation, each of a model that declares metrics. It is
+// offline: it opens no session and reads no database. Contract 25.24, under
+// models.report-counts.
+message ReportValuesRequest {
+  string engine = 1;
+  repeated string target_features = 2;
+  repeated ValueInput values = 3;
+}
+// ValueReports answers every value of the request, in order. Contract 25.24,
+// under models.report-counts.
+message ValueReports {
+  bool complete = 1;
+  repeated ValueReport values = 2;
+}
+// ValueReport counts one value: one count for each metric its model declares,
+// in the declared order.
+message ValueReport {
+  string id = 1;
+  repeated MetricCount counts = 2;
+}
+// MetricCount is what one value contributes to one metric. It is at most the
+// largest signed 64-bit integer.
+message MetricCount {
+  string name = 1;
+  uint64 value = 2;
 }
 message ModelKnowledge {
   enum State {
