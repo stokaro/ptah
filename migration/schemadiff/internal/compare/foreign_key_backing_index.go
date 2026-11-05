@@ -43,9 +43,6 @@ func ForeignKeyBackingIndexesLeaving(
 	for _, info := range diff.ForeignKeysRemovedWithTables {
 		removed[info.Identity] = true
 	}
-	for _, add := range diff.ConstraintsAdded {
-		delete(removed, add.Identity)
-	}
 	declared := generatedIndexIdentities(desired, semantics)
 	var leaving []difftypes.IndexRef
 	kept := make(map[difftypes.IndexRef]bool)
