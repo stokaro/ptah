@@ -23,8 +23,8 @@
 // read's regions, for one that also reports a namespace it did not read
 // (FIXTURE_READ_HIDDEN=1).
 //
-// With FIXTURE_REPORT_COUNTS=1 the retention models declare the count metrics
-// of backend.RetentionMetrics and the program counts their values.
+// With FIXTURE_REPORT_COUNTS=1 the engine reports the retention models with
+// the count metrics of retentionMetrics and the program counts their values.
 package main
 
 import (
@@ -80,7 +80,7 @@ func description() *protocol.Description {
 		engine.Features = append(engine.Features, provider.ReportCountsFeature)
 		for _, model := range engine.GetValueModels() {
 			if model.GetKind() == retentionKind {
-				engine.Reports = append(engine.Reports, &protocol.ModelReport{Kind: retentionKind, Representation: model.GetRepresentation(), Metrics: backend.RetentionMetrics()})
+				engine.Reports = append(engine.Reports, &protocol.ModelReport{Kind: retentionKind, Representation: model.GetRepresentation(), Metrics: retentionMetrics()})
 			}
 		}
 	}
@@ -96,10 +96,6 @@ func description() *protocol.Description {
 	}}
 	return description
 }
-
-// reportCountsEnabled reports whether the program declares and counts the
-// retention metrics.
-func reportCountsEnabled() bool { return os.Getenv("FIXTURE_REPORT_COUNTS") == "1" }
 
 type hclClaims struct{ *backend.Provider }
 
