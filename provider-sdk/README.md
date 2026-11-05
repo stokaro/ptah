@@ -55,7 +55,7 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.21. `provider-sdk/v0.18.0` speaks 25.19.
+speaks contract 25.22. `provider-sdk/v0.18.0` speaks 25.19.
 `provider-sdk/v0.17.0` speaks 25.18.
 `provider-sdk/v0.16.0` speaks 25.17.
 `provider-sdk/v0.15.0` speaks 25.16.
@@ -114,6 +114,7 @@ returns to 0.
   [the facets of a SQL schema reading](#facets-of-a-sql-schema-reading),
   [report counts](#report-counts) and
   [index facets on inspected indexes](#index-facets-on-inspected-indexes).
+  Contract 25.22 adds [HCL platform groups](#hcl-platform-groups).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -145,8 +146,9 @@ does not oblige a peer to use it.
   `units.migration-split`, `models.compare-counts`, `schema.index-methods`,
   `sessions.typed-arguments`, `errors.reasons`, `planning.index-renames`,
   `models.reverse`, `schema.unread-tables`, `schema.database-kinds`,
-  `schema.sql-facets`, `models.report-counts` and
-  `schema.observed-index-facets`. The embedding store's calls,
+  `schema.sql-facets`, `models.report-counts`,
+  `schema.observed-index-facets` and `source.hcl-platform`. The embedding
+  store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too,
@@ -1623,6 +1625,33 @@ site, with the binding and subject the site needs. `SourceDocument.limits`
 carries an HCL document's header entries of the declared kinds. An engine that
 declares no HCL claim keeps accepting HCL fragments without one, as earlier
 minors do. Both features are two-way and need `source.decode`.
+
+## HCL platform groups
+
+[ADR 0072](../docs/adr/0072-a-provider-claims-the-platform-group-of-a-table.md)
+decides this claim. `source.hcl-platform` adds the `TABLE_PLATFORM` site to
+`HCLSourceBlock`: the `platform` block of a `table` whose label is the claim's
+`type`, which is the engine's ID. Each `override` label of the group is an
+attribute of the claim, and every attribute is a `STRING`. The claim takes no
+naming, children, declared type, grant kind or inherited attribute. Its
+fragment is bound to the table, has no subject, and carries the overrides as a
+mapping.
+
+A platform claim's models need not list HCL among their source formats, and it
+brings them into an HCL document's scope anyway. A model that lists HCL needs a
+claim at another site too, because a table that writes no group states nothing
+about what the group carries. A host reads the kind-wide knowledge of a model
+that lists no HCL as uninspected and keeps the subject knowledge a decoding
+states for each table whose group it read.
+
+A group spells part of a facet. In an HCL reply under the feature, a loss may
+name a value a `TABLE_PLATFORM` part writes, once: the value is written in part,
+and the line says what the document does not hold of it. Every other written
+value takes no loss.
+
+The provider and each engine that declares such a claim list the feature,
+beside `source.hcl`. Without it negotiated, the description the host receives
+holds no `TABLE_PLATFORM` claim and the same models.
 
 ## Source encoding
 

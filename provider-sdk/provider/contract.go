@@ -49,7 +49,7 @@ func TwoWayFeatures() []string {
 		DatabaseContextFeature, ValueContextFeature, CommonViewFacetsFeature, ObservedColumnsFeature, ObservedPrimaryKeysFeature, ObservedIndexesFeature, PlanningObjectContextFeature,
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
-		ObservedIndexFacetsFeature}
+		ObservedIndexFacetsFeature, HCLPlatformFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -141,10 +141,12 @@ func ValidateHostFeatures(features []string) error {
 // QueryDialectFeature, the embedding store declarations unless it lists
 // EmbeddingStoreFeature, the common-object declarations unless it lists
 // CommonObjectsFeature, the HCL claims unless it lists HCLSourceFeature, the
+// claims of a table's platform group unless it lists HCLPlatformFeature, the
 // scope selections unless it lists ScopeSelectionsFeature, the reversal
 // services unless it lists ReverseChangesFeature, the database kinds unless
 // it lists DatabaseKindsFeature, and the model reports unless it lists
-// ReportCountsFeature. Without
+// ReportCountsFeature. A model keeps its source formats without
+// HCLPlatformFeature: a platform claim's models need not list HCL. Without
 // EntryKeysFeature, the YAML claims of a COLUMN or INDEX scope and the
 // YAML and Go claims that inherit common attributes are removed, since their
 // owner needs what the host would not send, and a model left with no YAML
@@ -170,9 +172,7 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 		negotiateCommonObjects(engine, hostFeatures)
 		negotiatePlanningObjects(engine, hostFeatures)
-		if !slices.Contains(hostFeatures, HCLSourceFeature) {
-			engine.HclSource = nil
-		}
+		negotiateHCLSource(engine, hostFeatures)
 		if !slices.Contains(hostFeatures, ScopeSelectionsFeature) {
 			engine.ScopeSelections = nil
 		}
@@ -202,6 +202,20 @@ func NegotiatedDescription(description *protocol.Description, hostFeatures []str
 		}
 	}
 	return negotiated
+}
+
+// negotiateHCLSource removes the HCL claims unless the host lists
+// HCLSourceFeature, and the claims of a table's platform group unless it lists
+// HCLPlatformFeature.
+func negotiateHCLSource(engine *protocol.Engine, hostFeatures []string) {
+	if !slices.Contains(hostFeatures, HCLSourceFeature) {
+		engine.HclSource = nil
+	}
+	if !slices.Contains(hostFeatures, HCLPlatformFeature) && engine.HclSource != nil {
+		engine.HclSource.Blocks = slices.DeleteFunc(engine.HclSource.Blocks, func(block *protocol.HCLSourceBlock) bool {
+			return block.GetSite() == protocol.HCLSourceBlock_TABLE_PLATFORM
+		})
+	}
 }
 
 // withoutEntryKeys removes the source claims that need EntryKeysFeature, and
