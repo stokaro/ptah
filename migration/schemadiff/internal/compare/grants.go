@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/pgprivilege"
 	"ptah.run/internal/routineargs"
@@ -51,6 +52,66 @@ func GrantsWithSemantics(
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
+) {
+	GrantsWithObjects(desired, database, diff, semantics, OwnedObjects{})
+}
+
+// GrantObjects names the object a grant is on when an owner manages it, such
+// as a YDB topic: the grant's object type is one the owner declares.
+// *ptah.run/core/selectext.Set implements it.
+type GrantObjects interface {
+	GrantObject(objectType, objectName string) (objectidentity.ID, bool)
+}
+
+// OwnedObjects is what a grant comparison knows of the objects owners manage:
+// how a grant names one, and what the desired source says about them. The
+// zero value names none, so every grant is on a common object.
+type OwnedObjects struct {
+	// Names reads the owner's object a grant names. Nil names none.
+	Names GrantObjects
+	// Desired is the desired source's own account of the owners' objects:
+	// the objects it declares and the knowledge it claims about the rest.
+	Desired schemaext.FeatureState
+}
+
+// describes reports whether the desired source makes a claim about the
+// object grant is on, so that leaving the grant out of it is a removal. A
+// grant on a common object is described as the object is. A grant on an
+// owner's object is described when the source declares the object, or claims
+// to know the object's state: it describes the object's kind there, asserts
+// the object absent, or asks for its defaults. A source that does not
+// describe the kind, by a `ptah:not-described` record or by claiming nothing
+// about it, makes no claim about who may use such an object, and the entry
+// stays as the database holds it.
+func (o OwnedObjects) describes(grant catalog.Grant) bool {
+	if o.Names == nil {
+		return true
+	}
+	ref, owned := o.Names.GrantObject(grant.ObjectType, grant.QualifiedTarget())
+	if !owned {
+		return true
+	}
+	if _, declared, _ := o.Desired.Objects.Get(ref); declared {
+		return true
+	}
+	switch o.Desired.Coverage.Lookup(schemaext.Kind(ref.Kind), ref).State {
+	case schemaext.Uninspected, schemaext.Unrepresentable:
+		return false
+	}
+	return true
+}
+
+// GrantsWithObjects is [GrantsWithSemantics] told how a grant names an
+// owner's object and what the desired source says about those objects. A
+// grant on an owner's object the desired source does not describe is not a
+// removal (see [OwnedObjects]), as a grant in a schema it does not describe is
+// not; a revoke the source writes out is still planned.
+func GrantsWithObjects(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	diff *difftypes.SchemaDiff,
+	semantics identifier.Semantics,
+	objects OwnedObjects,
 ) {
 	sequences := newColumnSequences(desired, database, semantics)
 	generatedGrantMap := make(map[grantIdentity]difftypes.GrantRef)
@@ -113,8 +174,10 @@ func GrantsWithSemantics(
 		//
 		// A grant on an object in a schema the desired state does not
 		// describe, or on that schema, is left alone for the same reason the
-		// object is. A revoke the desired state writes out is still planned.
-		if (managedRoles[ref.Role] && !grant.Implicit && grantRemovalPlanned(cov, grant)) ||
+		// object is, and so is a grant on an owner's object the desired
+		// source does not describe. A revoke the desired state writes out is
+		// still planned.
+		if (managedRoles[ref.Role] && !grant.Implicit && grantRemovalPlanned(cov, grant) && objects.describes(grant)) ||
 			revokedGrants[key] || revokedGrants[key.onWholeObject()] {
 			databaseGrantMapForRemovals[key] = ref
 		}
