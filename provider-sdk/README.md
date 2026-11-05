@@ -959,9 +959,11 @@ refuses a claim on any other Ptah directive.
 
 The host HCL adapter captures
 declared blocks and attributes with their bindings, inherited values, and
-header limits. HCL and Go export send the provider's values through
-`EncodeSource`; HCL reports unrepresentable values as losses, while Go refuses
-losses and coverage limits. Official-engine source parity remains part of
+header limits. It takes an HCL document's coverage from the provider only
+when the document's header holds an entry of one of the engine's HCL header
+kinds; a document without one claims nothing of the provider's models. HCL and
+Go export send the provider's values through `EncodeSource`; HCL reports
+unrepresentable values as losses, while Go refuses losses and coverage limits. Official-engine source parity remains part of
 #4204; the fixtures do not establish YDB source support.
 
 ## Observed model coverage
@@ -1682,7 +1684,10 @@ without that database, a read's table or column or an object of a
 scope-selected kind, names it too, as the read's values do.
 
 The request's coverage is what the document knows of the provider's models.
-A document the host read describes what the read listed. A kind the read knows
+An HCL request carries none: the host writes an HCL document's account itself,
+as a captured `ptah:feature-coverage` header it reads back with the provider's
+model definitions, and refuses a reply with limits. A document the host read
+describes what the read listed. A kind the read knows
 completely in every namespace region it reports is sent as complete, with no
 regions: the document is complete for the selection a later plan applies it
 to, as an embedded engine's writer writes a read that `--schemas` narrowed.
@@ -1717,7 +1722,10 @@ and the document has claimed headers. Every header must be valid; the returned
 model inventory stays exact. The provider interprets which of its models and
 subjects a header limits. The SDK validates these ownership and knowledge
 boundaries, not opaque header semantics. A missing feature or a document without
-headers retains complete authored scope. Round-trip tests must prove that the
+headers retains complete authored scope. The host reads that scope from a Go
+document; an HCL document without a claimed header is an Atlas file, which
+names none of the objects it leaves out, so the host takes no coverage from
+its reply. Round-trip tests must prove that the
 host preserves the owner's narrowed knowledge instead of inventing absence.
 
 `source.encode` is a provider service, listed by the provider and each
