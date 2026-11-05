@@ -90,6 +90,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `clickhouse` | 26.10 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.9 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
@@ -111,9 +112,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.7 | best-effort | `ClickHouse2411` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
 
-Declared release lines: 33. Probed on every pull request: 30.
+Declared release lines: 34. Probed on every pull request: 31.
 
-Support levels across the 33 declared lines: 27 certified, 2 legacy-tested, 4 best-effort.
+Support levels across the 34 declared lines: 28 certified, 2 legacy-tested, 4 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -128,7 +129,7 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
 - `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
-- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.1`.
+- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.56.2`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

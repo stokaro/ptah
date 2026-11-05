@@ -105,10 +105,10 @@ CREATE POLICY audit_visible ON audit USING (EXISTS (SELECT 1 FROM public.orders)
 
 // TestSchemaApplyRefusesAViewChangeAPolicyAlongTheSearchPathReadsE2E changes
 // the body of a materialized view the policy reads by its bare name. The
-// rebuild's DROP ... CASCADE would take the policy, so apply refuses before
-// the server changes, as compare and generate do. A policy apply did not pair
-// with its declaration escapes the refusal, and the CASCADE drops it before a
-// CREATE POLICY puts it back.
+// server refuses the rebuild's drop while the policy reads the view, so apply
+// refuses before the server changes, as compare and generate do. A policy
+// apply did not pair with its declaration escapes the refusal, and the server's
+// own error stops the plan.
 func TestSchemaApplyRefusesAViewChangeAPolicyAlongTheSearchPathReadsE2E(t *testing.T) {
 	c := qt.New(t)
 	database := newPolicySearchPathDatabase(c, append(slices.Clone(policySearchPathTables),
@@ -128,7 +128,7 @@ CREATE POLICY audit_visible ON reporting.audit USING (EXISTS (SELECT 1 FROM orde
 	got := runPtahIn(c, "schema", "apply", "--db-url", target, "--schemas", "public,reporting", "--schema-file", schema, "--auto-approve")
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, "ptah.run/pgpolicy/policy reporting.audit.audit_visible reads it, and the drop's CASCADE would drop it too")
+	c.Assert(got.Stderr, qt.Contains, "ptah.run/pgpolicy/policy reporting.audit.audit_visible reads it, and PostgreSQL refuses the drop while it does")
 	c.Assert(searchPathPolicies(c, database), qt.Equals, "reporting.audit.audit_visible")
 	var columns int
 	db := openPolicySearchPathDatabase(c, database)

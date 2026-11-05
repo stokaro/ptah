@@ -38,7 +38,7 @@ func clickHouse() descriptor.Dialect {
 				},
 				Attribution: "measured-lines",
 				Measured:    capabilityline.ClickHouseMeasured(),
-				Newest:      capabilityline.ClickHouse269,
+				Newest:      capabilityline.ClickHouse2610,
 			},
 		},
 

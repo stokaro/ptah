@@ -684,11 +684,12 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		// literal here reads as though it were the MySQL rows' answer and a
 		// blind replace when one of them moves corrupts the other
 		// (stokaro/ptah#2802).
-		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, capabilityline.ClickHouse269},
-		{"clickhouse on a measured line below the newest", "clickhouse", capabilityline.ClickHouse267 + ".3.19", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse269},
-		{"clickhouse on the line below the newest", "clickhouse", capabilityline.ClickHouse268 + ".2.7", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse269},
-		{"clickhouse on its newest measured line", "clickhouse", capabilityline.ClickHouse269 + ".1.1629", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse269},
-		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, capabilityline.ClickHouse269},
+		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, capabilityline.ClickHouse2610},
+		{"clickhouse on a measured line below the newest", "clickhouse", capabilityline.ClickHouse267 + ".3.19", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse2610},
+		{"clickhouse on a nearer measured line below the newest", "clickhouse", capabilityline.ClickHouse268 + ".2.7", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse2610},
+		{"clickhouse on the line below the newest", "clickhouse", capabilityline.ClickHouse269 + ".1.1629", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse2610},
+		{"clickhouse on its newest measured line", "clickhouse", capabilityline.ClickHouse2610 + ".1.1", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse2610},
+		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, capabilityline.ClickHouse2610},
 		// SQLite has a ladder of two steps, the rename at 3.25 and ALTER
 		// COLUMN ... NOT NULL at 3.53. It reports VersionSpecific because a
 		// version DID select an arm, and no newest measured line because the
