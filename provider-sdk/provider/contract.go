@@ -15,7 +15,7 @@ import (
 // counts the compatible additions within the major Revision. A host built
 // with this SDK announces Revision.ContractMinor, and a provider built with it
 // may require at most that minor from its host.
-const ContractMinor uint32 = 25
+const ContractMinor uint32 = 26
 
 // The features below each enable an addition to an existing message. An
 // addition is used only when both sides list its feature: the provider in its
@@ -50,7 +50,7 @@ func TwoWayFeatures() []string {
 		PlanningContextInventoryFeature, MigrationSplitFeature, ComparisonCountsFeature, IndexMethodsFeature, TypedArgumentsFeature, ErrorReasonsFeature,
 		IndexRenamesFeature, ReverseChangesFeature, UnreadTablesFeature, DatabaseKindsFeature, SQLFacetsFeature, ReportCountsFeature,
 		ObservedIndexFacetsFeature, SchemaSubtreeCoverageFeature, PasswordInputsFeature, HCLPlatformFeature, DefaultCapabilitiesFeature, LintTransactionOwnerFeature,
-		IndexKindsFeature, ModelPredecessorsFeature}
+		IndexKindsFeature, ModelPredecessorsFeature, RoleScopeReasonsFeature, GoPlacementsFeature}
 }
 
 // ContractError reports a host and a provider that cannot work together:
@@ -288,13 +288,17 @@ func HostFeatures(ctx context.Context) []string {
 func negotiateCommonObjects(engine *protocol.Engine, hostFeatures []string) {
 	if !slices.Contains(hostFeatures, CommonObjectsFeature) {
 		engine.CommonObjects = nil
-		engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == CommonAccessFeature || feature == CommonViewFacetsFeature })
+		engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool {
+			return feature == CommonAccessFeature || feature == CommonViewFacetsFeature || feature == RoleScopeReasonsFeature
+		})
 	}
 	if !slices.Contains(hostFeatures, CommonAccessFeature) && engine.CommonObjects != nil {
 		engine.CommonObjects.Kinds = slices.DeleteFunc(engine.CommonObjects.Kinds, commonAccessKind)
 		if len(engine.CommonObjects.Kinds) == 0 {
 			engine.CommonObjects = nil
-			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool { return feature == CommonObjectsFeature })
+			engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool {
+				return feature == CommonObjectsFeature || feature == RoleScopeReasonsFeature
+			})
 		}
 	}
 }

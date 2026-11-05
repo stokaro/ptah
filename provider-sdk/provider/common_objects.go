@@ -259,6 +259,7 @@ func validateObservedCommonObjects(engine *protocol.Engine, observed *protocol.O
 		func() error { return validateObservedGrants(complete, observed.GetGrants()) },
 		func() error { return validateObservedComments(engine.GetId(), complete, observed.GetComments()) },
 		func() error { return validateObservedAccess(engine, kinds, complete, observed) },
+		func() error { return validateRolesOutOfScopeReason(engine, observed) },
 	} {
 		if err := check(); err != nil {
 			return err

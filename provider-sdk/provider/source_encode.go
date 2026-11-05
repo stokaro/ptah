@@ -406,6 +406,13 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 	if _, known := protocol.EncodedFragment_Placement_name[int32(placement)]; !known {
 		return encodeError("unknown placement")
 	}
+	if goPlacement(placement) {
+		// See validateGoPlacements for the negotiation.
+		if encoded.GetFragment().GetGoDirective().GetScope() != protocol.GoSourceDirective_DOCUMENT {
+			return encodeError("a Go placement belongs to a Go directive of the document")
+		}
+		return nil
+	}
 	if (block != nil && hclOwnBlock(block.GetSite())) != (placement != protocol.EncodedFragment_PLACEMENT_UNSPECIFIED) {
 		return encodeError("an HCL block of the owner's says where it stands, and no other fragment does")
 	}
@@ -415,6 +422,9 @@ func validateEncodedPlacement(encoded *protocol.EncodedFragment) error {
 // validateEncodedExtras checks the header limits and the Go field types.
 func validateEncodedExtras(engine *protocol.Engine, request *protocol.EncodeSourceRequest, result *protocol.EncodedSource) error {
 	if err := validateEncodedLimits(engine, request, result); err != nil {
+		return err
+	}
+	if err := validateGoPlacements(engine, result); err != nil {
 		return err
 	}
 	for _, limit := range result.GetLimits() {

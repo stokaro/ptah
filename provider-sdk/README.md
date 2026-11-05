@@ -55,10 +55,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.25. Each released SDK speaks one contract:
+speaks contract 25.26. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.22.0` | 25.25 |
 | `provider-sdk/v0.21.0` | 25.24 |
 | `provider-sdk/v0.20.0` | 25.22 |
 | `provider-sdk/v0.19.0` | 25.21 |
@@ -130,6 +131,8 @@ returns to 0.
   Contract 25.23 adds [the transaction owner of a lint check](#transaction-owner-of-a-lint-check).
   Contract 25.24 adds [index kinds](#index-kinds).
   Contract 25.25 adds [model predecessors](#model-predecessors).
+  Contract 25.26 adds [role scope reasons](#role-scope-reasons) and
+  [Go placements](#go-placements).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -164,7 +167,8 @@ does not oblige a peer to use it.
   `schema.sql-facets`, `models.report-counts`, `schema.observed-index-facets`,
   `schema.subtree-coverage`, `schema.password-inputs`, `source.hcl-platform`,
   `engine.default-capabilities`, `lint.transaction-owner`,
-  `source.index-kinds` and `models.predecessors`. The embedding store's calls,
+  `source.index-kinds`, `models.predecessors`, `schema.role-scope-reasons` and
+  `source.go-placements`. The embedding store's calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
@@ -1757,6 +1761,40 @@ an operation or change model, an incomplete former identity, one that is a
 model the provider declares, and a former identity named twice in an engine.
 Without the feature negotiated, the description the host receives holds no
 predecessor.
+
+## Role scope reasons
+
+[ADR 0076](../docs/adr/0076-a-provider-says-why-a-read-leaves-roles-out.md)
+decides this field. `schema.role-scope-reasons` adds
+`ObservedCommonObjects.roles_out_of_scope_reason`: the owner's own words for
+why a read leaves the roles in `roles_out_of_scope` out of the description.
+A host prints them in the note that counts those roles, after "because", so
+the reason is a clause: one trimmed line of at most 300 bytes that does not
+end with a period. The note never names a role, and neither does the reason.
+
+A read sets the reason only with a role out of scope. The provider lists the
+feature, and so does each engine that carries the `ROLE` common kind. A host
+that does not list the feature, or that does not list `schema.common-objects`,
+receives an engine without it, and a read that gives such a host a reason is
+refused. Without a reason, the host words the note from what it knows of the
+dialect.
+
+## Go placements
+
+[ADR 0077](../docs/adr/0077-a-provider-says-where-its-go-directives-stand.md)
+decides these values. `source.go-placements` adds `GO_AFTER_SCHEMAS`,
+`GO_AFTER_VIEWS` and `GO_AFTER_PRIVILEGES` to `EncodedFragment.Placement`. An
+encoded Go `DOCUMENT` directive may say where it stands among the Go writer's
+own directives in the comment of the struct that holds a schema's standalone
+objects: after the schemas, after the views, or after the default privileges,
+the last of the writer's own. A directive that says nothing stands after the
+views, as it does without the feature. Within one placement the writer keeps
+the order of the provider's parts.
+
+A Go placement belongs to a Go `DOCUMENT` directive only, and an HCL value to an
+HCL block of the owner's only. The provider lists the feature, and so does each
+engine that places its directives, beside `source.encode`. A reply that places
+a directive for a host that did not list the feature is refused.
 
 ## Source encoding
 

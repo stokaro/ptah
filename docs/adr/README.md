@@ -85,6 +85,8 @@ a new record that names it, and its own status line is updated to point there.
 | [0073](0073-a-lint-check-says-who-opens-each-files-transaction.md) | A lint check says who opens each file's transaction | Proposed |
 | [0074](0074-a-provider-claims-the-index-kinds-it-models.md) | A provider claims the index kinds it models | Proposed |
 | [0075](0075-a-provider-names-the-identities-its-models-had-before.md) | A provider names the identities its models had before | Proposed |
+| [0076](0076-a-provider-says-why-a-read-leaves-roles-out.md) | A provider says why a read leaves roles out | Proposed |
+| [0077](0077-a-provider-says-where-its-go-directives-stand.md) | A provider says where its Go directives stand | Proposed |
 
 ## Writing one
 
