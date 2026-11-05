@@ -45,12 +45,12 @@ func TestLoadConfigFS_AProvidersDialectWithoutItsRuntime_FailurePath(t *testing.
 	c.Assert(cfg, qt.IsNil)
 }
 
-// Beside an engine a provider serves a server version is refused: Ptah holds
-// no release line of the engine.
+// Beside an engine a provider serves a server version that names no release
+// line its provider declares facts for is refused, not dropped.
 func TestLoadConfigFS_AProvidersDialectWithAServerVersion_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	cfg, err := lint.LoadConfigFS(providedRuntime(c), lintConfig("dialect: provided\nserver-version: \"26.2\"\n"), lint.ConfigFileName)
-	c.Assert(err, qt.ErrorMatches, `failed to parse lint config \.ptah-lint\.yaml: lint server-version "26.2" cannot be resolved against `+
-		`dialect "provided": Ptah holds no release-line capabilities for an engine its provider serves`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse lint config \.ptah-lint\.yaml: lint server-version: "26.2" names no release line `+
+		`of provided: Ptah holds no release-line capabilities for an engine its provider serves, and the provider declares none`)
 	c.Assert(cfg, qt.IsNil)
 }

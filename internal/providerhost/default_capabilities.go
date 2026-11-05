@@ -12,11 +12,13 @@ import (
 
 // registerDefaultCapabilities registers the capabilities each engine's
 // provider states it is planned with offline (Engine.default_capabilities),
-// under the engine's ID and aliases, so capability.ForDialect answers them
-// while the provider is selected: an offline render, generation or export of
-// the engine plans as a built-in dialect plans with its default preset. An
-// engine the process registry describes keeps the preset its descriptor
-// names. Facts the host's vocabulary does not hold refuse the provider.
+// and those of each of its release lines (ReleaseLine.capabilities), under
+// the engine's ID and aliases, so capability.ForDialect answers the defaults
+// and a --server-version resolves to a line while the provider is selected:
+// an offline render, generation or export of the engine plans as a built-in
+// dialect plans with its presets. An engine the process registry describes
+// keeps the presets its descriptor names. Facts the host's vocabulary does
+// not hold refuse the provider.
 func registerDefaultCapabilities(engines []*protocol.Engine) error {
 	for _, engine := range engines {
 		declared := engine.GetDefaultCapabilities()
@@ -26,13 +28,26 @@ func registerDefaultCapabilities(engines []*protocol.Engine) error {
 		if _, described := platform.Lookup(engine.GetId()); described {
 			continue
 		}
-		flags := make(map[capability.Capability]bool, len(declared))
-		for name, value := range declared {
-			flags[capability.Capability(name)] = value
-		}
-		if err := capability.RegisterDefaults(capability.Of(flags), append([]string{engine.GetId()}, engine.GetAliases()...)...); err != nil {
+		names := append([]string{engine.GetId()}, engine.GetAliases()...)
+		if err := capability.RegisterDefaults(stated(declared), names...); err != nil {
 			return fmt.Errorf("%w: engine %s states default capabilities the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
+		}
+		lines := make(map[string]capability.Capabilities, len(engine.GetReleaseLines()))
+		for _, line := range engine.GetReleaseLines() {
+			lines[line.GetLine()] = stated(line.GetCapabilities())
+		}
+		if err := capability.RegisterReleaseLines(lines, names...); err != nil {
+			return fmt.Errorf("%w: engine %s states release-line capabilities the host cannot register: %w", provider.ErrProtocol, engine.GetId(), err)
 		}
 	}
 	return nil
+}
+
+// stated is the capability set a provider stated as a map of names.
+func stated(declared map[string]bool) capability.Capabilities {
+	flags := make(map[capability.Capability]bool, len(declared))
+	for name, value := range declared {
+		flags[capability.Capability(name)] = value
+	}
+	return capability.Of(flags)
 }

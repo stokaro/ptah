@@ -246,10 +246,13 @@ schema is the directory that holds the object.
 
 `engine.default-capabilities` lets a provider state the capability facts its
 engine is planned with offline: a render, a generation or an export with no
-database. Ptah has no preset for an engine only a provider serves, so without
-them every fact is unknown offline, and a provider that refuses to plan
-against an unknown fact refuses the command. A command that connects plans
-with the facts the session states.
+database, and each release line's for a `--server-version`. A version selects
+the line it equals, or the longest line it starts with followed by a dot, so
+`26.2.1.14` selects `26.2`, and a version that selects no line is refused. Ptah
+has no preset for an engine only a provider serves, so without the facts every
+fact is unknown offline, and a provider that refuses to plan against an
+unknown fact refuses the command. A command that connects plans with the facts
+the session states.
 
 `sql.scan` lets a provider scan the SQL text of its engine. Ptah reads SQL text
 without parsing it in many places: the lineage of view bodies, the indentation
@@ -266,10 +269,10 @@ declares the rule catalog in its description, splits migration files with its ow
 lexing, and returns findings for the rule codes the host enables. A result that
 is not complete is an error, never a clean run. The host keeps output formats,
 severity thresholds, and suppression. It sends the target's capabilities with
-each check: a dev database's session states them. Ptah holds no release-line
-capabilities for an engine only a provider serves, so a `--server-version` or a
-`server-version` in `.ptah-lint.yaml` beside such an engine is refused, not
-dropped.
+each check: a dev database's session states them, and a `--server-version`, or
+a `server-version` in `.ptah-lint.yaml`, selects a release line the provider
+declares facts for (`engine.default-capabilities`). A version that names no
+declared line is refused, not dropped.
 
 A run that names no dialect is split by the host without one. The host answers
 the check for the provider, with no finding of its rules, because the request

@@ -2,8 +2,9 @@
 // against an established answer for transactional_ddl, as the YDB provider
 // renders a table only against established nontransactional DDL. It states
 // that answer for offline planning (contract 25.27,
-// engine.default-capabilities) unless FIXTURE_NO_DEFAULTS is set, which is
-// the control: without the stated facts an offline render is refused.
+// engine.default-capabilities), false by default and on release line 2.1 and
+// true on line 1.4, unless FIXTURE_NO_DEFAULTS is set, which is the control:
+// without the stated facts an offline render is refused.
 //
 // The engine is fixture-defaults, or the control's fixture-no-defaults: the
 // host keeps one set of offline facts per engine for the life of a process,
@@ -44,6 +45,10 @@ func main() {
 		description.Features = append(description.Features, provider.DefaultCapabilitiesFeature)
 		served.Features = append(served.Features, provider.DefaultCapabilitiesFeature)
 		served.DefaultCapabilities = map[string]bool{"transactional_ddl": false}
+		served.ReleaseLines = []*protocol.ReleaseLine{
+			{Line: "2.1", Label: "Fixture 2.1", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"transactional_ddl": false}},
+			{Line: "1.4", Label: "Fixture 1.4", Support: protocol.ReleaseLine_BEST_EFFORT, Unprobed: "a fixture line", Capabilities: map[string]bool{"transactional_ddl": true}},
+		}
 	}
 	err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner})

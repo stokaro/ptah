@@ -41,6 +41,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/servertarget"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -1900,10 +1901,12 @@ func declaredTarget(opts Options, cfg *lint.Config, dialect string) (declaration
 		// here holds, so it is refused rather than dropped; a dev database's
 		// session states them.
 		if version != "" {
-			return declaration{}, fmt.Errorf(
-				"lint server-version %q cannot be resolved against dialect %q: Ptah holds no release-line "+
-					"capabilities for an engine its provider serves; lint against a --dev-url, whose session states them",
-				version, dialect)
+			resolved, err := servertarget.Resolve(dialect, version)
+			if err != nil {
+				return declaration{}, fmt.Errorf("lint server-version: %w", err)
+			}
+			return declaration{resolved: lint.Target{Dialect: dialect, Version: version, Capabilities: resolved.Capabilities, Note: resolved.Note},
+				deferred: deferred}, nil
 		}
 		return declaration{resolved: lint.Target{Dialect: dialect}, deferred: deferred}, nil
 	}

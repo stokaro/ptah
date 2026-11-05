@@ -121,9 +121,9 @@ func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
 // TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath names the
 // ydb dialect, which the ydb-lint fixture serves under the official
 // provider's identity, with a server version. The release lines of an engine
-// a provider serves are the provider's, and Ptah holds no capabilities for
-// one offline, so the run is refused before the provider is asked, rather
-// than linting against a target the version did not select.
+// a provider serves are the provider's, and this fixture declares no facts
+// for any, so the run is refused before the provider is asked, rather than
+// linting against a target the version did not select.
 func TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	f := newLintProvider(c, "ydb-lint", ydbProviderID, "ydb")
@@ -138,8 +138,8 @@ func TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath(t *testing.
 		Error    string          `json:"error"`
 	}
 	c.Assert(json.Unmarshal([]byte(out+diagnostics), &report), qt.IsNil, qt.Commentf("stdout %q, stderr %q", out, diagnostics))
-	c.Assert(report.Error, qt.Equals, `lint server-version "26.2" cannot be resolved against dialect "ydb": Ptah holds no `+
-		`release-line capabilities for an engine its provider serves; lint against a --dev-url, whose session states them`)
+	c.Assert(report.Error, qt.Equals, `lint server-version: "26.2" names no release line of ydb: Ptah holds no `+
+		`release-line capabilities for an engine its provider serves, and the provider declares none`)
 	c.Assert(report.Findings, qt.HasLen, 0)
 }
 

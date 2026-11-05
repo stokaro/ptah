@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/servertarget"
 )
 
 // ConfigFileName is the conventional per-project lint configuration file,
@@ -168,9 +169,9 @@ func parseConfig(raw []byte, name string, rules []Rule, served schemaext.TargetR
 // dialect-specific rule at all instead of failing.
 //
 // A dialect the runtime serves through an executable provider is accepted
-// under the target name it selects. Ptah holds no release-line capabilities
-// for such an engine, so a server version beside it is refused rather than
-// dropped.
+// under the target name it selects. A server version beside it must name a
+// release line its provider declares facts for, and is refused rather than
+// dropped where it names none.
 func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) error {
 	canonical, ok := lintdialect.CanonicalIn(cfg.Dialect, served)
 	if !ok {
@@ -178,8 +179,9 @@ func validateConfig(cfg *Config, rules []Rule, served schemaext.TargetResolver) 
 	}
 	_, builtIn := lintdialect.Canonical(canonical)
 	if !builtIn && cfg.ServerVersion != "" {
-		return fmt.Errorf("lint server-version %q cannot be resolved against dialect %q: Ptah holds no release-line "+
-			"capabilities for an engine its provider serves", cfg.ServerVersion, canonical)
+		if _, err := servertarget.Resolve(canonical, cfg.ServerVersion); err != nil {
+			return fmt.Errorf("lint server-version: %w", err)
+		}
 	}
 	cfg.Dialect = canonical
 	// Only where the configuration names its own dialect. A policy may leave

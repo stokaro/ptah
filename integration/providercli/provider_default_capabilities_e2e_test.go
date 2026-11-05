@@ -15,8 +15,9 @@ import (
 )
 
 // renderDefaults renders a one-table YAML schema offline on engine, through
-// the default-capabilities fixture started with environment.
-func renderDefaults(c *qt.C, engine string, environment ...string) (stdout, stderr string, code int) {
+// the default-capabilities fixture started with environment, with the
+// command's further arguments.
+func renderDefaults(c *qt.C, engine string, environment []string, args ...string) (stdout, stderr string, code int) {
 	c.Helper()
 	dir := c.TempDir()
 	spec := fixtureSpec(c, "default-capabilities")
@@ -28,7 +29,7 @@ func renderDefaults(c *qt.C, engine string, environment ...string) (stdout, stde
 	c.Assert(os.WriteFile(manifest, data, 0o600), qt.IsNil)
 	schema := filepath.Join(dir, "schema.yaml")
 	c.Assert(os.WriteFile(schema, []byte("tables:\n  items:\n    columns:\n      id: { type: INTEGER, primary: true }\n"), 0o600), qt.IsNil)
-	return executeProviderCLI(c.Context(), []string{"schema", "render", "--provider-config", manifest, "--dialect", engine, "--schema-file", schema})
+	return executeProviderCLI(c.Context(), append([]string{"schema", "render", "--provider-config", manifest, "--dialect", engine, "--schema-file", schema}, args...))
 }
 
 // An offline render plans the engine with the capabilities its provider
@@ -37,7 +38,7 @@ func renderDefaults(c *qt.C, engine string, environment ...string) (stdout, stde
 func TestProviderRendersWithTheEnginesStatedCapabilities_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	out, diagnostics, code := renderDefaults(c, "fixture-defaults")
+	out, diagnostics, code := renderDefaults(c, "fixture-defaults", nil)
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
 	c.Assert(out, qt.Contains, "-- transactional_ddl=false\nCREATE TABLE \"items\" (id INTEGER);")
@@ -49,9 +50,34 @@ func TestProviderRendersWithTheEnginesStatedCapabilities_HappyPath(t *testing.T)
 func TestProviderRendersWithTheEnginesStatedCapabilities_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	out, diagnostics, code := renderDefaults(c, "fixture-no-defaults", "FIXTURE_NO_DEFAULTS=1")
+	out, diagnostics, code := renderDefaults(c, "fixture-no-defaults", []string{"FIXTURE_NO_DEFAULTS=1"})
 
 	c.Assert(code, qt.Not(qt.Equals), 0)
 	c.Assert(diagnostics, qt.Contains, "error rendering fixture-no-defaults schema: provider render failed (FailedPrecondition)")
+	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
+}
+
+// A --server-version plans the engine with the facts of the release line it
+// names: one equal to the version, or one the version starts with followed by
+// a dot.
+func TestProviderRendersWithAReleaseLinesCapabilities_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	out, diagnostics, code := renderDefaults(c, "fixture-defaults", nil, "--server-version", "1.4.2")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(out, qt.Contains, "-- transactional_ddl=true\nCREATE TABLE \"items\" (id INTEGER);")
+}
+
+// A version that names no declared line is refused with the lines to choose
+// from, never planned with the engine's default.
+func TestProviderRendersWithAReleaseLinesCapabilities_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	out, diagnostics, code := renderDefaults(c, "fixture-defaults", nil, "--server-version", "3.0")
+
+	c.Assert(code, qt.Not(qt.Equals), 0)
+	c.Assert(diagnostics, qt.Contains, `"3.0" names no release line the fixture-defaults provider declares: expected 1.4, 2.1, `+
+		`or a version that starts with one followed by a dot`)
 	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE")
 }

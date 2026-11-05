@@ -10,8 +10,10 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/servertarget"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/risk"
 )
@@ -260,10 +262,19 @@ func validateOnlineDialect(cfg *lint.Config, databaseDialect string) error {
 }
 
 // policyTarget resolves the server the apply-time gate plans against, or
-// leaves it unresolved on an engine the linter has no rules for.
+// leaves it unresolved on an engine the linter has no rules for. An engine an
+// executable provider serves resolves a version to a release line its
+// provider declares facts for.
 func policyTarget(databaseDialect, serverVersion string) (lint.Target, error) {
 	if _, ok := lintdialect.Canonical(databaseDialect); ok {
 		return lint.ResolveTarget(databaseDialect, serverVersion)
+	}
+	if _, declared := capability.ProvidedReleaseLine(databaseDialect, serverVersion); declared && serverVersion != "" {
+		resolved, err := servertarget.Resolve(databaseDialect, serverVersion)
+		if err != nil {
+			return lint.Target{}, fmt.Errorf("lint server-version: %w", err)
+		}
+		return lint.Target{Dialect: databaseDialect, Version: serverVersion, Capabilities: resolved.Capabilities}, nil
 	}
 	if serverVersion != "" {
 		return lint.Target{}, fmt.Errorf(

@@ -4964,9 +4964,13 @@ descriptor names, which an offline command plans with. An engine no descriptor
 describes has none. When an executable provider states the facts its engine is
 planned with offline (`Engine.default_capabilities`, contract 25.27), the host
 records them with `capability.RegisterDefaults` while the provider is selected,
-and `ForDialect` answers them under the engine's names. A registration lasts
-for the life of the process. A name a descriptor describes, or one already
-registered with other facts, is refused.
+and `ForDialect` answers them under the engine's names. The facts of each
+release line it declares (`ReleaseLine.capabilities`) are recorded with
+`capability.RegisterReleaseLines`, and `capability.ProvidedReleaseLine`
+resolves a server version to the line it equals or the longest line it starts
+with followed by a dot. A registration lasts for the life of the process. A
+name a descriptor describes, or one already registered with other facts, is
+refused.
 
 `core/platform/descriptor.Dialect` is what an engine states about itself, as
 data only. Beside its names and aliases, protocol family, default schema,
