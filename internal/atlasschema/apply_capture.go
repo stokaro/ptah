@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
@@ -61,6 +62,8 @@ func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, te
 		return ApplyPlan{}, err
 	}
 	positions := make([]int, len(units)+1)
+	names := atlaschange.For(info.Dialect).Forward(rendered.Request.Nodes)
+	named := -1
 	var indexes []int
 	for i, unit := range units {
 		positions[i] = len(plan.units)
@@ -75,6 +78,11 @@ func captureApplyPlan(info catalog.ServerInfo, rendered planner.RenderedPlan, te
 		}
 		plan.units = append(plan.units, unit.Fragment)
 		plan.texts = append(plan.texts, nodeText(unit, text))
+		plan.changes = append(plan.changes, "")
+		if unit.Node != named {
+			plan.changes[len(plan.changes)-1] = names[unit.Node]
+			named = unit.Node
+		}
 		indexes = append(indexes, unit.Node)
 	}
 	if !slices.ContainsFunc(plan.texts, func(text string) bool { return text != "" }) {

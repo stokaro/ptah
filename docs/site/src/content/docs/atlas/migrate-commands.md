@@ -1469,9 +1469,12 @@ planner cannot name.
 
 Every planner leaves out its descriptive comments. The MySQL-family, SQLite,
 SQL Server and ClickHouse planners keep their guards. Every other Ptah command
-that plans a change uses the same statement style, without the change comments:
-`schema apply`, `schema plan` and `schema diff` here, and native
-`ptah migrations generate` and `ptah schema apply`. The files
+that plans a change uses the same statement style: `schema apply`, `schema plan`
+and `schema diff` here, and native `ptah migrations generate` and `ptah schema
+apply`. The three `schema` verbs here write the same change comments, with the
+first letter in upper case as the community binary writes them on `schema diff`
+and `schema apply`: `-- Create "owners" table`. Native verbs write none. The
+community binary does not have `schema plan`. The files
 still differ from the community binary's in how statements are grouped and
 ordered, in type spelling, and in where the keys of a new table are written;
 [stokaro/ptah#4960](https://github.com/stokaro/ptah/issues/4960) tracks those.

@@ -21,8 +21,10 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
@@ -45,11 +47,15 @@ import (
 
 type DiffOptions struct {
 	// Runtime selects feature services and codecs for this operation. It is required.
-	Runtime  engine.SchemaRuntime
-	FromURLs []string
-	ToURLs   []string
-	DevURL   string
-	Exclude  []string
+	Runtime engine.SchemaRuntime
+	// ChangeComments writes the comment that names each statement's change, the
+	// Atlas contract of this verb: `-- Create "users" table`. See
+	// [ptah.run/internal/atlaschange].
+	ChangeComments bool
+	FromURLs       []string
+	ToURLs         []string
+	DevURL         string
+	Exclude        []string
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -473,33 +479,81 @@ func diffResolvedStates(
 	}
 
 	diff := applyDiffPolicy(compared, opts.Policy)
-	var statements []string
-	if diff.HasChanges() {
-		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(
-			ctx, opts.Runtime,
-			diff, dialect, planext.Options{
+	changes, err := plannedDiffChanges(ctx, opts, diff, dialect, planext.Options{
 
-				Capabilities:         capabilities,
-				ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-				OnlineAlter:          opts.Policy.OnlineAlter,
-				ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-				ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-					opts.Policy, diff, to, fromSide.database, dialect, capabilities,
-				),
-				OmitNullBackfill:    opts.OmitNullBackfill,
-				AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-				TableRebuildRequest: opts.Policy.TableRebuildRequest,
-				Statements:          planstyle.Statements,
-			},
-		)
-
-		if err != nil {
-			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
-		}
+		Capabilities:         capabilities,
+		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+		OnlineAlter:          opts.Policy.OnlineAlter,
+		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+		ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+			opts.Policy, diff, to, fromSide.database, dialect, capabilities,
+		),
+		OmitNullBackfill:    opts.OmitNullBackfill,
+		AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+		TableRebuildRequest: opts.Policy.TableRebuildRequest,
+		Statements:          planstyle.Statements,
+	})
+	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
-		Dialect: dialect, From: from, To: to, Statements: statements,
+		Dialect: dialect, From: from, To: to, Changes: changes,
 	}), diff, nil
+}
+
+// plannedDiffChanges is the statements of diff's plan, each carrying the comment
+// that names its change where the verb writes one.
+func plannedDiffChanges(
+	ctx context.Context,
+	opts DiffOptions,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	planOptions planext.Options,
+) ([]atlasreport.SchemaChange, error) {
+	if !diff.HasChanges() {
+		return nil, nil
+	}
+	plan, err := planner.GenerateSchemaDiffTextPlan(ctx, opts.Runtime, diff, dialect, planOptions)
+	if err != nil {
+		return nil, fmt.Errorf("generate schema diff SQL: %w", err)
+	}
+	statements, err := plan.Statements()
+	if err != nil {
+		return nil, fmt.Errorf("generate schema diff SQL: %w", err)
+	}
+	changes := make([]atlasreport.SchemaChange, 0, len(statements))
+	for _, statement := range statements {
+		changes = append(changes, atlasreport.SchemaChange{Cmd: statement})
+	}
+	if opts.ChangeComments {
+		if err := nameDiffChanges(changes, plan, dialect); err != nil {
+			return nil, fmt.Errorf("generate schema diff SQL: %w", err)
+		}
+	}
+	return changes, nil
+}
+
+// nameDiffChanges writes the comment that names each change on the first statement
+// its node renders, as a migration file does.
+func nameDiffChanges(changes []atlasreport.SchemaChange, plan planner.RenderedPlan, dialect string) error {
+	planned, err := plan.PlannedStatements()
+	if err != nil {
+		return err
+	}
+	names := atlaschange.For(dialect).Forward(plan.Request.Nodes)
+	heading := -1
+	at := 0
+	for _, piece := range planned {
+		if strings.TrimSpace(sqlutil.StripCommentsForDialect(piece.SQL, dialect)) == "" {
+			continue
+		}
+		if at < len(changes) && piece.Node >= 0 && piece.Node != heading {
+			changes[at].Comment = names[piece.Node]
+			heading = piece.Node
+		}
+		at++
+	}
+	return nil
 }
 
 // compareDiffSides runs the comparison on conn when there is one, and offline

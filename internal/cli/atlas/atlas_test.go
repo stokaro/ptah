@@ -2232,7 +2232,7 @@ table "users" {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1|AL|ALTER TABLE \"users\" ADD COLUMN \"email\" varchar(255) NOT NULL;\n")
+	c.Assert(out.String(), qt.Equals, "1|--|-- Modify \"users\" table\nALTER TABLE \"users\" ADD COLUMN \"email\" varchar(255) NOT NULL;\n")
 }
 
 func TestCompatCommand_SchemaDiffFormatsSyncedCustomTemplate(t *testing.T) {

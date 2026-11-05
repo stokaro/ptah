@@ -311,7 +311,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		if plan.HasNative() || plan.HasInputReferences() {
 			printAtlasSchemaApplyUnits(cmd.OutOrStdout(), plan.UnitReports(), plan.Annotations)
 		} else {
-			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+			printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.NamedSQL())
 		}
 	}
 	path := outputPath
@@ -351,7 +351,7 @@ func writeAtlasSchemaPlanFormat(cmd *cobra.Command, format string, plan atlassch
 // an empty plan file would apply cleanly and change nothing, which reads as
 // success. Statement text, including comments, round-trips through the editor.
 func editAtlasSchemaPlan(ctx context.Context, runtime safety.Runtime, plan atlasschema.PlanFile) (atlasschema.PlanFile, error) {
-	edited, err := editAtlasSQL(ctx, "schema plan", plan.SQL())
+	edited, err := editAtlasSQL(ctx, "schema plan", plan.NamedSQL())
 	if err != nil {
 		return atlasschema.PlanFile{}, err
 	}
@@ -608,7 +608,7 @@ func renderAtlasSchemaPlanFormat(format string, plan atlasschema.PlanFile) (stri
 		Exclude:       plan.Exclude,
 		Destructive:   plan.Destructive,
 		Statements:    changes,
-		MigrationBody: plan.SQL(),
+		MigrationBody: plan.NamedSQL(),
 	}))
 	return out.String(), err
 }
