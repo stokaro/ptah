@@ -489,7 +489,7 @@ releases. A release whose minimum contract this Ptah does not meet is refused,
 and the message names both versions:
 
 ```text
-the ydb provider 0.3.0 needs contract 26.0 or a later 26.x; this Ptah speaks contract 25.0
+the ydb provider 0.3.0 needs contract 26.0 or a later 26.x; this Ptah speaks contract 25.22
 ```
 
 The command takes the archive for the current platform from `ptah-provider.json`.

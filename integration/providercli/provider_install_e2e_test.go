@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/stokaro/ptah/provider-sdk/provider"
 
 	"ptah.run/internal/providerarchive/archivetest"
 	"ptah.run/internal/providerinstall"
@@ -136,4 +137,36 @@ func TestProvidersInstallFromAMirror(t *testing.T) {
 		c.Assert(refused.Diagnostic.Code, qt.Equals, "provider_untrusted")
 		c.Assert(refused.Diagnostic.Message, qt.Contains, "install record")
 	})
+}
+
+// TestProvidersInstallAReleaseThatNeedsTheContractThisPtahSpeaks installs a
+// release whose minimum is the contract the host announces to the providers it
+// starts, minor included, and selects it from the user store. The YDB provider
+// needs 25.7 of its host; a host that compared a minimum with minor 0 refused
+// it at install and again at selection, and installed an older release in its
+// place.
+func TestProvidersInstallAReleaseThatNeedsTheContractThisPtahSpeaks(t *testing.T) {
+	c := qt.New(t)
+	// The build runs the go command, which reads HOME, so it comes before the
+	// user cache moves to an empty directory.
+	binary, err := os.ReadFile(testutils.BuildFixtureProvider(c, "ydb-release"))
+	c.Assert(err, qt.IsNil)
+	c.Setenv("XDG_CACHE_HOME", c.TempDir())
+	c.Setenv("HOME", c.TempDir())
+	c.Setenv("LocalAppData", c.TempDir())
+	spoken := provider.Contract()
+	minimum := providerrelease.Contract{Major: spoken.GetMajor(), Minor: spoken.GetMinor()}
+	srv := releasetest.New("stokaro", "ptah-ydb-plugin")
+	c.Cleanup(srv.Close)
+	srv.Add(ydbRelease("0.4.0", minimum, binary))
+
+	installed, code, diagnostics := runJSON(c, "providers", "install", "ydb", "--version", "0.4.0", "--download-base-url", srv.MirrorURL())
+	checked, checkCode, checkDiagnostics := runJSON(c, "providers", "check", "--provider-engine", "ydb")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", diagnostics))
+	c.Assert(installed.Status, qt.Equals, "installed")
+	c.Assert(installed.MinContract, qt.Equals, minimum)
+	c.Assert(checkCode, qt.Equals, 0, qt.Commentf("%s", checkDiagnostics))
+	c.Assert(checked.Status, qt.Equals, "compatible")
+	c.Assert(checked.Executable, qt.Equals, installed.Executable)
 }
