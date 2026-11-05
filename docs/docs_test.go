@@ -122,7 +122,15 @@ func onDiskPaths(c *qt.C) []string {
 // skipDirIfUnreachable prunes the walk to the directories that hold
 // documentation or lead to it. Descending into `docs/site/node_modules` costs
 // more than the rest of the walk put together.
+//
+// A directory whose name starts with `.` or `_` is pruned because `go:embed`
+// leaves it out of a directory pattern. The site's provider import writes
+// `site/src/content/docs/_providers/` for that reason: those pages belong to the
+// provider repositories, and a binary carries the pages this repository holds.
 func skipDirIfUnreachable(name string) error {
+	if name != "." && hiddenFromEmbed(name) {
+		return filepath.SkipDir
+	}
 	reachable := name == "." || name == "adr" ||
 		name == "site" || name == "site/src" || name == "site/src/content" ||
 		name == "site/src/content/docs" || strings.HasPrefix(name, "site/src/content/docs/")
@@ -136,6 +144,9 @@ func skipDirIfUnreachable(name string) error {
 // holds documentation. `site` and `site/src` are walked to reach the content
 // below them; markdown sitting directly in them is site tooling.
 func appendMarkdownFromDocumentationDir(paths []string, name string) []string {
+	if hiddenFromEmbed(name) {
+		return paths
+	}
 	dir := path.Dir(name)
 	documentation := dir == "." || dir == "adr" ||
 		dir == "site/src/content/docs" || strings.HasPrefix(dir, "site/src/content/docs/")
@@ -143,6 +154,12 @@ func appendMarkdownFromDocumentationDir(paths []string, name string) []string {
 		return paths
 	}
 	return appendMarkdown(paths, name)
+}
+
+// hiddenFromEmbed reports a name `go:embed` leaves out of a directory pattern.
+func hiddenFromEmbed(name string) bool {
+	base := path.Base(name)
+	return strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_")
 }
 
 func appendMarkdown(paths []string, name string) []string {

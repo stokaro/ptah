@@ -2,3 +2,8 @@ dist/
 .astro/
 node_modules
 _site/
+
+# The import step writes provider pages here and the fetch cache beside the
+# site; both are rebuilt from scripts/data/provider-docs.json. See README.md.
+/src/content/docs/_providers/
+/.cache/

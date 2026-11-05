@@ -194,8 +194,8 @@ Each entry under `tables` declares one table.
 | `columns` / `fields` | Ordered column map. Use one or the other; duplicate names across both are rejected. |
 | `indexes` | Ordered table-local index map. |
 | `constraints` | Ordered table-local constraint map. |
-| `column_families` | Ordered map of a YDB table's column families; see [Column families](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#column-families). |
-| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/declarations.md#changefeeds). |
+| `column_families` | Ordered map of a YDB table's column families; see [Column families](https://docs.ptah.run/edge/extend/providers/ydb/declarations/#column-families). |
+| `changefeeds` | Ordered map of a YDB table's changefeeds; see [Changefeeds](https://docs.ptah.run/edge/extend/providers/ydb/declarations/#changefeeds). |
 | `rls_enabled` | Adds row-level security enablement for this table. |
 | `platform` / `overrides` | Dialect-specific override map, for example `platform.mysql.type`. A row deletion policy sits here too; see [Row Deletion Policies](#row-deletion-policies). |
 | `auto_partitioning_by_size`, `auto_partitioning_partition_size_mb`, `auto_partitioning_by_load`, `auto_partitioning_min_partitions_count`, `auto_partitioning_max_partitions_count`, `read_replicas_settings`, `key_bloom_filter`, `uniform_partitions`, `partition_at_keys` | A YDB row table's partitioning, read replicas, key bloom filter and starting partitions, with the values the `//ptah:schema:table` attributes of the same names take. Every other dialect refuses them. |

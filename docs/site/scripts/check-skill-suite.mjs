@@ -32,6 +32,13 @@
 // Only the suite block counts: the bash block that follows the
 // `<!-- documentation-suite -->` marker in the skill. A command in another block
 // is an example of something else, not part of what the skill says to run.
+//
+// The same reading holds .github/workflows/provider-docs.yml to docs.yml in one
+// direction. That workflow runs the content checks over a provider's pages from
+// the provider's own pull request, so each check it runs has to be one docs.yml
+// runs: a check renamed or retired there would otherwise keep running here
+// under its old name, or fail for a reason that is not the provider's. It may
+// run fewer, and says why in its header.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +47,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
 const workflowPath = join(repoRoot, '.github', 'workflows', 'docs.yml');
+const providerWorkflowPath = join(repoRoot, '.github', 'workflows', 'provider-docs.yml');
 const skillPath = join(repoRoot, '.agents', 'skills', 'ptah-documentation-maintenance', 'SKILL.md');
 const packagePath = join(siteRoot, 'package.json');
 
@@ -48,6 +56,19 @@ export const marker = '<!-- documentation-suite -->';
 // The workflow runs far more than this; a pattern that stopped matching would
 // find a handful and compare them successfully.
 const minimumWorkflowChecks = 60;
+
+// The provider workflow runs a dozen and more; below this its patterns stopped
+// reading it.
+const minimumProviderChecks = 12;
+
+// What the provider workflow runs that docs.yml has no reason to: it imports
+// the provider's checkout rather than the declared release, and it records
+// the routes a new provider page adds so the ledger check can report the ones
+// a removed page leaves behind.
+const providerOnly = new Map([
+  ['import-provider-docs.mjs --source', "imports the calling provider's checkout instead of the declared release"],
+  ['check-route-retirement.mjs --write', 'records the routes a provider page adds, which a declaration change commits'],
+]);
 
 const ciOnly = new Map([
   ['apply-docs-address.mjs --target', 'rewrites a checkout for the published address before a build'],
@@ -60,6 +81,7 @@ const ciOnly = new Map([
   ['deploy-pages-tag.sh', 'deploys one released tag'],
   ['check-release-page-actions.mjs --dist --version --source-commit', 'reads a released tag built by the deployment'],
   ['gen-versions.mjs', 'writes the version index into the assembled Pages root'],
+  ['import-provider-docs.mjs --cache', "imports a released tag's provider pages from the deployment's clone cache"],
   ['publish-root-assets.mjs', 'copies the install scripts into the assembled Pages root'],
   ['release-doc-tags.mjs', 'chooses which released tags the deployment builds'],
   ['write-build-info.mjs --output --version --source-commit', 'records the build a deployment produced'],
@@ -199,6 +221,27 @@ export function compare(workflow, skill, scripts) {
   return findings;
 }
 
+// compareProvider returns the findings for the provider workflow against the
+// Docs workflow: every check it runs is one the Docs workflow runs.
+export function compareProvider(workflow, providerWorkflow, scripts) {
+  const findings = [];
+  const ran = invocations(workflow, scripts);
+  const provider = invocations(providerWorkflow, scripts);
+  if (provider.found.length < minimumProviderChecks) {
+    findings.push(`the provider workflow yielded ${provider.found.length} checks, below the floor of ${minimumProviderChecks}; the patterns no longer read it`);
+  }
+  for (const key of provider.found) {
+    if (!providerOnly.has(key) && !ran.found.includes(key)) {
+      findings.push(`the provider workflow runs ${key}, which docs.yml does not run`);
+    }
+  }
+  for (const name of provider.unknown) findings.push(`the provider workflow runs npm script ${name}, which package.json does not define`);
+  for (const key of providerOnly.keys()) {
+    if (!provider.found.includes(key)) findings.push(`providerOnly names ${key}, which the provider workflow no longer runs`);
+  }
+  return findings;
+}
+
 function selftest() {
   const failures = [];
   const scripts = {
@@ -321,13 +364,35 @@ function selftest() {
     failures.push('a workflow below the floor was not reported');
   }
 
+  // The provider workflow: a check docs.yml runs is accepted, one it does not
+  // run is refused, and so is an excuse for a check nobody runs any more.
+  const providerChecks = Array.from({ length: minimumProviderChecks }, (_, i) => `node docs/site/scripts/check-f${i}.mjs`).join('\n');
+  const providerWorkflow = [
+    'run: |',
+    '  node docs/site/scripts/import-provider-docs.mjs --source "ydb=$GITHUB_WORKSPACE/provider"',
+    '  node scripts/check-route-retirement.mjs --write',
+    '  npm run check:style',
+    providerChecks,
+  ].join('\n');
+  const providerClean = compareProvider(workflow, providerWorkflow, scripts);
+  if (providerClean.length > 0) failures.push(`a provider workflow of docs.yml checks produced findings: ${providerClean.join('; ')}`);
+  const providerCases = [
+    ['a check docs.yml does not run', `${providerWorkflow}\n  node docs/site/scripts/check-invented.mjs`, 'check-invented.mjs, which docs.yml'],
+    ['a stale providerOnly excuse', providerWorkflow.replace('  node scripts/check-route-retirement.mjs --write\n', ''), 'providerOnly names check-route-retirement.mjs --write'],
+    ['an npm script nothing defines', `${providerWorkflow}\n  npm run check:gone`, 'check:gone'],
+    ['a provider workflow below the floor', 'run: npm run check:style', 'below the floor'],
+  ];
+  for (const [name, text, needle] of providerCases) {
+    if (!compareProvider(workflow, text, scripts).some((finding) => finding.includes(needle))) failures.push(`provider workflow: ${name} was not reported`);
+  }
+
   if (failures.length > 0) {
     console.error('check-skill-suite.mjs --selftest: FAILED');
     for (const failure of failures) console.error(`- ${failure}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`check-skill-suite.mjs --selftest: OK (${cases.length + 4} assertions via compare())`);
+  console.log(`check-skill-suite.mjs --selftest: OK (${cases.length + providerCases.length + 5} assertions via compare() and compareProvider())`);
 }
 
 function main() {
@@ -338,14 +403,20 @@ function main() {
   const scripts = JSON.parse(readFileSync(packagePath, 'utf8')).scripts;
   const workflow = readFileSync(workflowPath, 'utf8');
   const findings = compare(workflow, readFileSync(skillPath, 'utf8'), scripts);
-  if (findings.length > 0) {
+  const providerWorkflow = readFileSync(providerWorkflowPath, 'utf8');
+  const providerFindings = compareProvider(workflow, providerWorkflow, scripts);
+  if (findings.length > 0 || providerFindings.length > 0) {
     console.error('check-skill-suite.mjs: FAILED');
-    for (const finding of findings) console.error(`- ${finding}`);
-    console.error('Update the suite in .agents/skills/ptah-documentation-maintenance/SKILL.md.');
+    for (const finding of [...findings, ...providerFindings]) console.error(`- ${finding}`);
+    if (findings.length > 0) console.error('Update the suite in .agents/skills/ptah-documentation-maintenance/SKILL.md.');
+    if (providerFindings.length > 0) console.error('Update .github/workflows/provider-docs.yml.');
     process.exitCode = 1;
     return;
   }
-  console.log(`check-skill-suite.mjs: OK (${invocations(workflow, scripts).found.length} workflow checks)`);
+  console.log(
+    `check-skill-suite.mjs: OK (${invocations(workflow, scripts).found.length} workflow checks, ` +
+      `${invocations(providerWorkflow, scripts).found.length} provider workflow checks)`,
+  );
 }
 
 main();

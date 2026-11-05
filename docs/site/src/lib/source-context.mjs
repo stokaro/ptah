@@ -42,8 +42,24 @@ export function sourceCommitForBuild(supplied = process.env.DOCS_SOURCE_COMMIT, 
 }
 
 /**
+ * The source of a page a provider repository publishes, in the options
+ * resolveSourceContext and pageActionsForSource take: the provider's file at
+ * the commit the site imported, whatever the documentation version, and the
+ * provider repository's edit and issue links.
+ */
+export function providerPageSource({ repository, commit, source }) {
+  return {
+    sourceCommit: commit,
+    renderedSourcePath: source,
+    viewRef: commit,
+    repositoryUrl: `https://github.com/${repository}`,
+  };
+}
+
+/**
  * Resolve the source represented by one rendered documentation page and the
- * latest source a contributor should edit.
+ * latest source a contributor should edit. `viewRef` pins the source a reader
+ * views to one ref for every documentation version; a provider page passes it.
  */
 export function resolveSourceContext({
   documentationVersion,
@@ -52,6 +68,7 @@ export function resolveSourceContext({
   generated = false,
   generator,
   editSource,
+  viewRef,
 }) {
   const version = requiredString(documentationVersion, 'documentation version');
   const renderedPath = requiredString(renderedSourcePath, 'rendered source path');
@@ -68,7 +85,7 @@ export function resolveSourceContext({
 
   return {
     documentationVersion: version,
-    viewRef: isEdgeVersion(version) ? (commit ?? 'master') : sourceRefForVersion(version),
+    viewRef: viewRef?.trim() || (isEdgeVersion(version) ? (commit ?? 'master') : sourceRefForVersion(version)),
     editRef: 'master',
     renderedSourcePath: renderedPath,
     editSourcePath: generated ? declaredEditSource : renderedPath,

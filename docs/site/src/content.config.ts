@@ -30,6 +30,12 @@ const pageMetadata = z.object({
   // The FAQ draws the word an answer commits to as a tag; see
   // src/lib/markdown-faq-verdict.mjs.
   faqVerdicts: z.boolean().optional(),
+  // Where a page a provider repository publishes comes from. The import step
+  // writes all three (scripts/import-provider-docs.mjs) and the page actions
+  // read them, so a reader edits the page where it lives.
+  providerRepository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/).optional(),
+  providerCommit: z.string().regex(/^[0-9a-f]{40}$/).optional(),
+  providerSource: z.string().min(1).optional(),
 }).superRefine((data, context) => {
   for (const problem of validatePageMetadata(data, { repositoryRoot })) {
     context.addIssue({ code: 'custom', path: problem.path, message: problem.message });

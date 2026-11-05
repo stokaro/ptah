@@ -18,6 +18,14 @@ import { pluginLanguageLabel } from './src/lib/expressive-code-language-label.mj
 import markdownAsides from './src/lib/markdown-asides.mjs';
 import markdownHeadingIds from './src/lib/markdown-heading-ids.mjs';
 import markdownFaqVerdict from './src/lib/markdown-faq-verdict.mjs';
+import { importedProviders } from './src/lib/provider-docs.mjs';
+
+// The provider pages are written by the import step, not committed. A build
+// without them would publish a site whose provider subgroups and redirects
+// lead nowhere, so it stops here and names the command instead
+// (src/lib/provider-docs.mjs). `npm run build` and `npm run dev` run the import
+// first.
+importedProviders();
 
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
 // Both from one declaration. They were literals written for a GitHub project
@@ -66,7 +74,9 @@ const redirectRoutes = {
   '/reference/reusable-components/': '/extend/components/',
   '/reference/query-builder/': '/extend/query-builder/',
   '/start/quick-start-declarative/': '/start/quick-start-direct/',
-  '/databases/ydb/': '/extend/providers/ydb/',
+  // The connection, dev-database and ptah-compat material of this page is the
+  // YDB provider's own page now, which the site imports from the provider.
+  '/databases/ydb/': '/extend/providers/ydb/usage/',
 };
 
 const redirects = Object.fromEntries(

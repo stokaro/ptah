@@ -139,6 +139,12 @@ export function validatePageMetadata(data, options = {}) {
     if (data.editSource !== undefined) add('editSource', 'is only accepted when generated is true');
   }
 
+  const providerFields = ['providerRepository', 'providerCommit', 'providerSource'];
+  const declaredProviderFields = providerFields.filter((field) => data[field] !== undefined);
+  if (declaredProviderFields.length > 0 && declaredProviderFields.length < providerFields.length) {
+    add(declaredProviderFields[0], `goes with ${providerFields.join(', ')}: the import step writes all three or none`);
+  }
+
   if (data.type === 'status') {
     if (data.lastVerified === undefined) add('lastVerified', 'is required for status pages in YYYY-MM-DD form');
     if (data.evidence === undefined) {

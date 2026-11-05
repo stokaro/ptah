@@ -59,6 +59,17 @@
 // SidebarSublist.astro renders it as a static label above its pages, not as a
 // second level of disclosure, so the flag would have nothing to act on.
 
+// PROVIDER PAGES. A provider repository's own pages arrive through the import
+// step (scripts/import-provider-docs.mjs), so their entries cannot be written
+// here: they are whatever the imported release holds, in the order its pages
+// declare with `sidebar.order`. providerSidebarGroups() reads them from the
+// import, one subgroup per provider after the official providers' host pages.
+// It only reads src/lib/provider-docs.mjs, which is as dependency-free as this
+// module, and it never throws: a self-test that imports the sidebar in a fresh
+// checkout must still load. The gates that enumerate pages refuse a missing
+// import instead.
+import { providerSidebarGroups } from './lib/provider-docs.mjs';
+
 /** @type {import('@astrojs/starlight/types').StarlightUserConfig['sidebar']} */
 export const sidebar = [
   {
@@ -266,6 +277,7 @@ export const sidebar = [
         { slug: 'extend/providers/duckdb' },
         { slug: 'extend/providers/spanner' },
       ] },
+      ...providerSidebarGroups(),
       {
         label: 'Go integration',
         items: [

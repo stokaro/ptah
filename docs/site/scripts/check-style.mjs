@@ -17,6 +17,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { importedProviders } from '../src/lib/provider-docs.mjs';
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repoRoot = join(siteRoot, '..', '..');
@@ -1269,6 +1271,16 @@ function main() {
     return;
   }
 
+  // The walk reads the provider pages the import wrote under the content root.
+  // Without the import it would read fewer pages and say OK, so a missing or
+  // stale import is refused here first.
+  try {
+    importedProviders();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
   const files = documentationFiles();
   const errors = files.flatMap(checkFile);
 

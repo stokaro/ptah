@@ -226,7 +226,7 @@ declares; DBML has no spelling for it.
 A YDB table's TTL, changefeeds, column families, partitioning, read replicas and
 key bloom filter have no HCL or DBML spelling through the YDB provider, and a
 document read back keeps the table's settings; see
-[YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/README.md).
+[YDB](../../extend/providers/ydb/).
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

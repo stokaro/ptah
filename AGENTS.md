@@ -405,6 +405,11 @@ warnings, diagnostics and safety checks.
   says which routes exist; a route is Astro's, not the file path's.
 - The content inventory is computed by `buildContentInventory()` in
   `docs/site/scripts/build-content-inventory.mjs` (`--print`), never committed.
+- A provider's pages live in its repository's `docs/` folder and reach the site
+  through `docs/site/scripts/import-provider-docs.mjs`, at the release
+  `docs/site/scripts/data/provider-docs.json` names. Edit one there, never under
+  the ignored `_providers/` directory the import writes; `docs/site/README.md`
+  says how to move to a newer release and how to add a provider.
 - `docs/site/src/content/docs/atlas/feature-matrix.md` is generated: edit
   `docs/site/scripts/data/feature-matrix-rows.json`, run `node
   docs/site/scripts/build-feature-matrix.mjs`. A `note` is the reader's text

@@ -34,7 +34,7 @@ link here instead of redefining them.
 | YugabyteDB | `yugabytedb://user:pass@localhost:5433/app` |
 | Spanner (PostgreSQL interface) | `spanner://user:pass@localhost:5432/app` |
 | Oracle | `oracle://user:pass@localhost:1521/service` (renders, plans, reads a live catalog, and runs versioned migrations) |
-| YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#connecting)) |
+| YDB, through its provider | `ydb://localhost:2136/local`, or `ydbs://` over TLS (see [YDB](../../extend/providers/ydb/usage/#connecting)) |
 
 Scheme aliases normalize to the canonical dialect (`postgresql://`,
 `sqlite3://`, `mssql://`, `crdb://`, `ysql://`, `ch://`, and more) — the full
@@ -154,7 +154,7 @@ provider runs the cases in a dev realm in that database.
   which the run treats as its whole database and the provider removes at the
   end. A run against the database itself leaves `ptah_dev` out, so the URL may
   name the target; see
-  [YDB](https://github.com/stokaro/ptah-ydb-plugin/blob/master/docs/ptah.md#dev-shadow-and-scratch-databases).
+  [YDB](../../extend/providers/ydb/usage/#dev-shadow-and-scratch-databases).
 - **PostgreSQL cleanup gives back the schema it empties.** The schema the dev
   URL selects, `public` when it selects none, comes back after the cleanup
   with the owner, grants and comment it had when the run started. A role

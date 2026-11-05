@@ -218,6 +218,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
+      # A provider's pages live in its repository; scripts/data/provider-docs.json
+      # names the release the site shows, and the import writes the pages under
+      # the content root, where every check below reads them as it reads a page
+      # written here. The cache holds the blobless clones, so a run whose
+      # declaration did not change fetches nothing.
+      - name: Cache the provider repositories
+        uses: actions/cache@v6
+        with:
+          path: docs/site/.cache/provider-docs
+          key: provider-docs-${{ hashFiles('docs/site/scripts/data/provider-docs.json') }}
+          restore-keys: provider-docs-
+
+      - name: Import the provider documentation
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/import-provider-docs.mjs --selftest
+          node docs/site/scripts/import-provider-docs.mjs
+
       # Go is needed on every run of this job, not only the embedded one: the
       # command-line check below reads every Markdown file, and any of them is
       # this job's trigger.
@@ -265,10 +287,6 @@ jobs:
       # that still spell it without touching any of them.
       - name: Check documented command lines
         run: go test ./internal/doccommands -count=1
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '26'
 
       # check-style.mjs has no npm dependencies, so this needs no install step.
       # check-limitations.mjs has none either, and it governs a page under
@@ -369,6 +387,18 @@ jobs:
         run: |
           node docs/site/scripts/gen-versions.mjs --selftest
           node docs/site/scripts/release-doc-tags.mjs --selftest
+
+      # The same import the style job runs, for the same reason: the provider
+      # pages are part of the site these checks and the build read.
+      - name: Cache the provider repositories
+        uses: actions/cache@v6
+        with:
+          path: docs/site/.cache/provider-docs
+          key: provider-docs-${{ hashFiles('docs/site/scripts/data/provider-docs.json') }}
+          restore-keys: provider-docs-
+
+      - name: Import the provider documentation
+        run: node docs/site/scripts/import-provider-docs.mjs
 
       # The route ledger's primary invariant runs with the other site checks
       # below and needs no history. This is the secondary one, and it is here
@@ -521,6 +551,9 @@ jobs:
             cd "$workdir/docs/site"
             export DOCS_SOURCE_COMMIT="$edge_source_commit"
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
+            if [ -f scripts/import-provider-docs.mjs ]; then
+              node scripts/import-provider-docs.mjs --cache "$GITHUB_WORKSPACE/docs/site/.cache/provider-docs"
+            fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
             if [ -f scripts/check-redirects.mjs ]; then
@@ -587,6 +620,11 @@ jobs:
                 cd "$workdir/docs/site"
                 export DOCS_SOURCE_COMMIT="$tag_source_commit"
                 DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm ci
+                # A release shows the provider documentation its own
+                # declaration names; a release before the import has none.
+                if [ -f scripts/import-provider-docs.mjs ]; then
+                  node scripts/import-provider-docs.mjs --cache "$GITHUB_WORKSPACE/docs/site/.cache/provider-docs"
+                fi
                 if [ -f scripts/check-links.mjs ]; then
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links

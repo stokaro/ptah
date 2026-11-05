@@ -7,7 +7,8 @@ import { Origin, PageURL } from '../src/lib/docs-origin.mjs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sidebar } from '../src/sidebar.mjs';
-import { pageActionsForSource, resolveSourceContext } from '../src/lib/source-context.mjs';
+import { pageActionsForSource, providerPageSource, resolveSourceContext } from '../src/lib/source-context.mjs';
+import { declaredProviders } from '../src/lib/provider-docs.mjs';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
 import { buildContentInventory } from './build-content-inventory.mjs';
 
@@ -219,6 +220,34 @@ function selftest() {
       if (!reportBody.includes(expected)) throw new Error(`${actionCase.label} issue body omitted ${expected}`);
     }
   }
+  // A provider page: its source is the provider's file at the imported
+  // commit on every documentation version, and its edit and report links go to
+  // the provider repository rather than to a file only the import wrote.
+  const providerCommit = 'fedcba9876543210fedcba9876543210fedcba98';
+  for (const version of ['edge', 'v1.2.3']) {
+    const provider = providerPageSource({ repository: 'example/demo-plugin', commit: providerCommit, source: 'docs/usage.md' });
+    const context = resolveSourceContext({
+      documentationVersion: version,
+      sourceCommit: provider.sourceCommit,
+      renderedSourcePath: provider.renderedSourcePath,
+      viewRef: provider.viewRef,
+    });
+    const model = pageActionsForSource(context, {
+      pageUrl: PageURL(version, 'extend/providers/demo/usage/'),
+      title: 'Using the demo provider',
+      repositoryUrl: provider.repositoryUrl,
+    });
+    const wanted = [
+      [model.sourceUrl, `https://github.com/example/demo-plugin/blob/${providerCommit}/docs/usage.md`],
+      [model.editUrl, 'https://github.com/example/demo-plugin/edit/master/docs/usage.md'],
+    ];
+    for (const [actual, expected] of wanted) {
+      if (actual !== expected) throw new Error(`provider page on ${version}: ${actual}, want ${expected}`);
+    }
+    if (!model.reportUrl.startsWith('https://github.com/example/demo-plugin/issues/new?')) {
+      throw new Error(`provider page on ${version}: the report goes to ${model.reportUrl}`);
+    }
+  }
   const downloadBase = '/edge';
   const validDownloads = {
     'inference-quick-start.zip': {
@@ -245,7 +274,7 @@ function selftest() {
     throw new Error('swapped inference archive/checksum links passed');
   }
   console.log(
-    'check-navigation.mjs --selftest: OK (landings, four version-aware actions, and exact inference downloads)',
+    'check-navigation.mjs --selftest: OK (landings, four version-aware actions, provider page actions, and exact inference downloads)',
   );
 }
 
@@ -253,15 +282,21 @@ async function checkPageActionContract(page, built, buildInfo, entry, problems, 
   const routeUrl = `http://127.0.0.1:${built.port}${built.base}${entry.route}`;
   await page.goto(routeUrl, { waitUntil: 'load' });
   const canonicalPageUrl = `${Origin}${built.base}${entry.route}`;
+  const provider = entry.provider ? providerPageSource(entry.provider) : undefined;
   const source = resolveSourceContext({
     documentationVersion: buildInfo.documentation_version,
-    sourceCommit: buildInfo.source_commit,
-    renderedSourcePath: entry.path,
+    sourceCommit: provider?.sourceCommit ?? buildInfo.source_commit,
+    renderedSourcePath: provider?.renderedSourcePath ?? entry.path,
+    viewRef: provider?.viewRef,
     generated: entry.generated,
     generator: entry.generator,
     editSource: entry.editSource,
   });
-  const expected = pageActionsForSource(source, { pageUrl: canonicalPageUrl, title: entry.title });
+  const expected = pageActionsForSource(source, {
+    pageUrl: canonicalPageUrl,
+    title: entry.title,
+    repositoryUrl: provider?.repositoryUrl,
+  });
   const root = page.locator('ptah-page-actions');
   await root.waitFor({ state: 'visible' });
 
@@ -511,6 +546,15 @@ async function main() {
     } else {
       await checkPageActionContract(page, built, buildInfo, authored, problems, { copyHeading: 'Generate migrations' });
       await checkPageActionContract(page, built, buildInfo, generated, problems);
+    }
+    // A provider page is viewed, edited and reported in its own repository.
+    // Without the provider fields the actions name a file under docs/site that
+    // only the import wrote, and a reader who follows them finds nothing.
+    const imported = inventory.pages.find(({ provider }) => provider !== null);
+    if (declaredProviders().length > 0 && !imported) {
+      problems.push('the declaration names provider pages and the content inventory holds none');
+    } else if (imported) {
+      await checkPageActionContract(page, built, buildInfo, imported, problems);
     }
     await checkVersionedInferenceDownloads(page, built, problems);
 

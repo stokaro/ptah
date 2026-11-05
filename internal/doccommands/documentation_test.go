@@ -220,7 +220,10 @@ func extractAll(c *qt.C, repository string, files []string) []doccommands.Line {
 
 // documentationFiles lists the Markdown and MDX files the repository tracks,
 // and the untracked ones it would track, so a page being written is read
-// before it is committed.
+// before it is committed. It adds the provider pages the site's import step
+// wrote under docs/site/src/content/docs/_providers/, which git ignores: they
+// publish command lines as a page written here does. The docs workflow runs
+// the import before this test; without it the directory is absent.
 //
 // git is the path source for the reason scripts/check-test-style.sh gives: a
 // filesystem walk descends into every linked worktree parked under the
@@ -229,15 +232,23 @@ func extractAll(c *qt.C, repository string, files []string) []doccommands.Line {
 // on purpose.
 func documentationFiles(c *qt.C, repository string) []string {
 	c.Helper()
-	cmd := exec.Command("git", "-c", "core.quotePath=false",
-		"ls-files", "--cached", "--others", "--exclude-standard", "--", "*.md", "*.mdx")
-	cmd.Dir = repository
 	var out bytes.Buffer
-	cmd.Stdout = &out
-	c.Assert(cmd.Run(), qt.IsNil)
+	for _, cmd := range []*exec.Cmd{
+		exec.Command("git", "-c", "core.quotePath=false",
+			"ls-files", "--cached", "--others", "--exclude-standard", "--", "*.md", "*.mdx"),
+		exec.Command("git", "-c", "core.quotePath=false",
+			"ls-files", "--others", "--ignored", "--exclude-standard", "--", "docs/site/src/content/docs/_providers/"),
+	} {
+		cmd.Dir = repository
+		cmd.Stdout = &out
+		c.Assert(cmd.Run(), qt.IsNil)
+	}
 
 	var files []string
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
+		if strings.HasPrefix(line, "docs/site/src/content/docs/_providers/") && !strings.HasSuffix(line, ".md") {
+			continue
+		}
 		if line == "" || strings.Contains("/"+line, "/testdata/") {
 			continue
 		}

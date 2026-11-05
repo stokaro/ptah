@@ -292,6 +292,11 @@ practical, live commands:
   <!-- documentation-suite -->
 
   ```bash
+  # The provider pages, imported from each provider repository at the release
+  # docs/site/scripts/data/provider-docs.json names. Every check below reads
+  # them, the Go ones included.
+  node docs/site/scripts/import-provider-docs.mjs --selftest
+  node docs/site/scripts/import-provider-docs.mjs
   # From the repository root: the Go and shell checks of the Docs workflow.
   go test ./internal/doccommands -count=1
   go test ./docs ./internal/docsembed -count=1

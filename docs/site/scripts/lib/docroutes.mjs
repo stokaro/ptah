@@ -89,8 +89,10 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { importedPageFiles } from '../../src/lib/provider-docs.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
@@ -168,6 +170,12 @@ export function isPublished(relativePath) {
  * read. `root` therefore has to live inside this repository; a directory
  * outside one is refused rather than walked.
  *
+ * The pages a provider repository publishes here are the exception git cannot
+ * see: the import step writes them under `_providers/`, which is ignored, so
+ * they are added from the import's manifests when `root` is this site's
+ * content collection. That read refuses a missing or stale import, so a gate
+ * never passes over a site that lacks them; see src/lib/provider-docs.mjs.
+ *
  * Throws when git cannot answer and when git answers with nothing. An empty
  * content root is a broken invocation, not a result, and returning `[]` for it
  * is how a gate comes to pass without comparing anything.
@@ -199,13 +207,15 @@ export function contentFiles(root = contentRoot) {
 
   // An unmerged path is listed once per stage, so the same page can arrive
   // three times during a conflicted merge.
+  const imported = resolve(root) === resolve(contentRoot) ? importedPageFiles() : [];
   const files = [
-    ...new Set(
-      output
+    ...new Set([
+      ...output
         .split('\n')
         .map((line) => line.replace(/\r$/, ''))
         .filter((line) => line.length > 0),
-    ),
+      ...imported,
+    ]),
   ]
     .filter((file) => isPublished(file))
     .sort();

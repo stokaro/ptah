@@ -1,0 +1,133 @@
+name: Provider documentation
+
+# A provider repository's pages live in its `docs/` folder and are published on
+# docs.ptah.run: the Docs workflow imports them at the release
+# docs/site/scripts/data/provider-docs.json names and checks them with every
+# other page. This workflow is how the provider's own pull requests meet the
+# same checks before a release carries them. The provider calls it:
+#
+#   jobs:
+#     docs:
+#       uses: stokaro/ptah/.github/workflows/provider-docs.yml@master
+#       with:
+#         engine: ydb
+#
+# It checks out this repository at the commit of this file, imports the
+# caller's checkout in place of the declared release, and runs the checks the
+# Docs workflow runs over page content, then builds the site and checks what it
+# renders. The checkers stay here; the provider keeps no copy of them.
+# docs/site/scripts/check-skill-suite.mjs refuses a check here that the Docs
+# workflow does not run, so a check renamed there cannot stay behind here.
+#
+# A check the Docs workflow adds and this workflow does not run still reads the
+# provider pages: in the Docs run of the pull request that moves the
+# declaration to a release carrying them.
+on:
+  workflow_call:
+    inputs:
+      engine:
+        description: The engine the declaration lists the provider under, such as ydb
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pages:
+    name: Provider pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out Ptah at the commit of this workflow
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+
+      # Full history, because each page's "Last updated" date is the last
+      # commit that changed it. Moved out of the workspace before anything
+      # reads it: the gates enumerate this repository with git and walk it, and
+      # a second checkout inside it would be read as this repository's files.
+      - name: Check out the provider
+        uses: actions/checkout@v7
+        with:
+          path: .provider
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Move the provider checkout out of the workspace
+        run: mv .provider "$RUNNER_TEMP/provider"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package-lock.json
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Import the provider pages from its checkout
+        env:
+          ENGINE: ${{ inputs.engine }}
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/import-provider-docs.mjs --selftest
+          node docs/site/scripts/import-provider-docs.mjs --source "$ENGINE=$RUNNER_TEMP/provider"
+
+      # Every ptah and ptah-compat command line a page publishes has to name
+      # verbs the binary has and flags they take.
+      - name: Check documented command lines
+        run: go test ./internal/doccommands -count=1
+
+      - name: Check documentation style
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/check-style.mjs
+          node docs/site/scripts/check-terminology.mjs
+          node docs/site/scripts/check-implementation-chronology.mjs
+          node docs/site/scripts/check-limitations.mjs
+          node docs/site/scripts/check-mutable-source-links.mjs
+          node docs/site/scripts/check-source-page-contracts.mjs
+          node docs/site/scripts/check-editorial-shape.mjs
+
+      - name: Check links and page health
+        working-directory: docs/site
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check:links
+          npm run check:core-doc-links
+          npm run check:page-health
+
+      # A page the provider adds is recorded in the route ledger when a release
+      # carrying it is declared. A page it removes or renames needs a redirect
+      # in that same change, which only this repository can add, so here it is
+      # reported and does not fail the provider's pull request.
+      - name: Report the routes a declaration change has to redirect
+        continue-on-error: true
+        working-directory: docs/site
+        run: |
+          set -euo pipefail
+          node scripts/check-route-retirement.mjs --write
+          npm run check:route-retirement
+          npm run check:redirects
+
+      - name: Build the site and check the pages it renders
+        working-directory: docs/site
+        env:
+          DOCS_VERSION: edge
+          ASTRO_TELEMETRY_DISABLED: "1"
+        run: |
+          set -euo pipefail
+          npx playwright install --with-deps chromium
+          npm run build
+          npm run check:heading-anchors
+          npm run check:glossary-coverage
+          npm run check:accessibility
+          npm run check:responsive
+          npm run check:navigation
