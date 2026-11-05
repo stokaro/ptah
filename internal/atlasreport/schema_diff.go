@@ -275,15 +275,16 @@ func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
 func schemaChangesSQLText(changes []SchemaChange, spell, end func(string) string) string {
 	var sql strings.Builder
 	for _, change := range changes {
-		if change.Comment != "" {
-			fmt.Fprintf(&sql, "-- %s\n", spell(change.Comment))
-		}
 		cmd := strings.TrimSuffix(change.Cmd, ";")
 		if sqlscript.CommentOnly(cmd) {
 			// A note ends its own line; the script adds the line break.
 			cmd = strings.TrimRight(cmd, "\n")
 		}
-		fmt.Fprintf(&sql, "%s%s\n", cmd, end(cmd))
+		named := cmd
+		if change.Comment != "" {
+			named = afterNotes(cmd, "-- "+spell(change.Comment)+"\n")
+		}
+		fmt.Fprintf(&sql, "%s%s\n", named, end(cmd))
 	}
 	return sql.String()
 }
@@ -304,6 +305,31 @@ func ChangeLine(comment string) string {
 		return ""
 	}
 	return "-- " + capitalized(comment) + "\n"
+}
+
+// NameStatement is statement with [ChangeLine] for comment directly above its
+// SQL. A statement can open with notes a plan writes beside it, such as the
+// changes a diff policy left out or an object the target skipped; they stay
+// above the line, so the line names the statement that follows it rather than
+// the notes.
+func NameStatement(comment, statement string) string {
+	return afterNotes(statement, ChangeLine(comment))
+}
+
+// afterNotes is statement with line inserted after the comment lines it opens
+// with.
+func afterNotes(statement, line string) string {
+	if line == "" {
+		return statement
+	}
+	at := 0
+	for rest := range strings.Lines(statement) {
+		if !strings.HasPrefix(strings.TrimSpace(rest), "--") || !strings.HasSuffix(rest, "\n") {
+			break
+		}
+		at += len(rest)
+	}
+	return statement[:at] + line + statement[at:]
 }
 
 // asWritten is text as it is.

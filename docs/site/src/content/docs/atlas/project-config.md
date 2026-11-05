@@ -140,11 +140,32 @@ env "local" {
 | `format.migrate.diff` | Default `migrate diff --format`. |
 | `format.migrate.lint` | Default `migrate lint --format`. |
 | `format.migrate.status` | Default `migrate status --format`. |
-| `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
-| `diff.skip.drop_column` | Suppresses column drops in supported local diff/apply plans. |
-| `diff.skip.drop_index` | Suppresses standalone index drops and their comment cleanup in supported local diff/apply plans. |
+| `diff.skip.drop_table` | Omits table drops from `schema apply`, `schema diff`, `schema plan` and `migrate diff`. |
+| `diff.skip.drop_column` | Omits column drops from the same commands. |
+| `diff.skip.drop_index` | Omits standalone index drops and their comment cleanup from the same commands. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+
+### `diff.skip`
+
+`drop_table`, `drop_column` and `drop_index` go through the filter
+`ptah migrations generate` applies for `diff.skip` in `ptah.yaml`, so both
+binaries omit the same changes. Measured on SQLite, the pinned community binary
+v1.3.0 plans `ALTER TABLE t ADD COLUMN c` and nothing else for a table
+`t(id, a, b)` with an index on `a`, a desired `t(id, a, c)`, and
+`drop_column = true` and `drop_index = true`; `ptah-compat` plans the same
+statement.
+
+Ptah departs from the community binary on purpose in what it reports and in
+what a rebuild keeps. The community binary says nothing about what it left out;
+a `schema apply`, `schema diff` or `schema plan` here opens its plan
+with a `-- SKIP: ...` comment for each omitted change, and writes the same line
+to standard error when nothing else is left to run. `migrate diff` keeps the
+migration file byte for byte, because `atlas.sum` hashes it, and reports the
+omissions on standard error only. And a skipped column stays in its table's
+declaration: on SQLite, where a type change rebuilds the table, the community
+binary rebuilds `t` without the column `drop_column = true` keeps, and Ptah
+rebuilds it with the column and its rows.
 
 ### `migration.baseline`
 

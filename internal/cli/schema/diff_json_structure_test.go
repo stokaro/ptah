@@ -27,8 +27,9 @@ type schemaDiffJSON struct {
 func runSchemaDiffJSON(c *qt.C, args ...string) schemaDiffJSON {
 	c.Helper()
 
-	out, err := runSchema("", append([]string{"diff", "--format", "json"}, args...)...)
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	// The document is standard output alone: the error stream carries the
+	// notices beside it, such as a change the diff policy left out.
+	out, _ := runSchemaSucceeding(c, append([]string{"diff", "--format", "json"}, args...)...)
 
 	document := schemaDiffJSON{}
 	c.Assert(json.Unmarshal([]byte(out), &document), qt.IsNil, qt.Commentf("%s", out))

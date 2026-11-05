@@ -9,8 +9,6 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
-	"ptah.run/core/planext"
-	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
 )
@@ -71,20 +69,4 @@ func TestPlanner_ReleasesForeignKeyBeforeReferencedKeyReplacement(t *testing.T) 
 	assertBefore(t, sql, `DROP CONSTRAINT IF EXISTS "self_fk"`, `DROP CONSTRAINT IF EXISTS "key_id"`)
 	assertBefore(t, sql, `DROP CONSTRAINT IF EXISTS "key_id"`, `ADD CONSTRAINT "key_id"`)
 	assertBefore(t, sql, `ADD CONSTRAINT "key_id"`, `ADD CONSTRAINT "self_fk"`)
-}
-
-func TestPlanner_SkippedTableDropRetainsItsForeignKeys(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		TablesRemoved: difftypes.TableRemovals{{Name: "children"}},
-		ConstraintsRemoved: difftypes.ConstraintRemovals{
-			{Name: "parent_fk", TableName: "children", Type: "FOREIGN KEY"},
-			{Name: "other_fk", TableName: "archives", Type: "FOREIGN KEY"},
-		},
-	}
-	planner := postgres.New().WithSkipChangeKinds(planext.DropTable)
-	sql := renderPostgresSkip(c, planner, diff, &schemamodel.Database{})
-	c.Assert(sql, qt.Not(qt.Contains), `DROP CONSTRAINT IF EXISTS "parent_fk"`)
-	c.Assert(sql, qt.Contains, `DROP CONSTRAINT IF EXISTS "other_fk"`)
-	c.Assert(sql, qt.Contains, "skip: drop_table")
 }

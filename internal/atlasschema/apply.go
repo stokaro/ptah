@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/config"
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform/capability"
@@ -293,7 +292,7 @@ func (p ApplyPlan) NamedSQL() (string, error) {
 	for i, statement := range statements {
 		named[i] = statement
 		if i < len(p.changes) {
-			named[i] = atlasreport.ChangeLine(p.changes[i]) + statement
+			named[i] = atlasreport.NameStatement(p.changes[i], statement)
 		}
 	}
 	return annotatedSQL(named, p.annotations), nil
@@ -517,15 +516,11 @@ func computeApplyPlan(
 		schemasBeyondURL: read.schemasBeyondURL,
 	}
 	info := conn.Info()
-	// The comparison is told what applyDiffPolicy will do to its answer. The
-	// SQLite virtual-table guard runs inside CompareWithDatabase and refuses on
-	// the statements it predicts, so without this a plan whose every drop the
-	// policy deletes was refused before the policy could delete it
-	// (stokaro/ptah#1028).
-	compareOpts := config.DefaultCompareOptions()
-	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
+	// The comparison is told what the diff policy will do to its answer; see
+	// [DiffPolicy.CompareOptions].
+	compareOpts := opts.Policy.CompareOptions()
 	withSecretRotation(compareOpts, opts.Policy)
-	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
+	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
@@ -535,7 +530,7 @@ func computeApplyPlan(
 	// compatibility one both come through here.
 	undecidednote.Report(ctx, opts.Diagnostics, undecided, "the database", "the desired schema")
 	computation.undecided = undecided
-	diff = applyDiffPolicy(diff, opts.Policy)
+	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
 	// After the policy, which deletes the table drops a configuration skips:
 	// a drop the plan will not run is not one to warn about.
 	if opts.WarnUndescribedSchemas {
@@ -547,11 +542,18 @@ func computeApplyPlan(
 	}
 	// A skipped object is not a change, so a plan with nothing else to run
 	// has no statement to carry its comment; the line goes beside the
-	// result instead, so "synced" never stands alone over it.
+	// result instead, so "synced" never stands alone over it. A change the
+	// diff policy left out is reported the same way.
 	if !diff.HasChanges() {
+		ReportOmitted(opts.Diagnostics, omitted)
 		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
 	}
 	if diff.HasChanges() {
+		// The planner is handed the comparison as it came back, with the
+		// kinds the policy skips: it removes the same changes the filter
+		// above did, and the plan opens with a comment for each of them, as
+		// a generated migration does. Everything above decided on that
+		// filter's answer.
 		planOptions := planext.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
@@ -563,11 +565,12 @@ func computeApplyPlan(
 			OmitNullBackfill:    opts.OmitNullBackfill,
 			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 			Statements:          planstyle.Statements,
 		}
 		plan, err := planner.GenerateSchemaDiffRenderedPlan(
 			ctx, opts.Runtime,
-			diff, info.Dialect, planOptions,
+			compared, info.Dialect, planOptions,
 		)
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)

@@ -1752,6 +1752,24 @@ type TableDiff struct {
 	ColumnKeyNames map[string]string `json:"-"`
 }
 
+// HasChanges reports whether the table diff changes anything: a column added,
+// removed or modified, a constraint added or removed, the table's comment, or
+// an owner's change to a subject of the table. TableName, Desired, Current and
+// ColumnKeyNames describe the table a change is made to and are not changes of
+// their own, so a table diff carrying only them reports false. A nil table diff
+// reports false.
+//
+// A comparison lists a table among [SchemaDiff.TablesModified] only when this
+// holds, and a filter that takes changes out of a table diff, such as a diff
+// policy that skips column drops, drops the table diff when this stops holding.
+func (d *TableDiff) HasChanges() bool {
+	return d != nil && (len(d.ColumnsAdded) > 0 || len(d.ColumnsRemoved) > 0 ||
+		len(d.ColumnsModified) > 0 ||
+		len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0 ||
+		d.CommentChange != nil ||
+		len(d.FeatureChanges) > 0)
+}
+
 // ColumnDiff represents specific property changes within a database column.
 //
 // This structure captures the detailed differences between the current column

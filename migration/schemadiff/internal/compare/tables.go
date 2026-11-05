@@ -267,7 +267,7 @@ func TablesAndColumnsWithTableContext(
 			// with nothing able to fix it (stokaro/ptah#2168). A target that
 			// stores no table comment has nothing to compare.
 			tableDiff.CommentChange = storedCommentChange(dialect, genTable.Comment, dbTable.Comment)
-			if tableChanged(tableDiff) {
+			if tableDiff.HasChanges() {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}
@@ -318,16 +318,6 @@ func tableDiffName(schema, name, dialect string) string {
 		return tableref.CanonicalExact(schema, name)
 	}
 	return catalog.QualifyTableName(schema, name)
-}
-
-// tableChanged reports whether a table's modification carries any change: a
-// column added, dropped or changed, or a change of one of the table's own
-// settings.
-func tableChanged(tableDiff difftypes.TableDiff) bool {
-	return len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
-		len(tableDiff.ColumnsModified) > 0 ||
-		tableDiff.CommentChange != nil ||
-		len(tableDiff.FeatureChanges) > 0
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

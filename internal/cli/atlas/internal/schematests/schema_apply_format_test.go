@@ -426,21 +426,91 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"schema", "apply",
-		"--env", "local",
-		"--auto-approve",
-	})
-
-	err = cmd.Execute()
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "schema", "apply", "--env", "local", "--auto-approve")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(stdout, qt.Equals, "synced")
+	c.Assert(stderr, qt.Equals, "SKIP: DROP TABLE of old_users omitted by diff policy (skip: drop_table)\n")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "old_users"), qt.Equals, 1)
+}
+
+// skipColumnAndIndexPolicy is the env block that skips column and index drops.
+const skipColumnAndIndexPolicy = "  diff {\n    skip {\n      drop_index = true\n      drop_column = true\n    }\n  }\n"
+
+// skipColumnAndIndexProject is a SQLite database holding t(id, a, b) and an
+// index on a, a desired schema of t(id, a) plus whatever extra declares, and
+// an atlas.hcl env carrying policy. Dropping b is a table rebuild on SQLite,
+// and a rebuild loses every index the desired table does not declare.
+func skipColumnAndIndexProject(c *qt.C, extra, policy string) string {
+	c.Helper()
+	dir := c.TempDir()
+	c.Chdir(dir)
+	dbPath := filepath.Join(dir, "skip.db")
+	atlastest.SqliteExec(c, dbPath, "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT); CREATE INDEX t_a ON t(a);")
+	c.Assert(os.WriteFile("schema.sql", []byte("CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT"+extra+");\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
+  src = "file://schema.sql"
+`+policy+`}
+`), 0o600), qt.IsNil)
+	return dbPath
+}
+
+// TestSchemaApplyUsesAtlasProjectDiffSkipDropColumnAndIndex pins the two
+// drops the community binary v1.3.0 withholds under this policy: measured on
+// SQLite, it answers `Schema is synced, no changes to be made` where the
+// unskipped run rebuilds t without b and loses t_a. The plan here says what it
+// left out, which the community binary does not.
+func TestSchemaApplyUsesAtlasProjectDiffSkipDropColumnAndIndex(t *testing.T) {
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
+	c := qt.New(t)
+	dbPath := skipColumnAndIndexProject(c, "", skipColumnAndIndexPolicy)
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "schema", "apply", "--env", "local", "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(stdout, qt.Equals, "Schema is synced, no changes to be made\n")
+	c.Assert(stderr, qt.Equals, "SKIP: DROP COLUMN of t.b omitted by diff policy (skip: drop_column)\n"+
+		"SKIP: DROP INDEX of t.t_a omitted by diff policy (skip: drop_index)\n")
+	c.Assert(atlastest.SqliteQueryInt(c, dbPath, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'b'"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "t_a"), qt.Equals, 1)
+}
+
+// TestSchemaApplyUsesAtlasProjectDiffSkipBesideAPlannedChange pins the plan a
+// skip leaves something in: the column is added, b and t_a stay, and the plan
+// opens with the comment for each change it left out. The community binary
+// v1.3.0 plans the same single ADD COLUMN, without the comment.
+func TestSchemaApplyUsesAtlasProjectDiffSkipBesideAPlannedChange(t *testing.T) {
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
+	c := qt.New(t)
+	dbPath := skipColumnAndIndexProject(c, ", c TEXT", skipColumnAndIndexPolicy)
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "schema", "apply", "--env", "local", "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(stdout, qt.Contains, "-- SKIP: DROP COLUMN of t.b omitted by diff policy (skip: drop_column)\n"+
+		"-- SKIP: DROP INDEX of t.t_a omitted by diff policy (skip: drop_index)\n")
+	c.Assert(stdout, qt.Contains, `ALTER TABLE "t" ADD COLUMN "c" TEXT`)
+	c.Assert(stdout, qt.Not(qt.Contains), "DROP TABLE")
+	c.Assert(atlastest.SqliteQueryInt(c, dbPath, "SELECT count(*) FROM pragma_table_info('t') WHERE name IN ('b', 'c')"), qt.Equals, 2)
+	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "t_a"), qt.Equals, 1)
+}
+
+// TestSchemaApplyWithoutAtlasProjectDiffSkipDropsColumnAndIndex is the
+// control: the same project without the policy rebuilds the table, so the
+// rows above measure the policy and not the fixture.
+func TestSchemaApplyWithoutAtlasProjectDiffSkipDropsColumnAndIndex(t *testing.T) {
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
+	c := qt.New(t)
+	dbPath := skipColumnAndIndexProject(c, "", "")
+
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "schema", "apply", "--env", "local", "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))
+	c.Assert(stdout, qt.Contains, `DROP TABLE "t"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "SKIP:")
+	c.Assert(atlastest.SqliteQueryInt(c, dbPath, "SELECT count(*) FROM pragma_table_info('t') WHERE name = 'b'"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "t_a"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.T) {

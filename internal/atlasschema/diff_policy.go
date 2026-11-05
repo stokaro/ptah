@@ -1,22 +1,32 @@
 package atlasschema
 
 import (
+	"fmt"
+	"io"
 	"slices"
-	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/concurrentindex"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/diffpolicy"
 )
 
 // DiffPolicy holds Atlas-compatible schema diff policy that maps to Ptah's
 // local planning capabilities.
 type DiffPolicy struct {
-	SkipDropTable         bool
+	// SkipChangeKinds lists the destructive change kinds a plan leaves out:
+	// `diff.skip` in ptah.yaml, and `diff { skip { ... } }` in an Atlas
+	// project file. They are removed by [diffpolicy.ApplyForDialect], the
+	// filter `ptah migrations generate` applies, so both commands omit the same
+	// changes, and the plan carries one comment for each change it left out.
+	SkipChangeKinds []planext.ChangeKind
+
 	ConcurrentIndexCreate bool
 	ConcurrentIndexDrop   bool
 	// OnlineAlter asks the server to apply the plan without blocking the
@@ -95,61 +105,54 @@ func declaredConcurrentIndexRefs(
 	})
 }
 
-// ApplyDiffPolicy returns a shallow copy of diff with supported Atlas diff
-// policy applied.
-func ApplyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.SchemaDiff {
-	return applyDiffPolicy(diff, policy)
+// ApplyDiffPolicy returns diff without the changes of the kinds
+// policy.SkipChangeKinds lists, and the changes it left out in the order a plan
+// names them. A skipped table drop takes the removals that belong to the kept
+// table with it; [diffpolicy.ApplyForDialect] is the filter and says which.
+// dialect selects the index-name namespace a standalone index drop is told
+// from a replacement in. diff is not changed, and a policy that skips nothing
+// returns it as given.
+func ApplyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy, dialect string) (*difftypes.SchemaDiff, []diffpolicy.SkippedChange) {
+	return diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(policy.SkipChangeKinds...), dialect)
 }
 
-func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.SchemaDiff {
-	if diff == nil || !policy.SkipDropTable {
-		return diff
+// CompareOptions returns the default comparison options, told which removals
+// the caller deletes from the comparison's answer under policy.
+//
+// The comparison reads them only in the SQLite virtual-table guard, which runs
+// inside it and refuses on the statements it predicts. A drop the policy
+// deletes afterwards is a statement nothing runs, so without this the guard
+// refuses a plan the policy has already emptied (stokaro/ptah#1028). Every
+// kind the guard reads is forwarded; see [config.CompareOptions.SkipTableDrops].
+func (p DiffPolicy) CompareOptions() *config.CompareOptions {
+	opts := config.DefaultCompareOptions()
+	opts.SkipTableDrops = slices.Contains(p.SkipChangeKinds, planext.DropTable)
+	opts.SkipColumnDrops = slices.Contains(p.SkipChangeKinds, planext.DropColumn)
+	opts.SkipIndexDrops = slices.Contains(p.SkipChangeKinds, planext.DropIndex)
+	return opts
+}
+
+// virtualTablePolicy is the policy as the SQLite virtual-table guard reads it,
+// for a comparison that runs the guard itself rather than through
+// [DiffPolicy.CompareOptions].
+func (p DiffPolicy) virtualTablePolicy() sqlitevirtual.Policy {
+	opts := p.CompareOptions()
+	return sqlitevirtual.Policy{
+		SkipDropTable:  opts.SkipTableDrops,
+		SkipDropColumn: opts.SkipColumnDrops,
+		SkipDropIndex:  opts.SkipIndexDrops,
 	}
-	filtered := *diff
-	removedTables := tableSet(diff.TablesRemoved.Names())
-	filtered.TablesRemoved = nil
-	indexRemovals := slices.DeleteFunc(filtered.IndexRemovals(), func(ref difftypes.IndexRef) bool {
-		return hasTable(removedTables, ref.TableName)
-	})
-	filtered.SetIndexRemovals(indexRemovals)
-	// One list, so one filter: the parallel name list this also pruned is gone
-	// (stokaro/ptah#2315).
-	filtered.ConstraintsRemoved = slices.DeleteFunc(
-		slices.Clone(filtered.ConstraintsRemoved),
-		func(value difftypes.ConstraintRemovalInfo) bool {
-			return slices.Contains(diff.TablesRemoved.Names(), value.TableName)
-		},
-	)
-	filtered.TriggersRemoved = slices.DeleteFunc(slices.Clone(filtered.TriggersRemoved), func(ref difftypes.TriggerRef) bool {
-		return hasTable(removedTables, ref.TableName)
-	})
-	filtered.RLSPoliciesRemoved = slices.DeleteFunc(slices.Clone(filtered.RLSPoliciesRemoved), func(ref difftypes.RLSPolicyRef) bool {
-		return hasTable(removedTables, ref.TableName)
-	})
-	filtered.RLSEnabledTablesRemoved = slices.DeleteFunc(slices.Clone(filtered.RLSEnabledTablesRemoved), func(table schemamodel.RLSEnabledTable) bool {
-		name := table.Table
-		return hasTable(removedTables, name)
-	})
-	filtered.GrantsRemoved = slices.DeleteFunc(slices.Clone(filtered.GrantsRemoved), func(ref difftypes.GrantRef) bool {
-		return strings.EqualFold(ref.ObjectType, "TABLE") && hasTable(removedTables, ref.ObjectName)
-	})
-	// Default privileges are absent from this function on purpose. Every removal
-	// it prunes is keyed to a dropped table, and dropping a table removes
-	// nothing from pg_default_acl: a default privilege belongs to a schema and
-	// an object type, and it decides what a table created later receives.
-	// Pruning one here would suppress a removal the desired state asked for.
-	return &filtered
 }
 
-func tableSet(names []string) map[string]struct{} {
-	values := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		values[name] = struct{}{}
+// ReportOmitted writes one line for each change the diff policy left out, in
+// the words the plan's comment carries. A command whose plan has no statement
+// left to carry the comment writes it beside its result instead, so "synced"
+// never stands alone over a change the policy withheld.
+func ReportOmitted(diagnostics io.Writer, omitted []diffpolicy.SkippedChange) {
+	if diagnostics == nil {
+		return
 	}
-	return values
-}
-
-func hasTable(values map[string]struct{}, name string) bool {
-	_, ok := values[name]
-	return ok
+	for _, change := range omitted {
+		_, _ = fmt.Fprintln(diagnostics, change.Comment())
+	}
 }

@@ -405,18 +405,16 @@ func diffResolvedStates(
 	if err := setDiffRoot(ctx, dialect, opts.DevURL, fromSide.database, opts.Runtime); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	compareOpts := config.DefaultCompareOptions()
+	// A comparison on a held connection runs the SQLite virtual-table guard
+	// itself, and the guard reads the drop policy from here; see
+	// [DiffPolicy.CompareOptions]. schema apply sets the same fields.
+	compareOpts := opts.Policy.CompareOptions()
 	compareOpts.Dialect = dialect
 	// Two whole MySQL-family servers are compared database by database too,
 	// as the pinned community binary v1.3.0 compares them: measured on MySQL
 	// 8.4.11 and MariaDB 11.8.9, `schema diff` between two servers plans
 	// CREATE DATABASE and DROP DATABASE (stokaro/ptah#3789).
 	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
-	// A comparison on a held connection runs the SQLite virtual-table guard
-	// itself, and the guard reads the drop policy from here: without it, a
-	// project that skips `drop_table` is refused for a DROP the policy deletes
-	// (stokaro/ptah#1028). schema apply sets the same field.
-	compareOpts.SkipTableDrops = opts.Policy.SkipDropTable
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
@@ -429,9 +427,9 @@ func diffResolvedStates(
 	// (stokaro/ptah#1028).
 	//
 	// It gets the same diff policy that filters the diff below, because the
-	// refusal is a claim about a statement and `skip drop_table` deletes that
+	// refusal is a claim about a statement and a skipped drop deletes that
 	// statement before it is rendered.
-	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: opts.Policy.SkipDropTable}
+	virtualPolicy := opts.Policy.virtualTablePolicy()
 	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database, virtualPolicy); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -478,8 +476,11 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 
-	diff := applyDiffPolicy(compared, opts.Policy)
-	changes, err := plannedDiffChanges(ctx, opts, diff, dialect, planext.Options{
+	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, dialect)
+	if !diff.HasChanges() {
+		ReportOmitted(opts.Diagnostics, omitted)
+	}
+	changes, err := plannedDiffChanges(ctx, opts, compared, diff, dialect, planext.Options{
 
 		Capabilities:         capabilities,
 		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
@@ -491,6 +492,7 @@ func diffResolvedStates(
 		OmitNullBackfill:    opts.OmitNullBackfill,
 		AllowTableRebuild:   opts.Policy.AllowTableRebuild,
 		TableRebuildRequest: opts.Policy.TableRebuildRequest,
+		SkipChangeKinds:     opts.Policy.SkipChangeKinds,
 		Statements:          planstyle.Statements,
 	})
 	if err != nil {
@@ -506,14 +508,18 @@ func diffResolvedStates(
 func plannedDiffChanges(
 	ctx context.Context,
 	opts DiffOptions,
-	diff *difftypes.SchemaDiff,
+	compared, diff *difftypes.SchemaDiff,
 	dialect string,
 	planOptions planext.Options,
 ) ([]atlasreport.SchemaChange, error) {
 	if !diff.HasChanges() {
 		return nil, nil
 	}
-	plan, err := planner.GenerateSchemaDiffTextPlan(ctx, opts.Runtime, diff, dialect, planOptions)
+	// diff is compared with the diff policy applied, and says whether there is
+	// anything to plan. The plan is made from compared with the kinds the
+	// policy skips, as schema apply makes it: the planner removes the same
+	// changes again, and the statements open with a comment for each.
+	plan, err := planner.GenerateSchemaDiffTextPlan(ctx, opts.Runtime, compared, dialect, planOptions)
 	if err != nil {
 		return nil, fmt.Errorf("generate schema diff SQL: %w", err)
 	}

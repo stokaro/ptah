@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -94,6 +95,13 @@ func GenerateSchemaDiffAST(ctx context.Context, runtime PlanningRuntime, diff *d
 //     operation is planned as a node of its own, so its verdict belongs to
 //     the statements that node renders
 //
+// opts.SkipChangeKinds is applied here for every target, through
+// [ptah.run/migration/diffpolicy.ApplyForDialect], before the target's
+// planner is built. The plan omits each change of a listed kind and starts
+// with one comment naming it, in the words
+// [ptah.run/migration/diffpolicy.SkippedChange.Comment] writes. The planner
+// receives the filtered diff and options that list no kinds.
+//
 // Every failure comes back as a *ptaherr.PlanError carrying the dialect, so
 // errors.As selects the structured form and errors.Is the sentinel.
 func GenerateSchemaDiffASTWithOptions(
@@ -118,6 +126,8 @@ func GenerateSchemaDiffASTWithOptions(
 			),
 		)
 	}
+	diff, omitted := omitSkippedChanges(diff, opts.SkipChangeKinds, dialect)
+	opts.SkipChangeKinds = nil
 	planner, err := runtime.MigrationPlanner(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
@@ -156,7 +166,7 @@ func GenerateSchemaDiffASTWithOptions(
 	if err := ctx.Err(); err != nil {
 		return nil, wrapPlanError(dialect, err)
 	}
-	return append(skippedComments(diff), nodes...), nil
+	return slices.Concat(omitted, skippedComments(diff), nodes), nil
 }
 
 // skippedComments writes one comment ahead of the plan for each object the

@@ -23,7 +23,6 @@ func plannerFactory(dialect descriptor.Dialect) (planext.Factory, bool) {
 			plan := postgres.NewForDialect(name, opts.CapabilitiesFor(name)).
 				WithConcurrentIndexRefs(opts.ConcurrentIndexRefs...).
 				WithConcurrentIndexDropRefs(opts.ConcurrentIndexDropRefs...).
-				WithSkipChangeKinds(opts.SkipChangeKinds...).
 				WithStatementStyle(opts.Statements)
 			if opts.ConcurrentIndexes {
 				plan = plan.WithConcurrentIndexes()

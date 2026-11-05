@@ -1570,7 +1570,7 @@ func effectiveAtlasSchemas(cmd *cobra.Command, flagValues []string, cfg projectc
 
 func atlasDiffPolicy(cfg projectconfig.Config) (atlasschema.DiffPolicy, error) {
 	return atlasschema.DiffPolicy{
-		SkipDropTable:                 cfg.Diff.Skip.DropTable.Set && cfg.Diff.Skip.DropTable.Value,
+		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),

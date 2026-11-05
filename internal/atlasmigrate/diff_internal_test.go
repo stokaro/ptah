@@ -23,6 +23,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/coverage"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -82,7 +83,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 		},
 		{
 			name:    "a plan whose table drops the policy removes is not refused",
-			policy:  atlasschema.DiffPolicy{SkipDropTable: true},
+			policy:  atlasschema.DiffPolicy{SkipChangeKinds: []planext.ChangeKind{planext.DropTable}},
 			wantErr: false,
 		},
 	}

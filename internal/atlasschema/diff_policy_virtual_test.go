@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/planext"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
@@ -20,9 +21,9 @@ import (
 // between a caller's diff policy and the SQLite virtual-table guard.
 //
 // The guard runs before the policy: [atlasschema.PlanApply] reaches it inside
-// schemadiff.CompareWithDatabase and only calls applyDiffPolicy on what comes
-// back, and [atlasschema.Diff] calls it directly a few lines above its own
-// applyDiffPolicy. So a project configured with `skip drop_table` was refused
+// schemadiff.CompareWithDatabase and only calls [atlasschema.ApplyDiffPolicy]
+// on what comes back, and [atlasschema.Diff] calls it directly a few lines
+// above its own. So a project configured with `skip drop_table` was refused
 // for a `DROP TABLE` the policy had already deleted, and told to set
 // PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE or
 // PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP to obtain a plan that does nothing.
@@ -64,7 +65,7 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 		{
 			// The row this test exists for.
 			name:        "a plan whose table drops the policy removes is not refused",
-			policy:      atlasschema.DiffPolicy{SkipDropTable: true},
+			policy:      skipping(planext.DropTable),
 			wantErr:     false,
 			wantChanges: false,
 		},

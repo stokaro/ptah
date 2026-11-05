@@ -215,7 +215,12 @@ Skipping `drop_index` also preserves the retained index's comment. A replacement
 that drops and recreates an index still runs, including its comment changes.
 Skipping `drop_table` also omits the dependent removals (indexes, constraints,
 triggers, RLS policies, table-level grants) that a kept table must retain, so the
-plan stays consistent. Skip is currently honored by the PostgreSQL-family planner.
+plan stays consistent. A skipped column stays in its table's declaration, so a
+SQLite table rebuilt for another change keeps it and its rows. Every planner
+honors the list, a provider's included: `migrations generate`, `schema apply`,
+`schema plan` and `schema diff` apply the same filter. A plan opens with the
+`-- SKIP:` comment for each omitted change, and a run left with nothing to
+apply writes the same line to standard error beside `Schema is synced`.
 
 The selected environment's `diff.skip` replaces the top-level list when the
 field is present. An explicit empty list therefore clears inherited skip kinds.

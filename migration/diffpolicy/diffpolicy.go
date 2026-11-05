@@ -25,6 +25,9 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexscope"
 )
@@ -118,8 +121,11 @@ func ddl(k planext.ChangeKind) string {
 // constraints, triggers, RLS policies and enablement, and table-level grants)
 // that a kept table must retain, so the plan stays internally consistent; those
 // pruned dependents are not reported individually — the skipped table drop is
-// the one record for the group. diff is not mutated. A nil diff or empty skip
-// set returns the input unchanged with no skipped changes.
+// the one record for the group. A table whose only changes were skipped column
+// drops is left out of TablesModified, so the copy's
+// [difftypes.SchemaDiff.HasChanges] answers for what is left. diff is not
+// mutated. A nil diff or empty skip set returns the input unchanged with no
+// skipped changes.
 func Apply(diff *difftypes.SchemaDiff, skip SkipSet) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, "")
 }
@@ -164,7 +170,7 @@ func apply(
 		filtered = dropTableDependents(filtered, removedTables)
 	}
 	if skip.Has(planext.DropColumn) {
-		filtered.TablesModified, skipped = skipColumnRemovals(filtered.TablesModified, skipped)
+		filtered.TablesModified, skipped = skipColumnRemovals(filtered.TablesModified, skipped, filtered.EffectiveIdentifierSemantics(dialect))
 	}
 	if skip.Has(planext.DropIndex) {
 		additions := indexscope.NewConflictSetWithSemantics(
@@ -241,18 +247,85 @@ func indexRefObject(ref difftypes.IndexRef) string {
 	return ref.TableName + "." + ref.Name
 }
 
-func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange) ([]difftypes.TableDiff, []SkippedChange) {
-	out := slices.Clone(tables)
-	for i := range out {
-		if len(out[i].ColumnsRemoved) == 0 {
+// skipColumnRemovals takes the column removals out of every table diff, and
+// drops a table diff the skipped drops were the only change of: that table is
+// not modified, and a caller asking [difftypes.SchemaDiff.HasChanges] of the
+// filtered diff is told so. A table diff that removed no column is kept as it
+// came.
+//
+// A table diff that keeps another change keeps the skipped columns in its
+// declaration too. A planner that renders the table from the declaration
+// rather than from the removal list would drop them otherwise: a SQLite
+// rebuild creates the table again from the declared columns, and a provider
+// that owns its tables plans the alteration from the declared and observed
+// tables. Without this, a skipped drop of b beside a type change of a
+// rebuilds t without b on SQLite.
+func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange, semantics identifier.Semantics) ([]difftypes.TableDiff, []SkippedChange) {
+	var out []difftypes.TableDiff
+	for _, table := range tables {
+		if len(table.ColumnsRemoved) == 0 {
+			out = append(out, table)
 			continue
 		}
-		for _, column := range out[i].ColumnsRemoved {
-			skipped = append(skipped, SkippedChange{Kind: planext.DropColumn, Object: out[i].TableName + "." + column.Name})
+		for _, column := range table.ColumnsRemoved {
+			skipped = append(skipped, SkippedChange{Kind: planext.DropColumn, Object: table.TableName + "." + column.Name})
 		}
-		out[i].ColumnsRemoved = nil
+		retained := table.ColumnsRemoved
+		table.ColumnsRemoved = nil
+		if table.HasChanges() {
+			table.Desired = declareRetainedColumns(table.Desired, table.Current, retained, semantics)
+			out = append(out, table)
+		}
 	}
 	return out, skipped
+}
+
+// declareRetainedColumns returns declared with each retained column added as
+// a field of its table, at the place the observed table holds it: after the
+// nearest column before it that the declaration also has, or first when there
+// is none. A declaration that was not captured is returned as it came, and
+// declared is not changed.
+func declareRetainedColumns(
+	declared schemacapture.TableDeclaration,
+	observed schemacapture.TableObservation,
+	retained difftypes.ColumnChanges,
+	semantics identifier.Semantics,
+) schemacapture.TableDeclaration {
+	if !declared.HasTable() {
+		return declared
+	}
+	position := make(map[string]int, len(observed.Table.Columns))
+	for i, column := range observed.Table.Columns {
+		position[semantics.ColumnIdentityKey(column.Name)] = i
+	}
+	fields := slices.Clone(declared.Fields)
+	for _, column := range retained {
+		column.StructName = declared.Table.StructName
+		// The removal carries the column as the target observed it, and an
+		// owner's settings on it are observed values. A declaration holds
+		// desired ones, and a provider refuses an observed value there.
+		column.Facets = schemaext.Facets{}
+		fields = slices.Insert(fields, retainedFieldIndex(fields, declared.Table.StructName, column.Name, position, semantics), column)
+	}
+	declared.Fields = fields
+	return declared
+}
+
+// retainedFieldIndex is where a retained column goes among fields: after the
+// last field of the table that the observed table holds before it.
+func retainedFieldIndex(fields []schemamodel.Field, structName, column string, position map[string]int, semantics identifier.Semantics) int {
+	own, observed := position[semantics.ColumnIdentityKey(column)]
+	at := 0
+	for i, field := range fields {
+		if field.StructName != structName {
+			continue
+		}
+		before, held := position[semantics.ColumnIdentityKey(field.Name)]
+		if !observed || (held && before < own) {
+			at = i + 1
+		}
+	}
+	return at
 }
 
 func changesForNames(kind planext.ChangeKind, names []string) []SkippedChange {

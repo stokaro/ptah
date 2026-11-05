@@ -5,8 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/diffpolicy"
 )
@@ -139,6 +141,87 @@ func TestApplyDropColumn(t *testing.T) {
 	c.Assert(skipped[1].Object, qt.Equals, "users.old")
 	// Input not mutated.
 	c.Assert(diff.TablesModified[0].ColumnsRemoved.Names(), qt.DeepEquals, []string{"legacy", "old"})
+}
+
+// TestApplyDropColumnLeavesOutATableItEmptied pins that a table whose only
+// change was the skipped column drop is not modified, so the filtered diff
+// reports no change and a caller says the schema is synced. A table that
+// removed no column is kept as it came, and one with another change keeps
+// that change.
+func TestApplyDropColumnLeavesOutATableItEmptied(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{
+			{TableName: "emptied", ColumnsRemoved: difftypes.ColumnChanges{{Name: "b"}}},
+			{TableName: "commented", CommentChange: &difftypes.CommentChange{Desired: "kept"}},
+			{TableName: "retyped", ColumnsRemoved: difftypes.ColumnChanges{{Name: "b"}},
+				ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "a", Changes: map[string]string{"type": "TEXT -> INTEGER"}}}},
+		},
+	}
+
+	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropColumn))
+
+	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
+		{Kind: planext.DropColumn, Object: "emptied.b"},
+		{Kind: planext.DropColumn, Object: "retyped.b"},
+	})
+	c.Assert(got.TablesModified, qt.HasLen, 2)
+	c.Assert(got.TablesModified[0].TableName, qt.Equals, "commented")
+	c.Assert(got.TablesModified[1].TableName, qt.Equals, "retyped")
+	c.Assert(got.TablesModified[1].ColumnsRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 3)
+}
+
+// TestApplyDropColumnOfTheOnlyChangeReportsNoChanges is the case a schema
+// apply decides on: the policy took the one change there was.
+func TestApplyDropColumnOfTheOnlyChangeReportsNoChanges(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsRemoved: difftypes.ColumnChanges{{Name: "b"}}}},
+	}
+
+	got, _ := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(planext.DropColumn))
+
+	c.Assert(got.HasChanges(), qt.IsFalse)
+	c.Assert(diff.HasChanges(), qt.IsTrue)
+}
+
+// TestApplyDropColumnKeepsTheSkippedColumnDeclared pins the declaration a
+// planner renders a kept table from. A SQLite rebuild creates the table from
+// its declared columns, and a provider that owns its tables plans from the
+// declared and observed tables, so a skipped column has to stay declared, at
+// the place the table holds it, or the rebuild and the provider drop it anyway.
+func TestApplyDropColumnKeepsTheSkippedColumnDeclared(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
+			TableName: "t",
+			ColumnsRemoved: difftypes.ColumnChanges{
+				{StructName: "t", Name: "b", Type: "TEXT", Nullable: true},
+				{StructName: "t", Name: "z", Type: "TEXT", Nullable: true},
+			},
+			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "a", Changes: map[string]string{"type": "TEXT -> INTEGER"}}},
+			Desired: schemacapture.TableDeclaration{
+				Table:  schemamodel.Table{StructName: "T", Name: "t"},
+				Fields: []schemamodel.Field{{StructName: "T", Name: "id"}, {StructName: "T", Name: "a"}, {StructName: "T", Name: "c"}},
+			},
+			Current: schemacapture.TableObservation{Table: catalog.Table{Name: "t", Columns: []catalog.Column{
+				{Name: "id"}, {Name: "a"}, {Name: "b"}, {Name: "z"},
+			}}},
+		}},
+	}
+
+	got, _ := diffpolicy.ApplyForDialect(diff, diffpolicy.NewSkipSet(planext.DropColumn), "sqlite")
+
+	c.Assert(got.TablesModified, qt.HasLen, 1)
+	c.Assert(got.TablesModified[0].Desired.Fields, qt.DeepEquals, []schemamodel.Field{
+		{StructName: "T", Name: "id"},
+		{StructName: "T", Name: "a"},
+		{StructName: "T", Name: "b", Type: "TEXT", Nullable: true},
+		{StructName: "T", Name: "z", Type: "TEXT", Nullable: true},
+		{StructName: "T", Name: "c"},
+	})
+	c.Assert(diff.TablesModified[0].Desired.Fields, qt.HasLen, 3)
 }
 
 func TestApplyDropIndexPreservesReplacements(t *testing.T) {

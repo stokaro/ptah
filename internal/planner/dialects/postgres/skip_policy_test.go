@@ -9,9 +9,10 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
-	"ptah.run/internal/planner/dialects/postgres"
+	"ptah.run/migration/planner"
 )
 
 func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
@@ -31,13 +32,15 @@ func skipPolicyFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	return diff, desired
 }
 
-func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
-	nodes, err := planner.GenerateMigrationAST(
+// renderPostgresSkip plans diff for PostgreSQL through the shared planning
+// entry, which is where a skip policy is applied for every target.
+func renderPostgresSkip(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database, kinds ...planext.ChangeKind) string {
+	c.Helper()
+	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
 		context.Background(), must.Must(builtin.New()),
-		withDeclaredObjects(diff, desired),
+		withDeclaredObjects(diff, desired), platform.Postgres,
+		planext.Options{SkipChangeKinds: kinds},
 	)
-	c.Assert(err, qt.IsNil)
-	sql, err := builtin.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql
 }
@@ -47,7 +50,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 
 	t.Run("no policy emits every destructive statement", func(t *testing.T) {
 		c := qt.New(t)
-		sql := renderPostgresSkip(c, postgres.New(), diff, desired)
+		sql := renderPostgresSkip(c, diff, desired)
 		c.Assert(sql, qt.Contains, "DROP TABLE IF EXISTS \"legacy\"")
 		c.Assert(sql, qt.Contains, "DROP TYPE IF EXISTS \"legacy_status\"")
 		c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS \"idx_legacy\"")
@@ -56,8 +59,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 
 	t.Run("skip drop_table omits the drop and comments it", func(t *testing.T) {
 		c := qt.New(t)
-		planner := postgres.New().WithSkipChangeKinds(planext.DropTable)
-		sql := renderPostgresSkip(c, planner, diff, desired)
+		sql := renderPostgresSkip(c, diff, desired, planext.DropTable)
 		// The DDL statement is gone; only the SKIP comment mentions the table.
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Contains, "SKIP: DROP TABLE of legacy omitted by diff policy (skip: drop_table)")
@@ -69,10 +71,9 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 
 	t.Run("skip all destructive kinds omits them all", func(t *testing.T) {
 		c := qt.New(t)
-		planner := postgres.New().WithSkipChangeKinds(
+		sql := renderPostgresSkip(c, diff, desired,
 			planext.DropTable, planext.DropColumn, planext.DropIndex, planext.DropEnum,
 		)
-		sql := renderPostgresSkip(c, planner, diff, desired)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TYPE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP INDEX IF EXISTS")
@@ -82,15 +83,19 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 		c.Assert(sql, qt.Contains, "skip: drop_index")
 		c.Assert(sql, qt.Contains, "skip: drop_enum")
 	})
+}
 
-	t.Run("WithSkipChangeKinds is immutable and no-op safe", func(t *testing.T) {
-		c := qt.New(t)
-		base := postgres.New()
-		derived := base.WithSkipChangeKinds(planext.DropTable)
-		// The base planner is unaffected by the derived policy.
-		c.Assert(renderPostgresSkip(c, base, diff, desired), qt.Contains, "DROP TABLE IF EXISTS")
-		c.Assert(renderPostgresSkip(c, derived, diff, desired), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
-		// Passing no kinds returns the receiver unchanged.
-		c.Assert(base.WithSkipChangeKinds(), qt.Equals, base)
-	})
+func TestPlanner_SkippedTableDropRetainsItsForeignKeys(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		TablesRemoved: difftypes.TableRemovals{{Name: "children"}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
+			{Name: "parent_fk", TableName: "children", Type: "FOREIGN KEY"},
+			{Name: "other_fk", TableName: "archives", Type: "FOREIGN KEY"},
+		},
+	}
+	sql := renderPostgresSkip(c, diff, &schemamodel.Database{}, planext.DropTable)
+	c.Assert(sql, qt.Not(qt.Contains), `DROP CONSTRAINT IF EXISTS "parent_fk"`)
+	c.Assert(sql, qt.Contains, `DROP CONSTRAINT IF EXISTS "other_fk"`)
+	c.Assert(sql, qt.Contains, "skip: drop_table")
 }

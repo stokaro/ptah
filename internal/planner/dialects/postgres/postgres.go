@@ -34,7 +34,6 @@ import (
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
-	"ptah.run/migration/diffpolicy"
 )
 
 const (
@@ -114,9 +113,6 @@ type Planner struct {
 	// and folding them together would make a concurrent build silently rewrite
 	// unrelated drops in the same plan.
 	concurrentIndexDropRefs map[difftypes.IndexRef]struct{}
-	// skip lists destructive change kinds this planner omits from the plan,
-	// emitting a clearly-marked comment in their place. See diffpolicy.
-	skip diffpolicy.SkipSet
 	// statements is the statement style the plan is spelled in. The zero
 	// value is the annotated style; see statementstyle.go for what the exact
 	// style leaves out and why.
@@ -224,23 +220,6 @@ func (p *Planner) WithConcurrentIndexDropRefs(indexRefs ...difftypes.IndexRef) *
 		if strings.TrimSpace(ref.Name) != "" && strings.TrimSpace(ref.TableName) != "" {
 			cp.concurrentIndexDropRefs[ref] = struct{}{}
 		}
-	}
-	return &cp
-}
-
-// WithSkipChangeKinds returns a copy of the planner that omits the listed
-// destructive change kinds from the plan, emitting a clearly-marked comment in
-// their place instead of the DDL. The receiver is not modified. Passing no
-// kinds returns the receiver unchanged.
-func (p *Planner) WithSkipChangeKinds(kinds ...planext.ChangeKind) *Planner {
-	if len(kinds) == 0 {
-		return p
-	}
-	cp := *p
-	cp.skip = make(diffpolicy.SkipSet, len(p.skip)+len(kinds))
-	maps.Copy(cp.skip, p.skip)
-	for _, kind := range kinds {
-		cp.skip[kind] = struct{}{}
 	}
 	return &cp
 }
@@ -1557,16 +1536,6 @@ func (p *Planner) constraintBackedIndexDropNode(ref difftypes.IndexRef) ast.Node
 	}
 }
 
-// appendSkipComments emits one clearly-marked comment per change omitted by the
-// diff policy, so the omission is visible in the generated migration rather than
-// silent.
-func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) []ast.Node {
-	for _, change := range skipped {
-		result = append(result, ast.NewComment(change.Comment()))
-	}
-	return result
-}
-
 // removeTables drops the tables the declaration no longer holds. A table whose
 // row-level security policy reads another removed table goes before that
 // table when its policy has not already been dropped; see [tableDropRelies].
@@ -1838,20 +1807,13 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
-	// Apply the diff policy first so skipped destructive changes never reach the
-	// per-object emission below (and so a skipped DROP never trips the coarse
-	// destructive gate downstream). The omissions are surfaced as comments.
-	if !p.skip.Empty() {
-		var skipped []diffpolicy.SkippedChange
-		diff, skipped = diffpolicy.ApplyForDialect(diff, p.skip, p.targetDialect())
-		result = appendSkipComments(result, skipped)
-	}
 	// The views, materialized views and routines a column type change, a
 	// materialized view change or a view change the server cannot make in
 	// place drops and creates again. Every step below that would plan one of
-	// them leaves it to the rebuild. It is planned after the skip policy,
-	// which may leave a change out: only the drops the plan makes can take a
-	// policy with them.
+	// them leaves it to the rebuild. The diff arrives with the skip policy
+	// already applied (see [ptah.run/core/planext.Options.SkipChangeKinds]),
+	// so a change the policy left out is not here: only the drops the plan
+	// makes can take a policy with them.
 	rebuild := planViewRebuild(diff)
 	if err := p.refuseViewChanges(diff, rebuild, semantics); err != nil {
 		return nil, err

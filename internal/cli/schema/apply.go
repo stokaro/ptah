@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
@@ -272,7 +270,7 @@ func nativeDiffPolicy(cmd *cobra.Command, cfg projectconfig.Config) (atlasschema
 		return atlasschema.DiffPolicy{}, err
 	}
 	return atlasschema.DiffPolicy{
-		SkipDropTable:                 slices.Contains(cfg.Diff.SkipChangeKinds(), planext.DropTable),
+		SkipChangeKinds:               cfg.Diff.SkipChangeKinds(),
 		ConcurrentIndexCreate:         cfg.Diff.ConcurrentIndexCreate(),
 		ConcurrentIndexDrop:           cfg.Diff.ConcurrentIndexDrop(),
 		ConcurrentIndexCreateDisabled: cfg.Diff.ConcurrentIndexCreateDisabled(),
