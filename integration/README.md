@@ -31,7 +31,6 @@ The integration test suite covers all aspects of the migration system as outline
 ### 🧪 Partial Failure Recovery
 - Handle multi-step migrations with intentional failures
 - Validate recovery and rollback capabilities
-- Resume a migration that failed partway without running its committed statements again (`partial_failure_resume`)
 
 ### ⏱ Timestamp Verification
 - Check that `applied_at` timestamps are stored correctly

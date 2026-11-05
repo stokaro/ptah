@@ -327,7 +327,7 @@ func TestReportUndescribedNamesAReaderThatReadsNoRoles(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
 
-	rolescope.ReportUndescribed(&out, platform.YDB, &catalog.Database{
+	rolescope.ReportUndescribed(&out, platform.SQLite, &catalog.Database{
 		NotDescribed: coverage.Set{}.With(coverage.Object{
 			Kind:       coverage.Role,
 			Reason:     coverage.Unsupported,

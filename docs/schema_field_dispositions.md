@@ -79,16 +79,16 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-623 fields are reachable from the desired schema, and each one carries
+477 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 514 | reaches rendered SQL on at least one target |
-| `comparison` | 34 | read when two schemas are compared, and written into no statement |
-| `planning` | 10 | read while a change set is assembled or ordered |
+| `ddl` | 383 | reaches rendered SQL on at least one target |
+| `comparison` | 33 | read when two schemas are compared, and written into no statement |
+| `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 31 | identifies the source text the declaration was read from |
+| `source` | 21 | identifies the source text the declaration was read from |
 | `export` | 13 | what a generated document carries, or reports that it cannot |
 | `data` | 11 | reference or seed rows, which are not DDL |
 
@@ -133,8 +133,8 @@ migration nobody asked for.
 | `schemamodel.EmbeddedField.Type` | `cockroachdb`, `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.AutoInc` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
-| `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
+| `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.GeneratedExpression` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.IdentityGeneration` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -145,7 +145,7 @@ migration nobody asked for.
 | `schemamodel.Field.TypeIsDeclaredText` | `clickhouse`, `sqlite`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Field.TypeRawSQL` | `clickhouse`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Function.Dialects` | `clickhouse`, `oracle`, `spanner`, `sqlite` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Function.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Function.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Function.Kind` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Function.Kind` | `mariadb`, `mysql`, `sqlserver` | from-catalog | the conversions drop a routine's kind; the other direction is a recorded loss |
 | `schemamodel.Index.Facets` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -155,14 +155,14 @@ migration nobody asked for.
 | `schemamodel.IndexPart.Desc` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.Expr` | `oracle`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.IndexPart.Name` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.MaterializedView.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.MaterializedView.Dialects` | `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Desc` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Name` | `clickhouse` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.PrimaryKeyPart.Name` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.PrimaryKeyPart.Prefix` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Schema.Name` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Sequence.Dialects` | `cockroachdb`, `mariadb`, `oracle`, `spanner`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Sequence.Dialects` | `cockroachdb`, `mariadb`, `oracle`, `spanner`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.Collate` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -172,16 +172,16 @@ migration nobody asked for.
 | `schemamodel.Table.PrimaryKeyName` | `cockroachdb`, `oracle`, `postgres`, `spanner`, `sqlserver`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.PrimaryKeyParts` | `mariadb`, `mysql`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Trigger.Dialects` | `clickhouse`, `spanner` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.Trigger.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.Trigger.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Trigger.ExecuteFunction` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
-| `schemamodel.View.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite`, `ydb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
+| `schemamodel.View.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `spanner`, `sqlite` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `synonym.Synonym.Name` | `oracle`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `synonym.Synonym.Schema` | `oracle`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `tsschema.DesiredContinuousAggregate.Body` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
 
 ### Compared fields that do not reach a plan by design
 
-61 exemptions, each with the reason it is right.
+54 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -218,8 +218,6 @@ migration nobody asked for.
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `schemamodel.Field.Primary` | `clickhouse` | both | every fixture's only key column is its primary one, and a ClickHouse MergeTree table without a sorting key is refused |
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
-| `schemamodel.Grant.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver` | both | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
-| `schemamodel.Grant.Dialects` | `cockroachdb`, `yugabytedb` | to-catalog | removing the selection puts on the converted side a grant to a role the declaration does not manage on that target, and the comparison removes grants only from the roles it manages |
 | `schemamodel.Index.Operator` | `cockroachdb` | both | CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every key and pg_opclass is empty, also for an index built with gin_trgm_ops |
 | `schemamodel.Index.StorageParams` | `cockroachdb` | both | CockroachDB accepts WITH (fillfactor = 70) on CREATE INDEX and stores nothing: pg_class.reloptions stays empty on v26.3.2 |
 | `schemamodel.IndexPart.NullsOrder` | `cockroachdb` | both | CockroachDB has no NULLS FIRST or NULLS LAST in an index key (v26.3.2 answers `unimplemented: this syntax`) and orders NULLs by the key's direction, which the comparison reads |
@@ -231,25 +229,20 @@ migration nobody asked for.
 | `schemamodel.IndexPart.Operator` | `spanner` | both | Spanner refuses an operator class in CREATE INDEX ("Setting operator class is not supported", measured on the emulator behind PGAdapter v0.56.1), so no index it holds has one to compare |
 | `schemamodel.RLSEnabledTable.Forced` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
 | `schemamodel.RLSPolicy.Comment` | any | both | a shared row-level security declaration reaches no catalog: each target converts it to its owner's model or skips it, so only the dialect-free comparison of two declarations reads it |
-| `schemamodel.Role.Dialects` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | both | removing the selection either changes nothing, on a target the role is selected for, or puts on the converted side a role the declaration does not name, and the comparison never removes such a role (compare.TestRolesComparison) |
+| `schemamodel.Role.Dialects` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | both | removing the selection either changes nothing, on a target the role is selected for, or puts on the converted side a role the declaration does not name, and the comparison never removes such a role (compare.TestRolesComparison) |
 | `schemamodel.Role.Password` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | a catalog holds no readable password, so a declaration converted back from one has none |
 | `schemamodel.Schema.Charset` | `mariadb`, `mysql` | both | a MySQL-family schema is a database, and only a whole-server comparison compares databases (stokaro/ptah#3789); this comparison reads one database |
 | `schemamodel.Schema.Collate` | `mariadb`, `mysql` | both | a MySQL-family schema is a database, and only a whole-server comparison compares databases (stokaro/ptah#3789); this comparison reads one database |
 | `schemamodel.Sequence.IfNotExists` | `cockroachdb`, `mariadb`, `oracle`, `postgres`, `sqlserver`, `yugabytedb` | both | IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it |
-| `schemamodel.Table.CustomSQL` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `ydb`, `yugabytedb` | both | statements the author appends verbatim; no catalog describes them, so a comparison has nothing to hold them against |
+| `schemamodel.Table.CustomSQL` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `spanner`, `sqlite`, `sqlserver`, `yugabytedb` | both | statements the author appends verbatim; no catalog describes them, so a comparison has nothing to hold them against |
 | `sqlitetable.DesiredVirtual.Virtual` | `sqlite` | both | the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys the module's storage (stokaro/ptah#1028); the refusal names the table, which is the comparison reading it |
 | `sqlitetable.Virtual.Arguments` | `sqlite` | both | the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys the module's storage (stokaro/ptah#1028); the refusal names the table, which is the comparison reading it |
 | `sqlitetable.Virtual.Module` | `sqlite` | both | the comparison refuses any change of a SQLite virtual table, because rebuilding it destroys the module's storage (stokaro/ptah#1028); the refusal names the table, which is the comparison reading it |
 | `tsschema.DesiredHypertable.IfNotExists` | `cockroachdb`, `postgres`, `spanner`, `yugabytedb` | both | IF NOT EXISTS says how a statement behaves when the object exists; no catalog records it |
-| `ydbreplication.ReplicationSpec.ConsistencyLevel` | `ydb` | both | the fixture declares a commit interval, which belongs to the global level alone, so no other level is valid beside it. The commit interval is reached |
-| `ydbschema.ChangefeedSpec.Format` | `ydb` | both | the fixture's changefeed asks for virtual timestamps, which YDB writes only in JSON, so no other format is valid beside them. The timestamps are reached |
-| `ydbschema.ChangefeedSpec.Name` | `ydb` | both | repeats the changefeed's identity, which its subject key holds; a definition that disagrees with its key is refused, and a changefeed under another key is another object |
-| `ydbsecret.Desired.ValueEnv` | `ydb` | both | names the environment variable a secret's value is read from when it is applied; YDB never shows a secret's value |
-| `ydbstreaming.Desired.AllowStateReset` | `ydb` | both | permits a plan to reset a streaming query's state when its body changes; the permission is not stored in the database |
 
 ### Compared fields the round trip cannot ask about
 
-20, besides the ones only a recorded loss hides.
+23, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
@@ -271,8 +264,11 @@ migration nobody asked for.
 | `schemamodel.Sequence.Facets` | declared only by the census's unknown-facet fixture, which every target refuses |
 | `tsschema.DesiredContinuousAggregate.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `tsschema.NormalizedBody.Body` | no census fixture declares a server's spelling; a connected comparison attaches one |
-| `ydbschema.ChangefeedSpec.Disabled` | every target refuses it: YDB has no statement that disables a changefeed |
-| `ydbschema.ColumnFamily.KeepInMemory` | only a read sets it; no declaration carries it |
+| `schemamodel.Grant.ObjectKind` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
+| `schemamodel.Grant.OnDatabase` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
+| `schemamodel.Grant.OnObject` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
+| `schemamodel.Role.Group` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
+| `schemamodel.Role.MemberOf` | every built-in target refuses it by capability, so no pair is in scope; the YDB provider, which the census does not run, plans it |
 
 ### Every field
 
@@ -755,150 +751,4 @@ migration nobody asked for.
 | `tsschema.DesiredHypertable.Comment` | `ddl` | — |
 | `tsschema.DesiredHypertable.IfNotExists` | `ddl` | — |
 | `tsschema.NormalizedBody.Body` | `comparison` | the server's spelling of a declared body, compared with the catalog definition and never rendered |
-| `ydbcoordination.Desired.Spec` | `ddl` | — |
-| `ydbcoordination.Desired.StructName` | `source` | the Go holder recorded by the source; node identity is independent of the holder |
-| `ydbcoordination.Spec.AttachConsistencyMode` | `ddl` | — |
-| `ydbcoordination.Spec.RateLimiterCountersMode` | `ddl` | — |
-| `ydbcoordination.Spec.ReadConsistencyMode` | `ddl` | — |
-| `ydbcoordination.Spec.SelfCheckPeriodMillis` | `ddl` | — |
-| `ydbcoordination.Spec.SessionGracePeriodMillis` | `ddl` | — |
-| `ydbexternal.Column.Name` | `ddl` | — |
-| `ydbexternal.Column.NotNull` | `ddl` | — |
-| `ydbexternal.Column.Type` | `ddl` | — |
-| `ydbexternal.DataSource.AuthMethod` | `ddl` | — |
-| `ydbexternal.DataSource.Location` | `ddl` | — |
-| `ydbexternal.DataSource.Options` | `ddl` | — |
-| `ydbexternal.DataSource.SourceType` | `ddl` | — |
-| `ydbexternal.DesiredSource.Spec` | `ddl` | — |
-| `ydbexternal.DesiredSource.StructName` | `source` | the annotation holder, independent of the data source's path |
-| `ydbexternal.DesiredTable.Spec` | `ddl` | — |
-| `ydbexternal.DesiredTable.StructName` | `source` | the annotation holder, independent of the external table's path |
-| `ydbexternal.Table.Columns` | `ddl` | — |
-| `ydbexternal.Table.DataSource` | `ddl` | — |
-| `ydbexternal.Table.Location` | `ddl` | — |
-| `ydbexternal.Table.Options` | `ddl` | — |
-| `ydbreplication.Connection.ConnectionString` | `ddl` | — |
-| `ydbreplication.Connection.PasswordSecretName` | `ddl` | — |
-| `ydbreplication.Connection.PasswordSecretPath` | `ddl` | — |
-| `ydbreplication.Connection.TokenSecretName` | `ddl` | — |
-| `ydbreplication.Connection.TokenSecretPath` | `ddl` | — |
-| `ydbreplication.Connection.User` | `ddl` | — |
-| `ydbreplication.DesiredReplication.Spec` | `ddl` | — |
-| `ydbreplication.DesiredReplication.StructName` | `source` | the annotation holder, independent of the replication's path |
-| `ydbreplication.DesiredTransfer.Spec` | `ddl` | — |
-| `ydbreplication.DesiredTransfer.StructName` | `source` | the annotation holder, independent of the transfer's path |
-| `ydbreplication.Item.Source` | `ddl` | — |
-| `ydbreplication.Item.Target` | `ddl` | — |
-| `ydbreplication.ReplicationSpec.CommitInterval` | `ddl` | — |
-| `ydbreplication.ReplicationSpec.Connection` | `ddl` | — |
-| `ydbreplication.ReplicationSpec.ConsistencyLevel` | `ddl` | — |
-| `ydbreplication.ReplicationSpec.Items` | `ddl` | — |
-| `ydbreplication.TransferSpec.BatchSizeBytes` | `ddl` | — |
-| `ydbreplication.TransferSpec.Connection` | `ddl` | — |
-| `ydbreplication.TransferSpec.Consumer` | `ddl` | — |
-| `ydbreplication.TransferSpec.FlushInterval` | `ddl` | — |
-| `ydbreplication.TransferSpec.Lambda` | `ddl` | — |
-| `ydbreplication.TransferSpec.Source` | `ddl` | — |
-| `ydbreplication.TransferSpec.Target` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.Consumers` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.Disabled` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.Format` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.InitialScan` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.Mode` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.Name` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.ResolvedTimestamps` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.RetentionPeriod` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.SchemaChanges` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.TopicAutoPartitioning` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.TopicMinActivePartitions` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.UserSIDs` | `ddl` | — |
-| `ydbschema.ChangefeedSpec.VirtualTimestamps` | `ddl` | — |
-| `ydbschema.ColumnFamily.CacheMode` | `ddl` | — |
-| `ydbschema.ColumnFamily.Columns` | `ddl` | — |
-| `ydbschema.ColumnFamily.Compression` | `ddl` | — |
-| `ydbschema.ColumnFamily.Data` | `ddl` | — |
-| `ydbschema.ColumnFamily.KeepInMemory` | `comparison` | keep_in_memory as a read finds it on a YDB family; no YQL statement writes it, and it decides whether a change or a rebuild is refused |
-| `ydbschema.ColumnFamily.Name` | `ddl` | — |
-| `ydbschema.ColumnStore.HashColumns` | `ddl` | — |
-| `ydbschema.ColumnStore.Partitions` | `ddl` | — |
-| `ydbschema.ColumnStore.TTL` | `ddl` | — |
-| `ydbschema.DesiredChangefeed.RetainedReplication` | `planning` | retains an observed controller binding and refuses independent changefeed creation or mutation |
-| `ydbschema.DesiredChangefeed.Spec` | `ddl` | — |
-| `ydbschema.DesiredColumnFamilies.Families` | `ddl` | — |
-| `ydbschema.DesiredColumnStore.ColumnStore` | `ddl` | — |
-| `ydbschema.DesiredIndexPartitioning.IndexPartitioning` | `ddl` | — |
-| `ydbschema.DesiredTTL.Policy` | `ddl` | — |
-| `ydbschema.DesiredTablePartitioning.TablePartitioning` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.Clusters` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.Dimension` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.Distance` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.Levels` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.Similarity` | `ddl` | — |
-| `ydbschema.DesiredVectorIndex.VectorType` | `ddl` | — |
-| `ydbschema.IndexPartitioning.ByLoad` | `ddl` | — |
-| `ydbschema.IndexPartitioning.BySize` | `ddl` | — |
-| `ydbschema.IndexPartitioning.MaxPartitions` | `ddl` | — |
-| `ydbschema.IndexPartitioning.MinPartitions` | `ddl` | — |
-| `ydbschema.IndexPartitioning.PartitionSizeMB` | `ddl` | — |
-| `ydbschema.IndexPartitioning.ReadReplicas` | `ddl` | — |
-| `ydbschema.ReplicationBinding.DestinationPath` | `planning` | records the observed replica destination without interpreting it as a local replication object |
-| `ydbschema.ReplicationBinding.ItemID` | `planning` | identifies the observed replication target item whose stream must not be managed independently |
-| `ydbschema.ReplicationBinding.SupportsTopicAutopartitioning` | `planning` | preserves observed controller behavior through snapshots and codecs |
-| `ydbschema.TTL.Column` | `ddl` | — |
-| `ydbschema.TTL.Interval` | `ddl` | — |
-| `ydbschema.TTL.Unit` | `ddl` | — |
-| `ydbschema.TTLTier.ExternalSource` | `ddl` | — |
-| `ydbschema.TTLTier.Interval` | `ddl` | — |
-| `ydbschema.TablePartitioning.ByLoad` | `ddl` | — |
-| `ydbschema.TablePartitioning.BySize` | `ddl` | — |
-| `ydbschema.TablePartitioning.KeyBloomFilter` | `ddl` | — |
-| `ydbschema.TablePartitioning.MaxPartitions` | `ddl` | — |
-| `ydbschema.TablePartitioning.MinPartitions` | `ddl` | — |
-| `ydbschema.TablePartitioning.PartitionAtKeys` | `ddl` | — |
-| `ydbschema.TablePartitioning.PartitionSizeMB` | `ddl` | — |
-| `ydbschema.TablePartitioning.ReadReplicas` | `ddl` | — |
-| `ydbschema.TablePartitioning.UniformPartitions` | `ddl` | — |
-| `ydbschema.TieredTTL.Column` | `ddl` | — |
-| `ydbschema.TieredTTL.Tiers` | `ddl` | — |
-| `ydbschema.TieredTTL.Unit` | `ddl` | — |
-| `ydbsecret.Desired.StructName` | `source` | the annotation holder, independent of the secret's path |
-| `ydbsecret.Desired.ValueEnv` | `ddl` | — |
-| `ydbstreaming.Desired.AllowStateReset` | `ddl` | — |
-| `ydbstreaming.Desired.Spec` | `ddl` | — |
-| `ydbstreaming.Desired.StructName` | `source` | the annotation holder, independent of query identity |
-| `ydbstreaming.Spec.ResourcePool` | `ddl` | — |
-| `ydbstreaming.Spec.Run` | `ddl` | — |
-| `ydbstreaming.Spec.Text` | `ddl` | — |
-| `ydbtopic.ConsumerSpec.AvailabilityPeriod` | `ddl` | — |
-| `ydbtopic.ConsumerSpec.Important` | `ddl` | — |
-| `ydbtopic.ConsumerSpec.Name` | `ddl` | — |
-| `ydbtopic.ConsumerSpec.ReadFrom` | `ddl` | — |
-| `ydbtopic.ConsumerSpec.SupportedCodecs` | `ddl` | — |
-| `ydbtopic.Desired.Spec` | `ddl` | — |
-| `ydbtopic.Desired.StructName` | `source` | the annotation holder, independent of the topic's path |
-| `ydbtopic.Spec.AutoPartitioningDownUtilizationPercent` | `ddl` | — |
-| `ydbtopic.Spec.AutoPartitioningStabilizationWindow` | `ddl` | — |
-| `ydbtopic.Spec.AutoPartitioningStrategy` | `ddl` | — |
-| `ydbtopic.Spec.AutoPartitioningUpUtilizationPercent` | `ddl` | — |
-| `ydbtopic.Spec.Consumers` | `ddl` | — |
-| `ydbtopic.Spec.MaxActivePartitions` | `ddl` | — |
-| `ydbtopic.Spec.MinActivePartitions` | `ddl` | — |
-| `ydbtopic.Spec.PartitionWriteBurstBytes` | `ddl` | — |
-| `ydbtopic.Spec.PartitionWriteSpeedBytesPerSecond` | `ddl` | — |
-| `ydbtopic.Spec.RetentionPeriod` | `ddl` | — |
-| `ydbtopic.Spec.SupportedCodecs` | `ddl` | — |
-| `ydbworkload.ClassifierSpec.MemberName` | `ddl` | — |
-| `ydbworkload.ClassifierSpec.Rank` | `ddl` | — |
-| `ydbworkload.ClassifierSpec.ResourcePool` | `ddl` | — |
-| `ydbworkload.DesiredClassifier.Spec` | `ddl` | — |
-| `ydbworkload.DesiredClassifier.StructName` | `source` | the annotation holder, independent of classifier identity |
-| `ydbworkload.DesiredPool.Spec` | `ddl` | — |
-| `ydbworkload.DesiredPool.StructName` | `source` | the annotation holder, independent of pool identity |
-| `ydbworkload.PoolSpec.ConcurrentQueryLimit` | `ddl` | — |
-| `ydbworkload.PoolSpec.DatabaseLoadCPUThreshold` | `ddl` | — |
-| `ydbworkload.PoolSpec.QueryCPULimitPercentPerNode` | `ddl` | — |
-| `ydbworkload.PoolSpec.QueryMemoryLimitPercentPerNode` | `ddl` | — |
-| `ydbworkload.PoolSpec.QueueSize` | `ddl` | — |
-| `ydbworkload.PoolSpec.ResourceWeight` | `ddl` | — |
-| `ydbworkload.PoolSpec.TotalCPULimitPercentPerNode` | `ddl` | — |
 <!-- END GENERATED FIELD DISPOSITIONS -->

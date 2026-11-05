@@ -912,3 +912,13 @@ v0.16.1 ptah.run/engine
 # because the status command gains a failure document and the run document's
 # error changes shape. Pre-v1, so no compatibility is owed to the string field.
 v0.17.0 ptah.run/migration/migrator
+
+# The built-in YDB engine is deleted: the official executable provider
+# github.com/stokaro/ptah-ydb-plugin serves YDB (stokaro/ptah#4204).
+# platform.YDB named a built-in dialect, and the YDB presets and the
+# release-branch version scheme resolved YDB release lines only; the provider
+# states the capabilities of the server it connects to. The nineteen
+# ptah.run/dialect/ydb packages leave the Stable Embedder API with the engine.
+# Pre-v1, so no compatibility is owed.
+v0.19.0 ptah.run/core/platform
+v0.19.0 ptah.run/core/platform/capability
